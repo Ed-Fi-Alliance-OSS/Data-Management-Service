@@ -19,6 +19,15 @@
 > setup scripts warn about each one. Rename them as described in
 > [Migrating from the earlier variable names](../../docs/CONFIGURATION.md#migrating-from-the-earlier-variable-names).
 
+> [!NOTE]
+> `provision-dms-schema.ps1` and `configure-local-data-store.ps1` decrypt the connection strings
+> the Configuration Service stores with AES-GCM, which requires PowerShell 7.4 or later, for them
+> and for every flow that runs them, such as `setup-local-dms.ps1`. The other setup scripts still
+> need only PowerShell 7. Upgrade the Configuration Service, the Ed-Fi
+> API and these scripts together: earlier releases cannot read the connection strings this
+> Configuration Service writes. See
+> [ConfigurationServiceSettings](../../docs/CONFIGURATION.md#configurationservicesettings).
+
 ## Starting Services with Docker Compose
 
 This directory contains several Docker Compose files, which can be combined to

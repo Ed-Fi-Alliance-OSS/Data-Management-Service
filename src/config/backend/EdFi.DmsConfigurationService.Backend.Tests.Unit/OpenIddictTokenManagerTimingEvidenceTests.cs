@@ -99,6 +99,9 @@ public class Given_in_process_token_requests_measured_for_timing_evidence
 
         public Task<string?> GetTokenStatusAsync(Guid tokenId) => throw new NotSupportedException();
 
+        public Task<string?> GetTokenStatusForApplicationAsync(Guid tokenId, Guid applicationId) =>
+            throw new NotSupportedException();
+
         public Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId) =>
             throw new NotSupportedException();
 

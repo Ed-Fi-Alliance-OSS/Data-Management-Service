@@ -460,8 +460,11 @@ public class DataStoreOwnershipPublicationTests
         [Test]
         public void It_warns_naming_the_reconciler_and_the_exception_type()
         {
+            // The fixture's values are legacy, so each also logs the legacy-format warning.
             LogRecord warning = _logger
-                .Records.Where(record => record.Level == LogLevel.Warning)
+                .Records.Where(record =>
+                    record.Level == LogLevel.Warning && !record.Message.Contains("legacy AES-CBC format")
+                )
                 .Should()
                 .ContainSingle()
                 .Subject;
@@ -532,21 +535,13 @@ public class DataStoreOwnershipPublicationTests
 
             Dictionary<string, TaskCompletionSource> fetchGates = new()
             {
-                [firstTenant] = new TaskCompletionSource(
-                    TaskCreationOptions.RunContinuationsAsynchronously
-                ),
-                [secondTenant] = new TaskCompletionSource(
-                    TaskCreationOptions.RunContinuationsAsynchronously
-                ),
+                [firstTenant] = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+                [secondTenant] = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
             };
             Dictionary<string, TaskCompletionSource> fetchCompleted = new()
             {
-                [firstTenant] = new TaskCompletionSource(
-                    TaskCreationOptions.RunContinuationsAsynchronously
-                ),
-                [secondTenant] = new TaskCompletionSource(
-                    TaskCreationOptions.RunContinuationsAsynchronously
-                ),
+                [firstTenant] = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
+                [secondTenant] = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously),
             };
 
             string aConnection = TenantAPrimary;

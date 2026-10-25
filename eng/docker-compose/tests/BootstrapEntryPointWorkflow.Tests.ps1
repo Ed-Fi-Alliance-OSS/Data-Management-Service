@@ -3473,26 +3473,31 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "configure dataStore=[`$Dat
                 function script:New-WrapperReuseCipherText {
                     param([Parameter(Mandatory)] [string]$PlainText)
 
-                    # CMS's own scheme: Base64(IV || AES-CBC/PKCS7), key padded with '0' to 32 characters.
-                    $aes = [System.Security.Cryptography.Aes]::Create()
+                    # The envelope a current CMS returns: marker "EdFi.CS.Envelope", version 1, nonce (12),
+                    # tag (16), then AES-256-GCM cipher text of the PKCS7-padded UTF-8 text, with marker and
+                    # version as associated data, under an HKDF-SHA256 key derived from the key material.
+                    $keyMaterial = [System.Text.Encoding]::UTF8.GetBytes("TestEncryptionKey123456789012345678901234567890".PadRight(32, [char]'0').Substring(0, 32))
+                    $envelopeKey = [System.Security.Cryptography.HKDF]::DeriveKey(
+                        [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+                        $keyMaterial,
+                        32,
+                        [byte[]]::new(0),
+                        [System.Text.Encoding]::ASCII.GetBytes("EdFi.ConnectionString.AES-256-GCM.v1"))
+                    $plainTextBytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
+                    $paddingLength = 16 - ($plainTextBytes.Length % 16)
+                    $padded = [byte[]]($plainTextBytes + [byte[]](@([byte]$paddingLength) * $paddingLength))
+                    $header = [byte[]]([System.Text.Encoding]::ASCII.GetBytes("EdFi.CS.Envelope") + [byte[]]@(1))
+                    $nonce = [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(12)
+                    $tag = [byte[]]::new(16)
+                    $cipherText = [byte[]]::new($padded.Length)
+                    $aesGcm = [System.Security.Cryptography.AesGcm]::new($envelopeKey, 16)
                     try {
-                        $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
-                        $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
-                        $aes.Key = [System.Text.Encoding]::UTF8.GetBytes("TestEncryptionKey123456789012345678901234567890".PadRight(32, [char]'0').Substring(0, 32))
-                        $aes.GenerateIV()
-                        $plainTextBytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
-                        $encryptor = $aes.CreateEncryptor()
-                        try {
-                            $cipherText = $encryptor.TransformFinalBlock($plainTextBytes, 0, $plainTextBytes.Length)
-                        }
-                        finally {
-                            $encryptor.Dispose()
-                        }
-                        return [Convert]::ToBase64String([byte[]]($aes.IV + $cipherText))
+                        $aesGcm.Encrypt($nonce, $padded, $cipherText, $tag, $header)
                     }
                     finally {
-                        $aes.Dispose()
+                        $aesGcm.Dispose()
                     }
+                    return [Convert]::ToBase64String([byte[]]($header + $nonce + $tag + $cipherText))
                 }
 
                 $script:wrapperReuseStubNames = @("Add-CmsClient", "Get-CmsToken", "Get-DataStore", "Add-DataStore", "Invoke-Api", "Assert-MssqlTopologyPhysicalConsistency")

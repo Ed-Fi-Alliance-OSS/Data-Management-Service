@@ -21,6 +21,7 @@
         <PackageReference Include="Respawn" />
     </ItemGroup>
     <ItemGroup>
+        <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend.Installer\EdFi.DmsConfigurationService.Backend.Installer.csproj" />
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend.Postgresql\EdFi.DmsConfigurationService.Backend.Postgresql.csproj" />
         <ProjectReference Include="..\..\frontend\EdFi.DmsConfigurationService.Frontend.AspNetCore\EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj" />
         <ProjectReference Include="..\..\frontend\EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit\EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.csproj" />

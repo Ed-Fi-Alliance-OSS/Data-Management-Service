@@ -49,6 +49,7 @@ services:
       ConfigurationServiceSettings__Scope: ${DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE:-edfi_admin_api/readonly_access}
       ConfigurationServiceSettings__ClientSecret: ${DMS_CONFIGURATION_SERVICE_CLIENT_SECRET}
       ConfigurationServiceSettings__EncryptionKey: ${CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY:-}
+      ConfigurationServiceSettings__AllowLegacyConnectionStrings: ${CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS:-true}
       AppSettings__MultiTenancy: ${DMS_MULTI_TENANCY:-false}
       AppSettings__ApiSchema__UseCustomPath: ${USE_API_SCHEMA_PATH:-false}
       AppSettings__ApiSchema__Path: ${API_SCHEMA_PATH:-}

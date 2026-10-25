@@ -19,11 +19,15 @@ public static class ConfigurationServiceOpenApiTransformers
 
     public const string SecuritySchemeName = "oauth2_client_credentials";
 
+    public const string ClientCredentialsSchemeName = "client_secret_basic";
+
     /// <summary>
     /// Sets the document info, declares the client-credentials security scheme and requires it at
-    /// the root. The token URL is the request base the document is served for (scheme, host and
-    /// PathBase, after forwarded headers when enabled) followed by /connect/token. It never reads
-    /// the identity provider authority, so a document fetched through a proxy points at the proxy.
+    /// the root, and declares the HTTP Basic client-credentials scheme for the operations that
+    /// authenticate their caller themselves. The token URL is the request base the document is
+    /// served for (scheme, host and PathBase, after forwarded headers when enabled) followed by
+    /// /connect/token. It never reads the identity provider authority, so a document fetched through
+    /// a proxy points at the proxy.
     /// </summary>
     public static Task TransformDocument(
         OpenApiDocument document,
@@ -57,6 +61,17 @@ public static class ConfigurationServiceOpenApiTransformers
             },
         };
 
+        document.Components.SecuritySchemes[ClientCredentialsSchemeName] = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http,
+            Scheme = "basic",
+            Description =
+                "OAuth 2.0 client authentication (RFC 6749 §2.3.1): the client_id and client_secret, "
+                + "each form-urlencoded, joined with ':' and base64-encoded. These operations also accept "
+                + "the two values as client_id and client_secret form fields instead, but not both "
+                + "mechanisms at once.",
+        };
+
         document.Security =
         [
             new OpenApiSecurityRequirement
@@ -69,8 +84,10 @@ public static class ConfigurationServiceOpenApiTransformers
     }
 
     /// <summary>
-    /// Marks every operation that needs no token with an empty security requirement, which
-    /// overrides the root requirement. Operations that carry authorization metadata keep a null
+    /// Marks every operation that authenticates its caller with client credentials itself
+    /// (<see cref="ClientCredentialAuthenticationMetadata"/>) with the HTTP Basic client-credentials
+    /// requirement, and every other operation that needs no token with an empty security requirement.
+    /// Both override the root requirement. Operations that carry authorization metadata keep a null
     /// Security and inherit the root requirement.
     /// </summary>
     public static Task TransformOperation(
@@ -80,7 +97,17 @@ public static class ConfigurationServiceOpenApiTransformers
     )
     {
         var metadata = context.Description.ActionDescriptor.EndpointMetadata;
-        if (!metadata.OfType<IAuthorizeData>().Any() || metadata.OfType<IAllowAnonymous>().Any())
+        if (metadata.OfType<ClientCredentialAuthenticationMetadata>().Any())
+        {
+            operation.Security =
+            [
+                new OpenApiSecurityRequirement
+                {
+                    [new OpenApiSecuritySchemeReference(ClientCredentialsSchemeName, context.Document)] = [],
+                },
+            ];
+        }
+        else if (!metadata.OfType<IAuthorizeData>().Any() || metadata.OfType<IAllowAnonymous>().Any())
         {
             operation.Security = [];
         }

@@ -20,7 +20,11 @@ in `Infrastructure/Authorization/EndpointBuilderExtensions.cs`; they compose the
 service-role and scope policies. Use `MapLimitedAccess` only for reads DMS performs.
 
 Anonymous endpoints (`/health`, `/`, `/tenancy`, metadata, `/.well-known/*`, and the
-OAuth `/connect/*` endpoints) are intentional. Prefer `MapPublic` for new ones.
+OAuth `/connect/*` endpoints other than introspect and revoke) are intentional. Prefer `MapPublic` for new ones.
+
+In `self-contained` mode, `/connect/introspect` and `/connect/revoke` authenticate the caller with client
+credentials inside the handler. In `keycloak` mode revoke delegates that check to Keycloak, and introspect makes
+no credential check. Neither is mapped with `MapSecured*`.
 
 ## Tenancy Is Not Authorization
 

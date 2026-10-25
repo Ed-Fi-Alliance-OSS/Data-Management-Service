@@ -37,9 +37,12 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
         // An OAuth endpoint answers every failure in the RFC 6749 §5.2 format, including the ones
         // that escape its handler (DMS-1327 D-17). Logging is unaffected: RequestLoggingMiddleware
         // still records a handled 500 as HttpRequestFailed.
-        if (HasOAuthErrorContract(httpContext))
+        if (OAuthErrorContract(httpContext) is { } oauthContract)
         {
-            (int status, string error, string description) = MapOAuthFailure(exception);
+            (int status, string error, string description) = MapOAuthFailure(
+                exception,
+                oauthContract.ServerErrorDescription
+            );
             await OAuthErrorResponseWriter.WriteAsync(
                 httpContext,
                 status,
@@ -84,18 +87,21 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
     /// Exception handling clears the active endpoint but preserves the original on
     /// <see cref="IExceptionHandlerFeature"/>, so the route's marker is read from there.
     /// </summary>
-    private static bool HasOAuthErrorContract(HttpContext httpContext) =>
+    private static OAuthErrorContractMetadata? OAuthErrorContract(HttpContext httpContext) =>
         httpContext
             .Features.Get<IExceptionHandlerFeature>()
-            ?.Endpoint?.Metadata.GetMetadata<OAuthErrorContractMetadata>()
-            is not null;
+            ?.Endpoint?.Metadata.GetMetadata<OAuthErrorContractMetadata>();
 
     /// <summary>
     /// Malformed or unreadable request bodies are the caller's error and keep their client status;
-    /// anything else is a programming fault and is a 500 <c>server_error</c>. Descriptions are fixed,
-    /// so no exception text reaches the response.
+    /// anything else is a programming fault and is a 500 <c>server_error</c> with the route's
+    /// <paramref name="serverErrorDescription"/>. Descriptions are fixed, so no exception text reaches
+    /// the response.
     /// </summary>
-    private static (int Status, string Error, string Description) MapOAuthFailure(Exception exception) =>
+    private static (int Status, string Error, string Description) MapOAuthFailure(
+        Exception exception,
+        string serverErrorDescription
+    ) =>
         exception switch
         {
             InvalidDataException => MalformedForm,
@@ -115,11 +121,7 @@ public sealed class GlobalExceptionHandler : IExceptionHandler
                 "invalid_request",
                 "The request could not be read."
             ),
-            _ => (
-                StatusCodes.Status500InternalServerError,
-                "server_error",
-                "The revocation request could not be processed."
-            ),
+            _ => (StatusCodes.Status500InternalServerError, "server_error", serverErrorDescription),
         };
 
     private static readonly (int Status, string Error, string Description) MalformedForm = (

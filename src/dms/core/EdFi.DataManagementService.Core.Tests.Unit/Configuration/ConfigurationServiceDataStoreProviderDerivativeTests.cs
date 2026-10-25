@@ -53,10 +53,13 @@ public class ConfigurationServiceDataStoreProviderDerivativeTests
             _inputs.Add(base64EncodedCipherText);
             return decrypt(base64EncodedCipherText);
         }
+
+        public bool IsLegacyFormat(string? base64EncodedCipherText) => false;
     }
 
     /// <summary>
-    /// Mirrors the CMS ConnectionStringEncryptionService.Encrypt() method exactly.
+    /// Produces the legacy AES-CBC form the CMS wrote before connection string envelopes, which DMS
+    /// still reads.
     /// </summary>
     private static string EncryptToBase64(string plainText, string encryptionKey)
     {
@@ -104,7 +107,8 @@ public class ConfigurationServiceDataStoreProviderDerivativeTests
     private static ConfigurationServiceDataStoreProvider CreateProvider(
         object dataStoresResponse,
         ILogger<ConfigurationServiceDataStoreProvider> logger,
-        IConnectionStringDecryptionService? decryptionService = null
+        IConnectionStringDecryptionService? decryptionService = null,
+        DerivativeTestHttpMessageHandler? handler = null
     )
     {
         var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
@@ -113,7 +117,7 @@ public class ConfigurationServiceDataStoreProviderDerivativeTests
             )
             .Returns("valid-token");
 
-        var handler = new DerivativeTestHttpMessageHandler();
+        handler ??= new DerivativeTestHttpMessageHandler();
         handler.SetResponse("v3/dataStores/", dataStoresResponse);
 
         var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
@@ -232,6 +236,270 @@ public class ConfigurationServiceDataStoreProviderDerivativeTests
                     || text.Contains(PrimaryConnectionString, StringComparison.Ordinal)
                 );
         }
+    }
+
+    /// <summary>
+    /// Each legacy value logs one warning naming its row, so an operator can tell when legacy values
+    /// can be disallowed. An envelope logs nothing.
+    /// </summary>
+    [TestFixture]
+    public class Given_DataStores_With_Legacy_And_Envelope_Connection_Strings
+    {
+        private RecordingLogger<ConfigurationServiceDataStoreProvider> _logger = null!;
+        private ConnectionStringEncryptionVectors _vectors = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new RecordingLogger<ConfigurationServiceDataStoreProvider>();
+            _vectors = ConnectionStringEncryptionVectors.Load();
+
+            object response = new[]
+            {
+                DataStore(
+                    1,
+                    "Envelope Primary",
+                    _vectors.EnvelopeV1,
+                    [Derivative("Snapshot", _vectors.LegacyCbc)]
+                ),
+                DataStore(
+                    2,
+                    "Legacy Primary",
+                    _vectors.LegacyCbc,
+                    [Derivative("ReadReplica", _vectors.EnvelopeV1)]
+                ),
+            };
+
+            await CreateProvider(response, _logger, new ConnectionStringDecryptionService(_vectors.KeyText))
+                .LoadDataStores();
+        }
+
+        private IReadOnlyList<LogRecord> Warnings =>
+            [.. _logger.Records.Where(record => record.Level == LogLevel.Warning)];
+
+        [Test]
+        public void It_should_warn_once_for_the_legacy_primary() =>
+            Warnings
+                .Where(record => !record.Properties.ContainsKey("DerivativeId"))
+                .Should()
+                .ContainSingle()
+                .Which.Properties["DataStoreId"]
+                .Should()
+                .Be(2L);
+
+        [Test]
+        public void It_should_warn_once_for_the_legacy_derivative()
+        {
+            var warning = Warnings
+                .Where(record => record.Properties.ContainsKey("DerivativeId"))
+                .Should()
+                .ContainSingle()
+                .Subject;
+            warning.Properties["DataStoreId"].Should().Be(1L);
+            warning.Properties["DerivativeId"].Should().Be(10L);
+        }
+
+        [Test]
+        public void It_should_name_the_setting_in_each_warning() =>
+            Warnings
+                .Should()
+                .AllSatisfy(record =>
+                    record
+                        .Message.Should()
+                        .Contain("ConfigurationServiceSettings:AllowLegacyConnectionStrings")
+                );
+
+        [Test]
+        public void It_should_never_log_a_stored_value() =>
+            AllLoggedText(_logger)
+                .Should()
+                .NotContain(text =>
+                    text.Contains(_vectors.LegacyCbc, StringComparison.Ordinal)
+                    || text.Contains(_vectors.PlainText, StringComparison.Ordinal)
+                );
+    }
+
+    /// <summary>
+    /// A request that matches no data store reloads its tenant, so a legacy row warns once per process
+    /// rather than once per load, and warns again only when its stored value changes.
+    /// </summary>
+    [TestFixture]
+    public class Given_Legacy_Connection_Strings_Loaded_Repeatedly
+    {
+        private RecordingLogger<ConfigurationServiceDataStoreProvider> _logger = null!;
+        private int _warningsAfterFirstLoad;
+        private int _warningsAfterRepeatedLoads;
+        private IReadOnlyList<LogRecord> _warningsAfterValueChanged = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new RecordingLogger<ConfigurationServiceDataStoreProvider>();
+            var vectors = ConnectionStringEncryptionVectors.Load();
+            var handler = new DerivativeTestHttpMessageHandler();
+
+            var provider = CreateProvider(
+                new[]
+                {
+                    DataStore(
+                        1,
+                        "Legacy Primary",
+                        vectors.LegacyCbc,
+                        [Derivative("Snapshot", vectors.LegacyCbc)]
+                    ),
+                },
+                _logger,
+                new ConnectionStringDecryptionService(vectors.KeyText),
+                handler
+            );
+
+            await provider.LoadDataStores();
+            _warningsAfterFirstLoad = Warnings.Count;
+
+            await provider.LoadDataStores();
+            await provider.LoadDataStores();
+            _warningsAfterRepeatedLoads = Warnings.Count;
+
+            handler.SetResponse(
+                "v3/dataStores/",
+                new[]
+                {
+                    DataStore(
+                        1,
+                        "Legacy Primary",
+                        EncryptToBase64(PrimaryConnectionString, vectors.KeyText),
+                        [Derivative("Snapshot", vectors.LegacyCbc)]
+                    ),
+                }
+            );
+            await provider.LoadDataStores();
+            _warningsAfterValueChanged = [.. Warnings.Skip(_warningsAfterRepeatedLoads)];
+        }
+
+        private IReadOnlyList<LogRecord> Warnings =>
+            [.. _logger.Records.Where(record => record.Level == LogLevel.Warning)];
+
+        [Test]
+        public void It_should_warn_once_for_each_legacy_row_on_the_first_load() =>
+            _warningsAfterFirstLoad.Should().Be(2);
+
+        [Test]
+        public void It_should_not_warn_again_on_later_loads() =>
+            _warningsAfterRepeatedLoads.Should().Be(_warningsAfterFirstLoad);
+
+        [Test]
+        public void It_should_warn_again_only_for_the_row_whose_value_changed() =>
+            _warningsAfterValueChanged
+                .Should()
+                .ContainSingle()
+                .Which.Properties.Should()
+                .NotContainKey("DerivativeId")
+                .And.Contain("DataStoreId", 1L);
+    }
+
+    /// <summary>
+    /// A legacy primary the Ed-Fi API disallows fails the whole tenant load, unlike a derivative,
+    /// because a data store cannot be used without its primary connection string.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Legacy_Primary_While_Legacy_Values_Are_Disallowed
+    {
+        private ConfigurationServiceDataStoreProvider _provider = null!;
+        private Exception? _failure;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var vectors = ConnectionStringEncryptionVectors.Load();
+
+            object response = new[]
+            {
+                DataStore(1, "Envelope Primary", vectors.EnvelopeV1, []),
+                DataStore(2, "Legacy Primary", vectors.LegacyCbc, []),
+            };
+
+            _provider = CreateProvider(
+                response,
+                new RecordingLogger<ConfigurationServiceDataStoreProvider>(),
+                new ConnectionStringDecryptionService(vectors.KeyText, allowLegacyConnectionStrings: false)
+            );
+
+            try
+            {
+                await _provider.LoadDataStores();
+            }
+            catch (Exception ex)
+            {
+                _failure = ex;
+            }
+        }
+
+        [Test]
+        public void It_should_fail_the_load_naming_the_setting() =>
+            _failure
+                .Should()
+                .BeOfType<LegacyConnectionStringRejectedException>()
+                .Which.Message.Should()
+                .Contain("ConfigurationServiceSettings:AllowLegacyConnectionStrings is false");
+
+        [Test]
+        public void It_should_load_none_of_the_tenant_data_stores()
+        {
+            _provider.IsLoaded().Should().BeFalse();
+            _provider.GetAll().Should().BeEmpty();
+        }
+    }
+
+    /// <summary>
+    /// A legacy derivative the Ed-Fi API disallows, though the Configuration Service still returns it,
+    /// is reported as disallowed, not as a value that could not be decrypted.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Legacy_Derivative_While_Legacy_Values_Are_Disallowed
+    {
+        private RecordingLogger<ConfigurationServiceDataStoreProvider> _logger = null!;
+        private IList<DataStore> _loaded = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new RecordingLogger<ConfigurationServiceDataStoreProvider>();
+            var vectors = ConnectionStringEncryptionVectors.Load();
+
+            object response = new[]
+            {
+                DataStore(
+                    1,
+                    "Envelope Primary",
+                    vectors.EnvelopeV1,
+                    [Derivative("Snapshot", vectors.LegacyCbc)]
+                ),
+            };
+
+            _loaded = await CreateProvider(
+                    response,
+                    _logger,
+                    new ConnectionStringDecryptionService(
+                        vectors.KeyText,
+                        allowLegacyConnectionStrings: false
+                    )
+                )
+                .LoadDataStores();
+        }
+
+        [Test]
+        public void It_should_treat_the_derivative_as_not_configured() =>
+            _loaded.Should().ContainSingle().Which.Derivatives.Should().BeEmpty();
+
+        [Test]
+        public void It_should_log_one_error_naming_the_setting() =>
+            ErrorMessages(_logger)
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Contain("legacy AES-CBC format")
+                .And.Contain("ConfigurationServiceSettings:AllowLegacyConnectionStrings is false")
+                .And.NotContain("Unable to decrypt");
     }
 
     /// <summary>

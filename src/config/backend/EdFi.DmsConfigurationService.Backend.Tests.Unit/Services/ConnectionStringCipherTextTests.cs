@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.TestHelpers;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
 
@@ -78,6 +79,47 @@ public class ConnectionStringCipherTextTests
     }
 
     /// <summary>
+    /// Values stored in either form, taken from the shared vectors rather than the encryption service.
+    /// The envelope is 13 bytes past a block multiple, which a legacy-only length rule rejects.
+    /// </summary>
+    [TestFixture]
+    public class Given_stored_values_from_the_interoperability_vectors : ConnectionStringCipherTextTests
+    {
+        private ConnectionStringEncryptionVectors _vectors = null!;
+
+        [SetUp]
+        public void Setup() => _vectors = ConnectionStringEncryptionVectors.Load();
+
+        [Test]
+        public void It_recognizes_the_version_1_envelope() =>
+            ConnectionStringCipherText.LooksLikeCipherText(_vectors.EnvelopeV1).Should().BeTrue();
+
+        [Test]
+        public void It_recognizes_the_block_aligned_version_1_envelope() =>
+            ConnectionStringCipherText.LooksLikeCipherText(_vectors.BlockAlignedEnvelopeV1).Should().BeTrue();
+
+        [Test]
+        public void It_recognizes_the_legacy_cbc_value() =>
+            ConnectionStringCipherText.LooksLikeCipherText(_vectors.LegacyCbc).Should().BeTrue();
+
+        /// <summary>
+        /// Recognition goes by length, not by marker or version, so a value from a future version is
+        /// still refused as cipher text rather than encrypted again.
+        /// </summary>
+        [Test]
+        public void It_recognizes_an_envelope_of_another_version()
+        {
+            byte[] envelope = Convert.FromBase64String(_vectors.EnvelopeV1);
+            envelope[16] = 0x02;
+
+            ConnectionStringCipherText
+                .LooksLikeCipherText(Convert.ToBase64String(envelope))
+                .Should()
+                .BeTrue();
+        }
+    }
+
+    /// <summary>
     /// The values the platform itself registers, including the shapes
     /// eng/Dms-Management.psm1 builds for each engine. None of them may be mistaken for cipher text.
     /// </summary>
@@ -118,12 +160,25 @@ public class ConnectionStringCipherTextTests
                 .BeFalse();
 
         /// <summary>
-        /// Long enough, but not a whole number of cipher blocks, so the encryption service cannot
-        /// have written it.
+        /// 45 bytes has the envelope length class but is only marker, version, nonce and tag: the
+        /// shortest envelope also carries one block of cipher text (61 bytes).
+        /// </summary>
+        [Test]
+        public void It_is_not_recognized_as_an_envelope_without_cipher_text() =>
+            ConnectionStringCipherText
+                .LooksLikeCipherText(Convert.ToBase64String(new byte[45]))
+                .Should()
+                .BeFalse();
+
+        /// <summary>
+        /// Long enough, but neither a whole number of legacy cipher blocks nor 13 bytes past one as an
+        /// envelope is, so the encryption service cannot have written it.
         /// </summary>
         [TestCase(33)]
         [TestCase(47)]
-        public void It_is_not_recognized_when_the_length_is_not_a_block_multiple(int byteCount) =>
+        [TestCase(60)]
+        [TestCase(62)]
+        public void It_is_not_recognized_when_the_length_fits_neither_form(int byteCount) =>
             ConnectionStringCipherText
                 .LooksLikeCipherText(Convert.ToBase64String(new byte[byteCount]))
                 .Should()

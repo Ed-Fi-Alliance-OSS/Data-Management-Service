@@ -8,7 +8,6 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Secrets;
 using Microsoft.Extensions.Configuration;
@@ -36,11 +35,11 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict
             services.AddSingleton<OpenIddictTokenManager>();
             services.AddSingleton<ITokenManager, OpenIddictTokenManager>();
             services.AddSingleton<ITokenRevocationManager, OpenIddictTokenManager>();
+            services.AddSingleton<ITokenIntrospectionManager, OpenIddictTokenManager>();
             services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
 
-            // Add enhanced OpenIddict-compatible services
+            // Add OpenIddict-compatible services
             services.AddScoped<IOpenIdConnectConfigurationProvider, OpenIdConnectConfigurationProvider>();
-            services.AddScoped<IEnhancedTokenValidator, EnhancedTokenValidator>();
 
             // Add minimal OpenIddict validation support
             var issuer = configuration["IdentitySettings:Authority"];

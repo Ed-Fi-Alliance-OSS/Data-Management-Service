@@ -2147,22 +2147,34 @@ internal sealed class DocumentCacheAdminTestConfigurationService : IAsyncDisposa
         response.Close();
     }
 
+    /// <summary>
+    /// The envelope a current Configuration Service returns: "EdFi.CS.Envelope" || version 1 ||
+    /// nonce (12) || tag (16) || AES-256-GCM cipher text of the PKCS7-padded UTF-8 text, with marker and
+    /// version as associated data, under an HKDF-SHA256 key derived from the key material.
+    /// </summary>
     private static string EncryptToBase64(string plainText, string encryptionKey)
     {
-        byte[] keyBytes = Encoding.UTF8.GetBytes(encryptionKey.PadRight(32, '0')[..32]);
-        using var aes = Aes.Create();
-        aes.Key = keyBytes;
-        aes.GenerateIV();
+        byte[] envelopeKey = HKDF.DeriveKey(
+            HashAlgorithmName.SHA256,
+            Encoding.UTF8.GetBytes(encryptionKey.PadRight(32, '0')[..32]),
+            outputLength: 32,
+            salt: [],
+            info: "EdFi.ConnectionString.AES-256-GCM.v1"u8.ToArray()
+        );
 
-        using var encryptor = aes.CreateEncryptor();
         byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);
-        byte[] cipherBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
+        int paddingLength = 16 - plainBytes.Length % 16;
+        byte[] padded = [.. plainBytes, .. Enumerable.Repeat((byte)paddingLength, paddingLength)];
 
-        byte[] result = new byte[aes.IV.Length + cipherBytes.Length];
-        Buffer.BlockCopy(aes.IV, 0, result, 0, aes.IV.Length);
-        Buffer.BlockCopy(cipherBytes, 0, result, aes.IV.Length, cipherBytes.Length);
+        byte[] header = [.. "EdFi.CS.Envelope"u8, 1];
+        byte[] nonce = RandomNumberGenerator.GetBytes(12);
+        byte[] tag = new byte[16];
+        byte[] cipherText = new byte[padded.Length];
 
-        return Convert.ToBase64String(result);
+        using var aesGcm = new AesGcm(envelopeKey, tag.Length);
+        aesGcm.Encrypt(nonce, padded, cipherText, tag, header);
+
+        return Convert.ToBase64String([.. header, .. nonce, .. tag, .. cipherText]);
     }
 
     private static int GetEphemeralPort()

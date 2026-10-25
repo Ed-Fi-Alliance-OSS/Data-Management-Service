@@ -718,7 +718,7 @@ public class GlobalExceptionHandlerTests
             (_handled, _context, _content, _body) = await HandleAsync(
                 exception,
                 "trace-oauth",
-                CreateEndpoint(OAuthErrorContractMetadata.Instance)
+                CreateEndpoint(OAuthErrorContractMetadata.Revocation)
             );
 
         [Test]
@@ -742,6 +742,43 @@ public class GlobalExceptionHandlerTests
         [Test]
         public void It_keeps_the_trace_id_header() =>
             _context.Response.Headers["TraceId"].ToString().Should().Be("trace-oauth");
+
+        [Test]
+        public void It_does_not_leak_the_exception_text() => _content.Should().NotContain(OAuthSentinel);
+    }
+
+    /// <summary>
+    /// The 500 <c>server_error</c> description comes from the route's marker, so an unexpected fault on
+    /// the introspection endpoint names introspection rather than revocation.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_unexpected_exception_on_the_introspection_endpoint
+    {
+        private DefaultHttpContext _context = null!;
+        private string _content = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup() =>
+            (_, _context, _content, _body) = await HandleAsync(
+                new InvalidOperationException(OAuthSentinel),
+                "trace-introspection",
+                CreateEndpoint(OAuthErrorContractMetadata.Introspection)
+            );
+
+        [Test]
+        public void It_returns_500() => _context.Response.StatusCode.Should().Be(500);
+
+        [Test]
+        public void It_names_introspection_in_the_server_error()
+        {
+            _body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            _body["error"]!.GetValue<string>().Should().Be("server_error");
+            _body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The introspection request could not be processed.");
+        }
 
         [Test]
         public void It_does_not_leak_the_exception_text() => _content.Should().NotContain(OAuthSentinel);

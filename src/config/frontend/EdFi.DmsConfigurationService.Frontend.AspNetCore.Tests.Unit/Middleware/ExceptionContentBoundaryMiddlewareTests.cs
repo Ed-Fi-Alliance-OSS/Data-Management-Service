@@ -223,7 +223,7 @@ public class ExceptionContentBoundaryMiddlewareTests
 
             (Exception? thrown, DefaultHttpContext context) = Run(
                 original,
-                Endpoint(OAuthErrorContractMetadata.Instance)
+                Endpoint(OAuthErrorContractMetadata.Revocation)
             );
 
             thrown.Should().BeSameAs(original);

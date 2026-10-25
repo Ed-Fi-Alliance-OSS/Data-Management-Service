@@ -3,12 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
@@ -20,6 +22,7 @@ using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
 using EdFi.DmsConfigurationService.DataModel.Model.Token;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 using EdFi.DmsConfigurationService.Secrets;
@@ -28,6 +31,7 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -1531,32 +1535,32 @@ public class OAuthEndpointErrorTests
         });
     }
 
-    private static void AssertBadRequestContract(
-        HttpResponseMessage response,
-        string content,
-        string expectedDetail
-    )
-    {
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        JsonObject body = JsonNode.Parse(content)!.AsObject();
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request");
-        body["title"]!.GetValue<string>().Should().Be("Bad Request");
-        body["detail"]!.GetValue<string>().Should().Be(expectedDetail);
-        body["status"]!.GetValue<int>().Should().Be(400);
-        body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
-        body["validationErrors"]!.AsObject().Count.Should().Be(0);
-        body["errors"]!.AsArray().Count.Should().Be(0);
-
-        // The OAuth { error, error_description } shape must be gone from the parsed body.
-        body.ContainsKey("error").Should().BeFalse();
-        body.ContainsKey("error_description").Should().BeFalse();
-    }
-
     [TestFixture]
     public class Given_a_token_request_with_an_unsupported_grant_type
     {
+        private static void AssertBadRequestContract(
+            HttpResponseMessage response,
+            string content,
+            string expectedDetail
+        )
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+
+            JsonObject body = JsonNode.Parse(content)!.AsObject();
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request");
+            body["title"]!.GetValue<string>().Should().Be("Bad Request");
+            body["detail"]!.GetValue<string>().Should().Be(expectedDetail);
+            body["status"]!.GetValue<int>().Should().Be(400);
+            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+            body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            body["errors"]!.AsArray().Count.Should().Be(0);
+
+            // The OAuth { error, error_description } shape must be gone from the parsed body.
+            body.ContainsKey("error").Should().BeFalse();
+            body.ContainsKey("error_description").Should().BeFalse();
+        }
+
         private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -1741,7 +1745,11 @@ public class OAuthEndpointErrorTests
         [SetUp]
         public async Task Setup()
         {
-            _factory = CreateFactory(configureServices: null);
+            _factory = CreateFactory(services =>
+            {
+                services.RemoveAll<ITokenIntrospectionManager>();
+                services.AddSingleton(A.Fake<ITokenIntrospectionManager>());
+            });
             _client = _factory.CreateClient();
             _response = await _client.PostAsync(
                 "/connect/introspect",
@@ -1758,8 +1766,17 @@ public class OAuthEndpointErrorTests
         }
 
         [Test]
-        public void It_returns_the_ed_fi_bad_request_contract() =>
-            AssertBadRequestContract(_response, _content, "The token parameter is missing.");
+        public void It_returns_400() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_request_body()
+        {
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            JsonObject body = JsonNode.Parse(_content)!.AsObject();
+            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            body["error"]!.GetValue<string>().Should().Be("invalid_request");
+            body["error_description"]!.GetValue<string>().Should().Be("The token parameter is missing.");
+        }
     }
 
     [TestFixture]
@@ -1773,9 +1790,13 @@ public class OAuthEndpointErrorTests
         [SetUp]
         public async Task Setup()
         {
-            _factory = CreateFactory(configureServices: null);
+            _factory = CreateFactory(services =>
+            {
+                services.RemoveAll<ITokenIntrospectionManager>();
+                services.AddSingleton(A.Fake<ITokenIntrospectionManager>());
+            });
             _client = _factory.CreateClient();
-            // An unresolved/opaque token yields the RFC 7662 { active: false } 200 success, unchanged.
+            // No client credentials: introspection is client-authenticated, so the token is never evaluated.
             _response = await _client.PostAsync(
                 "/connect/introspect",
                 new FormUrlEncodedContent(new[] { new KeyValuePair<string, string>("token", "opaque-token") })
@@ -1791,15 +1812,19 @@ public class OAuthEndpointErrorTests
         }
 
         [Test]
-        public void It_returns_200() => _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        public void It_returns_400() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
         [Test]
         public void It_is_not_problem_details() =>
             _response.Content.Headers.ContentType?.MediaType.Should().NotBe("application/problem+json");
 
         [Test]
-        public void It_reports_the_token_as_inactive() =>
-            _body["active"]!.GetValue<bool>().Should().BeFalse();
+        public void It_reports_invalid_client() =>
+            _body["error"]!.GetValue<string>().Should().Be("invalid_client");
+
+        [Test]
+        public void It_explains_that_client_authentication_is_required() =>
+            _body["error_description"]!.GetValue<string>().Should().Be("Client authentication is required.");
     }
 
     [TestFixture]
@@ -1928,7 +1953,7 @@ public class RevocationOwnershipTests
     private const string OtherClientId = "revoke-other-client";
     private const string TestClientSecret = "test-secret";
 
-    private static (string KeyId, byte[] PublicKeySpki, RsaSecurityKey SigningKey) CreateSigningKey()
+    internal static (string KeyId, byte[] PublicKeySpki, RsaSecurityKey SigningKey) CreateSigningKey()
     {
         var rsa = RSA.Create(2048);
         string keyId = Guid.NewGuid().ToString();
@@ -1962,7 +1987,7 @@ public class RevocationOwnershipTests
     /// store of its own. The factory's container creates this owner and disposes it, and with it the provider and the
     /// store, when the factory is disposed.
     /// </summary>
-    private sealed class RealTokenManagerOwner : IDisposable
+    internal sealed class RealTokenManagerOwner : IDisposable
     {
         private readonly SigningKeySnapshotProvider _signingKeyProvider;
         private readonly DevelopmentCertificateStore _developmentCertificateStore;
@@ -2025,7 +2050,10 @@ public class RevocationOwnershipTests
     /// <c>ValidateClientCredentialsAsync</c> authenticates it. Pair with a secret hasher fake that
     /// returns true from <c>VerifySecretAsync</c>, which is what actually accepts the secret.
     /// </summary>
-    private static void RegisterApprovedClient(IOpenIddictTokenRepository tokenRepository, string clientId) =>
+    internal static void RegisterApprovedClient(
+        IOpenIddictTokenRepository tokenRepository,
+        string clientId
+    ) =>
         A.CallTo(() => tokenRepository.GetApplicationByClientIdAsync(clientId))
             .Returns(new ApplicationInfo { ClientId = clientId, IsApproved = true });
 
@@ -3414,6 +3442,427 @@ public class RevocationOwnershipTests
     }
 }
 
+/// <summary>
+/// Drives POST /connect/introspect through the in-process host with the real
+/// <see cref="OpenIddictTokenManager"/> over a faked <see cref="IOpenIddictTokenRepository"/> and
+/// <see cref="IClientSecretHasher"/>, so signature verification, ownership comparison and the
+/// authenticate-before-evaluate order are the production code's, not a fake's. The secret hasher
+/// is faked to a blanket "always matches" except where a fixture says otherwise, because the
+/// hashing algorithm is covered by the manager's own tests.
+/// </summary>
+public class IntrospectionOwnershipTests
+{
+    private const string TestIssuer = "https://cms.example.test";
+    private const string TestAudience = "ed-fi-cms-tests";
+    private const string OwnerClientId = "introspect-owner-client";
+    private const string OtherClientId = "introspect-other-client";
+    private const string TestClientSecret = "test-secret";
+    private const string TestScope = "edfi_admin_api/full_access";
+    private const string TestSubject = "owner-subject";
+    private const string InactiveBody = """{"active":false}""";
+
+    private sealed class StoreUnavailableException(string message) : DbException(message);
+
+    /// <summary>
+    /// Issues a signed JWT that carries everything an active introspection reports. The "kid"
+    /// header comes from the signing key. <c>exp</c> and <c>iat</c> are integer claims, so they
+    /// are written to the payload as JSON numbers.
+    /// </summary>
+    private static string CreateIntrospectableToken(
+        RsaSecurityKey signingKey,
+        string clientId,
+        Guid jti,
+        DateTimeOffset issuedAt,
+        DateTimeOffset expires
+    )
+    {
+        var jwt = new JwtSecurityToken(
+            issuer: TestIssuer,
+            audience: TestAudience,
+            claims:
+            [
+                new Claim(JwtRegisteredClaimNames.Jti, jti.ToString()),
+                new Claim(JwtRegisteredClaimNames.Sub, TestSubject),
+                new Claim("client_id", clientId),
+                new Claim("scope", TestScope),
+                new Claim(
+                    JwtRegisteredClaimNames.Iat,
+                    issuedAt.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    ClaimValueTypes.Integer64
+                ),
+            ],
+            notBefore: issuedAt.UtcDateTime.AddMinutes(-1),
+            expires: expires.UtcDateTime,
+            signingCredentials: new SigningCredentials(signingKey, SecurityAlgorithms.RsaSha256)
+        );
+        return new JwtSecurityTokenHandler().WriteToken(jwt);
+    }
+
+    /// <summary>
+    /// Arranges the host and sends the introspection request the fixture describes. The default
+    /// arrangement registers one verification key, an approved owner application and a hasher that
+    /// accepts any secret; a fixture overrides <see cref="Arrange"/> to change any of that.
+    /// </summary>
+    public abstract class IntrospectionFixture
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+
+        protected readonly IOpenIddictTokenRepository TokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        protected readonly IClientSecretHasher SecretHasher = A.Fake<IClientSecretHasher>();
+        protected readonly Guid Jti = Guid.NewGuid();
+        protected readonly Guid OwnerApplicationId = Guid.NewGuid();
+        protected readonly DateTimeOffset IssuedAt = DateTimeOffset.FromUnixTimeSeconds(
+            DateTimeOffset.UtcNow.AddMinutes(-1).ToUnixTimeSeconds()
+        );
+        protected readonly DateTimeOffset Expires = DateTimeOffset.FromUnixTimeSeconds(
+            DateTimeOffset.UtcNow.AddMinutes(10).ToUnixTimeSeconds()
+        );
+
+        protected RsaSecurityKey SigningKey { get; private set; } = null!;
+        protected HttpClient Client => _client;
+        protected HttpResponseMessage Response { get; private set; } = null!;
+        protected string Content { get; private set; } = null!;
+
+        /// <summary>The client id the caller authenticates with.</summary>
+        protected virtual string CallerClientId => OwnerClientId;
+
+        protected virtual string CallerSecret => TestClientSecret;
+
+        protected virtual bool UseFormCredentials => false;
+
+        protected virtual void Arrange() { }
+
+        /// <summary>The token the request carries, minted by the default signing key.</summary>
+        protected abstract string Token { get; }
+
+        protected string OwnedToken(string clientId = OwnerClientId) =>
+            CreateIntrospectableToken(SigningKey, clientId, Jti, IssuedAt, Expires);
+
+        protected Task<HttpResponseMessage> PostIntrospection(string token) =>
+            PostIntrospection(CallerClientId, CallerSecret, token);
+
+        protected async Task<HttpResponseMessage> PostIntrospection(
+            string clientId,
+            string clientSecret,
+            string token
+        )
+        {
+            List<KeyValuePair<string, string>> fields = [new("token", token)];
+            using HttpRequestMessage request = new(HttpMethod.Post, "/connect/introspect");
+            if (UseFormCredentials)
+            {
+                fields.Add(new("client_id", clientId));
+                fields.Add(new("client_secret", clientSecret));
+            }
+            else
+            {
+                request.Headers.Authorization = new AuthenticationHeaderValue(
+                    "Basic",
+                    Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{clientSecret}"))
+                );
+            }
+
+            request.Content = new FormUrlEncodedContent(fields);
+            return await _client.SendAsync(request);
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (keyId, publicKeySpki, signingKey) = RevocationOwnershipTests.CreateSigningKey();
+            SigningKey = signingKey;
+            A.CallTo(() => TokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._))
+                .Returns(
+                    new[]
+                    {
+                        new PublicKeyInfo { KeyId = keyId, PublicKey = publicKeySpki },
+                    }
+                );
+            RevocationOwnershipTests.RegisterApprovedClient(TokenRepository, OwnerClientId);
+            RevocationOwnershipTests.RegisterApprovedClient(TokenRepository, OtherClientId);
+            A.CallTo(() => TokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        Id = OwnerApplicationId,
+                        ClientId = OwnerClientId,
+                        IsApproved = true,
+                    }
+                );
+            A.CallTo(() => SecretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
+            A.CallTo(() => TokenRepository.GetTokenStatusForApplicationAsync(Jti, OwnerApplicationId))
+                .Returns("valid");
+            Arrange();
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    collection.AddTestAuthentication();
+                    collection.AddSingleton(_ => new RevocationOwnershipTests.RealTokenManagerOwner(
+                        TokenRepository,
+                        SecretHasher
+                    ));
+                    collection.AddTransient<ITokenManager>(services =>
+                        services
+                            .GetRequiredService<RevocationOwnershipTests.RealTokenManagerOwner>()
+                            .TokenManager
+                    );
+                    collection.RemoveAll<ITokenIntrospectionManager>();
+                    collection.AddTransient<ITokenIntrospectionManager>(services =>
+                        services
+                            .GetRequiredService<RevocationOwnershipTests.RealTokenManagerOwner>()
+                            .TokenManager
+                    );
+                });
+            });
+            _client = _factory.CreateClient();
+
+            Response = await PostIntrospection(Token);
+            Content = await Response.Content.ReadAsStringAsync();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            Response?.Dispose();
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        protected JsonElement Body() => JsonDocument.Parse(Content).RootElement;
+
+        protected void AssertInactive()
+        {
+            Response.StatusCode.Should().Be(HttpStatusCode.OK, Content);
+            Content.Should().Be(InactiveBody);
+        }
+    }
+
+    /// <summary>The owner's own live token is reported in full, however the owner authenticates.</summary>
+    public abstract class ActiveIntrospection : IntrospectionFixture
+    {
+        protected override string Token => OwnedToken();
+
+        [Test]
+        public void It_answers_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK, Content);
+
+        [Test]
+        public void It_answers_json() =>
+            Response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        [Test]
+        public void It_reports_active_true() =>
+            Body().GetProperty("active").ValueKind.Should().Be(JsonValueKind.True);
+
+        [Test]
+        public void It_reports_the_owner_as_client_id() =>
+            Body().GetProperty("client_id").GetString().Should().Be(OwnerClientId);
+
+        [Test]
+        public void It_reports_exp_as_the_numeric_token_expiry()
+        {
+            Body().GetProperty("exp").ValueKind.Should().Be(JsonValueKind.Number);
+            Body().GetProperty("exp").GetInt64().Should().Be(Expires.ToUnixTimeSeconds());
+        }
+
+        [Test]
+        public void It_reports_iat_as_the_numeric_token_issue_time()
+        {
+            Body().GetProperty("iat").ValueKind.Should().Be(JsonValueKind.Number);
+            Body().GetProperty("iat").GetInt64().Should().Be(IssuedAt.ToUnixTimeSeconds());
+        }
+
+        [Test]
+        public void It_reports_the_scope_subject_audience_issuer_and_token_type()
+        {
+            Body().GetProperty("scope").GetString().Should().Be(TestScope);
+            Body().GetProperty("sub").GetString().Should().Be(TestSubject);
+            Body().GetProperty("aud").GetString().Should().Be(TestAudience);
+            Body().GetProperty("iss").GetString().Should().Be(TestIssuer);
+            Body().GetProperty("token_type").GetString().Should().Be("Bearer");
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_introspection_of_a_token_the_basic_authenticated_caller_owns : ActiveIntrospection;
+
+    [TestFixture]
+    public class Given_an_introspection_of_a_token_the_form_authenticated_caller_owns : ActiveIntrospection
+    {
+        protected override bool UseFormCredentials => true;
+    }
+
+    /// <summary>
+    /// Casing defect at the HTTP level: a collation-insensitive lookup resolves a mis-cased
+    /// client_id to the stored application, while minted tokens carry the stored spelling. The
+    /// ownership comparison must be given the canonical id or the caller's own token reads inactive.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_introspection_authenticated_with_non_canonical_casing : ActiveIntrospection
+    {
+        private const string NonCanonicalClientId = "INTROSPECT-Owner-Client";
+
+        protected override string CallerClientId => NonCanonicalClientId;
+
+        protected override void Arrange() =>
+            A.CallTo(() => TokenRepository.GetApplicationByClientIdAsync(NonCanonicalClientId))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        Id = OwnerApplicationId,
+                        ClientId = OwnerClientId,
+                        IsApproved = true,
+                    }
+                );
+    }
+
+    /// <summary>
+    /// Another authenticated client must learn nothing about a token it does not own: the answer is
+    /// the same bytes it gets for a token that does not exist at all.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_introspection_of_a_token_owned_by_another_client : IntrospectionFixture
+    {
+        private string _unknownTokenContent = null!;
+
+        protected override string CallerClientId => OtherClientId;
+
+        protected override string Token => OwnedToken(OwnerClientId);
+
+        [SetUp]
+        public async Task SetupUnknownTokenComparison()
+        {
+            using HttpResponseMessage unknown = await PostIntrospection("not-a-token");
+            _unknownTokenContent = await unknown.Content.ReadAsStringAsync();
+        }
+
+        [Test]
+        public void It_answers_200_active_false() => AssertInactive();
+
+        [Test]
+        public void It_answers_the_same_bytes_as_for_an_unknown_token() =>
+            Content.Should().Be(_unknownTokenContent);
+
+        [Test]
+        public void It_does_not_read_the_token_status() =>
+            A.CallTo(() => TokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, A<Guid>._))
+                .MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_an_introspection_of_a_garbage_token_by_the_owner : IntrospectionFixture
+    {
+        protected override string Token => "not-a-token";
+
+        [Test]
+        public void It_answers_200_active_false() => AssertInactive();
+    }
+
+    [TestFixture]
+    public class Given_an_introspection_of_a_well_formed_token_unknown_to_the_status_store
+        : IntrospectionFixture
+    {
+        protected override string Token => OwnedToken();
+
+        protected override void Arrange() =>
+            A.CallTo(() => TokenRepository.GetTokenStatusForApplicationAsync(Jti, OwnerApplicationId))
+                .Returns((string?)null);
+
+        [Test]
+        public void It_answers_200_active_false() => AssertInactive();
+    }
+
+    /// <summary>
+    /// A token naming the caller but signed with a key that is not registered must not verify, so
+    /// the caller's name on it proves nothing.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_introspection_of_a_forged_token_naming_the_caller : IntrospectionFixture
+    {
+        protected override string Token
+        {
+            get
+            {
+                var (_, _, attackerKey) = RevocationOwnershipTests.CreateSigningKey();
+                return CreateIntrospectableToken(attackerKey, OwnerClientId, Jti, IssuedAt, Expires);
+            }
+        }
+
+        [Test]
+        public void It_answers_200_active_false() => AssertInactive();
+    }
+
+    /// <summary>
+    /// Authentication runs before the token is evaluated: a wrong secret is 401 invalid_client
+    /// even though the token alone would have answered <c>{"active":false}</c>.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_introspection_of_a_garbage_token_with_a_wrong_secret : IntrospectionFixture
+    {
+        protected override string Token => "not-a-token";
+
+        protected override string CallerSecret => "wrong-secret";
+
+        protected override void Arrange() =>
+            A.CallTo(() => SecretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(false);
+
+        [Test]
+        public void It_answers_401() => Response.StatusCode.Should().Be(HttpStatusCode.Unauthorized, Content);
+
+        [Test]
+        public void It_answers_invalid_client() =>
+            Body().GetProperty("error").GetString().Should().Be("invalid_client");
+
+        [Test]
+        public void It_does_not_answer_active_false() => Content.Should().NotContain("active");
+
+        [Test]
+        public void It_sends_a_basic_challenge() =>
+            Response.Headers.WwwAuthenticate.Should().ContainSingle(header => header.Scheme == "Basic");
+    }
+
+    [TestFixture]
+    public class Given_an_introspection_when_the_application_lookup_fails : IntrospectionFixture
+    {
+        protected override string Token => OwnedToken();
+
+        protected override void Arrange() =>
+            A.CallTo(() => TokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
+                .Throws(new TimeoutException("database unavailable"));
+
+        [Test]
+        public void It_answers_503() =>
+            Response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, Content);
+
+        [Test]
+        public void It_answers_temporarily_unavailable() =>
+            Body().GetProperty("error").GetString().Should().Be("temporarily_unavailable");
+
+        [Test]
+        public void It_does_not_claim_the_token_is_inactive() => Content.Should().NotContain("\"active\"");
+    }
+
+    /// <summary>
+    /// A token-status read failure is not a verdict on the token, but introspection answers it as
+    /// inactive, as the bearer validation path always has.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_introspection_when_the_token_status_read_fails : IntrospectionFixture
+    {
+        protected override string Token => OwnedToken();
+
+        protected override void Arrange() =>
+            A.CallTo(() => TokenRepository.GetTokenStatusForApplicationAsync(Jti, OwnerApplicationId))
+                .Throws(new StoreUnavailableException("status store unavailable"));
+
+        [Test]
+        public void It_answers_200_active_false() => AssertInactive();
+    }
+}
+
 public class IdentityProviderErrorParsingTests
 {
     [TestFixture]
@@ -3490,8 +3939,10 @@ public class IdentityProviderErrorParsingTests
 /// sibling endpoints, which must stay anonymous at the framework level — <c>/connect/token</c>
 /// especially, since it is where a client gets its first credential-backed response. The existing
 /// tests for those routes never install an authentication scheme, so they would not notice. These
-/// install the harness's test authentication, present no credentials, and assert the responses are
-/// never 401. Non-fixture container; the runnable fixture is the nested <c>Given_…</c> class.
+/// install the harness's test authentication, present no credentials, and assert register and token are
+/// never 401. <c>/connect/introspect</c> authenticates the client itself, so it answers 400
+/// <c>invalid_client</c>, never a framework 401. Non-fixture container; the runnable fixture is the
+/// nested <c>Given_…</c> class.
 /// </summary>
 public class TokenEndpointAnonymityTests
 {
@@ -3510,7 +3961,12 @@ public class TokenEndpointAnonymityTests
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection => collection.AddTestAuthentication());
+                builder.ConfigureServices(collection =>
+                {
+                    collection.AddTestAuthentication();
+                    collection.RemoveAll<ITokenIntrospectionManager>();
+                    collection.AddSingleton(A.Fake<ITokenIntrospectionManager>());
+                });
             });
 
             // No Authorization header and no X-Test-Scope, so the harness authenticates nobody.
@@ -3526,7 +3982,7 @@ public class TokenEndpointAnonymityTests
             );
             _introspectResponse = await _client.PostAsync(
                 "/connect/introspect",
-                new FormUrlEncodedContent(Array.Empty<KeyValuePair<string, string>>())
+                new FormUrlEncodedContent([new KeyValuePair<string, string>("token", "opaque-token")])
             );
         }
 
@@ -3546,8 +4002,14 @@ public class TokenEndpointAnonymityTests
             _tokenResponse.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
 
         [Test]
-        public void It_does_not_require_authentication_for_introspect() =>
-            _introspectResponse.StatusCode.Should().NotBe(HttpStatusCode.Unauthorized);
+        public async Task It_rejects_the_credential_less_introspection_with_invalid_client()
+        {
+            _introspectResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonObject body = JsonNode
+                .Parse(await _introspectResponse.Content.ReadAsStringAsync())!
+                .AsObject();
+            body["error"]!.GetValue<string>().Should().Be("invalid_client");
+        }
     }
 }
 
@@ -3567,6 +4029,11 @@ public class RevocationRequestContractTests
 
     /// <summary>Planted in caller input that is rejected, to prove it never reaches a log.</summary>
     private const string Sentinel = "SECRET-REVOKE-SENTINEL";
+
+    /// <summary>
+    /// One character past <c>FormOptions.KeyLengthLimit</c>, so <c>ReadFormAsync</c> throws.
+    /// </summary>
+    private static readonly string OverLongFormKey = new('k', 2049);
 
     private const string Challenge = "Basic realm=\"EdFi.DmsConfigurationService\"";
     private const string DuplicateDescription = "A request parameter or header was included more than once.";
@@ -3753,7 +4220,7 @@ public class RevocationRequestContractTests
         }
     }
 
-    // ----- D-03 row 1: no form content type -----
+    // ----- D-03 row 1: not application/x-www-form-urlencoded -----
 
     public static IEnumerable<TestFixtureData> NonFormBodies()
     {
@@ -3763,10 +4230,15 @@ public class RevocationRequestContractTests
             )
         ).SetArgDisplayNames("a JSON body");
         yield return new TestFixtureData(new Func<HttpContent?>(() => null)).SetArgDisplayNames("no body");
+        yield return new TestFixtureData(
+            new Func<HttpContent?>(() =>
+                new MultipartFormDataContent { { new StringContent(Token), "token" } }
+            )
+        ).SetArgDisplayNames("a well-formed multipart/form-data body");
     }
 
     [TestFixtureSource(typeof(RevocationRequestContractTests), nameof(NonFormBodies))]
-    public class Given_a_revocation_request_without_a_form_body(Func<HttpContent?> body)
+    public class Given_a_revocation_request_without_a_url_encoded_body(Func<HttpContent?> body)
         : RevocationRequestFixture
     {
         protected override HttpContent? Body => body();
@@ -3788,24 +4260,14 @@ public class RevocationRequestContractTests
     // ----- D-03 row 2 / D-17: malformed form, through the exception handler -----
 
     /// <summary>
-    /// <c>multipart/form-data</c> without a boundary makes <c>ReadFormAsync</c> throw
-    /// <see cref="InvalidDataException"/>. The handler selects the OAuth writer from the route's
-    /// marker, read off <c>IExceptionHandlerFeature.Endpoint</c> (A-05).
+    /// A form key longer than <c>FormOptions.KeyLengthLimit</c> (2048 characters) makes
+    /// <c>ReadFormAsync</c> throw <see cref="InvalidDataException"/>. The handler selects the OAuth
+    /// writer from the route's marker, read off <c>IExceptionHandlerFeature.Endpoint</c> (A-05).
     /// </summary>
     [TestFixture]
     public class Given_a_revocation_request_with_a_malformed_form_payload : RevocationRequestFixture
     {
-        protected override HttpContent? Body
-        {
-            get
-            {
-                StringContent content = new($"token={Sentinel}");
-                content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
-                    "multipart/form-data"
-                );
-                return content;
-            }
-        }
+        protected override HttpContent? Body => RawForm($"{OverLongFormKey}=x&token={Sentinel}");
 
         protected override IEnumerable<string> AuthorizationValues => [_validBasic];
 
@@ -3818,8 +4280,7 @@ public class RevocationRequestContractTests
             );
 
         [Test]
-        public void It_does_not_leak_the_framework_parsing_message() =>
-            Content.Should().NotContain("boundary");
+        public void It_does_not_leak_the_framework_parsing_message() => Content.Should().NotContain("limit");
 
         [Test]
         public void It_does_not_call_the_manager() => AssertManagerNotCalled();
@@ -4778,6 +5239,579 @@ public class RevocationRequestContractTests
         [Test]
         public void It_does_not_log_the_caller_input() =>
             AssertNotLogged(Token, ClientSecret, _validBasic["Basic ".Length..]);
+    }
+}
+
+/// <summary>
+/// The <c>/connect/introspect</c> request contract through the real HTTP pipeline: it shares the
+/// DMS-1327 D-03 request-shape and client-credential seam with <c>/connect/revoke</c> (the full
+/// matrix lives in <see cref="RevocationRequestContractTests"/>), then maps the manager's outcome per
+/// RFC 7662. The manager is a recorder, and every rejection asserts it was never called.
+/// Non-fixture container; the runnable fixtures are the nested <c>Given_…</c> classes.
+/// </summary>
+public class IntrospectionRequestContractTests
+{
+    private const string ClientId = "introspect-client";
+    private const string ClientSecret = "introspect-secret";
+    private const string Token = "SECRET-TOKEN-SENTINEL-introspect";
+    private const string Challenge = "Basic realm=\"EdFi.DmsConfigurationService\"";
+    private const string InvalidCredentialsDescription = "Invalid client or Invalid client credentials";
+
+    private static readonly string _validBasic =
+        $"Basic {Convert.ToBase64String(Encoding.UTF8.GetBytes($"{ClientId}:{ClientSecret}"))}";
+
+    private static FormUrlEncodedContent Form(params (string Key, string Value)[] fields) =>
+        new(fields.Select(field => new KeyValuePair<string, string>(field.Key, field.Value)));
+
+    private static (string, string)[] WithFormCredentials(params (string, string)[] fields) =>
+        [("client_id", ClientId), ("client_secret", ClientSecret), .. fields];
+
+    private static HttpContent RawForm(string encoded)
+    {
+        ByteArrayContent content = new(Encoding.UTF8.GetBytes(encoded));
+        content.Headers.TryAddWithoutValidation("Content-Type", "application/x-www-form-urlencoded");
+        return content;
+    }
+
+    private static IntrospectedToken ActiveToken { get; } =
+        new(
+            ClientId,
+            "edfi_admin_api/full_access",
+            1893456000,
+            1893455100,
+            "subject-1",
+            "audience-1",
+            "issuer-1"
+        );
+
+    internal sealed class RecordingIntrospectionManager(Func<TokenIntrospectionResult> respond)
+        : ITokenIntrospectionManager
+    {
+        public List<TokenIntrospectionRequest> Requests { get; } = [];
+
+        public Task<TokenIntrospectionResult> IntrospectTokenAsync(
+            TokenIntrospectionRequest request,
+            CancellationToken cancellationToken
+        )
+        {
+            Requests.Add(request);
+            return Task.FromResult(respond());
+        }
+    }
+
+    /// <summary>
+    /// Arranges a host with a recording manager and a capturing log provider, sends the request the
+    /// fixture builds, and keeps the response.
+    /// </summary>
+    public abstract class IntrospectionRequestFixture
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+
+        private protected RecordingIntrospectionManager Manager { get; private set; } = null!;
+        private protected RevocationLogCapture Logs { get; private set; } = null!;
+        protected HttpResponseMessage Response { get; private set; } = null!;
+        protected string Content { get; private set; } = null!;
+
+        protected virtual TokenIntrospectionResult Respond() => new TokenIntrospectionResult.Inactive();
+
+        protected abstract HttpContent? Body { get; }
+
+        protected virtual IEnumerable<string> AuthorizationValues => [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            Manager = new RecordingIntrospectionManager(Respond);
+            Logs = new RevocationLogCapture();
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    collection.AddSingleton<ILoggerProvider>(Logs);
+                    collection.RemoveAll<ITokenIntrospectionManager>();
+                    collection.AddSingleton<ITokenIntrospectionManager>(Manager);
+                });
+            });
+            _client = _factory.CreateClient();
+
+            using HttpRequestMessage request = new(HttpMethod.Post, "/connect/introspect") { Content = Body };
+            string[] authorization = [.. AuthorizationValues];
+            if (authorization.Length > 0)
+            {
+                request.Headers.TryAddWithoutValidation("Authorization", authorization).Should().BeTrue();
+            }
+
+            Response = await _client.SendAsync(request);
+            Content = await Response.Content.ReadAsStringAsync();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            Response?.Dispose();
+            _client?.Dispose();
+            _factory?.Dispose();
+            Logs?.Dispose();
+        }
+
+        protected void AssertOAuthError(HttpStatusCode status, string error, string description)
+        {
+            Response.StatusCode.Should().Be(status, Content);
+            Response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            JsonObject body = JsonNode.Parse(Content)!.AsObject();
+            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            body["error"]!.GetValue<string>().Should().Be(error);
+            body["error_description"]!.GetValue<string>().Should().Be(description);
+        }
+
+        protected void AssertChallenge() =>
+            Response
+                .Headers.GetValues("WWW-Authenticate")
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(Challenge);
+
+        protected void AssertNoChallenge() => Response.Headers.WwwAuthenticate.Should().BeEmpty();
+
+        protected void AssertManagerNotCalled() => Manager.Requests.Should().BeEmpty();
+    }
+
+    // ----- D-03 rows 1-7: one case per row, each rejected before the manager -----
+
+    public static IEnumerable<TestFixtureData> RejectedRequests()
+    {
+        yield return new TestFixtureData(
+            new Func<HttpContent?>(() => new StringContent("{}", Encoding.UTF8, "application/json")),
+            new[] { _validBasic },
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The request body must be application/x-www-form-urlencoded.",
+            false
+        ).SetArgDisplayNames("row 1, no form content type");
+        yield return new TestFixtureData(
+            new Func<HttpContent?>(() =>
+                new MultipartFormDataContent { { new StringContent("x"), "token" } }
+            ),
+            new[] { _validBasic },
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The request body must be application/x-www-form-urlencoded.",
+            false
+        ).SetArgDisplayNames("row 1, a well-formed multipart/form-data body");
+        yield return new TestFixtureData(
+            new Func<HttpContent?>(() => RawForm($"{new string('k', 2049)}=x&token=x")),
+            new[] { _validBasic },
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The request form payload is malformed.",
+            false
+        ).SetArgDisplayNames("row 2, malformed form payload");
+        yield return new TestFixtureData(
+            new Func<HttpContent?>(() =>
+                RawForm($"token=%GG&client_id={ClientId}&client_secret={ClientSecret}")
+            ),
+            Array.Empty<string>(),
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The request form payload is malformed.",
+            false
+        ).SetArgDisplayNames("row 2a, malformed URL encoding");
+        yield return new TestFixtureData(
+            new Func<HttpContent?>(() => Form(WithFormCredentials(("token", Token), ("token", Token)))),
+            Array.Empty<string>(),
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "A request parameter or header was included more than once.",
+            false
+        ).SetArgDisplayNames("row 3, duplicated token");
+        yield return new TestFixtureData(
+            new Func<HttpContent?>(() => Form(WithFormCredentials(("token", Token)))),
+            new[] { _validBasic },
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "Only one client authentication mechanism may be used.",
+            false
+        ).SetArgDisplayNames("row 4, mixed mechanisms");
+        yield return new TestFixtureData(
+            new Func<HttpContent?>(() => Form(WithFormCredentials())),
+            Array.Empty<string>(),
+            HttpStatusCode.BadRequest,
+            "invalid_request",
+            "The token parameter is missing.",
+            false
+        ).SetArgDisplayNames("row 5, no token");
+        yield return new TestFixtureData(
+            new Func<HttpContent?>(() => Form(("token", Token))),
+            new[] { "Basic !!!!" },
+            HttpStatusCode.Unauthorized,
+            "invalid_client",
+            InvalidCredentialsDescription,
+            true
+        ).SetArgDisplayNames("row 6, malformed Basic");
+        yield return new TestFixtureData(
+            new Func<HttpContent?>(() => Form(("token", Token))),
+            Array.Empty<string>(),
+            HttpStatusCode.BadRequest,
+            "invalid_client",
+            "Client authentication is required.",
+            false
+        ).SetArgDisplayNames("row 7, no credentials");
+    }
+
+    [TestFixtureSource(typeof(IntrospectionRequestContractTests), nameof(RejectedRequests))]
+    public class Given_an_introspection_request_the_shared_checks_reject(
+        Func<HttpContent?> body,
+        string[] authorization,
+        HttpStatusCode status,
+        string error,
+        string description,
+        bool challenged
+    ) : IntrospectionRequestFixture
+    {
+        protected override HttpContent? Body => body();
+
+        protected override IEnumerable<string> AuthorizationValues => authorization;
+
+        [Test]
+        public void It_answers_the_oauth_error() => AssertOAuthError(status, error, description);
+
+        [Test]
+        public void It_sends_the_challenge_only_for_basic()
+        {
+            if (challenged)
+            {
+                AssertChallenge();
+            }
+            else
+            {
+                AssertNoChallenge();
+            }
+        }
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+    }
+
+    /// <summary>
+    /// A bearer header is not client authentication here: it is ignored and, with no form
+    /// credentials, the caller is unauthenticated.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_introspection_request_with_only_a_bearer_header : IntrospectionRequestFixture
+    {
+        protected override HttpContent? Body => Form(("token", Token));
+
+        protected override IEnumerable<string> AuthorizationValues => ["Bearer some-access-token"];
+
+        [Test]
+        public void It_answers_400_invalid_client() =>
+            AssertOAuthError(
+                HttpStatusCode.BadRequest,
+                "invalid_client",
+                "Client authentication is required."
+            );
+
+        [Test]
+        public void It_does_not_call_the_manager() => AssertManagerNotCalled();
+    }
+
+    // ----- Manager outcomes -----
+
+    [TestFixture]
+    public class Given_a_basic_authenticated_introspection_the_manager_rejects : IntrospectionRequestFixture
+    {
+        protected override TokenIntrospectionResult Respond() => new TokenIntrospectionResult.InvalidClient();
+
+        protected override HttpContent? Body => Form(("token", Token));
+
+        protected override IEnumerable<string> AuthorizationValues => [_validBasic];
+
+        [Test]
+        public void It_answers_401_invalid_client() =>
+            AssertOAuthError(HttpStatusCode.Unauthorized, "invalid_client", InvalidCredentialsDescription);
+
+        [Test]
+        public void It_sends_the_basic_challenge() => AssertChallenge();
+    }
+
+    [TestFixture]
+    public class Given_a_form_authenticated_introspection_the_manager_rejects : IntrospectionRequestFixture
+    {
+        protected override TokenIntrospectionResult Respond() => new TokenIntrospectionResult.InvalidClient();
+
+        protected override HttpContent? Body => Form(WithFormCredentials(("token", Token)));
+
+        [Test]
+        public void It_answers_400_invalid_client() =>
+            AssertOAuthError(HttpStatusCode.BadRequest, "invalid_client", InvalidCredentialsDescription);
+
+        [Test]
+        public void It_does_not_send_a_challenge() => AssertNoChallenge();
+    }
+
+    [TestFixture]
+    public class Given_an_introspection_the_manager_reports_inactive : IntrospectionRequestFixture
+    {
+        protected override HttpContent? Body => Form(WithFormCredentials(("token", Token)));
+
+        [Test]
+        public void It_answers_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK, Content);
+
+        [Test]
+        public void It_answers_exactly_active_false() => Content.Should().Be("""{"active":false}""");
+    }
+
+    [TestFixture]
+    public class Given_an_introspection_the_manager_reports_active : IntrospectionRequestFixture
+    {
+        protected override TokenIntrospectionResult Respond() =>
+            new TokenIntrospectionResult.Active(ActiveToken);
+
+        protected override HttpContent? Body => Form(WithFormCredentials(("token", Token)));
+
+        private JsonElement Body_() => JsonDocument.Parse(Content).RootElement;
+
+        [Test]
+        public void It_answers_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK, Content);
+
+        [Test]
+        public void It_answers_json() =>
+            Response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        [Test]
+        public void It_answers_exactly_the_rfc_7662_members() =>
+            Body_()
+                .EnumerateObject()
+                .Select(member => member.Name)
+                .Should()
+                .BeEquivalentTo(
+                    "active",
+                    "client_id",
+                    "scope",
+                    "exp",
+                    "iat",
+                    "sub",
+                    "aud",
+                    "iss",
+                    "token_type"
+                );
+
+        [Test]
+        public void It_reports_active_as_a_boolean() =>
+            Body_().GetProperty("active").ValueKind.Should().Be(JsonValueKind.True);
+
+        [Test]
+        public void It_reports_exp_as_a_number()
+        {
+            Body_().GetProperty("exp").ValueKind.Should().Be(JsonValueKind.Number);
+            Body_().GetProperty("exp").GetInt64().Should().Be(ActiveToken.Exp);
+        }
+
+        [Test]
+        public void It_reports_iat_as_a_number()
+        {
+            Body_().GetProperty("iat").ValueKind.Should().Be(JsonValueKind.Number);
+            Body_().GetProperty("iat").GetInt64().Should().Be(ActiveToken.Iat);
+        }
+
+        [Test]
+        public void It_reports_the_client_id() =>
+            Body_().GetProperty("client_id").GetString().Should().Be(ClientId);
+
+        [Test]
+        public void It_reports_the_scope() =>
+            Body_().GetProperty("scope").GetString().Should().Be("edfi_admin_api/full_access");
+
+        [Test]
+        public void It_reports_the_subject_audience_and_issuer()
+        {
+            Body_().GetProperty("sub").GetString().Should().Be("subject-1");
+            Body_().GetProperty("aud").GetString().Should().Be("audience-1");
+            Body_().GetProperty("iss").GetString().Should().Be("issuer-1");
+        }
+
+        [Test]
+        public void It_reports_the_bearer_token_type() =>
+            Body_().GetProperty("token_type").GetString().Should().Be("Bearer");
+    }
+
+    [TestFixture]
+    public class Given_an_introspection_the_manager_cannot_complete : IntrospectionRequestFixture
+    {
+        protected override TokenIntrospectionResult Respond() =>
+            new TokenIntrospectionResult.TemporarilyUnavailable("contract-boundary");
+
+        protected override HttpContent? Body => Form(WithFormCredentials(("token", Token)));
+
+        [Test]
+        public void It_answers_503_temporarily_unavailable() =>
+            AssertOAuthError(
+                HttpStatusCode.ServiceUnavailable,
+                "temporarily_unavailable",
+                "Token introspection is temporarily unavailable. Retry the request."
+            );
+
+        [Test]
+        public void It_does_not_claim_the_token_is_inactive() => Content.Should().NotContain("active");
+
+        [Test]
+        public void It_logs_the_sanitized_client_and_reason_at_warning() =>
+            Logs
+                .Records.Should()
+                .ContainSingle(record =>
+                    record.Level == LogLevel.Warning
+                    && record.Message.Contains(ClientId)
+                    && record.Message.Contains("contract-boundary")
+                );
+
+        [Test]
+        public void It_does_not_log_the_secret_or_token() =>
+            Logs.AllCapturedText().Should().NotContain(ClientSecret).And.NotContain(Token);
+    }
+
+    [TestFixture]
+    public class Given_a_basic_authenticated_introspection_with_a_token_type_hint
+        : IntrospectionRequestFixture
+    {
+        protected override HttpContent? Body => Form(("token", Token), ("token_type_hint", "refresh_token"));
+
+        protected override IEnumerable<string> AuthorizationValues => [_validBasic];
+
+        [Test]
+        public void It_hands_the_manager_the_callers_id_secret_token_and_hint() =>
+            Manager
+                .Requests.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(new TokenIntrospectionRequest(ClientId, ClientSecret, Token, TokenTypeHint.RefreshToken));
+    }
+
+    [TestFixture]
+    public class Given_a_form_authenticated_introspection : IntrospectionRequestFixture
+    {
+        protected override HttpContent? Body => Form(WithFormCredentials(("token", Token)));
+
+        [Test]
+        public void It_hands_the_manager_the_callers_id_secret_and_token() =>
+            Manager
+                .Requests.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(new TokenIntrospectionRequest(ClientId, ClientSecret, Token, TokenTypeHint.None));
+    }
+
+    // ----- Keycloak mode: no manager is registered -----
+
+    public abstract class KeycloakIntrospectionFixture
+    {
+        private const string UnreachableDatabase =
+            "host=127.0.0.1;port=1;database=unreachable;username=none;timeout=1";
+
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        protected HttpResponseMessage Response { get; private set; } = null!;
+        protected string Content { get; private set; } = null!;
+
+        protected abstract HttpContent Body { get; }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("AppSettings:IdentityProvider", "keycloak");
+                builder.UseSetting("DatabaseSettings:DatabaseConnection", UnreachableDatabase);
+                builder.ConfigureServices(collection => collection.RemoveAll<ITokenIntrospectionManager>());
+            });
+            _client = _factory.CreateClient();
+            Response = await _client.PostAsync("/connect/introspect", Body);
+            Content = await Response.Content.ReadAsStringAsync();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            Response?.Dispose();
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+    }
+
+    [TestFixture]
+    public class Given_keycloak_mode_and_a_credential_less_introspection_with_a_token
+        : KeycloakIntrospectionFixture
+    {
+        protected override HttpContent Body => Form(("token", Token));
+
+        [Test]
+        public void It_answers_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK, Content);
+
+        [Test]
+        public void It_answers_exactly_active_false() => Content.Should().Be("""{"active":false}""");
+    }
+
+    [TestFixture]
+    public class Given_keycloak_mode_and_an_introspection_without_a_token : KeycloakIntrospectionFixture
+    {
+        protected override HttpContent Body => Form();
+
+        [Test]
+        public void It_answers_400() => Response.StatusCode.Should().Be(HttpStatusCode.BadRequest, Content);
+
+        [Test]
+        public void It_answers_the_oauth_invalid_request_body()
+        {
+            JsonObject body = JsonNode.Parse(Content)!.AsObject();
+            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            body["error"]!.GetValue<string>().Should().Be("invalid_request");
+            body["error_description"]!.GetValue<string>().Should().Be("The token parameter is missing.");
+        }
+    }
+
+    // ----- Route metadata -----
+
+    [TestFixture]
+    public class Given_the_introspect_route
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private IReadOnlyList<object> _metadata = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+                builder.UseEnvironment("Test")
+            );
+            _metadata =
+            [
+                .. _factory
+                    .Services.GetRequiredService<EndpointDataSource>()
+                    .Endpoints.OfType<RouteEndpoint>()
+                    .Single(endpoint =>
+                        endpoint.RoutePattern.RawText?.TrimStart('/') == "connect/introspect/{**contextPath}"
+                    )
+                    .Metadata,
+            ];
+        }
+
+        [TearDown]
+        public void TearDown() => _factory?.Dispose();
+
+        [Test]
+        public void It_carries_the_oauth_error_contract() =>
+            _metadata.Should().Contain(OAuthErrorContractMetadata.Introspection);
+
+        [Test]
+        public void It_carries_exception_type_only_logging() =>
+            _metadata.Should().Contain(ExceptionTypeOnlyLoggingMetadata.Instance);
+
+        [Test]
+        public void It_is_exempt_from_bearer_authentication() =>
+            _metadata.Should().Contain(BearerAuthenticationExemptMetadata.Instance);
     }
 }
 

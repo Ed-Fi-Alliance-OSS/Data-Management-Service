@@ -19,11 +19,14 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 /// <summary>
 /// The generated /openapi/v1.json document describes client-credentials sign-in itself: a security
 /// scheme whose token URL is the request base the document is served for, a root requirement on it,
-/// and an empty requirement on every operation that needs no token.
+/// an empty requirement on every operation that needs no token, and an HTTP Basic client-credentials
+/// requirement on the operations that authenticate their caller themselves.
 /// </summary>
 public class OpenApiSecurityDocumentTests
 {
     private const string SchemeName = "oauth2_client_credentials";
+
+    private const string ClientCredentialsSchemeName = "client_secret_basic";
 
     private static readonly string[] HttpMethodNames =
     [
@@ -40,7 +43,8 @@ public class OpenApiSecurityDocumentTests
     private static async Task<JsonDocument> FetchDocumentAsync(
         bool multiTenancy = false,
         string? authority = null,
-        string? host = null
+        string? host = null,
+        string? identityProvider = null
     )
     {
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -56,6 +60,11 @@ public class OpenApiSecurityDocumentTests
                 if (authority is not null)
                 {
                     settings["IdentitySettings:Authority"] = authority;
+                }
+
+                if (identityProvider is not null)
+                {
+                    settings["AppSettings:IdentityProvider"] = identityProvider;
                 }
 
                 configuration.AddInMemoryCollection(settings);
@@ -90,6 +99,26 @@ public class OpenApiSecurityDocumentTests
                     op.Operation.TryGetProperty("security", out var security)
                     && security.ValueKind == JsonValueKind.Array
                     && security.GetArrayLength() == 0
+                )
+                .Select(op => op.Key)
+                .Order(),
+        ];
+
+    /// <summary>
+    /// The operations whose only requirement is the client-credentials scheme, without scopes.
+    /// </summary>
+    private static string[] OperationsRequiringClientCredentials(JsonDocument document) =>
+        [
+            .. Operations(document)
+                .Where(op =>
+                    op.Operation.TryGetProperty("security", out var security)
+                    && security.ValueKind == JsonValueKind.Array
+                    && security.GetArrayLength() == 1
+                    && security[0]
+                        .EnumerateObject()
+                        .Select(p => p.Name)
+                        .SequenceEqual([ClientCredentialsSchemeName])
+                    && security[0].GetProperty(ClientCredentialsSchemeName).GetArrayLength() == 0
                 )
                 .Select(op => op.Key)
                 .Order(),
@@ -198,19 +227,36 @@ public class OpenApiSecurityDocumentTests
                         "GET /.well-known/openiddict-status",
                         "GET /health",
                         "GET /tenancy",
-                        "POST /connect/introspect/{contextPath}",
                         "POST /connect/register/{contextPath}",
-                        "POST /connect/revoke/{contextPath}",
                         "POST /connect/token/{contextPath}",
                     }.Order()
                 );
         }
 
         [Test]
+        public void It_declares_an_http_basic_scheme_for_client_credentials()
+        {
+            var scheme = _document
+                .RootElement.GetProperty("components")
+                .GetProperty("securitySchemes")
+                .GetProperty(ClientCredentialsSchemeName);
+            scheme.GetProperty("type").GetString().Should().Be("http");
+            scheme.GetProperty("scheme").GetString().Should().Be("basic");
+        }
+
+        [Test]
+        public void It_requires_client_credentials_on_revocation_and_introspection() =>
+            OperationsRequiringClientCredentials(_document)
+                .Should()
+                .Equal("POST /connect/introspect/{contextPath}", "POST /connect/revoke/{contextPath}");
+
+        [Test]
         public void It_leaves_every_other_operation_without_a_security_property()
         {
-            var anonymous = OperationsWithEmptySecurity(_document);
-            var others = Operations(_document).Where(op => !anonymous.Contains(op.Key)).ToArray();
+            var described = OperationsWithEmptySecurity(_document)
+                .Concat(OperationsRequiringClientCredentials(_document))
+                .ToArray();
+            var others = Operations(_document).Where(op => !described.Contains(op.Key)).ToArray();
 
             // The root requirement they inherit must exist, or "no property" would prove nothing.
             _document.RootElement.TryGetProperty("security", out _).Should().BeTrue();
@@ -313,5 +359,34 @@ public class OpenApiSecurityDocumentTests
                 .BeEmpty();
             OperationsWithEmptySecurity(_document).Should().NotContain(k => k.Contains(" /v3/tenants"));
         }
+    }
+
+    /// <summary>
+    /// Under Keycloak no introspection manager is registered and introspection makes no credential
+    /// check, so only revocation is described as requiring client credentials.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_document_of_a_keycloak_host
+    {
+        private JsonDocument _document = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _document = await FetchDocumentAsync(identityProvider: "keycloak");
+        }
+
+        [TearDown]
+        public void TearDown() => _document.Dispose();
+
+        [Test]
+        public void It_requires_client_credentials_on_revocation_only() =>
+            OperationsRequiringClientCredentials(_document)
+                .Should()
+                .Equal("POST /connect/revoke/{contextPath}");
+
+        [Test]
+        public void It_marks_introspection_with_an_empty_requirement() =>
+            OperationsWithEmptySecurity(_document).Should().Contain("POST /connect/introspect/{contextPath}");
     }
 }

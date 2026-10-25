@@ -7,7 +7,6 @@ using System.Security.Claims;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -29,9 +28,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
             Microsoft.Extensions.Configuration.IConfiguration configuration
         )
         {
-            // Add enhanced token validator
-            services.AddScoped<IEnhancedTokenValidator, EnhancedTokenValidator>();
-
             // Add OpenIddict validation support
             services
                 .AddOpenIddict()

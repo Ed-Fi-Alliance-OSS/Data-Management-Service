@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-#Requires -Version 7
+#Requires -Version 7.4
 
 Set-StrictMode -Version Latest
 
@@ -1587,6 +1587,8 @@ function Resolve-RestoreSmokeApiEndpoint {
     It also returns the stack's CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY (DataStoreEncryptionKey): CMS
     returns every data store connection string as Base64 AES cipher text under that key, so data
     store selection needs it. A stack without it is refused. The value is never logged or recorded.
+    AllowLegacyConnectionStrings is the stack's CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS,
+    resolved as the containers receive it, so selection refuses legacy values exactly when they do.
     #>
     param(
         [Parameter(Mandatory)]
@@ -1605,10 +1607,11 @@ function Resolve-RestoreSmokeApiEndpoint {
     }
 
     return [pscustomobject]@{
-        CmsUrl                 = ([string](Resolve-CmsBaseUrl -EnvValues $values)).TrimEnd("/")
-        DmsUrl                 = ([string](Resolve-DockerLocalDmsBaseUrl -EnvValues $values)).TrimEnd("/")
-        AdminClient            = Resolve-BootstrapAdminClient -EnvValues $values
-        DataStoreEncryptionKey = $encryptionKey
+        CmsUrl                       = ([string](Resolve-CmsBaseUrl -EnvValues $values)).TrimEnd("/")
+        DmsUrl                       = ([string](Resolve-DockerLocalDmsBaseUrl -EnvValues $values)).TrimEnd("/")
+        AdminClient                  = Resolve-BootstrapAdminClient -EnvValues $values
+        DataStoreEncryptionKey       = $encryptionKey
+        AllowLegacyConnectionStrings = Test-LegacyConnectionStringAllowed -EnvValues $values
     }
 }
 
@@ -1651,10 +1654,12 @@ function Reset-RestoreSmokeApiSession {
 function Get-RestoreSmokeDataStoreAesKey {
     <#
     .SYNOPSIS
-    The AES key CMS derives from CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY, exactly as
-    ConnectionStringEncryptionService does: the key string padded with '0' to 32 characters, cut to
-    its first 32, then UTF-8 encoded. Throws for a blank key, or for one whose first 32 characters
-    do not encode to 32 bytes (CMS cannot use such a key either). Messages never carry the key.
+    The key material the Configuration Service takes from
+    CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY, exactly as ConnectionStringEncryptionService
+    does: the key string padded with '0' to 32 characters, cut to its first 32, then UTF-8 encoded.
+    It is the AES key of legacy values and the HKDF input for envelopes. Throws for a blank key, or
+    for one whose first 32 characters do not encode to 32 bytes (legacy AES needs exactly 32, and
+    the Configuration Service validator rejects such a key). Messages never carry the key.
     #>
     param(
         [Parameter(Mandatory)]
@@ -1675,11 +1680,20 @@ function Get-RestoreSmokeDataStoreAesKey {
 function ConvertFrom-RestoreSmokeDataStoreCipherText {
     <#
     .SYNOPSIS
-    Decrypts one connection string as a CMS data store response carries it: Base64 of a 16-byte IV
-    followed by AES-CBC/PKCS7 cipher text (ConnectionStringEncryptionService.Decrypt). Returns
-    PlainText, or a Reason when the value is not Base64, is too short or not whole AES blocks, does not
-    decrypt under the key, or does not decrypt to UTF-8 text. Plaintext input is rejected, never parsed
-    as a fallback. A Reason never carries the key, the value, its plaintext, or exception text.
+    Decrypts one connection string as a Configuration Service data store response carries it, in
+    either stored form (ConnectionStringCipherText in the Configuration Service describes both): an
+    envelope ("EdFi.CS.Envelope", version 1, 12-byte nonce, 16-byte tag, then AES-256-GCM cipher
+    text of the PKCS7-padded text, under a key HKDF-SHA256 derives from -Key), or a legacy 16-byte
+    IV followed by AES-CBC/PKCS7 cipher text under -Key itself. -Key is the key material
+    Get-RestoreSmokeDataStoreAesKey returns. Returns PlainText, or a Reason when the value is not
+    Base64, has a length neither form can have, is an envelope with an unrecognized marker or
+    unsupported version, does not decrypt (or authenticate) under the key, or does not decrypt to
+    UTF-8 text. A value with the envelope length class or marker is never retried as legacy.
+    Plaintext input is rejected, never parsed as a fallback. A Reason never carries the key, the
+    value, its plaintext, or exception text. Requires PowerShell 7.4 or later (.NET 8 AesGcm).
+    With -AllowLegacyConnectionStrings $false, a legacy-length value is refused before any CBC
+    decryption, so a value altered through its IV is never returned and padding validity cannot be
+    probed.
     #>
     param(
         [AllowNull()]
@@ -1687,7 +1701,9 @@ function ConvertFrom-RestoreSmokeDataStoreCipherText {
         [string]$CipherText,
 
         [Parameter(Mandatory)]
-        [byte[]]$Key
+        [byte[]]$Key,
+
+        [bool]$AllowLegacyConnectionStrings = $true
     )
 
     $result = [pscustomobject]@{ PlainText = $null; Reason = $null }
@@ -1699,34 +1715,110 @@ function ConvertFrom-RestoreSmokeDataStoreCipherText {
         $result.Reason = "its connection string is not CMS Base64 cipher text"
         return $result
     }
-    if ($payload.Length -lt 32 -or ($payload.Length % 16) -ne 0) {
-        $result.Reason = "its connection string cipher text is truncated or malformed ($($payload.Length) bytes; expected a 16-byte IV and whole 16-byte AES blocks)"
-        return $result
-    }
 
-    $iv = [byte[]]::new(16)
-    [System.Array]::Copy($payload, 0, $iv, 0, 16)
+    $malformedReason = "its connection string cipher text is truncated or malformed ($($payload.Length) bytes; expected a Configuration Service connection string envelope, or a 16-byte IV and whole 16-byte AES blocks)"
+    $undecryptableReason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
+    $hasMarker = $payload.Length -ge 16 -and [System.Convert]::ToHexString($payload, 0, 16) -eq "456446692E43532E456E76656C6F7065"
     $plainTextBytes = $null
-    $aes = [System.Security.Cryptography.Aes]::Create()
-    try {
-        $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
-        $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
-        $aes.Key = $Key
-        $aes.IV = $iv
-        $decryptor = $aes.CreateDecryptor()
+
+    if (($payload.Length % 16) -eq 13 -or $hasMarker) {
+        if ($payload.Length -lt 61 -or ($payload.Length % 16) -ne 13) {
+            $result.Reason = $malformedReason
+            return $result
+        }
+        if (-not $hasMarker) {
+            $result.Reason = "its connection string cipher text is not a recognized Configuration Service connection string envelope"
+            return $result
+        }
+        if ($payload[16] -ne 1) {
+            $result.Reason = "its connection string cipher text uses an unsupported Configuration Service connection string envelope version"
+            return $result
+        }
+
+        $header = [byte[]]::new(17)
+        $nonce = [byte[]]::new(12)
+        $tag = [byte[]]::new(16)
+        $sealed = [byte[]]::new($payload.Length - 45)
+        [System.Array]::Copy($payload, 0, $header, 0, 17)
+        [System.Array]::Copy($payload, 17, $nonce, 0, 12)
+        [System.Array]::Copy($payload, 29, $tag, 0, 16)
+        [System.Array]::Copy($payload, 45, $sealed, 0, $sealed.Length)
+        $padded = [byte[]]::new($sealed.Length)
+
+        # Key derivation and construction sit inside the try, so a runtime without them gives a fixed
+        # reason rather than raw overload or platform text. Only a tag mismatch is reported as an
+        # authentication failure.
+        $aesGcm = $null
         try {
-            $plainTextBytes = $decryptor.TransformFinalBlock($payload, 16, $payload.Length - 16)
+            $envelopeKey = [System.Security.Cryptography.HKDF]::DeriveKey(
+                [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+                $Key,
+                32,
+                [byte[]]::new(0),
+                [System.Text.Encoding]::ASCII.GetBytes("EdFi.ConnectionString.AES-256-GCM.v1"))
+            $aesGcm = [System.Security.Cryptography.AesGcm]::new($envelopeKey, 16)
+            # Authentication comes first: nothing is read from the plain text unless it passes.
+            $aesGcm.Decrypt($nonce, $sealed, $tag, $padded, $header)
+        }
+        catch [System.Security.Cryptography.AuthenticationTagMismatchException] {
+            $result.Reason = "its connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
+            return $result
+        }
+        catch {
+            $result.Reason = $undecryptableReason
+            return $result
         }
         finally {
-            $decryptor.Dispose()
+            if ($null -ne $aesGcm) {
+                $aesGcm.Dispose()
+            }
         }
+
+        $paddingLength = [int]$padded[$padded.Length - 1]
+        $paddingValid = $paddingLength -ge 1 -and $paddingLength -le 16
+        for ($index = $padded.Length - $paddingLength; $paddingValid -and $index -lt $padded.Length; $index++) {
+            $paddingValid = $padded[$index] -eq $paddingLength
+        }
+        if (-not $paddingValid) {
+            $result.Reason = $undecryptableReason
+            return $result
+        }
+        $plainTextBytes = [byte[]]::new($padded.Length - $paddingLength)
+        [System.Array]::Copy($padded, 0, $plainTextBytes, 0, $plainTextBytes.Length)
     }
-    catch {
-        $result.Reason = "its connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
-        return $result
-    }
-    finally {
-        $aes.Dispose()
+    else {
+        if ($payload.Length -lt 32 -or ($payload.Length % 16) -ne 0) {
+            $result.Reason = $malformedReason
+            return $result
+        }
+        if (-not $AllowLegacyConnectionStrings) {
+            $result.Reason = "its connection string is in the legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false"
+            return $result
+        }
+
+        $iv = [byte[]]::new(16)
+        [System.Array]::Copy($payload, 0, $iv, 0, 16)
+        $aes = [System.Security.Cryptography.Aes]::Create()
+        try {
+            $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+            $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+            $aes.Key = $Key
+            $aes.IV = $iv
+            $decryptor = $aes.CreateDecryptor()
+            try {
+                $plainTextBytes = $decryptor.TransformFinalBlock($payload, 16, $payload.Length - 16)
+            }
+            finally {
+                $decryptor.Dispose()
+            }
+        }
+        catch {
+            $result.Reason = $undecryptableReason
+            return $result
+        }
+        finally {
+            $aes.Dispose()
+        }
     }
 
     try {
@@ -1751,7 +1843,8 @@ function Select-RestoreSmokeDataStore {
     CMS returns each connection string as Base64 AES cipher text, so each one is decrypted with
     -EncryptionKey (the stack's CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY) before it is parsed. A value
     that does not decrypt is not selected, with a reason that names no key or value. A blank key throws
-    before any data store is examined.
+    before any data store is examined. -AllowLegacyConnectionStrings $false refuses legacy values, as
+    the stack does when CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false.
     #>
     param(
         [AllowNull()]
@@ -1767,7 +1860,9 @@ function Select-RestoreSmokeDataStore {
 
         [Parameter(Mandatory)]
         [AllowEmptyString()]
-        [string]$EncryptionKey
+        [string]$EncryptionKey,
+
+        [bool]$AllowLegacyConnectionStrings = $true
     )
 
     $keyBytes = Get-RestoreSmokeDataStoreAesKey -EncryptionKey $EncryptionKey
@@ -1816,7 +1911,7 @@ function Select-RestoreSmokeDataStore {
             $record.Reason = "CMS returned no connection string for it"
             continue
         }
-        $decrypted = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText $cipherText -Key $keyBytes
+        $decrypted = ConvertFrom-RestoreSmokeDataStoreCipherText -CipherText $cipherText -Key $keyBytes -AllowLegacyConnectionStrings $AllowLegacyConnectionStrings
         if ($null -ne $decrypted.Reason) {
             $record.Reason = $decrypted.Reason
             continue
@@ -1978,6 +2073,15 @@ function Test-RestoreSmokeApiRead {
 
     $adminSecret = [string]$Endpoint.AdminClient.ClientSecret
     $encryptionKey = [string](Get-RestoreSmokeEvidenceValue $Endpoint "DataStoreEncryptionKey")
+    # An endpoint without the setting predates it and keeps the compatible default. A present value
+    # must already be a boolean: a [bool] cast would turn the string "false" into true.
+    $allowLegacyConnectionStrings = Get-RestoreSmokeEvidenceValue $Endpoint "AllowLegacyConnectionStrings"
+    if ($null -eq $allowLegacyConnectionStrings) {
+        $allowLegacyConnectionStrings = $true
+    }
+    elseif ($allowLegacyConnectionStrings -isnot [bool]) {
+        throw "The served-data probe endpoint's AllowLegacyConnectionStrings must be a boolean."
+    }
     $tokenReused = $null -ne $Session.Token
     if (-not $tokenReused) {
         $cmsToken = $null
@@ -1988,7 +2092,7 @@ function Test-RestoreSmokeApiRead {
         catch {
             throw "The served-data probe could not list the CMS data stores: $(ConvertTo-RestoreSmokeRedactedText $_.Exception.Message -Secret @($adminSecret, $cmsToken, $encryptionKey))"
         }
-        $selection = Select-RestoreSmokeDataStore -DataStores $dataStores -TargetDatabaseName $TargetDatabaseName -DatabaseEngine $DatabaseEngine -EncryptionKey $encryptionKey
+        $selection = Select-RestoreSmokeDataStore -DataStores $dataStores -TargetDatabaseName $TargetDatabaseName -DatabaseEngine $DatabaseEngine -EncryptionKey $encryptionKey -AllowLegacyConnectionStrings $allowLegacyConnectionStrings
 
         $applicationSecret = $null
         $token = $null

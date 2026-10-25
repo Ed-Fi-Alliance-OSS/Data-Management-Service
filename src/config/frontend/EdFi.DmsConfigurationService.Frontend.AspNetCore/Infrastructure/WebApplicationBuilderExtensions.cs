@@ -426,8 +426,9 @@ public static class WebApplicationBuilderExtensions
                         options.UseSigningKeySnapshot(configurationManager, bearerEvents);
 
                         // UseSigningKeySnapshot replaces the scheme's message-received handler, so the
-                        // revocation route's exemption is composed back in front of it: on that route the
-                        // handler stops before the snapshot boundary reads or validates the token (DMS-1327).
+                        // exemption of the marked routes (/connect/revoke, /connect/introspect) is composed
+                        // back in front of it: on those routes the handler stops before the snapshot
+                        // boundary reads or validates the token (DMS-1327).
                         Func<MessageReceivedContext, Task> snapshotMessageReceived = options
                             .Events
                             .OnMessageReceived;

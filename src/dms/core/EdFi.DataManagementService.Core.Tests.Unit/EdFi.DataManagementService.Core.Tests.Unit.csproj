@@ -119,6 +119,11 @@
         <None Include="OpenApi/Fixtures/ods-7.3.2-identity-openapi.json">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </None>
+        <None
+            Include="../../../config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/connection-string-encryption-vectors.json"
+            Link="Fixtures/connection-string-encryption-vectors.json"
+            CopyToOutputDirectory="PreserveNewest"
+        />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend\EdFi.DataManagementService.Backend.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.Plans\EdFi.DataManagementService.Backend.Plans.csproj" />
         <ProjectReference Include="..\..\backend\EdFi.DataManagementService.Backend.RelationalModel\EdFi.DataManagementService.Backend.RelationalModel.csproj" />
