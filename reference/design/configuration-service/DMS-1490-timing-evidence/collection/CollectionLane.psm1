@@ -428,7 +428,11 @@ $script:EndpointArms = @('absent', 'unapproved_correct_secret', 'wrong_secret')
 .DESCRIPTION
     The column row must be exactly the format's. Every row must split into those six fields, with a
     round in 0..Rounds-1, one of the given arms, a position in 0..arms-1, a finite non-negative
-    elapsed_us, an integer round_started_qpc and a round-trip round_started_utc. Every round must
+    elapsed_us, an integer round_started_qpc and a round_started_utc in the writer's UTC form. The
+    exact 'o' parse already fixes the layout (seven fractional digits); its kind must then be UTC,
+    which only the Z suffix gives, so a time without a suffix or with an offset is refused. The
+    sample check runs on the parsed value, because the parser also accepts the NaN and Infinity
+    tokens and turns an overlong number into Infinity. Every round must
     hold each arm once and each position once, one timestamp pair on all of its rows, and a
     round_started_qpc above the previous round's. Throws, naming the phase, on anything else.
 #>
@@ -462,7 +466,9 @@ function Assert-SamplesPhase {
         }
         if ($round -ge $Rounds) { throw "Row $i of the $Phase samples file names round $round, outside 0..$($Rounds - 1)." }
         if ($Arms -cnotcontains $fields[1]) { throw "Row $i of the $Phase samples file names an unexpected arm." }
-        if ($position -ge $Arms.Count -or [double]::IsInfinity($elapsed)) { throw "Row $i of the $Phase samples file has an invalid position or sample." }
+        if ($position -ge $Arms.Count) { throw "Row $i of the $Phase samples file has an invalid position." }
+        if ([double]::IsNaN($elapsed) -or [double]::IsInfinity($elapsed) -or $elapsed -lt 0) { throw "Row $i of the $Phase samples file has a sample that is not finite and non-negative." }
+        if ($utc.Kind -ne [DateTimeKind]::Utc) { throw "Row $i of the $Phase samples file has a round time that is not in the UTC 'o' form ending in Z." }
         if (-not $byRound.ContainsKey($round)) { $byRound[$round] = [System.Collections.Generic.List[object]]::new() }
         $byRound[$round].Add([pscustomobject]@{ arm = $fields[1]; position = $position; qpc = $qpc; utc = $fields[5] })
     }

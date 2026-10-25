@@ -126,7 +126,7 @@ The shared recorder (`TimingEvidenceRecorder`, used by the endpoint and in-proce
 
 - exactly one measured file, one warm-up file and one header;
 - the header at `timing-evidence/2`, matching the run (label, boundary, rounds, warm-up rounds, seed, the three endpoint arms), and naming both files with their row counts;
-- in each file, exactly the columns above. Every round 0..N−1 must hold each arm and each position once, one timestamp pair, a `round_started_qpc` above the previous round's, finite non-negative samples, and a round-trip `round_started_utc`.
+- in each file, exactly the columns above. Every round 0..N−1 must hold each arm and each position once, one timestamp pair, a `round_started_qpc` above the previous round's, finite non-negative samples (`NaN`, `Infinity` and overflowing values are refused after parsing), and a `round_started_utc` in the writer's UTC form (the exact `o` layout of a UTC time, ending in `Z`; a time without a suffix, with an offset or with a shorter fraction is refused).
 
 Anything else, including a previous-format file, fails the run. A run label may not contain the segment `warmup`, so that no label's measured pattern can reach another label's warm-up file.
 

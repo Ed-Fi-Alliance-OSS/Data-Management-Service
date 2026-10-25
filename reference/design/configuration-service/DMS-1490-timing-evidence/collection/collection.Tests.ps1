@@ -696,6 +696,66 @@ Describe 'Assert-CollectorRun' {
         { Assert-CollectorRun -ExitCode 0 @arguments } | Should -Throw $Message
     }
 
+    It 'accepts a zero sample' {
+        Write-TestTrx $trx $tests $fixture
+        Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301 -EditMeasured { param($r) $r[4] = $r[4] -replace ',1000\.000,', ',0.000,'; , $r }
+        (Assert-CollectorRun -ExitCode 0 @arguments).sample_rows | Should -Be 60
+    }
+
+    It 'refuses a <Phase> sample of <Value>, which parses but is not finite' -ForEach @(
+        @{ Phase = 'measured'; Value = 'NaN' }
+        @{ Phase = 'warm-up'; Value = 'NaN' }
+        @{ Phase = 'measured'; Value = 'Infinity' }
+        @{ Phase = 'warm-up'; Value = 'Infinity' }
+        @{ Phase = 'measured'; Value = ('1' + ('0' * 400) + '.000') }
+    ) {
+        Write-TestTrx $trx $tests $fixture
+        $value = $Value
+        $edit = { param($r) $r[1] = $r[1] -replace ',1000\.000,', ",$value,"; , $r }.GetNewClosure()
+        if ($Phase -eq 'measured') { Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301 -EditMeasured $edit }
+        else { Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301 -EditWarmup $edit }
+        { Assert-CollectorRun -ExitCode 0 @arguments } | Should -Throw "*of the $Phase samples file has a sample that is not finite and non-negative*"
+    }
+
+    It 'refuses a negative <Phase> sample' -ForEach @(@{ Phase = 'measured' }, @{ Phase = 'warm-up' }) {
+        Write-TestTrx $trx $tests $fixture
+        $edit = { param($r) $r[1] = $r[1] -replace ',1000\.000,', ',-1.000,'; , $r }
+        if ($Phase -eq 'measured') { Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301 -EditMeasured $edit }
+        else { Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301 -EditWarmup $edit }
+        { Assert-CollectorRun -ExitCode 0 @arguments } | Should -Throw "*of the $Phase samples file is malformed*"
+    }
+
+    # The whole round changes, so that only the UTC-form check can refuse it: the round's rows still
+    # share one timestamp pair, and its qpc still rises.
+    It 'refuses a whole <Phase> round whose time is <Name>' -ForEach @(
+        @{ Phase = 'measured'; Name = 'without a suffix'; Change = 'drop' }
+        @{ Phase = 'measured'; Name = 'with an offset'; Change = 'offset' }
+        @{ Phase = 'warm-up'; Name = 'without a suffix'; Change = 'drop' }
+        @{ Phase = 'warm-up'; Name = 'with an offset'; Change = 'offset' }
+    ) {
+        Write-TestTrx $trx $tests $fixture
+        $change = $Change
+        $edit = {
+            param($r)
+            , @($r | ForEach-Object {
+                    $f = $_.Split(',')
+                    if ($f[0] -eq '1') { $f[5] = if ($change -eq 'drop') { $f[5].TrimEnd('Z') } else { $f[5].TrimEnd('Z') + '+03:00' } }
+                    $f -join ','
+                })
+        }.GetNewClosure()
+        if ($Phase -eq 'measured') { Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301 -EditMeasured $edit }
+        else { Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301 -EditWarmup $edit }
+        { Assert-CollectorRun -ExitCode 0 @arguments } | Should -Throw "*of the $Phase samples file has a round time that is not in the UTC 'o' form ending in Z*"
+    }
+
+    It 'refuses a <Phase> round time that is UTC but not in the writer''s exact layout as malformed' -ForEach @(@{ Phase = 'measured' }, @{ Phase = 'warm-up' }) {
+        Write-TestTrx $trx $tests $fixture
+        $edit = { param($r) , @($r | ForEach-Object { $f = $_.Split(','); if ($f[0] -eq '0') { $f[5] = $f[5] -replace '\.0000000Z$', '.0Z' }; $f -join ',' }) }
+        if ($Phase -eq 'measured') { Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301 -EditMeasured $edit }
+        else { Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301 -EditWarmup $edit }
+        { Assert-CollectorRun -ExitCode 0 @arguments } | Should -Throw "*of the $Phase samples file is malformed*"
+    }
+
     It 'refuses a second warm-up file for the run' {
         Write-TestTrx $trx $tests $fixture
         Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301
