@@ -330,7 +330,7 @@ try {
         try { Complete-LaneSampler $launchQpc $exitQpc } catch { Add-LaneFailure 'sampler-coverage' $_ }
     }
     $provenance.collector_exit = $collectorExit
-    $summary = Assert-CollectorRun -ExitCode $collectorExit -TrxPath (Join-Path $WorkRoot $trxName) -OutputDir $OutputDir -RunLabel $RunLabel -Backend postgresql -Rounds $Rounds -Seed $Seed -StartedUtc $collectorStarted
+    $summary = Assert-CollectorRun -ExitCode $collectorExit -TrxPath (Join-Path $WorkRoot $trxName) -OutputDir $OutputDir -RunLabel $RunLabel -Backend postgresql -Rounds $Rounds -WarmupRounds $WarmupRounds -Seed $Seed -StartedUtc $collectorStarted
     $provenance.collector_run = $summary
     Write-LaneLog "RUN tests_passed=$($summary.tests_passed) samples=$($summary.samples_file) rows=$($summary.sample_rows)"
 

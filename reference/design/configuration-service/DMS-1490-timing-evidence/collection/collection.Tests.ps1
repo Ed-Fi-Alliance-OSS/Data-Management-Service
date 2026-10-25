@@ -56,14 +56,53 @@ BeforeAll {
             Set-Content -LiteralPath $Path -Encoding utf8NoBOM
     }
 
-    # The samples and header one collector run writes.
-    function global:Write-TestSample([string] $OutputDir, [string] $RunLabel, [string] $Backend, [int] $Rounds, [int] $Seed, [int] $RowCount = -1) {
-        if ($RowCount -lt 0) { $RowCount = $Rounds * 3 }
-        $stem = "$RunLabel-endpoint-$Backend-$((Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'"))"
-        $rows = @('round,arm,position,elapsed_us') + @(1..$RowCount | ForEach-Object { "0,absent,0,1.0" })
-        $rows | Set-Content -LiteralPath (Join-Path $OutputDir "$stem.csv") -Encoding utf8NoBOM
-        [ordered]@{ run_label = $RunLabel; boundary = "endpoint-$Backend"; rounds = $Rounds; seed = $Seed; samples_file = "$stem.csv"; arms = @('absent', 'wrong_secret', 'unapproved_correct_secret') } |
-            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDir "$stem.json") -Encoding utf8NoBOM
+    # The measured samples, warm-up samples and header one collector run writes (timing-evidence/2):
+    # every round holds the three arms once, with one timestamp pair. -EditMeasured and -EditWarmup
+    # receive and return the data rows; -Header overrides header fields; -RowCount keeps only that
+    # many measured rows; -NoWarmup writes no warm-up file.
+    $global:TestSamplesColumns = 'round,arm,position,elapsed_us,round_started_qpc,round_started_utc'
+
+    function global:New-TestSampleRowSet([int] $Rounds, [long] $FirstQpc) {
+        $arms = @('absent', 'unapproved_correct_secret', 'wrong_secret')
+        $start = [datetime]::new(2026, 10, 24, 12, 0, 0, [DateTimeKind]::Utc)
+        , @(for ($round = 0; $round -lt $Rounds; $round++) {
+                $qpc = $FirstQpc + ($round * 30000)
+                $utc = $start.AddMilliseconds($round * 3).ToString('o')
+                for ($slot = 0; $slot -lt 3; $slot++) { "$round,$($arms[($round + $slot) % 3]),$slot,1000.000,$qpc,$utc" }
+            })
+    }
+
+    function global:Write-TestSample {
+        param(
+            [string] $OutputDir, [string] $RunLabel, [string] $Backend, [int] $Rounds, [int] $Seed,
+            [int] $RowCount = -1, [int] $WarmupRounds = 2, [hashtable] $Header = @{},
+            [scriptblock] $EditMeasured = $null, [scriptblock] $EditWarmup = $null, [switch] $NoWarmup
+        )
+        $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'")
+        $stem = "$RunLabel-endpoint-$Backend-$stamp"
+        $warmupName = "$RunLabel-warmup-endpoint-$Backend-$stamp.csv"
+        $warmupRows = New-TestSampleRowSet $WarmupRounds 1000000
+        $measuredRows = New-TestSampleRowSet $Rounds 9000000
+        if ($RowCount -ge 0) { $measuredRows = @($measuredRows | Select-Object -First $RowCount) }
+        if ($null -ne $EditMeasured) { $measuredRows = @(& $EditMeasured $measuredRows) }
+        if ($null -ne $EditWarmup) { $warmupRows = @(& $EditWarmup $warmupRows) }
+        @($global:TestSamplesColumns) + $measuredRows | Set-Content -LiteralPath (Join-Path $OutputDir "$stem.csv") -Encoding utf8NoBOM
+        if (-not $NoWarmup) { @($global:TestSamplesColumns) + $warmupRows | Set-Content -LiteralPath (Join-Path $OutputDir $warmupName) -Encoding utf8NoBOM }
+        $fields = [ordered]@{
+            schema        = 'timing-evidence/2'
+            run_label     = $RunLabel
+            boundary      = "endpoint-$Backend"
+            rounds        = $Rounds
+            warmup_rounds = $WarmupRounds
+            seed          = $Seed
+            arms          = @('absent', 'wrong_secret', 'unapproved_correct_secret')
+            samples_file  = "$stem.csv"
+            measured_rows = $Rounds * 3
+            warmup_file   = $warmupName
+            warmup_rows   = $WarmupRounds * 3
+        }
+        foreach ($key in $Header.Keys) { $fields[$key] = $Header[$key] }
+        $fields | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $OutputDir "$stem.json") -Encoding utf8NoBOM
     }
 
     function global:Get-EvidenceText([string] $OutputDir) {
@@ -532,7 +571,7 @@ Describe 'Assert-CollectorRun' {
         $started = (Get-Date).ToUniversalTime().AddSeconds(-5)
         $fixture = "EdFi.DmsConfigurationService.Tests.E2E.Timing.$(Get-CollectorFixtureName)"
         $tests = @('It_records_one_sample_per_arm_per_round', 'It_writes_the_run_header')
-        $arguments = @{ TrxPath = $trx; OutputDir = $folder; RunLabel = 'pilot-a5'; Backend = 'postgresql'; Rounds = 20; Seed = 301; StartedUtc = $started }
+        $arguments = @{ TrxPath = $trx; OutputDir = $folder; RunLabel = 'pilot-a5'; Backend = 'postgresql'; Rounds = 20; WarmupRounds = 2; Seed = 301; StartedUtc = $started }
     }
 
     It 'accepts a run of the fixture''s two tests with this run''s samples' {
@@ -552,7 +591,7 @@ Describe 'Assert-CollectorRun' {
         Write-TestTrx $trx $tests $fixture
         Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301
         Get-ChildItem -LiteralPath $folder -Filter 'pilot-a5-*' | ForEach-Object { $_.LastWriteTimeUtc = $started.AddMinutes(-1) }
-        { Assert-CollectorRun -ExitCode 0 @arguments } | Should -Throw '*found 0 and 0*'
+        { Assert-CollectorRun -ExitCode 0 @arguments } | Should -Throw '*found 0, 0 and 0*'
     }
 
     It 'refuses a nonzero exit' {
@@ -581,7 +620,7 @@ Describe 'Assert-CollectorRun' {
 
     It 'refuses a run that wrote no samples' {
         Write-TestTrx $trx $tests $fixture
-        { Assert-CollectorRun -ExitCode 0 @arguments } | Should -Throw '*found 0 and 0*'
+        { Assert-CollectorRun -ExitCode 0 @arguments } | Should -Throw '*found 0, 0 and 0*'
     }
 
     It 'refuses a samples file with the wrong number of rows' {
@@ -594,6 +633,74 @@ Describe 'Assert-CollectorRun' {
         Write-TestTrx $trx $tests $fixture
         Write-TestSample $folder 'pilot-a5' 'postgresql' 20 999
         { Assert-CollectorRun -ExitCode 0 @arguments } | Should -Throw '*does not match*'
+    }
+
+    It 'returns the warm-up file and both row counts with the schema' {
+        Write-TestTrx $trx $tests $fixture
+        Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301
+        $summary = Assert-CollectorRun -ExitCode 0 @arguments
+        $summary.schema | Should -Be 'timing-evidence/2'
+        $summary.warmup_file | Should -BeLike 'pilot-a5-warmup-endpoint-postgresql-*.csv'
+        $summary.warmup_rows | Should -Be 6
+        $summary.sample_rows | Should -Be 60
+    }
+
+    It 'accepts a run with no warm-up rounds, whose warm-up file holds only the column row' {
+        Write-TestTrx $trx $tests $fixture
+        Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301 -WarmupRounds 0
+        $arguments.WarmupRounds = 0
+        (Assert-CollectorRun -ExitCode 0 @arguments).warmup_rows | Should -Be 0
+    }
+
+    It 'never selects the warm-up file with the measured pattern' {
+        Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301
+        @(Get-ChildItem -LiteralPath $folder -Filter 'pilot-a5-endpoint-postgresql-*.csv').Name | Should -Not -BeLike '*warmup*'
+        @(Get-ChildItem -LiteralPath $folder -Filter 'pilot-a5-endpoint-postgresql-*.csv').Count | Should -Be 1
+        @(Get-ChildItem -LiteralPath $folder -Filter 'pilot-a5-warmup-endpoint-postgresql-*.csv').Count | Should -Be 1
+    }
+
+    It 'refuses a run label that contains the segment warmup, whose pattern could reach another label''s warm-up file' {
+        Write-TestTrx $trx $tests $fixture
+        $arguments.RunLabel = 'pilot-warmup'
+        { Assert-CollectorRun -ExitCode 0 @arguments } | Should -Throw '*segment "warmup"*'
+    }
+
+    It 'refuses <Name>' -ForEach @(
+        @{ Name = 'a run with no warm-up file'; Sample = @{ NoWarmup = $true }; Message = '*found 1, 0 and 1*' }
+        @{ Name = 'a header of the previous schema'; Sample = @{ Header = @{ schema = 'timing-evidence/1' } }; Message = '*timing-evidence/2*' }
+        @{ Name = 'a header for another warm-up count'; Sample = @{ Header = @{ warmup_rounds = 3 } }; Message = '*does not match*' }
+        @{ Name = 'a header naming another warm-up file'; Sample = @{ Header = @{ warmup_file = 'other.csv' } }; Message = '*different warm-up file*' }
+        @{ Name = 'a header with another measured row count'; Sample = @{ Header = @{ measured_rows = 59 } }; Message = '*row counts*' }
+        @{ Name = 'a header with another warm-up row count'; Sample = @{ Header = @{ warmup_rows = 5 } }; Message = '*row counts*' }
+        @{ Name = 'a header naming other arms'; Sample = @{ Header = @{ arms = @('absent', 'wrong_secret', 'c0_no_derivation') } }; Message = '*three endpoint arms*' }
+        @{ Name = 'a warm-up file missing a row'; Sample = @{ EditWarmup = { param($r) , @($r | Select-Object -SkipLast 1) } }; Message = '*warm-up samples file has 5 rows*' }
+        @{ Name = 'a measured file with the previous columns'; Sample = @{ EditMeasured = { param($r) , @($r) } ; Header = @{} ; OldColumns = $true }; Message = '*measured samples file does not have*' }
+        @{ Name = 'a round holding one arm twice'; Sample = @{ EditMeasured = { param($r) $r[1] = $r[1] -replace ',unapproved_correct_secret,', ',absent,' -replace ',wrong_secret,', ',absent,'; , $r } }; Message = '*each arm and position once*' }
+        @{ Name = 'a round outside the expected range'; Sample = @{ EditMeasured = { param($r) $r[0] = $r[0] -replace '^0,', '20,'; , $r } }; Message = '*outside 0..19*' }
+        @{ Name = 'two timestamps in one round'; Sample = @{ EditMeasured = { param($r) $f = $r[1].Split(','); $f[4] = '9000001'; $r[1] = $f -join ','; , $r } }; Message = '*more than one round timestamp*' }
+        @{ Name = 'a round that does not start after the one before it'; Sample = @{ EditMeasured = { param($r) $r = @($r | ForEach-Object { $f = $_.Split(','); if ($f[0] -eq '1') { $f[4] = '9000000' }; $f -join ',' }); , $r } }; Message = '*does not start after*' }
+        @{ Name = 'a malformed round time'; Sample = @{ EditMeasured = { param($r) $r = @($r | ForEach-Object { $f = $_.Split(','); if ($f[0] -eq '2') { $f[5] = '2026-10-24 12:00:00' }; $f -join ',' }); , $r } }; Message = '*row * of the measured samples file is malformed*' }
+        @{ Name = 'a negative sample'; Sample = @{ EditMeasured = { param($r) $r[4] = $r[4] -replace ',1000\.000,', ',-1.000,'; , $r } }; Message = '*malformed*' }
+        @{ Name = 'a warm-up row with an unknown arm'; Sample = @{ EditWarmup = { param($r) $r[0] = $r[0] -replace ',absent,', ',other,'; , $r } }; Message = '*warm-up samples file names an unexpected arm*' }
+    ) {
+        Write-TestTrx $trx $tests $fixture
+        $options = @{}
+        foreach ($key in $Sample.Keys) { if ($key -ne 'OldColumns') { $options[$key] = $Sample[$key] } }
+        Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301 @options
+        if ($Sample.OldColumns) {
+            $measured = (Get-ChildItem -LiteralPath $folder -Filter 'pilot-a5-endpoint-postgresql-*.csv')[0].FullName
+            $lines = @(Get-Content -LiteralPath $measured)
+            $lines[0] = 'round,arm,position,elapsed_us'
+            $lines | Set-Content -LiteralPath $measured -Encoding utf8NoBOM
+        }
+        { Assert-CollectorRun -ExitCode 0 @arguments } | Should -Throw $Message
+    }
+
+    It 'refuses a second warm-up file for the run' {
+        Write-TestTrx $trx $tests $fixture
+        Write-TestSample $folder 'pilot-a5' 'postgresql' 20 301
+        Copy-Item -LiteralPath (Get-ChildItem -LiteralPath $folder -Filter 'pilot-a5-warmup-*.csv')[0].FullName -Destination (Join-Path $folder 'pilot-a5-warmup-endpoint-postgresql-20991231T000000Z.csv')
+        { Assert-CollectorRun -ExitCode 0 @arguments } | Should -Throw '*found 1, 2 and 1*'
     }
 }
 
@@ -1581,7 +1688,7 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
             $trx = Join-Path $results ($logger -replace '^trx;LogFileName=', '')
             Write-TestTrx $trx $global:LaneScenario.TestNames $global:LaneFixtureClass
             if ($global:LaneScenario.WriteSamples) {
-                Write-TestSample $env:TIMING_EVIDENCE_OUTPUT_DIR $env:TIMING_EVIDENCE_RUN_LABEL 'postgresql' ([int]$env:TIMING_EVIDENCE_ROUNDS) ([int]$env:TIMING_EVIDENCE_SEED)
+                Write-TestSample $env:TIMING_EVIDENCE_OUTPUT_DIR $env:TIMING_EVIDENCE_RUN_LABEL 'postgresql' ([int]$env:TIMING_EVIDENCE_ROUNDS) ([int]$env:TIMING_EVIDENCE_SEED) -WarmupRounds ([int]$env:TIMING_EVIDENCE_WARMUP_ROUNDS)
             }
             # A sampler that dies by the exit dies while the collector runs, after its readiness.
             if ($global:SamplerScenario.DeadAtExit -and $null -ne $global:SamplerScenario.Process) { $global:SamplerScenario.Process.State.Exited = $true }
@@ -2069,8 +2176,8 @@ Export-ModuleMember -Function ReadValuesFromEnvFile
 }
 
 AfterAll {
-    Remove-Item -LiteralPath Function:\global:Get-TestHash, Function:\global:Get-ValidSetting, Function:\global:Get-ValidFingerprint, Function:\global:Write-TestTrx, Function:\global:Write-TestSample, Function:\global:Get-EvidenceText -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath Function:\global:Get-TestHash, Function:\global:Get-ValidSetting, Function:\global:Get-ValidFingerprint, Function:\global:Write-TestTrx, Function:\global:Write-TestSample, Function:\global:New-TestSampleRowSet, Function:\global:Get-EvidenceText -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath Alias:\Read-SystemPowerStatus, Alias:\Read-ActivePowerScheme, Function:\global:Get-TestPowerStatus, Function:\global:Get-TestActiveScheme, Function:\global:New-PowerStep, Function:\global:Set-PowerSequence, Function:\global:Get-PowerStep, Function:\global:Get-RefusalLine -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath Function:\global:New-TestSampleSpec, Function:\global:ConvertTo-TestSampleLine, Function:\global:Write-TestReady, Function:\global:New-TestProcess -ErrorAction SilentlyContinue
-    Remove-Variable -Name LaneScenario, LaneSentinel, LaneAssemblies, LaneFixtureClass, PowerScenario, BalancedScheme, SamplerScenario, SamplerColumns, QpcFrequency -Scope Global -ErrorAction SilentlyContinue
+    Remove-Variable -Name TestSamplesColumns, LaneScenario, LaneSentinel, LaneAssemblies, LaneFixtureClass, PowerScenario, BalancedScheme, SamplerScenario, SamplerColumns, QpcFrequency -Scope Global -ErrorAction SilentlyContinue
 }

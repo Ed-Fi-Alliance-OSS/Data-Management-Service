@@ -6,9 +6,11 @@
 
 """Offline warning diagnostics for one endpoint timing run (spec section 18.3). Reads samples; never measures.
 
-Input is the samples CSV an endpoint collector writes: columns round, arm, position, elapsed_us,
-with exactly the three endpoint arms (absent, unapproved_correct_secret, wrong_secret) once per
-round, rounds numbered 0..N-1, and N >= 20. Anything else is refused.
+Input is the measured samples CSV an endpoint collector writes. The analysis needs the columns
+round, arm and elapsed_us, with exactly the three endpoint arms (absent, unapproved_correct_secret,
+wrong_secret) once per round, rounds numbered 0..N-1, and N >= 20; anything else is refused. Other
+columns (position, and in timing-evidence/2 round_started_qpc and round_started_utc) are permitted
+and ignored. The warm-up file is never an input.
 
 Warning flags. The constants are prospective and conservative rejection flags, not validated
 stationarity or coverage criteria, and they were chosen after the historical runs were seen:
@@ -434,6 +436,21 @@ def selftest():
             with open(path, "w", newline="", encoding="utf-8") as handle:
                 handle.write("\n".join(edited) + "\n")
             check(f"synthetic: {label} is refused", raises(lambda p=path: diagnose(p, 250.0, resamples, 1)))
+
+        # Synthetic: the timing-evidence/2 columns are ignored; the same samples give the same flags
+        # and diagnostics.
+        with open(good, encoding="utf-8") as handle:
+            plain = handle.read().splitlines()
+        wide = os.path.join(directory, "synthetic-timing-evidence-2.csv")
+        with open(wide, "w", newline="", encoding="utf-8") as handle:
+            handle.write(plain[0] + ",round_started_qpc,round_started_utc\n")
+            for line in plain[1:]:
+                handle.write(f"{line},{1000 + int(line.split(',')[0])},2026-10-24T12:00:00.0000000Z\n")
+        narrow_result, wide_result = diagnose(good, 250.0, resamples, 1), diagnose(wide, 250.0, resamples, 1)
+        check(
+            "synthetic: a timing-evidence/2 file's extra columns change nothing",
+            narrow_result["flags"] == wide_result["flags"] and narrow_result["mandatory"] == wide_result["mandatory"] and narrow_result["intervals"] == wide_result["intervals"],
+        )
 
         accepted = diagnose(good, 250.0, resamples, 1)
         check("no output key claims validity or admissibility", not any(key in json.dumps(accepted) for key in ('"valid"', '"admissible"', '"accepted"')))

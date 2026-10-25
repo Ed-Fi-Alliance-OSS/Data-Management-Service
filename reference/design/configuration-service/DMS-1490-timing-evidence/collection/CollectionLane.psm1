@@ -416,14 +416,85 @@ function Compare-LaneSnapshot {
     , $differences.ToArray()
 }
 
+# The collector's samples format: its schema, the columns of both of its samples files, and the
+# arms an endpoint run measures.
+$script:SamplesSchema = 'timing-evidence/2'
+$script:SamplesColumns = 'round,arm,position,elapsed_us,round_started_qpc,round_started_utc'
+$script:EndpointArms = @('absent', 'unapproved_correct_secret', 'wrong_secret')
+
 <#
 .SYNOPSIS
-    Requires a collector run that actually ran the explicit fixture and wrote this run's samples.
+    Requires one samples file of a phase to hold exactly the expected rounds, each complete.
 .DESCRIPTION
-    The runner must exit 0; its TRX must report exactly the fixture's two tests, run and passed, and
-    nothing else; the output folder must hold exactly one samples CSV and one header JSON for this
-    run, written after it started, whose header matches the run and whose CSV has one row per arm per
-    round. Returns a summary built only from these checked values, never from runner output.
+    The column row must be exactly the format's. Every row must split into those six fields, with a
+    round in 0..Rounds-1, one of the given arms, a position in 0..arms-1, a finite non-negative
+    elapsed_us, an integer round_started_qpc and a round-trip round_started_utc. Every round must
+    hold each arm once and each position once, one timestamp pair on all of its rows, and a
+    round_started_qpc above the previous round's. Throws, naming the phase, on anything else.
+#>
+function Assert-SamplesPhase {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [string] $Phase,
+        [Parameter(Mandatory)] [int] $Rounds,
+        [Parameter(Mandatory)] [string[]] $Arms
+    )
+    $lines = @(Get-Content -LiteralPath $Path)
+    if ($lines.Count -eq 0 -or $lines[0] -cne $script:SamplesColumns) { throw "The $Phase samples file does not have the $($script:SamplesSchema) columns." }
+    $expectedRows = $Rounds * $Arms.Count
+    if ($lines.Count - 1 -ne $expectedRows) { throw "The $Phase samples file has $($lines.Count - 1) rows, not $expectedRows." }
+    $invariant = [cultureinfo]::InvariantCulture
+    $byRound = @{}
+    for ($i = 1; $i -lt $lines.Count; $i++) {
+        $fields = $lines[$i].Split(',')
+        $round = 0
+        $position = 0
+        $elapsed = 0.0
+        $qpc = [long]0
+        $utc = [datetime]::MinValue
+        if ($fields.Count -ne 6 -or
+            -not [int]::TryParse($fields[0], [System.Globalization.NumberStyles]::None, $invariant, [ref]$round) -or
+            -not [int]::TryParse($fields[2], [System.Globalization.NumberStyles]::None, $invariant, [ref]$position) -or
+            -not [double]::TryParse($fields[3], [System.Globalization.NumberStyles]::AllowDecimalPoint, $invariant, [ref]$elapsed) -or
+            -not [long]::TryParse($fields[4], [System.Globalization.NumberStyles]::None, $invariant, [ref]$qpc) -or
+            -not [datetime]::TryParseExact($fields[5], 'o', $invariant, [System.Globalization.DateTimeStyles]::RoundtripKind, [ref]$utc)) {
+            throw "Row $i of the $Phase samples file is malformed."
+        }
+        if ($round -ge $Rounds) { throw "Row $i of the $Phase samples file names round $round, outside 0..$($Rounds - 1)." }
+        if ($Arms -cnotcontains $fields[1]) { throw "Row $i of the $Phase samples file names an unexpected arm." }
+        if ($position -ge $Arms.Count -or [double]::IsInfinity($elapsed)) { throw "Row $i of the $Phase samples file has an invalid position or sample." }
+        if (-not $byRound.ContainsKey($round)) { $byRound[$round] = [System.Collections.Generic.List[object]]::new() }
+        $byRound[$round].Add([pscustomobject]@{ arm = $fields[1]; position = $position; qpc = $qpc; utc = $fields[5] })
+    }
+    $previousQpc = $null
+    for ($round = 0; $round -lt $Rounds; $round++) {
+        $rows = $byRound[$round]
+        if ($null -eq $rows -or
+            @($rows.arm | Sort-Object -Unique).Count -ne $Arms.Count -or
+            @($rows.position | Sort-Object -Unique).Count -ne $Arms.Count) {
+            throw "Round $round of the $Phase samples file does not hold each arm and position once."
+        }
+        if (@($rows.qpc | Sort-Object -Unique).Count -ne 1 -or @($rows.utc | Sort-Object -Unique).Count -ne 1) {
+            throw "Round $round of the $Phase samples file has more than one round timestamp."
+        }
+        if ($null -ne $previousQpc -and $rows[0].qpc -le $previousQpc) { throw "Round $round of the $Phase samples file does not start after the round before it." }
+        $previousQpc = $rows[0].qpc
+    }
+}
+
+<#
+.SYNOPSIS
+    Requires a collector run that actually ran the explicit fixture and wrote this run's files.
+.DESCRIPTION
+    The runner must exit 0, and its TRX must report exactly the fixture's two tests, run and passed,
+    and nothing else. The output folder must hold, written after the run started, exactly one
+    measured samples CSV (<label>-endpoint-<backend>-*.csv), one warm-up samples CSV
+    (<label>-warmup-endpoint-<backend>-*.csv, which the measured pattern cannot match) and one header
+    JSON. The header must be timing-evidence/2, match the run (label, boundary, rounds, warm-up
+    rounds, seed, the three endpoint arms), and name both files with their row counts; each file must
+    pass Assert-SamplesPhase. A run label may not contain the segment "warmup", so that no label's
+    measured pattern can reach another label's warm-up file. Returns a summary built only from these
+    checked values, never from runner output.
 #>
 function Assert-CollectorRun {
     param(
@@ -433,9 +504,11 @@ function Assert-CollectorRun {
         [Parameter(Mandatory)] [string] $RunLabel,
         [Parameter(Mandatory)] [ValidateSet('postgresql', 'mssql')] [string] $Backend,
         [Parameter(Mandatory)] [int] $Rounds,
+        [Parameter(Mandatory)] [int] $WarmupRounds,
         [Parameter(Mandatory)] [int] $Seed,
         [Parameter(Mandatory)] [datetime] $StartedUtc
     )
+    if ($RunLabel -match '(^|-)warmup(-|$)') { throw 'A run label must not contain the segment "warmup".' }
     if ($ExitCode -ne 0) { throw "The collector exited $ExitCode." }
     if (-not (Test-Path -LiteralPath $TrxPath)) { throw 'The collector wrote no test results.' }
     [xml] $trx = Get-Content -LiteralPath $TrxPath -Raw
@@ -457,23 +530,37 @@ function Assert-CollectorRun {
     # 16 ms) earlier than a start taken just before the write. One second absorbs that; a run takes
     # minutes, so an earlier run's files stay excluded, and the exactly-one check refuses any extra.
     $notBefore = $StartedUtc.AddSeconds(-1)
-    $pattern = "$RunLabel-endpoint-$Backend-*"
-    $csv = @(Get-ChildItem -LiteralPath $OutputDir -Filter "$pattern.csv" | Where-Object { $_.LastWriteTimeUtc -ge $notBefore })
-    $json = @(Get-ChildItem -LiteralPath $OutputDir -Filter "$pattern.json" | Where-Object { $_.LastWriteTimeUtc -ge $notBefore })
-    if ($csv.Count -ne 1 -or $json.Count -ne 1) { throw "Expected one samples file and one header for this run, found $($csv.Count) and $($json.Count)." }
-    $header = Get-Content -LiteralPath $json[0].FullName -Raw | ConvertFrom-Json
-    if ($header.run_label -ne $RunLabel -or $header.boundary -ne "endpoint-$Backend" -or $header.rounds -ne $Rounds -or $header.seed -ne $Seed) {
+    $recent = { param([string] $Folder, [string] $Filter) , @(Get-ChildItem -LiteralPath $Folder -Filter $Filter | Where-Object { $_.LastWriteTimeUtc -ge $notBefore }) }
+    $csv = & $recent $OutputDir "$RunLabel-endpoint-$Backend-*.csv"
+    $warmup = & $recent $OutputDir "$RunLabel-warmup-endpoint-$Backend-*.csv"
+    $json = & $recent $OutputDir "$RunLabel-endpoint-$Backend-*.json"
+    if ($csv.Count -ne 1 -or $warmup.Count -ne 1 -or $json.Count -ne 1) {
+        throw "Expected one samples file, one warm-up file and one header for this run, found $($csv.Count), $($warmup.Count) and $($json.Count)."
+    }
+    try { $header = Get-Content -LiteralPath $json[0].FullName -Raw | ConvertFrom-Json }
+    catch { throw 'The run header is not valid JSON.' }
+    if ($header.schema -cne $script:SamplesSchema) { throw "The run header has schema '$($header.schema)', not $($script:SamplesSchema)." }
+    if ($header.run_label -ne $RunLabel -or $header.boundary -ne "endpoint-$Backend" -or $header.rounds -ne $Rounds -or
+        $header.warmup_rounds -ne $WarmupRounds -or $header.seed -ne $Seed) {
         throw 'The run header does not match this run.'
     }
-    if ($header.samples_file -ne $csv[0].Name) { throw 'The run header names a different samples file.' }
-    $rows = @(Get-Content -LiteralPath $csv[0].FullName).Count - 1
-    $expectedRows = $Rounds * @($header.arms).Count
-    if ($rows -ne $expectedRows) { throw "The samples file has $rows rows, not $expectedRows." }
+    $arms = @($header.arms | ForEach-Object { [string]$_ } | Sort-Object)
+    if (($arms -join ',') -cne ($script:EndpointArms -join ',')) { throw 'The run header does not name the three endpoint arms.' }
+    if ($header.samples_file -cne $csv[0].Name) { throw 'The run header names a different samples file.' }
+    if ($header.warmup_file -cne $warmup[0].Name) { throw 'The run header names a different warm-up file.' }
+    if ($header.measured_rows -ne $Rounds * $arms.Count -or $header.warmup_rows -ne $WarmupRounds * $arms.Count) {
+        throw 'The run header row counts do not match the run.'
+    }
+    Assert-SamplesPhase -Path $csv[0].FullName -Phase 'measured' -Rounds $Rounds -Arms $arms
+    Assert-SamplesPhase -Path $warmup[0].FullName -Phase 'warm-up' -Rounds $WarmupRounds -Arms $arms
     [ordered]@{
         tests_passed = $results.Count
+        schema       = $script:SamplesSchema
         samples_file = $csv[0].Name
+        sample_rows  = $Rounds * $arms.Count
+        warmup_file  = $warmup[0].Name
+        warmup_rows  = $WarmupRounds * $arms.Count
         header_file  = $json[0].Name
-        sample_rows  = $rows
     }
 }
 
@@ -1322,4 +1409,4 @@ function Get-SamplerLifecycleFailure([System.Collections.IDictionary] $Stop) {
     , $failures.ToArray()
 }
 
-Export-ModuleMember -Function Get-FingerprintedAssemblyName, Get-SettingAllowlist, Get-CollectorFixtureName, Resolve-LanePath, Assert-LaneRoot, Assert-OutsideWorktree, ConvertFrom-Sha256Listing, Assert-AssemblyFingerprint, Assert-RunSetting, Compare-LaneSnapshot, Assert-CollectorRun, Get-PowerSource, Get-PowerConditionFailure, ConvertTo-PowerCheckRecord, Add-PowerRefusal, Get-SchemeQueryProvider, ConvertTo-PowerSampleValue, ConvertFrom-PowerSampleRow, Test-SamplerCoverage, Resolve-RoleIdentity, Select-LocalDbCandidate, Initialize-HostSampleState, Get-HostSampleColumn, Get-HostSampleRole, Read-HostSample, Invoke-PowerSampler, Open-PowerSampler, Wait-PowerSamplerReady, ConvertTo-SamplerRefusalRecord, Close-PowerSampler, Get-SamplerLifecycleFailure
+Export-ModuleMember -Function Get-FingerprintedAssemblyName, Get-SettingAllowlist, Get-CollectorFixtureName, Resolve-LanePath, Assert-LaneRoot, Assert-OutsideWorktree, ConvertFrom-Sha256Listing, Assert-AssemblyFingerprint, Assert-RunSetting, Compare-LaneSnapshot, Assert-SamplesPhase, Assert-CollectorRun, Get-PowerSource, Get-PowerConditionFailure, ConvertTo-PowerCheckRecord, Add-PowerRefusal, Get-SchemeQueryProvider, ConvertTo-PowerSampleValue, ConvertFrom-PowerSampleRow, Test-SamplerCoverage, Resolve-RoleIdentity, Select-LocalDbCandidate, Initialize-HostSampleState, Get-HostSampleColumn, Get-HostSampleRole, Read-HostSample, Invoke-PowerSampler, Open-PowerSampler, Wait-PowerSamplerReady, ConvertTo-SamplerRefusalRecord, Close-PowerSampler, Get-SamplerLifecycleFailure

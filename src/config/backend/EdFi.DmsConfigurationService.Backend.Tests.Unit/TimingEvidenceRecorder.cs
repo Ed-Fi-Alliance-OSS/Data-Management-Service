@@ -22,8 +22,28 @@ internal sealed record TimingArm<TResponse>(
     Func<TResponse, bool> IsExpected
 );
 
-/// <summary>The two files one run writes.</summary>
-internal sealed record TimingRunFiles(string SamplesPath, string HeaderPath, int Samples);
+/// <summary>
+/// The three files one run writes: the measured samples, the warm-up samples and the header.
+/// <see cref="Samples"/> and <see cref="WarmupSamples"/> count rows, without the column row.
+/// </summary>
+internal sealed record TimingRunFiles(
+    string SamplesPath,
+    string WarmupPath,
+    string HeaderPath,
+    int Samples,
+    int WarmupSamples
+);
+
+/// <summary>
+/// The clocks a run reads: the high-resolution timestamp that times each request and stamps each
+/// round (on Windows, the system-wide QueryPerformanceCounter, which the power sampler also reads),
+/// its frequency, and the wall clock. Tests replace them to check what is read, and when.
+/// </summary>
+internal sealed record TimingClock(Func<long> Timestamp, long Frequency, Func<DateTime> UtcNow)
+{
+    public static TimingClock System { get; } =
+        new(Stopwatch.GetTimestamp, Stopwatch.Frequency, () => DateTime.UtcNow);
+}
 
 /// <summary>
 /// The settings of one run, read from <c>TIMING_EVIDENCE_*</c> environment variables and recorded
@@ -86,70 +106,74 @@ internal sealed record TimingRunSettings(
 /// <summary>
 /// Runs warm-up rounds and then measured rounds. In every round each arm sends exactly one request,
 /// in an order drawn from a generator seeded by the run's seed, so slow drift and ordering effects
-/// fall on every arm alike. Writes one CSV row per measured request (<c>round,arm,position,elapsed_us</c>)
-/// and a JSON header describing the run. It computes no statistics: the offline analysis does.
-/// Neither file holds a secret, a token, a connection string or a request body.
+/// fall on every arm alike. Each round reads one timestamp pair, <c>round_started_qpc</c> and
+/// <c>round_started_utc</c>, after its shuffle and before its first arm's timed span, so the stamp
+/// lies outside every timed request and draws nothing from the generator.
+///
+/// Every row (<c>round,arm,position,elapsed_us,round_started_qpc,round_started_utc</c>) is kept in
+/// memory until the last measured round has finished, and only then are the measured samples, the
+/// warm-up samples (<c>{label}-warmup-{boundary}-{stamp}.csv</c>, a name the measured file's
+/// <c>{label}-{boundary}-*</c> pattern cannot match) and the JSON header written; a rejected response
+/// in either phase aborts the run before any file exists. It computes no statistics: the offline
+/// analysis does. No file holds a secret, a token, a connection string or a request body.
 /// </summary>
 internal static class TimingEvidenceRecorder
 {
+    public const string Schema = "timing-evidence/2";
+    public const string Columns = "round,arm,position,elapsed_us,round_started_qpc,round_started_utc";
+
     private static readonly JsonSerializerOptions _headerOptions = new() { WriteIndented = true };
 
     // Without a byte order mark, so the first CSV column is read as "round" by any reader.
     private static readonly UTF8Encoding _utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
-    public static async Task<TimingRunFiles> RunAsync<TResponse>(
+    public static Task<TimingRunFiles> RunAsync<TResponse>(
         TimingRunSettings settings,
         string boundary,
         IReadOnlyDictionary<string, string> context,
         IReadOnlyList<TimingArm<TResponse>> arms
+    ) => RunAsync(settings, boundary, context, arms, TimingClock.System);
+
+    public static async Task<TimingRunFiles> RunAsync<TResponse>(
+        TimingRunSettings settings,
+        string boundary,
+        IReadOnlyDictionary<string, string> context,
+        IReadOnlyList<TimingArm<TResponse>> arms,
+        TimingClock clock
     )
     {
         Random order = new(settings.Seed);
         int[] positions = [.. Enumerable.Range(0, arms.Count)];
-        DateTimeOffset startedUtc = DateTimeOffset.UtcNow;
+        DateTime startedUtc = clock.UtcNow();
 
         // Warm-up rounds are discarded. They absorb first-use costs: JIT, connection set-up, and the
         // token manager's placeholder generation on its first unknown-client request.
-        for (int round = 0; round < settings.WarmupRounds; round++)
-        {
-            order.Shuffle(positions);
-            foreach (int position in positions)
-            {
-                _ = await MeasureAsync(arms[position]);
-            }
-        }
+        // Their samples are kept apart, in the warm-up file, and never enter the analysis.
+        List<string> warmupRows = new((settings.WarmupRounds * arms.Count) + 1) { Columns };
+        await RunRoundsAsync(settings.WarmupRounds, order, positions, arms, clock, warmupRows);
 
         int[] collectionsBefore = Collections();
-        List<string> rows = new(settings.Rounds * arms.Count) { "round,arm,position,elapsed_us" };
-        for (int round = 0; round < settings.Rounds; round++)
-        {
-            order.Shuffle(positions);
-            for (int slot = 0; slot < positions.Length; slot++)
-            {
-                TimingArm<TResponse> arm = arms[positions[slot]];
-                double elapsedMicroseconds = await MeasureAsync(arm);
-                rows.Add(
-                    string.Create(
-                        CultureInfo.InvariantCulture,
-                        $"{round},{arm.Name},{slot},{elapsedMicroseconds:F3}"
-                    )
-                );
-            }
-        }
+        List<string> rows = new((settings.Rounds * arms.Count) + 1) { Columns };
+        await RunRoundsAsync(settings.Rounds, order, positions, arms, clock, rows);
 
         int[] collectionsAfter = Collections();
-        DateTimeOffset finishedUtc = DateTimeOffset.UtcNow;
+        DateTime finishedUtc = clock.UtcNow();
 
         Directory.CreateDirectory(settings.OutputDirectory);
-        string stem =
-            $"{settings.RunLabel}-{boundary}-{startedUtc.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture)}";
+        string stamp = startedUtc.ToString("yyyyMMdd'T'HHmmss'Z'", CultureInfo.InvariantCulture);
+        string stem = $"{settings.RunLabel}-{boundary}-{stamp}";
         string samplesPath = Path.Combine(settings.OutputDirectory, $"{stem}.csv");
+        string warmupPath = Path.Combine(
+            settings.OutputDirectory,
+            $"{settings.RunLabel}-warmup-{boundary}-{stamp}.csv"
+        );
         string headerPath = Path.Combine(settings.OutputDirectory, $"{stem}.json");
+        await File.WriteAllLinesAsync(warmupPath, warmupRows, _utf8);
         await File.WriteAllLinesAsync(samplesPath, rows, _utf8);
 
         Dictionary<string, object> header = new()
         {
-            ["schema"] = "timing-evidence/1",
+            ["schema"] = Schema,
             ["boundary"] = boundary,
             ["run_label"] = settings.RunLabel,
             ["collector_commit"] = settings.Commit,
@@ -158,28 +182,63 @@ internal static class TimingEvidenceRecorder
             ["rounds"] = settings.Rounds,
             ["arms"] = arms.Select(arm => arm.Name).ToArray(),
             ["order"] = "each round: every arm once, order shuffled by System.Random(seed)",
+            ["columns"] = Columns.Split(','),
+            ["round_timestamp"] =
+                "round_started_qpc (the timestamp clock, at stopwatch_frequency) and round_started_utc, read once per round after its shuffle and before its first arm's timed span",
             ["samples_file"] = Path.GetFileName(samplesPath),
+            ["measured_rows"] = rows.Count - 1,
+            ["warmup_file"] = Path.GetFileName(warmupPath),
+            ["warmup_rows"] = warmupRows.Count - 1,
             ["started_utc"] = startedUtc.ToString("O", CultureInfo.InvariantCulture),
             ["finished_utc"] = finishedUtc.ToString("O", CultureInfo.InvariantCulture),
             ["os"] = RuntimeInformation.OSDescription,
             ["architecture"] = RuntimeInformation.ProcessArchitecture.ToString(),
             ["processor_count"] = Environment.ProcessorCount,
             ["framework"] = RuntimeInformation.FrameworkDescription,
-            ["stopwatch_frequency"] = Stopwatch.Frequency,
+            ["stopwatch_frequency"] = clock.Frequency,
             ["gc_collections_before"] = collectionsBefore,
             ["gc_collections_after"] = collectionsAfter,
             ["context"] = context,
         };
         await File.WriteAllTextAsync(headerPath, JsonSerializer.Serialize(header, _headerOptions), _utf8);
 
-        return new TimingRunFiles(samplesPath, headerPath, rows.Count - 1);
+        return new TimingRunFiles(samplesPath, warmupPath, headerPath, rows.Count - 1, warmupRows.Count - 1);
     }
 
-    private static async Task<double> MeasureAsync<TResponse>(TimingArm<TResponse> arm)
+    // One phase: per round, the shuffle, then the round's one timestamp pair, then every arm in turn.
+    private static async Task RunRoundsAsync<TResponse>(
+        int rounds,
+        Random order,
+        int[] positions,
+        IReadOnlyList<TimingArm<TResponse>> arms,
+        TimingClock clock,
+        List<string> rows
+    )
     {
-        long started = Stopwatch.GetTimestamp();
+        for (int round = 0; round < rounds; round++)
+        {
+            order.Shuffle(positions);
+            long roundStartedQpc = clock.Timestamp();
+            string roundStartedUtc = clock.UtcNow().ToString("O", CultureInfo.InvariantCulture);
+            for (int slot = 0; slot < positions.Length; slot++)
+            {
+                TimingArm<TResponse> arm = arms[positions[slot]];
+                double elapsedMicroseconds = await MeasureAsync(arm, clock);
+                rows.Add(
+                    string.Create(
+                        CultureInfo.InvariantCulture,
+                        $"{round},{arm.Name},{slot},{elapsedMicroseconds:F3},{roundStartedQpc},{roundStartedUtc}"
+                    )
+                );
+            }
+        }
+    }
+
+    private static async Task<double> MeasureAsync<TResponse>(TimingArm<TResponse> arm, TimingClock clock)
+    {
+        long started = clock.Timestamp();
         TResponse response = await arm.Send();
-        long elapsed = Stopwatch.GetTimestamp() - started;
+        long elapsed = clock.Timestamp() - started;
 
         if (!arm.IsExpected(response))
         {
@@ -188,7 +247,7 @@ internal static class TimingEvidenceRecorder
             );
         }
 
-        return elapsed * 1_000_000.0 / Stopwatch.Frequency;
+        return elapsed * 1_000_000.0 / clock.Frequency;
     }
 
     private static int[] Collections() =>

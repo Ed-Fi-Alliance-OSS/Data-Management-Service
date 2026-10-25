@@ -106,6 +106,32 @@ Coverage detects gaps. It cannot show what the power source did between two rows
 
 The sampler's console output, stop signal and any exception text go to `<Work>\runs`.
 
+## Collector files (`timing-evidence/2`, spec §18.6 M2)
+
+The shared recorder (`TimingEvidenceRecorder`, used by the endpoint and in-process collectors) writes three files, and only after the last measured round. A rejected response in either phase aborts the run with no file written.
+
+| File | Content |
+| --- | --- |
+| `<label>-<boundary>-<stamp>.csv` | Measured samples, one row per arm per round |
+| `<label>-warmup-<boundary>-<stamp>.csv` | Warm-up samples, in the same columns. The measured pattern cannot match this name, and it is never an analysis input. |
+| `<label>-<boundary>-<stamp>.json` | Header: schema `timing-evidence/2`, both file names, `measured_rows`, `warmup_rows`, the columns, `stopwatch_frequency`, and the earlier run fields |
+
+**Columns:** `round,arm,position,elapsed_us,round_started_qpc,round_started_utc`.
+
+- **Round timestamp:** each round reads one timestamp pair after its shuffle and before its first arm's timed span, and repeats it on every row of the round. The timestamp is the request clock, which is the system-wide QueryPerformanceCounter on Windows, as the sampler's `qpc` is.
+- **Unchanged:** the random draws, and with them the arm order, the timed span, and the response check after the clock stops.
+- **Readers:** `analyze_timing.py` and `diagnostics.py` read by column name and ignore the extra columns.
+
+**What `Assert-CollectorRun` requires** of the files written after the collector started:
+
+- exactly one measured file, one warm-up file and one header;
+- the header at `timing-evidence/2`, matching the run (label, boundary, rounds, warm-up rounds, seed, the three endpoint arms), and naming both files with their row counts;
+- in each file, exactly the columns above. Every round 0..N−1 must hold each arm and each position once, one timestamp pair, a `round_started_qpc` above the previous round's, finite non-negative samples, and a round-trip `round_started_utc`.
+
+Anything else, including a previous-format file, fails the run. A run label may not contain the segment `warmup`, so that no label's measured pattern can reach another label's warm-up file.
+
+**Before any E1 collection (M3):** run and analysis provenance must also pin the exact commit and SHA-256 of `diagnostics.py`, which is outside the historical evidence manifest. That wiring is M3's, with its own review.
+
 ## Identities
 
 | Role | Commit | Notes |
