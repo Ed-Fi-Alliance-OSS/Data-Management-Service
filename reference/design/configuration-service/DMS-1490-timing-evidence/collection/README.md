@@ -51,7 +51,7 @@ Unknown (255) and every failure are not P.
 - **The collector launch is the attempt boundary.** Provenance records `attempt_started`, and the seed's launch record is written immediately before the launch (see the E1 pilot stage).
 - **Refusals are not attempts.** Each is appended as one JSON line to `refusals.log` in the run's staging folder (`<Stage>\pilot` or `<Stage>\final`), with the check, the unmet parts of P and the raw power fields. The file is never rewritten. After correcting the environment, for example by plugging in, the same run may be started again.
 - **What is recorded:** every check, met or not, in `power_checks` in provenance. A failed scheme query is recorded as its status and a fixed reason code, never as exception text. Exception text from a failed observation goes to `<Work>\runs` only.
-- **What is not yet implemented:** the offline diagnostics (§18.3) and the collector's round timestamps and warm-up file (§18.6 M2). Provenance therefore records `environment_protocol.complete = false`, and no run of these lanes is a complete E1 run. No collection is authorised with them.
+- **What is pending:** the offline diagnostics (§18.3) and the collector's round timestamps and warm-up file (§18.6 M2) are implemented, but no live run has validated them and no run's evidence has been independently accepted. Provenance therefore still records `environment_protocol.complete = false`, and no run of these lanes is a complete E1 run. Each collection still needs its own approval.
 
 ## Power sampler (spec §18.2)
 
@@ -178,7 +178,11 @@ These are machine checks only: passing them never stands for the review and appr
   - A failure refuses the run before setup; it is not an attempt.
 - **Targets:** each prepared target is verified against the approved commit and tree, not the ones `target.json` names (which must agree).
   - Every tracked file must have its blob's raw bytes, with no line-ending conversion.
-  - Other files are allowed only as the root `target.json` or below a directory named exactly `bin` or `obj`.
+  - Other files are allowed only in these categories, each derived from the approved tree, never from the target:
+    - the root `target.json`, or below a directory named exactly `bin` or `obj` (`allowed_extra`);
+    - a claims file staged by the target's setup directly in `eng/docker-compose/.e2e-claims`. Its name, ignoring case as the staging helper does, must belong to exactly one direct `*-claims.json` file of the two tracked fragment folders, and its raw bytes must be that file's blob. Each is recorded with its source path and blob (`staged_claims`). Anything else below that folder is refused, even below `bin` or `obj`;
+    - a compiler analyzer log named exactly `results.sarif`, directly in a folder that holds a tracked `*.csproj`. Its path and SHA-256 are recorded (`analyzer_logs`); its content is not checked.
+  - `allowed_extra_by_category` counts each category and `untracked_files` their total. A rejected file stays an extra file and fails the check.
   - Nothing is repaired or rebuilt.
   - The LocalDB lane's five host-assembly fingerprints are still checked.
 - **Analysis:** `analysis-manifest.json` pins both scripts as they are in the approved commit (blob id, SHA-256, version), with `analyze_timing.py` also matching `SHA256SUMS.txt`, the Python and numpy versions, and the fixed parameters.

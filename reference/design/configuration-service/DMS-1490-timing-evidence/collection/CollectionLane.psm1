@@ -1424,6 +1424,17 @@ $script:CollectorOutputPath = 'src/config/tests/EdFi.DmsConfigurationService.Tes
 $script:CollectorManifestSchema = 'collector-build/1'
 $script:AnalysisManifestSchema = 'analysis-identity/1'
 
+# Generated files a prepared target's own tracked code writes, accepted only when the approved tree
+# vouches for them: the claims workspace that Initialize-E2EClaimsWorkspace stages from its two
+# fragment folders, and the analyzer log the tracked Directory.Build.props files have the compiler
+# write beside each project.
+$script:StagedClaimsDirectory = 'eng/docker-compose/.e2e-claims'
+$script:ClaimsFragmentSources = @(
+    'src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims'
+    'src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments'
+)
+$script:AnalyzerLogName = 'results.sarif'
+
 # The analysis scripts and the fixed parameters every E1 analysis uses.
 $script:AnalysisScripts = [ordered]@{
     analyze_timing = 'reference/design/configuration-service/DMS-1490-timing-evidence/analyze_timing.py'
@@ -1580,11 +1591,20 @@ function Assert-CollectorBuild {
 .DESCRIPTION
     The commit and tree come from the caller (the approval), never from target.json, which must
     agree with them. Every path in the commit's tree must exist in the target with the raw bytes of
-    its blob (Get-GitBlobId, no line-ending conversion). Any other file is allowed only as the root
-    target.json or below a directory named exactly bin or obj (a directory component, not a substring
-    of a name); a tracked file under such a directory is still verified. A junction or symbolic link
-    anywhere is refused. Nothing is repaired. Returns a summary of counts and the first differing
-    paths; throws target_source_differs or another fixed code when anything differs.
+    its blob (Get-GitBlobId, no line-ending conversion). Any other file is allowed only as:
+    - the root target.json, or below a directory named exactly bin or obj (a directory component,
+      not a substring of a name), counted in allowed_extra;
+    - a staged claims file directly in eng/docker-compose/.e2e-claims whose name, ignoring case as
+      the staging helper does, belongs to exactly one direct *-claims.json file of the two tracked
+      fragment folders, and whose raw bytes are that file's blob. Everything else below that
+      directory is refused, even below a bin or obj directory;
+    - a file named exactly results.sarif directly in a directory that holds a tracked *.csproj. It is
+      a build log: its SHA-256 is recorded, its content is not checked.
+    Exemptions come only from the approved tree, never from the target. A tracked file under any of
+    these directories is still verified. A junction or symbolic link anywhere is refused. Nothing is
+    repaired. Returns a summary of counts, the accepted staged claims with their sources and blobs,
+    the analyzer logs with their hashes, and the first differing paths; throws
+    target_source_differs or another fixed code when anything differs.
 #>
 function Assert-TargetSource {
     param(
@@ -1612,6 +1632,20 @@ function Assert-TargetSource {
     }
     if ($tracked.Count -eq 0) { throw 'target_tree_unreadable: the commit''s tree is empty.' }
 
+    # Each fragment name's one tracked source, keyed without case; a name in both sources is
+    # ambiguous ($null) and never accepted. And every directory with a tracked project file.
+    $fragments = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    $projectDirectories = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($path in $tracked.Keys) {
+        $slash = $path.LastIndexOf('/')
+        $directory = if ($slash -lt 0) { '' } else { $path.Substring(0, $slash) }
+        $name = $path.Substring($slash + 1)
+        if ($name.EndsWith('.csproj', [System.StringComparison]::OrdinalIgnoreCase)) { [void]$projectDirectories.Add($directory) }
+        if ($name.EndsWith('-claims.json', [System.StringComparison]::OrdinalIgnoreCase) -and @($script:ClaimsFragmentSources | Where-Object { $_ -ieq $directory }).Count -gt 0) {
+            $fragments[$name] = if ($fragments.ContainsKey($name)) { $null } else { [ordered]@{ source = $path; blob = $tracked[$path] } }
+        }
+    }
+
     $root = Resolve-LanePath $TargetRoot
     $missing = [System.Collections.Generic.List[string]]::new()
     $changed = [System.Collections.Generic.List[string]]::new()
@@ -1622,24 +1656,48 @@ function Assert-TargetSource {
     }
     $extra = [System.Collections.Generic.List[string]]::new()
     $allowed = 0
+    $stagedClaims = [System.Collections.Generic.List[object]]::new()
+    $analyzerLogs = [System.Collections.Generic.List[object]]::new()
     foreach ($item in Get-ChildItem -LiteralPath $root -Recurse -Force) {
         if ($item.Attributes.HasFlag([System.IO.FileAttributes]::ReparsePoint)) { throw "target_reparse_point: $([System.IO.Path]::GetRelativePath($root, $item.FullName)) is a junction or symbolic link." }
         if ($item.PSIsContainer) { continue }
         $relative = [System.IO.Path]::GetRelativePath($root, $item.FullName).Replace('\', '/')
         if ($tracked.ContainsKey($relative)) { continue }
         $directories = @($relative.Split('/') | Select-Object -SkipLast 1)
+        $directory = $directories -join '/'
+        # The claims workspace has only its own rule, ahead of the bin/obj allowance.
+        if ($relative.StartsWith("$script:StagedClaimsDirectory/", [System.StringComparison]::OrdinalIgnoreCase)) {
+            $fragment = if ($directory -ieq $script:StagedClaimsDirectory -and $fragments.ContainsKey($item.Name)) { $fragments[$item.Name] } else { $null }
+            if ($null -ne $fragment -and (Get-GitBlobId $item.FullName) -ceq $fragment.blob) { $stagedClaims.Add([ordered]@{ path = $relative; source = $fragment.source; blob = $fragment.blob }) }
+            else { $extra.Add($relative) }
+            continue
+        }
         if ($relative -ceq 'target.json' -or @($directories | Where-Object { $_ -ieq 'bin' -or $_ -ieq 'obj' }).Count -gt 0) { $allowed++; continue }
+        if ($item.Name -ceq $script:AnalyzerLogName -and $projectDirectories.Contains($directory)) {
+            $analyzerLogs.Add([ordered]@{ path = $relative; sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant() })
+            continue
+        }
         $extra.Add($relative)
     }
     $summary = [ordered]@{
-        commit          = $Commit
-        tree            = $Tree
-        tracked_files   = $tracked.Count
-        verified_files  = $tracked.Count - $missing.Count - $changed.Count
-        missing         = @($missing | Sort-Object | Select-Object -First 20)
-        changed         = @($changed | Sort-Object | Select-Object -First 20)
-        extra           = @($extra | Sort-Object | Select-Object -First 20)
-        allowed_extra   = $allowed
+        commit                    = $Commit
+        tree                      = $Tree
+        tracked_files             = $tracked.Count
+        verified_files            = $tracked.Count - $missing.Count - $changed.Count
+        missing                   = @($missing | Sort-Object | Select-Object -First 20)
+        changed                   = @($changed | Sort-Object | Select-Object -First 20)
+        extra                     = @($extra | Sort-Object | Select-Object -First 20)
+        allowed_extra             = $allowed
+        staged_claims_verified    = $stagedClaims.Count
+        staged_claims             = @($stagedClaims | Sort-Object { $_.path } -Culture ([cultureinfo]::InvariantCulture))
+        analyzer_logs             = @($analyzerLogs | Sort-Object { $_.path } -Culture ([cultureinfo]::InvariantCulture))
+        # A returned summary has no extra file, so every untracked file is in exactly one category.
+        untracked_files           = $allowed + $stagedClaims.Count + $analyzerLogs.Count
+        allowed_extra_by_category = [ordered]@{
+            target_json_or_build_output = $allowed
+            staged_claims               = $stagedClaims.Count
+            analyzer_logs               = $analyzerLogs.Count
+        }
     }
     if ($missing.Count + $changed.Count + $extra.Count -gt 0) {
         throw "target_source_differs: $($missing.Count) missing, $($changed.Count) changed, $($extra.Count) extra (first: $(@($summary.missing + $summary.changed + $summary.extra | Select-Object -First 5) -join ', '))."

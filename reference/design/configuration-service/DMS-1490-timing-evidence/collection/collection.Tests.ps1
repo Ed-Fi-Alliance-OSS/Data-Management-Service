@@ -1871,6 +1871,121 @@ Describe 'Target source identity' {
     }
 }
 
+Describe 'Target source generated files' {
+    BeforeEach {
+        # A repository with the two claims fragment folders and two projects, and a target extracted
+        # from its commit that holds what setup and a build generate: two staged claims, an analyzer
+        # log beside a tracked project and build output.
+        $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $repository = Join-Path $root 'repository'
+        $target = Join-Path $root 'target'
+        $additional = 'src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims'
+        $fragments = 'src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments'
+        $workspace = 'eng/docker-compose/.e2e-claims'
+        $write = {
+            param([string] $Root, [string] $Relative, [string] $Text)
+            $file = Join-Path $Root $Relative
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
+            [System.IO.File]::WriteAllText($file, $Text)
+        }
+        $files = [ordered]@{
+            'src/a.txt'                                = "alpha`n"
+            "$additional/001-alpha-claims.json"        = '{"alpha":1}'
+            "$additional/003-shared-claims.json"       = '{"shared":"additional"}'
+            "$additional/README.md"                    = "readme`n"
+            "$additional/nested/009-nested-claims.json" = '{"nested":1}'
+            "$fragments/002-beta-claims.json"          = '{"beta":2}'
+            "$fragments/003-Shared-claims.json"        = '{"shared":"fragments"}'
+            'proj/App/App.csproj'                      = '<Project />'
+            'proj/Lib/Lib.csproj'                      = '<Project />'
+            'proj/Lib/results.sarif'                   = 'tracked log'
+            'proj/Docs/notes.txt'                      = "notes`n"
+        }
+        foreach ($file in $files.GetEnumerator()) { & $write $repository $file.Key $file.Value }
+        git -C $repository init -q 2>$null
+        git -C $repository -c core.autocrlf=false add -A 2>$null
+        git -C $repository -c core.autocrlf=false -c user.name=test -c user.email=test@example.invalid commit -q -m initial 2>$null
+        $commit = ((git -C $repository rev-parse HEAD) | Out-String).Trim()
+        $tree = ((git -C $repository rev-parse 'HEAD^{tree}') | Out-String).Trim()
+        Copy-Item -LiteralPath $repository -Destination $target -Recurse
+        Remove-Item -LiteralPath (Join-Path $target '.git') -Recurse -Force
+        @{ commit = $commit; tree = $tree } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $target 'target.json')
+        $check = @{ RepositoryRoot = $repository; TargetRoot = $target; Commit = $commit; Tree = $tree }
+
+        # Copies a tracked file's bytes from the repository to a path in the target.
+        $stage = {
+            param([string] $Source, [string] $Destination)
+            $file = Join-Path $target $Destination
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $file) | Out-Null
+            Copy-Item -LiteralPath (Join-Path $repository $Source) -Destination $file
+        }
+        & $stage "$additional/001-alpha-claims.json" "$workspace/001-alpha-claims.json"
+        & $stage "$fragments/002-beta-claims.json" "$workspace/002-beta-claims.json"
+        & $write $target 'proj/App/results.sarif' '{"runs":[]}'
+        & $write $target 'src/bin/Release/app.dll' 'dll'
+        $blob = { param([string] $Path) ((git -C $repository rev-parse "HEAD:$Path") | Out-String).Trim() }
+        $fixture = @{ Target = $target; Write = $write; Stage = $stage; Additional = $additional; Fragments = $fragments; Workspace = $workspace }
+    }
+
+    It 'accepts verified staged claims and an analyzer log beside a tracked project, and records each by category' {
+        $summary = Assert-TargetSource @check
+        $summary.tracked_files | Should -Be 11
+        $summary.verified_files | Should -Be 11
+        $summary.extra | Should -BeNullOrEmpty
+        $summary.allowed_extra | Should -Be 2
+        $summary.staged_claims_verified | Should -Be 2
+        ConvertTo-Json -Compress -InputObject $summary.staged_claims | Should -Be (ConvertTo-Json -Compress -InputObject @(
+                [ordered]@{ path = "$workspace/001-alpha-claims.json"; source = "$additional/001-alpha-claims.json"; blob = (& $blob "$additional/001-alpha-claims.json") }
+                [ordered]@{ path = "$workspace/002-beta-claims.json"; source = "$fragments/002-beta-claims.json"; blob = (& $blob "$fragments/002-beta-claims.json") }
+            ))
+        $logHash = (Get-FileHash -LiteralPath (Join-Path $target 'proj/App/results.sarif') -Algorithm SHA256).Hash.ToLowerInvariant()
+        ConvertTo-Json -Compress -InputObject $summary.analyzer_logs | Should -Be (ConvertTo-Json -Compress -InputObject @([ordered]@{ path = 'proj/App/results.sarif'; sha256 = $logHash }))
+        $summary.untracked_files | Should -Be 5
+        ConvertTo-Json -Compress -InputObject $summary.allowed_extra_by_category | Should -Be '{"target_json_or_build_output":2,"staged_claims":2,"analyzer_logs":1}'
+    }
+
+    It 'matches a staged name to its source without case, as the staging helper does' {
+        Remove-Item -LiteralPath (Join-Path $target "$workspace/001-alpha-claims.json")
+        & $stage "$additional/001-alpha-claims.json" "$workspace/001-ALPHA-claims.json"
+        $summary = Assert-TargetSource @check
+        $summary.staged_claims[0].path | Should -BeExactly "$workspace/001-ALPHA-claims.json"
+        $summary.staged_claims[0].source | Should -BeExactly "$additional/001-alpha-claims.json"
+    }
+
+    It 'still verifies a tracked analyzer log' {
+        & $write $target 'proj/Lib/results.sarif' 'changed log'
+        { Assert-TargetSource @check } | Should -Throw '*0 missing, 1 changed, 0 extra (first: proj/Lib/results.sarif)*'
+    }
+
+    It 'refuses <Name>, counted as extra' -ForEach @(
+        @{ Name = 'a staged fragment whose bytes changed'; Expected = '.e2e-claims/001-alpha-claims.json'; Arrange = { param($f) & $f.Write $f.Target "$($f.Workspace)/001-alpha-claims.json" '{"alpha":2}' } }
+        @{ Name = 'a staged name holding another fragment''s blob'; Expected = '.e2e-claims/002-beta-claims.json'; Arrange = { param($f) Remove-Item -LiteralPath (Join-Path $f.Target "$($f.Workspace)/002-beta-claims.json"); & $f.Stage "$($f.Additional)/001-alpha-claims.json" "$($f.Workspace)/002-beta-claims.json" } }
+        @{ Name = 'an unknown staged claims file'; Expected = '.e2e-claims/099-unknown-claims.json'; Arrange = { param($f) & $f.Write $f.Target "$($f.Workspace)/099-unknown-claims.json" '{}' } }
+        @{ Name = 'a staged copy of a tracked non-claims source file'; Expected = '.e2e-claims/README.md'; Arrange = { param($f) & $f.Stage "$($f.Additional)/README.md" "$($f.Workspace)/README.md" } }
+        @{ Name = 'a staged fragment copy under another extension'; Expected = '.e2e-claims/001-alpha-claims.json.bak'; Arrange = { param($f) & $f.Stage "$($f.Additional)/001-alpha-claims.json" "$($f.Workspace)/001-alpha-claims.json.bak" } }
+        @{ Name = 'a fragment copy in a subfolder of the workspace'; Expected = '.e2e-claims/sub/001-alpha-claims.json'; Arrange = { param($f) & $f.Stage "$($f.Additional)/001-alpha-claims.json" "$($f.Workspace)/sub/001-alpha-claims.json" } }
+        @{ Name = 'a fragment copy below bin inside the workspace'; Expected = '.e2e-claims/bin/001-alpha-claims.json'; Arrange = { param($f) & $f.Stage "$($f.Additional)/001-alpha-claims.json" "$($f.Workspace)/bin/001-alpha-claims.json" } }
+        @{ Name = 'build output below obj inside the workspace'; Expected = '.e2e-claims/obj/project.assets.json'; Arrange = { param($f) & $f.Write $f.Target "$($f.Workspace)/obj/project.assets.json" '{}' } }
+        @{ Name = 'a fragment copy in a .e2e-claims folder at another path'; Expected = 'src/eng/docker-compose/.e2e-claims/001-alpha-claims.json'; Arrange = { param($f) & $f.Stage "$($f.Additional)/001-alpha-claims.json" "src/$($f.Workspace)/001-alpha-claims.json" } }
+        @{ Name = 'a copy of a fragment tracked only in a subfolder of a source'; Expected = '.e2e-claims/009-nested-claims.json'; Arrange = { param($f) & $f.Stage "$($f.Additional)/nested/009-nested-claims.json" "$($f.Workspace)/009-nested-claims.json" } }
+        @{ Name = 'a fragment name tracked in both sources (first source''s bytes)'; Expected = '.e2e-claims/003-shared-claims.json'; Arrange = { param($f) & $f.Stage "$($f.Additional)/003-shared-claims.json" "$($f.Workspace)/003-shared-claims.json" } }
+        @{ Name = 'a fragment name tracked in both sources (second source''s bytes)'; Expected = '.e2e-claims/003-Shared-claims.json'; Arrange = { param($f) & $f.Stage "$($f.Fragments)/003-Shared-claims.json" "$($f.Workspace)/003-Shared-claims.json" } }
+        @{ Name = 'an analyzer log in a folder without a project'; Expected = 'proj/Docs/results.sarif'; Arrange = { param($f) & $f.Write $f.Target 'proj/Docs/results.sarif' '{}' } }
+        @{ Name = 'an analyzer log at the target root'; Expected = 'results.sarif'; Arrange = { param($f) & $f.Write $f.Target 'results.sarif' '{}' } }
+        @{ Name = 'an analyzer log in a subfolder of a project'; Expected = 'proj/App/sub/results.sarif'; Arrange = { param($f) & $f.Write $f.Target 'proj/App/sub/results.sarif' '{}' } }
+        @{ Name = 'an analyzer log named in another case'; Expected = 'proj/App/Results.sarif'; Arrange = { param($f) Remove-Item -LiteralPath (Join-Path $f.Target 'proj/App/results.sarif'); & $f.Write $f.Target 'proj/App/Results.sarif' '{}' } }
+    ) {
+        & $Arrange $fixture
+        { Assert-TargetSource @check } | Should -Throw "*target_source_differs: 0 missing, 0 changed, 1 extra (first: *$Expected)*"
+    }
+
+    It 'refuses an analyzer log beside a project file that is not tracked' {
+        & $write $target 'proj/Untracked/Untracked.csproj' '<Project />'
+        & $write $target 'proj/Untracked/results.sarif' '{}'
+        { Assert-TargetSource @check } | Should -Throw '*0 missing, 0 changed, 2 extra (first: *proj/Untracked/results.sarif*'
+    }
+}
+
 Describe 'Analysis identity' {
     BeforeAll {
         # A script's identity as the record stores it, computed here independently of the module.

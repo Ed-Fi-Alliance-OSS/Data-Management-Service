@@ -39,8 +39,9 @@
     launch record (launch-endpoint-mssql-<label>-seed<seed>.json) is created exclusively and
     flushed, and the collector launches only once it exists. A run whose seed already has a launch
     record stops before anything is set up, even if the earlier run never wrote its provenance.
-    Protocol E1's power checks and sampler coverage are implemented; its diagnostics and collector
-    timestamps are not, so no run of this script is a complete E1 run.
+    Protocol E1's power checks, sampler coverage, diagnostics and collector timestamps are
+    implemented, but live validation and independent acceptance are pending, so provenance keeps
+    complete = false and no run of this script is a complete E1 run.
 
     Written to -OutputDir (the evidence staging folder): the samples CSV and header JSON,
     provenance-*.json, the launch record, refusals.log, the sampler's host-power-*.csv, host-optional-*.csv and
