@@ -1,7 +1,5 @@
 # Evidence files are kept byte-for-byte: their SHA-256 values are recorded in SHA256SUMS.txt
 # and in each analysis output, so line endings must not be normalised.
-p3.0-pilot/** -text
-p3.2-final/** -text
-a5-pilot/** -text
 a5-final/** -text
+step1-mssql/** -text
 SHA256SUMS.txt -text
