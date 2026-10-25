@@ -229,6 +229,18 @@ BeforeAll {
     }
 
     $global:TestStartUtc = [datetime]::new(2026, 10, 24, 11, 59, 0, [DateTimeKind]::Utc)
+    $global:TestCommit = '1111111111111111111111111111111111111111'
+
+    # A collector checkout's Release output (two files) and the build record for it.
+    function global:New-TestCollectorBuild([string] $CollectorRoot, [string] $ManifestPath) {
+        $output = Join-Path $CollectorRoot 'src\config\tests\EdFi.DmsConfigurationService.Tests.E2E\bin\Release\net10.0'
+        New-Item -ItemType Directory -Force -Path (Join-Path $output 'runtimes') | Out-Null
+        Set-Content -LiteralPath (Join-Path $output 'EdFi.DmsConfigurationService.Tests.E2E.dll') -Value 'collector assembly' -NoNewline
+        Set-Content -LiteralPath (Join-Path $output 'runtimes\native.dll') -Value 'native' -NoNewline
+        Get-CollectorBuildManifest -CollectorRoot $CollectorRoot -Commit $global:TestCommit -Tree $global:TestCommit -BuildCommand 'dotnet build collector -c Release --no-incremental --nologo' -SdkVersion '10.0.100' |
+            ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $ManifestPath -Encoding utf8NoBOM
+        $output
+    }
 
     function global:Write-TestReady {
         param(
@@ -434,7 +446,7 @@ Describe 'prepare-target.ps1 with synthetic command output' {
     }
 
     AfterAll {
-        Remove-Item -LiteralPath Function:\global:git, Function:\global:tar, Function:\global:dotnet -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath Function:\git, Function:\tar, Function:\dotnet -ErrorAction SilentlyContinue
     }
 
     BeforeEach {
@@ -1708,6 +1720,583 @@ Describe 'Role selection' {
     }
 }
 
+Describe 'Collector build identity' {
+    BeforeEach {
+        $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $collector = Join-Path $root 'collector'
+        $manifest = Join-Path $root 'collector-build.json'
+        $output = New-TestCollectorBuild $collector $manifest
+        $check = @{ CollectorRoot = $collector; ManifestPath = $manifest; ExpectedCommit = $global:TestCommit; HeadCommit = $global:TestCommit; HeadTree = $global:TestCommit }
+        $edit = {
+            param([scriptblock] $Change)
+            $record = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json -AsHashtable
+            & $Change $record
+            $record | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $manifest -Encoding utf8NoBOM
+        }
+    }
+
+    It 'accepts the recorded build and returns the record''s hash and file count' {
+        $result = Assert-CollectorBuild @check
+        $result.files | Should -Be 2
+        $result.manifest_sha256 | Should -Be (Get-FileHash -LiteralPath $manifest -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+
+    It 'records every output file with its size and SHA-256, and how it was built' {
+        $record = Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json
+        @($record.files.path) | Should -Be @('EdFi.DmsConfigurationService.Tests.E2E.dll', 'runtimes/native.dll')
+        $record.files[0].size | Should -Be 18
+        $record.files[0].sha256 | Should -Be (Get-FileHash -LiteralPath (Join-Path $output 'EdFi.DmsConfigurationService.Tests.E2E.dll') -Algorithm SHA256).Hash.ToLowerInvariant()
+        $record.build.command | Should -BeLike 'dotnet build*--no-incremental*'
+        $record.output | Should -Be 'src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/bin/Release/net10.0'
+    }
+
+    It 'refuses an output with <Name>' -ForEach @(
+        @{ Name = 'a changed file of the same size'; Change = { param($o) Set-Content -LiteralPath (Join-Path $o 'runtimes\native.dll') -Value 'NATIVE' -NoNewline }; Code = '*collector_files_differ: 0 missing, 0 extra, 1 changed*' }
+        @{ Name = 'a missing file'; Change = { param($o) Remove-Item -LiteralPath (Join-Path $o 'runtimes\native.dll') }; Code = '*1 missing, 0 extra*' }
+        @{ Name = 'an extra file'; Change = { param($o) Set-Content -LiteralPath (Join-Path $o 'stale.pdb') -Value 'stale' }; Code = '*0 missing, 1 extra*' }
+    ) {
+        & $Change $output
+        { Assert-CollectorBuild @check } | Should -Throw $Code
+    }
+
+    It 'refuses an output folder that holds a junction' {
+        New-Item -ItemType Junction -Path (Join-Path $output 'linked') -Target $TestDrive | Out-Null
+        try { { Assert-CollectorBuild @check } | Should -Throw '*junction*' }
+        finally { [System.IO.Directory]::Delete((Join-Path $output 'linked')) }
+    }
+
+    It 'refuses a checkout at <Name>' -ForEach @(
+        @{ Name = 'another commit than the approved one'; Key = 'ExpectedCommit' }
+        @{ Name = 'another HEAD than the record'; Key = 'HeadCommit' }
+        @{ Name = 'another tree than the record'; Key = 'HeadTree' }
+    ) {
+        $check[$Key] = '2222222222222222222222222222222222222222'
+        { Assert-CollectorBuild @check } | Should -Throw '*collector_commit_mismatch*'
+    }
+
+    It 'refuses an expected commit that is not a full id' {
+        $check.ExpectedCommit = '1111111'
+        { Assert-CollectorBuild @check } | Should -Throw '*collector_expected_commit_invalid*'
+    }
+
+    It 'refuses, before opening any listed file, a record with <Name>' -ForEach @(
+        @{ Name = 'another schema'; Change = { param($r) $r.schema = 'collector-build/0' } }
+        @{ Name = 'another output folder'; Change = { param($r) $r.output = 'src/config/bin' } }
+        @{ Name = 'a short commit'; Change = { param($r) $r.commit = '1111' } }
+        @{ Name = 'no build command'; Change = { param($r) $r.build.command = '' } }
+        @{ Name = 'no files'; Change = { param($r) $r.files = @() } }
+        @{ Name = 'a path that climbs out'; Change = { param($r) $r.files[0].path = '../../../secret.txt' } }
+        @{ Name = 'a rooted path'; Change = { param($r) $r.files[0].path = 'C:/Windows/win.ini' } }
+        @{ Name = 'a backslash path'; Change = { param($r) $r.files[1].path = 'runtimes\native.dll' } }
+        @{ Name = 'an empty segment'; Change = { param($r) $r.files[1].path = 'runtimes//native.dll' } }
+        @{ Name = 'a path listed twice in another case'; Change = { param($r) $r.files[1].path = 'EDFI.DmsConfigurationService.Tests.E2E.dll' } }
+        @{ Name = 'a malformed hash'; Change = { param($r) $r.files[0].sha256 = 'abc' } }
+        @{ Name = 'a negative size'; Change = { param($r) $r.files[0].size = -1 } }
+    ) {
+        & $edit $Change
+        { Assert-CollectorBuild @check } | Should -Throw '*collector_manifest_invalid*'
+    }
+
+    It 'refuses a record that is not JSON' {
+        '{ not json' | Set-Content -LiteralPath $manifest
+        { Assert-CollectorBuild @check } | Should -Throw '*collector_manifest_invalid*'
+    }
+
+    It 'hashes a file as git hash-object --no-filters does' {
+        $file = Join-Path $root 'crlf.txt'
+        [System.IO.File]::WriteAllBytes($file, [byte[]](0x61, 0x0D, 0x0A, 0x62))
+        Get-GitBlobId $file | Should -Be ((git hash-object --no-filters $file) | Out-String).Trim()
+    }
+}
+
+Describe 'Target source identity' {
+    BeforeEach {
+        # A small repository with a tracked file under bin/, and a target extracted from its commit.
+        $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $repository = Join-Path $root 'repository'
+        $target = Join-Path $root 'target'
+        New-Item -ItemType Directory -Force -Path (Join-Path $repository 'src'), (Join-Path $repository 'bin') | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $repository 'src\a.txt'), "alpha`n")
+        [System.IO.File]::WriteAllText((Join-Path $repository 'bin\tracked.txt'), "tracked`n")
+        [System.IO.File]::WriteAllText((Join-Path $repository 'README.md'), "readme`n")
+        git -C $repository init -q 2>$null
+        git -C $repository -c core.autocrlf=false add -A 2>$null
+        git -C $repository -c core.autocrlf=false -c user.name=test -c user.email=test@example.invalid commit -q -m initial 2>$null
+        $commit = ((git -C $repository rev-parse HEAD) | Out-String).Trim()
+        $tree = ((git -C $repository rev-parse 'HEAD^{tree}') | Out-String).Trim()
+        Copy-Item -LiteralPath $repository -Destination $target -Recurse
+        Remove-Item -LiteralPath (Join-Path $target '.git') -Recurse -Force
+        @{ commit = $commit; tree = $tree } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $target 'target.json')
+        $check = @{ RepositoryRoot = $repository; TargetRoot = $target; Commit = $commit; Tree = $tree }
+    }
+
+    It 'accepts the pinned files with target.json and build output under bin and obj directories' {
+        New-Item -ItemType Directory -Force -Path (Join-Path $target 'obj'), (Join-Path $target 'src\bin\Release') | Out-Null
+        Set-Content -LiteralPath (Join-Path $target 'obj\project.assets.json') -Value '{}'
+        Set-Content -LiteralPath (Join-Path $target 'src\bin\Release\app.dll') -Value 'dll'
+        $summary = Assert-TargetSource @check
+        $summary.tracked_files | Should -Be 3
+        $summary.verified_files | Should -Be 3
+        $summary.allowed_extra | Should -Be 3
+    }
+
+    It 'refuses <Name>' -ForEach @(
+        @{ Name = 'a tracked file whose line endings changed'; Change = { param($t) [System.IO.File]::WriteAllText((Join-Path $t 'src\a.txt'), "alpha`r`n") }; Code = '*1 changed*' }
+        @{ Name = 'a changed tracked file under a bin directory'; Change = { param($t) [System.IO.File]::WriteAllText((Join-Path $t 'bin\tracked.txt'), "changed`n") }; Code = '*1 changed*' }
+        @{ Name = 'a missing tracked file'; Change = { param($t) Remove-Item -LiteralPath (Join-Path $t 'README.md') }; Code = '*1 missing*' }
+        @{ Name = 'an extra source file'; Change = { param($t) Set-Content -LiteralPath (Join-Path $t 'src\extra.cs') -Value 'x' }; Code = '*1 extra*' }
+        @{ Name = 'an extra file whose folder only contains the word bin'; Change = { param($t) New-Item -ItemType Directory -Path (Join-Path $t 'binary') | Out-Null; Set-Content -LiteralPath (Join-Path $t 'binary\x.txt') -Value 'x' }; Code = '*1 extra*' }
+        @{ Name = 'an extra file named like obj'; Change = { param($t) Set-Content -LiteralPath (Join-Path $t 'src\obj') -Value 'x' }; Code = '*1 extra*' }
+        @{ Name = 'an extra target.json below the root'; Change = { param($t) Set-Content -LiteralPath (Join-Path $t 'src\target.json') -Value '{}' }; Code = '*1 extra*' }
+    ) {
+        & $Change $target
+        { Assert-TargetSource @check } | Should -Throw "*target_source_differs*"
+        { Assert-TargetSource @check } | Should -Throw $Code
+    }
+
+    It 'refuses a target.json naming another commit' {
+        @{ commit = '2222222222222222222222222222222222222222'; tree = $check.Tree } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $target 'target.json')
+        { Assert-TargetSource @check } | Should -Throw '*target_metadata_mismatch*'
+    }
+
+    It 'refuses an approved tree that the commit does not have, whatever target.json says' {
+        $check.Tree = '3333333333333333333333333333333333333333'
+        { Assert-TargetSource @check } | Should -Throw '*target_tree_mismatch*'
+    }
+
+    It 'refuses a target that holds a junction' {
+        New-Item -ItemType Junction -Path (Join-Path $target 'linked') -Target $root | Out-Null
+        try { { Assert-TargetSource @check } | Should -Throw '*target_reparse_point*' }
+        finally { [System.IO.Directory]::Delete((Join-Path $target 'linked')) }
+    }
+}
+
+Describe 'Analysis identity' {
+    BeforeEach {
+        $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $repository = Join-Path $root 'repository'
+        $evidence = Join-Path $repository 'reference\design\configuration-service\DMS-1490-timing-evidence'
+        New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+        [System.IO.File]::WriteAllText((Join-Path $evidence 'analyze_timing.py'), "METHOD_VERSION = `"1`"`nprint('analysis')`n")
+        [System.IO.File]::WriteAllText((Join-Path $evidence 'diagnostics.py'), "DIAGNOSTICS_VERSION = `"1`"`nprint('diagnostics')`n")
+        git -C $repository init -q 2>$null
+        git -C $repository -c core.autocrlf=false add -A 2>$null
+        git -C $repository -c core.autocrlf=false -c user.name=test -c user.email=test@example.invalid commit -q -m initial 2>$null
+        $commit = ((git -C $repository rev-parse HEAD) | Out-String).Trim()
+        $sums = Join-Path $root 'SHA256SUMS.txt'
+        $hash = (Get-FileHash -LiteralPath (Join-Path $evidence 'analyze_timing.py') -Algorithm SHA256).Hash.ToLowerInvariant()
+        "$hash  50  analyze_timing.py" | Set-Content -LiteralPath $sums
+        $new = @{ RepositoryRoot = $repository; Commit = $commit; EvidenceManifestPath = $sums; PythonVersion = '3.12.10'; NumpyVersion = '2.5.2' }
+        $record = Join-Path $root 'analysis-manifest.json'
+    }
+
+    It 'pins both scripts at the approved commit with the fixed parameters, and re-checks them' {
+        $manifest = Get-AnalysisManifest @new
+        $manifest.scripts.analyze_timing.blob | Should -Be ((git -C $repository rev-parse "$commit`:reference/design/configuration-service/DMS-1490-timing-evidence/analyze_timing.py") | Out-String).Trim()
+        $manifest.scripts.diagnostics.version | Should -Be '1'
+        $manifest.parameters.resamples | Should -Be 5000
+        $manifest.parameters.delta_us | Should -Be 250
+        @($manifest.parameters.candidates) | Should -Be @(500, 1000, 2000, 4000)
+        $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $record
+        (Assert-AnalysisIdentity -RepositoryRoot $repository -ManifestPath $record).manifest_sha256 | Should -Match '^[0-9a-f]{64}$'
+    }
+
+    It 'refuses to pin a script that differs from the approved commit' {
+        Add-Content -LiteralPath (Join-Path $evidence 'diagnostics.py') -Value '# edited'
+        { Get-AnalysisManifest @new } | Should -Throw '*analysis_script_differs*'
+    }
+
+    It 'refuses an analysis script that no longer matches the evidence manifest' {
+        'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  50  analyze_timing.py' | Set-Content -LiteralPath $new.EvidenceManifestPath
+        { Get-AnalysisManifest @new } | Should -Throw '*does not match the evidence manifest*'
+    }
+
+    It 'refuses a script that declares another version' {
+        [System.IO.File]::WriteAllText((Join-Path $evidence 'diagnostics.py'), "DIAGNOSTICS_VERSION = `"2`"`n")
+        git -C $repository -c core.autocrlf=false add -A 2>$null
+        git -C $repository -c core.autocrlf=false -c user.name=test -c user.email=test@example.invalid commit -q -m v2 2>$null
+        $new.Commit = ((git -C $repository rev-parse HEAD) | Out-String).Trim()
+        { Get-AnalysisManifest @new } | Should -Throw '*analysis_version_mismatch*'
+    }
+
+    It 'refuses, immediately before use, a script changed after it was pinned' {
+        Get-AnalysisManifest @new | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $record
+        Add-Content -LiteralPath (Join-Path $evidence 'analyze_timing.py') -Value '# edited'
+        { Assert-AnalysisIdentity -RepositoryRoot $repository -ManifestPath $record } | Should -Throw '*analysis_script_differs*'
+    }
+
+    It 'refuses a record whose <Key> is not the pinned value' -ForEach @(@{ Key = 'resamples'; Value = 1000 }, @{ Key = 'delta_us'; Value = 25 }, @{ Key = 'seed'; Value = 2 }) {
+        $manifest = Get-AnalysisManifest @new
+        $manifest.parameters[$Key] = $Value
+        $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $record
+        { Assert-AnalysisIdentity -RepositoryRoot $repository -ManifestPath $record } | Should -Throw "*record's $Key is not the pinned value*"
+    }
+}
+
+Describe 'Invoke-SamplerPreflight' {
+    BeforeEach {
+        $folder = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $folder | Out-Null
+        $powerPath = Join-Path $folder 'power.csv'
+        $stopPath = Join-Path $folder 'stop'
+        # Rows every second over 12 s from qpc 1e9; the window runs from 0.5 s to 10.5 s.
+        $writeRows = { param([double] $Step = 1, [int] $Count = 12) @(($global:SamplerColumns -join ',')) + (ConvertTo-TestSampleLine (New-TestSampleSpec $Count -Step $Step -RunId 'run-1')) | Set-Content -LiteralPath $powerPath -Encoding utf8NoBOM }
+        & $writeRows
+        $online = [ordered]@{ utc = 'x'; call_succeeded = $true; win32_error = $null; ac_line_status = 1; battery_flag = 8; battery_life_percent = 80; system_status_flag = 0; scheme_query_succeeded = $true; scheme_query_status = 0; scheme_query_failure = $null; scheme_guid = $global:BalancedScheme }
+        $state = @{ Id = 4242 }
+        $process = New-TestProcess $state
+        # Whole milliseconds, so that fifty 200 ms pauses are exactly 10 s.
+        $time = @{ Milliseconds = 0; Qpc = [System.Collections.Generic.Queue[long]]::new([long[]]@(1005000000, 1105000000)); Pauses = 0; Closes = 0 }
+        $ready = @{ failure = $null; unmet = @(); ready = @{ roles = [ordered]@{ localdb = [ordered]@{ pid = $null; start_utc = $null; na = 'process_absent' } } } }
+        $preflight = @{
+            RunId     = 'run-1'
+            PowerPath = $powerPath
+            QpcFrequency = $global:QpcFrequency
+            WindowSeconds = 10
+            ReadPower = { $online }.GetNewClosure()
+            Open      = { $process }.GetNewClosure()
+            WaitReady = { param($Process) $ready }.GetNewClosure()
+            Close     = { param($Process) $time.Closes++; Close-PowerSampler -Process $Process -StopPath $stopPath }.GetNewClosure()
+            ReadQpc   = { $time.Qpc.Dequeue() }.GetNewClosure()
+            Clock     = { $time.Milliseconds / 1000.0 }.GetNewClosure()
+            Pause     = { param([int] $Milliseconds) $time.Pauses++; if ($time.Pauses -gt 1000) { throw 'The preflight window did not end.' }; $time.Milliseconds += $Milliseconds }.GetNewClosure()
+        }
+    }
+
+    It 'passes a ready sampler that covers its window and stops cleanly, and reports the roles it found' {
+        $result = Invoke-SamplerPreflight @preflight
+        $result.outcome | Should -Be 'passed'
+        $result.power.check | Should -Be 'preflight'
+        $result.power.condition_met | Should -BeTrue
+        $result.roles.localdb.na | Should -Be 'process_absent'
+        $result.observed_seconds | Should -Be 10
+        $result.stop.terminated | Should -BeTrue
+        @($result.coverage_failures) | Should -BeNullOrEmpty
+        $time.Closes | Should -Be 1
+        $time.Pauses | Should -Be 50
+        $result.statement | Should -BeLike '*qualifies no later collection*'
+    }
+
+    It 'fails, and still stops the sampler, when it is not ready' {
+        $ready.failure = 'sampler_ready_timeout'
+        $result = Invoke-SamplerPreflight @preflight
+        $result.outcome | Should -Be 'failed'
+        $result.ready_failure | Should -Be 'sampler_ready_timeout'
+        $result.observed_seconds | Should -BeNullOrEmpty
+        $time.Closes | Should -Be 1
+    }
+
+    It 'fails when the sampler exits during the window' {
+        $state.ExitAfterChecks = 3
+        $result = Invoke-SamplerPreflight @preflight
+        $result.outcome | Should -Be 'failed'
+        $result.exited_early | Should -BeTrue
+        @($result.lifecycle_failures) | Should -Contain 'sampler_dead_at_exit'
+    }
+
+    It 'fails when the power reading does not meet P, even with a healthy sampler' {
+        $online.ac_line_status = 0
+        $result = Invoke-SamplerPreflight @preflight
+        $result.outcome | Should -Be 'failed'
+        $result.power.unmet | Should -Be @('ac_line_offline')
+    }
+
+    It 'fails when the sampler''s rows leave a gap in the window' {
+        & $writeRows 5 4
+        $result = Invoke-SamplerPreflight @preflight
+        $result.outcome | Should -Be 'failed'
+        @($result.coverage_failures) | Should -Contain 'gap_exceeded'
+    }
+
+    It 'fails when termination cannot be confirmed' {
+        $state.ExitsOnStop = $false
+        $state.KillIneffective = $true
+        $result = Invoke-SamplerPreflight @preflight
+        $result.outcome | Should -Be 'failed'
+        @($result.lifecycle_failures) | Should -Contain 'sampler_not_terminated'
+    }
+
+    It 'stops the sampler even when waiting for readiness throws' {
+        $preflight.WaitReady = { param($Process) throw 'ready check failed' }
+        { Invoke-SamplerPreflight @preflight } | Should -Throw '*ready check failed*'
+        $time.Closes | Should -Be 1
+    }
+}
+
+Describe 'stage-e1.ps1 with synthetic commands' {
+    BeforeAll {
+        $driver = Join-Path $PSScriptRoot 'stage-e1.ps1'
+        $global:DriverCommit = 'abcdefabcdefabcdefabcdefabcdefabcdefabcd'
+
+        function global:git {
+            $line = $args -join ' '
+            $global:DriverScenario.Calls.Add("git $line")
+            $global:LASTEXITCODE = 0
+            if ($line -like '*status --porcelain') { if ($global:DriverScenario.Dirty) { ' M file.cs' }; return }
+            if ($line -like '*rev-parse HEAD^{tree}') { return '9999999999999999999999999999999999999999' }
+            if ($line -like '*rev-parse HEAD') { return $global:DriverScenario.Head }
+        }
+        function global:dotnet {
+            $line = $args -join ' '
+            $global:DriverScenario.Calls.Add("dotnet $line")
+            $global:LASTEXITCODE = 0
+            if ($line -like 'build *') { $global:LASTEXITCODE = $global:DriverScenario.BuildExit; return }
+            if ($line -eq '--version') { return '10.0.100' }
+            if ($line -eq '--list-sdks') { return '10.0.100 [C:\sdk]' }
+        }
+        function global:docker { $global:LASTEXITCODE = 0; '28.0.0' }
+        function global:sqllocaldb { $global:LASTEXITCODE = 0; 'Microsoft SQL Server 2022 (16.0.1000.6)' }
+        function global:python {
+            $line = $args -join ' '
+            $global:DriverScenario.Calls.Add("python $line")
+            $global:LASTEXITCODE = 0
+            if ($line -like '*sys.version*') { return '3.12.10' }
+            if ($line -like '*numpy.__version__*') { return '2.5.2' }
+            if ($line -like '* diagnose *') {
+                $global:LASTEXITCODE = $global:DriverScenario.DiagnoseExit
+                if ($global:DriverScenario.DiagnoseExit -eq 2) { return }
+                $csv = $args[[array]::IndexOf($args, '--csv') + 1]
+                return ([ordered]@{ input = (Split-Path -Leaf $csv); flags = [ordered]@{ stop_for_review = ($global:DriverScenario.DiagnoseExit -eq 3) } } | ConvertTo-Json)
+            }
+            if ($line -like '* fit *') { return '{"mu": 9.9, "sigma": 0.1, "rho": 0.2, "drift_sd": 3.5}' }
+            if ($line -like '* plan *' -or $line -like '* simulate *') { return '{}' }
+        }
+        # A lane run: records its arguments and writes the provenance the scenario asks for.
+        function global:pwsh {
+            $global:DriverScenario.Calls.Add("pwsh $($args -join ' ')")
+            $lane = Split-Path -Leaf $args[[array]::IndexOf($args, '-File') + 1]
+            $backend = if ($lane -eq 'lane-postgresql.ps1') { 'postgresql' } else { 'mssql' }
+            $stage = $args[[array]::IndexOf($args, '-OutputDir') + 1]
+            $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmssfff'Z'")
+            [ordered]@{
+                attempt_started = $global:DriverScenario.LaneAttempted
+                succeeded       = ($global:DriverScenario.LaneExit -eq 0)
+                collector_run   = [ordered]@{ samples_file = "e1-pilot-a5-endpoint-$backend-$stamp.csv" }
+            } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $stage "provenance-endpoint-$backend-e1-pilot-a5-$stamp.json")
+            $global:LASTEXITCODE = $global:DriverScenario.LaneExit
+        }
+
+        # The identity and preflight functions answer from the scenario; the driver's own logic is
+        # what is tested.
+        function global:Get-DriverStandIn([string] $Name) {
+            $global:DriverScenario.Calls.Add($Name)
+            if ($global:DriverScenario.Throw -contains $Name) { throw "${Name}: stand-in failure" }
+            [ordered]@{ stand_in = $Name; files = 2; manifest_sha256 = ('0' * 64); tracked_files = 3; allowed_extra = 1 }
+        }
+        function global:Get-StandInCollectorBuildManifest { Get-DriverStandIn 'Get-CollectorBuildManifest' }
+        function global:Assert-StandInCollectorBuild { Get-DriverStandIn 'Assert-CollectorBuild' }
+        function global:Assert-StandInTargetSource { Get-DriverStandIn 'Assert-TargetSource' }
+        function global:Get-StandInAnalysisManifest { Get-DriverStandIn 'Get-AnalysisManifest' }
+        function global:Assert-StandInAnalysisIdentity { Get-DriverStandIn 'Assert-AnalysisIdentity' }
+        function global:Invoke-StandInSamplerPreflight { $global:DriverScenario.Calls.Add('Invoke-SamplerPreflight'); [ordered]@{ schema = 'sampler-preflight/1'; outcome = $global:DriverScenario.PreflightOutcome } }
+        $standIns = @{
+            'Get-CollectorBuildManifest' = 'Get-StandInCollectorBuildManifest'
+            'Assert-CollectorBuild'      = 'Assert-StandInCollectorBuild'
+            'Assert-TargetSource'        = 'Assert-StandInTargetSource'
+            'Get-AnalysisManifest'       = 'Get-StandInAnalysisManifest'
+            'Assert-AnalysisIdentity'    = 'Assert-StandInAnalysisIdentity'
+            'Invoke-SamplerPreflight'    = 'Invoke-StandInSamplerPreflight'
+        }
+        foreach ($name in $standIns.Keys) { Set-Alias -Name $name -Value $standIns[$name] -Scope Global }
+    }
+
+    AfterAll {
+        Remove-Item -LiteralPath Function:\git, Function:\dotnet, Function:\docker, Function:\sqllocaldb, Function:\python, Function:\pwsh, Function:\Get-DriverStandIn -ErrorAction SilentlyContinue
+        foreach ($name in $standIns.Keys) { Remove-Item -LiteralPath "Alias:\$name", "Function:\$($standIns[$name])" -ErrorAction SilentlyContinue }
+        Remove-Variable -Name DriverScenario, DriverCommit -Scope Global -ErrorAction SilentlyContinue
+    }
+
+    BeforeEach {
+        $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $paths = @{
+            Repository = Join-Path $root 'repository'
+            Stage      = Join-Path $root 'stage-e1\pilot'
+            Work       = Join-Path $root 'work\runs-e1'
+            Targets    = Join-Path $root 'work\targets'
+        }
+        New-Item -ItemType Directory -Force -Path $paths.Repository, (Join-Path $paths.Targets 'a5') | Out-Null
+        $global:DriverScenario = @{
+            Calls = [System.Collections.Generic.List[string]]::new(); Head = $global:DriverCommit; Dirty = $false; BuildExit = 0
+            LaneExit = 0; LaneAttempted = $true; DiagnoseExit = 0; PreflightOutcome = 'passed'; Throw = @()
+        }
+        $run = { param([string] $Step) & $driver -Step $Step -ExpectedCommit $global:DriverCommit @paths; $LASTEXITCODE }
+        $log = { param([string] $Step) Get-Content -LiteralPath (Join-Path $paths.Stage "$($Step.ToLowerInvariant())-commands.log") -Raw }
+        $stageZeroFiles = { foreach ($name in 'collector-build.json', 'analysis-manifest.json') { '{}' | Set-Content -LiteralPath (Join-Path $paths.Stage $name) } }
+        $diagnostics = { param([string] $Backend, [bool] $Stop) New-Item -ItemType Directory -Force -Path (Join-Path $paths.Stage 'analysis') | Out-Null; @{ input = "x-$Backend.csv"; flags = @{ stop_for_review = $Stop } } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $paths.Stage "analysis\diagnostics-$Backend.json") }
+    }
+
+    It 'runs Stage0 with literal commands and writes its records, without any lane or diagnostics' {
+        & $run 'Stage0' | Should -Be 0
+        foreach ($name in 'collector-build.json', 'target-verification.json', 'analysis-manifest.json', 'toolchain.json') { Test-Path -LiteralPath (Join-Path $paths.Stage $name) | Should -BeTrue }
+        $text = & $log 'Stage0'
+        $text | Should -Match ([regex]::Escape("dotnet build $(Join-Path $paths.Repository 'src\config\tests\EdFi.DmsConfigurationService.Tests.E2E\EdFi.DmsConfigurationService.Tests.E2E.csproj') -c Release --no-incremental --nologo -> exit 0"))
+        $text | Should -Match 'analyze_timing.py selftest -> exit 0'
+        $text | Should -Match 'DONE Stage0; stop for review'
+        @($global:DriverScenario.Calls | Where-Object { $_ -like 'Assert-TargetSource' }).Count | Should -Be 2
+        $global:DriverScenario.Calls | Where-Object { $_ -like 'pwsh *' -or $_ -like '* diagnose *' } | Should -BeNullOrEmpty
+    }
+
+    It 'stops Stage0 before building when <Name>' -ForEach @(
+        @{ Name = 'the checkout is not clean'; Change = @{ Dirty = $true } }
+        @{ Name = 'HEAD is not the approved commit'; Change = @{ Head = '1234567890123456789012345678901234567890' } }
+    ) {
+        foreach ($key in $Change.Keys) { $global:DriverScenario[$key] = $Change[$key] }
+        & $run 'Stage0' | Should -Be 1
+        $global:DriverScenario.Calls | Where-Object { $_ -like 'dotnet build *' } | Should -BeNullOrEmpty
+        Test-Path -LiteralPath (Join-Path $paths.Stage 'collector-build.json') | Should -BeFalse
+        & $log 'Stage0' | Should -Match 'STOPPED Stage0'
+    }
+
+    It 'stops Stage0 without a build record when the build fails' {
+        $global:DriverScenario.BuildExit = 1
+        & $run 'Stage0' | Should -Be 1
+        Test-Path -LiteralPath (Join-Path $paths.Stage 'collector-build.json') | Should -BeFalse
+    }
+
+    It 'stops Stage0 before the analysis record when target verification fails' {
+        $global:DriverScenario.Throw = @('Assert-TargetSource')
+        & $run 'Stage0' | Should -Be 1
+        Test-Path -LiteralPath (Join-Path $paths.Stage 'analysis-manifest.json') | Should -BeFalse
+        $global:DriverScenario.Calls | Where-Object { $_ -like '* selftest' } | Should -BeNullOrEmpty
+    }
+
+    It 'never overwrites an earlier Stage0 record' {
+        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
+        '{}' | Set-Content -LiteralPath (Join-Path $paths.Stage 'collector-build.json')
+        & $run 'Stage0' | Should -Be 1
+        $global:DriverScenario.Calls | Should -BeNullOrEmpty
+        Get-Content -LiteralPath (Join-Path $paths.Stage 'collector-build.json') -Raw | Should -Match '^\{\}'
+    }
+
+    It 'runs the PostgreSQL pilot once with the reserved settings, then its diagnostics, and nothing else' {
+        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
+        & $stageZeroFiles
+        & $run 'PilotPostgreSql' | Should -Be 0
+        $lanes = @($global:DriverScenario.Calls | Where-Object { $_ -like 'pwsh *' })
+        $lanes.Count | Should -Be 1
+        $lanes[0] | Should -BeLike '*lane-postgresql.ps1 -RunLabel e1-pilot-a5 -Rounds 200 -WarmupRounds 1200 -Seed 401 *'
+        $lanes[0] | Should -BeLike "*-TargetRoot $(Join-Path $paths.Targets 'a5') *"
+        $lanes[0] | Should -BeLike "*-CollectorBuildManifest $(Join-Path $paths.Stage 'collector-build.json') -ExpectedCollectorCommit $($global:DriverCommit)"
+        $global:DriverScenario.Calls | Where-Object { $_ -like '*lane-localdb.ps1*' } | Should -BeNullOrEmpty
+        ($global:DriverScenario.Calls | Where-Object { $_ -like '* diagnose *' }) | Should -BeLike '* --delta 250 --resamples 5000 --seed 1'
+        $global:DriverScenario.Calls.IndexOf('Assert-AnalysisIdentity') | Should -BeLessThan $global:DriverScenario.Calls.IndexOf(($global:DriverScenario.Calls | Where-Object { $_ -like '* diagnose *' }))
+        Test-Path -LiteralPath (Join-Path $paths.Stage 'analysis\diagnostics-postgresql.json') | Should -BeTrue
+    }
+
+    It 'stops the pilot without diagnostics when the lane fails' {
+        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
+        & $stageZeroFiles
+        $global:DriverScenario.LaneExit = 1
+        & $run 'PilotPostgreSql' | Should -Be 1
+        $global:DriverScenario.Calls | Where-Object { $_ -like '* diagnose *' } | Should -BeNullOrEmpty
+    }
+
+    It 'stops with exit 3, keeping the diagnostics, when they raise a flag' {
+        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
+        & $stageZeroFiles
+        $global:DriverScenario.DiagnoseExit = 3
+        & $run 'PilotPostgreSql' | Should -Be 3
+        (Get-Content -LiteralPath (Join-Path $paths.Stage 'analysis\diagnostics-postgresql.json') -Raw | ConvertFrom-Json).flags.stop_for_review | Should -BeTrue
+        & $log 'PilotPostgreSql' | Should -Match 'a flag was raised; the stage stops for review'
+    }
+
+    It 'stops with exit 1 when the diagnostics refuse their input' {
+        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
+        & $stageZeroFiles
+        $global:DriverScenario.DiagnoseExit = 2
+        & $run 'PilotPostgreSql' | Should -Be 1
+    }
+
+    It 'stops before the diagnostics when the analysis identity no longer holds' {
+        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
+        & $stageZeroFiles
+        $global:DriverScenario.Throw = @('Assert-AnalysisIdentity')
+        & $run 'PilotPostgreSql' | Should -Be 1
+        $global:DriverScenario.Calls | Where-Object { $_ -like '* diagnose *' } | Should -BeNullOrEmpty
+    }
+
+    It 'refuses a pilot whose seed was already attempted, before launching anything' {
+        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
+        & $stageZeroFiles
+        '{"attempt_started": true}' | Set-Content -LiteralPath (Join-Path $paths.Stage 'provenance-endpoint-postgresql-e1-pilot-a5-20261024T000000Z.json')
+        & $run 'PilotPostgreSql' | Should -Be 1
+        $global:DriverScenario.Calls | Where-Object { $_ -like 'pwsh *' } | Should -BeNullOrEmpty
+        & $log 'PilotPostgreSql' | Should -Match 'Seed 401 was already attempted'
+    }
+
+    It 'allows a pilot whose earlier run was only refused before the launch' {
+        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
+        & $stageZeroFiles
+        '{"attempt_started": false}' | Set-Content -LiteralPath (Join-Path $paths.Stage 'provenance-endpoint-postgresql-e1-pilot-a5-20261024T000000Z.json')
+        & $run 'PilotPostgreSql' | Should -Be 0
+    }
+
+    It 'refuses a pilot before Stage0''s records exist' {
+        & $run 'PilotPostgreSql' | Should -Be 1
+        $global:DriverScenario.Calls | Where-Object { $_ -like 'pwsh *' } | Should -BeNullOrEmpty
+    }
+
+    It 'refuses the SQL Server pilot <Name>' -ForEach @(
+        @{ Name = 'before the PostgreSQL pilot''s diagnostics exist'; Flagged = $null }
+        @{ Name = 'when the PostgreSQL pilot raised a flag'; Flagged = $true }
+    ) {
+        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
+        & $stageZeroFiles
+        if ($null -ne $Flagged) { & $diagnostics 'postgresql' $Flagged }
+        & $run 'PilotSqlServer' | Should -Be 1
+        $global:DriverScenario.Calls | Where-Object { $_ -like 'pwsh *' } | Should -BeNullOrEmpty
+    }
+
+    It 'runs the SQL Server pilot with seed 402 after a flag-free PostgreSQL pilot' {
+        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
+        & $stageZeroFiles
+        & $diagnostics 'postgresql' $false
+        & $run 'PilotSqlServer' | Should -Be 0
+        @($global:DriverScenario.Calls | Where-Object { $_ -like 'pwsh *' })[0] | Should -BeLike '*lane-localdb.ps1 -RunLabel e1-pilot-a5 -Rounds 200 -WarmupRounds 1200 -Seed 402 *'
+    }
+
+    It 'plans every candidate N for both backends with the pinned parameters, choosing nothing' {
+        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
+        & $stageZeroFiles
+        & $diagnostics 'postgresql' $false
+        & $diagnostics 'mssql' $false
+        & $run 'Planning' | Should -Be 0
+        $simulations = @($global:DriverScenario.Calls | Where-Object { $_ -like '* simulate *' })
+        $simulations.Count | Should -Be 8
+        foreach ($rounds in 500, 1000, 2000, 4000) { @($simulations | Where-Object { $_ -like "* --rounds $rounds --delta 250 --mu 9.9 --sigma 0.1 --rho 0.2 --drift-sd 3.5 --replicates 500 --resamples 5000 --seed 1" }).Count | Should -Be 2 }
+        @($global:DriverScenario.Calls | Where-Object { $_ -like '* plan *' })[0] | Should -BeLike '* --candidates 500 1000 2000 4000 --resamples 5000 --seed 1'
+        $global:DriverScenario.Calls | Where-Object { $_ -like 'pwsh *' } | Should -BeNullOrEmpty
+    }
+
+    It 'refuses planning when a pilot raised a flag' {
+        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
+        & $stageZeroFiles
+        & $diagnostics 'postgresql' $false
+        & $diagnostics 'mssql' $true
+        & $run 'Planning' | Should -Be 1
+        $global:DriverScenario.Calls | Where-Object { $_ -like 'python *' } | Should -BeNullOrEmpty
+    }
+
+    It 'records the preflight and stops with exit <Exit> when it <Outcome>' -ForEach @(@{ Outcome = 'passed'; Exit = 0 }, @{ Outcome = 'failed'; Exit = 1 }) {
+        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
+        & $stageZeroFiles
+        $global:DriverScenario.PreflightOutcome = $Outcome
+        & $run 'Preflight' | Should -Be $Exit
+        (Get-Content -LiteralPath (Join-Path $paths.Stage 'preflight.json') -Raw | ConvertFrom-Json).outcome | Should -Be $Outcome
+        & $run 'Preflight' | Should -Be 1
+        @($global:DriverScenario.Calls | Where-Object { $_ -eq 'Invoke-SamplerPreflight' }).Count | Should -Be 1
+    }
+
+    It 'refuses a staging folder inside the collector checkout' {
+        $paths.Stage = Join-Path $paths.Repository 'stage'
+        { & $driver -Step Stage0 -ExpectedCommit $global:DriverCommit @paths } | Should -Throw '*OutputDir*'
+    }
+
+    It 'refuses an expected commit that is not a full id' {
+        { & $driver -Step Stage0 -ExpectedCommit 'abc' @paths } | Should -Throw
+    }
+}
+
 Describe 'lane-postgresql.ps1 with synthetic command output' {
     BeforeAll {
         $lane = Join-Path $PSScriptRoot 'lane-postgresql.ps1'
@@ -1791,7 +2380,7 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
     }
 
     AfterAll {
-        Remove-Item -LiteralPath Function:\global:git, Function:\global:Get-NetTCPConnection, Function:\global:Invoke-WebRequest, Function:\global:pwsh, Function:\global:docker, Function:\global:dotnet, Function:\global:Open-TestSampler, Alias:\Open-PowerSampler -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath Function:\git, Function:\Get-NetTCPConnection, Function:\Invoke-WebRequest, Function:\pwsh, Function:\docker, Function:\dotnet, Function:\Open-TestSampler, Alias:\Open-PowerSampler -ErrorAction SilentlyContinue
     }
 
     BeforeEach {
@@ -1801,6 +2390,7 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
         $stage = Join-Path $run 'stage'
         $work = Join-Path $run 'work'
         New-Item -ItemType Directory -Force -Path $collector, $target | Out-Null
+        $collectorOutput = New-TestCollectorBuild $collector (Join-Path $run 'collector-build.json')
         '{"commit":"b2b8d5df47e5e48c46f9ca26fe0f2a58b787c399"}' | Set-Content -LiteralPath (Join-Path $target 'target.json')
         $global:LaneScenario = @{
             Calls          = [System.Collections.Generic.List[string]]::new()
@@ -1816,7 +2406,7 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
         }
         Set-PowerSequence 'online'
         $global:SamplerScenario = @{ ExitBeforeReady = $false; ReadyKind = 'online'; LastKind = 'online'; Step = 1; DeadBeforeLaunch = $false; DeadAtExit = $false; SlowShutdown = $false; KillIneffective = $false; ExitCode = 0; Arguments = $null; Process = $null }
-        $arguments = @{ RunLabel = 'pilot-a5'; Rounds = 20; WarmupRounds = 0; Seed = 301; OutputDir = $stage; CollectorRoot = $collector; TargetRoot = $target; WorkRoot = $work }
+        $arguments = @{ RunLabel = 'pilot-a5'; Rounds = 20; WarmupRounds = 0; Seed = 301; OutputDir = $stage; CollectorRoot = $collector; TargetRoot = $target; WorkRoot = $work; CollectorBuildManifest = (Join-Path $run 'collector-build.json'); ExpectedCollectorCommit = $global:TestCommit }
         $readProvenance = { Get-Content (Get-ChildItem $stage -Filter 'provenance-*.json').FullName -Raw | ConvertFrom-Json }
         $setupCalls = { @($global:LaneScenario.Calls | Where-Object { $_ -like '*setup-local-cms.ps1*' }) }
         $teardownCalls = { @($global:LaneScenario.Calls | Where-Object { $_ -like '*teardown-local-cms.ps1*' }) }
@@ -2026,6 +2616,32 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
         (Get-ChildItem $work -Filter '*.diagnostics.txt' | Get-Content -Raw) | Should -Match $global:LaneSentinel
     }
 
+    It 'records the verified collector build in provenance' {
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 0
+        $build = (& $readProvenance).collector_build
+        $build.commit | Should -Be $global:TestCommit
+        $build.files | Should -Be 2
+        $build.manifest_sha256 | Should -Be (Get-FileHash -LiteralPath $arguments.CollectorBuildManifest -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+
+    It 'refuses before setup, without collecting, when the collector build <Name>' -ForEach @(
+        @{ Name = 'has a changed file'; Change = { param($o, $a) Add-Content -LiteralPath (Join-Path $o 'EdFi.DmsConfigurationService.Tests.E2E.dll') -Value 'x' } }
+        @{ Name = 'has an extra file'; Change = { param($o, $a) Set-Content -LiteralPath (Join-Path $o 'stale.dll') -Value 'stale' } }
+        @{ Name = 'is missing a file'; Change = { param($o, $a) Remove-Item -LiteralPath (Join-Path $o 'runtimes\native.dll') } }
+        @{ Name = 'is not for the approved commit'; Change = { param($o, $a) $a.ExpectedCollectorCommit = '2222222222222222222222222222222222222222' } }
+    ) {
+        & $Change $collectorOutput $arguments
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        & $setupCalls | Should -BeNullOrEmpty
+        $global:LaneScenario.Calls | Should -Not -Contain 'dotnet test'
+        $provenance = & $readProvenance
+        $provenance.attempt_started | Should -BeFalse
+        $provenance.collector_build | Should -BeNullOrEmpty
+        @($provenance.power_checks) | Should -BeNullOrEmpty
+    }
+
     It 'starts the sampler with the docker_vm role and requires its coverage of a successful run' {
         & $lane @arguments
         $LASTEXITCODE | Should -Be 0
@@ -2133,7 +2749,7 @@ Describe 'lane-localdb.ps1 with synthetic command output, before the service sta
     }
 
     AfterAll {
-        Remove-Item -LiteralPath Function:\global:git, Function:\global:Get-NetTCPConnection, Function:\global:docker, Function:\global:sqllocaldb, Function:\global:sqlcmd -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath Function:\git, Function:\Get-NetTCPConnection, Function:\docker, Function:\sqllocaldb, Function:\sqlcmd -ErrorAction SilentlyContinue
         Remove-Module env-utility, database-safety, bootstrap-manifest, OpenIddict-Crypto -ErrorAction SilentlyContinue
     }
 
@@ -2146,6 +2762,7 @@ Describe 'lane-localdb.ps1 with synthetic command output, before the service sta
         $bin = Join-Path $target 'src\config\frontend\EdFi.DmsConfigurationService.Frontend.AspNetCore\bin\Release\net10.0'
         $compose = Join-Path $target 'eng\docker-compose'
         New-Item -ItemType Directory -Force -Path $collector, $bin, $compose | Out-Null
+        $collectorOutput = New-TestCollectorBuild $collector (Join-Path $run 'collector-build.json')
         $fingerprints = [ordered]@{}
         foreach ($assembly in $global:LaneAssemblies) {
             Set-Content -LiteralPath (Join-Path $bin $assembly) -Value "assembly $assembly" -NoNewline
@@ -2166,7 +2783,7 @@ Export-ModuleMember -Function ReadValuesFromEnvFile
         $env:LANE_TEST_ITERATIONS = '210000'
         $global:LaneScenario = @{ Calls = [System.Collections.Generic.List[string]]::new() }
         Set-PowerSequence 'online'
-        $arguments = @{ RunLabel = 'pilot-a5'; Rounds = 20; WarmupRounds = 0; Seed = 302; OutputDir = $stage; CollectorRoot = $collector; TargetRoot = $target; WorkRoot = $work }
+        $arguments = @{ RunLabel = 'pilot-a5'; Rounds = 20; WarmupRounds = 0; Seed = 302; OutputDir = $stage; CollectorRoot = $collector; TargetRoot = $target; WorkRoot = $work; CollectorBuildManifest = (Join-Path $run 'collector-build.json'); ExpectedCollectorCommit = $global:TestCommit }
     }
 
     AfterEach {
@@ -2224,6 +2841,14 @@ Export-ModuleMember -Function ReadValuesFromEnvFile
         Get-EvidenceText $stage | Should -Not -Match $global:LaneSentinel
     }
 
+    It 'refuses before any LocalDB work when the collector build has a changed file' {
+        Add-Content -LiteralPath (Join-Path $collectorOutput 'EdFi.DmsConfigurationService.Tests.E2E.dll') -Value 'x'
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        $global:LaneScenario.Calls | Should -BeNullOrEmpty
+        Test-Path (Join-Path $work 'db') | Should -BeFalse
+    }
+
     It 'checks power before setup and proceeds to LocalDB when it holds' {
         $env:LANE_TEST_ITERATIONS = '100000'
         & $lane @arguments
@@ -2236,8 +2861,8 @@ Export-ModuleMember -Function ReadValuesFromEnvFile
 }
 
 AfterAll {
-    Remove-Item -LiteralPath Function:\global:Get-TestHash, Function:\global:Get-ValidSetting, Function:\global:Get-ValidFingerprint, Function:\global:Write-TestTrx, Function:\global:Write-TestSample, Function:\global:New-TestSampleRowSet, Function:\global:Get-EvidenceText -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath Alias:\Read-SystemPowerStatus, Alias:\Read-ActivePowerScheme, Function:\global:Get-TestPowerStatus, Function:\global:Get-TestActiveScheme, Function:\global:New-PowerStep, Function:\global:Set-PowerSequence, Function:\global:Get-PowerStep, Function:\global:Get-RefusalLine -ErrorAction SilentlyContinue
-    Remove-Item -LiteralPath Function:\global:New-TestSampleSpec, Function:\global:ConvertTo-TestSampleLine, Function:\global:Write-TestReady, Function:\global:New-TestProcess -ErrorAction SilentlyContinue
-    Remove-Variable -Name TestSamplesColumns, LaneScenario, LaneSentinel, LaneAssemblies, LaneFixtureClass, PowerScenario, BalancedScheme, SamplerScenario, SamplerColumns, QpcFrequency -Scope Global -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath Function:\Get-TestHash, Function:\Get-ValidSetting, Function:\Get-ValidFingerprint, Function:\Write-TestTrx, Function:\Write-TestSample, Function:\New-TestSampleRowSet, Function:\Get-EvidenceText -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath Alias:\Read-SystemPowerStatus, Alias:\Read-ActivePowerScheme, Function:\Get-TestPowerStatus, Function:\Get-TestActiveScheme, Function:\New-PowerStep, Function:\Set-PowerSequence, Function:\Get-PowerStep, Function:\Get-RefusalLine -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath Function:\New-TestSampleSpec, Function:\ConvertTo-TestSampleLine, Function:\Write-TestReady, Function:\New-TestProcess, Function:\New-TestCollectorBuild -ErrorAction SilentlyContinue
+    Remove-Variable -Name TestCommit, TestStartUtc, TestSamplesColumns, LaneScenario, LaneSentinel, LaneAssemblies, LaneFixtureClass, PowerScenario, BalancedScheme, SamplerScenario, SamplerColumns, QpcFrequency -Scope Global -ErrorAction SilentlyContinue
 }

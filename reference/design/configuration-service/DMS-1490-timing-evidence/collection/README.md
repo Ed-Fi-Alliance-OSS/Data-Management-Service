@@ -12,6 +12,7 @@ The scripts here produce evidence. They are not part of the product, and no ordi
 | `lane-postgresql.ps1` | One PostgreSQL run: builds the target's `cs-local` stack without cache, verifies the deployment, runs the collector once, verifies the run and the deployment again, then tears the stack down |
 | `lane-localdb.ps1` | One SQL Server run on LocalDB, with the target's Configuration Service as a host process: recreates the database, starts a new process with a controlled launch environment, verifies, runs the collector once, verifies again, then stops the process |
 | `power-sampler.ps1` | The power sampler each lane starts in its own process: one power row a second, then the optional host values (see Power sampler) |
+| `stage-e1.ps1` | One explicit step of the E1 pilot stage: Stage0, Preflight, either pilot, or Planning (see E1 pilot stage) |
 | `CollectionLane.psm1` | The checks both lanes and the preparer rely on: path normalization, root and worktree separation, exact fingerprints, pre-registered settings, deployment comparison, collector-run verification, the power reader, power condition P, and the sampler's loop, readiness, coverage and shutdown |
 | `collection.Tests.ps1` | Pester checks of the lanes' failure paths, the power checks, the sampler and the preparer's folder refusals, with synthetic command output, power readings, clocks and processes. No deployment, database, collector or real sampler is used, nothing waits on a wall-clock timer, and no test calls the native power function; the native declaration is checked by its layout. |
 
@@ -130,7 +131,49 @@ The shared recorder (`TimingEvidenceRecorder`, used by the endpoint and in-proce
 
 Anything else, including a previous-format file, fails the run. A run label may not contain the segment `warmup`, so that no label's measured pattern can reach another label's warm-up file.
 
-**Before any E1 collection (M3):** run and analysis provenance must also pin the exact commit and SHA-256 of `diagnostics.py`, which is outside the historical evidence manifest. That wiring is M3's, with its own review.
+**Before any E1 collection (M3):** run and analysis provenance must also pin the exact commit and SHA-256 of `diagnostics.py`, which is outside the historical evidence manifest. `stage-e1.ps1` does this through `analysis-manifest.json`; see the next section.
+
+## E1 pilot stage (`stage-e1.ps1`, spec §18.6 M3)
+
+**Each step is its own invocation and needs its own approval.** The script never runs a second step, never moves on from one pilot to the next, and closes no process on the host.
+
+```
+pwsh -NoProfile -File <Collection>\stage-e1.ps1 -Step <Stage0|Preflight|PilotPostgreSql|PilotSqlServer|Planning> -ExpectedCommit <approved full commit>
+```
+
+The defaults are `-Stage C:\dev\simpat\dms1490-timing\stage-e1\pilot`, `-Work C:\dev\simpat\dms1490-timing\work\runs-e1` and `-Targets C:\dev\simpat\dms1490-timing\work\targets`.
+
+| Step | Does | Never |
+| --- | --- | --- |
+| `Stage0` | Clean checkout at the expected commit; toolchain versions (`toolchain.json`); `dotnet build <E2E csproj> -c Release --no-incremental --nologo`; `collector-build.json`; both prepared targets verified (`target-verification.json`); both analysis selftests; `analysis-manifest.json`; the checkout still clean | Deploys, starts a sampler or runs a collector |
+| `Preflight` | The declared preflight: one power reading, then `power-sampler.ps1` alone for 10 s (localdb and docker_vm roles requested, reported as found), stopped and judged by the run rules; `preflight.json` | Deploys, sends a request, runs a collector, or qualifies a later collection |
+| `PilotPostgreSql` | `lane-postgresql.ps1` on target A5: label `e1-pilot-a5`, 200 measured rounds, 1,200 warm-up rounds, seed 401. The lane still builds a fresh no-cache image from the target. Then the analysis identity is re-checked, and `diagnostics.py diagnose --delta 250 --resamples 5000 --seed 1` runs on the measured file | Runs the SQL Server pilot |
+| `PilotSqlServer` | `lane-localdb.ps1`, the same settings, seed 402. It needs the PostgreSQL pilot's diagnostics with no flag raised | Runs a second time for a seed |
+| `Planning` | For each backend: `analyze_timing.py plan` (candidates 500, 1000, 2000 and 4000), `fit`, and `simulate` at every candidate (500 replicates, 5,000 resamples, seed 1). It needs both pilots' diagnostics with no flag. | Chooses N |
+
+**Output and exit codes:**
+
+- **Logs:** every native command is run with literal arguments and logged, with its exit code, in the public `<Stage>\<step>-commands.log`. Its output and any exception text go to `<Work>\<step>-<stamp>\`.
+- **Exit codes:** 0 means done, so stop for review; 3 means a diagnostic flag was raised, so stop for review; 1 means anything else stopped the step.
+- **Never overwritten:** a step never overwrites an earlier step's output.
+- **Seeds:** a pilot whose collector already launched (provenance `attempt_started`) is refused, so a seed is used once. A run refused before the launch does not use its seed.
+
+**Identity checks:**
+
+- **Collector build:** `collector-build.json` records the commit, the tree, the build command and SDK, and every file of `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/bin/Release/net10.0` with its size and SHA-256.
+  - Each lane now requires `-CollectorBuildManifest` and `-ExpectedCollectorCommit`, the approved commit, supplied at execution time.
+  - Before any setup, the lane validates the record (schema, full ids, contained relative paths, no duplicates) before opening any file.
+  - It then requires the checkout's HEAD and tree to match, and exactly the listed files, none missing or extra, with their sizes and hashes.
+  - A failure refuses the run before setup; it is not an attempt.
+- **Targets:** each prepared target is verified against the approved commit and tree, not the ones `target.json` names (which must agree).
+  - Every tracked file must have its blob's raw bytes, with no line-ending conversion.
+  - Other files are allowed only as the root `target.json` or below a directory named exactly `bin` or `obj`.
+  - Nothing is repaired or rebuilt.
+  - The LocalDB lane's five host-assembly fingerprints are still checked.
+- **Analysis:** `analysis-manifest.json` pins both scripts as they are in the approved commit (blob id, SHA-256, version), with `analyze_timing.py` also matching `SHA256SUMS.txt`, the Python and numpy versions, and the fixed parameters. Both scripts are re-hashed against it immediately before every diagnostics and planning run.
+- **Protocol:** E1 provenance keeps `complete = false`. Only review of a run's evidence settles its acceptance.
+
+**Old command lines:** the Stage 1 and Stage 2 commands below describe the A5 runs as they were made. Today's lanes also need the two collector parameters above.
 
 ## Identities
 

@@ -679,7 +679,7 @@ function Get-PowerConditionFailure {
 #>
 function ConvertTo-PowerCheckRecord {
     param(
-        [Parameter(Mandatory)] [ValidateSet('before_setup', 'before_launch', 'after_exit')] [string] $Check,
+        [Parameter(Mandatory)] [ValidateSet('before_setup', 'before_launch', 'after_exit', 'preflight')] [string] $Check,
         [AllowNull()] [System.Collections.IDictionary] $Reading
     )
     $copy = $null
@@ -1415,4 +1415,396 @@ function Get-SamplerLifecycleFailure([System.Collections.IDictionary] $Stop) {
     , $failures.ToArray()
 }
 
-Export-ModuleMember -Function Get-FingerprintedAssemblyName, Get-SettingAllowlist, Get-CollectorFixtureName, Resolve-LanePath, Assert-LaneRoot, Assert-OutsideWorktree, ConvertFrom-Sha256Listing, Assert-AssemblyFingerprint, Assert-RunSetting, Compare-LaneSnapshot, Assert-SamplesPhase, Assert-CollectorRun, Get-PowerSource, Get-PowerConditionFailure, ConvertTo-PowerCheckRecord, Add-PowerRefusal, Get-SchemeQueryProvider, ConvertTo-PowerSampleValue, ConvertFrom-PowerSampleRow, Test-SamplerCoverage, Resolve-RoleIdentity, Select-LocalDbCandidate, Initialize-HostSampleState, Get-HostSampleColumn, Get-HostSampleRole, Read-HostSample, Invoke-PowerSampler, Open-PowerSampler, Wait-PowerSamplerReady, ConvertTo-SamplerRefusalRecord, Close-PowerSampler, Get-SamplerLifecycleFailure
+# Identities (spec section 18.6, M3). A run names the collector build it ran, the application
+# target it measured and the analysis that read it, and each is checked against what was approved,
+# not just declared.
+
+# The one Release output directory the collector runs from, relative to the collector checkout.
+$script:CollectorOutputPath = 'src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/bin/Release/net10.0'
+$script:CollectorManifestSchema = 'collector-build/1'
+$script:AnalysisManifestSchema = 'analysis-identity/1'
+
+# The analysis scripts and the fixed parameters every E1 analysis uses.
+$script:AnalysisScripts = [ordered]@{
+    analyze_timing = 'reference/design/configuration-service/DMS-1490-timing-evidence/analyze_timing.py'
+    diagnostics    = 'reference/design/configuration-service/DMS-1490-timing-evidence/diagnostics.py'
+}
+$script:AnalysisParameters = [ordered]@{
+    method_version      = '1'
+    diagnostics_version = '1'
+    resamples           = 5000
+    seed                = 1
+    delta_us            = 250
+    candidates          = @(500, 1000, 2000, 4000)
+    replicates          = 500
+}
+
+<#
+.SYNOPSIS
+    The Git blob id of a file's raw bytes, as `git hash-object --no-filters` computes it.
+.DESCRIPTION
+    SHA-1 of "blob <length>\0" followed by the bytes, with no line-ending or other conversion, so a
+    file extracted by `git archive` matches its pinned blob only if its bytes are unchanged.
+#>
+function Get-GitBlobId {
+    param([Parameter(Mandatory)] [string] $Path)
+    $bytes = [System.IO.File]::ReadAllBytes($Path)
+    $header = [System.Text.Encoding]::ASCII.GetBytes("blob $($bytes.Length)`0")
+    $sha1 = [System.Security.Cryptography.SHA1]::Create()
+    try {
+        [void]$sha1.TransformBlock($header, 0, $header.Length, $null, 0)
+        [void]$sha1.TransformFinalBlock($bytes, 0, $bytes.Length)
+        [System.Convert]::ToHexString($sha1.Hash).ToLowerInvariant()
+    }
+    finally { $sha1.Dispose() }
+}
+
+<#
+.SYNOPSIS
+    Every file under a folder: its path relative to the folder (with /), size and SHA-256, sorted.
+    A junction or symbolic link anywhere inside is refused.
+#>
+function Get-FileInventory {
+    param([Parameter(Mandatory)] [string] $Root)
+    $full = Resolve-LanePath $Root
+    if (-not [System.IO.Directory]::Exists($full)) { throw "The folder '$Root' does not exist." }
+    $entries = [System.Collections.Generic.List[object]]::new()
+    foreach ($item in Get-ChildItem -LiteralPath $full -Recurse -Force) {
+        if ($item.Attributes.HasFlag([System.IO.FileAttributes]::ReparsePoint)) { throw "'$($item.FullName)' is a junction or symbolic link." }
+        if ($item.PSIsContainer) { continue }
+        $relative = [System.IO.Path]::GetRelativePath($full, $item.FullName).Replace('\', '/')
+        $entries.Add([ordered]@{ path = $relative; size = [long]$item.Length; sha256 = (Get-FileHash -LiteralPath $item.FullName -Algorithm SHA256).Hash.ToLowerInvariant() })
+    }
+    , @($entries | Sort-Object { $_.path } -Culture ([cultureinfo]::InvariantCulture))
+}
+
+# A relative path that stays inside its root: forward slashes, no empty, '.' or '..' segment, no
+# drive or root, no character Windows treats as special in a path.
+function Test-ContainedRelativePath([string] $Path) {
+    if ([string]::IsNullOrEmpty($Path) -or $Path.Contains('\') -or $Path.IndexOfAny([System.IO.Path]::GetInvalidPathChars()) -ge 0 -or $Path.Contains(':')) { return $false }
+    if ($Path.StartsWith('/') -or [System.IO.Path]::IsPathRooted($Path)) { return $false }
+    foreach ($segment in $Path.Split('/')) { if ($segment -eq '' -or $segment -eq '.' -or $segment -eq '..') { return $false } }
+    $true
+}
+
+<#
+.SYNOPSIS
+    The collector build record: the approved commit and tree, how it was built, and every file of
+    its Release output with size and SHA-256.
+#>
+function Get-CollectorBuildManifest {
+    param(
+        [Parameter(Mandatory)] [string] $CollectorRoot,
+        [Parameter(Mandatory)] [ValidatePattern('^[0-9a-f]{40}$')] [string] $Commit,
+        [Parameter(Mandatory)] [ValidatePattern('^[0-9a-f]{40}$')] [string] $Tree,
+        [Parameter(Mandatory)] [string] $BuildCommand,
+        [Parameter(Mandatory)] [string] $SdkVersion
+    )
+    $files = Get-FileInventory (Join-Path $CollectorRoot $script:CollectorOutputPath)
+    if ($files.Count -eq 0) { throw 'The collector Release output is empty.' }
+    [ordered]@{
+        schema = $script:CollectorManifestSchema
+        commit = $Commit
+        tree   = $Tree
+        build  = [ordered]@{ command = $BuildCommand; sdk_version = $SdkVersion }
+        output = $script:CollectorOutputPath
+        files  = $files
+    }
+}
+
+<#
+.SYNOPSIS
+    Requires the collector checkout and its Release output to be exactly the recorded build.
+.DESCRIPTION
+    The expected commit comes from the caller (the approval), not from the manifest. The manifest is
+    validated before any listed file is opened: its schema, a 40-hex commit and tree, the one output
+    folder, and every entry a contained relative path, a size and a SHA-256, with no path twice
+    (ignoring case). Then the checkout's HEAD and tree must equal the manifest's and the expected
+    commit, and the output folder must hold exactly the listed files (none missing, none extra) with
+    their sizes and hashes. Throws with a fixed code on anything else; returns the manifest's own
+    SHA-256 and counts.
+#>
+function Assert-CollectorBuild {
+    param(
+        [Parameter(Mandatory)] [string] $CollectorRoot,
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $ExpectedCommit,
+        [Parameter(Mandatory)] [string] $HeadCommit,
+        [Parameter(Mandatory)] [string] $HeadTree
+    )
+    if ($ExpectedCommit -cnotmatch '^[0-9a-f]{40}$') { throw 'collector_expected_commit_invalid: the expected commit is not a full lowercase commit id.' }
+    try { $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json -AsHashtable }
+    catch { throw 'collector_manifest_invalid: the manifest is not valid JSON.' }
+    if ($manifest -isnot [System.Collections.IDictionary] -or $manifest.schema -cne $script:CollectorManifestSchema) { throw 'collector_manifest_invalid: the manifest has another schema.' }
+    if ([string]$manifest.commit -cnotmatch '^[0-9a-f]{40}$' -or [string]$manifest.tree -cnotmatch '^[0-9a-f]{40}$') { throw 'collector_manifest_invalid: the commit or tree is not a full id.' }
+    if ($manifest.output -cne $script:CollectorOutputPath) { throw 'collector_manifest_invalid: the manifest names another output folder.' }
+    if ($manifest.build -isnot [System.Collections.IDictionary] -or [string]::IsNullOrWhiteSpace([string]$manifest.build.command) -or [string]::IsNullOrWhiteSpace([string]$manifest.build.sdk_version)) {
+        throw 'collector_manifest_invalid: the build command or SDK version is missing.'
+    }
+    $listed = @{}
+    foreach ($entry in @($manifest.files)) {
+        if ($entry -isnot [System.Collections.IDictionary] -or -not (Test-ContainedRelativePath ([string]$entry.path)) -or
+            -not ($entry.size -is [long] -or $entry.size -is [int]) -or $entry.size -lt 0 -or [string]$entry.sha256 -cnotmatch '^[0-9a-f]{64}$') {
+            throw 'collector_manifest_invalid: a file entry is malformed or leaves the output folder.'
+        }
+        $key = ([string]$entry.path).ToLowerInvariant()
+        if ($listed.ContainsKey($key)) { throw 'collector_manifest_invalid: a file is listed twice.' }
+        $listed[$key] = $entry
+    }
+    if ($listed.Count -eq 0) { throw 'collector_manifest_invalid: the manifest lists no files.' }
+    if ($manifest.commit -cne $ExpectedCommit) { throw 'collector_commit_mismatch: the manifest is not for the approved commit.' }
+    if ($HeadCommit -cne $manifest.commit -or $HeadTree -cne $manifest.tree) { throw 'collector_commit_mismatch: the checkout is not at the manifest''s commit and tree.' }
+
+    $actual = @{}
+    # Assigned first: the inventory is returned as one array.
+    $inventory = Get-FileInventory (Join-Path $CollectorRoot $script:CollectorOutputPath)
+    foreach ($file in $inventory) { $actual[$file.path.ToLowerInvariant()] = $file }
+    $missing = @($listed.Keys | Where-Object { -not $actual.ContainsKey($_) } | Sort-Object)
+    $extra = @($actual.Keys | Where-Object { -not $listed.ContainsKey($_) } | Sort-Object)
+    $changed = @($listed.Keys | Where-Object { $actual.ContainsKey($_) -and ($actual[$_].size -ne [long]$listed[$_].size -or $actual[$_].sha256 -cne $listed[$_].sha256) } | Sort-Object)
+    if ($missing.Count + $extra.Count + $changed.Count -gt 0) {
+        $first = @($missing + $extra + $changed | Select-Object -First 5) -join ', '
+        throw "collector_files_differ: $($missing.Count) missing, $($extra.Count) extra, $($changed.Count) changed (first: $first)."
+    }
+    [ordered]@{
+        manifest_sha256 = (Get-FileHash -LiteralPath $ManifestPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        commit          = $manifest.commit
+        tree            = $manifest.tree
+        files           = $listed.Count
+    }
+}
+
+<#
+.SYNOPSIS
+    Requires a prepared target to hold exactly the pinned commit's files, byte for byte.
+.DESCRIPTION
+    The commit and tree come from the caller (the approval), never from target.json, which must
+    agree with them. Every path in the commit's tree must exist in the target with the raw bytes of
+    its blob (Get-GitBlobId, no line-ending conversion). Any other file is allowed only as the root
+    target.json or below a directory named exactly bin or obj (a directory component, not a substring
+    of a name); a tracked file under such a directory is still verified. A junction or symbolic link
+    anywhere is refused. Nothing is repaired. Returns a summary of counts and the first differing
+    paths; throws target_source_differs or another fixed code when anything differs.
+#>
+function Assert-TargetSource {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [string] $TargetRoot,
+        [Parameter(Mandatory)] [ValidatePattern('^[0-9a-f]{40}$')] [string] $Commit,
+        [Parameter(Mandatory)] [ValidatePattern('^[0-9a-f]{40}$')] [string] $Tree
+    )
+    $actualTree = (& git -C $RepositoryRoot rev-parse "$Commit^{tree}" 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $actualTree -cne $Tree) { throw 'target_tree_mismatch: the commit does not have the approved tree.' }
+    try { $metadata = Get-Content -LiteralPath (Join-Path $TargetRoot 'target.json') -Raw | ConvertFrom-Json }
+    catch { throw 'target_metadata_invalid: target.json is missing or not valid JSON.' }
+    if ($metadata.commit -cne $Commit -or $metadata.tree -cne $Tree) { throw 'target_metadata_mismatch: target.json names another commit or tree.' }
+
+    $listing = (& git -C $RepositoryRoot ls-tree -r -z --full-tree $Commit | Out-String)
+    if ($LASTEXITCODE -ne 0) { throw 'target_tree_unreadable: the commit''s tree could not be listed.' }
+    $tracked = [System.Collections.Generic.Dictionary[string, string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($entry in $listing.Split([char]0)) {
+        # PowerShell ends captured native output with a line break, even after -z.
+        $record = $entry.Trim("`r", "`n")
+        if ($record -eq '') { continue }
+        if ($record -notmatch '^(\d{6}) (\w+) ([0-9a-f]{40})\t(.+)$') { throw 'target_tree_unreadable: a tree entry is malformed.' }
+        if ($Matches[2] -cne 'blob' -or ($Matches[1] -ne '100644' -and $Matches[1] -ne '100755')) { throw "target_unsupported_entry: $($Matches[4]) is a $($Matches[1]) $($Matches[2])." }
+        $tracked[$Matches[4]] = $Matches[3]
+    }
+    if ($tracked.Count -eq 0) { throw 'target_tree_unreadable: the commit''s tree is empty.' }
+
+    $root = Resolve-LanePath $TargetRoot
+    $missing = [System.Collections.Generic.List[string]]::new()
+    $changed = [System.Collections.Generic.List[string]]::new()
+    foreach ($path in $tracked.Keys) {
+        $file = Join-Path $root $path
+        if (-not [System.IO.File]::Exists($file)) { $missing.Add($path); continue }
+        if ((Get-GitBlobId $file) -cne $tracked[$path]) { $changed.Add($path) }
+    }
+    $extra = [System.Collections.Generic.List[string]]::new()
+    $allowed = 0
+    foreach ($item in Get-ChildItem -LiteralPath $root -Recurse -Force) {
+        if ($item.Attributes.HasFlag([System.IO.FileAttributes]::ReparsePoint)) { throw "target_reparse_point: $([System.IO.Path]::GetRelativePath($root, $item.FullName)) is a junction or symbolic link." }
+        if ($item.PSIsContainer) { continue }
+        $relative = [System.IO.Path]::GetRelativePath($root, $item.FullName).Replace('\', '/')
+        if ($tracked.ContainsKey($relative)) { continue }
+        $directories = @($relative.Split('/') | Select-Object -SkipLast 1)
+        if ($relative -ceq 'target.json' -or @($directories | Where-Object { $_ -ieq 'bin' -or $_ -ieq 'obj' }).Count -gt 0) { $allowed++; continue }
+        $extra.Add($relative)
+    }
+    $summary = [ordered]@{
+        commit          = $Commit
+        tree            = $Tree
+        tracked_files   = $tracked.Count
+        verified_files  = $tracked.Count - $missing.Count - $changed.Count
+        missing         = @($missing | Sort-Object | Select-Object -First 20)
+        changed         = @($changed | Sort-Object | Select-Object -First 20)
+        extra           = @($extra | Sort-Object | Select-Object -First 20)
+        allowed_extra   = $allowed
+    }
+    if ($missing.Count + $changed.Count + $extra.Count -gt 0) {
+        throw "target_source_differs: $($missing.Count) missing, $($changed.Count) changed, $($extra.Count) extra (first: $(@($summary.missing + $summary.changed + $summary.extra | Select-Object -First 5) -join ', '))."
+    }
+    $summary
+}
+
+# A script's identity now: its raw-byte Git blob id and SHA-256, and the version constant it declares.
+function Get-AnalysisScriptIdentity([string] $Path, [string] $VersionName) {
+    if (-not [System.IO.File]::Exists($Path)) { throw "analysis_script_missing: $(Split-Path -Leaf $Path) does not exist." }
+    $version = $null
+    foreach ($line in [System.IO.File]::ReadAllLines($Path)) {
+        if ($line -match "^$VersionName = `"([^`"]+)`"$") { $version = $Matches[1]; break }
+    }
+    [ordered]@{ blob = Get-GitBlobId $Path; sha256 = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant(); version = $version }
+}
+
+<#
+.SYNOPSIS
+    The analysis identity record: both scripts as they are in the approved commit, their versions,
+    the toolchain and the fixed analysis parameters.
+.DESCRIPTION
+    Each script's working bytes must be exactly its blob in the approved commit (the caller supplies
+    the commit), its version constant must be the pinned one, and analyze_timing.py must also match
+    its entry in the evidence manifest. Throws on any difference.
+#>
+function Get-AnalysisManifest {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [ValidatePattern('^[0-9a-f]{40}$')] [string] $Commit,
+        [Parameter(Mandatory)] [string] $EvidenceManifestPath,
+        [Parameter(Mandatory)] [string] $PythonVersion,
+        [Parameter(Mandatory)] [string] $NumpyVersion
+    )
+    $scripts = [ordered]@{}
+    foreach ($name in $script:AnalysisScripts.Keys) {
+        $path = $script:AnalysisScripts[$name]
+        $pinned = (& git -C $RepositoryRoot rev-parse "$Commit`:$path" 2>$null | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or $pinned -cnotmatch '^[0-9a-f]{40}$') { throw "analysis_script_unpinned: $path is not in the approved commit." }
+        $identity = Get-AnalysisScriptIdentity (Join-Path $RepositoryRoot $path) $(if ($name -eq 'analyze_timing') { 'METHOD_VERSION' } else { 'DIAGNOSTICS_VERSION' })
+        if ($identity.blob -cne $pinned) { throw "analysis_script_differs: $path is not the approved commit's version." }
+        $scripts[$name] = [ordered]@{ path = $path; blob = $identity.blob; sha256 = $identity.sha256; version = $identity.version }
+    }
+    if ($scripts.analyze_timing.version -cne $script:AnalysisParameters.method_version) { throw 'analysis_version_mismatch: analyze_timing.py declares another method version.' }
+    if ($scripts.diagnostics.version -cne $script:AnalysisParameters.diagnostics_version) { throw 'analysis_version_mismatch: diagnostics.py declares another version.' }
+    $entry = @(Get-Content -LiteralPath $EvidenceManifestPath | Where-Object { $_ -match '^([0-9a-f]{64})  \d+  analyze_timing\.py$' })
+    if ($entry.Count -ne 1 -or $entry[0].Substring(0, 64) -cne $scripts.analyze_timing.sha256) { throw 'analysis_script_differs: analyze_timing.py does not match the evidence manifest.' }
+    [ordered]@{
+        schema     = $script:AnalysisManifestSchema
+        commit     = $Commit
+        scripts    = $scripts
+        python     = $PythonVersion
+        numpy      = $NumpyVersion
+        # A copy, so that no caller can change the pinned values through the record.
+        parameters = ($script:AnalysisParameters | ConvertTo-Json -Depth 3 | ConvertFrom-Json -AsHashtable)
+    }
+}
+
+<#
+.SYNOPSIS
+    Requires both analysis scripts to be, right now, exactly the ones the analysis record pinned.
+.DESCRIPTION
+    Re-hashes each script immediately before use and compares its blob id, SHA-256 and version with
+    the record, and the record's parameters with the pinned ones. Throws on any difference; returns
+    the record's own SHA-256.
+#>
+function Assert-AnalysisIdentity {
+    param(
+        [Parameter(Mandatory)] [string] $RepositoryRoot,
+        [Parameter(Mandatory)] [string] $ManifestPath
+    )
+    try { $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json -AsHashtable }
+    catch { throw 'analysis_manifest_invalid: the record is not valid JSON.' }
+    if ($manifest -isnot [System.Collections.IDictionary] -or $manifest.schema -cne $script:AnalysisManifestSchema) { throw 'analysis_manifest_invalid: the record has another schema.' }
+    foreach ($name in $script:AnalysisScripts.Keys) {
+        $recorded = $manifest.scripts.$name
+        if ($recorded -isnot [System.Collections.IDictionary] -or $recorded.path -cne $script:AnalysisScripts[$name]) { throw "analysis_manifest_invalid: the record does not pin $name." }
+        $now = Get-AnalysisScriptIdentity (Join-Path $RepositoryRoot $recorded.path) $(if ($name -eq 'analyze_timing') { 'METHOD_VERSION' } else { 'DIAGNOSTICS_VERSION' })
+        if ($now.blob -cne $recorded.blob -or $now.sha256 -cne $recorded.sha256 -or $now.version -cne $recorded.version) { throw "analysis_script_differs: $($recorded.path) has changed since it was pinned." }
+    }
+    foreach ($key in $script:AnalysisParameters.Keys) {
+        if (($manifest.parameters.$key | ConvertTo-Json -Compress) -cne ($script:AnalysisParameters[$key] | ConvertTo-Json -Compress)) { throw "analysis_manifest_invalid: the record's $key is not the pinned value." }
+    }
+    [ordered]@{ manifest_sha256 = (Get-FileHash -LiteralPath $ManifestPath -Algorithm SHA256).Hash.ToLowerInvariant() }
+}
+
+<#
+.SYNOPSIS
+    The declared preflight: one power reading, then the sampler alone for a bounded window, stopped
+    and judged by the same rules as a run. No deployment, no request, no collector.
+.DESCRIPTION
+    Reads the power source once (recorded as check `preflight`), starts the sampler, waits for its
+    ready record, observes it for WindowSeconds of the monotonic clock (or until it exits), stops it
+    through Close-PowerSampler and judges its coverage of the window. The sampler is always closed,
+    even when readiness or the wait fails. Roles are reported as the ready record found them. The
+    result qualifies no later collection; a failure means review, never a retry. Every host access
+    is a parameter, so tests drive it with stand-ins and no real wait.
+#>
+function Invoke-SamplerPreflight {
+    param(
+        [Parameter(Mandatory)] [scriptblock] $ReadPower,
+        [Parameter(Mandatory)] [scriptblock] $Open,
+        [Parameter(Mandatory)] [scriptblock] $WaitReady,
+        [Parameter(Mandatory)] [scriptblock] $Close,
+        [Parameter(Mandatory)] [scriptblock] $ReadQpc,
+        [Parameter(Mandatory)] [scriptblock] $Clock,
+        [Parameter(Mandatory)] [scriptblock] $Pause,
+        [Parameter(Mandatory)] [string] $PowerPath,
+        [Parameter(Mandatory)] [string] $RunId,
+        [long] $QpcFrequency = [System.Diagnostics.Stopwatch]::Frequency,
+        [double] $WindowSeconds = 10
+    )
+    $reading = $null
+    try { $reading = & $ReadPower } catch { $reading = $null }
+    $result = [ordered]@{
+        schema             = 'sampler-preflight/1'
+        statement          = 'Preflight only: no deployment, no request, no collector. It qualifies no later collection.'
+        power              = ConvertTo-PowerCheckRecord -Check preflight -Reading $reading
+        ready_failure      = $null
+        ready_unmet        = @()
+        roles              = $null
+        window_seconds     = $WindowSeconds
+        observed_seconds   = $null
+        exited_early       = $false
+        stop               = $null
+        lifecycle_failures = @()
+        coverage_failures  = @()
+        outcome            = 'failed'
+    }
+    $process = $null
+    try {
+        $process = & $Open
+        $ready = & $WaitReady $process
+        $result.ready_failure = $ready.failure
+        $result.ready_unmet = @($ready.unmet)
+        if ($null -ne $ready.ready) { $result.roles = $ready.ready.roles }
+        if ($null -eq $ready.failure) {
+            $startQpc = [long](& $ReadQpc)
+            $started = [double](& $Clock)
+            while (([double](& $Clock) - $started) -lt $WindowSeconds) {
+                if ($process.HasExited) { $result.exited_early = $true; break }
+                & $Pause 200
+            }
+            $endQpc = [long](& $ReadQpc)
+            $result.observed_seconds = ($endQpc - $startQpc) / $QpcFrequency
+        }
+    }
+    finally {
+        if ($null -ne $process) {
+            $stop = & $Close $process
+            $result.stop = $stop
+            # Assigned first: the failures are returned as one array.
+            $lifecycle = Get-SamplerLifecycleFailure $stop
+            $result.lifecycle_failures = @($lifecycle)
+        }
+    }
+    if ($null -eq $result.ready_failure -and $null -ne $result.observed_seconds) {
+        $lines = @(if (Test-Path -LiteralPath $PowerPath) { Get-Content -LiteralPath $PowerPath })
+        $covered = Test-SamplerCoverage -Line $lines -RunId $RunId -QpcFrequency $QpcFrequency -LaunchQpc $startQpc -ExitQpc $endQpc
+        $result.coverage_failures = @($covered)
+    }
+    $passed = $result.power.condition_met -and $null -ne $process -and $null -eq $result.ready_failure -and -not $result.exited_early -and
+        $result.lifecycle_failures.Count -eq 0 -and $result.coverage_failures.Count -eq 0
+    $result.outcome = if ($passed) { 'passed' } else { 'failed' }
+    $result
+}
+
+Export-ModuleMember -Function Get-FingerprintedAssemblyName, Get-SettingAllowlist, Get-CollectorFixtureName, Resolve-LanePath, Assert-LaneRoot, Assert-OutsideWorktree, ConvertFrom-Sha256Listing, Assert-AssemblyFingerprint, Assert-RunSetting, Compare-LaneSnapshot, Assert-SamplesPhase, Assert-CollectorRun, Get-PowerSource, Get-PowerConditionFailure, ConvertTo-PowerCheckRecord, Add-PowerRefusal, Get-SchemeQueryProvider, ConvertTo-PowerSampleValue, ConvertFrom-PowerSampleRow, Test-SamplerCoverage, Resolve-RoleIdentity, Select-LocalDbCandidate, Initialize-HostSampleState, Get-HostSampleColumn, Get-HostSampleRole, Read-HostSample, Invoke-PowerSampler, Open-PowerSampler, Wait-PowerSamplerReady, ConvertTo-SamplerRefusalRecord, Close-PowerSampler, Get-SamplerLifecycleFailure, Get-GitBlobId, Get-FileInventory, Get-CollectorBuildManifest, Assert-CollectorBuild, Assert-TargetSource, Get-AnalysisManifest, Assert-AnalysisIdentity, Invoke-SamplerPreflight

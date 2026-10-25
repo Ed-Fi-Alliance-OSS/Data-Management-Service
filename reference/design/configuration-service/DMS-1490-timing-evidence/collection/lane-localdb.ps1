@@ -10,7 +10,8 @@
     For hosts that cannot run the SQL Server container (an ARM64 Windows host cannot). Steps:
     1. Refuses to start unless the staging, work and target folders neither equal, contain nor lie
        inside the collector checkout (and the staging folder none of the others), the collector
-       checkout is clean, the prepared target's Release assemblies still match the five
+       checkout is clean and at -ExpectedCollectorCommit with exactly the Release output recorded in
+       -CollectorBuildManifest, the prepared target's Release assemblies still match the five
        fingerprints prepare-target.ps1 recorded, power condition P holds, port 8081 is free, and
        no cs-local container exists.
     2. Starts the LocalDB instance, enables the sa login over its named pipe, and recreates the
@@ -56,6 +57,8 @@ param(
     [Parameter(Mandatory)] [string] $CollectorRoot,
     [Parameter(Mandatory)] [string] $TargetRoot,
     [Parameter(Mandatory)] [string] $WorkRoot,
+    [Parameter(Mandatory)] [string] $CollectorBuildManifest,
+    [Parameter(Mandatory)] [ValidatePattern('^[0-9a-f]{40}$')] [string] $ExpectedCollectorCommit,
     [string] $Instance = 'DMS1490',
     [ValidateSet('current', 'pre-fix')] [string] $Contract = 'current'
 )
@@ -234,9 +237,10 @@ $provenance = [ordered]@{
     schema                   = 'timing-provenance/4'
     environment_protocol     = [ordered]@{
         version               = 'E1'
+        # Set by review of a run's evidence, never by this script.
         complete              = $false
-        implemented           = 'power condition P before setup, before the collector launch and after it exits; sampler readiness and coverage'
-        not_implemented       = 'offline diagnostics and collector round timestamps'
+        implemented           = 'power condition P before setup, before the collector launch and after it exits; sampler readiness and coverage; timing-evidence/2 round timestamps and warm-up file; offline diagnostics; collector build, target and analysis identity checks'
+        acceptance            = 'pending: independent review of this run''s evidence'
         scheme_query_provider = Get-SchemeQueryProvider
     }
     attempt_started          = $false
@@ -267,6 +271,11 @@ try {
     $collectorStatus = Invoke-Native 'git status' { git -C $CollectorRoot status --porcelain }
     $provenance.collector = [ordered]@{ commit = $collectorCommit; worktree_clean = [string]::IsNullOrWhiteSpace(($collectorStatus | Out-String)) }
     if (-not $provenance.collector.worktree_clean) { throw 'The collector checkout is not clean.' }
+    # The collector build this lane runs (--no-build) must be the recorded Release output of the
+    # approved commit, file for file, before anything is set up.
+    $collectorTree = (Invoke-Native 'git rev-parse tree' { git -C $CollectorRoot rev-parse 'HEAD^{tree}' } | Out-String).Trim()
+    $provenance.collector_build = Assert-CollectorBuild -CollectorRoot $CollectorRoot -ManifestPath $CollectorBuildManifest -ExpectedCommit $ExpectedCollectorCommit -HeadCommit $collectorCommit -HeadTree $collectorTree
+    Write-LaneLog "COLLECTOR BUILD verified commit=$collectorCommit files=$($provenance.collector_build.files) manifest=$($provenance.collector_build.manifest_sha256)"
 
     $target = Get-Content -LiteralPath (Join-Path $TargetRoot 'target.json') -Raw | ConvertFrom-Json
     $provenance.target = $target
