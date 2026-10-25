@@ -1700,30 +1700,81 @@ function Get-AnalysisManifest {
 
 <#
 .SYNOPSIS
-    Requires both analysis scripts to be, right now, exactly the ones the analysis record pinned.
+    Requires both analysis scripts to be, right now, exactly the approved commit's, as the analysis
+    record pinned them.
 .DESCRIPTION
-    Re-hashes each script immediately before use and compares its blob id, SHA-256 and version with
-    the record, and the record's parameters with the pinned ones. Throws on any difference; returns
-    the record's own SHA-256.
+    The expected commit comes from the caller (the approval). The record must name it; each script's
+    recorded blob must be that commit's blob for its path, and its recorded version the approved one.
+    Each script is then re-hashed immediately before use, and its blob id, SHA-256 and declared
+    version compared with the record; the record's parameters must be the pinned ones. Throws on any
+    difference. Returns the record's own SHA-256 and the full path of each script verified, which is
+    the path to execute.
 #>
 function Assert-AnalysisIdentity {
     param(
         [Parameter(Mandatory)] [string] $RepositoryRoot,
-        [Parameter(Mandatory)] [string] $ManifestPath
+        [Parameter(Mandatory)] [string] $ManifestPath,
+        [Parameter(Mandatory)] [string] $ExpectedCommit
     )
+    if ($ExpectedCommit -cnotmatch '^[0-9a-f]{40}$') { throw 'analysis_expected_commit_invalid: the expected commit is not a full lowercase commit id.' }
     try { $manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json -AsHashtable }
     catch { throw 'analysis_manifest_invalid: the record is not valid JSON.' }
     if ($manifest -isnot [System.Collections.IDictionary] -or $manifest.schema -cne $script:AnalysisManifestSchema) { throw 'analysis_manifest_invalid: the record has another schema.' }
+    if ($manifest.commit -cne $ExpectedCommit) { throw 'analysis_commit_mismatch: the record is not for the approved commit.' }
+    $paths = [ordered]@{}
     foreach ($name in $script:AnalysisScripts.Keys) {
         $recorded = $manifest.scripts.$name
         if ($recorded -isnot [System.Collections.IDictionary] -or $recorded.path -cne $script:AnalysisScripts[$name]) { throw "analysis_manifest_invalid: the record does not pin $name." }
-        $now = Get-AnalysisScriptIdentity (Join-Path $RepositoryRoot $recorded.path) $(if ($name -eq 'analyze_timing') { 'METHOD_VERSION' } else { 'DIAGNOSTICS_VERSION' })
+        $approved = if ($name -eq 'analyze_timing') { $script:AnalysisParameters.method_version } else { $script:AnalysisParameters.diagnostics_version }
+        if ($recorded.version -cne $approved) { throw "analysis_version_mismatch: the record pins another version of $name." }
+        $pinned = (& git -C $RepositoryRoot rev-parse "$ExpectedCommit`:$($recorded.path)" 2>$null | Out-String).Trim()
+        if ($LASTEXITCODE -ne 0 -or $pinned -cnotmatch '^[0-9a-f]{40}$' -or $recorded.blob -cne $pinned) { throw "analysis_script_unpinned: the record's $name is not the approved commit's." }
+        $path = [System.IO.Path]::GetFullPath((Join-Path $RepositoryRoot $recorded.path))
+        $now =Get-AnalysisScriptIdentity $path $(if ($name -eq 'analyze_timing') { 'METHOD_VERSION' } else { 'DIAGNOSTICS_VERSION' })
         if ($now.blob -cne $recorded.blob -or $now.sha256 -cne $recorded.sha256 -or $now.version -cne $recorded.version) { throw "analysis_script_differs: $($recorded.path) has changed since it was pinned." }
+        $paths[$name] = $path
     }
     foreach ($key in $script:AnalysisParameters.Keys) {
         if (($manifest.parameters.$key | ConvertTo-Json -Compress) -cne ($script:AnalysisParameters[$key] | ConvertTo-Json -Compress)) { throw "analysis_manifest_invalid: the record's $key is not the pinned value." }
     }
-    [ordered]@{ manifest_sha256 = (Get-FileHash -LiteralPath $ManifestPath -Algorithm SHA256).Hash.ToLowerInvariant() }
+    [ordered]@{ manifest_sha256 = (Get-FileHash -LiteralPath $ManifestPath -Algorithm SHA256).Hash.ToLowerInvariant(); paths = $paths }
+}
+
+<#
+.SYNOPSIS
+    The path of the one launch record of a lane run's seed, in the staging folder.
+#>
+function Get-LaunchRecordPath {
+    param(
+        [Parameter(Mandatory)] [string] $OutputDir,
+        [Parameter(Mandatory)] [ValidateSet('postgresql', 'mssql')] [string] $Backend,
+        [Parameter(Mandatory)] [string] $RunLabel,
+        [Parameter(Mandatory)] [int] $Seed
+    )
+    Join-Path $OutputDir "launch-endpoint-$Backend-$RunLabel-seed$Seed.json"
+}
+
+<#
+.SYNOPSIS
+    Writes the launch record of a seed, which must not exist yet, and flushes it to disk.
+.DESCRIPTION
+    Created exclusively (FileMode.CreateNew), so of two runs claiming the same seed only one can
+    write it, and it is never rewritten. A lane writes it immediately before the collector launch
+    and launches only once it is written; the record then marks the seed as used even if the run
+    never publishes its provenance. Throws if the record exists or cannot be written.
+#>
+function Add-LaunchRecord {
+    param(
+        [Parameter(Mandatory)] [string] $Path,
+        [Parameter(Mandatory)] [System.Collections.IDictionary] $Record
+    )
+    $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes(($Record | ConvertTo-Json -Depth 4))
+    $stream = [System.IO.FileStream]::new($Path, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+    try {
+        $stream.Write($bytes, 0, $bytes.Length)
+        $stream.Flush($true)
+    }
+    finally { $stream.Dispose() }
 }
 
 <#
@@ -1807,4 +1858,4 @@ function Invoke-SamplerPreflight {
     $result
 }
 
-Export-ModuleMember -Function Get-FingerprintedAssemblyName, Get-SettingAllowlist, Get-CollectorFixtureName, Resolve-LanePath, Assert-LaneRoot, Assert-OutsideWorktree, ConvertFrom-Sha256Listing, Assert-AssemblyFingerprint, Assert-RunSetting, Compare-LaneSnapshot, Assert-SamplesPhase, Assert-CollectorRun, Get-PowerSource, Get-PowerConditionFailure, ConvertTo-PowerCheckRecord, Add-PowerRefusal, Get-SchemeQueryProvider, ConvertTo-PowerSampleValue, ConvertFrom-PowerSampleRow, Test-SamplerCoverage, Resolve-RoleIdentity, Select-LocalDbCandidate, Initialize-HostSampleState, Get-HostSampleColumn, Get-HostSampleRole, Read-HostSample, Invoke-PowerSampler, Open-PowerSampler, Wait-PowerSamplerReady, ConvertTo-SamplerRefusalRecord, Close-PowerSampler, Get-SamplerLifecycleFailure, Get-GitBlobId, Get-FileInventory, Get-CollectorBuildManifest, Assert-CollectorBuild, Assert-TargetSource, Get-AnalysisManifest, Assert-AnalysisIdentity, Invoke-SamplerPreflight
+Export-ModuleMember -Function Get-FingerprintedAssemblyName, Get-SettingAllowlist, Get-CollectorFixtureName, Resolve-LanePath, Assert-LaneRoot, Assert-OutsideWorktree, ConvertFrom-Sha256Listing, Assert-AssemblyFingerprint, Assert-RunSetting, Compare-LaneSnapshot, Assert-SamplesPhase, Assert-CollectorRun, Get-PowerSource, Get-PowerConditionFailure, ConvertTo-PowerCheckRecord, Add-PowerRefusal, Get-SchemeQueryProvider, ConvertTo-PowerSampleValue, ConvertFrom-PowerSampleRow, Test-SamplerCoverage, Resolve-RoleIdentity, Select-LocalDbCandidate, Initialize-HostSampleState, Get-HostSampleColumn, Get-HostSampleRole, Read-HostSample, Invoke-PowerSampler, Open-PowerSampler, Wait-PowerSamplerReady, ConvertTo-SamplerRefusalRecord, Close-PowerSampler, Get-SamplerLifecycleFailure, Get-GitBlobId, Get-FileInventory, Get-CollectorBuildManifest, Assert-CollectorBuild, Assert-TargetSource, Get-AnalysisManifest, Assert-AnalysisIdentity, Get-LaunchRecordPath, Add-LaunchRecord, Invoke-SamplerPreflight

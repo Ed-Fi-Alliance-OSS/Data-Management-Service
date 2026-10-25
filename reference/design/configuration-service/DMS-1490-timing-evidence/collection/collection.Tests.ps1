@@ -1872,6 +1872,14 @@ Describe 'Target source identity' {
 }
 
 Describe 'Analysis identity' {
+    BeforeAll {
+        # A script's identity as the record stores it, computed here independently of the module.
+        function Get-AnalysisScriptIdentityForTest([string] $Path, [string] $VersionName) {
+            $version = ([regex]::Match([System.IO.File]::ReadAllText($Path), "(?m)^$VersionName = `"([^`"]+)`"$")).Groups[1].Value
+            [ordered]@{ blob = Get-GitBlobId $Path; sha256 = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant(); version = $version }
+        }
+    }
+
     BeforeEach {
         $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
         $repository = Join-Path $root 'repository'
@@ -1888,6 +1896,8 @@ Describe 'Analysis identity' {
         "$hash  50  analyze_timing.py" | Set-Content -LiteralPath $sums
         $new = @{ RepositoryRoot = $repository; Commit = $commit; EvidenceManifestPath = $sums; PythonVersion = '3.12.10'; NumpyVersion = '2.5.2' }
         $record = Join-Path $root 'analysis-manifest.json'
+        $check = @{ RepositoryRoot = $repository; ManifestPath = $record; ExpectedCommit = $commit }
+        $commitAll = { param([string] $Message) git -C $repository -c core.autocrlf=false add -A 2>$null; git -C $repository -c core.autocrlf=false -c user.name=test -c user.email=test@example.invalid commit -q -m $Message 2>$null; ((git -C $repository rev-parse HEAD) | Out-String).Trim() }
     }
 
     It 'pins both scripts at the approved commit with the fixed parameters, and re-checks them' {
@@ -1898,7 +1908,53 @@ Describe 'Analysis identity' {
         $manifest.parameters.delta_us | Should -Be 250
         @($manifest.parameters.candidates) | Should -Be @(500, 1000, 2000, 4000)
         $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $record
-        (Assert-AnalysisIdentity -RepositoryRoot $repository -ManifestPath $record).manifest_sha256 | Should -Match '^[0-9a-f]{64}$'
+        $verified = Assert-AnalysisIdentity @check
+        $verified.manifest_sha256 | Should -Be (Get-FileHash -LiteralPath $record -Algorithm SHA256).Hash.ToLowerInvariant()
+        $verified.paths.analyze_timing | Should -Be (Join-Path $evidence 'analyze_timing.py')
+        $verified.paths.diagnostics | Should -Be (Join-Path $evidence 'diagnostics.py')
+    }
+
+    It 'refuses a record checked against another approved commit' {
+        Get-AnalysisManifest @new | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $record
+        $check.ExpectedCommit = 'f' * 40
+        { Assert-AnalysisIdentity @check } | Should -Throw '*analysis_commit_mismatch*'
+    }
+
+    It 'refuses a record that names another commit than the approved one' {
+        $manifest = Get-AnalysisManifest @new
+        $manifest.commit = 'f' * 40
+        $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $record
+        { Assert-AnalysisIdentity @check } | Should -Throw '*analysis_commit_mismatch*'
+    }
+
+    It 'refuses a self-consistent record of a script that is not the approved commit''s' {
+        $manifest = Get-AnalysisManifest @new
+        Add-Content -LiteralPath (Join-Path $evidence 'diagnostics.py') -Value '# edited'
+        $edited = Get-AnalysisScriptIdentityForTest (Join-Path $evidence 'diagnostics.py') 'DIAGNOSTICS_VERSION'
+        $manifest.scripts.diagnostics.blob = $edited.blob
+        $manifest.scripts.diagnostics.sha256 = $edited.sha256
+        $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $record
+        { Assert-AnalysisIdentity @check } | Should -Throw '*analysis_script_unpinned*'
+    }
+
+    It 'refuses a self-consistent record of a commit whose script declares another version' {
+        $manifest = Get-AnalysisManifest @new
+        [System.IO.File]::WriteAllText((Join-Path $evidence 'diagnostics.py'), "DIAGNOSTICS_VERSION = `"2`"`n")
+        $versionTwo = & $commitAll 'v2'
+        $edited = Get-AnalysisScriptIdentityForTest (Join-Path $evidence 'diagnostics.py') 'DIAGNOSTICS_VERSION'
+        $manifest.commit = $versionTwo
+        $manifest.scripts.diagnostics.blob = $edited.blob
+        $manifest.scripts.diagnostics.sha256 = $edited.sha256
+        $manifest.scripts.diagnostics.version = $edited.version
+        $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $record
+        $check.ExpectedCommit = $versionTwo
+        { Assert-AnalysisIdentity @check } | Should -Throw '*analysis_version_mismatch*'
+    }
+
+    It 'refuses an expected commit that is not a full id' {
+        Get-AnalysisManifest @new | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $record
+        $check.ExpectedCommit = $commit.Substring(0, 12)
+        { Assert-AnalysisIdentity @check } | Should -Throw '*analysis_expected_commit_invalid*'
     }
 
     It 'refuses to pin a script that differs from the approved commit' {
@@ -1913,23 +1969,51 @@ Describe 'Analysis identity' {
 
     It 'refuses a script that declares another version' {
         [System.IO.File]::WriteAllText((Join-Path $evidence 'diagnostics.py'), "DIAGNOSTICS_VERSION = `"2`"`n")
-        git -C $repository -c core.autocrlf=false add -A 2>$null
-        git -C $repository -c core.autocrlf=false -c user.name=test -c user.email=test@example.invalid commit -q -m v2 2>$null
-        $new.Commit = ((git -C $repository rev-parse HEAD) | Out-String).Trim()
+        $new.Commit = & $commitAll 'v2'
         { Get-AnalysisManifest @new } | Should -Throw '*analysis_version_mismatch*'
     }
 
     It 'refuses, immediately before use, a script changed after it was pinned' {
         Get-AnalysisManifest @new | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $record
         Add-Content -LiteralPath (Join-Path $evidence 'analyze_timing.py') -Value '# edited'
-        { Assert-AnalysisIdentity -RepositoryRoot $repository -ManifestPath $record } | Should -Throw '*analysis_script_differs*'
+        { Assert-AnalysisIdentity @check } | Should -Throw '*analysis_script_differs*'
     }
 
     It 'refuses a record whose <Key> is not the pinned value' -ForEach @(@{ Key = 'resamples'; Value = 1000 }, @{ Key = 'delta_us'; Value = 25 }, @{ Key = 'seed'; Value = 2 }) {
         $manifest = Get-AnalysisManifest @new
         $manifest.parameters[$Key] = $Value
         $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $record
-        { Assert-AnalysisIdentity -RepositoryRoot $repository -ManifestPath $record } | Should -Throw "*record's $Key is not the pinned value*"
+        { Assert-AnalysisIdentity @check } | Should -Throw "*record's $Key is not the pinned value*"
+    }
+}
+
+Describe 'Launch record' {
+    BeforeEach {
+        $folder = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $folder | Out-Null
+        $path = Get-LaunchRecordPath -OutputDir $folder -Backend postgresql -RunLabel 'e1-pilot-a5' -Seed 401
+    }
+
+    It 'names one record per backend, run label and seed' {
+        Split-Path -Leaf $path | Should -Be 'launch-endpoint-postgresql-e1-pilot-a5-seed401.json'
+        Split-Path -Leaf (Get-LaunchRecordPath -OutputDir $folder -Backend mssql -RunLabel 'e1-pilot-a5' -Seed 402) | Should -Be 'launch-endpoint-mssql-e1-pilot-a5-seed402.json'
+    }
+
+    It 'writes the record' {
+        Add-LaunchRecord -Path $path -Record ([ordered]@{ schema = 'timing-launch/1'; seed = 401 })
+        (Get-Content -LiteralPath $path -Raw | ConvertFrom-Json).seed | Should -Be 401
+    }
+
+    It 'refuses a record that already exists, and leaves it as it was' {
+        Add-LaunchRecord -Path $path -Record ([ordered]@{ seed = 401; run = 'first' })
+        { Add-LaunchRecord -Path $path -Record ([ordered]@{ seed = 401; run = 'second' }) } | Should -Throw
+        (Get-Content -LiteralPath $path -Raw | ConvertFrom-Json).run | Should -Be 'first'
+    }
+
+    It 'throws when the record cannot be created' {
+        $unreachable = Join-Path $folder 'missing\launch.json'
+        { Add-LaunchRecord -Path $unreachable -Record ([ordered]@{ seed = 401 }) } | Should -Throw
+        Test-Path -LiteralPath $unreachable | Should -BeFalse
     }
 }
 
@@ -2025,14 +2109,15 @@ Describe 'Invoke-SamplerPreflight' {
 
 Describe 'stage-e1.ps1 with synthetic commands' {
     BeforeAll {
-        $driver = Join-Path $PSScriptRoot 'stage-e1.ps1'
         $global:DriverCommit = 'abcdefabcdefabcdefabcdefabcdefabcdefabcd'
+        $collectionPath = 'reference\design\configuration-service\DMS-1490-timing-evidence\collection'
 
         function global:git {
             $line = $args -join ' '
             $global:DriverScenario.Calls.Add("git $line")
             $global:LASTEXITCODE = 0
             if ($line -like '*status --porcelain') { if ($global:DriverScenario.Dirty) { ' M file.cs' }; return }
+            if ($line -like '*rev-parse --show-toplevel') { return $global:DriverScenario.TopLevel }
             if ($line -like '*rev-parse HEAD^{tree}') { return '9999999999999999999999999999999999999999' }
             if ($line -like '*rev-parse HEAD') { return $global:DriverScenario.Head }
         }
@@ -2061,13 +2146,19 @@ Describe 'stage-e1.ps1 with synthetic commands' {
             if ($line -like '* fit *') { return '{"mu": 9.9, "sigma": 0.1, "rho": 0.2, "drift_sd": 3.5}' }
             if ($line -like '* plan *' -or $line -like '* simulate *') { return '{}' }
         }
-        # A lane run: records its arguments and writes the provenance the scenario asks for.
+        # A lane run: records its arguments, writes the launch record a launched run writes, and the
+        # provenance the scenario asks for. An interrupted run stops after its launch record.
         function global:pwsh {
             $global:DriverScenario.Calls.Add("pwsh $($args -join ' ')")
             $lane = Split-Path -Leaf $args[[array]::IndexOf($args, '-File') + 1]
             $backend = if ($lane -eq 'lane-postgresql.ps1') { 'postgresql' } else { 'mssql' }
             $stage = $args[[array]::IndexOf($args, '-OutputDir') + 1]
+            $seed = $args[[array]::IndexOf($args, '-Seed') + 1]
             $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmssfff'Z'")
+            if ($global:DriverScenario.LaneAttempted -and $global:DriverScenario.WriteLaunchRecord) {
+                '{"schema": "timing-launch/1"}' | Set-Content -LiteralPath (Join-Path $stage "launch-endpoint-$backend-e1-pilot-a5-seed$seed.json")
+            }
+            if ($global:DriverScenario.LaneInterrupted) { $global:LASTEXITCODE = 1; return }
             [ordered]@{
                 attempt_started = $global:DriverScenario.LaneAttempted
                 succeeded       = ($global:DriverScenario.LaneExit -eq 0)
@@ -2076,18 +2167,25 @@ Describe 'stage-e1.ps1 with synthetic commands' {
             $global:LASTEXITCODE = $global:DriverScenario.LaneExit
         }
 
-        # The identity and preflight functions answer from the scenario; the driver's own logic is
-        # what is tested.
-        function global:Get-DriverStandIn([string] $Name) {
-            $global:DriverScenario.Calls.Add($Name)
-            if ($global:DriverScenario.Throw -contains $Name) { throw "${Name}: stand-in failure" }
+        # The identity and preflight functions answer from the scenario and record the arguments they
+        # were given; the driver's own logic and wiring is what is tested.
+        function global:Get-DriverStandIn([string] $Name, [string] $Detail) {
+            $global:DriverScenario.Calls.Add("$Name $Detail".Trim())
+            $global:DriverScenario.Counts[$Name] = 1 + [int]$global:DriverScenario.Counts[$Name]
+            if ($global:DriverScenario.Throw -contains $Name -or $global:DriverScenario.ThrowOnCall[$Name] -eq $global:DriverScenario.Counts[$Name]) { throw "${Name}: stand-in failure" }
             [ordered]@{ stand_in = $Name; files = 2; manifest_sha256 = ('0' * 64); tracked_files = 3; allowed_extra = 1 }
         }
-        function global:Get-StandInCollectorBuildManifest { Get-DriverStandIn 'Get-CollectorBuildManifest' }
-        function global:Assert-StandInCollectorBuild { Get-DriverStandIn 'Assert-CollectorBuild' }
-        function global:Assert-StandInTargetSource { Get-DriverStandIn 'Assert-TargetSource' }
-        function global:Get-StandInAnalysisManifest { Get-DriverStandIn 'Get-AnalysisManifest' }
-        function global:Assert-StandInAnalysisIdentity { Get-DriverStandIn 'Assert-AnalysisIdentity' }
+        function global:Get-StandInCollectorBuildManifest { param($CollectorRoot, $Commit, $Tree, $BuildCommand, $SdkVersion) Get-DriverStandIn 'Get-CollectorBuildManifest' "$CollectorRoot|$Commit" }
+        function global:Assert-StandInCollectorBuild { param($CollectorRoot, $ManifestPath, $ExpectedCommit, $HeadCommit, $HeadTree) Get-DriverStandIn 'Assert-CollectorBuild' "$CollectorRoot|$ExpectedCommit|$HeadCommit" }
+        function global:Assert-StandInTargetSource { param($RepositoryRoot, $TargetRoot, $Commit, $Tree) Get-DriverStandIn 'Assert-TargetSource' "$RepositoryRoot|$TargetRoot|$Commit|$Tree" }
+        function global:Get-StandInAnalysisManifest { param($RepositoryRoot, $Commit, $EvidenceManifestPath, $PythonVersion, $NumpyVersion) Get-DriverStandIn 'Get-AnalysisManifest' "$RepositoryRoot|$Commit" }
+        function global:Assert-StandInAnalysisIdentity {
+            param($RepositoryRoot, $ManifestPath, $ExpectedCommit)
+            $result = Get-DriverStandIn 'Assert-AnalysisIdentity' "$RepositoryRoot|$ExpectedCommit"
+            $evidence = Join-Path $RepositoryRoot 'reference\design\configuration-service\DMS-1490-timing-evidence'
+            $result.paths = [ordered]@{ analyze_timing = Join-Path $evidence 'analyze_timing.py'; diagnostics = Join-Path $evidence 'diagnostics.py' }
+            $result
+        }
         function global:Invoke-StandInSamplerPreflight { $global:DriverScenario.Calls.Add('Invoke-SamplerPreflight'); [ordered]@{ schema = 'sampler-preflight/1'; outcome = $global:DriverScenario.PreflightOutcome } }
         $standIns = @{
             'Get-CollectorBuildManifest' = 'Get-StandInCollectorBuildManifest'
@@ -2108,41 +2206,91 @@ Describe 'stage-e1.ps1 with synthetic commands' {
 
     BeforeEach {
         $root = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        # The driver runs from a copy in a checkout of its own, as it does from the real one.
+        $repository = Join-Path $root 'repository'
+        $collection = Join-Path $repository $collectionPath
+        New-Item -ItemType Directory -Force -Path $collection | Out-Null
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'stage-e1.ps1'), (Join-Path $PSScriptRoot 'CollectionLane.psm1') -Destination $collection
+        $driver = Join-Path $collection 'stage-e1.ps1'
+        $evidence = Split-Path -Parent $collection
         $paths = @{
-            Repository = Join-Path $root 'repository'
-            Stage      = Join-Path $root 'stage-e1\pilot'
-            Work       = Join-Path $root 'work\runs-e1'
-            Targets    = Join-Path $root 'work\targets'
+            Stage   = Join-Path $root 'stage-e1\pilot'
+            Work    = Join-Path $root 'work\runs-e1'
+            Targets = Join-Path $root 'work\targets'
         }
-        New-Item -ItemType Directory -Force -Path $paths.Repository, (Join-Path $paths.Targets 'a5') | Out-Null
+        New-Item -ItemType Directory -Force -Path (Join-Path $paths.Targets 'a5') | Out-Null
         $global:DriverScenario = @{
-            Calls = [System.Collections.Generic.List[string]]::new(); Head = $global:DriverCommit; Dirty = $false; BuildExit = 0
-            LaneExit = 0; LaneAttempted = $true; DiagnoseExit = 0; PreflightOutcome = 'passed'; Throw = @()
+            Calls = [System.Collections.Generic.List[string]]::new(); Counts = @{}; Head = $global:DriverCommit; TopLevel = $repository.Replace('\', '/'); Dirty = $false; BuildExit = 0
+            LaneExit = 0; LaneAttempted = $true; WriteLaunchRecord = $true; LaneInterrupted = $false; DiagnoseExit = 0; PreflightOutcome = 'passed'; Throw = @(); ThrowOnCall = @{}
         }
         $run = { param([string] $Step) & $driver -Step $Step -ExpectedCommit $global:DriverCommit @paths; $LASTEXITCODE }
         $log = { param([string] $Step) Get-Content -LiteralPath (Join-Path $paths.Stage "$($Step.ToLowerInvariant())-commands.log") -Raw }
-        $stageZeroFiles = { foreach ($name in 'collector-build.json', 'analysis-manifest.json') { '{}' | Set-Content -LiteralPath (Join-Path $paths.Stage $name) } }
-        $diagnostics = { param([string] $Backend, [bool] $Stop) New-Item -ItemType Directory -Force -Path (Join-Path $paths.Stage 'analysis') | Out-Null; @{ input = "x-$Backend.csv"; flags = @{ stop_for_review = $Stop } } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $paths.Stage "analysis\diagnostics-$Backend.json") }
+        $calls = { param([string] $Pattern) @($global:DriverScenario.Calls | Where-Object { $_ -like $Pattern }) }
+        $indexOf = { param([string] $Line) $global:DriverScenario.Calls.IndexOf($Line) }
+        $before = { param([string] $Line) $global:DriverScenario.Calls[$global:DriverScenario.Calls.IndexOf($Line) - 1] }
+        # Earlier steps run through the driver itself, so a later step meets their real records.
+        $completeStage0 = { (& $run 'Stage0') | Should -Be 0; $global:DriverScenario.Calls.Clear(); $global:DriverScenario.Counts.Clear() }
+        $passPreflight = { & $completeStage0; (& $run 'Preflight') | Should -Be 0; $global:DriverScenario.Calls.Clear(); $global:DriverScenario.Counts.Clear() }
+        $diagnostics = { param([string] $Backend, [bool] $Stop) @{ input = "x-$Backend.csv"; flags = @{ stop_for_review = $Stop } } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $paths.Stage "analysis\diagnostics-$Backend.json") }
+        $targetCall = { param([string] $Name, [string] $Commit, [string] $Tree) "Assert-TargetSource $repository|$(Join-Path $paths.Targets $Name)|$Commit|$Tree" }
+        $a5 = @('a5', 'b2b8d5df47e5e48c46f9ca26fe0f2a58b787c399', 'd420aa2c27a94a9d3736af7c82fd7ce4298e121e')
+        $baseline = @('baseline', '9a19802ddae9b23b103cd92dd6c27a8a48814cb7', 'd5d810184f6f34e8732e1ce2ad06d79509c0cf4f')
+        $identityCall = "Assert-AnalysisIdentity $repository|$($global:DriverCommit)"
     }
 
     It 'runs Stage0 with literal commands and writes its records, without any lane or diagnostics' {
         & $run 'Stage0' | Should -Be 0
-        foreach ($name in 'collector-build.json', 'target-verification.json', 'analysis-manifest.json', 'toolchain.json') { Test-Path -LiteralPath (Join-Path $paths.Stage $name) | Should -BeTrue }
+        foreach ($name in 'collector-build.json', 'target-verification.json', 'analysis-manifest.json', 'toolchain.json', 'stage0.json') { Test-Path -LiteralPath (Join-Path $paths.Stage $name) | Should -BeTrue }
         $text = & $log 'Stage0'
-        $text | Should -Match ([regex]::Escape("dotnet build $(Join-Path $paths.Repository 'src\config\tests\EdFi.DmsConfigurationService.Tests.E2E\EdFi.DmsConfigurationService.Tests.E2E.csproj') -c Release --no-incremental --nologo -> exit 0"))
-        $text | Should -Match 'analyze_timing.py selftest -> exit 0'
+        $text | Should -Match ([regex]::Escape("dotnet build $(Join-Path $repository 'src\config\tests\EdFi.DmsConfigurationService.Tests.E2E\EdFi.DmsConfigurationService.Tests.E2E.csproj') -c Release --no-incremental --nologo -> exit 0"))
+        $text | Should -Match ([regex]::Escape("python -I -B $(Join-Path $evidence 'analyze_timing.py') selftest -> exit 0"))
         $text | Should -Match 'DONE Stage0; stop for review'
-        @($global:DriverScenario.Calls | Where-Object { $_ -like 'Assert-TargetSource' }).Count | Should -Be 2
-        $global:DriverScenario.Calls | Where-Object { $_ -like 'pwsh *' -or $_ -like '* diagnose *' } | Should -BeNullOrEmpty
+        & $calls 'pwsh *' | Should -BeNullOrEmpty
+        & $calls '* diagnose *' | Should -BeNullOrEmpty
+    }
+
+    It 'verifies each prepared target at its own folder against its own pins' {
+        & $run 'Stage0' | Should -Be 0
+        & $calls 'Assert-TargetSource *' | Should -Be @((& $targetCall @a5), (& $targetCall @baseline))
+        $recorded = Get-Content -LiteralPath (Join-Path $paths.Stage 'target-verification.json') -Raw | ConvertFrom-Json
+        $recorded.targets_root | Should -Be $paths.Targets
+        @($recorded.targets.PSObject.Properties.Name) | Should -Be @('a5', 'baseline')
+    }
+
+    It 'pins the collector build and the analysis scripts to the approved commit, in its own checkout' {
+        & $run 'Stage0' | Should -Be 0
+        & $calls 'Get-CollectorBuildManifest *' | Should -Be @("Get-CollectorBuildManifest $repository|$($global:DriverCommit)")
+        & $calls 'Assert-CollectorBuild *' | Should -Be @("Assert-CollectorBuild $repository|$($global:DriverCommit)|$($global:DriverCommit)")
+        & $calls 'Get-AnalysisManifest *' | Should -Be @("Get-AnalysisManifest $repository|$($global:DriverCommit)")
+        foreach ($line in & $calls 'git *') { $line | Should -BeLike "git -C $repository *" }
+    }
+
+    It 'checks the analysis identity immediately before each selftest, and records completion last' {
+        & $run 'Stage0' | Should -Be 0
+        foreach ($script in 'analyze_timing.py', 'diagnostics.py') {
+            & $before @(& $calls "python *$script selftest")[0] | Should -Be $identityCall
+        }
+        $completion = Get-Content -LiteralPath (Join-Path $paths.Stage 'stage0.json') -Raw | ConvertFrom-Json
+        $completion.expected_commit | Should -Be $global:DriverCommit
+        $completion.targets_root | Should -Be $paths.Targets
+        $completion.records.'collector-build.json' | Should -Be (Get-FileHash -LiteralPath (Join-Path $paths.Stage 'collector-build.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+
+    It 'stops Stage0 before the selftests, and incomplete, when the analysis identity fails' {
+        $global:DriverScenario.Throw = @('Assert-AnalysisIdentity')
+        & $run 'Stage0' | Should -Be 1
+        & $calls '* selftest' | Should -BeNullOrEmpty
+        Test-Path -LiteralPath (Join-Path $paths.Stage 'stage0.json') | Should -BeFalse
     }
 
     It 'stops Stage0 before building when <Name>' -ForEach @(
         @{ Name = 'the checkout is not clean'; Change = @{ Dirty = $true } }
         @{ Name = 'HEAD is not the approved commit'; Change = @{ Head = '1234567890123456789012345678901234567890' } }
+        @{ Name = 'the script is not at its checkout''s top level'; Change = @{ TopLevel = 'C:/elsewhere/checkout' } }
     ) {
         foreach ($key in $Change.Keys) { $global:DriverScenario[$key] = $Change[$key] }
         & $run 'Stage0' | Should -Be 1
-        $global:DriverScenario.Calls | Where-Object { $_ -like 'dotnet build *' } | Should -BeNullOrEmpty
+        & $calls 'dotnet build *' | Should -BeNullOrEmpty
         Test-Path -LiteralPath (Join-Path $paths.Stage 'collector-build.json') | Should -BeFalse
         & $log 'Stage0' | Should -Match 'STOPPED Stage0'
     }
@@ -2157,7 +2305,8 @@ Describe 'stage-e1.ps1 with synthetic commands' {
         $global:DriverScenario.Throw = @('Assert-TargetSource')
         & $run 'Stage0' | Should -Be 1
         Test-Path -LiteralPath (Join-Path $paths.Stage 'analysis-manifest.json') | Should -BeFalse
-        $global:DriverScenario.Calls | Where-Object { $_ -like '* selftest' } | Should -BeNullOrEmpty
+        Test-Path -LiteralPath (Join-Path $paths.Stage 'stage0.json') | Should -BeFalse
+        & $calls '* selftest' | Should -BeNullOrEmpty
     }
 
     It 'never overwrites an earlier Stage0 record' {
@@ -2169,31 +2318,105 @@ Describe 'stage-e1.ps1 with synthetic commands' {
     }
 
     It 'runs the PostgreSQL pilot once with the reserved settings, then its diagnostics, and nothing else' {
-        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
-        & $stageZeroFiles
+        & $passPreflight
         & $run 'PilotPostgreSql' | Should -Be 0
-        $lanes = @($global:DriverScenario.Calls | Where-Object { $_ -like 'pwsh *' })
+        $lanes = @(& $calls 'pwsh *')
         $lanes.Count | Should -Be 1
-        $lanes[0] | Should -BeLike '*lane-postgresql.ps1 -RunLabel e1-pilot-a5 -Rounds 200 -WarmupRounds 1200 -Seed 401 *'
-        $lanes[0] | Should -BeLike "*-TargetRoot $(Join-Path $paths.Targets 'a5') *"
+        $lanes[0] | Should -BeLike "pwsh -NoProfile -File $(Join-Path $collection 'lane-postgresql.ps1') -RunLabel e1-pilot-a5 -Rounds 200 -WarmupRounds 1200 -Seed 401 *"
+        $lanes[0] | Should -BeLike "*-CollectorRoot $repository -TargetRoot $(Join-Path $paths.Targets 'a5') *"
         $lanes[0] | Should -BeLike "*-CollectorBuildManifest $(Join-Path $paths.Stage 'collector-build.json') -ExpectedCollectorCommit $($global:DriverCommit)"
-        $global:DriverScenario.Calls | Where-Object { $_ -like '*lane-localdb.ps1*' } | Should -BeNullOrEmpty
-        ($global:DriverScenario.Calls | Where-Object { $_ -like '* diagnose *' }) | Should -BeLike '* --delta 250 --resamples 5000 --seed 1'
-        $global:DriverScenario.Calls.IndexOf('Assert-AnalysisIdentity') | Should -BeLessThan $global:DriverScenario.Calls.IndexOf(($global:DriverScenario.Calls | Where-Object { $_ -like '* diagnose *' }))
+        & $calls '*lane-localdb.ps1*' | Should -BeNullOrEmpty
+        $diagnose = @(& $calls '* diagnose *')
+        $diagnose.Count | Should -Be 1
+        $diagnose[0] | Should -BeLike "python -I -B $(Join-Path $evidence 'diagnostics.py') diagnose --csv $(Join-Path $paths.Stage 'e1-pilot-a5-endpoint-postgresql-')*.csv --delta 250 --resamples 5000 --seed 1"
+        & $before $diagnose[0] | Should -Be $identityCall
         Test-Path -LiteralPath (Join-Path $paths.Stage 'analysis\diagnostics-postgresql.json') | Should -BeTrue
     }
 
+    It 'verifies target A5 again against its pins before the lane, and records it' {
+        & $passPreflight
+        & $run 'PilotPostgreSql' | Should -Be 0
+        & $calls 'Assert-TargetSource *' | Should -Be @(& $targetCall @a5)
+        $verified = & $indexOf (& $targetCall @a5)
+        $verified | Should -BeGreaterOrEqual 0
+        $verified | Should -BeLessThan (& $indexOf @(& $calls 'pwsh *')[0])
+        $check = Get-ChildItem -LiteralPath $paths.Stage -Filter 'target-check-postgresql-*.json'
+        @($check).Count | Should -Be 1
+        (Get-Content -LiteralPath $check.FullName -Raw | ConvertFrom-Json).targets_root | Should -Be $paths.Targets
+    }
+
+    It 'refuses the pilot, launching nothing, when <Name>' -ForEach @(
+        @{ Name = 'Stage0 never ran'; Arrange = { param($c) } }
+        @{ Name = 'Stage0 failed'; Arrange = { param($c) $global:DriverScenario.Throw = @('Assert-TargetSource'); (& $c.Run 'Stage0') | Should -Be 1; $global:DriverScenario.Throw = @() } }
+        @{ Name = 'a Stage0 record changed after Stage0 completed'; Arrange = { param($c) & $c.PassPreflight; Add-Content -LiteralPath (Join-Path $c.Paths.Stage 'collector-build.json') -Value ' ' } }
+        @{ Name = 'the preflight never ran'; Arrange = { param($c) & $c.CompleteStage0 } }
+        @{ Name = 'the preflight failed'; Arrange = { param($c) & $c.CompleteStage0; $global:DriverScenario.PreflightOutcome = 'failed'; (& $c.Run 'Preflight') | Should -Be 1 } }
+        @{ Name = 'the preflight belongs to another Stage0'; Arrange = { param($c) & $c.PassPreflight; $p = Join-Path $c.Paths.Stage 'preflight.json'; (Get-Content -LiteralPath $p -Raw) -replace '"stage0_sha256": "[0-9a-f]+"', ('"stage0_sha256": "' + ('1' * 64) + '"') | Set-Content -LiteralPath $p } }
+        @{ Name = 'another targets folder is given than the one Stage0 verified'; Arrange = { param($c) & $c.PassPreflight; $c.Paths.Targets = Join-Path (Split-Path -Parent $c.Paths.Targets) 'other-targets' } }
+        @{ Name = 'target A5 no longer matches its pins'; Arrange = { param($c) & $c.PassPreflight; $global:DriverScenario.Throw = @('Assert-TargetSource') } }
+    ) {
+        & $Arrange @{ Run = $run; Paths = $paths; CompleteStage0 = $completeStage0; PassPreflight = $passPreflight }
+        $global:DriverScenario.Calls.Clear()
+        & $run 'PilotPostgreSql' | Should -Be 1
+        & $calls 'pwsh *' | Should -BeNullOrEmpty
+        & $calls 'python *' | Should -BeNullOrEmpty
+        Test-Path -LiteralPath (Join-Path $paths.Stage 'launch-endpoint-postgresql-e1-pilot-a5-seed401.json') | Should -BeFalse
+    }
+
+    It 'refuses <Step> when the checkout is <Name> after Stage0' -ForEach @(
+        @{ Step = 'Preflight'; Name = 'no longer clean'; Change = @{ Dirty = $true } }
+        @{ Step = 'PilotPostgreSql'; Name = 'no longer clean'; Change = @{ Dirty = $true } }
+        @{ Step = 'PilotPostgreSql'; Name = 'at another commit'; Change = @{ Head = '1234567890123456789012345678901234567890' } }
+        @{ Step = 'Planning'; Name = 'at another commit'; Change = @{ Head = '1234567890123456789012345678901234567890' } }
+    ) {
+        if ($Step -eq 'Preflight') { & $completeStage0 } else { & $passPreflight }
+        & $diagnostics 'postgresql' $false
+        & $diagnostics 'mssql' $false
+        if ($Step -eq 'PilotPostgreSql') { Remove-Item -LiteralPath (Join-Path $paths.Stage 'analysis\diagnostics-postgresql.json') }
+        foreach ($key in $Change.Keys) { $global:DriverScenario[$key] = $Change[$key] }
+        & $run $Step | Should -Be 1
+        $global:DriverScenario.Calls | Should -Not -Contain 'Invoke-SamplerPreflight'
+        & $calls 'pwsh *' | Should -BeNullOrEmpty
+        & $calls 'python *' | Should -BeNullOrEmpty
+        & $calls 'Assert-TargetSource *' | Should -BeNullOrEmpty
+    }
+
+    It 'does not reach target verification when the targets folder is not the one Stage0 verified' {
+        & $passPreflight
+        $paths.Targets = Join-Path (Split-Path -Parent $paths.Targets) 'other-targets'
+        & $run 'PilotPostgreSql' | Should -Be 1
+        & $calls 'Assert-TargetSource *' | Should -BeNullOrEmpty
+        & $log 'PilotPostgreSql' | Should -Match 'The targets folder is not the one Stage0 verified'
+    }
+
+    It 'refuses another launch of a seed whose earlier run stopped after its launch record, before any provenance' {
+        & $passPreflight
+        $global:DriverScenario.LaneInterrupted = $true
+        & $run 'PilotPostgreSql' | Should -Be 1
+        Get-ChildItem -LiteralPath $paths.Stage -Filter 'provenance-*.json' | Should -BeNullOrEmpty
+        $global:DriverScenario.LaneInterrupted = $false
+        & $run 'PilotPostgreSql' | Should -Be 1
+        @(& $calls 'pwsh *').Count | Should -Be 1
+        & $calls '* diagnose *' | Should -BeNullOrEmpty
+        & $log 'PilotPostgreSql' | Should -Match 'Seed 401 was already launched \(launch-endpoint-postgresql-e1-pilot-a5-seed401\.json\)'
+    }
+
+    It 'stops before the diagnostics when a run reports a launch but left no launch record' {
+        & $passPreflight
+        $global:DriverScenario.WriteLaunchRecord = $false
+        & $run 'PilotPostgreSql' | Should -Be 1
+        & $calls '* diagnose *' | Should -BeNullOrEmpty
+    }
+
     It 'stops the pilot without diagnostics when the lane fails' {
-        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
-        & $stageZeroFiles
+        & $passPreflight
         $global:DriverScenario.LaneExit = 1
         & $run 'PilotPostgreSql' | Should -Be 1
-        $global:DriverScenario.Calls | Where-Object { $_ -like '* diagnose *' } | Should -BeNullOrEmpty
+        & $calls '* diagnose *' | Should -BeNullOrEmpty
     }
 
     It 'stops with exit 3, keeping the diagnostics, when they raise a flag' {
-        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
-        & $stageZeroFiles
+        & $passPreflight
         $global:DriverScenario.DiagnoseExit = 3
         & $run 'PilotPostgreSql' | Should -Be 3
         (Get-Content -LiteralPath (Join-Path $paths.Stage 'analysis\diagnostics-postgresql.json') -Raw | ConvertFrom-Json).flags.stop_for_review | Should -BeTrue
@@ -2201,99 +2424,122 @@ Describe 'stage-e1.ps1 with synthetic commands' {
     }
 
     It 'stops with exit 1 when the diagnostics refuse their input' {
-        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
-        & $stageZeroFiles
+        & $passPreflight
         $global:DriverScenario.DiagnoseExit = 2
         & $run 'PilotPostgreSql' | Should -Be 1
     }
 
     It 'stops before the diagnostics when the analysis identity no longer holds' {
-        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
-        & $stageZeroFiles
+        & $passPreflight
         $global:DriverScenario.Throw = @('Assert-AnalysisIdentity')
         & $run 'PilotPostgreSql' | Should -Be 1
-        $global:DriverScenario.Calls | Where-Object { $_ -like '* diagnose *' } | Should -BeNullOrEmpty
+        & $calls '* diagnose *' | Should -BeNullOrEmpty
     }
 
     It 'refuses a pilot whose seed was already attempted, before launching anything' {
-        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
-        & $stageZeroFiles
+        & $passPreflight
         '{"attempt_started": true}' | Set-Content -LiteralPath (Join-Path $paths.Stage 'provenance-endpoint-postgresql-e1-pilot-a5-20261024T000000Z.json')
         & $run 'PilotPostgreSql' | Should -Be 1
-        $global:DriverScenario.Calls | Where-Object { $_ -like 'pwsh *' } | Should -BeNullOrEmpty
+        & $calls 'pwsh *' | Should -BeNullOrEmpty
         & $log 'PilotPostgreSql' | Should -Match 'Seed 401 was already attempted'
     }
 
     It 'allows a pilot whose earlier run was only refused before the launch' {
-        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
-        & $stageZeroFiles
+        & $passPreflight
         '{"attempt_started": false}' | Set-Content -LiteralPath (Join-Path $paths.Stage 'provenance-endpoint-postgresql-e1-pilot-a5-20261024T000000Z.json')
         & $run 'PilotPostgreSql' | Should -Be 0
-    }
-
-    It 'refuses a pilot before Stage0''s records exist' {
-        & $run 'PilotPostgreSql' | Should -Be 1
-        $global:DriverScenario.Calls | Where-Object { $_ -like 'pwsh *' } | Should -BeNullOrEmpty
     }
 
     It 'refuses the SQL Server pilot <Name>' -ForEach @(
         @{ Name = 'before the PostgreSQL pilot''s diagnostics exist'; Flagged = $null }
         @{ Name = 'when the PostgreSQL pilot raised a flag'; Flagged = $true }
     ) {
-        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
-        & $stageZeroFiles
+        & $passPreflight
         if ($null -ne $Flagged) { & $diagnostics 'postgresql' $Flagged }
         & $run 'PilotSqlServer' | Should -Be 1
-        $global:DriverScenario.Calls | Where-Object { $_ -like 'pwsh *' } | Should -BeNullOrEmpty
+        & $calls 'pwsh *' | Should -BeNullOrEmpty
     }
 
     It 'runs the SQL Server pilot with seed 402 after a flag-free PostgreSQL pilot' {
-        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
-        & $stageZeroFiles
+        & $passPreflight
         & $diagnostics 'postgresql' $false
         & $run 'PilotSqlServer' | Should -Be 0
-        @($global:DriverScenario.Calls | Where-Object { $_ -like 'pwsh *' })[0] | Should -BeLike '*lane-localdb.ps1 -RunLabel e1-pilot-a5 -Rounds 200 -WarmupRounds 1200 -Seed 402 *'
+        @(& $calls 'pwsh *')[0] | Should -BeLike "pwsh -NoProfile -File $(Join-Path $collection 'lane-localdb.ps1') -RunLabel e1-pilot-a5 -Rounds 200 -WarmupRounds 1200 -Seed 402 *"
     }
 
     It 'plans every candidate N for both backends with the pinned parameters, choosing nothing' {
-        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
-        & $stageZeroFiles
+        & $completeStage0
         & $diagnostics 'postgresql' $false
         & $diagnostics 'mssql' $false
         & $run 'Planning' | Should -Be 0
-        $simulations = @($global:DriverScenario.Calls | Where-Object { $_ -like '* simulate *' })
+        $simulations = & $calls '* simulate *'
         $simulations.Count | Should -Be 8
         foreach ($rounds in 500, 1000, 2000, 4000) { @($simulations | Where-Object { $_ -like "* --rounds $rounds --delta 250 --mu 9.9 --sigma 0.1 --rho 0.2 --drift-sd 3.5 --replicates 500 --resamples 5000 --seed 1" }).Count | Should -Be 2 }
-        @($global:DriverScenario.Calls | Where-Object { $_ -like '* plan *' })[0] | Should -BeLike '* --candidates 500 1000 2000 4000 --resamples 5000 --seed 1'
-        $global:DriverScenario.Calls | Where-Object { $_ -like 'pwsh *' } | Should -BeNullOrEmpty
+        @(& $calls '* plan *')[0] | Should -BeLike '* --candidates 500 1000 2000 4000 --resamples 5000 --seed 1'
+        & $calls 'pwsh *' | Should -BeNullOrEmpty
+    }
+
+    It 'checks the analysis identity immediately before every planning command, and runs the script it verified' {
+        & $completeStage0
+        & $diagnostics 'postgresql' $false
+        & $diagnostics 'mssql' $false
+        & $run 'Planning' | Should -Be 0
+        $analyses = @(& $calls 'python *')
+        $analyses.Count | Should -Be 12
+        foreach ($line in $analyses) {
+            $line | Should -BeLike "python -I -B $(Join-Path $evidence 'analyze_timing.py') *"
+            & $before $line | Should -Be $identityCall
+        }
+    }
+
+    It 'stops planning before the next command when a script changes between commands' {
+        & $completeStage0
+        & $diagnostics 'postgresql' $false
+        & $diagnostics 'mssql' $false
+        $global:DriverScenario.ThrowOnCall = @{ 'Assert-AnalysisIdentity' = 3 }
+        & $run 'Planning' | Should -Be 1
+        @(& $calls 'python *').Count | Should -Be 2
+        Test-Path -LiteralPath (Join-Path $paths.Stage 'analysis\simulate-postgresql-500.json') | Should -BeFalse
     }
 
     It 'refuses planning when a pilot raised a flag' {
-        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
-        & $stageZeroFiles
+        & $completeStage0
         & $diagnostics 'postgresql' $false
         & $diagnostics 'mssql' $true
         & $run 'Planning' | Should -Be 1
-        $global:DriverScenario.Calls | Where-Object { $_ -like 'python *' } | Should -BeNullOrEmpty
+        & $calls 'python *' | Should -BeNullOrEmpty
     }
 
-    It 'records the preflight and stops with exit <Exit> when it <Outcome>' -ForEach @(@{ Outcome = 'passed'; Exit = 0 }, @{ Outcome = 'failed'; Exit = 1 }) {
-        New-Item -ItemType Directory -Force -Path $paths.Stage | Out-Null
-        & $stageZeroFiles
+    It 'records the preflight, with the Stage0 it follows, and stops with exit <Exit> when it <Outcome>' -ForEach @(@{ Outcome = 'passed'; Exit = 0 }, @{ Outcome = 'failed'; Exit = 1 }) {
+        & $completeStage0
         $global:DriverScenario.PreflightOutcome = $Outcome
         & $run 'Preflight' | Should -Be $Exit
-        (Get-Content -LiteralPath (Join-Path $paths.Stage 'preflight.json') -Raw | ConvertFrom-Json).outcome | Should -Be $Outcome
+        $preflight = Get-Content -LiteralPath (Join-Path $paths.Stage 'preflight.json') -Raw | ConvertFrom-Json
+        $preflight.outcome | Should -Be $Outcome
+        $preflight.expected_commit | Should -Be $global:DriverCommit
+        $preflight.stage0_sha256 | Should -Be (Get-FileHash -LiteralPath (Join-Path $paths.Stage 'stage0.json') -Algorithm SHA256).Hash.ToLowerInvariant()
         & $run 'Preflight' | Should -Be 1
         @($global:DriverScenario.Calls | Where-Object { $_ -eq 'Invoke-SamplerPreflight' }).Count | Should -Be 1
     }
 
+    It 'refuses the preflight before Stage0 has completed' {
+        & $run 'Preflight' | Should -Be 1
+        $global:DriverScenario.Calls | Should -Not -Contain 'Invoke-SamplerPreflight'
+    }
+
     It 'refuses a staging folder inside the collector checkout' {
-        $paths.Stage = Join-Path $paths.Repository 'stage'
+        $paths.Stage = Join-Path $repository 'stage'
         { & $driver -Step Stage0 -ExpectedCommit $global:DriverCommit @paths } | Should -Throw '*OutputDir*'
     }
 
     It 'refuses an expected commit that is not a full id' {
         { & $driver -Step Stage0 -ExpectedCommit 'abc' @paths } | Should -Throw
+    }
+
+    It 'takes no checkout other than its own, so none can be checked while another runs' {
+        $other = Join-Path $root 'other-checkout'
+        { & $driver -Step Stage0 -ExpectedCommit $global:DriverCommit -Repository $other @paths } | Should -Throw '*Repository*'
+        $global:DriverScenario.Calls | Should -BeNullOrEmpty
     }
 }
 
@@ -2331,6 +2577,7 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
             $global:LASTEXITCODE = 0
             if ($line -like 'build-server*') { return }
             $global:LaneScenario.Calls.Add('dotnet test')
+            $global:LaneScenario.LaunchRecordAtLaunch = @(Get-ChildItem -LiteralPath $env:TIMING_EVIDENCE_OUTPUT_DIR -Filter 'launch-endpoint-postgresql-*.json').Count -eq 1
             "runner output with $($global:LaneSentinel)"
             $results = $args[[array]::IndexOf($args, '--results-directory') + 1]
             $logger = [string]$args[[array]::IndexOf($args, '--logger') + 1]
@@ -2625,6 +2872,58 @@ Describe 'lane-postgresql.ps1 with synthetic command output' {
         $build.manifest_sha256 | Should -Be (Get-FileHash -LiteralPath $arguments.CollectorBuildManifest -Algorithm SHA256).Hash.ToLowerInvariant()
     }
 
+    It 'writes the seed''s launch record before the collector launches, and names it in provenance' {
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 0
+        $launch = Join-Path $stage 'launch-endpoint-postgresql-pilot-a5-seed301.json'
+        $record = Get-Content -LiteralPath $launch -Raw | ConvertFrom-Json
+        $record.schema | Should -Be 'timing-launch/1'
+        $record.seed | Should -Be 301
+        $record.run_label | Should -Be 'pilot-a5'
+        $provenanceFile = Get-ChildItem $stage -Filter 'provenance-*.json'
+        $record.provenance_file | Should -Be $provenanceFile.Name
+        $record.sampler_run_id | Should -Be $global:SamplerScenario.Arguments.RunId
+        (& $readProvenance).launch_record | Should -Be 'launch-endpoint-postgresql-pilot-a5-seed301.json'
+        $global:LaneScenario.LaunchRecordAtLaunch | Should -BeTrue
+    }
+
+    It 'stops before setup, launching nothing, when the seed already has a launch record' {
+        New-Item -ItemType Directory -Force -Path $stage | Out-Null
+        $launch = Join-Path $stage 'launch-endpoint-postgresql-pilot-a5-seed301.json'
+        '{"earlier": true}' | Set-Content -LiteralPath $launch
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        & $setupCalls | Should -BeNullOrEmpty
+        $global:LaneScenario.Calls | Should -Not -Contain 'dotnet test'
+        (& $readProvenance).attempt_started | Should -BeFalse
+        Get-Content -LiteralPath $launch -Raw | Should -Match '"earlier": true'
+    }
+
+    It 'does not launch the collector when the launch record cannot be written' {
+        function global:Add-TestLaunchRecordFailure { param($Path, $Record) throw 'the launch record could not be written' }
+        Set-Alias -Name Add-LaunchRecord -Value Add-TestLaunchRecordFailure -Scope Global
+        try {
+            & $lane @arguments
+            $LASTEXITCODE | Should -Be 1
+            $global:LaneScenario.Calls | Should -Not -Contain 'dotnet test'
+            $provenance = & $readProvenance
+            $provenance.attempt_started | Should -BeFalse
+            $provenance.launch_record | Should -BeNullOrEmpty
+            @($provenance.failures.stage) | Should -Be @('run')
+            (& $teardownCalls).Count | Should -Be 1
+        }
+        finally {
+            Remove-Item -LiteralPath Alias:\Add-LaunchRecord, Function:\Add-TestLaunchRecordFailure -ErrorAction SilentlyContinue
+        }
+    }
+
+    It 'leaves the seed unused when the run is refused before the launch' {
+        Set-PowerSequence 'online', 'offline'
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        Test-Path -LiteralPath (Join-Path $stage 'launch-endpoint-postgresql-pilot-a5-seed301.json') | Should -BeFalse
+    }
+
     It 'refuses before setup, without collecting, when the collector build <Name>' -ForEach @(
         @{ Name = 'has a changed file'; Change = { param($o, $a) Add-Content -LiteralPath (Join-Path $o 'EdFi.DmsConfigurationService.Tests.E2E.dll') -Value 'x' } }
         @{ Name = 'has an extra file'; Change = { param($o, $a) Set-Content -LiteralPath (Join-Path $o 'stale.dll') -Value 'stale' } }
@@ -2839,6 +3138,15 @@ Export-ModuleMember -Function ReadValuesFromEnvFile
         $provenance.attempt_started | Should -BeFalse
         $provenance.refused_at | Should -Be 'before_setup'
         Get-EvidenceText $stage | Should -Not -Match $global:LaneSentinel
+    }
+
+    It 'stops before any LocalDB work when the seed already has a launch record' {
+        New-Item -ItemType Directory -Force -Path $stage | Out-Null
+        '{"earlier": true}' | Set-Content -LiteralPath (Join-Path $stage 'launch-endpoint-mssql-pilot-a5-seed302.json')
+        & $lane @arguments
+        $LASTEXITCODE | Should -Be 1
+        $global:LaneScenario.Calls | Should -BeNullOrEmpty
+        (Get-Content (Get-ChildItem $stage -Filter 'provenance-*.json').FullName -Raw | ConvertFrom-Json).attempt_started | Should -BeFalse
     }
 
     It 'refuses before any LocalDB work when the collector build has a changed file' {

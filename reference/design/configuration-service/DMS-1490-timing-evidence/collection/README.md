@@ -48,7 +48,7 @@ Unknown (255) and every failure are not P.
 | `before_launch` | Immediately before the collector process starts | **Refusal**: the stack is torn down or the process stopped, and nothing is collected |
 | `after_exit` | As soon as the collector exits, whatever its outcome | The attempt **fails** (`power-after-exit`), recorded beside any other failure |
 
-- **The collector launch is the attempt boundary.** Provenance records `attempt_started`.
+- **The collector launch is the attempt boundary.** Provenance records `attempt_started`, and the seed's launch record is written immediately before the launch (see the E1 pilot stage).
 - **Refusals are not attempts.** Each is appended as one JSON line to `refusals.log` in the run's staging folder (`<Stage>\pilot` or `<Stage>\final`), with the check, the unmet parts of P and the raw power fields. The file is never rewritten. After correcting the environment, for example by plugging in, the same run may be started again.
 - **What is recorded:** every check, met or not, in `power_checks` in provenance. A failed scheme query is recorded as its status and a fixed reason code, never as exception text. Exception text from a failed observation goes to `<Work>\runs` only.
 - **What is not yet implemented:** the offline diagnostics (§18.3) and the collector's round timestamps and warm-up file (§18.6 M2). Provenance therefore records `environment_protocol.complete = false`, and no run of these lanes is a complete E1 run. No collection is authorised with them.
@@ -143,20 +143,31 @@ pwsh -NoProfile -File <Collection>\stage-e1.ps1 -Step <Stage0|Preflight|PilotPos
 
 The defaults are `-Stage C:\dev\simpat\dms1490-timing\stage-e1\pilot`, `-Work C:\dev\simpat\dms1490-timing\work\runs-e1` and `-Targets C:\dev\simpat\dms1490-timing\work\targets`.
 
+**The checkout is the one that holds the script.** There is no `-Repository` parameter. Every step first requires that checkout to be clean, at its own top level and at the expected commit, so the driver, module, lanes, sampler and analysis scripts it runs are all the approved commit's.
+
 | Step | Does | Never |
 | --- | --- | --- |
-| `Stage0` | Clean checkout at the expected commit; toolchain versions (`toolchain.json`); `dotnet build <E2E csproj> -c Release --no-incremental --nologo`; `collector-build.json`; both prepared targets verified (`target-verification.json`); both analysis selftests; `analysis-manifest.json`; the checkout still clean | Deploys, starts a sampler or runs a collector |
-| `Preflight` | The declared preflight: one power reading, then `power-sampler.ps1` alone for 10 s (localdb and docker_vm roles requested, reported as found), stopped and judged by the run rules; `preflight.json` | Deploys, sends a request, runs a collector, or qualifies a later collection |
-| `PilotPostgreSql` | `lane-postgresql.ps1` on target A5: label `e1-pilot-a5`, 200 measured rounds, 1,200 warm-up rounds, seed 401. The lane still builds a fresh no-cache image from the target. Then the analysis identity is re-checked, and `diagnostics.py diagnose --delta 250 --resamples 5000 --seed 1` runs on the measured file | Runs the SQL Server pilot |
+| `Stage0` | Clean checkout at the expected commit; toolchain versions (`toolchain.json`); `dotnet build <E2E csproj> -c Release --no-incremental --nologo`; `collector-build.json`; both prepared targets verified (`target-verification.json`); `analysis-manifest.json`; both analysis selftests; the checkout still clean; and last, `stage0.json` (the commit, the targets folder and the SHA-256 of each record above) | Deploys, starts a sampler or runs a collector |
+| `Preflight` | Needs `stage0.json`. The declared preflight: one power reading, then `power-sampler.ps1` alone for 10 s (localdb and docker_vm roles requested, reported as found), stopped and judged by the run rules; `preflight.json`, with the commit and the SHA-256 of the `stage0.json` it follows | Deploys, sends a request, runs a collector, or qualifies a later collection |
+| `PilotPostgreSql` | `lane-postgresql.ps1` on target A5: label `e1-pilot-a5`, 200 measured rounds, 1,200 warm-up rounds, seed 401. The lane still builds a fresh no-cache image from the target. Then `diagnostics.py diagnose --delta 250 --resamples 5000 --seed 1` runs on the measured file | Runs the SQL Server pilot |
 | `PilotSqlServer` | `lane-localdb.ps1`, the same settings, seed 402. It needs the PostgreSQL pilot's diagnostics with no flag raised | Runs a second time for a seed |
-| `Planning` | For each backend: `analyze_timing.py plan` (candidates 500, 1000, 2000 and 4000), `fit`, and `simulate` at every candidate (500 replicates, 5,000 resamples, seed 1). It needs both pilots' diagnostics with no flag. | Chooses N |
+| `Planning` | Needs `stage0.json`. For each backend: `analyze_timing.py plan` (candidates 500, 1000, 2000 and 4000), `fit`, and `simulate` at every candidate (500 replicates, 5,000 resamples, seed 1). It needs both pilots' diagnostics with no flag. | Chooses N |
+
+**Before a pilot's lane runs,** all of these must hold, or the step stops with no lane call:
+
+- `stage0.json` is for the expected commit and the `-Targets` folder given now, and each record it lists still has its recorded hash;
+- `preflight.json` passed and follows that `stage0.json`;
+- the seed has no launch record (see Seeds);
+- target A5 is verified again against its pins, recorded in `target-check-<backend>-<stamp>.json`.
+
+These are machine checks only: passing them never stands for the review and approval each step needs.
 
 **Output and exit codes:**
 
 - **Logs:** every native command is run with literal arguments and logged, with its exit code, in the public `<Stage>\<step>-commands.log`. Its output and any exception text go to `<Work>\<step>-<stamp>\`.
 - **Exit codes:** 0 means done, so stop for review; 3 means a diagnostic flag was raised, so stop for review; 1 means anything else stopped the step.
 - **Never overwritten:** a step never overwrites an earlier step's output.
-- **Seeds:** a pilot whose collector already launched (provenance `attempt_started`) is refused, so a seed is used once. A run refused before the launch does not use its seed.
+- **Seeds:** immediately before the collector launches, the lane creates the seed's launch record, `launch-endpoint-<backend>-<label>-seed<seed>.json`. It is created exclusively and flushed, and the collector launches only once it exists. A launch record, even one with no provenance after it (an interrupted run), refuses any later run of that seed, in both the driver and the lane, before anything is set up; that attempt needs review. A run refused before the launch writes none and does not use its seed. Provenance `attempt_started` is still checked as well.
 
 **Identity checks:**
 
@@ -170,7 +181,9 @@ The defaults are `-Stage C:\dev\simpat\dms1490-timing\stage-e1\pilot`, `-Work C:
   - Other files are allowed only as the root `target.json` or below a directory named exactly `bin` or `obj`.
   - Nothing is repaired or rebuilt.
   - The LocalDB lane's five host-assembly fingerprints are still checked.
-- **Analysis:** `analysis-manifest.json` pins both scripts as they are in the approved commit (blob id, SHA-256, version), with `analyze_timing.py` also matching `SHA256SUMS.txt`, the Python and numpy versions, and the fixed parameters. Both scripts are re-hashed against it immediately before every diagnostics and planning run.
+- **Analysis:** `analysis-manifest.json` pins both scripts as they are in the approved commit (blob id, SHA-256, version), with `analyze_timing.py` also matching `SHA256SUMS.txt`, the Python and numpy versions, and the fixed parameters.
+  - Immediately before every Python analysis call (each selftest, diagnostics run, plan, fit and simulation), the record is checked against the expected commit supplied at execution: it must name that commit, each recorded blob must be that commit's blob and each version the approved one.
+  - Both scripts are then re-hashed against it, and the call runs the script path that check verified.
 - **Protocol:** E1 provenance keeps `complete = false`. Only review of a run's evidence settles its acceptance.
 
 **Old command lines:** the Stage 1 and Stage 2 commands below describe the A5 runs as they were made. Today's lanes also need the two collector parameters above.

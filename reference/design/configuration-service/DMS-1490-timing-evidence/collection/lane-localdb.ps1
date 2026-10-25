@@ -35,12 +35,15 @@
     success exits 0. A power check that fails, or a sampler that is not ready, before the collector
     launch is a refusal, not an attempt: it is appended to the staging folder's refusals.log, which
     is never rewritten, and the run may be started again once the environment is corrected. From
-    the launch on, the run is its one attempt. Protocol E1's power checks and sampler coverage are
-    implemented; its diagnostics and collector timestamps are not, so no run of this script is a
-    complete E1 run.
+    the launch on, the run is its one attempt: immediately before the collector launches, the seed's
+    launch record (launch-endpoint-mssql-<label>-seed<seed>.json) is created exclusively and
+    flushed, and the collector launches only once it exists. A run whose seed already has a launch
+    record stops before anything is set up, even if the earlier run never wrote its provenance.
+    Protocol E1's power checks and sampler coverage are implemented; its diagnostics and collector
+    timestamps are not, so no run of this script is a complete E1 run.
 
     Written to -OutputDir (the evidence staging folder): the samples CSV and header JSON,
-    provenance-*.json, refusals.log, the sampler's host-power-*.csv, host-optional-*.csv and
+    provenance-*.json, the launch record, refusals.log, the sampler's host-power-*.csv, host-optional-*.csv and
     host-ready-*.json, and lane-localdb-*.log, which holds only status lines, checked counts, unmet
     power condition and coverage codes, and exception type names. Written to -WorkRoot (never
     evidence): database files, the service's own output, the collector's output and results file,
@@ -90,6 +93,7 @@ New-Item -ItemType Directory -Force -Path $OutputDir, $WorkRoot | Out-Null
 $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'")
 $log = Join-Path $OutputDir "lane-localdb-$RunLabel-$stamp.log"
 $provenancePath = Join-Path $OutputDir "provenance-endpoint-mssql-$RunLabel-$stamp.json"
+$launchRecordPath = Get-LaunchRecordPath -OutputDir $OutputDir -Backend mssql -RunLabel $RunLabel -Seed $Seed
 $refusalLog = Join-Path $OutputDir 'refusals.log'
 $diagnostics = Join-Path $WorkRoot "lane-localdb-$RunLabel-$stamp.diagnostics.txt"
 $runnerLog = Join-Path $WorkRoot "collector-mssql-$RunLabel-$stamp.log"
@@ -267,6 +271,7 @@ $copies = @()
 $shimInstalled = $false
 $locationPushed = $false
 try {
+    if (Test-Path -LiteralPath $launchRecordPath) { throw 'This seed already has a launch record; that attempt needs review, not another run.' }
     $collectorCommit = (Invoke-Native 'git rev-parse' { git -C $CollectorRoot rev-parse HEAD } | Out-String).Trim()
     $collectorStatus = Invoke-Native 'git status' { git -C $CollectorRoot status --porcelain }
     $provenance.collector = [ordered]@{ commit = $collectorCommit; worktree_clean = [string]::IsNullOrWhiteSpace(($collectorStatus | Out-String)) }
@@ -502,6 +507,19 @@ try {
     Write-LaneLog "BEFORE pid=$($before.pid) start=$($before.start_time) settings and five fingerprints verified"
     Open-LaneSampler ([ordered]@{ CmsProcessId = $cms.Id; CmsStartTicks = $cms.StartTime.ToUniversalTime().Ticks; LocalDbInstance = $Instance })
     Invoke-PowerCheck 'before_launch'
+    # The seed is used from here on, whether or not this run reaches its provenance.
+    Add-LaunchRecord -Path $launchRecordPath -Record ([ordered]@{
+            schema           = 'timing-launch/1'
+            lane             = 'endpoint-mssql'
+            run_label        = $RunLabel
+            seed             = $Seed
+            lane_stamp       = $stamp
+            provenance_file  = Split-Path -Leaf $provenancePath
+            sampler_run_id   = $samplerRunId
+            collector_commit = $collectorCommit
+            utc              = (Get-Date).ToUniversalTime().ToString('o')
+        })
+    $provenance.launch_record = Split-Path -Leaf $launchRecordPath
     Write-LaneLog 'RUN collector (Release, --no-build; output and results file in the work folder); the launch starts the attempt'
     $provenance.attempt_started = $true
     $collectorStarted = (Get-Date).ToUniversalTime()

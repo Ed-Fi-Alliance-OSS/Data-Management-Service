@@ -8,27 +8,36 @@
     One explicit step of the E1 pilot stage (spec section 18.6, M3): Stage0, Preflight,
     PilotPostgreSql, PilotSqlServer or Planning. Each step needs its own approval.
 .DESCRIPTION
-    Every native command runs with literal arguments; its line and exit code are appended to the
-    public <Stage>\<step>-commands.log, and its standard output and error go to a private folder
-    under -Work. Any unexpected exit, missing prerequisite or failed check stops the step with exit 1
-    (diagnostics that raise a flag stop it with exit 3); nothing is retried and no step runs another.
-    No step overwrites an earlier step's output, and a pilot whose collector was already launched
-    (provenance attempt_started) is refused: a seed is used once. A refusal before the launch does
-    not use the seed.
+    The collector checkout is the one that holds this script; every step first requires it to be
+    clean, at its own top level and at -ExpectedCommit, so the driver, module, lanes, sampler and
+    analysis scripts it runs are all the approved commit's. Every native command runs with literal
+    arguments; its line and exit code are appended to the public <Stage>\<step>-commands.log, and
+    its standard output and error go to a private folder under -Work. Any unexpected exit, missing
+    prerequisite or failed check stops the step with exit 1 (diagnostics that raise a flag stop it
+    with exit 3); nothing is retried and no step runs another. No step overwrites an earlier step's
+    output.
 
     Stage0        clean checkout at -ExpectedCommit; toolchain versions; the collector Release build
                   (--no-incremental) and collector-build.json; both prepared targets verified
-                  against their pinned trees (target-verification.json); both analysis selftests;
-                  analysis-manifest.json. No deployment, no collector.
+                  against their pinned trees (target-verification.json); analysis-manifest.json,
+                  then both analysis selftests; and last, stage0.json, which records the commit, the
+                  targets folder and the hash of each of those records. No deployment, no collector.
     Preflight     the declared preflight (Invoke-SamplerPreflight): one power reading and the sampler
-                  alone for 10 s, written to preflight.json. No deployment, no request, no collector.
+                  alone for 10 s, written to preflight.json with the Stage0 record it follows. No
+                  deployment, no request, no collector.
     PilotPostgreSql / PilotSqlServer
                   one lane run on target A5 (200 measured rounds, 1,200 warm-up rounds, seed 401 or
-                  402), then diagnostics.py on its measured file after the analysis identity is
-                  checked again. The SQL Server pilot needs the PostgreSQL pilot's diagnostics with no
-                  flag raised.
+                  402), then diagnostics.py on its measured file. Before the lane: a completed
+                  Stage0 for this commit and targets folder, a passed preflight after it, no launch
+                  record for the seed (a seed is used once; a refusal before the launch does not use
+                  it), and target A5 verified again against its pins (target-check-*.json). The SQL
+                  Server pilot also needs the PostgreSQL pilot's diagnostics with no flag raised.
     Planning      for each backend: analyze_timing.py plan, fit, and simulate at every candidate N,
                   with the pinned parameters. It chooses nothing.
+
+    The analysis identity is checked against -ExpectedCommit immediately before every Python
+    analysis call, and the script run is the one just verified. A step's prerequisites passing is a
+    machine check only; it never stands for the review and approval each step needs.
 
     Collection still needs the host on AC power with battery saver off and the Balanced scheme; the
     lanes enforce it. This script closes no process and prepares nothing on the host.
@@ -37,7 +46,6 @@
 param(
     [Parameter(Mandatory)] [ValidateSet('Stage0', 'Preflight', 'PilotPostgreSql', 'PilotSqlServer', 'Planning')] [string] $Step,
     [Parameter(Mandatory)] [ValidatePattern('^[0-9a-f]{40}$')] [string] $ExpectedCommit,
-    [string] $Repository = 'C:\dev\simpat\Data-Management-Service-DMS-1490',
     [string] $Stage = 'C:\dev\simpat\dms1490-timing\stage-e1\pilot',
     [string] $Work = 'C:\dev\simpat\dms1490-timing\work\runs-e1',
     [string] $Targets = 'C:\dev\simpat\dms1490-timing\work\targets',
@@ -59,24 +67,26 @@ $pilots = @{
     PilotSqlServer  = @{ Backend = 'mssql'; Lane = 'lane-localdb.ps1'; Seed = 402 }
 }
 
-$Repository = Resolve-LanePath $Repository
+# This script lives in <checkout>\reference\design\configuration-service\DMS-1490-timing-evidence\collection.
+$Repository = Resolve-LanePath (Join-Path $PSScriptRoot '..\..\..\..\..')
 $Stage = Resolve-LanePath $Stage
 $Work = Resolve-LanePath $Work
 $Targets = Resolve-LanePath $Targets
 Assert-LaneRoot -CollectorRoot $Repository -OutputDir $Stage -WorkRoot $Work -TargetRoot (Join-Path $Targets 'a5')
-$evidence = Split-Path -Parent $PSScriptRoot
 $analysis = Join-Path $Stage 'analysis'
 $stamp = (Get-Date).ToUniversalTime().ToString("yyyyMMdd'T'HHmmss'Z'")
 $private = Join-Path $Work "$($Step.ToLowerInvariant())-$stamp"
 New-Item -ItemType Directory -Force -Path $Stage, $analysis, $private | Out-Null
 $commandsLog = Join-Path $Stage "$($Step.ToLowerInvariant())-commands.log"
-$files = @{
+$files = [ordered]@{
     collectorBuild     = Join-Path $Stage 'collector-build.json'
     targetVerification = Join-Path $Stage 'target-verification.json'
     analysisManifest   = Join-Path $Stage 'analysis-manifest.json'
     toolchain          = Join-Path $Stage 'toolchain.json'
+    stage0             = Join-Path $Stage 'stage0.json'
     preflight          = Join-Path $Stage 'preflight.json'
 }
+$stage0Records = @('collectorBuild', 'targetVerification', 'analysisManifest', 'toolchain')
 
 function Write-StepLog([string] $Text) {
     "[$((Get-Date).ToUniversalTime().ToString('o'))] $Text" | Out-File -LiteralPath $commandsLog -Append -Encoding utf8NoBOM
@@ -86,6 +96,8 @@ function Format-Argument([string] $Value) {
     if ($Value -ne '' -and $Value -notmatch '[\s"]') { return $Value }
     '"' + (($Value -replace '(\\*)"', '$1$1\"') -replace '(\\+)$', '$1$1') + '"'
 }
+
+function Get-Sha256([string] $Path) { (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant() }
 
 # Runs one native command with literal arguments, logs the line and its exit code publicly, keeps
 # its output privately (or in -OutputPath), and throws on an exit outside -Accept.
@@ -108,6 +120,21 @@ function Invoke-Logged {
     [pscustomobject]@{ ExitCode = $code; Output = (Get-Content -LiteralPath $out -Raw -ErrorAction SilentlyContinue) }
 }
 
+# One Python analysis call, made only after the analysis identity holds for the approved commit,
+# with the script path that check verified.
+function Invoke-Analysis {
+    param(
+        [Parameter(Mandatory)] [ValidateSet('analyze_timing', 'diagnostics')] [string] $Script,
+        [Parameter(Mandatory)] [string] $Name,
+        [string[]] $Arguments = @(),
+        [int[]] $Accept = @(0),
+        [string] $OutputPath = ''
+    )
+    $identity = Assert-AnalysisIdentity -RepositoryRoot $Repository -ManifestPath $files.analysisManifest -ExpectedCommit $ExpectedCommit
+    Write-StepLog "ANALYSIS identity checked before $Name manifest=$($identity.manifest_sha256)"
+    Invoke-Logged -Name $Name -FilePath 'python' -Arguments (@('-I', '-B', $identity.paths[$Script]) + $Arguments) -Accept $Accept -OutputPath $OutputPath
+}
+
 function Save-Json([string] $Path, $Value) {
     if (Test-Path -LiteralPath $Path) { throw "$(Split-Path -Leaf $Path) already exists; a step never overwrites earlier output." }
     $Value | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $Path -Encoding utf8NoBOM
@@ -124,10 +151,34 @@ function Assert-Present([string[]] $Path) {
 function Get-CheckoutState {
     $status = (Invoke-Logged -Name 'git-status' -FilePath 'git' -Arguments @('-C', $Repository, 'status', '--porcelain')).Output
     if (-not [string]::IsNullOrWhiteSpace($status)) { throw 'The collector checkout is not clean.' }
+    $top = ([string](Invoke-Logged -Name 'git-top-level' -FilePath 'git' -Arguments @('-C', $Repository, 'rev-parse', '--show-toplevel')).Output).Trim()
+    if ((Resolve-LanePath $top) -ine $Repository) { throw 'This script is not in its own checkout''s collection folder.' }
     $head = ([string](Invoke-Logged -Name 'git-head' -FilePath 'git' -Arguments @('-C', $Repository, 'rev-parse', 'HEAD')).Output).Trim()
     if ($head -cne $ExpectedCommit) { throw "The collector checkout is at $head, not the approved $ExpectedCommit." }
     $tree = ([string](Invoke-Logged -Name 'git-tree' -FilePath 'git' -Arguments @('-C', $Repository, 'rev-parse', 'HEAD^{tree}')).Output).Trim()
     [ordered]@{ commit = $head; tree = $tree }
+}
+
+# The SHA-256 of a completed Stage0's record, which must be for this commit and targets folder and
+# whose listed records must be unchanged.
+function Get-Stage0Completion {
+    Assert-Present $files.stage0
+    $record = Get-Content -LiteralPath $files.stage0 -Raw | ConvertFrom-Json -AsHashtable
+    if ($record.schema -cne 'stage0-complete/1' -or $record.expected_commit -cne $ExpectedCommit) { throw 'stage0.json is not a completed Stage0 of the approved commit.' }
+    if ($record.targets_root -ine $Targets) { throw 'The targets folder is not the one Stage0 verified.' }
+    foreach ($name in $stage0Records) {
+        $leaf = Split-Path -Leaf $files[$name]
+        if (-not (Test-Path -LiteralPath $files[$name]) -or (Get-Sha256 $files[$name]) -cne $record.records[$leaf]) { throw "$leaf is not the record Stage0 completed with." }
+    }
+    Get-Sha256 $files.stage0
+}
+
+# Requires the preflight to have passed after this Stage0.
+function Assert-PassedPreflight([string] $Stage0Sha256) {
+    Assert-Present $files.preflight
+    $preflight = Get-Content -LiteralPath $files.preflight -Raw | ConvertFrom-Json -AsHashtable
+    if ($preflight.outcome -cne 'passed') { throw 'The preflight did not pass; the pilots wait for its review.' }
+    if ($preflight.stage0_sha256 -cne $Stage0Sha256 -or $preflight.expected_commit -cne $ExpectedCommit) { throw 'The preflight does not follow this Stage0.' }
 }
 
 # The diagnostics of a finished pilot; refuses a missing file or one that raised a flag.
@@ -140,7 +191,7 @@ function Get-CleanDiagnostic([string] $Backend) {
 }
 
 function Invoke-Stage0 {
-    Assert-Absent @($files.collectorBuild, $files.targetVerification, $files.analysisManifest, $files.toolchain)
+    Assert-Absent (@($stage0Records | ForEach-Object { $files[$_] }) + $files.stage0)
     $checkout = Get-CheckoutState
     $python = ([string](Invoke-Logged -Name 'python-version' -FilePath 'python' -Arguments @('-I', '-c', 'import sys; print(sys.version.split()[0])')).Output).Trim()
     $numpy = ([string](Invoke-Logged -Name 'numpy-version' -FilePath 'python' -Arguments @('-I', '-c', 'import numpy; print(numpy.__version__)')).Output).Trim()
@@ -163,23 +214,33 @@ function Invoke-Stage0 {
     Save-Json $files.collectorBuild (Get-CollectorBuildManifest -CollectorRoot $Repository -Commit $checkout.commit -Tree $checkout.tree -BuildCommand $buildLine -SdkVersion $sdk)
     $verified = Assert-CollectorBuild -CollectorRoot $Repository -ManifestPath $files.collectorBuild -ExpectedCommit $ExpectedCommit -HeadCommit $checkout.commit -HeadTree $checkout.tree
     Write-StepLog "COLLECTOR BUILD files=$($verified.files) manifest=$($verified.manifest_sha256)"
-    $targets = [ordered]@{}
+    $targetResults = [ordered]@{}
     foreach ($name in $targetPins.Keys) {
-        $targets[$name] = Assert-TargetSource -RepositoryRoot $Repository -TargetRoot (Join-Path $Targets $name) -Commit $targetPins[$name].Commit -Tree $targetPins[$name].Tree
-        Write-StepLog "TARGET $name verified tracked=$($targets[$name].tracked_files) allowed_extra=$($targets[$name].allowed_extra)"
+        $targetResults[$name] = Assert-TargetSource -RepositoryRoot $Repository -TargetRoot (Join-Path $Targets $name) -Commit $targetPins[$name].Commit -Tree $targetPins[$name].Tree
+        Write-StepLog "TARGET $name verified tracked=$($targetResults[$name].tracked_files) allowed_extra=$($targetResults[$name].allowed_extra)"
     }
-    Save-Json $files.targetVerification ([ordered]@{ schema = 'timing-target-verification/1'; targets = $targets })
-    Invoke-Logged -Name 'analyze-timing-selftest' -FilePath 'python' -Arguments @('-I', '-B', (Join-Path $evidence 'analyze_timing.py'), 'selftest') | Out-Null
-    Invoke-Logged -Name 'diagnostics-selftest' -FilePath 'python' -Arguments @('-I', '-B', (Join-Path $evidence 'diagnostics.py'), 'selftest') | Out-Null
-    Save-Json $files.analysisManifest (Get-AnalysisManifest -RepositoryRoot $Repository -Commit $checkout.commit -EvidenceManifestPath (Join-Path $evidence 'SHA256SUMS.txt') -PythonVersion $python -NumpyVersion $numpy)
-    $identity = Assert-AnalysisIdentity -RepositoryRoot $Repository -ManifestPath $files.analysisManifest
-    Write-StepLog "ANALYSIS identity pinned manifest=$($identity.manifest_sha256)"
-    Get-CheckoutState | Out-Null
+    Save-Json $files.targetVerification ([ordered]@{ schema = 'timing-target-verification/1'; targets_root = $Targets; targets = $targetResults })
+    Save-Json $files.analysisManifest (Get-AnalysisManifest -RepositoryRoot $Repository -Commit $ExpectedCommit -EvidenceManifestPath (Join-Path $Repository 'reference\design\configuration-service\DMS-1490-timing-evidence\SHA256SUMS.txt') -PythonVersion $python -NumpyVersion $numpy)
+    Invoke-Analysis -Script analyze_timing -Name 'analyze-timing-selftest' -Arguments @('selftest') | Out-Null
+    Invoke-Analysis -Script diagnostics -Name 'diagnostics-selftest' -Arguments @('selftest') | Out-Null
+    $final = Get-CheckoutState
+    $records = [ordered]@{}
+    foreach ($name in $stage0Records) { $records[(Split-Path -Leaf $files[$name])] = Get-Sha256 $files[$name] }
+    Save-Json $files.stage0 ([ordered]@{
+            schema          = 'stage0-complete/1'
+            statement       = 'Machine prerequisites only; every later step still needs its own review and approval.'
+            expected_commit = $ExpectedCommit
+            tree            = $final.tree
+            targets_root    = $Targets
+            records         = $records
+        })
+    Write-StepLog "STAGE0 complete record=$(Get-Sha256 $files.stage0)"
 }
 
 function Invoke-Preflight([string] $Instance, [double] $Seconds) {
-    Assert-Present @($files.collectorBuild, $files.analysisManifest)
+    $stage0 = Get-Stage0Completion
     Assert-Absent $files.preflight
+    Get-CheckoutState | Out-Null
     $runId = [guid]::NewGuid().ToString('N')
     $paths = @{
         PowerPath       = Join-Path $private 'preflight-power.csv'
@@ -208,22 +269,31 @@ function Invoke-Preflight([string] $Instance, [double] $Seconds) {
         -ReadQpc { [System.Diagnostics.Stopwatch]::GetTimestamp() } `
         -Clock { [System.Diagnostics.Stopwatch]::GetTimestamp() / [double][System.Diagnostics.Stopwatch]::Frequency } `
         -Pause { param([int] $Milliseconds) Start-Sleep -Milliseconds $Milliseconds }
+    $result.expected_commit = $ExpectedCommit
+    $result.stage0_sha256 = $stage0
     Save-Json $files.preflight $result
     Write-StepLog "PREFLIGHT outcome=$($result.outcome)"
     if ($result.outcome -ne 'passed') { throw 'The preflight failed; it is kept for review and is not retried.' }
 }
 
 function Invoke-Pilot([hashtable] $Pilot) {
-    Assert-Present @($files.collectorBuild, $files.analysisManifest)
+    $stage0 = Get-Stage0Completion
+    Assert-PassedPreflight $stage0
     $diagnosticsPath = Join-Path $analysis "diagnostics-$($Pilot.Backend).json"
     Assert-Absent $diagnosticsPath
     if ($Pilot.Backend -eq 'mssql') { Get-CleanDiagnostic 'postgresql' | Out-Null }
+    $launchRecord = Get-LaunchRecordPath -OutputDir $Stage -Backend $Pilot.Backend -RunLabel $runLabel -Seed $Pilot.Seed
+    if (Test-Path -LiteralPath $launchRecord) { throw "Seed $($Pilot.Seed) was already launched ($(Split-Path -Leaf $launchRecord)); a seed is used once, and that attempt needs review." }
     $pattern = "provenance-endpoint-$($Pilot.Backend)-$runLabel-*.json"
     foreach ($earlier in @(Get-ChildItem -LiteralPath $Stage -Filter $pattern)) {
         if ((Get-Content -LiteralPath $earlier.FullName -Raw | ConvertFrom-Json).attempt_started -eq $true) {
             throw "Seed $($Pilot.Seed) was already attempted ($($earlier.Name)); a seed is used once."
         }
     }
+    Get-CheckoutState | Out-Null
+    $target = Assert-TargetSource -RepositoryRoot $Repository -TargetRoot (Join-Path $Targets 'a5') -Commit $targetPins.a5.Commit -Tree $targetPins.a5.Tree
+    Save-Json (Join-Path $Stage "target-check-$($Pilot.Backend)-$stamp.json") ([ordered]@{ schema = 'timing-target-verification/1'; step = $Step; targets_root = $Targets; targets = [ordered]@{ a5 = $target } })
+    Write-StepLog "TARGET a5 verified before the lane tracked=$($target.tracked_files) allowed_extra=$($target.allowed_extra)"
     $earlierRecords = @(Get-ChildItem -LiteralPath $Stage -Filter $pattern | ForEach-Object { $_.Name })
     $laneArguments = @(
         '-NoProfile', '-File', (Join-Path $PSScriptRoot $Pilot.Lane),
@@ -236,10 +306,9 @@ function Invoke-Pilot([hashtable] $Pilot) {
     if ($provenance.Count -ne 1) { throw "Expected one provenance record for this pilot, found $($provenance.Count)." }
     $record = Get-Content -LiteralPath $provenance[0].FullName -Raw | ConvertFrom-Json
     if ($record.succeeded -ne $true -or $record.attempt_started -ne $true -or [string]::IsNullOrEmpty($record.collector_run.samples_file)) { throw 'The pilot''s provenance does not record a successful attempt.' }
-    $identity = Assert-AnalysisIdentity -RepositoryRoot $Repository -ManifestPath $files.analysisManifest
-    Write-StepLog "ANALYSIS identity checked manifest=$($identity.manifest_sha256)"
-    $diagnose = Invoke-Logged -Name "diagnostics-$($Pilot.Backend)" -FilePath 'python' -Arguments @(
-        '-I', '-B', (Join-Path $evidence 'diagnostics.py'), 'diagnose', '--csv', (Join-Path $Stage $record.collector_run.samples_file),
+    if (-not (Test-Path -LiteralPath $launchRecord)) { throw 'The pilot''s provenance records a launch, but its launch record is missing.' }
+    $diagnose = Invoke-Analysis -Script diagnostics -Name "diagnostics-$($Pilot.Backend)" -Arguments @(
+        'diagnose', '--csv', (Join-Path $Stage $record.collector_run.samples_file),
         '--delta', '250', '--resamples', '5000', '--seed', '1'
     ) -Accept @(0, 3) -OutputPath $diagnosticsPath
     if ($diagnose.ExitCode -eq 3) {
@@ -250,21 +319,20 @@ function Invoke-Pilot([hashtable] $Pilot) {
 }
 
 function Invoke-Planning {
-    Assert-Present $files.analysisManifest
+    Get-Stage0Completion | Out-Null
     $inputs = [ordered]@{}
     foreach ($backend in 'postgresql', 'mssql') {
         $inputs[$backend] = Join-Path $Stage (Get-CleanDiagnostic $backend).input
         Assert-Absent @(Join-Path $analysis "plan-$backend.json")
     }
-    Assert-AnalysisIdentity -RepositoryRoot $Repository -ManifestPath $files.analysisManifest | Out-Null
-    $analyzer = Join-Path $evidence 'analyze_timing.py'
+    Get-CheckoutState | Out-Null
     foreach ($backend in $inputs.Keys) {
-        Invoke-Logged -Name "plan-$backend" -FilePath 'python' -Arguments @('-I', '-B', $analyzer, 'plan', '--csv', $inputs[$backend], '--delta', '250', '--candidates', '500', '1000', '2000', '4000', '--resamples', '5000', '--seed', '1') -OutputPath (Join-Path $analysis "plan-$backend.json") | Out-Null
-        Invoke-Logged -Name "fit-$backend" -FilePath 'python' -Arguments @('-I', '-B', $analyzer, 'fit', '--csv', $inputs[$backend]) -OutputPath (Join-Path $analysis "fit-$backend.json") | Out-Null
+        Invoke-Analysis -Script analyze_timing -Name "plan-$backend" -Arguments @('plan', '--csv', $inputs[$backend], '--delta', '250', '--candidates', '500', '1000', '2000', '4000', '--resamples', '5000', '--seed', '1') -OutputPath (Join-Path $analysis "plan-$backend.json") | Out-Null
+        Invoke-Analysis -Script analyze_timing -Name "fit-$backend" -Arguments @('fit', '--csv', $inputs[$backend]) -OutputPath (Join-Path $analysis "fit-$backend.json") | Out-Null
         $fit = Get-Content -LiteralPath (Join-Path $analysis "fit-$backend.json") -Raw | ConvertFrom-Json
         foreach ($rounds in 500, 1000, 2000, 4000) {
             $parameters = @('--mu', $fit.mu, '--sigma', $fit.sigma, '--rho', $fit.rho, '--drift-sd', $fit.drift_sd) | ForEach-Object { [string]::Format([cultureinfo]::InvariantCulture, '{0}', $_) }
-            Invoke-Logged -Name "simulate-$backend-$rounds" -FilePath 'python' -Arguments (@('-I', '-B', $analyzer, 'simulate', '--rounds', [string]$rounds, '--delta', '250') + $parameters + @('--replicates', '500', '--resamples', '5000', '--seed', '1')) -OutputPath (Join-Path $analysis "simulate-$backend-$rounds.json") | Out-Null
+            Invoke-Analysis -Script analyze_timing -Name "simulate-$backend-$rounds" -Arguments (@('simulate', '--rounds', [string]$rounds, '--delta', '250') + $parameters + @('--replicates', '500', '--resamples', '5000', '--seed', '1')) -OutputPath (Join-Path $analysis "simulate-$backend-$rounds.json") | Out-Null
         }
     }
     Write-StepLog 'PLANNING outputs written for every candidate; the choice of N is for review'
