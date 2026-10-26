@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Data.Common;
 using System.Text.Json;
 using Dapper;
@@ -412,7 +413,7 @@ public class ApiClientRepository(
             // rows. XLOCK, not UPDLOCK, so a state read holding a shared lock never interleaves.
             string checkSql = $"""
                 SELECT ApplicationId, InheritsApplicationEducationOrganizations
-                FROM dmscs.ApiClient WITH (XLOCK, ROWLOCK, HOLDLOCK)
+                FROM dmscs.ApiClient WITH (INDEX(PK_ApiClient), XLOCK, ROWLOCK, HOLDLOCK)
                 WHERE Id = @Id AND {TenantScopedApplicationCondition()};
                 """;
             var existing = await connection.QuerySingleOrDefaultAsync<(
@@ -619,7 +620,7 @@ public class ApiClientRepository(
             // Check if ApiClient exists within the current tenant, locking it before its education
             // organization rows go, so a state read holding a shared lock never interleaves
             string checkSql = $"""
-                SELECT COUNT(1) FROM dmscs.ApiClient WITH (XLOCK, ROWLOCK, HOLDLOCK)
+                SELECT COUNT(1) FROM dmscs.ApiClient WITH (INDEX(PK_ApiClient), XLOCK, ROWLOCK, HOLDLOCK)
                 WHERE Id = @Id AND {TenantScopedApplicationCondition()};
                 """;
             int exists = await connection.ExecuteScalarAsync<int>(
@@ -695,7 +696,10 @@ public class ApiClientRepository(
     /// Reads the state under shared locks held to commit, taken Application first and then the
     /// client and its rows, the order an Application save takes them. The Application lock excludes
     /// an Application save, and the client lock excludes scope writes, moves and deletes, which lock
-    /// the client exclusively first. Returns null when the client moved before its lock was taken.
+    /// the client exclusively first. Every one of those locking reads names PK_ApiClient: a covering
+    /// index such as UX_ApiClient_Id_ApplicationId would take its lock on a different key, so a writer
+    /// and this read would not conflict there and could deadlock on the rows instead. Returns null
+    /// when the client moved before its lock was taken.
     /// </summary>
     private async Task<ApiClientEducationOrganizationStateResult?> TryReadEducationOrganizationStateAsync(
         int id
@@ -720,7 +724,7 @@ public class ApiClientRepository(
         }
 
         await connection.ExecuteAsync(
-            "SELECT Id FROM dmscs.Application WITH (HOLDLOCK, ROWLOCK) WHERE Id = @ApplicationId;",
+            "SELECT Id FROM dmscs.Application WITH (INDEX(PK_Application), HOLDLOCK, ROWLOCK) WHERE Id = @ApplicationId;",
             new { ApplicationId = applicationId },
             transaction
         );
@@ -732,7 +736,7 @@ public class ApiClientRepository(
         )?>(
             $"""
             SELECT ApplicationId, InheritsApplicationEducationOrganizations, IdentityProviderSyncPendingSince
-            FROM dmscs.ApiClient WITH (HOLDLOCK, ROWLOCK)
+            FROM dmscs.ApiClient WITH (INDEX(PK_ApiClient), HOLDLOCK, ROWLOCK)
             WHERE Id = @Id AND {TenantScopedApplicationCondition()};
             """,
             new { Id = id, TenantId },
@@ -800,7 +804,7 @@ public class ApiClientRepository(
         try
         {
             string clientSql = $"""
-                SELECT ApplicationId FROM dmscs.ApiClient WITH (XLOCK, ROWLOCK, HOLDLOCK)
+                SELECT ApplicationId FROM dmscs.ApiClient WITH (INDEX(PK_ApiClient), XLOCK, ROWLOCK, HOLDLOCK)
                 WHERE Id = @Id AND {TenantScopedApplicationCondition()};
                 """;
             int? applicationId = await connection.ExecuteScalarAsync<int?>(
@@ -890,15 +894,12 @@ public class ApiClientRepository(
                 SET IdentityProviderSyncPendingSince = @PendingSince
                 WHERE Id = @Id AND {TenantScopedApplicationCondition()};
                 """;
-            int updatedRows = await connection.ExecuteAsync(
-                sql,
-                new
-                {
-                    Id = id,
-                    PendingSince = pendingSince,
-                    TenantId,
-                }
-            );
+            // Without an explicit DateTime2 type, SqlClient binds a DateTime as legacy datetime and
+            // rounds its fractional seconds before the DATETIME2 column stores them
+            DynamicParameters parameters = new(new { Id = id, TenantId });
+            parameters.Add("PendingSince", pendingSince, DbType.DateTime2);
+
+            int updatedRows = await connection.ExecuteAsync(sql, parameters);
 
             return updatedRows == 0
                 ? new ApiClientSyncPendingResult.FailureNotFound()
