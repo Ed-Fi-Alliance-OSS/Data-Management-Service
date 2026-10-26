@@ -93,6 +93,12 @@ public class ConnectRateLimiterTests
                 .ClientPartitionKey(new string('x', 300) + "-one")
                 .Should()
                 .NotBe(ConnectRateLimiter.ClientPartitionKey(new string('x', 300) + "-two"));
+
+        [TestCase(1)]
+        [TestCase(256)]
+        [TestCase(1024)]
+        public void It_bounds_the_retained_key_independently_of_client_id_length(int length) =>
+            ConnectRateLimiter.ClientPartitionKey(new string('x', length)).Length.Should().Be(44);
     }
 
     [TestFixture]

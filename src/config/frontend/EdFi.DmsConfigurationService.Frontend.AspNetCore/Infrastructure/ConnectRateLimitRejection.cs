@@ -21,12 +21,6 @@ internal static class ConnectRateLimitRejection
 
     public static IResult Create(HttpContext context, RateLimitLease lease, string gate, ILogger logger)
     {
-        Prepare(context, lease, gate, logger);
-        return FailureResults.TooManyRequests(context.TraceIdentifier);
-    }
-
-    private static void Prepare(HttpContext context, RateLimitLease lease, string gate, ILogger logger)
-    {
         // The gate and the route template are fixed, service-owned text. The client id, the address
         // and every credential stay out of the log.
         logger.LogDebug(
@@ -42,5 +36,7 @@ internal static class ConnectRateLimitRejection
                 CultureInfo.InvariantCulture
             );
         }
+
+        return FailureResults.TooManyRequests(context.TraceIdentifier);
     }
 }

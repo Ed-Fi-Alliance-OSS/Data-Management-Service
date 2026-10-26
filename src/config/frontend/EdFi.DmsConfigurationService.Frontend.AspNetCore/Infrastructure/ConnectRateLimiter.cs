@@ -6,6 +6,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Threading.RateLimiting;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using Microsoft.Extensions.Options;
@@ -32,23 +33,29 @@ public sealed class ConnectRateLimiter : IDisposable
 
     private readonly PartitionedRateLimiter<string> _sourceLimiter;
     private readonly PartitionedRateLimiter<string> _clientLimiter;
+    private readonly bool _enabled;
 
     public ConnectRateLimiter(IOptions<ConnectRateLimitSettings> options)
     {
         ConnectRateLimitSettings settings = options.Value;
+        _enabled = settings.Enabled;
         _sourceLimiter = CreateLimiter(settings, settings.SourcePermitLimit);
         _clientLimiter = CreateLimiter(settings, settings.ClientPermitLimit);
     }
 
     public RateLimitLease AttemptSource(HttpContext context) =>
-        _sourceLimiter.AttemptAcquire(SourcePartitionKey(context.Connection.RemoteIpAddress));
+        _sourceLimiter.AttemptAcquire(
+            _enabled ? SourcePartitionKey(context.Connection.RemoteIpAddress) : string.Empty
+        );
 
     public RateLimitLease AttemptClient(HttpContext context, string clientId) =>
         // Neither source keys nor base64 client keys contain '|', so pairs cannot collide. Use the
         // same trusted source identity as the source gate; public attempts cannot spend a different
         // source's private refresh allowance just by naming its client ID.
         _clientLimiter.AttemptAcquire(
-            $"{SourcePartitionKey(context.Connection.RemoteIpAddress)}|{ClientPartitionKey(clientId)}"
+            _enabled
+                ? $"{SourcePartitionKey(context.Connection.RemoteIpAddress)}|{ClientPartitionKey(clientId)}"
+                : string.Empty
         );
 
     public void Dispose()
@@ -107,10 +114,13 @@ public sealed class ConnectRateLimiter : IDisposable
             length -= characterLength;
         }
 
-        // Keep the entire canonical key: prefix truncation merges distinct long IDs. The handler's
-        // input length limit bounds retained state without discarding significant suffixes.
+        // Hash the entire canonical key: prefix truncation merges distinct long IDs. The digest
+        // bounds retained partition state independently of linguistic sort-key expansion, while the
+        // handler's input length limit bounds the temporary allocation and comparison work.
         // Sort keys handle malformed UTF-16 without the exceptions Unicode normalization can raise.
-        return Convert.ToBase64String(comparison.GetSortKey(clientId[..length], ClientComparison).KeyData);
+        return Convert.ToBase64String(
+            SHA256.HashData(comparison.GetSortKey(clientId[..length], ClientComparison).KeyData)
+        );
     }
 
     internal static PartitionedRateLimiter<string> CreateLimiter(

@@ -7,7 +7,8 @@
 **Review remediation (2026-10-26):** D2 now uses a source-plus-client budget alongside the independent
 source budget, as proposed by the story. The original global client budget let public failed attempts
 exhaust DMS's private CMS refresh allowance (CAR-001). Trusted forwarding now isolates both budgets.
-Complete canonical client keys replace prefix truncation to keep distinct long IDs independent.
+SHA-256 fingerprints of complete canonical client keys replace prefix truncation to keep distinct
+long IDs independent with bounded retained state.
 For CAR-002, the user chose to align every new rate-limit rejection with REQ-2's Ed-Fi contract,
 including revoke, while preserving the existing OAuth errors for other statuses. D1 records this
 decision; the acceptance criteria remain unchanged.
@@ -114,7 +115,7 @@ Route-context suffixes, path base and path case are handled by endpoint routing,
   - Both handlers enforce the 1024-code-unit input limit before key generation (D9).
   - An invariant linguistic sort key ignores case, accents, width and kana type. This merges common MSSQL lookup aliases, including full-width ASCII letters. It is deliberately conservative across providers and does not emulate every locale-specific SQL collation.
   - Trailing spaces and linguistically ignored suffix characters are removed before key generation, because SQL Server equality pads with spaces. The original credential is still passed unchanged to authentication. No Unicode normalization is performed, avoiding exceptions on malformed UTF-16.
-  - The entire remaining ID is converted to a sort key and encoded as base64, with no truncation. The validated input length bounds retained state without merging distinct significant suffixes. The source and base64 key are joined with `|`, which neither component can contain.
+  - The entire remaining ID is converted to a sort key, hashed with SHA-256 and encoded as base64, with no prefix truncation. The 44-character fingerprint bounds retained state; the validated input length bounds temporary comparison and allocation work. Distinct significant suffixes contribute to the fingerprint. The source and base64 key are joined with `|`, which neither component can contain.
   - The source budget limits how many new client partitions one source can create per window, and the framework removes idle partitions.
 - No database lookup or credential verification is used to build any key.
 
@@ -171,7 +172,7 @@ Regression surfaces to leave unchanged: `IdentityModuleTests` (`TokenEndpointBas
 
 ## 7. Dependencies, coordination and remaining items
 
-- **DMS-1479 (In QA)** adds caller authentication to introspect. Whichever change merges second adds the client gate to introspect immediately before its token validation, keyed on the authenticated caller's `client_id`. That's one call and doesn't change this design.
+- **DMS-1479 (merged into `main` at `0113a0a40`, absent from this branch's baseline)** adds caller authentication to introspect and shares its credential parser with revoke. Integration must retain the source marker, apply the client gate after parsing and before the introspection manager call, and preserve the client-ID bound on both authenticated routes. Add introspection rejection and no-manager-call coverage against that combined code. The baseline handler here has no caller credentials; the submitted token's claims must never supply a client partition key.
 - **DMS-1491** owns any later change to the throttle response format or codes. The current Ed-Fi 429 on all four routes follows REQ-2; a future OAuth migration must update both rejection paths and their tests. No blocking dependency.
 - **DMS-1490 (Open)** is independent. The client budget is spent regardless of whether the client exists, so this work adds no new oracle.
 - **Follow-up candidate:** a per-source failed-attempt backoff ticket (D3), if the product owner wants it.

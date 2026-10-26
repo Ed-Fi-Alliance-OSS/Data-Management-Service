@@ -341,7 +341,10 @@ public class ConnectRateLimitPipelineTests
         [SetUp]
         public async Task Setup()
         {
-            // NUnit skips [TearDown] when [SetUp] throws, so restore the variables here on failure.
+            string[] variables = [UseForwardedHeadersEnv, KnownProxiesEnv, RequiredProxyEnv];
+            Dictionary<string, string> previous = variables
+                .Where(key => Environment.GetEnvironmentVariable(key) is not null)
+                .ToDictionary(key => key, key => Environment.GetEnvironmentVariable(key)!);
             try
             {
                 Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, "true");
@@ -370,21 +373,13 @@ public class ConnectRateLimitPipelineTests
                     ]
                 );
             }
-            catch
+            finally
             {
-                RestoreEnvironment();
-                throw;
+                foreach (string key in variables)
+                {
+                    Environment.SetEnvironmentVariable(key, previous.GetValueOrDefault(key));
+                }
             }
-        }
-
-        [TearDown]
-        public void TearDown() => RestoreEnvironment();
-
-        private static void RestoreEnvironment()
-        {
-            Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, null);
-            Environment.SetEnvironmentVariable(KnownProxiesEnv, null);
-            Environment.SetEnvironmentVariable(RequiredProxyEnv, null);
         }
 
         [Test]
@@ -406,7 +401,8 @@ public class ConnectRateLimitPipelineTests
         [SetUp]
         public async Task Setup()
         {
-            // NUnit skips [TearDown] when [SetUp] throws, so restore the variable here on failure.
+            bool previouslyPresent = Environment.GetEnvironmentVariable(SourceLimitEnv) is not null;
+            string previous = Environment.GetEnvironmentVariable(SourceLimitEnv) ?? string.Empty;
             try
             {
                 Environment.SetEnvironmentVariable(SourceLimitEnv, "1");
@@ -420,15 +416,11 @@ public class ConnectRateLimitPipelineTests
                     ]
                 );
             }
-            catch
+            finally
             {
-                Environment.SetEnvironmentVariable(SourceLimitEnv, null);
-                throw;
+                Environment.SetEnvironmentVariable(SourceLimitEnv, previouslyPresent ? previous : null);
             }
         }
-
-        [TearDown]
-        public void TearDown() => Environment.SetEnvironmentVariable(SourceLimitEnv, null);
 
         [Test]
         public void It_applies_the_environment_value() => _statuses.Should().Equal(200, 429);

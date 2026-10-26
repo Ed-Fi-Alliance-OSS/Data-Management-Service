@@ -60,7 +60,8 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
                 ExceptionTypeOnlyLoggingMetadata.Instance,
                 BearerAuthenticationExemptMetadata.Instance,
                 ClientCredentialAuthenticationMetadata.Instance,
-                OAuthEndpointMetadata.Instance
+                OAuthEndpointMetadata.Instance,
+                ConnectRateLimitMetadata.Instance
             );
         // The same contract as /connect/revoke. RFC 7662 §2.1 requires some form of authorization
         // to call the endpoint; in self-contained mode CMS uses client credentials (RFC 6749 §2.3),
