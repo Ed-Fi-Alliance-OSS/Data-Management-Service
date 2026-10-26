@@ -372,7 +372,7 @@ public class ApplicationRepository(
             string outerOrderByClause = BuildOrderByClause(query, "a");
             string sql = $"""
                 SELECT a."Id", a."ApplicationName", a."VendorId", a."ClaimSetName",
-                       (SELECT COALESCE(BOOL_AND(ac2."IsApproved"), true)
+                       (SELECT COALESCE(BOOL_AND(ac2."IsApproved"), false)
                         FROM "dmscs"."ApiClient" ac2
                         WHERE ac2."ApplicationId" = a."Id") AS "Enabled",
                        e."EducationOrganizationId", acd."DataStoreId", ap."ProfileId"
@@ -451,7 +451,7 @@ public class ApplicationRepository(
         {
             string sql = $"""
                 SELECT a."Id", a."ApplicationName", a."VendorId", a."ClaimSetName",
-                       (SELECT COALESCE(BOOL_AND(ac2."IsApproved"), true)
+                       (SELECT COALESCE(BOOL_AND(ac2."IsApproved"), false)
                         FROM "dmscs"."ApiClient" ac2
                         WHERE ac2."ApplicationId" = a."Id") AS "Enabled",
                        e."EducationOrganizationId", acd."DataStoreId", ap."ProfileId"

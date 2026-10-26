@@ -370,7 +370,7 @@ public class ApplicationRepository(
             string direction = query.IsDescending ? "DESC" : "ASC";
             string sql = $"""
                 SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
-                       (SELECT CAST(COALESCE(MIN(CAST(ac2.IsApproved AS INT)), 1) AS BIT)
+                       (SELECT CAST(COALESCE(MIN(CAST(ac2.IsApproved AS INT)), 0) AS BIT)
                         FROM dmscs.ApiClient ac2
                         WHERE ac2.ApplicationId = a.Id) AS Enabled,
                        e.EducationOrganizationId, acd.DataStoreId, ap.ProfileId
@@ -449,7 +449,7 @@ public class ApplicationRepository(
         {
             string sql = $"""
                 SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
-                       (SELECT CAST(COALESCE(MIN(CAST(ac2.IsApproved AS INT)), 1) AS BIT)
+                       (SELECT CAST(COALESCE(MIN(CAST(ac2.IsApproved AS INT)), 0) AS BIT)
                         FROM dmscs.ApiClient ac2
                         WHERE ac2.ApplicationId = a.Id) AS Enabled,
                        e.EducationOrganizationId, acd.DataStoreId, ap.ProfileId

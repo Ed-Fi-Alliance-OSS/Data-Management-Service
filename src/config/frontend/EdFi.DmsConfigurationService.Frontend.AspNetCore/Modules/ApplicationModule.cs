@@ -1422,7 +1422,9 @@ public class ApplicationModule : IEndpointModule
                 }
                 else
                 {
-                    return FailureResults.NotFound("Application not found", httpContext.TraceIdentifier);
+                    // No clients is either a missing (or foreign-tenant) Application or one with
+                    // zero clients; the lock is still held, so the existence read is consistent.
+                    return await ZeroClientResetResult(id, httpContext, repository, logger);
                 }
                 break;
             case ApplicationApiClientsResult.FailureUnknown failure:
@@ -1430,5 +1432,38 @@ public class ApplicationModule : IEndpointModule
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
         return FailureResults.Unknown(httpContext.TraceIdentifier);
+    }
+
+    private static async Task<IResult> ZeroClientResetResult(
+        int id,
+        HttpContext httpContext,
+        IApplicationRepository repository,
+        ILogger logger
+    )
+    {
+        switch (await repository.GetApplication(id))
+        {
+            case ApplicationGetResult.Success:
+                // An application-level reset has no client whose credentials it could rotate.
+                return Results.Json(
+                    FailureResponse.ForConflict(
+                        "The application has no API clients. Create one with POST /v3/apiClients.",
+                        httpContext.TraceIdentifier
+                    ),
+                    contentType: "application/problem+json",
+                    statusCode: (int)HttpStatusCode.Conflict
+                );
+            case ApplicationGetResult.FailureNotFound:
+                return FailureResults.NotFound("Application not found", httpContext.TraceIdentifier);
+            case ApplicationGetResult.FailureUnknown failure:
+                logger.LogError(
+                    "Error reading application during credential reset: {Message}",
+                    SanitizeForLog(failure.FailureMessage)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            default:
+                logger.LogError("Unexpected result reading application during credential reset");
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
     }
 }

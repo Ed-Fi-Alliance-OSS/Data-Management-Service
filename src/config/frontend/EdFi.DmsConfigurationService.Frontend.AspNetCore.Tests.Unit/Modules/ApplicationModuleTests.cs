@@ -4589,18 +4589,22 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_not_found_when_application_has_no_api_clients()
+        public async Task Should_return_not_found_when_the_application_does_not_exist()
         {
-            // Arrange
+            // Arrange - a missing application has no clients and no application row
+            Fake.ClearRecordedCalls(_clientRepository);
             using var client = SetUpClient();
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(new ApplicationApiClientsResult.Success([]));
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
+                .Returns(new ApplicationGetResult.FailureNotFound());
 
             // Act
             var resetResponse = await client.PutAsync("/v3/applications/1/reset-credential", null);
 
             // Assert
             resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored)).MustNotHaveHappened();
         }
 
         [Test]
@@ -6843,5 +6847,79 @@ public class ApplicationModuleTests
 
         [Test]
         public void It_never_calls_the_identity_provider() => AssertNoProviderClientWasCreatedOrDeleted();
+    }
+
+    [TestFixture]
+    public class Given_a_credential_reset_for_an_application_with_no_api_clients : ApplicationModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private JsonNode _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(7))
+                .Returns(new ApplicationApiClientsResult.Success([]));
+            A.CallTo(() => _applicationRepository.GetApplication(7))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 7,
+                            ApplicationName = "Zero Client Application",
+                            ClaimSetName = "ClaimSet",
+                            VendorId = 1,
+                        }
+                    )
+                );
+
+            using var client = SetUpClient();
+            _response = await client.PutAsync("/v3/applications/7/reset-credential", null);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+        }
+
+        [Test]
+        public void It_returns_conflict() => _response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_returns_the_conflict_problem_type() =>
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:conflict");
+
+        [Test]
+        public void It_explains_that_the_application_has_no_api_clients() =>
+            _body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The application has no API clients. Create one with POST /v3/apiClients.");
+
+        [Test]
+        public void It_resets_no_identity_provider_client() =>
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored)).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_a_credential_reset_for_an_application_that_cannot_be_read : ApplicationModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(7))
+                .Returns(new ApplicationApiClientsResult.Success([]));
+            A.CallTo(() => _applicationRepository.GetApplication(7))
+                .Returns(new ApplicationGetResult.FailureUnknown("read failed"));
+
+            using var client = SetUpClient();
+            _response = await client.PutAsync("/v3/applications/7/reset-credential", null);
+        }
+
+        [Test]
+        public void It_returns_internal_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_resets_no_identity_provider_client() =>
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored)).MustNotHaveHappened();
     }
 }
