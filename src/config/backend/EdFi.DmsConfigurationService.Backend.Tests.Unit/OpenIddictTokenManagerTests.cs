@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Collections.Concurrent;
 using System.Data.Common;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
@@ -33,16 +32,13 @@ public class OpenIddictTokenManagerTests
     private IOpenIddictTokenRepository _tokenRepository = null!;
     private SigningKeySnapshotProvider _signingKeyProvider = null!;
     private DevelopmentCertificateStore _developmentCertificateStore = null!;
+    private ClientSecretPlaceholderHash _placeholderHash = null!;
     private OpenIddictTokenManager _tokenManager = null!;
 
     [SetUp]
-    public void Setup()
+    public async Task Setup()
     {
         _secretHasher = A.Fake<IClientSecretHasher>();
-        // An unknown client's secret is verified against a placeholder the manager generates through
-        // the hasher. A non-empty default keeps every unknown-client fixture on that normal path, and
-        // fixtures about the placeholder itself configure their own.
-        A.CallTo(() => _secretHasher.HashSecretAsync(A<string>._)).Returns(DefaultPlaceholderHash);
         _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
 
         // The real provider over the faked repository, so key reads go through the same snapshot, source and parser
@@ -53,7 +49,23 @@ public class OpenIddictTokenManagerTests
             NullLogger<DevelopmentCertificateStore>.Instance
         );
 
+        // An unknown client's secret is verified against this placeholder, initialized before any
+        // manager exists, as the host does at startup.
+        _placeholderHash = await InitializedPlaceholderAsync(DefaultPlaceholderHash);
         _tokenManager = NewTokenManager(new IdentityOptions());
+    }
+
+    /// <summary>
+    /// A placeholder initialized through a stub hasher of its own that returns
+    /// <paramref name="hash"/>, so the fixture's hasher records only what requests do with it.
+    /// </summary>
+    private static async Task<ClientSecretPlaceholderHash> InitializedPlaceholderAsync(string hash)
+    {
+        IClientSecretHasher placeholderHasher = A.Fake<IClientSecretHasher>();
+        A.CallTo(() => placeholderHasher.HashSecretAsync(A<string>._)).Returns(hash);
+        ClientSecretPlaceholderHash placeholder = new(placeholderHasher);
+        await placeholder.InitializeAsync();
+        return placeholder;
     }
 
     private SigningKeySnapshotProvider NewSigningKeyProvider() =>
@@ -100,7 +112,8 @@ public class OpenIddictTokenManagerTests
         IdentityOptions options,
         ILogger<OpenIddictTokenManager>? logger = null,
         ISigningKeySnapshotProvider? signingKeyProvider = null,
-        DevelopmentCertificateStore? developmentCertificateStore = null
+        DevelopmentCertificateStore? developmentCertificateStore = null,
+        ClientSecretPlaceholderHash? placeholderHash = null
     ) =>
         new(
             Options.Create(options),
@@ -108,7 +121,8 @@ public class OpenIddictTokenManagerTests
             _secretHasher,
             _tokenRepository,
             signingKeyProvider ?? _signingKeyProvider,
-            developmentCertificateStore ?? _developmentCertificateStore
+            developmentCertificateStore ?? _developmentCertificateStore,
+            placeholderHash ?? _placeholderHash
         );
 
     /// <summary>
@@ -2281,7 +2295,8 @@ public class OpenIddictTokenManagerTests
         IClientSecretHasher secretHasher,
         IOpenIddictTokenRepository tokenRepository,
         ISigningKeySnapshotProvider signingKeyProvider,
-        DevelopmentCertificateStore developmentCertificateStore
+        DevelopmentCertificateStore developmentCertificateStore,
+        ClientSecretPlaceholderHash placeholderHash
     )
         : OpenIddictTokenManager(
             identityOptions,
@@ -2289,7 +2304,8 @@ public class OpenIddictTokenManagerTests
             secretHasher,
             tokenRepository,
             signingKeyProvider,
-            developmentCertificateStore
+            developmentCertificateStore,
+            placeholderHash
         )
     {
         protected override bool TokenBelongsToCaller(string? tokenClientId, string callerClientId) =>
@@ -2316,7 +2332,8 @@ public class OpenIddictTokenManagerTests
                 _secretHasher,
                 _tokenRepository,
                 _signingKeyProvider,
-                _developmentCertificateStore
+                _developmentCertificateStore,
+                _placeholderHash
             );
 
             _act = () =>
@@ -2374,7 +2391,8 @@ public class OpenIddictTokenManagerTests
     private OpenIddictTokenManager CreateManagerWith(
         IClientSecretHasher hasher,
         ILogger<OpenIddictTokenManager>? logger = null,
-        IdentityOptions? options = null
+        IdentityOptions? options = null,
+        ClientSecretPlaceholderHash? placeholderHash = null
     ) =>
         new(
             Options.Create(
@@ -2384,7 +2402,8 @@ public class OpenIddictTokenManagerTests
             hasher,
             _tokenRepository,
             _signingKeyProvider,
-            _developmentCertificateStore
+            _developmentCertificateStore,
+            placeholderHash ?? _placeholderHash
         );
 
     // A deterministic configuration failure inside the real hasher: verification cannot run at all.
@@ -2696,13 +2715,13 @@ public class OpenIddictTokenManagerTests
             LogCountAt(_hasherLogger, LogLevel.Warning).Should().Be(1);
     }
 
-    // An unknown client's presented secret is verified against a placeholder hash the manager
-    // generates through the registered hasher, so an unknown client id costs the same secret
-    // verification as a known one with a wrong secret. The verification's answer is discarded.
+    // An unknown client's presented secret is verified against a placeholder hash the host
+    // generates through the registered hasher at startup, so an unknown client id costs the same
+    // single secret verification as a known one with a wrong secret, and no request generates it.
+    // The verification's answer is discarded.
 
     private const string UnknownClientId = "unknown-client";
     private const string PresentedSecret = "PRESENTED-SECRET-SENTINEL-unknown-client";
-    private static readonly TimeSpan Guard = TimeSpan.FromSeconds(30);
 
     private static readonly TokenResult.FailureAuthentication InvalidClientFailure = new(
         "invalid_client",
@@ -2747,13 +2766,8 @@ public class OpenIddictTokenManagerTests
                 .MustHaveHappenedOnceExactly();
 
         [Test]
-        public void It_generates_the_placeholder_from_a_secret_other_than_the_presented_one() =>
-            Fake.GetCalls(_secretHasher)
-                .Single(call => call.Method.Name == nameof(IClientSecretHasher.HashSecretAsync))
-                .GetArgument<string>(0)
-                .Should()
-                .NotBeNullOrEmpty()
-                .And.NotBe(PresentedSecret);
+        public void It_hashes_nothing_for_the_request() =>
+            A.CallTo(() => _secretHasher.HashSecretAsync(A<string>._)).MustNotHaveHappened();
 
         [Test]
         public void It_stores_no_token() =>
@@ -2863,7 +2877,6 @@ public class OpenIddictTokenManagerTests
             _hasher = A.Fake<IClientSecretHasher>(options =>
                 options.Implements<IFailurePreservingSecretVerifier>()
             );
-            A.CallTo(() => _hasher.HashSecretAsync(A<string>._)).Returns(DefaultPlaceholderHash);
             StubUnknownClient();
 
             _result = await CreateManagerWith(_hasher)
@@ -2936,19 +2949,16 @@ public class OpenIddictTokenManagerTests
             await _act.Should().ThrowAsync<OperationCanceledException>();
     }
 
-    // A cancellation from a placeholder operation keeps its classification, but the hasher's own
+    // A cancellation from the placeholder verification keeps its classification, but the hasher's own
     // exception never reaches the token endpoint's log or result: a replacement hasher's message or
     // inner exceptions may carry the secret it was given, and the endpoint's error handling logs
     // and returns whatever exception reaches it.
-    [TestFixture("generation")]
-    [TestFixture("verification")]
-    public class Given_GetAccessTokenAsync_WhenAPlaceholderOperationIsCancelledWithSecretsInItsException(
-        string stage
-    ) : OpenIddictTokenManagerTests
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WhenThePlaceholderVerificationIsCancelledWithSecretsInItsException
+        : OpenIddictTokenManagerTests
     {
         private ILogger<OpenIddictTokenManager> _logger = null!;
         private TokenResult _result = null!;
-        private string _generatedSecret = string.Empty;
 
         private static OperationCanceledException SecretBearingCancellation(string secrets) =>
             new(
@@ -2956,35 +2966,18 @@ public class OpenIddictTokenManagerTests
                 new InvalidOperationException($"inner detail {secrets}")
             );
 
-        private string[] Sentinels() =>
-            stage == "generation"
-                ? [_generatedSecret, PresentedSecret]
-                : [PresentedSecret, DefaultPlaceholderHash];
+        private static string[] Sentinels() => [PresentedSecret, DefaultPlaceholderHash];
 
         [SetUp]
         public async Task Act()
         {
             _logger = A.Fake<ILogger<OpenIddictTokenManager>>();
             StubUnknownClient();
-            if (stage == "generation")
-            {
-                A.CallTo(() => _secretHasher.HashSecretAsync(A<string>._))
-                    .ReturnsLazily(
-                        (string secret) =>
-                        {
-                            _generatedSecret = secret;
-                            return Task.FromException<string>(SecretBearingCancellation(secret));
-                        }
-                    );
-            }
-            else
-            {
-                A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._))
-                    .ReturnsLazily(
-                        (string presented, string hashed) =>
-                            Task.FromException<bool>(SecretBearingCancellation($"{presented} {hashed}"))
-                    );
-            }
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._))
+                .ReturnsLazily(
+                    (string presented, string hashed) =>
+                        Task.FromException<bool>(SecretBearingCancellation($"{presented} {hashed}"))
+                );
 
             _result = await NewTokenManager(new IdentityOptions(), _logger)
                 .GetAccessTokenAsync(UnknownClientCredentials());
@@ -3094,185 +3087,54 @@ public class OpenIddictTokenManagerTests
                 .Be("client-authentication");
     }
 
-    /// <summary>
-    /// A hasher whose first hash blocks its calling thread, as the built-in hasher's derivation
-    /// does, until the test releases it. A second hash would mean the publication protocol let a
-    /// second caller start a generation, so it throws instead of blocking: a regression fails the
-    /// assertions rather than hanging.
-    /// </summary>
-    private sealed class BlockingFirstGenerationHasher : IClientSecretHasher, IDisposable
-    {
-        public const string Placeholder = "blocking-hasher-placeholder";
-        private int _generations;
-
-        public ManualResetEventSlim Entered { get; } = new();
-        public ManualResetEventSlim Release { get; } = new();
-        public ConcurrentQueue<(string Presented, string Hashed)> VerifiedPairs { get; } = new();
-        public int Generations => Volatile.Read(ref _generations);
-
-        public Task<string> HashSecretAsync(string plainTextSecret)
-        {
-            if (Interlocked.Increment(ref _generations) > 1)
-            {
-                throw new InvalidOperationException("A second placeholder generation started.");
-            }
-
-            Entered.Set();
-            Release.Wait();
-            return Task.FromResult(Placeholder);
-        }
-
-        public Task<bool> VerifySecretAsync(string plainTextSecret, string hashedSecret)
-        {
-            VerifiedPairs.Enqueue((plainTextSecret, hashedSecret));
-            return Task.FromResult(false);
-        }
-
-        public bool IsSecretHashed(string secret) => false;
-
-        public void Dispose()
-        {
-            Entered.Dispose();
-            Release.Dispose();
-        }
-    }
-
-    // The first generation is held in progress on another thread while a second request enters on
-    // this one. The second call runs synchronously up to its first incomplete await, which is the
-    // published holder, so when it returns it has provably passed the point where it could have
-    // started a generation of its own.
+    // The host initializes the placeholder once at startup, through the registered hasher.
     [TestFixture]
-    public class Given_a_second_unknown_client_request_while_the_first_placeholder_generation_blocks
-        : OpenIddictTokenManagerTests
+    public class Given_placeholders_initialized_through_the_hasher : OpenIddictTokenManagerTests
     {
-        private BlockingFirstGenerationHasher _hasher = null!;
-        private bool _firstEnteredTheHasher;
-        private int _generationsWhileTheFirstWasBlocked;
-        private bool _secondCompletedWhileTheFirstWasBlocked;
-        private TokenResult[] _results = null!;
+        private const string Generated = "generated-placeholder";
+        private IClientSecretHasher _hasher = null!;
+        private ClientSecretPlaceholderHash _placeholder = null!;
 
         [SetUp]
         public async Task Act()
         {
-            StubUnknownClient();
-            _hasher = new BlockingFirstGenerationHasher();
-            OpenIddictTokenManager manager = CreateManagerWith(_hasher);
-            try
-            {
-                Task<TokenResult> first = Task.Run(() =>
-                    manager.GetAccessTokenAsync(UnknownClientCredentials())
-                );
-                _firstEnteredTheHasher = _hasher.Entered.Wait(Guard);
-
-                Task<TokenResult> second = manager.GetAccessTokenAsync(UnknownClientCredentials());
-                _generationsWhileTheFirstWasBlocked = _hasher.Generations;
-                _secondCompletedWhileTheFirstWasBlocked = second.IsCompleted;
-
-                _hasher.Release.Set();
-                _results = await Task.WhenAll(first, second).WaitAsync(Guard);
-            }
-            finally
-            {
-                _hasher.Release.Set();
-            }
+            _hasher = A.Fake<IClientSecretHasher>();
+            A.CallTo(() => _hasher.HashSecretAsync(A<string>._)).Returns(Generated);
+            _placeholder = new ClientSecretPlaceholderHash(_hasher);
+            await _placeholder.InitializeAsync();
+            await new ClientSecretPlaceholderHash(_hasher).InitializeAsync();
         }
 
-        [TearDown]
-        public void TearDown() => _hasher.Dispose();
+        private IEnumerable<string> HashedSecrets() =>
+            Fake.GetCalls(_hasher)
+                .Where(call => call.Method.Name == nameof(IClientSecretHasher.HashSecretAsync))
+                .Select(call => call.GetArgument<string>(0)!);
 
         [Test]
-        public void It_has_the_first_request_enter_the_hasher() => _firstEnteredTheHasher.Should().BeTrue();
+        public void It_holds_the_hashers_result() => _placeholder.Hash.Should().Be(Generated);
 
         [Test]
-        public void It_starts_no_second_generation_while_the_first_is_in_progress() =>
-            _generationsWhileTheFirstWasBlocked.Should().Be(1);
+        public void It_hashes_once_per_initialization() => PlaceholderGenerations(_hasher).Should().Be(2);
 
         [Test]
-        public void It_has_the_second_request_wait_for_the_first_generation() =>
-            _secondCompletedWhileTheFirstWasBlocked.Should().BeFalse();
-
-        [Test]
-        public void It_generates_once() => _hasher.Generations.Should().Be(1);
-
-        [Test]
-        public void It_verifies_both_requests_against_the_one_placeholder() =>
-            _hasher
-                .VerifiedPairs.Should()
-                .Equal(
-                    (PresentedSecret, BlockingFirstGenerationHasher.Placeholder),
-                    (PresentedSecret, BlockingFirstGenerationHasher.Placeholder)
-                );
-
-        [Test]
-        public void It_rejects_both_requests() => _results.Should().AllBeEquivalentTo(InvalidClientFailure);
+        public void It_hashes_a_fresh_secret_for_each_placeholder() =>
+            HashedSecrets()
+                .Should()
+                .OnlyHaveUniqueItems()
+                .And.OnlyContain(secret => secret.Length > 0 && secret != PresentedSecret);
     }
 
-    [TestFixture]
-    public class Given_unknown_client_requests_while_the_placeholder_generation_is_pending
-        : OpenIddictTokenManagerTests
-    {
-        private const int Requests = 16;
-        private const string Placeholder = "pending-placeholder";
-        private int _generationsBeforeCompletion;
-        private bool _anyRequestCompletedBeforeCompletion;
-        private TokenResult[] _results = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            StubUnknownClient();
-            TaskCompletionSource<string> generation = new();
-            A.CallTo(() => _secretHasher.HashSecretAsync(A<string>._)).Returns(generation.Task);
-
-            Task<TokenResult>[] requests =
-            [
-                .. Enumerable
-                    .Range(0, Requests)
-                    .Select(_ => _tokenManager.GetAccessTokenAsync(UnknownClientCredentials())),
-            ];
-            _generationsBeforeCompletion = PlaceholderGenerations(_secretHasher);
-            _anyRequestCompletedBeforeCompletion = Array.Exists(requests, request => request.IsCompleted);
-
-            generation.SetResult(Placeholder);
-            _results = await Task.WhenAll(requests).WaitAsync(Guard);
-        }
-
-        [Test]
-        public void It_starts_one_generation_for_all_requests() =>
-            _generationsBeforeCompletion.Should().Be(1);
-
-        [Test]
-        public void It_has_every_request_wait_for_the_generation() =>
-            _anyRequestCompletedBeforeCompletion.Should().BeFalse();
-
-        [Test]
-        public void It_generates_once() => PlaceholderGenerations(_secretHasher).Should().Be(1);
-
-        [Test]
-        public void It_verifies_every_request_against_the_one_placeholder() =>
-            A.CallTo(() => _secretHasher.VerifySecretAsync(PresentedSecret, Placeholder))
-                .MustHaveHappened(Requests, Times.Exactly);
-
-        [Test]
-        public void It_rejects_every_request() => _results.Should().AllBeEquivalentTo(InvalidClientFailure);
-    }
-
-    // A failed generation leaves no placeholder behind: its requests are rejected without the
-    // verification, it is logged once, and the next request starts a new generation that later
-    // concurrent requests share.
+    // A hasher that cannot produce a placeholder leaves none, and no token manager can be
+    // constructed over it, so no request can reject an unknown client without the verification.
+    // The host stops startup on the failure.
     [TestFixture("a synchronous throw")]
     [TestFixture("a faulted task")]
     [TestFixture("an empty hash")]
-    public class Given_a_failed_placeholder_generation_followed_by_more_unknown_client_requests(
-        string failure
-    ) : OpenIddictTokenManagerTests
+    [TestFixture("the real hasher at zero iterations")]
+    public class Given_a_placeholder_whose_initialization_fails(string failure) : OpenIddictTokenManagerTests
     {
-        private const string Recovered = "recovered-placeholder";
-        private ILogger<OpenIddictTokenManager> _logger = null!;
-        private TokenResult _failedAttemptResult = null!;
-        private int _verificationsAfterTheFailedAttempt;
-        private int _generationsWhileTheRetryIsPending;
-        private TokenResult[] _laterResults = null!;
+        private ClientSecretPlaceholderHash _placeholder = null!;
+        private Task _initialization = null!;
 
         private Task<string> FailedGeneration() =>
             failure switch
@@ -3287,156 +3149,56 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            _logger = A.Fake<ILogger<OpenIddictTokenManager>>();
-            StubUnknownClient();
-            TaskCompletionSource<string> retry = new();
-            int calls = 0;
-            A.CallTo(() => _secretHasher.HashSecretAsync(A<string>._))
-                .ReturnsLazily(() => Interlocked.Increment(ref calls) == 1 ? FailedGeneration() : retry.Task);
-            OpenIddictTokenManager manager = NewTokenManager(new IdentityOptions(), _logger);
-
-            _failedAttemptResult = await manager.GetAccessTokenAsync(UnknownClientCredentials());
-            _verificationsAfterTheFailedAttempt = Fake.GetCalls(_secretHasher)
-                .Count(call => call.Method.Name == nameof(IClientSecretHasher.VerifySecretAsync));
-
-            Task<TokenResult> second = manager.GetAccessTokenAsync(UnknownClientCredentials());
-            Task<TokenResult> third = manager.GetAccessTokenAsync(UnknownClientCredentials());
-            _generationsWhileTheRetryIsPending = PlaceholderGenerations(_secretHasher);
-
-            retry.SetResult(Recovered);
-            _laterResults = await Task.WhenAll(second, third).WaitAsync(Guard);
+            A.CallTo(() => _secretHasher.HashSecretAsync(A<string>._)).ReturnsLazily(FailedGeneration);
+            _placeholder = new ClientSecretPlaceholderHash(
+                failure == "the real hasher at zero iterations" ? CreateRealHasher(0) : _secretHasher
+            );
+            _initialization = _placeholder.InitializeAsync();
+            // Waits for the attempt without observing its failure; the tests below observe it.
+            await Task.WhenAny(_initialization);
         }
 
         [Test]
-        public void It_rejects_the_request_whose_generation_failed() =>
-            _failedAttemptResult.Should().BeEquivalentTo(InvalidClientFailure);
+        public async Task It_fails_the_initialization() =>
+            await FluentActions.Awaiting(() => _initialization).Should().ThrowAsync<Exception>();
 
         [Test]
-        public void It_skips_the_verification_when_no_placeholder_exists() =>
-            _verificationsAfterTheFailedAttempt.Should().Be(0);
+        public void It_holds_no_hash() =>
+            FluentActions.Invoking(() => _placeholder.Hash).Should().Throw<InvalidOperationException>();
 
         [Test]
-        public void It_logs_the_failed_attempt_once_by_exception_type() =>
-            LogMessagesAt(_logger, LogLevel.Warning)
+        public void It_lets_no_token_manager_be_constructed_over_it() =>
+            FluentActions
+                .Invoking(() => NewTokenManager(new IdentityOptions(), placeholderHash: _placeholder))
                 .Should()
-                .ContainSingle()
-                .Which.Should()
-                .Contain("System.InvalidOperationException");
-
-        [Test]
-        public void It_starts_exactly_one_new_generation_for_the_later_requests() =>
-            _generationsWhileTheRetryIsPending.Should().Be(2);
-
-        [Test]
-        public void It_verifies_the_later_requests_against_the_recovered_placeholder() =>
-            A.CallTo(() => _secretHasher.VerifySecretAsync(PresentedSecret, Recovered))
-                .MustHaveHappenedTwiceExactly();
-
-        [Test]
-        public void It_rejects_the_later_requests() =>
-            _laterResults.Should().AllBeEquivalentTo(InvalidClientFailure);
+                .Throw<InvalidOperationException>();
     }
 
-    // Waiters of a failed attempt finish only after a newer attempt has started. The failed
-    // attempt's generator is held inside its failure log, after it cleared its own holder and
-    // before it faults the holder its waiters await, so the overlap is certain rather than likely.
+    // Reading the placeholder never generates one, so a manager over a placeholder the host has
+    // not initialized fails at construction instead of hashing on a request.
     [TestFixture]
-    public class Given_waiters_of_a_failed_placeholder_generation_finishing_after_a_newer_one_started
-        : OpenIddictTokenManagerTests
+    public class Given_a_placeholder_that_was_never_initialized : OpenIddictTokenManagerTests
     {
-        private const string SecondPlaceholder = "second-placeholder";
-        private ManualResetEventSlim _failureLogged = null!;
-        private ManualResetEventSlim _releaseFailureLog = null!;
-        private bool _failureWasLogged;
-        private bool _oldWaitersPendingWhenTheNewAttemptStarted;
-        private int _generationsAfterTheOldWaitersFinished;
-        private TokenResult[] _results = null!;
+        private ClientSecretPlaceholderHash _placeholder = null!;
+        private Action _construction = null!;
 
         [SetUp]
-        public async Task Act()
+        public void Arrange()
         {
-            _failureLogged = new ManualResetEventSlim();
-            _releaseFailureLog = new ManualResetEventSlim();
-            ILogger<OpenIddictTokenManager> logger = A.Fake<ILogger<OpenIddictTokenManager>>();
-            A.CallTo(logger)
-                .Where(call =>
-                    call.Method.Name == nameof(ILogger.Log)
-                    && call.GetArgument<LogLevel>(0) == LogLevel.Warning
-                )
-                .Invokes(() =>
-                {
-                    _failureLogged.Set();
-                    _releaseFailureLog.Wait();
-                });
-
-            StubUnknownClient();
-            TaskCompletionSource<string> firstAttempt = new();
-            TaskCompletionSource<string> secondAttempt = new();
-            int calls = 0;
-            A.CallTo(() => _secretHasher.HashSecretAsync(A<string>._))
-                .ReturnsLazily(() =>
-                    Interlocked.Increment(ref calls) == 1 ? firstAttempt.Task : secondAttempt.Task
-                );
-            OpenIddictTokenManager manager = NewTokenManager(new IdentityOptions(), logger);
-
-            try
-            {
-                Task<TokenResult> oldWaiter1 = manager.GetAccessTokenAsync(UnknownClientCredentials());
-                Task<TokenResult> oldWaiter2 = manager.GetAccessTokenAsync(UnknownClientCredentials());
-
-                Task failing = Task.Run(() =>
-                    firstAttempt.SetException(new InvalidOperationException("first attempt failed"))
-                );
-                _failureWasLogged = _failureLogged.Wait(Guard);
-                _oldWaitersPendingWhenTheNewAttemptStarted =
-                    !oldWaiter1.IsCompleted && !oldWaiter2.IsCompleted;
-
-                Task<TokenResult> newRequest = manager.GetAccessTokenAsync(UnknownClientCredentials());
-
-                _releaseFailureLog.Set();
-                await Task.WhenAll(oldWaiter1, oldWaiter2, failing).WaitAsync(Guard);
-
-                Task<TokenResult> laterRequest = manager.GetAccessTokenAsync(UnknownClientCredentials());
-                _generationsAfterTheOldWaitersFinished = PlaceholderGenerations(_secretHasher);
-
-                secondAttempt.SetResult(SecondPlaceholder);
-                _results = await Task.WhenAll(oldWaiter1, oldWaiter2, newRequest, laterRequest)
-                    .WaitAsync(Guard);
-            }
-            finally
-            {
-                _releaseFailureLog.Set();
-            }
-        }
-
-        [TearDown]
-        public void TearDown()
-        {
-            _failureLogged.Dispose();
-            _releaseFailureLog.Dispose();
+            _placeholder = new ClientSecretPlaceholderHash(_secretHasher);
+            _construction = () => NewTokenManager(new IdentityOptions(), placeholderHash: _placeholder);
         }
 
         [Test]
-        public void It_holds_the_failed_attempt_in_its_failure_log() => _failureWasLogged.Should().BeTrue();
+        public void It_lets_no_token_manager_be_constructed_over_it() =>
+            _construction.Should().Throw<InvalidOperationException>();
 
         [Test]
-        public void It_starts_the_new_attempt_while_the_old_waiters_are_pending() =>
-            _oldWaitersPendingWhenTheNewAttemptStarted.Should().BeTrue();
-
-        [Test]
-        public void It_keeps_the_new_attempt_after_the_old_waiters_finish() =>
-            _generationsAfterTheOldWaitersFinished.Should().Be(2);
-
-        [Test]
-        public void It_verifies_only_the_requests_of_the_new_attempt() =>
-            Fake.GetCalls(_secretHasher)
-                .Where(call => call.Method.Name == nameof(IClientSecretHasher.VerifySecretAsync))
-                .Select(call => call.GetArgument<string>(1))
-                .Should()
-                .Equal(SecondPlaceholder, SecondPlaceholder);
-
-        [Test]
-        public void It_rejects_every_request() => _results.Should().AllBeEquivalentTo(InvalidClientFailure);
+        public void It_hashes_nothing_when_read()
+        {
+            _construction.Should().Throw<InvalidOperationException>();
+            A.CallTo(() => _secretHasher.HashSecretAsync(A<string>._)).MustNotHaveHappened();
+        }
     }
 
     [TestFixture]
@@ -3445,6 +3207,7 @@ public class OpenIddictTokenManagerTests
         private const int Requests = 10;
         private ClientSecretHasher _realHasher = null!;
         private IClientSecretHasher _observedHasher = null!;
+        private int _hashesBeforeTheRequests;
         private List<TokenResult> _results = null!;
 
         [SetUp]
@@ -3453,7 +3216,11 @@ public class OpenIddictTokenManagerTests
             StubUnknownClient();
             _realHasher = CreateRealHasher(HashedAtIterations);
             _observedHasher = A.Fake<IClientSecretHasher>(options => options.Wrapping(_realHasher));
-            OpenIddictTokenManager manager = CreateManagerWith(_observedHasher);
+            // One hasher for the placeholder and the requests, as in the host.
+            ClientSecretPlaceholderHash placeholder = new(_observedHasher);
+            await placeholder.InitializeAsync();
+            OpenIddictTokenManager manager = CreateManagerWith(_observedHasher, placeholderHash: placeholder);
+            _hashesBeforeTheRequests = PlaceholderGenerations(_observedHasher);
 
             _results = [];
             for (int request = 0; request < Requests; request++)
@@ -3466,8 +3233,12 @@ public class OpenIddictTokenManagerTests
         public void It_rejects_every_request() => _results.Should().AllBeEquivalentTo(InvalidClientFailure);
 
         [Test]
-        public void It_generates_the_placeholder_once() =>
-            PlaceholderGenerations(_observedHasher).Should().Be(1);
+        public void It_hashes_the_placeholder_once_before_the_requests() =>
+            _hashesBeforeTheRequests.Should().Be(1);
+
+        [Test]
+        public void It_hashes_nothing_while_handling_the_requests() =>
+            PlaceholderGenerations(_observedHasher).Should().Be(_hashesBeforeTheRequests);
 
         [Test]
         public void It_verifies_every_request() =>
@@ -3484,41 +3255,6 @@ public class OpenIddictTokenManagerTests
                 .ContainSingle()
                 .Which.Should()
                 .Match(hash => _realHasher.IsSecretHashed(hash));
-    }
-
-    // The real hasher cannot hash at all at a zero iteration count, so no placeholder exists. The
-    // unknown caller is still an authentication outcome, never a 503: its absence was established.
-    [TestFixture]
-    public class Given_RevokeTokenAsync_WhenTheCallerIsUnknown_AndTheRealHasherCannotHash
-        : OpenIddictTokenManagerTests
-    {
-        private ILogger<OpenIddictTokenManager> _logger = null!;
-        private TokenRevocationResult _result = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _logger = A.Fake<ILogger<OpenIddictTokenManager>>();
-            StubUnknownClient();
-
-            _result = await CreateManagerWith(CreateRealHasher(0), _logger)
-                .RevokeTokenAsync(UnknownCallerRevocation(), CancellationToken.None);
-        }
-
-        [Test]
-        public void It_reports_invalid_client() =>
-            _result.Should().BeOfType<TokenRevocationResult.InvalidClient>();
-
-        [Test]
-        public void It_logs_the_failed_generation_once_by_exception_type() =>
-            LogMessagesAt(_logger, LogLevel.Warning)
-                .Should()
-                .ContainSingle()
-                .Which.Should()
-                .Contain("System.ArgumentOutOfRangeException");
-
-        [Test]
-        public void It_logs_no_revocation_failure() => LogCountAt(_logger, LogLevel.Error).Should().Be(0);
     }
 
     /// <summary>A scratch directory for certificate files, removed by the fixture's teardown.</summary>
@@ -3981,7 +3717,8 @@ public class OpenIddictTokenManagerTests
                 _secretHasher,
                 _tokenRepository,
                 _signingKeyProvider,
-                _developmentCertificateStore
+                _developmentCertificateStore,
+                _placeholderHash
             );
             _result = await manager.GetAccessTokenAsync(GrantCredentials());
         }
@@ -5292,7 +5029,8 @@ public class OpenIddictTokenManagerTests
                 _secretHasher,
                 _tokenRepository,
                 _signingKeyProvider,
-                _developmentCertificateStore
+                _developmentCertificateStore,
+                _placeholderHash
             );
 
             _thrown = await ExceptionFrom(() =>
@@ -5678,18 +5416,17 @@ public class OpenIddictTokenManagerTests
         {
             _reader = UseCredentialReadingRepository();
             Guid applicationId = Guid.NewGuid();
-            ClientCredential? credential = failure switch
-            {
-                "absent" => null,
-                "unapproved" => new(
-                    applicationId,
-                    CredentialClientId,
-                    StoredCredentialHash,
-                    IsApproved: false
-                ),
-                _ => new(applicationId, CredentialClientId, StoredCredentialHash, IsApproved: true),
-            };
-            A.CallTo(() => _reader.GetClientCredentialAsync(CredentialClientId)).Returns(credential);
+            A.CallTo(() => _reader.GetClientCredentialAsync(CredentialClientId))
+                .Returns(
+                    failure == "absent"
+                        ? null
+                        : new ClientCredential(
+                            applicationId,
+                            CredentialClientId,
+                            StoredCredentialHash,
+                            IsApproved: failure != "unapproved"
+                        )
+                );
             A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, StoredCredentialHash))
                 .Returns(failure != "wrong_secret");
 
@@ -5750,15 +5487,18 @@ public class OpenIddictTokenManagerTests
         {
             (_, ApplicationInfo application) = ArrangeCredentialClient();
             StubActiveKeyPair();
-            ApplicationInfo? reloaded = change switch
-            {
-                "gone" => null,
-                "replaced" => CredentialApplication(Guid.NewGuid(), StoredCredentialClientId),
-                "denied" => Denied(CredentialApplication(application.Id, StoredCredentialClientId)),
-                _ => WithRotatedSecret(CredentialApplication(application.Id, StoredCredentialClientId)),
-            };
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(CredentialClientId))
-                .Returns(reloaded);
+                .Returns(
+                    change switch
+                    {
+                        "gone" => null,
+                        "replaced" => CredentialApplication(Guid.NewGuid(), StoredCredentialClientId),
+                        "denied" => Denied(CredentialApplication(application.Id, StoredCredentialClientId)),
+                        _ => WithRotatedSecret(
+                            CredentialApplication(application.Id, StoredCredentialClientId)
+                        ),
+                    }
+                );
 
             _result = await CreateMintingTokenManager().GetAccessTokenAsync(CredentialGrant());
         }

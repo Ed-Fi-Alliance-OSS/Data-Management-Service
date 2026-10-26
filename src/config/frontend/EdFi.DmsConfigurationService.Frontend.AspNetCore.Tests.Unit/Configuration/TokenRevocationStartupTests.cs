@@ -333,6 +333,172 @@ public class TokenRevocationStartupTests
             _boot.CapturedText().Should().NotContain(Sentinel);
     }
 
+    /// <summary>
+    /// The placeholder an unknown client's secret is verified against is generated at startup through
+    /// the final hasher registration, a replacement included, before any request is served; requests
+    /// only verify against it. The repository is faked so the unknown client needs no database.
+    /// </summary>
+    [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(SelfContainedDatastores))]
+    public class Given_a_self_contained_boot_with_a_replacement_client_secret_hasher(string datastore)
+    {
+        private const string AbsentClientId = "absent-client";
+        private const string PresentedSecret = "absent-client-secret";
+        private const string StartupPlaceholder = "replacement-startup-placeholder";
+        private const int Requests = 2;
+
+        private IClientSecretHasher _hasher = null!;
+        private RevocationBoot _boot = null!;
+        private int _hashesBeforeAnyRequest;
+        private readonly List<(HttpStatusCode Status, string? Error)> _answers = [];
+
+        private int Hashes() =>
+            Fake.GetCalls(_hasher)
+                .Count(call => call.Method.Name == nameof(IClientSecretHasher.HashSecretAsync));
+
+        [OneTimeSetUp]
+        public async Task OneTimeSetUp()
+        {
+            _hasher = A.Fake<IClientSecretHasher>();
+            A.CallTo(() => _hasher.HashSecretAsync(A<string>._)).Returns(StartupPlaceholder);
+            IOpenIddictTokenRepository repository = A.Fake<IOpenIddictTokenRepository>();
+            A.CallTo(() => repository.GetApplicationByClientIdAsync(AbsentClientId))
+                .Returns((ApplicationInfo?)null);
+
+            _boot = RevocationBoot.Run(
+                "self-contained",
+                datastore,
+                services =>
+                {
+                    services.AddSingleton(_hasher);
+                    services.AddSingleton(repository);
+                }
+            );
+            _hashesBeforeAnyRequest = Hashes();
+
+            for (int request = 0; request < Requests; request++)
+            {
+                using HttpResponseMessage response = await _boot.Client!.PostAsync(
+                    "/connect/token",
+                    new FormUrlEncodedContent([
+                        new KeyValuePair<string, string>("client_id", AbsentClientId),
+                        new KeyValuePair<string, string>("client_secret", PresentedSecret),
+                        new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                        new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
+                    ])
+                );
+                JsonNode? body = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+                _answers.Add((response.StatusCode, body?["errors"]?[0]?.GetValue<string>()));
+            }
+        }
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown() => _boot.Dispose();
+
+        [Test]
+        public void It_starts() => _boot.StartupException.Should().BeNull();
+
+        [Test]
+        public void It_generates_the_placeholder_once_before_any_request() =>
+            _hashesBeforeAnyRequest.Should().Be(1);
+
+        [Test]
+        public void It_hashes_nothing_for_the_requests() => Hashes().Should().Be(1);
+
+        [Test]
+        public void It_verifies_each_request_against_the_startup_placeholder() =>
+            A.CallTo(() => _hasher.VerifySecretAsync(PresentedSecret, StartupPlaceholder))
+                .MustHaveHappened(Requests, Times.Exactly);
+
+        [Test]
+        public void It_answers_each_request_invalid_client() =>
+            _answers
+                .Should()
+                .HaveCount(Requests)
+                .And.AllBeEquivalentTo(
+                    (
+                        HttpStatusCode.Unauthorized,
+                        "invalid_client. Invalid client or Invalid client credentials"
+                    )
+                );
+    }
+
+    /// <summary>
+    /// A hasher that cannot produce the placeholder stops startup, so no request is ever served
+    /// without the unknown-client verification. The failure is reported by exception type names alone:
+    /// a replacement hasher's exception can carry anything.
+    /// </summary>
+    [TestFixture("throws")]
+    [TestFixture("faults")]
+    [TestFixture("returns an empty hash")]
+    public class Given_a_self_contained_boot_whose_client_secret_hasher_cannot_produce_the_placeholder(
+        string failure
+    )
+    {
+        private static string NotGeneratedMessage(string exceptionTypes) =>
+            "The placeholder client secret hash could not be generated with the registered client secret "
+            + $"hasher ({exceptionTypes}). Correct the hasher registration or its settings, then restart.";
+
+        private string ExpectedMessage() =>
+            NotGeneratedMessage(
+                failure == "returns an empty hash"
+                    ? typeof(InvalidOperationException).FullName!
+                    : _throwingFactoryTypeChain
+            );
+
+        private IClientSecretHasher _hasher = null!;
+        private RevocationBoot _boot = null!;
+
+        [OneTimeSetUp]
+        public void OneTimeSetUp()
+        {
+            _hasher = A.Fake<IClientSecretHasher>();
+            A.CallTo(() => _hasher.HashSecretAsync(A<string>._))
+                .ReturnsLazily(() =>
+                    failure switch
+                    {
+                        "throws" => throw ThrowingFactoryFailure(),
+                        "faults" => Task.FromException<string>(ThrowingFactoryFailure()),
+                        _ => Task.FromResult(string.Empty),
+                    }
+                );
+
+            _boot = RevocationBoot.Run(
+                "self-contained",
+                "postgresql",
+                services => services.AddSingleton(_hasher)
+            );
+        }
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown() => _boot.Dispose();
+
+        [Test]
+        public void It_fails_to_start_with_the_message_naming_the_exception_type_chain() =>
+            _boot.FindByMessage(ExpectedMessage()).Should().BeOfType<InvalidOperationException>();
+
+        [Test]
+        public void It_does_not_wrap_the_hashers_exception() =>
+            _boot.FindByMessage(ExpectedMessage())!.InnerException.Should().BeNull();
+
+        [Test]
+        public void It_serves_no_request() => _boot.Client.Should().BeNull();
+
+        [Test]
+        public void It_logs_the_same_message_as_critical_without_an_exception()
+        {
+            CapturedStartupLog critical = _boot
+                .Logs.Records.Should()
+                .ContainSingle(record => record.Level == LogLevel.Critical)
+                .Subject;
+            critical.Message.Should().Be(ExpectedMessage());
+            critical.Exception.Should().BeNull();
+        }
+
+        [Test]
+        public void It_keeps_the_hashers_exception_text_out_of_every_log_field_and_the_startup_failure() =>
+            _boot.CapturedText().Should().NotContain(Sentinel);
+    }
+
     [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(Shapes))]
     public class Given_a_boot_with_no_revocation_manager_registered(string provider, string datastore)
     {

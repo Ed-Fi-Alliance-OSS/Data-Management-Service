@@ -135,7 +135,10 @@ public class Given_in_process_token_requests_measured_for_timing_evidence
         public bool IsSecretHashed(string secret) => true;
     }
 
-    private OpenIddictTokenManager Manager(IClientSecretHasher hasher, IOpenIddictTokenRepository repository)
+    private async Task<OpenIddictTokenManager> ManagerAsync(
+        IClientSecretHasher hasher,
+        IOpenIddictTokenRepository repository
+    )
     {
         IOptions<IdentityOptions> options = Options.Create(new IdentityOptions());
         SigningKeySnapshotProvider signingKeyProvider = new(
@@ -151,13 +154,18 @@ public class Given_in_process_token_requests_measured_for_timing_evidence
         _owned.Add(signingKeyProvider);
         _owned.Add(certificateStore);
 
+        // As the host does at startup, before any request.
+        ClientSecretPlaceholderHash placeholderHash = new(hasher);
+        await placeholderHash.InitializeAsync();
+
         return new OpenIddictTokenManager(
             options,
             NullLogger<OpenIddictTokenManager>.Instance,
             hasher,
             repository,
             signingKeyProvider,
-            certificateStore
+            certificateStore,
+            placeholderHash
         );
     }
 
@@ -178,15 +186,15 @@ public class Given_in_process_token_requests_measured_for_timing_evidence
         );
         string storedHash = await realHasher.HashSecretAsync(KnownSecret);
 
-        OpenIddictTokenManager measured = Manager(
+        OpenIddictTokenManager measured = await ManagerAsync(
             realHasher,
             new FixedCostTokenRepository(KnownClientId, storedHash, TimeSpan.Zero)
         );
-        OpenIddictTokenManager noDerivation = Manager(
+        OpenIddictTokenManager noDerivation = await ManagerAsync(
             new NoDerivationHasher(),
             new FixedCostTokenRepository(KnownClientId, storedHash, TimeSpan.Zero)
         );
-        OpenIddictTokenManager slowAbsentLookup = Manager(
+        OpenIddictTokenManager slowAbsentLookup = await ManagerAsync(
             realHasher,
             new FixedCostTokenRepository(
                 KnownClientId,

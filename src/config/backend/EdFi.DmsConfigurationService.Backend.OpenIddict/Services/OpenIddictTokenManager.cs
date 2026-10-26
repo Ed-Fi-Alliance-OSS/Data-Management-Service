@@ -36,7 +36,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         IClientSecretHasher secretHasher,
         IOpenIddictTokenRepository tokenRepository,
         ISigningKeySnapshotProvider signingKeyProvider,
-        DevelopmentCertificateStore developmentCertificateStore
+        DevelopmentCertificateStore developmentCertificateStore,
+        ClientSecretPlaceholderHash placeholderHash
     ) : ITokenManager, ITokenRevocationManager, ITokenIntrospectionManager
     {
         private readonly IOptions<IdentityOptions> _identityOptions = identityOptions;
@@ -49,11 +50,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
 
         /// <summary>
         /// The registered hasher's hash of a random secret that nobody holds, which an unknown
-        /// client's presented secret is verified against. Null until the first unknown-client
-        /// request publishes a holder; one per manager instance. See
-        /// <see cref="GetPlaceholderHashAsync"/>.
+        /// client's presented secret is verified against. Read once here, so a manager cannot be
+        /// constructed before the host has initialized the placeholder, and no request generates it.
         /// </summary>
-        private Task<string>? _placeholderHash;
+        private readonly string _placeholderHash = placeholderHash.Hash;
 
         /// <summary>
         /// Static helper to validate a JWT token and check its revocation status using a service provider.
@@ -1064,9 +1064,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// <para>
         /// Both endpoints use the lenient verification here. An ordinary failure is logged by
         /// exception type and absorbed, because the client's absence is already established and the
-        /// answer is the same either way. Without a placeholder, because the hasher could not
-        /// produce one, the client is rejected without the verification, which leaves the timing
-        /// difference until a later request generates one. Cancellation is not absorbed: it reaches
+        /// answer is the same either way. Cancellation is not absorbed: it reaches
         /// the caller's own handling, as it would from a known client's verification, but as a new
         /// exception with a fixed message, the original token and no inner exception: the
         /// hasher's own exception may carry the secret it was given, and the caller's handling
@@ -1075,24 +1073,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// </summary>
         private async Task VerifyAgainstPlaceholderAsync(string presentedSecret)
         {
-            string placeholderHash;
             try
             {
-                placeholderHash = await GetPlaceholderHashAsync();
-            }
-            catch (OperationCanceledException ex)
-            {
-                throw SanitizedCancellation(ex);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // The generator logged this attempt's failure once; waiters add nothing.
-                return;
-            }
-
-            try
-            {
-                _ = await _secretHasher.VerifySecretAsync(presentedSecret, placeholderHash);
+                _ = await _secretHasher.VerifySecretAsync(presentedSecret, _placeholderHash);
             }
             catch (OperationCanceledException ex)
             {
@@ -1109,74 +1092,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         ) => new("The secret verification for an unknown client was canceled.", exception.CancellationToken);
 
         /// <summary>
-        /// Returns this manager's placeholder hash, generating it on first use. The holder is
-        /// published before the hasher is called, so concurrent first callers share one
-        /// generation: exactly one caller, the one that published, invokes the hasher, and the
-        /// others await its result without blocking a thread. A failed attempt is cleared by its
-        /// own generator, so the next request starts a new one, and a late observer of a failed
-        /// attempt can never clear a newer one.
-        /// </summary>
-        private Task<string> GetPlaceholderHashAsync()
-        {
-            if (Volatile.Read(ref _placeholderHash) is { } published)
-            {
-                return published;
-            }
-
-            TaskCompletionSource<string> holder = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            if (Interlocked.CompareExchange(ref _placeholderHash, holder.Task, null) is { } winner)
-            {
-                return winner;
-            }
-
-            _ = GeneratePlaceholderHashAsync(holder);
-            return holder.Task;
-        }
-
-        /// <summary>
-        /// Hashes a random secret that is never stored or returned, through the registered hasher, so
-        /// the placeholder has whatever format and work factor that hasher gives its own hashes. A
-        /// synchronous throw, a faulted or cancelled task and an empty result all fail the attempt.
-        /// </summary>
-        private async Task GeneratePlaceholderHashAsync(TaskCompletionSource<string> holder)
-        {
-            try
-            {
-                string hash = await _secretHasher.HashSecretAsync(
-                    Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
-                );
-                if (string.IsNullOrWhiteSpace(hash))
-                {
-                    throw new InvalidOperationException("The client secret hasher returned an empty hash.");
-                }
-
-                holder.SetResult(hash);
-            }
-            catch (Exception ex)
-            {
-                // Clears only this attempt's holder; the returned previous value is not needed.
-                _ = Interlocked.CompareExchange(ref _placeholderHash, null, holder.Task);
-                try
-                {
-                    LogPlaceholderGenerationFailure(ex);
-                }
-                finally
-                {
-                    holder.SetException(ex);
-                }
-            }
-        }
-
-        /// <summary>
         /// Records only the chain of exception type names: a replacement hasher's exception message
         /// may carry anything, including the secret it was given.
         /// </summary>
-        private void LogPlaceholderGenerationFailure(Exception exception) =>
-            _logger.LogWarning(
-                "The placeholder client secret hash could not be generated ({ExceptionTypes}); unknown clients are rejected without the placeholder verification until a later attempt succeeds",
-                ExceptionTypeChain(exception)
-            );
-
         private void LogPlaceholderVerificationFailure(Exception exception) =>
             _logger.LogWarning(
                 "Verifying a secret against the placeholder client secret hash failed ({ExceptionTypes}); the unknown client is still rejected",

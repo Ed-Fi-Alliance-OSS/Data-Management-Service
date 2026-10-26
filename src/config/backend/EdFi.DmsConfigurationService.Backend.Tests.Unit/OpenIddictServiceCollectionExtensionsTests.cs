@@ -863,10 +863,10 @@ public class OpenIddictServiceCollectionExtensionsTests
 
     /// <summary>
     /// A plugin replaces the client secret hasher with a plain <c>Add</c> after the host's own
-    /// registration. The managers resolved from the production store registrations must generate
-    /// and verify the unknown-client placeholder through that replacement, in its own format, and
-    /// each resolved manager instance generates its own placeholder. Only the token repository is
-    /// faked, so no database is contacted.
+    /// registration. The one placeholder the production store registrations provide is generated
+    /// through that replacement, in its own format, once, as the host does at startup; the managers
+    /// resolved afterwards verify unknown clients against it and generate nothing per request. Only
+    /// the token repository is faked, so no database is contacted.
     /// </summary>
     [TestFixture("postgresql")]
     [TestFixture("mssql")]
@@ -878,6 +878,7 @@ public class OpenIddictServiceCollectionExtensionsTests
 
         private ServiceProvider _provider = null!;
         private IClientSecretHasher _replacement = null!;
+        private int _hashesAtInitialization;
         private TokenResult _tokenResult = null!;
         private TokenRevocationResult _revocationResult = null!;
 
@@ -911,6 +912,10 @@ public class OpenIddictServiceCollectionExtensionsTests
             services.AddSingleton(_replacement);
 
             _provider = services.BuildServiceProvider();
+            await _provider.GetRequiredService<ClientSecretPlaceholderHash>().InitializeAsync();
+            _hashesAtInitialization = Fake.GetCalls(_replacement)
+                .Count(call => call.Method.Name == nameof(IClientSecretHasher.HashSecretAsync));
+
             _tokenResult = await _provider
                 .GetRequiredService<ITokenManager>()
                 .GetAccessTokenAsync([
@@ -957,8 +962,12 @@ public class OpenIddictServiceCollectionExtensionsTests
             _revocationResult.Should().BeOfType<TokenRevocationResult.InvalidClient>();
 
         [Test]
-        public void It_generates_one_placeholder_per_resolved_manager_through_the_replacement() =>
-            A.CallTo(() => _replacement.HashSecretAsync(A<string>._)).MustHaveHappenedTwiceExactly();
+        public void It_generates_the_placeholder_once_through_the_replacement() =>
+            _hashesAtInitialization.Should().Be(1);
+
+        [Test]
+        public void It_hashes_nothing_while_handling_the_requests() =>
+            A.CallTo(() => _replacement.HashSecretAsync(A<string>._)).MustHaveHappenedOnceExactly();
 
         [Test]
         public void It_verifies_both_requests_against_the_replacements_placeholder() =>
@@ -981,7 +990,7 @@ public class OpenIddictServiceCollectionExtensionsTests
         private IClientSecretHasher _replacement = null!;
 
         [SetUp]
-        public void Setup()
+        public async Task Setup()
         {
             IConfiguration configuration = new ConfigurationBuilder()
                 .AddInMemoryCollection(
@@ -1007,9 +1016,12 @@ public class OpenIddictServiceCollectionExtensionsTests
                     : services.AddMssqlOpenIddictStores(configuration, "http://localhost");
 
             _replacement = A.Fake<IClientSecretHasher>();
+            A.CallTo(() => _replacement.HashSecretAsync(A<string>._)).Returns("replacement-placeholder");
             services.AddSingleton(_replacement);
 
             _provider = services.BuildServiceProvider();
+            // As the host does at startup; a manager cannot be constructed before it.
+            await _provider.GetRequiredService<ClientSecretPlaceholderHash>().InitializeAsync();
         }
 
         [TearDown]

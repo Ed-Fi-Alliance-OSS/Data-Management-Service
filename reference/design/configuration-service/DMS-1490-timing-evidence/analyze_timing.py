@@ -51,6 +51,7 @@ DEFAULT_RESAMPLES = 5000
 DEFAULT_SEED = 1
 BATCH = 250
 MIN_INTERVAL_ROUNDS = 20
+REQUIRED_COLUMNS = ("round", "arm", "elapsed_us")
 
 
 # --------------------------------------------------------------------------------------------
@@ -100,7 +101,15 @@ def load_rounds(path):
     arms = set()
     # utf-8-sig also accepts a file that starts with a byte order mark.
     with open(path, newline="", encoding="utf-8-sig") as handle:
-        for row in csv.DictReader(handle):
+        reader = csv.DictReader(handle)
+        absent = [column for column in REQUIRED_COLUMNS if column not in (reader.fieldnames or [])]
+        if absent:
+            raise ValueError(f"the input lacks the required column(s) {absent}")
+        for row in reader:
+            # DictReader fills the columns a short row leaves out with None.
+            short = [column for column in REQUIRED_COLUMNS if row[column] is None]
+            if short:
+                raise ValueError(f"line {reader.line_num} has no value for {short}")
             round_index = int(row["round"])
             arm = row["arm"]
             arms.add(arm)
@@ -518,6 +527,19 @@ def selftest():
         with open(bad, "w", newline="", encoding="utf-8") as handle:
             handle.write("round,arm,position,elapsed_us\n0,x,0,1.0\n0,y,1,2.0\n1,x,0,3.0\n")
         check("a round missing an arm is rejected", raises(lambda: load_rounds(bad)))
+
+        malformed = {
+            "a missing required column": "round,arm\n0,x\n",
+            "a row cut short": "round,arm,elapsed_us\n0,x\n",
+        }
+        for label, content in malformed.items():
+            path = os.path.join(directory, f"{label}.csv")
+            with open(path, "w", newline="", encoding="utf-8") as handle:
+                handle.write(content)
+            check(f"{label} is rejected", raises(lambda p=path: load_rounds(p)))
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                exit_code = main(["analyze", "--csv", path, "--delta", "25"])
+            check(f"the command line refuses {label} with exit code 2", exit_code == 2)
 
         for label, value in (("negative", "-1.0"), ("NaN", "nan"), ("infinite", "inf")):
             invalid = os.path.join(directory, f"{label}.csv")

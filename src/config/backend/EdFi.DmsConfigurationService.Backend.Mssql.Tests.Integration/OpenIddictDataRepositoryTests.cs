@@ -151,6 +151,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
         IClientSecretHasher secretHasher = A.Fake<IClientSecretHasher>();
         A.CallTo(() => secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
+        A.CallTo(() => secretHasher.HashSecretAsync(A<string>._)).Returns("integration-placeholder");
+        // As the host does at startup; the faked hasher completes synchronously.
+        ClientSecretPlaceholderHash placeholderHash = new(secretHasher);
+        placeholderHash.InitializeAsync().GetAwaiter().GetResult();
         options.EncryptionKey = "integration-signing-key";
         OpenIddictTokenManager manager = new(
             Options.Create(options),
@@ -161,7 +165,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             new DevelopmentCertificateStore(
                 Options.Create(options),
                 NullLogger<DevelopmentCertificateStore>.Instance
-            )
+            ),
+            placeholderHash
         );
         return (manager, signingRepository);
     }

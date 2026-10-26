@@ -1985,7 +1985,7 @@ public class RevocationOwnershipTests
     /// <summary>
     /// The real manager over the faked repository and secret hasher, with a real snapshot provider and certificate
     /// store of its own. The factory's container creates this owner and disposes it, and with it the provider and the
-    /// store, when the factory is disposed.
+    /// store, when the factory is disposed. The placeholder is the host's own, which the host initialized at startup.
     /// </summary>
     internal sealed class RealTokenManagerOwner : IDisposable
     {
@@ -1995,6 +1995,7 @@ public class RevocationOwnershipTests
         public RealTokenManagerOwner(
             IOpenIddictTokenRepository tokenRepository,
             IClientSecretHasher secretHasher,
+            ClientSecretPlaceholderHash placeholderHash,
             bool faultOwnershipComparison = false
         )
         {
@@ -2024,7 +2025,8 @@ public class RevocationOwnershipTests
                     secretHasher,
                     tokenRepository,
                     _signingKeyProvider,
-                    _developmentCertificateStore
+                    _developmentCertificateStore,
+                    placeholderHash
                 )
                 : new OpenIddictTokenManager(
                     options,
@@ -2032,7 +2034,8 @@ public class RevocationOwnershipTests
                     secretHasher,
                     tokenRepository,
                     _signingKeyProvider,
-                    _developmentCertificateStore
+                    _developmentCertificateStore,
+                    placeholderHash
                 );
         }
 
@@ -2073,9 +2076,10 @@ public class RevocationOwnershipTests
             builder.ConfigureServices(collection =>
             {
                 collection.AddTestAuthentication();
-                collection.AddSingleton(_ => new RealTokenManagerOwner(
+                collection.AddSingleton(services => new RealTokenManagerOwner(
                     tokenRepository,
                     secretHasher,
+                    services.GetRequiredService<ClientSecretPlaceholderHash>(),
                     faultOwnershipComparison
                 ));
                 collection.AddTransient<ITokenManager>(services =>
@@ -2096,7 +2100,8 @@ public class RevocationOwnershipTests
         IClientSecretHasher secretHasher,
         IOpenIddictTokenRepository tokenRepository,
         ISigningKeySnapshotProvider signingKeyProvider,
-        DevelopmentCertificateStore developmentCertificateStore
+        DevelopmentCertificateStore developmentCertificateStore,
+        ClientSecretPlaceholderHash placeholderHash
     )
         : OpenIddictTokenManager(
             options,
@@ -2104,7 +2109,8 @@ public class RevocationOwnershipTests
             secretHasher,
             tokenRepository,
             signingKeyProvider,
-            developmentCertificateStore
+            developmentCertificateStore,
+            placeholderHash
         )
     {
         protected override bool TokenBelongsToCaller(string? tokenClientId, string callerClientId) =>
@@ -3601,9 +3607,10 @@ public class IntrospectionOwnershipTests
                 builder.ConfigureServices(collection =>
                 {
                     collection.AddTestAuthentication();
-                    collection.AddSingleton(_ => new RevocationOwnershipTests.RealTokenManagerOwner(
+                    collection.AddSingleton(services => new RevocationOwnershipTests.RealTokenManagerOwner(
                         TokenRepository,
-                        SecretHasher
+                        SecretHasher,
+                        services.GetRequiredService<ClientSecretPlaceholderHash>()
                     ));
                     collection.AddTransient<ITokenManager>(services =>
                         services
@@ -6359,9 +6366,10 @@ public class Given_TokenEndpoint_requests_that_fail_client_authentication(string
 
 /// <summary>
 /// A replacement client secret hasher with its own stored format, behind the real token manager
-/// over HTTP. An unknown client is still answered invalid_client, and its presented secret is
-/// verified against a placeholder the replacement generated, in the replacement's format: the host
-/// assumes nothing about the built-in hasher's format.
+/// over HTTP, registered as the host's hasher, as a plugin registers one. An unknown client is still
+/// answered invalid_client, and its presented secret is verified against the placeholder the host
+/// generated through the replacement at startup, in the replacement's format: the host assumes
+/// nothing about the built-in hasher's format, and the request generates nothing.
 /// </summary>
 [TestFixture]
 public class Given_TokenEndpoint_requests_with_a_replacement_client_secret_hasher
@@ -6394,6 +6402,7 @@ public class Given_TokenEndpoint_requests_with_a_replacement_client_secret_hashe
     private IClientSecretHasher _hasher = null!;
     private WebApplicationFactory<Program> _factory = null!;
     private HttpClient _client = null!;
+    private int _hashesBeforeTheRequest;
     private HttpResponseMessage _response = null!;
     private JsonNode _body = null!;
 
@@ -6404,8 +6413,14 @@ public class Given_TokenEndpoint_requests_with_a_replacement_client_secret_hashe
         A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(AbsentClientId))
             .Returns((ApplicationInfo?)null);
 
-        _factory = RevocationOwnershipTests.CreateFactory(_tokenRepository, _hasher);
+        _factory = RevocationOwnershipTests
+            .CreateFactory(_tokenRepository, _hasher)
+            .WithWebHostBuilder(builder =>
+                builder.ConfigureServices(services => services.AddSingleton(_hasher))
+            );
         _client = _factory.CreateClient();
+        _hashesBeforeTheRequest = Fake.GetCalls(_hasher)
+            .Count(call => call.Method.Name == nameof(IClientSecretHasher.HashSecretAsync));
         _response = await _client.PostAsync(
             "/connect/token",
             new FormUrlEncodedContent([
@@ -6438,7 +6453,11 @@ public class Given_TokenEndpoint_requests_with_a_replacement_client_secret_hashe
             .Equal("invalid_client. Invalid client or Invalid client credentials");
 
     [Test]
-    public void It_generates_the_placeholder_through_the_replacement() =>
+    public void It_generates_the_placeholder_through_the_replacement_at_startup() =>
+        _hashesBeforeTheRequest.Should().Be(1);
+
+    [Test]
+    public void It_hashes_nothing_for_the_request() =>
         A.CallTo(() => _hasher.HashSecretAsync(A<string>._)).MustHaveHappenedOnceExactly();
 
     [Test]

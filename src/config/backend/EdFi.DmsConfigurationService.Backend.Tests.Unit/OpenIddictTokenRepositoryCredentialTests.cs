@@ -92,10 +92,13 @@ public class OpenIddictTokenRepositoryCredentialTests
         return applicationId;
     }
 
-    private static Task<TokenResult> GrantThroughAsync(IOpenIddictTokenRepository tokenRepository)
+    private static async Task<TokenResult> GrantThroughAsync(IOpenIddictTokenRepository tokenRepository)
     {
         IClientSecretHasher secretHasher = A.Fake<IClientSecretHasher>();
         A.CallTo(() => secretHasher.VerifySecretAsync(ClientSecret, StoredSecret)).Returns(true);
+        A.CallTo(() => secretHasher.HashSecretAsync(A<string>._)).Returns("wrapper-placeholder");
+        ClientSecretPlaceholderHash placeholderHash = new(secretHasher);
+        await placeholderHash.InitializeAsync();
         IdentityOptions options = new()
         {
             Authority = "https://cms.example.test",
@@ -111,9 +114,13 @@ public class OpenIddictTokenRepositoryCredentialTests
             new DevelopmentCertificateStore(
                 Options.Create(options),
                 NullLogger<DevelopmentCertificateStore>.Instance
-            )
+            ),
+            placeholderHash
         );
-        return manager.GetAccessTokenAsync([new("client_id", ClientId), new("client_secret", ClientSecret)]);
+        return await manager.GetAccessTokenAsync([
+            new("client_id", ClientId),
+            new("client_secret", ClientSecret),
+        ]);
     }
 
     [TestFixture("postgresql")]

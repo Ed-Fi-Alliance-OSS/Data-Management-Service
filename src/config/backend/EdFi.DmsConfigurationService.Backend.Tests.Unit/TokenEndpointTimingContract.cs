@@ -66,8 +66,8 @@ internal static class TokenEndpointTimingContract
                 JsonNode.Parse(body) is JsonObject root
                 && root["errors"] is JsonArray { Count: 1 } errors
                 && errors[0] is JsonValue error
-                && error.TryGetValue(out string? text)
-                ? text
+                && error.GetValueKind() == JsonValueKind.String
+                ? error.GetValue<string>()
                 : null;
         }
         catch (JsonException)
