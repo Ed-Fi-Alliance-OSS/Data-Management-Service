@@ -41,16 +41,6 @@ public sealed class ReferenceResolverIntegrationFixture
             "AcademicSubjectDescriptor"
         );
 
-        var schoolReferentialId = CreateReferentialId("00000000-0000-0000-0000-000000000111");
-        var educationOrganizationAliasReferentialId = CreateReferentialId(
-            "00000000-0000-0000-0000-000000000222"
-        );
-        var localEducationAgencyReferentialId = CreateReferentialId("00000000-0000-0000-0000-000000000333");
-        var schoolTypeDescriptorReferentialId = CreateReferentialId("00000000-0000-0000-0000-000000000444");
-        var academicSubjectDescriptorReferentialId = CreateReferentialId(
-            "00000000-0000-0000-0000-000000000555"
-        );
-
         const string SchoolTypeDescriptorUri = "uri://ed-fi.org/SchoolTypeDescriptor#Alternative";
         const string AcademicSubjectDescriptorUri = "uri://ed-fi.org/AcademicSubjectDescriptor#English";
 
@@ -85,22 +75,6 @@ public sealed class ReferenceResolverIntegrationFixture
                     new ReferenceResolverDocumentSeed(
                         404,
                         Guid.Parse("40000000-0000-0000-0000-000000000404"),
-                        14
-                    ),
-                ],
-                ReferentialIdentities:
-                [
-                    new ReferenceResolverReferentialIdentitySeed(schoolReferentialId, 101, 11),
-                    new ReferenceResolverReferentialIdentitySeed(
-                        educationOrganizationAliasReferentialId,
-                        101,
-                        30
-                    ),
-                    new ReferenceResolverReferentialIdentitySeed(localEducationAgencyReferentialId, 202, 12),
-                    new ReferenceResolverReferentialIdentitySeed(schoolTypeDescriptorReferentialId, 303, 13),
-                    new ReferenceResolverReferentialIdentitySeed(
-                        academicSubjectDescriptorReferentialId,
-                        404,
                         14
                     ),
                 ],
@@ -240,8 +214,6 @@ public sealed class ReferenceResolverIntegrationFixture
         );
     }
 
-    private static Guid CreateReferentialId(string value) => Guid.Parse(value);
-
     private static ConcreteResourceModel CreateConcreteResource(
         ResourceKeyEntry resourceKey,
         string tableName,
@@ -347,7 +319,6 @@ public sealed class ReferenceResolverIntegrationFixture
 public sealed record ReferenceResolverSeedData(
     IReadOnlyList<ReferenceResolverResourceKeySeed> ResourceKeys,
     IReadOnlyList<ReferenceResolverDocumentSeed> Documents,
-    IReadOnlyList<ReferenceResolverReferentialIdentitySeed> ReferentialIdentities,
     IReadOnlyList<ReferenceResolverSchoolSeed> Schools,
     IReadOnlyList<ReferenceResolverLocalEducationAgencySeed> LocalEducationAgencies,
     IReadOnlyList<ReferenceResolverDescriptorSeed> Descriptors
@@ -388,24 +359,6 @@ public sealed record ReferenceResolverSeedData(
                     .Select(document =>
                         (IReadOnlyList<object?>)
                             [document.DocumentId, document.DocumentUuid, document.ResourceKeyId]
-                    )
-                    .ToArray()
-            ),
-            new(
-                new DbTableName(new DbSchemaName("dms"), "ReferentialIdentity"),
-                [
-                    new DbColumnName("ReferentialId"),
-                    new DbColumnName("DocumentId"),
-                    new DbColumnName("ResourceKeyId"),
-                ],
-                ReferentialIdentities
-                    .Select(referentialIdentity =>
-                        (IReadOnlyList<object?>)
-                            [
-                                referentialIdentity.ReferentialId,
-                                referentialIdentity.DocumentId,
-                                referentialIdentity.ResourceKeyId,
-                            ]
                     )
                     .ToArray()
             ),
@@ -466,12 +419,6 @@ public sealed record ReferenceResolverResourceKeySeed(
 );
 
 public sealed record ReferenceResolverDocumentSeed(long DocumentId, Guid DocumentUuid, short ResourceKeyId);
-
-public sealed record ReferenceResolverReferentialIdentitySeed(
-    Guid ReferentialId,
-    long DocumentId,
-    short ResourceKeyId
-);
 
 public sealed record ReferenceResolverSchoolSeed(long DocumentId, long SchoolId);
 

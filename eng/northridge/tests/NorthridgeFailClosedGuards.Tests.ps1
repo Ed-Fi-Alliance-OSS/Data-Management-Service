@@ -389,11 +389,15 @@ Describe "Add-NorthridgeGapDocument.ps1 compares a date-time field instead of th
 
 Describe "Copy-NorthridgeDataForward.ps1 classifies every dms base table exactly once" {
     BeforeAll {
-        foreach ($name in @("ProvisioningOwnedTable", "DmsDataTable", "DmsStagedTable", "DmsDerivedTable")) {
+        foreach ($name in @("ProvisioningOwnedTable", "DmsDataTable", "DmsStagedTable", "DmsDerivedTable", "DmsRetiredSourceTable")) {
             . ([scriptblock]::Create((Get-ScriptAssignmentText -ScriptPath $script:copyScript -VariablePath "script:$name")))
         }
-        . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName "Get-DmsTableClassificationFailure")))
-        $script:knownDmsTable = @(@($script:ProvisioningOwnedTable) + @($script:DmsDataTable) + @($script:DmsStagedTable) + @($script:DmsDerivedTable) | ForEach-Object { "dms.$_" })
+        foreach ($name in @("Get-DmsTableClassificationFailure", "Select-ArchiveEntry")) {
+            . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName $name)))
+        }
+        # The source is an older archive that still carries the retired tables; the target is current.
+        $script:knownDmsTable = @(@($script:ProvisioningOwnedTable) + @($script:DmsDataTable) + @($script:DmsStagedTable) + @($script:DmsDerivedTable) + @($script:DmsRetiredSourceTable) | ForEach-Object { "dms.$_" })
+        $script:targetDmsTable = @($script:knownDmsTable | Where-Object { $_ -cne 'dms.ReferentialIdentity' })
         $script:copyText = Get-Content -Raw -LiteralPath $script:copyScript
     }
 
@@ -402,25 +406,51 @@ Describe "Copy-NorthridgeDataForward.ps1 classifies every dms base table exactly
         # that stand in for discovery have to add up to the same number, or one side is wrong.
         $expected = [regex]::Match($script:recipe, "SELECT 'dms base tables', '(?<n>\d+)'").Groups["n"].Value
         $expected | Should -Not -BeNullOrEmpty -Because "step 6 must assert the dms base table count"
-        # The published artifact records the older ten-table inventory. Current provisioning adds
-        # the operational restamp table; it is classified but never restored as dataset state.
+        # The published artifact records the older ten-table inventory, retired ReferentialIdentity
+        # included. Current provisioning adds the operational restamp table; it is classified but
+        # never restored as dataset state.
         @($script:knownDmsTable | Where-Object { $_ -cne 'dms.RepresentationRestampOperation' }).Count | Should -Be ([int]$expected)
         $script:knownDmsTable | Should -Contain 'dms.RepresentationRestampOperation'
+        $script:knownDmsTable | Should -Contain 'dms.ReferentialIdentity'
         @($script:knownDmsTable | Sort-Object -Unique).Count | Should -Be $script:knownDmsTable.Count -Because "no table may be on two lists"
     }
 
-    It "reports nothing when source and target hold exactly the classified tables" {
-        $failure = Get-DmsTableClassificationFailure -SourceTable $script:knownDmsTable -TargetTable $script:knownDmsTable
+    It "reports nothing when an older source carries the retired tables and the current target does not" {
+        $failure = Get-DmsTableClassificationFailure -SourceTable $script:knownDmsTable -TargetTable $script:targetDmsTable
         $failure.Count | Should -Be 0
+        (Get-DmsTableClassificationFailure -SourceTable $script:targetDmsTable -TargetTable $script:targetDmsTable).Count |
+            Should -Be 0 -Because "a newer archive without the retired tables is just as valid"
+    }
+
+    It "fails a retired table present in the target" {
+        $failure = Get-DmsTableClassificationFailure -SourceTable $script:knownDmsTable -TargetTable $script:knownDmsTable
+        $failure.Count | Should -Be 1
+        $failure[0] | Should -Match '^dms\.ReferentialIdentity is retired and must not be a base table in the target'
+    }
+
+    It "never requests retired rows from pg_restore and logs the skipped archive entry" {
+        $script:Container = 'mock-only'
+        Mock docker {
+            $global:LASTEXITCODE = 0
+            '14340; 0 16700 TABLE DATA dms ReferentialIdentity postgres'
+            '14341; 0 16701 TABLE DATA edfi Student postgres'
+        }
+        $selection = Select-ArchiveEntry -ContainerName 'mock-only' -ArchivePath '/tmp/a.dump' -QualifiedTable @('edfi.Student')
+        $selection.Table | Should -Be @('edfi.Student')
+        $selection.Line | Should -Be @('14341; 0 16701 TABLE DATA edfi Student postgres')
+        $selection.Retired | Should -Be @('dms.ReferentialIdentity')
+        { Select-ArchiveEntry -ContainerName 'mock-only' -ArchivePath '/tmp/a.dump' -QualifiedTable @('dms.ReferentialIdentity', 'edfi.Student') } |
+            Should -Throw '*retired table(s) whose rows are never restored: dms.ReferentialIdentity*'
+        $script:copyText | Should -Match '\$selection\.Retired -join'
     }
 
     It "fails an unclassified dms table on either side, naming the table and the side" {
         # The false pass: a dms table the lists do not know is neither restored nor reconciled, and the
         # copy reported PASS around it.
         foreach ($case in @(
-                @{ Source = $script:knownDmsTable + "dms.Ledger"; Target = $script:knownDmsTable; Side = "source" },
-                @{ Source = $script:knownDmsTable; Target = $script:knownDmsTable + "dms.Ledger"; Side = "target" },
-                @{ Source = $script:knownDmsTable + "dms.Ledger"; Target = $script:knownDmsTable + "dms.Ledger"; Side = "source and target" }
+                @{ Source = $script:knownDmsTable + "dms.Ledger"; Target = $script:targetDmsTable; Side = "source" },
+                @{ Source = $script:knownDmsTable; Target = $script:targetDmsTable + "dms.Ledger"; Side = "target" },
+                @{ Source = $script:knownDmsTable + "dms.Ledger"; Target = $script:targetDmsTable + "dms.Ledger"; Side = "source and target" }
             )) {
             $failure = Get-DmsTableClassificationFailure -SourceTable $case.Source -TargetTable $case.Target
             $failure.Count | Should -Be 1 -Because "one unknown table is one failure ($($case.Side))"
@@ -430,12 +460,12 @@ Describe "Copy-NorthridgeDataForward.ps1 classifies every dms base table exactly
 
     It "fails a copied or derived table missing from either side" {
         $withoutDocument = @($script:knownDmsTable | Where-Object { $_ -ne "dms.Document" })
-        $withoutDescriptor = @($script:knownDmsTable | Where-Object { $_ -ne "dms.Descriptor" })
-        (Get-DmsTableClassificationFailure -SourceTable $withoutDocument -TargetTable $script:knownDmsTable) -join "`n" |
+        $withoutDescriptor = @($script:targetDmsTable | Where-Object { $_ -ne "dms.Descriptor" })
+        (Get-DmsTableClassificationFailure -SourceTable $withoutDocument -TargetTable $script:targetDmsTable) -join "`n" |
             Should -Match "dms\.Document is not a base table in the source"
         (Get-DmsTableClassificationFailure -SourceTable $script:knownDmsTable -TargetTable $withoutDescriptor) -join "`n" |
             Should -Match "dms\.Descriptor is not a base table in the target"
-        (Get-DmsTableClassificationFailure -SourceTable @() -TargetTable $script:knownDmsTable) -join "`n" |
+        (Get-DmsTableClassificationFailure -SourceTable @() -TargetTable $script:targetDmsTable) -join "`n" |
             Should -Match "dms\.Document is not a base table in the source"
     }
 
@@ -446,11 +476,11 @@ Describe "Copy-NorthridgeDataForward.ps1 classifies every dms base table exactly
                 $_ -notin @("dms.DataStoreIdentity", "dms.DocumentCacheState", "dms.DocumentProjectionWork")
             })
         $olderSource.Count | Should -Be ($script:knownDmsTable.Count - 3)
-        (Get-DmsTableClassificationFailure -SourceTable $olderSource -TargetTable $script:knownDmsTable).Count | Should -Be 0
+        (Get-DmsTableClassificationFailure -SourceTable $olderSource -TargetTable $script:targetDmsTable).Count | Should -Be 0
     }
 
     It "treats a name that differs only in case as a different, unclassified table" {
-        (Get-DmsTableClassificationFailure -SourceTable ($script:knownDmsTable + "dms.document") -TargetTable $script:knownDmsTable) -join "`n" |
+        (Get-DmsTableClassificationFailure -SourceTable ($script:knownDmsTable + "dms.document") -TargetTable $script:targetDmsTable) -join "`n" |
             Should -Match "dms\.document is a base table in the source"
     }
 
@@ -458,7 +488,7 @@ Describe "Copy-NorthridgeDataForward.ps1 classifies every dms base table exactly
         $saved = $script:DmsDataTable
         try {
             $script:DmsDataTable = @($saved) + $script:DmsDerivedTable
-            (Get-DmsTableClassificationFailure -SourceTable $script:knownDmsTable -TargetTable $script:knownDmsTable) -join "`n" |
+            (Get-DmsTableClassificationFailure -SourceTable $script:knownDmsTable -TargetTable $script:targetDmsTable) -join "`n" |
                 Should -Match "dms\.$($script:DmsDerivedTable) is classified twice"
         }
         finally {
@@ -1801,16 +1831,47 @@ Describe 'Compact descriptor carry-forward contracts and independent allocator g
         { Assert-CopyColumnShape -QualifiedTable 'edfi.Student' -Source $source -Target $target -Inventory $omitted } | Should -Throw '*legacy source type*'
     }
     It 'Keeps source and target column coverage exact for <QualifiedTable>' -ForEach @(
-        @{ QualifiedTable = 'dms.ReferentialIdentity' },
+        @{ QualifiedTable = 'edfi.DescriptorSubjectIdentity' },
         @{ QualifiedTable = 'auth.CarryForwardWitness' },
         @{ QualifiedTable = 'edfi.Student' }
     ) {
+        # Abstract identity tables are exempt for ResourceKeyId alone, so every other column stays exact.
+        $abstract = @('edfi.DescriptorSubjectIdentity')
         $shape = @([pscustomobject]@{ Name = 'DocumentId'; Type = 'bigint'; Generated = $false })
         $extra = $shape + @([pscustomobject]@{ Name = 'Extra'; Type = 'bigint'; Generated = $false })
-        { Assert-CopyColumnShape -QualifiedTable $QualifiedTable -Source $extra -Target $shape -Inventory $compactInventory } |
+        { Assert-CopyColumnShape -QualifiedTable $QualifiedTable -Source $extra -Target $shape -Inventory $compactInventory -AbstractIdentityTable $abstract } |
             Should -Throw "*Unexpected source column outside conversion coverage: $QualifiedTable/Extra*"
-        { Assert-CopyColumnShape -QualifiedTable $QualifiedTable -Source $shape -Target $extra -Inventory $compactInventory } |
+        { Assert-CopyColumnShape -QualifiedTable $QualifiedTable -Source $shape -Target $extra -Inventory $compactInventory -AbstractIdentityTable $abstract } |
             Should -Throw "*Missing/mismatched source-shape coverage: $QualifiedTable/Extra*"
+    }
+    It 'Expects ResourceKeyId as the only target-only column of an abstract identity table and refuses a source that has it' {
+        $abstract = @('edfi.DescriptorSubjectIdentity')
+        $source = @([pscustomobject]@{ Name = 'DocumentId'; Type = 'bigint'; Generated = $false },
+            [pscustomobject]@{ Name = 'SchoolTypeDescriptor_DescriptorId'; Type = 'bigint'; Generated = $false })
+        $resourceKey = [pscustomobject]@{ Name = 'ResourceKeyId'; Type = 'smallint'; Generated = $false }
+        $target = @($source[0], [pscustomobject]@{ Name = 'SchoolTypeDescriptor_DescriptorId'; Type = 'integer'; Generated = $false }, $resourceKey)
+        { Assert-CopyColumnShape -QualifiedTable 'edfi.DescriptorSubjectIdentity' -Source $source -Target $target -Inventory $compactInventory -AbstractIdentityTable $abstract } |
+            Should -Not -Throw
+        { Assert-CopyColumnShape -QualifiedTable 'edfi.DescriptorSubjectIdentity' -Source ($source + $resourceKey) -Target $target -Inventory $compactInventory -AbstractIdentityTable $abstract } |
+            Should -Throw '*Source edfi.DescriptorSubjectIdentity already has ResourceKeyId*'
+        { Assert-CopyColumnShape -QualifiedTable 'edfi.DescriptorSubjectIdentity' -Source $source -Target $target -Inventory $compactInventory } |
+            Should -Throw '*Missing/mismatched source-shape coverage: edfi.DescriptorSubjectIdentity/ResourceKeyId*' -Because 'only a table the manifest names as abstract identity is exempt'
+    }
+    It 'Derives abstract identity ResourceKeyId from the owning document before the insert plan, behind an orphan gate' {
+        . ([scriptblock]::Create((Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName 'Get-AbstractIdentityResourceKeySql')))
+        $sql = Get-AbstractIdentityResourceKeySql -StagedTable '"northridge_staging"."t_x"' -QualifiedTable 'edfi.DescriptorSubjectIdentity'
+        $alter = $sql.IndexOf('ALTER TABLE "northridge_staging"."t_x" ADD COLUMN "ResourceKeyId" smallint;')
+        $gate = $sql.IndexOf("RAISE EXCEPTION 'Abstract identity row without an owning document in edfi.DescriptorSubjectIdentity'")
+        $update = $sql.IndexOf('UPDATE "northridge_staging"."t_x" s SET "ResourceKeyId" = d."ResourceKeyId"')
+        $alter | Should -BeGreaterOrEqual 0
+        $gate | Should -BeGreaterThan $alter
+        $update | Should -BeGreaterThan $gate
+        $sql | Should -Match 'FROM dms\."Document" d WHERE d\."DocumentId" = s\."DocumentId";'
+        $loader = Get-ScriptFunctionText -ScriptPath $script:copyScript -FunctionName 'Copy-StagedDescriptorTable'
+        $loader.IndexOf('Get-DescriptorRemapSql') | Should -BeLessThan $loader.IndexOf('Get-AbstractIdentityResourceKeySql') -Because 'the descriptor key is remapped before the derivation'
+        $loader.IndexOf('Get-AbstractIdentityResourceKeySql') | Should -BeLessThan $loader.IndexOf('Resolve-StagedInsertColumn') -Because 'the plan refuses a NOT NULL target column the source list lacks'
+        $loader | Should -Match "Staged and inserted row counts differ"
+        $loader | Should -Not -Match 'SELECT \*'
     }
     It 'Requires generated aliases to retain their compact target type and skips remapping them' {
         $source = @([pscustomobject]@{ Name = 'PrimarySchoolTypeDescriptor_DescriptorId'; Type = 'bigint'; Generated = $true })

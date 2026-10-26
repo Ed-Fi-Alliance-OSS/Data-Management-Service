@@ -1353,11 +1353,9 @@ exploits is a property of the data, which the copy preserves.
 
 Both live and historical descriptor type predicates use the qualified `ResourceKeyId`. The live
 primary key is independently allocated `int DescriptorId`; `bigint DocumentId` is its unique,
-non-null document association and remains the paging key when that anchor is selected. Uniqueness
-uses `UX_Descriptor_ResourceKeyId_Uri`: PostgreSQL indexes the unlowered whole-URI expression,
-and SQL Server indexes a non-persisted computed Uri that inherits the DMS identity collation
-(`SQL_Latin1_General_CP1_CI_AS`) of its `Namespace` and `CodeValue` components. Descriptor identity is
-the lowered whole URI under `UX_Descriptor_UriLowered_ResourceKeyId`, and every Change Query probe of a
+non-null document association and remains the paging key when that anchor is selected. Descriptor
+uniqueness and identity are the lowered whole URI under `UX_Descriptor_UriLowered_ResourceKeyId`,
+the only descriptor URI index, and every Change Query probe of a
 live descriptor (recreation and custom-view seeks) is a seek on that index: PostgreSQL's expression
 index on `lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8")` and SQL Server's
 non-persisted `UriLowered` computed column.
@@ -1370,7 +1368,7 @@ non-persisted `UriLowered` computed column.
   `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` for live descriptor
   change-version-windowed page selection into `IndexesInCreateOrder`. The core DDL pass continues to
   own `IX_Descriptor_ResourceKeyId_DocumentId` and
-  `UX_Descriptor_ResourceKeyId_Uri`. No live-descriptor index has `Discriminator` as a key.
+  `UX_Descriptor_UriLowered_ResourceKeyId`. No live-descriptor index has `Discriminator` as a key.
 - `DbTriggerInfo` for entries with `Kind = DocumentStamping` gains a required `StampTargetTable: DbTableName` field. The derivation pass assigns the target by rule: same table for root-table triggers, resource's root for child / `_ext` triggers, `dms.Descriptor` for the descriptor trigger. Dialect emitters render the owner stamp UPDATE against `StampTargetTable` and MUST NOT re-derive the target from the trigger's source table.
 
 #### Triggers that populate the `tracked_changes*` tables

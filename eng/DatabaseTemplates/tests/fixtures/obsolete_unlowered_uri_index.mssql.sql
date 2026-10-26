@@ -4,4 +4,5 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 -- Test-only catalog mutation; the v3 EffectiveSchema fingerprint is deliberately unchanged.
-DROP INDEX [UX_Descriptor_ResourceKeyId_Uri] ON [dms].[Descriptor];
+-- Recreates the unlowered whole-URI index that DMS no longer provisions.
+CREATE UNIQUE INDEX [UX_Descriptor_ResourceKeyId_Uri] ON [dms].[Descriptor] ([ResourceKeyId], [Uri]);

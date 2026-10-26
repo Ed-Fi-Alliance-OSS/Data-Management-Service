@@ -5,6 +5,7 @@
 
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -174,7 +175,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_emit_phases_in_correct_order()
     {
         var phase1 = _ddl.IndexOf("Phase 1: Schemas", StringComparison.Ordinal);
-        var phase2 = _ddl.IndexOf("Phase 2: Extensions", StringComparison.Ordinal);
         var phase3 = _ddl.IndexOf("Phase 3: Sequences", StringComparison.Ordinal);
         var phase4 = _ddl.IndexOf("Phase 4: Functions", StringComparison.Ordinal);
         var phase5 = _ddl.IndexOf("Phase 5: Tables", StringComparison.Ordinal);
@@ -184,8 +184,8 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         var phase9 = _ddl.IndexOf("Phase 9: Security and Grants", StringComparison.Ordinal);
 
         phase1.Should().BeGreaterOrEqualTo(0);
-        phase2.Should().BeGreaterThan(phase1);
-        phase3.Should().BeGreaterThan(phase2);
+        _ddl.Should().NotContain("Phase 2: Extensions");
+        phase3.Should().BeGreaterThan(phase1);
         phase4.Should().BeGreaterThan(phase3);
         phase5.Should().BeGreaterThan(phase4);
         phase6.Should().BeGreaterThan(phase5);
@@ -200,12 +200,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_create_dms_schema()
     {
         _ddl.Should().Contain("CREATE SCHEMA IF NOT EXISTS \"dms\"");
-    }
-
-    [Test]
-    public void It_should_create_pgcrypto_extension()
-    {
-        _ddl.Should().Contain("CREATE EXTENSION IF NOT EXISTS \"pgcrypto\"");
     }
 
     [Test]
@@ -237,22 +231,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     // ── Functions ───────────────────────────────────────────────────
-
-    [Test]
-    public void It_should_create_uuidv5_function()
-    {
-        _ddl.Should()
-            .Contain("CREATE OR REPLACE FUNCTION \"dms\".\"uuidv5\"(namespace_uuid uuid, name_text text)");
-    }
-
-    [Test]
-    public void It_should_emit_uuidv5_before_triggers()
-    {
-        var funcPos = _ddl.IndexOf("\"dms\".\"uuidv5\"", StringComparison.Ordinal);
-        var triggerPos = _ddl.IndexOf("Phase 8: Triggers", StringComparison.Ordinal);
-        funcPos.Should().BeGreaterThan(0);
-        funcPos.Should().BeLessThan(triggerPos);
-    }
 
     [Test]
     public void It_should_create_throw_error_function()
@@ -294,10 +272,9 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     {
         var getMax = _ddl.IndexOf("\"dms\".\"GetMaxChangeVersion\"()", StringComparison.Ordinal);
         var throwError = _ddl.IndexOf("\"dms\".\"throw_error\"", StringComparison.Ordinal);
-        var uuidv5 = _ddl.IndexOf("\"dms\".\"uuidv5\"", StringComparison.Ordinal);
 
+        getMax.Should().BeGreaterThan(0);
         getMax.Should().BeLessThan(throwError);
-        throwError.Should().BeLessThan(uuidv5);
     }
 
     [Test]
@@ -448,12 +425,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_create_referential_identity_table()
-    {
-        _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"ReferentialIdentity\"");
-    }
-
-    [Test]
     public void It_should_create_resource_key_table()
     {
         _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"ResourceKey\"");
@@ -480,7 +451,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
             StringComparison.Ordinal
         );
         var effectiveSchema = _ddl.IndexOf("\"dms\".\"EffectiveSchema\"", StringComparison.Ordinal);
-        var referentialIdentity = _ddl.IndexOf("\"dms\".\"ReferentialIdentity\"", StringComparison.Ordinal);
         var resourceKey = _ddl.IndexOf("\"dms\".\"ResourceKey\"", StringComparison.Ordinal);
         var schemaComponent = _ddl.IndexOf("\"dms\".\"SchemaComponent\"", StringComparison.Ordinal);
 
@@ -490,8 +460,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         documentCache.Should().BeLessThan(documentCacheState);
         documentCacheState.Should().BeLessThan(documentProjectionWork);
         documentProjectionWork.Should().BeLessThan(effectiveSchema);
-        effectiveSchema.Should().BeLessThan(referentialIdentity);
-        referentialIdentity.Should().BeLessThan(resourceKey);
+        effectiveSchema.Should().BeLessThan(resourceKey);
         resourceKey.Should().BeLessThan(schemaComponent);
     }
 
@@ -608,12 +577,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_have_simple_pk_for_referential_identity()
-    {
-        _ddl.Should().Contain("CONSTRAINT \"PK_ReferentialIdentity\" PRIMARY KEY (\"ReferentialId\")");
-    }
-
-    [Test]
     public void It_should_not_contain_clustered_keyword()
     {
         _ddl.Should().NotContain("CLUSTERED");
@@ -622,12 +585,9 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     // ── UNIQUE constraints ──────────────────────────────────────────
 
     [Test]
-    public void It_should_have_unique_on_descriptor_resource_key_and_reconstructed_whole_uri()
+    public void It_should_not_emit_obsolete_descriptor_uri_indexes()
     {
-        _ddl.Should()
-            .Contain(
-                "CREATE UNIQUE INDEX IF NOT EXISTS \"UX_Descriptor_ResourceKeyId_Uri\" ON \"dms\".\"Descriptor\" (\"ResourceKeyId\", (\"Namespace\" || '#' || \"CodeValue\"));"
-            );
+        _ddl.Should().NotContain("UX_Descriptor_ResourceKeyId_Uri");
         _ddl.Should().NotContain("UX_Descriptor_Uri_Discriminator");
         _ddl.Should().NotContain("IX_Descriptor_Discriminator_ContentVersion");
     }
@@ -817,18 +777,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
-    public void It_should_have_fk_referential_identity_document()
-    {
-        _ddl.Should().Contain("\"FK_ReferentialIdentity_Document\"");
-    }
-
-    [Test]
-    public void It_should_have_fk_referential_identity_resource_key()
-    {
-        _ddl.Should().Contain("\"FK_ReferentialIdentity_ResourceKey\"");
-    }
-
-    [Test]
     public void It_should_have_fk_schema_component_effective_schema_hash()
     {
         _ddl.Should().Contain("\"FK_SchemaComponent_EffectiveSchemaHash\"");
@@ -839,7 +787,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     [Test]
     public void It_should_not_emit_a_descriptor_uri_discriminator_index()
     {
-        // Descriptor identity is indexed by ResourceKeyId and the reconstructed whole URI.
+        // Descriptor identity is indexed by the lowered whole URI and ResourceKeyId.
         _ddl.Should().NotContain("\"IX_Descriptor_Uri_Discriminator\"");
     }
 
@@ -891,14 +839,6 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     public void It_should_not_emit_a_document_cache_uuid_index()
     {
         _ddl.Should().NotContain("\"IX_DocumentCache_DocumentUuid\"");
-    }
-
-    [Test]
-    public void It_should_not_emit_a_referential_identity_document_id_index()
-    {
-        // DocumentId-keyed access is served by the leading column of
-        // UX_ReferentialIdentity_DocumentId_ResourceKeyId.
-        _ddl.Should().NotContain("\"IX_ReferentialIdentity_DocumentId\"");
     }
 
     // ── PG DocumentCache UUID validation trigger ────────────────────
@@ -1527,13 +1467,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Functions ───────────────────────────────────────────────────
 
     [Test]
-    public void It_should_create_uuidv5_function()
-    {
-        _ddl.Should().Contain("CREATE OR ALTER FUNCTION [dms].[uuidv5]");
-    }
-
-    [Test]
-    public void It_should_emit_go_batch_separator_after_uuidv5_function_before_tables()
+    public void It_should_emit_go_batch_separator_after_function_batch_before_tables()
     {
         var functionIndex = _ddl.IndexOf("CREATE OR ALTER FUNCTION", StringComparison.Ordinal);
         var phase5Index = _ddl.IndexOf("Phase 5: Tables", StringComparison.Ordinal);
@@ -1543,15 +1477,6 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         phase5Index.Should().BeGreaterThan(functionIndex);
         goIndex.Should().BeGreaterThan(functionIndex, "expected GO batch separator after function batch");
         goIndex.Should().BeLessThan(phase5Index);
-    }
-
-    [Test]
-    public void It_should_emit_uuidv5_before_triggers()
-    {
-        var funcPos = _ddl.IndexOf("[dms].[uuidv5]", StringComparison.Ordinal);
-        var triggerPos = _ddl.IndexOf("Phase 8: Triggers", StringComparison.Ordinal);
-        funcPos.Should().BeGreaterThan(0);
-        funcPos.Should().BeLessThan(triggerPos);
     }
 
     [Test]
@@ -1644,7 +1569,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_create_all_ten_tables()
+    public void It_should_create_all_nine_tables()
     {
         _ddl.Should().Contain("[dms].[DataStoreIdentity]");
         _ddl.Should().Contain("[dms].[Descriptor]");
@@ -1653,7 +1578,6 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("[dms].[DocumentCacheState]");
         _ddl.Should().Contain("[dms].[DocumentProjectionWork]");
         _ddl.Should().Contain("[dms].[EffectiveSchema]");
-        _ddl.Should().Contain("[dms].[ReferentialIdentity]");
         _ddl.Should().Contain("[dms].[ResourceKey]");
         _ddl.Should().Contain("[dms].[SchemaComponent]");
     }
@@ -1913,15 +1837,6 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("CONSTRAINT [PK_ResourceKey] PRIMARY KEY CLUSTERED ([ResourceKeyId])");
     }
 
-    // ── MSSQL ReferentialIdentity: NONCLUSTERED PK + UNIQUE CLUSTERED ──
-
-    [Test]
-    public void It_should_have_nonclustered_pk_for_referential_identity()
-    {
-        _ddl.Should()
-            .Contain("CONSTRAINT [PK_ReferentialIdentity] PRIMARY KEY NONCLUSTERED ([ReferentialId])");
-    }
-
     [Test]
     public void It_emits_the_document_resource_candidate_key()
     {
@@ -1932,15 +1847,6 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should()
             .MatchRegex(
                 @"ALTER TABLE \[dms\]\.\[Document\]\s+ADD CONSTRAINT \[UX_Document_DocumentId_ResourceKeyId\] UNIQUE \(\[DocumentId\], \[ResourceKeyId\]\);"
-            );
-    }
-
-    [Test]
-    public void It_should_have_unique_clustered_for_referential_identity()
-    {
-        _ddl.Should()
-            .Contain(
-                "CONSTRAINT [UX_ReferentialIdentity_DocumentId_ResourceKeyId] UNIQUE CLUSTERED ([DocumentId], [ResourceKeyId])"
             );
     }
 
@@ -2058,14 +1964,12 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     // ── Foreign keys ────────────────────────────────────────────────
 
     [Test]
-    public void It_should_have_all_seven_foreign_keys()
+    public void It_should_have_all_five_foreign_keys()
     {
         _ddl.Should().Contain("[FK_Descriptor_DocumentResourceKey]");
         _ddl.Should().Contain("[FK_Document_ResourceKey]");
         _ddl.Should().Contain("[FK_DocumentCache_Document]");
         _ddl.Should().Contain("[FK_DocumentProjectionWork_Document]");
-        _ddl.Should().Contain("[FK_ReferentialIdentity_Document]");
-        _ddl.Should().Contain("[FK_ReferentialIdentity_ResourceKey]");
         _ddl.Should().Contain("[FK_SchemaComponent_EffectiveSchemaHash]");
     }
 
@@ -2123,14 +2027,11 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     [Test]
     public void It_should_have_the_descriptor_identity_and_core_support_indexes()
     {
-        _ddl.Should().Contain("[UX_Descriptor_ResourceKeyId_Uri]");
         _ddl.Should().Contain("[UX_Descriptor_UriLowered_ResourceKeyId]");
         _ddl.Should().Contain("[IX_Descriptor_ResourceKeyId_DocumentId]");
         _ddl.Should().Contain("[IX_Document_CreatedByOwnershipTokenId]");
         _ddl.Should().Contain("[IX_DocumentProjectionWork_FirstEnqueuedAt_DocumentId]");
-        // Descriptor identity is covered by UX_Descriptor_ResourceKeyId_Uri, and
-        // ReferentialIdentity DocumentId access by the leading column of
-        // UX_ReferentialIdentity_DocumentId_ResourceKeyId. Descriptor paging roots
+        // Descriptor identity is covered by UX_Descriptor_UriLowered_ResourceKeyId. Descriptor paging roots
         // on dms.Descriptor, so dms.Document carries no ResourceKeyId index.
         // DocumentCache.DocumentUuid is deliberately non-indexed, and the old
         // ProjectName/ResourceName/LastModifiedAt scan index is no longer emitted.
@@ -2138,20 +2039,17 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().NotContain("[IX_DocumentCache_DocumentUuid]");
         _ddl.Should().NotContain("[IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt]");
         _ddl.Should().NotContain("[IX_Document_ResourceKeyId_DocumentId]");
-        _ddl.Should().NotContain("[IX_ReferentialIdentity_DocumentId]");
     }
 
     [Test]
-    public void It_should_use_a_non_persisted_descriptor_uri_in_the_unique_resource_key_index()
+    public void It_should_keep_a_non_persisted_descriptor_uri_without_an_index()
     {
         var columns = DescriptorTableColumnExtractor.ExtractMssqlColumns(_ddl);
         columns.Should().Contain(("Uri", "AS"));
         columns.Select(c => c.Name).Should().NotContain("Discriminator");
         _ddl.Should().Contain("[Uri] AS ([Namespace] + N'#' + [CodeValue]),");
-        _ddl.Should()
-            .Contain(
-                "CREATE UNIQUE INDEX [UX_Descriptor_ResourceKeyId_Uri] ON [dms].[Descriptor] ([ResourceKeyId], [Uri]);"
-            );
+        _ddl.Should().NotContain("UX_Descriptor_ResourceKeyId_Uri");
+        _ddl.Should().NotContain("[Uri]);");
         _ddl.Should().NotContain("UX_Descriptor_Uri_Discriminator");
         _ddl.Should().NotContain("IX_Descriptor_Discriminator_ContentVersion");
     }
@@ -2553,16 +2451,6 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_emit_get_max_change_version_before_uuidv5()
-    {
-        var getMax = _ddl.IndexOf("[dms].[GetMaxChangeVersion]", StringComparison.Ordinal);
-        var uuidv5 = _ddl.IndexOf("[dms].[uuidv5]", StringComparison.Ordinal);
-
-        getMax.Should().BeGreaterThan(0);
-        getMax.Should().BeLessThan(uuidv5);
-    }
-
-    [Test]
     public void It_should_emit_get_max_change_version_before_phase_5_tables()
     {
         var function = _ddl.IndexOf("[dms].[GetMaxChangeVersion]", StringComparison.Ordinal);
@@ -2596,7 +2484,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             search = idx + 1;
         }
 
-        occurrences.Should().Be(2, "expected exactly two function batches: GetMaxChangeVersion and uuidv5");
+        occurrences.Should().Be(1, "expected exactly one function batch: GetMaxChangeVersion");
     }
 
     [Test]
@@ -3100,11 +2988,11 @@ public class Given_CoreDdlEmitter_Descriptor_Stamping_Trigger_Metadata
     {
         // IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId is derived-inventory-owned and rendered once by the
         // relational DDL emitter; the core emitter must not also emit it (which would duplicate it in the
-        // full DDL). The core emitter owns the ResourceKeyId paging and whole-URI identity indexes.
+        // full DDL). The core emitter owns the ResourceKeyId paging and lowered whole-URI identity indexes.
         _pgsqlDdl.Should().NotContain("IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId");
         _pgsqlDdl.Should().NotContain("IX_Descriptor_Discriminator_ContentVersion");
         _pgsqlDdl.Should().NotContain("IX_Descriptor_Uri_Discriminator");
-        _pgsqlDdl.Should().Contain("UX_Descriptor_ResourceKeyId_Uri");
+        _pgsqlDdl.Should().NotContain("UX_Descriptor_ResourceKeyId_Uri");
         _pgsqlDdl.Should().Contain("UX_Descriptor_UriLowered_ResourceKeyId");
         _pgsqlDdl.Should().NotContain("UX_Descriptor_Uri_Discriminator");
     }
@@ -3121,6 +3009,48 @@ public class Given_CoreDdlEmitter_Descriptor_Stamping_Trigger_Metadata
         }
 
         return count;
+    }
+}
+
+/// <summary>
+/// The full authoritative DS 5.2 DDL installs no referential-identity artifact: no table, trigger,
+/// <c>uuidv5</c> function, <c>digest()</c> call, <c>pgcrypto</c> extension or unlowered descriptor URI
+/// index. The lowered descriptor URI index stays.
+/// </summary>
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+public class Given_The_Authoritative_Ds52_Full_Ddl(SqlDialect dialect)
+{
+    private string _ddl = default!;
+
+    [OneTimeSetUp]
+    public void Setup()
+    {
+        var fixtureDirectory = Path.GetFullPath(
+            Path.Combine(FixtureTestHelper.FindProjectRoot(), "..", "Fixtures", "authoritative", "ds-5.2")
+        );
+        var effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadEffectiveSchemaSet(
+            fixtureDirectory,
+            FixtureConfigReader.Read(fixtureDirectory).ApiSchemaFiles
+        );
+
+        _ddl = DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, dialect).CombinedSql;
+    }
+
+    [Test]
+    public void It_should_not_install_any_referential_identity_artifact()
+    {
+        _ddl.Should().NotContainAny("ReferentialIdentity", "ReferentialId", "uuidv5", "digest(");
+        _ddl.Should().NotContainEquivalentOf("pgcrypto");
+    }
+
+    [Test]
+    public void It_should_keep_only_the_lowered_descriptor_uri_index()
+    {
+        _ddl.Should().Contain("UX_Descriptor_UriLowered_ResourceKeyId");
+        _ddl.Should().NotContain("UX_Descriptor_ResourceKeyId_Uri");
+        _ddl.Should().NotContain("UX_Descriptor_Uri_Discriminator");
+        _ddl.Should().NotContain("IX_Descriptor_Discriminator_ContentVersion");
     }
 }
 

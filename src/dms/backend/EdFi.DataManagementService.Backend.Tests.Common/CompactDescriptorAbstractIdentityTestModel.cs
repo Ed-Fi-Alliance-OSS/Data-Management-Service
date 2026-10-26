@@ -4,33 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 
 namespace EdFi.DataManagementService.Backend.Tests.Common;
 
-public static class CompactDescriptorReferentialIdentityTestModel
+public static class CompactDescriptorAbstractIdentityTestModel
 {
-    public static DocumentIdentity CreateDescriptorIdentity(string descriptorUri) =>
-        new([
-            IdentityValueCanonicalizer.CreateDocumentIdentityElement(
-                DocumentIdentity.DescriptorIdentityJsonPath,
-                descriptorUri
-            ),
-        ]);
-
-    public static DocumentIdentity CreateIdentity(string descriptorUri) =>
-        new([
-            IdentityValueCanonicalizer.CreateDocumentIdentityElement(
-                new("$.programTypeDescriptor"),
-                descriptorUri
-            ),
-            IdentityValueCanonicalizer.CreateDocumentIdentityElement(
-                new("$.programReference.programTypeDescriptor"),
-                descriptorUri
-            ),
-        ]);
-
     public static DerivedRelationalModelSet Build(SqlDialect dialect, bool unifiedReferenceIdentity = false)
     {
         var schema = new DbSchemaName("edfi");
@@ -42,6 +20,7 @@ public static class CompactDescriptorReferentialIdentityTestModel
         );
         var resource = new QualifiedResourceName("Ed-Fi", "ProgramOffering");
         var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+        var abstractIdentityTable = new DbTableName(schema, "GeneralProgramOfferingIdentity");
 
         var rootTable = new DbTableModel(
             tableName,
@@ -89,28 +68,21 @@ public static class CompactDescriptorReferentialIdentityTestModel
         IReadOnlyList<DbTriggerInfo> triggers =
         [
             new(
-                new DbTriggerName("TR_ProgramOffering_ReferentialIdentity"),
+                new DbTriggerName("TR_ProgramOffering_AbstractIdentity"),
                 tableName,
                 [documentIdColumn],
                 [programTypeDescriptorColumn, graduationPlanTypeDescriptorColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    1,
-                    "Ed-Fi",
-                    "ProgramOffering",
+                new TriggerKindParameters.AbstractIdentityMaintenance(
+                    abstractIdentityTable,
                     [
-                        new IdentityElementMapping(
-                            programTypeDescriptorColumn,
-                            "$.programTypeDescriptor",
-                            new RelationalScalarType(ScalarKind.Int32),
-                            IsDescriptorReference: true
-                        ),
-                        new IdentityElementMapping(
+                        new TriggerColumnMapping(programTypeDescriptorColumn, programTypeDescriptorColumn),
+                        new TriggerColumnMapping(
                             graduationPlanTypeDescriptorColumn,
-                            "$.graduationPlanTypeDescriptor",
-                            new RelationalScalarType(ScalarKind.Int32),
-                            IsDescriptorReference: true
+                            graduationPlanTypeDescriptorColumn
                         ),
-                    ]
+                    ],
+                    1,
+                    "Ed-Fi:ProgramOffering"
                 )
             ),
         ];
@@ -195,16 +167,7 @@ public static class CompactDescriptorReferentialIdentityTestModel
                 ),
             ],
         };
-        var primaryIdentity = (TriggerKindParameters.ReferentialIdentityMaintenance)triggers[0].Parameters;
-        IReadOnlyList<IdentityElementMapping> unifiedElements =
-        [
-            primaryIdentity.IdentityElements[0],
-            primaryIdentity.IdentityElements[0] with
-            {
-                Column = copiedDescriptorColumn,
-                IdentityJsonPath = copiedDescriptorPath.Canonical,
-            },
-        ];
+        var primaryIdentity = (TriggerKindParameters.AbstractIdentityMaintenance)triggers[0].Parameters;
         var superclassKey = new ResourceKeyEntry(2, new("Ed-Fi", "GeneralProgramOffering"), "1.0.0", true);
 
         return modelSet with
@@ -268,8 +231,14 @@ public static class CompactDescriptorReferentialIdentityTestModel
                     IdentityProjectionColumns = [programTypeDescriptorColumn],
                     Parameters = primaryIdentity with
                     {
-                        IdentityElements = unifiedElements,
-                        SuperclassAlias = new(2, "Ed-Fi", "GeneralProgramOffering", unifiedElements),
+                        TargetColumnMappings =
+                        [
+                            new TriggerColumnMapping(
+                                programTypeDescriptorColumn,
+                                programTypeDescriptorColumn
+                            ),
+                            new TriggerColumnMapping(copiedDescriptorColumn, copiedDescriptorColumn),
+                        ],
                     },
                 },
             ],

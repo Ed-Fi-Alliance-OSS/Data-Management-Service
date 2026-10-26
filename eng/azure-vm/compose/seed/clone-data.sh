@@ -61,7 +61,7 @@ for db in "${TARGETS[@]}"; do
   # TRUNCATE + restore in ONE transaction: any error (incl. \i failing) rolls back the truncate
   # too, so a failed clone leaves the target's prior data intact instead of empty/half-loaded.
   docker exec -i "$PG_CONTAINER" psql -v ON_ERROR_STOP=1 --single-transaction -U "$PG_USER" -d "$db" -q <<SQL
-TRUNCATE dms."Document", dms."Descriptor", dms."ReferentialIdentity", dms."DocumentCache" CASCADE;
+TRUNCATE dms."Document", dms."Descriptor", dms."DocumentCache" CASCADE;
 \i $DUMP
 SQL
   echo "   done."

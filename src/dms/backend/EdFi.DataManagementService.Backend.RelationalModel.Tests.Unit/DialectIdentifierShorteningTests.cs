@@ -670,41 +670,12 @@ public class Given_Trigger_Parameter_Column_Shortening
             .ResourceKeyIdValue.Should()
             .Be(TriggerParameterColumnIdentifiers.AbstractIdentityResourceKeyIdValue);
     }
-
-    [Test]
-    public void It_should_shorten_referential_identity_maintenance_identity_elements()
-    {
-        var trigger = _result.TriggersInCreateOrder.Single(t =>
-            t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
-        );
-        var parameters = (TriggerKindParameters.ReferentialIdentityMaintenance)trigger.Parameters;
-        var element = parameters.IdentityElements.Single();
-
-        element.Column.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.IdentityColumn));
-    }
-
-    [Test]
-    public void It_should_shorten_superclass_alias_identity_elements()
-    {
-        var trigger = _result.TriggersInCreateOrder.Single(t =>
-            t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
-        );
-        var parameters = (TriggerKindParameters.ReferentialIdentityMaintenance)trigger.Parameters;
-        var aliasElement = parameters.SuperclassAlias!.IdentityElements.Single();
-
-        aliasElement.Column.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.AliasColumn));
-    }
 }
 
 /// <summary>
 /// Long identifier values for trigger parameter column shortening tests.
 /// </summary>
-internal sealed record TriggerParameterColumnIdentifiers(
-    string SourceColumn,
-    string TargetColumn,
-    string IdentityColumn,
-    string AliasColumn
-)
+internal sealed record TriggerParameterColumnIdentifiers(string SourceColumn, string TargetColumn)
 {
     public const short AbstractIdentityResourceKeyIdValue = 4242;
 
@@ -712,9 +683,7 @@ internal sealed record TriggerParameterColumnIdentifiers(
     {
         return new TriggerParameterColumnIdentifiers(
             SourceColumn: BuildLong("SourceCol", length),
-            TargetColumn: BuildLong("TargetCol", length),
-            IdentityColumn: BuildLong("IdentityCol", length),
-            AliasColumn: BuildLong("AliasCol", length)
+            TargetColumn: BuildLong("TargetCol", length)
         );
     }
 
@@ -725,7 +694,7 @@ internal sealed record TriggerParameterColumnIdentifiers(
 }
 
 /// <summary>
-/// Fixture pass that seeds triggers with each non-DocumentStamping parameter subtype containing long column names.
+/// Fixture pass that seeds an abstract identity maintenance trigger containing long column names.
 /// </summary>
 file sealed class TriggerParameterColumnFixturePass(TriggerParameterColumnIdentifiers identifiers)
     : IRelationalModelSetPass
@@ -754,39 +723,6 @@ file sealed class TriggerParameterColumnFixturePass(TriggerParameterColumnIdenti
                     ],
                     TriggerParameterColumnIdentifiers.AbstractIdentityResourceKeyIdValue,
                     "School"
-                )
-            )
-        );
-
-        context.TriggerInventory.Add(
-            new DbTriggerInfo(
-                new DbTriggerName("TR_RefIdentity"),
-                table,
-                [],
-                [],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    1,
-                    "Ed-Fi",
-                    "School",
-                    [
-                        new IdentityElementMapping(
-                            new DbColumnName(identifiers.IdentityColumn),
-                            "$.id",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ],
-                    new SuperclassAliasInfo(
-                        2,
-                        "Ed-Fi",
-                        "EducationOrganization",
-                        [
-                            new IdentityElementMapping(
-                                new DbColumnName(identifiers.AliasColumn),
-                                "$.parentId",
-                                new RelationalScalarType(ScalarKind.Int32)
-                            ),
-                        ]
-                    )
                 )
             )
         );

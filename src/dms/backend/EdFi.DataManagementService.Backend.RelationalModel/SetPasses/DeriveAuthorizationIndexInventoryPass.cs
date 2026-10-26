@@ -59,7 +59,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// strict pipeline (production runtime) sets it <see langword="true"/> so a missing PA literal
 /// column raises <see cref="InvalidOperationException"/> and surfaces real schema drift;
 /// default pipeline leaves it <see langword="false"/> so synthetic test fixtures
-/// (<c>small/referential-identity</c>, <c>small/polymorphic</c>) that reuse PA resource names
+/// (<c>small/identity-references</c>) that reuse PA resource names
 /// without carrying the post-key-unification columns continue to build.</para>
 /// </remarks>
 /// <param name="throwOnMissingPaLiteral">

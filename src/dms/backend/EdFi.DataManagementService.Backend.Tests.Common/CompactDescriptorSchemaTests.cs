@@ -210,7 +210,6 @@ public abstract class CompactDescriptorSchemaTests
 
     [TestCase("missing_document_unique")]
     [TestCase("missing_fk")]
-    [TestCase("missing_uri_index")]
     [TestCase("wide_history")]
     public async Task It_rejects_timestamp_correct_templates_missing_compact_descriptor_features(
         string mutation
@@ -340,7 +339,7 @@ public abstract class CompactDescriptorSchemaTests
             var rejection = await insert.Should().ThrowAsync<DbException>();
             if (IsPgsql)
             {
-                // The unlowered index keeps case variants distinct on PostgreSQL; only the lowered index rejects.
+                // Only the lowered index rejects case variants on PostgreSQL.
                 rejection.WithMessage("*UX_Descriptor_UriLowered_ResourceKeyId*");
             }
         }
@@ -364,7 +363,6 @@ public abstract class CompactDescriptorSchemaTests
     [TestCase("missing_document_unique")]
     [TestCase("missing_document_fk")]
     [TestCase("cascading_document_fk")]
-    [TestCase("missing_uri_index")]
     [TestCase("missing_lowered_uri_index")]
     [TestCase("stale_lowered_uri")]
     [TestCase("wrong_uri_expression")]
@@ -375,6 +373,15 @@ public abstract class CompactDescriptorSchemaTests
     )
     {
         await AssertCatalogMutationRejectedAsync(mutation, "*Compact descriptor baseline:*");
+    }
+
+    [Test]
+    public async Task It_rejects_the_obsolete_unlowered_uri_index_even_with_the_same_v3_fingerprint()
+    {
+        await AssertCatalogMutationRejectedAsync(
+            "obsolete_unlowered_uri_index",
+            "*Compact descriptor baseline: obsolete descriptor storage/index remains*"
+        );
     }
 
     public static IEnumerable<string> DescriptorAliasMutations(string dialect)
@@ -392,7 +399,7 @@ public abstract class CompactDescriptorSchemaTests
     protected Task AssertDescriptorAliasMutationAsync(string mutation) =>
         AssertCatalogMutationRejectedAsync(mutation, "*Compact descriptor baseline:*descriptor alias*");
 
-    private Task AssertCatalogMutationRejectedAsync(string mutation, string expectedMessage) =>
+    protected Task AssertCatalogMutationRejectedAsync(string mutation, string expectedMessage) =>
         AssertCatalogMutationRejectedAsync(mutation, expectedMessage, _assertionSql);
 
     private async Task AssertCatalogMutationRejectedAsync(

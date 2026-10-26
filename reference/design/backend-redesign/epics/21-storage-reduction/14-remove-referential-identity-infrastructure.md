@@ -81,10 +81,7 @@ atomically removing all remaining DMS-owned ReferentialIdentity and UUIDv5 infra
   - Update `eng/northridge/README.md` to match. `Add-NorthridgeGapDocument.ps1` writes through the
     API, so only its help text, which lists `dms.ReferentialIdentity` among the rows the API
     produces, changes.
-- Republish both Northridge artifacts on the final schema. The README treats the PostgreSQL and SQL
-  Server `.7z` artifacts as a matched pair (same documents, same effective schema), and both predate
-  this epic's schema. `Copy-NorthridgeDataForward.ps1` handles PostgreSQL only and there is no
-  SQL Server carry-forward tool, so producing the SQL Server artifact is part of this work.
+- Republishing both Northridge artifacts on the final schema is DMS-1634's scope.
 - Remove `dms.ReferentialIdentity` from `CdcDmsManagedTableInventory` (the DMS-managed table list
   the CDC connector-principal privilege audit checks against) and the CDC inventory test pins. The
   table was never published, so no CDC change stream changes.
@@ -121,9 +118,9 @@ atomically removing all remaining DMS-owned ReferentialIdentity and UUIDv5 infra
   `Copy-NorthridgeDataForward.ps1` needs to skip the archive's dropped `ReferentialIdentity` table
   and expect its absence.
 - `Copy-NorthridgeDataForward.ps1` completes against the final schema with no guard bypassed or
-  edited; abstract identity rows carry the `ResourceKeyId` of their owning `dms.Document` row.
-- Both republished Northridge artifacts (PostgreSQL and SQL Server) are on the final schema, remain
-  a matched pair, and contain no `dms.ReferentialIdentity` data.
+  edited; abstract identity rows carry the `ResourceKeyId` of their owning `dms.Document` row. The
+  full-dataset run belongs to DMS-1634.
+- Republishing both Northridge artifacts on the final schema is DMS-1634's scope.
 - CDC bootstrap (publication / capture-instance) succeeds against the final schema on both providers
   and the CDC inventory test pins contain no `dms.ReferentialIdentity`.
 - Tests for the retained trigger families (DocumentCache enqueue, stamping, change-tracking,

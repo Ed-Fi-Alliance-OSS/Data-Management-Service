@@ -21,17 +21,15 @@ namespace EdFi.DataManagementService.Performance.Harness.Smoke;
 /// Primary variants: after the 10,000-row primary load, the authorization seeding and the
 /// filtered overlay run in their mandatory order. One control StudentSchoolAssociation is
 /// POSTed through the real HTTP pipeline for a student the seed left unenrolled, and the
-/// seeded rows must match its row shape across dms.Document, the association's shared
-/// columns, and the trigger-derived referential identity — validating the independent SSA
-/// uuidv5 formula against a production write before holding seeded rows to it. The
-/// authorization view must contain exactly the seeded students plus the control enrollment.
-/// The overlay must change only the selected birth dates: no tracked-change rows, and a real
-/// filtered GET must return exactly the overlaid students in DocumentId order.
+/// seeded rows must match its row shape across dms.Document and the association's shared
+/// columns, including the EntryDate identity part. The authorization view must contain
+/// exactly the seeded students plus the control enrollment. The overlay must change only the
+/// selected birth dates: no tracked-change rows, and a real filtered GET must return exactly
+/// the overlaid students in DocumentId order.
 ///
 /// Descriptor fixture: after the 2,000-row descriptor load, one control descriptor is POSTed
-/// and the loader rows must match its document metadata, descriptor row semantics, and
-/// referential identity derivation; a real GET-many must hydrate the interleaved namespaces
-/// in DocumentId order.
+/// and the loader rows must match its document metadata and descriptor row semantics; a
+/// real GET-many must hydrate the interleaved namespaces in DocumentId order.
 ///
 /// All assertion SQL uses double-quoted identifiers, which both providers accept.
 /// </summary>
@@ -48,14 +46,8 @@ internal static class PerfFinalGateFixtureSmokeScenario
         """;
 
     private const string SsaRowSql = """
-        SELECT "SchoolId_Unified", "School_DocumentId", "Student_DocumentId", "Student_StudentUniqueId", "EntryGradeLevelDescriptor_DescriptorId", "ContentVersion"
+        SELECT "SchoolId_Unified", "School_DocumentId", "Student_DocumentId", "Student_StudentUniqueId", "EntryGradeLevelDescriptor_DescriptorId", "EntryDate", "ContentVersion"
         FROM "edfi"."StudentSchoolAssociation"
-        WHERE "DocumentId" = @documentId;
-        """;
-
-    private const string ReferentialIdentityRowsSql = """
-        SELECT "ReferentialId"
-        FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = @documentId;
         """;
 
@@ -90,6 +82,7 @@ internal static class PerfFinalGateFixtureSmokeScenario
         long StudentDocumentId,
         string StudentUniqueId,
         int EntryGradeLevelDescriptorId,
+        object EntryDate,
         long ContentVersion
     );
 
@@ -166,6 +159,7 @@ internal static class PerfFinalGateFixtureSmokeScenario
         seededSsa.SchoolIdUnified.Should().Be(controlSsa.SchoolIdUnified);
         seededSsa.SchoolDocumentId.Should().Be(controlSsa.SchoolDocumentId);
         seededSsa.EntryGradeLevelDescriptorId.Should().Be(controlSsa.EntryGradeLevelDescriptorId);
+        seededSsa.EntryDate.Should().Be(controlSsa.EntryDate);
         DescriptorRow gradeLevelDescriptor = await ReadDescriptorRowAsync(
             connection,
             seed.GradeLevelDescriptorDocumentId
@@ -183,19 +177,6 @@ internal static class PerfFinalGateFixtureSmokeScenario
             .ContentVersion.Should()
             .Be(seededDocument.ContentVersion, "the stamp trigger must have mirrored the document version");
         controlSsa.ContentVersion.Should().Be(controlDocument.ContentVersion);
-
-        // Validate the independent uuidv5 formula against the control row the production
-        // write path produced, then hold the seeded row to it.
-        await AssertSsaReferentialIdentityAsync(
-            connection,
-            controlDocument.DocumentId,
-            PerfFixtureDefinition.StudentUniqueIdFor(ControlStudentOrdinal)
-        );
-        await AssertSsaReferentialIdentityAsync(
-            connection,
-            seededDocument.DocumentId,
-            PerfFixtureDefinition.StudentUniqueIdFor(2)
-        );
 
         long viewMembership = await CountAsync(
             connection,
@@ -308,15 +289,6 @@ internal static class PerfFinalGateFixtureSmokeScenario
                 "the descriptor stamp trigger must mirror the document version"
             );
 
-        // Hold the loader row to the independent descriptor referential-id formula. The
-        // production write path no longer records this lowercased derivation, so the control
-        // row is not compared.
-        await AssertDescriptorReferentialIdentityAsync(
-            connection,
-            loaderDocument.DocumentId,
-            PerfDescriptorFixtureDefinition.UriFor(1)
-        );
-
         controlDescriptor.ContentVersion.Should().Be(controlDocument.ContentVersion);
         await AssertDescriptorFirstPageAsync(harness);
     }
@@ -422,62 +394,6 @@ internal static class PerfFinalGateFixtureSmokeScenario
         }
     }
 
-    private static async Task AssertSsaReferentialIdentityAsync(
-        DbConnection connection,
-        long documentId,
-        string studentUniqueId
-    )
-    {
-        Guid expected = ReferentialIdentityDerivation.StudentSchoolAssociationReferentialId(
-            PerfAuthorizationSeedDefinition.EntryDateIso,
-            PerfAuthorizationSeedDefinition.SchoolId,
-            studentUniqueId
-        );
-        Guid actual = await ReadSingleReferentialIdAsync(connection, documentId);
-        actual
-            .Should()
-            .Be(
-                expected,
-                $"the association referential id for '{studentUniqueId}' must match the independent uuidv5 derivation"
-            );
-    }
-
-    private static async Task AssertDescriptorReferentialIdentityAsync(
-        DbConnection connection,
-        long documentId,
-        string uri
-    )
-    {
-        Guid expected = ReferentialIdentityDerivation.DescriptorReferentialId(
-            PerfDescriptorFixtureDefinition.ResourceName,
-            uri
-        );
-        Guid actual = await ReadSingleReferentialIdAsync(connection, documentId);
-        actual
-            .Should()
-            .Be(expected, $"the referential id for '{uri}' must match the independent uuidv5 derivation");
-    }
-
-    private static async Task<Guid> ReadSingleReferentialIdAsync(DbConnection connection, long documentId)
-    {
-        await using DbCommand command = connection.CreateCommand();
-        command.CommandText = ReferentialIdentityRowsSql;
-        AddParameter(command, "documentId", documentId);
-
-        List<Guid> rows = [];
-        await using (DbDataReader reader = await command.ExecuteReaderAsync())
-        {
-            while (await reader.ReadAsync())
-            {
-                rows.Add(reader.GetGuid(0));
-            }
-        }
-
-        return rows.Should()
-            .ContainSingle($"document {documentId} must carry exactly one referential identity")
-            .Subject;
-    }
-
     private static async Task<long> CountAsync(
         DbConnection connection,
         string sql,
@@ -528,7 +444,8 @@ internal static class PerfFinalGateFixtureSmokeScenario
             reader.GetInt64(2),
             reader.GetString(3),
             reader.GetInt32(4),
-            reader.GetInt64(5)
+            reader.GetValue(5),
+            reader.GetInt64(6)
         );
     }
 

@@ -39,8 +39,7 @@ Source documents:
   filter is a 400. Resource POST upserts detect existing documents through the own-natural-key
   capture, and descriptor writes through the lowered-URI probe with stored-wins identity (see
   [natural-key-resolution.md](natural-key-resolution.md)). Core computes no referential ids,
-  and no runtime path reads `dms.ReferentialIdentity`; resource triggers maintain it until its
-  removal.
+  and DMS DDL creates no `dms.ReferentialIdentity` table or referential-identity triggers.
 - SQL Server identity string columns carry the explicit DMS collation
   `SQL_Latin1_General_CP1_CI_AS`, independent of the database default; PostgreSQL keeps its
   existing collation verdicts. Compact descriptor storage introduces no normalization.
@@ -59,7 +58,7 @@ Source documents:
 ## Core concepts and terms
 
 - `DocumentUuid`: stable external identifier for API `id` (does not change on identity updates).
-- `DocumentId`: owning document surrogate (`bigint`) for document references, metadata, locks, RI, cache, restamping and paging.
+- `DocumentId`: owning document surrogate (`bigint`) for document references, metadata, locks, cache, restamping and paging.
 - `DescriptorId`: separately generated descriptor surrogate (`int`) for stored descriptor FKs, filtering and URI hydration. It is not the owning `DocumentId`.
 - **Natural-key probe**: generated lookup metadata that converts a resource's ordered `DocumentIdentity` values into the persisted `DocumentId` by probing the target's `RefKey`, abstract-identity, descriptor, or root natural-key index.
 - **Identity component**: a reference whose projected identity participates in a document’s identity (`identityJsonPaths`). Identity-component values are stored locally as reference-identity bindings (which may be generated/persisted aliases of canonical stored columns under key unification) so natural-key probes and reconstitution read row-local values.
@@ -89,11 +88,10 @@ Source documents:
     with its own sequence, SQL Server `IDENTITY(1,1)`. A unique non-null `bigint DocumentId` FK
     associates each row with its owner; resource descriptor FKs target `DescriptorId`.
   - `ResourceKeyId` identifies the qualified type. No live descriptor discriminator or physically
-    stored URI remains. `UX_Descriptor_ResourceKeyId_Uri` enforces unlowered whole-URI uniqueness:
-    PostgreSQL expression `(ResourceKeyId, (Namespace || '#' || CodeValue))` under the database-default
-    collation; SQL Server non-persisted computed `Uri AS ([Namespace] + N'#' + [CodeValue])`, indexed
-    with `ResourceKeyId`, which inherits the `SQL_Latin1_General_CP1_CI_AS` identity collation of its
-    `Namespace` and `CodeValue` components. `UX_Descriptor_UriLowered_ResourceKeyId` adds lowered
+    stored URI remains. SQL Server keeps a non-persisted, unindexed computed
+    `Uri AS ([Namespace] + N'#' + [CodeValue])` that reconstructs the whole URI and inherits the
+    `SQL_Latin1_General_CP1_CI_AS` identity collation of its `Namespace` and `CodeValue` components.
+    `UX_Descriptor_UriLowered_ResourceKeyId`, the only descriptor URI index, enforces lowered
     whole-URI uniqueness within the type: PostgreSQL expression
     `lower((Namespace || '#' || CodeValue) COLLATE "pg_c_utf8"), ResourceKeyId`; SQL Server
     non-persisted `UriLowered AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)`
@@ -320,8 +318,8 @@ performance results; neither benchmarks nor database-version upgrades gate this 
 The [developer guide](../../../../docs/RELATIONAL-BACKEND.md#reprovisioning-and-legacy-data-carry-forward)
 describes the working PostgreSQL legacy-dump conversion into a fresh target with a reviewed
 exact-schema manifest: source-shaped staging, independent descriptor allocation, remapping
-stored references, translating history types without live owners, preserving documents/RI/stamps,
-and validating the allocator. Restoring an unchanged legacy schema does not perform that conversion.
+stored references, translating history types without live owners, preserving documents and stamps,
+skipping legacy RI rows, and validating the allocator. Restoring an unchanged legacy schema does not perform that conversion.
 
 DMS-1404's closure/handoff includes its working RI runtime on fresh schemas on both engines,
 regenerated fixtures, reusable descriptor catalog assertions, working loaders/copy conversion,

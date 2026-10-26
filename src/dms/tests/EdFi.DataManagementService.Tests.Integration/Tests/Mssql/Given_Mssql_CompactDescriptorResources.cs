@@ -92,8 +92,8 @@ public sealed class Given_Mssql_CompactDescriptorResources : MssqlApiIntegration
         );
 
     [Test]
-    public Task It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates() =>
-        CompactDescriptorResourceScenario.It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates(
+    public Task It_maintains_copied_descriptor_keys_after_resource_identity_updates() =>
+        CompactDescriptorResourceScenario.It_maintains_copied_descriptor_keys_after_resource_identity_updates(
             Harness
         );
 

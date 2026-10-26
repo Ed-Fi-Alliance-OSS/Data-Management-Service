@@ -623,15 +623,6 @@ internal static class CompactDescriptorHistoryScenario
         )
             .Should()
             .Be(0);
-        (
-            await ScalarAsync(
-                harness,
-                "SELECT COUNT(*) FROM \"dms\".\"ReferentialIdentity\" WHERE \"DocumentId\" = @id",
-                ("@id", descriptor.DocumentId)
-            )
-        )
-            .Should()
-            .Be(0);
     }
 
     private static async Task<long> DescriptorDeleteVersionAsync(

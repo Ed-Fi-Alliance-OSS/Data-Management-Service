@@ -171,7 +171,7 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/CompactDescriptorResources/MixedCaseIdentityMatching",
-            "Repeated resource POSTs and transitive descriptor-bearing document identities resolve mixed-case URIs through RI with stable document IDs and exact no-op stamps.",
+            "Repeated resource POSTs and transitive descriptor-bearing document identities resolve mixed-case URIs by natural key with stable document IDs and exact no-op stamps.",
             "CompactDescriptorResourceScenario.It_matches_repeated_POST_and_transitive_document_identities_with_mixed_case_descriptors",
             "It_matches_repeated_POST_and_transitive_document_identities_with_mixed_case_descriptors",
             fixtureSuffix: "CompactDescriptorResources"
@@ -192,9 +192,9 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/CompactDescriptorResources/IdentityUpdatePropagation",
-            "Regular-resource descriptor identity updates propagate compact keys and canonical URIs through two reference levels, advance stamps, maintain RI matching and reject stale references.",
-            "CompactDescriptorResourceScenario.It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates",
-            "It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates",
+            "Regular-resource descriptor identity updates propagate compact keys and canonical URIs through two reference levels, advance stamps, keep natural-key matching and reject stale references.",
+            "CompactDescriptorResourceScenario.It_maintains_copied_descriptor_keys_after_resource_identity_updates",
+            "It_maintains_copied_descriptor_keys_after_resource_identity_updates",
             fixtureSuffix: "CompactDescriptorResources"
         ),
         Api(
@@ -220,7 +220,7 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/CompactDescriptorHistory/QualifiedDeleteRouting",
-            "Deleted descriptor/document/RI rows retain exact external IDs, type-specific component snapshots and versions; same-named cross-project recreation suppresses only its own ResourceKeyId.",
+            "Deleted descriptor/document rows retain exact external IDs, type-specific component snapshots and versions; same-named cross-project recreation suppresses only its own ResourceKeyId.",
             "CompactDescriptorHistoryScenario.It_routes_deleted_descriptors_by_qualified_resource_key_without_live_rows",
             "It_routes_deleted_descriptors_by_qualified_resource_key_without_live_rows",
             fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"
@@ -241,7 +241,7 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/CompactDescriptorHistory/ResourceRecreation",
-            "Recreated resources suppress their old deletes through the qualified descriptor compact key found by lowered whole URI, preserving RI mixed-case matching and exact stored int values.",
+            "Recreated resources suppress their old deletes through the qualified descriptor compact key found by lowered whole URI, preserving mixed-case natural-key matching and exact stored int values.",
             "CompactDescriptorHistoryScenario.It_recreates_resources_using_compact_descriptor_identity_joins",
             "It_recreates_resources_using_compact_descriptor_identity_joins",
             fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"

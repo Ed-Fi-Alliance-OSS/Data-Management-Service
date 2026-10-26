@@ -168,7 +168,6 @@ This inventory is the explicit “what exists in the database” contract that t
     against the owning document by the stamping trigger.
   - No live descriptor discriminator or physically stored URI; see the reconstructed-URI
     index and runtime-session contract below.
-- `dms.ReferentialIdentity` (trigger-maintained for resources until RI removal; no runtime path reads it)
 - `dms.DataStoreIdentity` (singleton source identity stable during ordinary operation)
 - `dms.DocumentCache` (always present; optionally populated/read)
 - `dms.DocumentProjectionWork` (always-present coalesced durable projection work)
@@ -222,51 +221,45 @@ This inventory is the explicit “what exists in the database” contract that t
 
 ### Descriptor storage and runtime session options
 
-Descriptor whole-URI uniqueness uses `UX_Descriptor_ResourceKeyId_Uri` and
-`UX_Descriptor_UriLowered_ResourceKeyId`:
+Descriptor whole-URI uniqueness uses `UX_Descriptor_UriLowered_ResourceKeyId`, the only
+descriptor URI index:
 
 ```sql
 -- PostgreSQL: no Uri or UriLowered column in the base table.
-CREATE UNIQUE INDEX "UX_Descriptor_ResourceKeyId_Uri"
-    ON "dms"."Descriptor" ("ResourceKeyId", ("Namespace" || '#' || "CodeValue"));
 CREATE UNIQUE INDEX "UX_Descriptor_UriLowered_ResourceKeyId"
     ON "dms"."Descriptor" (lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8"), "ResourceKeyId");
 
 -- SQL Server: the table defines non-persisted
 --   Uri AS ([Namespace] + N'#' + [CodeValue]) and
 --   UriLowered AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS).
-CREATE UNIQUE INDEX [UX_Descriptor_ResourceKeyId_Uri]
-    ON [dms].[Descriptor] ([ResourceKeyId], [Uri]);
 CREATE UNIQUE INDEX [UX_Descriptor_UriLowered_ResourceKeyId]
     ON [dms].[Descriptor] ([UriLowered], [ResourceKeyId]);
 ```
 
-`UX_Descriptor_ResourceKeyId_Uri` compares the unlowered whole URI. On SQL Server the computed
-`Uri` inherits the DMS identity collation (`SQL_Latin1_General_CP1_CI_AS`) emitted on `Namespace`
-and `CodeValue`; PostgreSQL uses the database-default collation.
-`UX_Descriptor_UriLowered_ResourceKeyId` compares the lowered whole URI, and case folding is
-engine-owned: PostgreSQL pins `pg_c_utf8` rather than following the database default, and SQL
-Server computes `UriLowered` from the stored components, never from `Uri`. Neither index
-introduces lowered component columns or component-wise uniqueness. Descriptor discriminator
+The index compares the lowered whole URI, and case folding is engine-owned: PostgreSQL pins
+`pg_c_utf8` rather than following the database default, and SQL Server computes `UriLowered` from
+the stored components, never from `Uri`. On SQL Server, `Namespace` and `CodeValue` carry the DMS
+identity collation (`SQL_Latin1_General_CP1_CI_AS`), and the non-persisted `Uri` reconstructs the
+whole URI without an index; PostgreSQL uses the database-default collation for the components.
+The index introduces no lowered component columns or component-wise uniqueness. Descriptor discriminator
 storage and its obsolete content-version index are removed. Abstract identity discriminator
 columns, literals, union-view output and authorization remain unchanged.
 
 SQL Server requires `ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`,
 `CONCAT_NULL_YIELDS_NULL`, `QUOTED_IDENTIFIER` effectively ON and `NUMERIC_ROUNDABORT` OFF
-both when creating these computed-column indexes and when maintaining them. Generated DDL sets
+both when creating this computed-column index and when maintaining it. Generated DDL sets
 these in the provisioner's session and captures trigger settings. Ordinary fresh/reused
 `Microsoft.Data.SqlClient` pools satisfy the effective options independently without an
 initializer: at compatibility level 90 or above, `ANSI_WARNINGS ON` implies effective
 `ARITHABORT ON` for this purpose. Direct clients must supply the required options too;
 provisioning-only settings do not survive onto runtime connections.
 
-The current DDL retains `dms.ReferentialIdentity`, RI maintenance triggers/functions,
-PostgreSQL `dms.uuidv5()` and its `pgcrypto` dependency, which keep resource RI rows maintained
-until RI removal; no runtime path reads them. Resource POST upsert existence detection uses the
-own-natural-key capture, and descriptor writes use the lowered-URI probe and write no RI rows. RI maintenance joins use `DescriptorId` and reconstruct the whole URI before
-existing hashing transformations; document-level RI maintenance uses the owning `DocumentId`.
-Reference resolution and descriptor filters already use the lowered-URI probes; RI removal
-described in [natural-key-resolution.md](natural-key-resolution.md) belongs to later stories.
+DMS DDL emits no `dms.ReferentialIdentity` table, no referential-identity triggers or functions,
+no `dms.uuidv5()` function on either engine and no PostgreSQL `pgcrypto` extension. Resource
+POST upsert existence detection uses the own-natural-key capture, descriptor writes use the
+lowered-URI probe, and reference resolution and descriptor filters use the lowered-URI probes
+described in
+[natural-key-resolution.md](natural-key-resolution.md).
 
 `IX_Descriptor_ResourceKeyId_DocumentId` remains core-owned;
 `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` remains derived for live change
@@ -479,8 +472,9 @@ schemas on supported engines; a matching hash or a provisioning rerun cannot con
 The [PostgreSQL carry-forward workflow](../../../../eng/northridge/README.md#copy-legacy-data-into-the-current-compact-schema)
 uses source-shaped staging, independent allocation and stored-reference remapping, qualified
 history type-key conversion without live owners, and allocator validation. Both Copy and
-Checkpoint require a reviewed exact-schema `ExpectedModelManifestPath`; documents, RI and
-stamps remain intact. An unchanged legacy dump restore is not the conversion.
+Checkpoint require a reviewed exact-schema `ExpectedModelManifestPath`; documents and stamps
+remain intact, legacy RI rows are skipped, and abstract identity rows take `ResourceKeyId` from
+their owning document. An unchanged legacy dump restore is not the conversion.
 
 The [DMS-1404 handoff](../../../../docs/RELATIONAL-BACKEND.md#descriptor-catalog-checks-and-template-handoff)
 historically retained authoritative `dms.Document.ContentVersion` and `ContentLastModifiedAt`

@@ -666,7 +666,7 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
         (await _context.CountResourceCollectionRowsAsync(ProjectEndpointName, RootChildResourceName))
             .Should()
             .Be(seed.ClassPeriods.Count);
-        (await _context.CountReferentialIdentityRowsForAuthorizationRootChildAsync(seed)).Should().Be(1);
+        (await _context.CountAuthorizationRootChildRowsByNaturalKeyAsync(seed)).Should().Be(1);
     }
 
     private async Task AssertNoCreateSideEffectsAsync(AuthorizationRootChildSeed seed)
@@ -687,7 +687,7 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
         (await _context.CountResourceCollectionRowsAsync(ProjectEndpointName, RootChildResourceName))
             .Should()
             .Be(0);
-        (await _context.CountReferentialIdentityRowsForAuthorizationRootChildAsync(seed)).Should().Be(0);
+        (await _context.CountAuthorizationRootChildRowsByNaturalKeyAsync(seed)).Should().Be(0);
     }
 
     private async Task AssertPeoplePersistedRowsAsync(AuthorizationStudentAcademicRecordSeed seed)

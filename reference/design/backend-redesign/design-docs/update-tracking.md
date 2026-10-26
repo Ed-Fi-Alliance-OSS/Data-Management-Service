@@ -94,7 +94,7 @@ the same `ContentVersion` and `ContentLastModifiedAt` stamps are updated.
 `dms.Descriptor.DescriptorId` is a native independently generated `int` primary key.
 `DocumentId` is its unique non-null `bigint` association to the owning document. Stored
 resource descriptor FKs and URI projection joins use the compact key; document stamps,
-UUID lookup, locks, RI, cache/projection work and representation restamping use `DocumentId`.
+UUID lookup, locks, cache/projection work and representation restamping use `DocumentId`.
 Updating or restamping an existing descriptor preserves both IDs and touches the correct
 descriptor stamp owner through its document association even when the values differ.
 

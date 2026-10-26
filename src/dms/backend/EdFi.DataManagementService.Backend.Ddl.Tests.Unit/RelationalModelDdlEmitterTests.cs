@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -767,16 +766,30 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Tr
     {
         _ddl.Should()
             .Contain(
-                "INSERT INTO \"edfi\".\"EducationOrganizationIdentity\" (\"DocumentId\", \"EducationOrganizationId\", \"ResourceKeyId\", \"Discriminator\")"
+                "INSERT INTO \"edfi\".\"EducationOrganizationIdentity\" (\"DocumentId\", \"EducationOrganizationId\", \"SchoolYear\", \"ResourceKeyId\", \"Discriminator\")"
             );
-        _ddl.Should().Contain("VALUES (NEW.\"DocumentId\", NEW.\"SchoolId\", 4242, 'Ed-Fi:School')");
+        _ddl.Should()
+            .Contain(
+                "VALUES (NEW.\"DocumentId\", NEW.\"SchoolId\", NEW.\"SchoolYear\", 4242, 'Ed-Fi:School')"
+            );
     }
 
     [Test]
     public void It_should_update_only_identity_columns_on_conflict()
     {
         _ddl.Should()
-            .Contain("DO UPDATE SET \"EducationOrganizationId\" = EXCLUDED.\"EducationOrganizationId\";");
+            .Contain(
+                "DO UPDATE SET \"EducationOrganizationId\" = EXCLUDED.\"EducationOrganizationId\", \"SchoolYear\" = EXCLUDED.\"SchoolYear\";"
+            );
+    }
+
+    [Test]
+    public void It_should_compose_identity_diff_terms_with_or_for_multi_column_identities()
+    {
+        _ddl.Should()
+            .Contain(
+                "IF TG_OP = 'INSERT' OR (OLD.\"SchoolId\" IS DISTINCT FROM NEW.\"SchoolId\" OR OLD.\"SchoolYear\" IS DISTINCT FROM NEW.\"SchoolYear\") THEN"
+            );
     }
 }
 
@@ -800,9 +813,50 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Tr
     {
         _ddl.Should()
             .Contain(
-                "INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])"
+                "INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [SchoolYear], [ResourceKeyId], [Discriminator])"
             );
-        _ddl.Should().Contain("SELECT s.[DocumentId], s.[SchoolId], 4242, N'Ed-Fi:School'");
+        _ddl.Should().Contain("SELECT s.[DocumentId], s.[SchoolId], s.[SchoolYear], 4242, N'Ed-Fi:School'");
+    }
+
+    [Test]
+    public void It_should_gate_maintenance_with_changed_docs_value_diff()
+    {
+        _ddl.Should().Contain("ELSE IF (UPDATE([SchoolId]) OR UPDATE([SchoolYear]))");
+        _ddl.Should().Contain("DECLARE @changedDocs TABLE");
+
+        var worksetStart = _ddl.IndexOf("INSERT INTO @changedDocs", StringComparison.Ordinal);
+        worksetStart.Should().BeGreaterOrEqualTo(0);
+
+        var worksetEnd = _ddl.IndexOf(';', worksetStart);
+        worksetEnd
+            .Should()
+            .BeGreaterThan(
+                worksetStart,
+                "@changedDocs INSERT must terminate before any subsequent statement"
+            );
+
+        var worksetStatement = _ddl.Substring(worksetStart, worksetEnd - worksetStart);
+        worksetStatement
+            .Should()
+            .Contain(
+                "i.[SchoolId] <> d.[SchoolId]",
+                "value-diff filter must live inside the @changedDocs INSERT WHERE clause"
+            );
+        worksetStatement.Should().Contain("i.[SchoolYear] <> d.[SchoolYear]");
+
+        _ddl.IndexOf("IF EXISTS (SELECT 1 FROM @changedDocs)", worksetEnd, StringComparison.Ordinal)
+            .Should()
+            .BeGreaterThan(
+                worksetEnd,
+                "maintenance must consume the @changedDocs workset after it is populated"
+            );
+        _ddl.IndexOf(
+                "INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]",
+                worksetEnd,
+                StringComparison.Ordinal
+            )
+            .Should()
+            .BeGreaterThan(worksetEnd);
     }
 
     [Test]
@@ -1336,44 +1390,6 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
             );
     }
 
-    [Test]
-    public void It_should_short_circuit_referential_identity_maintenance_on_same_value_root_updates()
-    {
-        var functionStart = _ddl.IndexOf(
-            "CREATE OR REPLACE FUNCTION \"edfi\".\"TF_TR_School_ReferentialIdentity\"()",
-            StringComparison.Ordinal
-        );
-        functionStart.Should().BeGreaterOrEqualTo(0);
-
-        var triggerCreateStart = _ddl.IndexOf(
-            "CREATE TRIGGER \"TR_School_ReferentialIdentity\"",
-            functionStart,
-            StringComparison.Ordinal
-        );
-        triggerCreateStart.Should().BeGreaterThan(functionStart);
-
-        var functionBody = _ddl.Substring(functionStart, triggerCreateStart - functionStart);
-
-        var guardIndex = functionBody.IndexOf(
-            "IF TG_OP = 'INSERT' OR (OLD.\"SchoolId\" IS DISTINCT FROM NEW.\"SchoolId\") THEN",
-            StringComparison.Ordinal
-        );
-        var deleteIndex = functionBody.IndexOf(
-            "DELETE FROM \"dms\".\"ReferentialIdentity\"",
-            StringComparison.Ordinal
-        );
-        var insertIndex = functionBody.IndexOf(
-            "INSERT INTO \"dms\".\"ReferentialIdentity\"",
-            StringComparison.Ordinal
-        );
-
-        guardIndex
-            .Should()
-            .BeGreaterOrEqualTo(0, "RI trigger must guard the DELETE/INSERT block on identity diffs");
-        deleteIndex.Should().BeGreaterThan(guardIndex);
-        insertIndex.Should().BeGreaterThan(guardIndex);
-    }
-
     private string GetRootStampFunctionBody()
     {
         var functionStart = _ddl.IndexOf(
@@ -1447,83 +1463,6 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
         segmentEnd.Should().BeGreaterThan(segmentStart);
 
         return functionBody.Substring(segmentStart, segmentEnd - segmentStart);
-    }
-}
-
-[TestFixture]
-public class Given_RelationalModelDdlEmitter_With_Pgsql_MultiColumnReferentialIdentity
-{
-    private string _ddl = default!;
-
-    [SetUp]
-    public void Setup()
-    {
-        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
-        var emitter = new RelationalModelDdlEmitter(dialect);
-        var modelSet = PgsqlMultiColumnReferentialIdentityFixture.Build();
-
-        _ddl = emitter.Emit(modelSet);
-    }
-
-    [Test]
-    public void It_should_compose_identity_diff_terms_with_or_for_multi_column_identities()
-    {
-        _ddl.Should()
-            .Contain(
-                "IF TG_OP = 'INSERT' OR (OLD.\"PartA\" IS DISTINCT FROM NEW.\"PartA\" OR OLD.\"PartB\" IS DISTINCT FROM NEW.\"PartB\") THEN"
-            );
-    }
-}
-
-[TestFixture]
-public class Given_RelationalModelDdlEmitter_With_Descriptor_Valued_ReferentialIdentity
-{
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
-    public void It_should_hash_reconstructed_descriptor_uri_using_compact_id(SqlDialect dialect)
-    {
-        var dialectInstance = SqlDialectFactory.Create(dialect);
-        var emitter = new RelationalModelDdlEmitter(dialectInstance);
-        var modelSet = CompactDescriptorReferentialIdentityTestModel.Build(dialect);
-
-        var ddl = emitter.Emit(modelSet);
-
-        if (dialect == SqlDialect.Pgsql)
-        {
-            ddl.Should()
-                .Contain(
-                    "'$.programTypeDescriptor=' || lower((SELECT descriptor.\"Namespace\" || '#' || descriptor.\"CodeValue\" FROM \"dms\".\"Descriptor\" descriptor WHERE descriptor.\"DescriptorId\" = NEW.\"ProgramTypeDescriptor_DescriptorId\"))"
-                );
-            ddl.Should()
-                .Contain(
-                    "'$.graduationPlanTypeDescriptor=' || lower((SELECT descriptor.\"Namespace\" || '#' || descriptor.\"CodeValue\" FROM \"dms\".\"Descriptor\" descriptor WHERE descriptor.\"DescriptorId\" = NEW.\"GraduationPlanTypeDescriptor_DescriptorId\"))"
-                );
-            ddl.Should()
-                .NotContain("'$.programTypeDescriptor=' || NEW.\"ProgramTypeDescriptor_DescriptorId\"::text");
-            ddl.Should()
-                .NotContain(
-                    "'$.graduationPlanTypeDescriptor=' || NEW.\"GraduationPlanTypeDescriptor_DescriptorId\"::text"
-                );
-        }
-        else
-        {
-            ddl.Should()
-                .Contain(
-                    "N'$.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]))"
-                );
-            ddl.Should()
-                .Contain(
-                    "N'$.graduationPlanTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GraduationPlanTypeDescriptor_DescriptorId]))"
-                );
-            ddl.Should()
-                .NotContain(
-                    "N'$.programTypeDescriptor=' + CAST(i.[ProgramTypeDescriptor_DescriptorId] AS nvarchar(max))"
-                );
-            ddl.Should()
-                .NotContain(
-                    "N'$.graduationPlanTypeDescriptor=' + CAST(i.[GraduationPlanTypeDescriptor_DescriptorId] AS nvarchar(max))"
-                );
-        }
     }
 }
 
@@ -1882,59 +1821,6 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         _ddl.Should()
             .Contain(
                 "WHERE del.[CollectionItemId] IS NULL OR (i.[CollectionItemId] <> del.[CollectionItemId] OR (i.[CollectionItemId] IS NULL AND del.[CollectionItemId] IS NOT NULL) OR (i.[CollectionItemId] IS NOT NULL AND del.[CollectionItemId] IS NULL)) OR (i.[School_DocumentId] <> del.[School_DocumentId] OR (i.[School_DocumentId] IS NULL AND del.[School_DocumentId] IS NOT NULL) OR (i.[School_DocumentId] IS NOT NULL AND del.[School_DocumentId] IS NULL)) OR (CAST(i.[StreetNumberName] AS varbinary(max)) <> CAST(del.[StreetNumberName] AS varbinary(max)) OR (i.[StreetNumberName] IS NULL AND del.[StreetNumberName] IS NOT NULL) OR (i.[StreetNumberName] IS NOT NULL AND del.[StreetNumberName] IS NULL))"
-            );
-    }
-
-    [Test]
-    public void It_should_gate_referential_identity_maintenance_with_changed_docs_value_diff()
-    {
-        var triggerStart = _ddl.IndexOf(
-            "CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]",
-            StringComparison.Ordinal
-        );
-        triggerStart.Should().BeGreaterOrEqualTo(0);
-
-        var nextTriggerStart = _ddl.IndexOf(
-            "CREATE OR ALTER TRIGGER",
-            triggerStart + 1,
-            StringComparison.Ordinal
-        );
-        var triggerBody =
-            nextTriggerStart >= 0
-                ? _ddl.Substring(triggerStart, nextTriggerStart - triggerStart)
-                : _ddl[triggerStart..];
-
-        triggerBody.Should().Contain("ELSE IF (UPDATE([SchoolId]))");
-        triggerBody.Should().Contain("DECLARE @changedDocs TABLE");
-
-        var worksetStart = triggerBody.IndexOf("INSERT INTO @changedDocs", StringComparison.Ordinal);
-        worksetStart.Should().BeGreaterOrEqualTo(0);
-
-        var worksetEnd = triggerBody.IndexOf(';', worksetStart);
-        worksetEnd
-            .Should()
-            .BeGreaterThan(
-                worksetStart,
-                "@changedDocs INSERT must terminate before any subsequent statement"
-            );
-
-        var worksetStatement = triggerBody.Substring(worksetStart, worksetEnd - worksetStart);
-        worksetStatement
-            .Should()
-            .Contain(
-                "i.[SchoolId] <> d.[SchoolId]",
-                "value-diff filter must live inside the @changedDocs INSERT WHERE clause"
-            );
-
-        var riDeleteIndex = triggerBody.IndexOf(
-            "WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs)",
-            StringComparison.Ordinal
-        );
-        riDeleteIndex
-            .Should()
-            .BeGreaterThan(
-                worksetEnd,
-                "RI DELETE must consume the @changedDocs workset after it is populated"
             );
     }
 
@@ -3422,24 +3308,6 @@ internal static class PgsqlDocumentStampingFixture
                 new TriggerKindParameters.DocumentStamping(),
                 StampTargetTable: tableName
             ),
-            new(
-                new DbTriggerName("TR_School_ReferentialIdentity"),
-                tableName,
-                [documentIdColumn],
-                [schoolIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    1,
-                    "Ed-Fi",
-                    "School",
-                    [
-                        new IdentityElementMapping(
-                            schoolIdColumn,
-                            "$.schoolId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ]
-                )
-            ),
         ];
 
         return new DerivedRelationalModelSet(
@@ -3600,145 +3468,6 @@ internal static class MssqlDocumentStampingFixture
                 new TriggerKindParameters.DocumentStamping(),
                 StampTargetTable: tableName
             ),
-            new(
-                new DbTriggerName("TR_School_ReferentialIdentity"),
-                tableName,
-                [documentIdColumn],
-                [schoolIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    1,
-                    "Ed-Fi",
-                    "School",
-                    [
-                        new IdentityElementMapping(
-                            schoolIdColumn,
-                            "$.schoolId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ]
-                )
-            ),
-        ];
-
-        return new DerivedRelationalModelSet(
-            new EffectiveSchemaInfo(
-                "1.0.0",
-                "1.0.0",
-                "hash",
-                1,
-                [0x01],
-                [
-                    new SchemaComponentInfo(
-                        "ed-fi",
-                        "Ed-Fi",
-                        "1.0.0",
-                        false,
-                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
-                    ),
-                ],
-                [resourceKey]
-            ),
-            dialect,
-            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
-            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
-            [],
-            [],
-            [],
-            triggers
-        );
-    }
-}
-
-internal static class PgsqlMultiColumnReferentialIdentityFixture
-{
-    internal static DerivedRelationalModelSet Build()
-    {
-        var dialect = SqlDialect.Pgsql;
-        var schema = new DbSchemaName("edfi");
-        var tableName = new DbTableName(schema, "Composite");
-        var documentIdColumn = new DbColumnName("DocumentId");
-        var partAColumn = new DbColumnName("PartA");
-        var partBColumn = new DbColumnName("PartB");
-        var resource = new QualifiedResourceName("Ed-Fi", "Composite");
-        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
-
-        var rootTable = new DbTableModel(
-            tableName,
-            new JsonPathExpression("$", []),
-            new TableKey("PK_Composite", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
-            [
-                new DbColumnModel(
-                    documentIdColumn,
-                    ColumnKind.ParentKeyPart,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
-                    SourceJsonPath: null,
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    partAColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression("$.partA", []),
-                    TargetResource: null
-                ),
-                new DbColumnModel(
-                    partBColumn,
-                    ColumnKind.Scalar,
-                    new RelationalScalarType(ScalarKind.Int32),
-                    IsNullable: false,
-                    SourceJsonPath: new JsonPathExpression("$.partB", []),
-                    TargetResource: null
-                ),
-            ],
-            []
-        )
-        {
-            IdentityMetadata = new DbTableIdentityMetadata(
-                DbTableKind.Root,
-                [documentIdColumn],
-                [documentIdColumn],
-                [],
-                []
-            ),
-        };
-
-        var relationalModel = new RelationalResourceModel(
-            resource,
-            schema,
-            ResourceStorageKind.RelationalTables,
-            rootTable,
-            [rootTable],
-            [],
-            []
-        );
-
-        IReadOnlyList<DbTriggerInfo> triggers =
-        [
-            new(
-                new DbTriggerName("TR_Composite_ReferentialIdentity"),
-                tableName,
-                [documentIdColumn],
-                [partAColumn, partBColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    1,
-                    "Ed-Fi",
-                    "Composite",
-                    [
-                        new IdentityElementMapping(
-                            partAColumn,
-                            "$.partA",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                        new IdentityElementMapping(
-                            partBColumn,
-                            "$.partB",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ]
-                )
-            ),
         ];
 
         return new DerivedRelationalModelSet(
@@ -3884,6 +3613,8 @@ internal static class AbstractIdentityTriggerFixture
         var documentIdColumn = new DbColumnName("DocumentId");
         var schoolIdColumn = new DbColumnName("SchoolId");
         var organizationIdColumn = new DbColumnName("EducationOrganizationId");
+        // A second identity part, so the identity change guards must compose more than one column.
+        var schoolYearColumn = new DbColumnName("SchoolYear");
         var resourceKeyIdColumn = new DbColumnName("ResourceKeyId");
         var discriminatorColumn = new DbColumnName("Discriminator");
 
@@ -3923,6 +3654,14 @@ internal static class AbstractIdentityTriggerFixture
                     new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: false,
                     SourceJsonPath: new JsonPathExpression("$.educationOrganizationId", []),
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    schoolYearColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression("$.schoolYear", []),
                     TargetResource: null
                 ),
                 new DbColumnModel(
@@ -3976,6 +3715,14 @@ internal static class AbstractIdentityTriggerFixture
                     SourceJsonPath: new JsonPathExpression("$.schoolId", []),
                     TargetResource: null
                 ),
+                new DbColumnModel(
+                    schoolYearColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression("$.schoolYear", []),
+                    TargetResource: null
+                ),
             ],
             []
         );
@@ -3996,10 +3743,13 @@ internal static class AbstractIdentityTriggerFixture
                 new DbTriggerName("TR_School_AbstractIdentity"),
                 schoolTableName,
                 [documentIdColumn],
-                [schoolIdColumn],
+                [schoolIdColumn, schoolYearColumn],
                 new TriggerKindParameters.AbstractIdentityMaintenance(
                     identityTableName,
-                    [new TriggerColumnMapping(schoolIdColumn, organizationIdColumn)],
+                    [
+                        new TriggerColumnMapping(schoolIdColumn, organizationIdColumn),
+                        new TriggerColumnMapping(schoolYearColumn, schoolYearColumn),
+                    ],
                     ResourceKeyIdValue,
                     "Ed-Fi:School"
                 )
@@ -4145,27 +3895,6 @@ internal static class AllOrNoneCheckFixture
             [],
             []
         );
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// UUIDv5 Namespace Guard Test
-// ═══════════════════════════════════════════════════════════════════
-
-/// <summary>
-/// Guard test pinning the DDL emitter's embedded UUIDv5 namespace to the canonical Ed-Fi value.
-/// If this test fails, emitted triggers would compute referential IDs that differ from those
-/// already stored in provisioned databases.
-/// </summary>
-[TestFixture]
-public class Given_Uuidv5Namespace_Constant
-{
-    [Test]
-    public void It_should_match_the_canonical_EdFi_UUIDv5_namespace()
-    {
-        const string expected = "edf1edf1-3df1-3df1-3df1-3df1edf1edf1";
-
-        RelationalModelDdlEmitter.Uuidv5Namespace.Should().Be(expected);
     }
 }
 

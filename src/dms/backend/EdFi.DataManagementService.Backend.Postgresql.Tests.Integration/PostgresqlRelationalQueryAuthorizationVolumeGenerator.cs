@@ -19,18 +19,15 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// </summary>
 /// <remarks>
 /// <para>
-/// What this does NOT bypass: every generated <c>edfi</c> table carries a FOR EACH ROW
-/// <c>TR_&lt;Table&gt;_ReferentialIdentity</c> trigger that hashes the natural key into
-/// <c>dms.ReferentialIdentity</c>, whose <c>ReferentialId</c> is the primary key. Two generated rows whose
-/// hashed columns coincide therefore fail on a primary-key violation. Every root table in this inventory
-/// hashes the student unique id (directly, or through the StudentSectionAssociation / StudentAcademicRecord it
-/// points at), so varying Student per row satisfies all of them. A second FOR EACH ROW trigger stamps
-/// <c>dms.Document."ContentVersion"</c> and writes <c>tracked_changes_edfi.*</c>, which is why this is not the
-/// pure bulk insert one statement per table suggests, and why the 150k lane is [Explicit].
+/// What this does NOT bypass: every generated <c>edfi</c> root table carries its natural-key unique constraint,
+/// so two generated rows with the same natural key fail. Every root table in this inventory keys on the student
+/// (directly, or through the StudentSectionAssociation / StudentAcademicRecord it points at), so varying Student
+/// per row satisfies all of them. A FOR EACH ROW trigger stamps <c>dms.Document."ContentVersion"</c> and writes
+/// <c>tracked_changes_edfi.*</c>, which is why this is not the pure bulk insert one statement per table
+/// suggests, and why the 150k lane is [Explicit].
 /// </para>
 /// <para>
-/// Generated rows carry no JSON payload, so they cannot be hydrated. That is the one thing missing, not the
-/// referential identities.
+/// Generated rows carry no JSON payload, so they cannot be hydrated. That is the one thing missing.
 /// </para>
 /// <para>
 /// Referential foreign keys stay enabled throughout — no dropped constraints, no disabled triggers. An
@@ -61,7 +58,7 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
 {
     /// <summary>
     /// Generation runs with a longer statement timeout than the harness default. One set-based INSERT per table
-    /// is still one statement, but it fires the referential-identity and stamp triggers once per row, so at the
+    /// is still one statement, but it fires the stamp triggers once per row, so at the
     /// [Explicit] 150,000-row scale a single statement runs well past the shared 300-second default. The
     /// timeout is restored afterwards, so every other statement against this database keeps the shorter one
     /// that makes a genuinely hung statement fail fast.
@@ -840,7 +837,6 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
             """
             ANALYZE "dms"."Document";
             ANALYZE "dms"."Descriptor";
-            ANALYZE "dms"."ReferentialIdentity";
             ANALYZE "auth"."EducationOrganizationIdToEducationOrganizationId";
             ANALYZE "edfi"."School";
             ANALYZE "edfi"."SchoolYearType";

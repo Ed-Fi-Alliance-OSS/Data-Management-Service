@@ -179,8 +179,7 @@ file static class PostAsUpdateIntegrationTestSupport
     public static NoProfilePostAsUpdateScenarios.AuthoritativePostAsUpdateSnapshot ToSnapshot(
         AuthoritativeStudentAcademicRecordPersistedState state,
         long academicRecordContentVersion,
-        DateTimeOffset academicRecordContentLastModifiedAt,
-        IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow> referentialIdentities
+        DateTimeOffset academicRecordContentLastModifiedAt
     ) =>
         new(
             new NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot(
@@ -255,8 +254,7 @@ file static class PostAsUpdateIntegrationTestSupport
                         row.IssuerName
                     )
                 ),
-            ],
-            referentialIdentities
+            ]
         );
 
     public static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
@@ -679,6 +677,8 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_A_Focused_Stable_Key_F
 [Category(MssqlCiShards.Shard3)]
 public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_Key_Fixture
 {
+    private const long SharedSchoolId = 255901;
+
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics";
 
@@ -732,7 +732,6 @@ public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_K
     private Task<UpsertResult> _staleCreateCandidateTask = null!;
     private UpsertResult _createWinnerResult = null!;
     private UpsertResult _staleCreateCandidateResult = null!;
-    private Guid _sharedSchoolReferentialId;
     private FocusedPostAsUpdateDocumentRow _documentAfterRequests = null!;
     private FocusedPostAsUpdateSchoolRow _schoolAfterRequests = null!;
     private IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow> _addressesAfterRequests = null!;
@@ -757,7 +756,6 @@ public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_K
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _raceCoordinator = new ConcurrentPostCreateRaceCoordinator();
         _serviceProvider = PostAsUpdateIntegrationTestSupport.CreateServiceProvider(_raceCoordinator);
-        _sharedSchoolReferentialId = await ComputeSchoolReferentialIdAsync();
 
         _staleCreateCandidateTask = ExecuteUpsertAsync(
             StaleCreateCandidateRequestBodyJson,
@@ -785,7 +783,7 @@ public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_K
         );
 
         (await ReadDocumentCountAsync(CreateWinnerDocumentUuid.Value)).Should().Be(1);
-        (await ReadReferentialIdentityCountAsync(_sharedSchoolReferentialId)).Should().Be(1);
+        (await ReadSchoolCountAsync(SharedSchoolId)).Should().Be(1);
 
         _raceCoordinator.ReleaseFirstWriteSession();
 
@@ -976,40 +974,20 @@ public class Given_A_Mssql_Relational_Post_Create_Race_With_The_Focused_Stable_K
             : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
     }
 
-    private async Task<long> ReadReferentialIdentityCountAsync(Guid referentialId)
+    private async Task<long> ReadSchoolCountAsync(long schoolId)
     {
         var rows = await _database.QueryRowsAsync(
             """
             SELECT COUNT_BIG(*) AS [Count]
-            FROM [dms].[ReferentialIdentity]
-            WHERE [ReferentialId] = @referentialId;
+            FROM [edfi].[School]
+            WHERE [SchoolId] = @schoolId;
             """,
-            new SqlParameter("@referentialId", referentialId)
+            new SqlParameter("@schoolId", schoolId)
         );
 
         return rows.Count == 1
             ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
             : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
-    }
-
-    private async Task<Guid> ComputeSchoolReferentialIdAsync()
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT [dms].[uuidv5](
-                @namespaceUuid,
-                'Ed-FiSchool' + '$.schoolId=' + @schoolId
-            ) AS [ReferentialId];
-            """,
-            new SqlParameter("@namespaceUuid", Guid.Parse("edf1edf1-3df1-3df1-3df1-3df1edf1edf1")),
-            new SqlParameter("@schoolId", "255901")
-        );
-
-        return rows.Count == 1
-            ? PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId")
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential-id row, but found {rows.Count}."
-            );
     }
 
     private async Task<FocusedPostAsUpdateSchoolRow> ReadSchoolAsync(long documentId)
@@ -2115,10 +2093,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
 
     private async Task<AuthoritativeStudentAcademicRecordSeedData> SeedReferenceDataAsync()
     {
-        var educationOrganizationResourceKeyId = await GetResourceKeyIdAsync(
-            "Ed-Fi",
-            "EducationOrganization"
-        );
         var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
         var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
@@ -2153,41 +2127,18 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
                 await InsertEducationOrganizationIdentityAsync(schoolDocumentId, 100, "Ed-Fi:School");
             }
         );
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(("Ed-Fi", "School", false), ("$.schoolId", "100")),
-            schoolDocumentId,
-            schoolResourceKeyId
-        );
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(
-                ("Ed-Fi", "EducationOrganization", false),
-                ("$.educationOrganizationId", "100")
-            ),
-            schoolDocumentId,
-            educationOrganizationResourceKeyId
-        );
 
         var schoolYearTypeDocumentId = await InsertDocumentAsync(
             Guid.Parse("22222222-2222-2222-2222-222222222222"),
             schoolYearTypeResourceKeyId
         );
         await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, 2026, true, "2025-2026");
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(("Ed-Fi", "SchoolYearType", false), ("$.schoolYear", "2026")),
-            schoolYearTypeDocumentId,
-            schoolYearTypeResourceKeyId
-        );
 
         var studentDocumentId = await InsertDocumentAsync(
             Guid.Parse("33333333-3333-3333-3333-333333333333"),
             studentResourceKeyId
         );
         await InsertStudentAsync(studentDocumentId, "10001", "Casey", "Cole");
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(("Ed-Fi", "Student", false), ("$.studentUniqueId", "10001")),
-            studentDocumentId,
-            studentResourceKeyId
-        );
 
         var fallTermDescriptor = await InsertDescriptorAsync(
             Guid.Parse("44444444-4444-4444-4444-444444444444"),
@@ -2195,11 +2146,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
             "Fall"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", "TermDescriptor", FallTermDescriptorUri),
-            fallTermDescriptor.DocumentId,
-            termDescriptorResourceKeyId
         );
 
         var honorRollAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
@@ -2209,15 +2155,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             "HonorRoll",
             "Honor Roll"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "AcademicHonorCategoryDescriptor",
-                HonorRollAcademicHonorCategoryDescriptorUri
-            ),
-            honorRollAcademicHonorCategoryDescriptor.DocumentId,
-            academicHonorCategoryDescriptorResourceKeyId
-        );
 
         var scholarAthleteAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
             Guid.Parse("66666666-6666-6666-6666-666666666666"),
@@ -2225,15 +2162,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "ScholarAthlete",
             "Scholar Athlete"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "AcademicHonorCategoryDescriptor",
-                ScholarAthleteAcademicHonorCategoryDescriptorUri
-            ),
-            scholarAthleteAcademicHonorCategoryDescriptor.DocumentId,
-            academicHonorCategoryDescriptorResourceKeyId
         );
 
         var communityServiceAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
@@ -2243,15 +2171,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             "CommunityService",
             "Community Service"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "AcademicHonorCategoryDescriptor",
-                CommunityServiceAcademicHonorCategoryDescriptorUri
-            ),
-            communityServiceAcademicHonorCategoryDescriptor.DocumentId,
-            academicHonorCategoryDescriptorResourceKeyId
-        );
 
         var standardDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("88888888-8888-8888-8888-888888888888"),
@@ -2259,11 +2178,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "StandardDiploma",
             "Standard Diploma"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", "DiplomaTypeDescriptor", StandardDiplomaTypeDescriptorUri),
-            standardDiplomaTypeDescriptor.DocumentId,
-            diplomaTypeDescriptorResourceKeyId
         );
 
         var careerDiplomaTypeDescriptor = await InsertDescriptorAsync(
@@ -2273,11 +2187,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             "CareerDiploma",
             "Career Diploma"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", "DiplomaTypeDescriptor", CareerDiplomaTypeDescriptorUri),
-            careerDiplomaTypeDescriptor.DocumentId,
-            diplomaTypeDescriptorResourceKeyId
-        );
 
         var honorsDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
@@ -2285,11 +2194,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "HonorsDiploma",
             "Honors Diploma"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", "DiplomaTypeDescriptor", HonorsDiplomaTypeDescriptorUri),
-            honorsDiplomaTypeDescriptor.DocumentId,
-            diplomaTypeDescriptorResourceKeyId
         );
 
         var cumulativeGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
@@ -2299,15 +2203,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             "Cumulative",
             "Cumulative"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "GradePointAverageTypeDescriptor",
-                CumulativeGradePointAverageTypeDescriptorUri
-            ),
-            cumulativeGradePointAverageTypeDescriptor.DocumentId,
-            gradePointAverageTypeDescriptorResourceKeyId
-        );
 
         var sessionGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
@@ -2315,15 +2210,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Session",
             "Session"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "GradePointAverageTypeDescriptor",
-                SessionGradePointAverageTypeDescriptorUri
-            ),
-            sessionGradePointAverageTypeDescriptor.DocumentId,
-            gradePointAverageTypeDescriptorResourceKeyId
         );
 
         var weightedGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
@@ -2333,15 +2219,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             "Weighted",
             "Weighted"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "GradePointAverageTypeDescriptor",
-                WeightedGradePointAverageTypeDescriptorUri
-            ),
-            weightedGradePointAverageTypeDescriptor.DocumentId,
-            gradePointAverageTypeDescriptorResourceKeyId
-        );
 
         var meritRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
@@ -2349,15 +2226,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Merit",
             "Merit"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "RecognitionTypeDescriptor",
-                MeritRecognitionTypeDescriptorUri
-            ),
-            meritRecognitionTypeDescriptor.DocumentId,
-            recognitionTypeDescriptorResourceKeyId
         );
 
         var leadershipRecognitionTypeDescriptor = await InsertDescriptorAsync(
@@ -2367,15 +2235,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             "Leadership",
             "Leadership"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "RecognitionTypeDescriptor",
-                LeadershipRecognitionTypeDescriptorUri
-            ),
-            leadershipRecognitionTypeDescriptor.DocumentId,
-            recognitionTypeDescriptorResourceKeyId
-        );
 
         var attendanceRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("12121212-1212-1212-1212-121212121212"),
@@ -2383,15 +2242,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Attendance",
             "Attendance"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "RecognitionTypeDescriptor",
-                AttendanceRecognitionTypeDescriptorUri
-            ),
-            attendanceRecognitionTypeDescriptor.DocumentId,
-            recognitionTypeDescriptorResourceKeyId
         );
 
         return new(
@@ -2573,28 +2423,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         );
     }
 
-    private async Task InsertReferentialIdentityAsync(
-        Guid referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            IF NOT EXISTS (
-                SELECT 1
-                FROM [dms].[ReferentialIdentity]
-                WHERE [ReferentialId] = @referentialId
-            )
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            VALUES (@referentialId, @documentId, @resourceKeyId);
-            """,
-            new SqlParameter("@referentialId", referentialId),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
-
     private async Task ExecuteWithTriggersTemporarilyDisabledAsync(
         string schema,
         string table,
@@ -2611,38 +2439,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         {
             await _database.ExecuteNonQueryAsync($"""ENABLE TRIGGER ALL ON [{schema}].[{table}];""");
         }
-    }
-
-    private static Guid CreateReferentialId(
-        (string ProjectName, string ResourceName, bool IsDescriptor) targetResource,
-        params (string IdentityJsonPath, string IdentityValue)[] identityElements
-    )
-    {
-        return ReferentialIdTestHelper.ReferentialIdFrom(
-            new BaseResourceInfo(
-                new ProjectName(targetResource.ProjectName),
-                new ResourceName(targetResource.ResourceName),
-                targetResource.IsDescriptor
-            ),
-            new DocumentIdentity([
-                .. identityElements.Select(identityElement => new DocumentIdentityElement(
-                    new JsonPath(identityElement.IdentityJsonPath),
-                    identityElement.IdentityValue
-                )),
-            ])
-        );
-    }
-
-    private static Guid CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return CreateReferentialId(
-            (projectName, resourceName, true),
-            (DocumentIdentity.DescriptorIdentityJsonPath.Value, descriptorUri.ToLowerInvariant())
-        );
     }
 
     private int CalculateCreateCollectionInsertParameterCount()
@@ -3378,10 +3174,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
     private AuthoritativeStudentAcademicRecordPersistedState _stateAfterRepeatPostAsUpdate = null!;
     private (long ContentVersion, DateTimeOffset ContentLastModifiedAt) _rootStampsAfterPostAsUpdate;
     private (long ContentVersion, DateTimeOffset ContentLastModifiedAt) _rootStampsAfterRepeatPostAsUpdate;
-    private IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow> _referentialIdentitiesAfterPostAsUpdate =
-        null!;
-    private IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow> _referentialIdentitiesAfterRepeatPostAsUpdate =
-        null!;
     private UpsertResult _postAsUpdateResult = null!;
     private UpsertResult _repeatPostAsUpdateResult = null!;
     private long _resourceDocumentCount;
@@ -3461,7 +3253,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
         _rootStampsAfterPostAsUpdate = await ReadAcademicRecordRootStampsAsync(
             _stateAfterPostAsUpdate.AcademicRecord.DocumentId
         );
-        _referentialIdentitiesAfterPostAsUpdate = await ReadAllReferentialIdentityRowsAsync();
         _repeatPostAsUpdateResult = await ExecuteUpsertAsync(
             PostAsUpdateRequestBodyJson,
             RepeatStudentAcademicRecordDocumentUuid,
@@ -3481,7 +3272,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
         _rootStampsAfterRepeatPostAsUpdate = await ReadAcademicRecordRootStampsAsync(
             _stateAfterRepeatPostAsUpdate.AcademicRecord.DocumentId
         );
-        _referentialIdentitiesAfterRepeatPostAsUpdate = await ReadAllReferentialIdentityRowsAsync();
         _resourceDocumentCount = await ReadDocumentCountAsync(
             _mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]
         );
@@ -3517,26 +3307,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             : throw new InvalidOperationException(
                 $"Expected exactly one StudentAcademicRecord row for document id '{documentId}', but found {rows.Count}."
             );
-    }
-
-    private async Task<
-        IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow>
-    > ReadAllReferentialIdentityRowsAsync()
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT [ReferentialId], [DocumentId], [ResourceKeyId]
-            FROM [dms].[ReferentialIdentity]
-            ORDER BY [ReferentialId];
-            """
-        );
-
-        return rows.Select(row => new NoProfilePostAsUpdateScenarios.ReferentialIdentityRow(
-                PostAsUpdateIntegrationTestSupport.GetGuid(row, "ReferentialId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(row, "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(row, "ResourceKeyId")
-            ))
-            .ToArray();
     }
 
     [OneTimeTearDown]
@@ -3724,14 +3494,12 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             PostAsUpdateIntegrationTestSupport.ToSnapshot(
                 _stateAfterPostAsUpdate,
                 _rootStampsAfterPostAsUpdate.ContentVersion,
-                _rootStampsAfterPostAsUpdate.ContentLastModifiedAt,
-                _referentialIdentitiesAfterPostAsUpdate
+                _rootStampsAfterPostAsUpdate.ContentLastModifiedAt
             ),
             PostAsUpdateIntegrationTestSupport.ToSnapshot(
                 _stateAfterRepeatPostAsUpdate,
                 _rootStampsAfterRepeatPostAsUpdate.ContentVersion,
-                _rootStampsAfterRepeatPostAsUpdate.ContentLastModifiedAt,
-                _referentialIdentitiesAfterRepeatPostAsUpdate
+                _rootStampsAfterRepeatPostAsUpdate.ContentLastModifiedAt
             ),
             _repeatIncomingDocumentUuidCount
         );
@@ -3861,10 +3629,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
 
     private async Task<AuthoritativeStudentAcademicRecordSeedData> SeedReferenceDataAsync()
     {
-        var educationOrganizationResourceKeyId = await GetResourceKeyIdAsync(
-            "Ed-Fi",
-            "EducationOrganization"
-        );
         var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
         var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
@@ -3899,41 +3663,18 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
                 await InsertEducationOrganizationIdentityAsync(schoolDocumentId, 100, "Ed-Fi:School");
             }
         );
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(("Ed-Fi", "School", false), ("$.schoolId", "100")),
-            schoolDocumentId,
-            schoolResourceKeyId
-        );
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(
-                ("Ed-Fi", "EducationOrganization", false),
-                ("$.educationOrganizationId", "100")
-            ),
-            schoolDocumentId,
-            educationOrganizationResourceKeyId
-        );
 
         var schoolYearTypeDocumentId = await InsertDocumentAsync(
             Guid.Parse("22222222-0000-0000-0000-000000000002"),
             schoolYearTypeResourceKeyId
         );
         await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, 2026, true, "2025-2026");
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(("Ed-Fi", "SchoolYearType", false), ("$.schoolYear", "2026")),
-            schoolYearTypeDocumentId,
-            schoolYearTypeResourceKeyId
-        );
 
         var studentDocumentId = await InsertDocumentAsync(
             Guid.Parse("33333333-0000-0000-0000-000000000003"),
             studentResourceKeyId
         );
         await InsertStudentAsync(studentDocumentId, "10001", "Casey", "Cole");
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(("Ed-Fi", "Student", false), ("$.studentUniqueId", "10001")),
-            studentDocumentId,
-            studentResourceKeyId
-        );
 
         var fallTermDescriptor = await InsertDescriptorAsync(
             Guid.Parse("44444444-0000-0000-0000-000000000004"),
@@ -3941,11 +3682,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
             "Fall"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", "TermDescriptor", "uri://ed-fi.org/TermDescriptor#Fall"),
-            fallTermDescriptor.DocumentId,
-            termDescriptorResourceKeyId
         );
 
         var honorRollAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
@@ -3955,15 +3691,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             "HonorRoll",
             "Honor Roll"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "AcademicHonorCategoryDescriptor",
-                "uri://ed-fi.org/AcademicHonorCategoryDescriptor#HonorRoll"
-            ),
-            honorRollAcademicHonorCategoryDescriptor.DocumentId,
-            academicHonorCategoryDescriptorResourceKeyId
-        );
 
         var scholarAthleteAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
             Guid.Parse("66666666-0000-0000-0000-000000000006"),
@@ -3971,15 +3698,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "ScholarAthlete",
             "Scholar Athlete"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "AcademicHonorCategoryDescriptor",
-                "uri://ed-fi.org/AcademicHonorCategoryDescriptor#ScholarAthlete"
-            ),
-            scholarAthleteAcademicHonorCategoryDescriptor.DocumentId,
-            academicHonorCategoryDescriptorResourceKeyId
         );
 
         var communityServiceAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
@@ -3989,15 +3707,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             "CommunityService",
             "Community Service"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "AcademicHonorCategoryDescriptor",
-                "uri://ed-fi.org/AcademicHonorCategoryDescriptor#CommunityService"
-            ),
-            communityServiceAcademicHonorCategoryDescriptor.DocumentId,
-            academicHonorCategoryDescriptorResourceKeyId
-        );
 
         var standardDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("88888888-0000-0000-0000-000000000008"),
@@ -4005,15 +3714,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "StandardDiploma",
             "Standard Diploma"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "DiplomaTypeDescriptor",
-                "uri://ed-fi.org/DiplomaTypeDescriptor#StandardDiploma"
-            ),
-            standardDiplomaTypeDescriptor.DocumentId,
-            diplomaTypeDescriptorResourceKeyId
         );
 
         var careerDiplomaTypeDescriptor = await InsertDescriptorAsync(
@@ -4023,15 +3723,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             "CareerDiploma",
             "Career Diploma"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "DiplomaTypeDescriptor",
-                "uri://ed-fi.org/DiplomaTypeDescriptor#CareerDiploma"
-            ),
-            careerDiplomaTypeDescriptor.DocumentId,
-            diplomaTypeDescriptorResourceKeyId
-        );
 
         var honorsDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("aaaaaaaa-0000-0000-0000-00000000000a"),
@@ -4039,15 +3730,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "HonorsDiploma",
             "Honors Diploma"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "DiplomaTypeDescriptor",
-                "uri://ed-fi.org/DiplomaTypeDescriptor#HonorsDiploma"
-            ),
-            honorsDiplomaTypeDescriptor.DocumentId,
-            diplomaTypeDescriptorResourceKeyId
         );
 
         var cumulativeGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
@@ -4057,15 +3739,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             "Cumulative",
             "Cumulative"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "GradePointAverageTypeDescriptor",
-                "uri://ed-fi.org/GradePointAverageTypeDescriptor#Cumulative"
-            ),
-            cumulativeGradePointAverageTypeDescriptor.DocumentId,
-            gradePointAverageTypeDescriptorResourceKeyId
-        );
 
         var sessionGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("cccccccc-0000-0000-0000-00000000000c"),
@@ -4073,15 +3746,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Session",
             "Session"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "GradePointAverageTypeDescriptor",
-                "uri://ed-fi.org/GradePointAverageTypeDescriptor#Session"
-            ),
-            sessionGradePointAverageTypeDescriptor.DocumentId,
-            gradePointAverageTypeDescriptorResourceKeyId
         );
 
         var weightedGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
@@ -4091,15 +3755,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             "Weighted",
             "Weighted"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "GradePointAverageTypeDescriptor",
-                "uri://ed-fi.org/GradePointAverageTypeDescriptor#Weighted"
-            ),
-            weightedGradePointAverageTypeDescriptor.DocumentId,
-            gradePointAverageTypeDescriptorResourceKeyId
-        );
 
         var meritRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("eeeeeeee-0000-0000-0000-00000000000e"),
@@ -4107,15 +3762,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Merit",
             "Merit"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "RecognitionTypeDescriptor",
-                "uri://ed-fi.org/RecognitionTypeDescriptor#Merit"
-            ),
-            meritRecognitionTypeDescriptor.DocumentId,
-            recognitionTypeDescriptorResourceKeyId
         );
 
         var leadershipRecognitionTypeDescriptor = await InsertDescriptorAsync(
@@ -4125,15 +3771,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             "Leadership",
             "Leadership"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "RecognitionTypeDescriptor",
-                "uri://ed-fi.org/RecognitionTypeDescriptor#Leadership"
-            ),
-            leadershipRecognitionTypeDescriptor.DocumentId,
-            recognitionTypeDescriptorResourceKeyId
-        );
 
         var attendanceRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("12121212-0000-0000-0000-000000000010"),
@@ -4141,15 +3778,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Attendance",
             "Attendance"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "RecognitionTypeDescriptor",
-                "uri://ed-fi.org/RecognitionTypeDescriptor#Attendance"
-            ),
-            attendanceRecognitionTypeDescriptor.DocumentId,
-            recognitionTypeDescriptorResourceKeyId
         );
 
         return new(
@@ -4331,28 +3959,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
         );
     }
 
-    private async Task InsertReferentialIdentityAsync(
-        Guid referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            IF NOT EXISTS (
-                SELECT 1
-                FROM [dms].[ReferentialIdentity]
-                WHERE [ReferentialId] = @referentialId
-            )
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            VALUES (@referentialId, @documentId, @resourceKeyId);
-            """,
-            new SqlParameter("@referentialId", referentialId),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
-
     private async Task ExecuteWithTriggersTemporarilyDisabledAsync(
         string schema,
         string table,
@@ -4369,38 +3975,6 @@ public class Given_A_Mssql_Relational_Post_As_Update_With_The_Authoritative_Samp
         {
             await _database.ExecuteNonQueryAsync($"""ENABLE TRIGGER ALL ON [{schema}].[{table}];""");
         }
-    }
-
-    private static Guid CreateReferentialId(
-        (string ProjectName, string ResourceName, bool IsDescriptor) targetResource,
-        params (string IdentityJsonPath, string IdentityValue)[] identityElements
-    )
-    {
-        return ReferentialIdTestHelper.ReferentialIdFrom(
-            new BaseResourceInfo(
-                new ProjectName(targetResource.ProjectName),
-                new ResourceName(targetResource.ResourceName),
-                targetResource.IsDescriptor
-            ),
-            new DocumentIdentity([
-                .. identityElements.Select(identityElement => new DocumentIdentityElement(
-                    new JsonPath(identityElement.IdentityJsonPath),
-                    identityElement.IdentityValue
-                )),
-            ])
-        );
-    }
-
-    private static Guid CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return CreateReferentialId(
-            (projectName, resourceName, true),
-            (DocumentIdentity.DescriptorIdentityJsonPath.Value, descriptorUri.ToLowerInvariant())
-        );
     }
 
     private async Task<AuthoritativeStudentAcademicRecordPersistedState> ReadPersistedStateAsync(

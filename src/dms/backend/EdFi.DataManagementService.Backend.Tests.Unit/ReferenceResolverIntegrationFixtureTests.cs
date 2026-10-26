@@ -32,7 +32,6 @@ public class Given_ReferenceResolverIntegrationFixture
             .Equal(
                 "dms.ResourceKey",
                 "dms.Document",
-                "dms.ReferentialIdentity",
                 "edfi.School",
                 "edfi.LocalEducationAgency",
                 "dms.Descriptor"
@@ -40,7 +39,6 @@ public class Given_ReferenceResolverIntegrationFixture
 
         _seedBatches.Single(batch => batch.Table.Name == "ResourceKey").Rows.Should().HaveCount(6);
         _seedBatches.Single(batch => batch.Table.Name == "Document").Rows.Should().HaveCount(4);
-        _seedBatches.Single(batch => batch.Table.Name == "ReferentialIdentity").Rows.Should().HaveCount(5);
         _seedBatches.Single(batch => batch.Table.Name == "School").Rows.Should().HaveCount(1);
         _seedBatches.Single(batch => batch.Table.Name == "LocalEducationAgency").Rows.Should().HaveCount(1);
         _seedBatches.Single(batch => batch.Table.Name == "Descriptor").Rows.Should().HaveCount(2);
@@ -52,9 +50,6 @@ public class Given_ReferenceResolverIntegrationFixture
                 && resourceKey.ResourceKeyId == 30
                 && resourceKey.IsAbstractResource
             );
-        _fixture
-            .SeedData.ReferentialIdentities.Should()
-            .Contain(identity => identity.DocumentId == 101 && identity.ResourceKeyId == 30);
 
         var abstractUnionView = _fixture
             .CreateMappingSet(EdFi.DataManagementService.Backend.External.SqlDialect.Mssql)

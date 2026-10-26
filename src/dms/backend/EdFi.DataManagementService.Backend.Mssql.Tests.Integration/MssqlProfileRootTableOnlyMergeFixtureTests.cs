@@ -299,9 +299,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
     //  Prerequisite-seed helpers (MSSQL dialect). Mirror of the pgsql sibling
     //  file; dialect differences: bracket identifiers, SqlParameter, bit (0/1)
     //  for boolean, OUTPUT INSERTED for scalar return. See pgsql file header
-    //  comment for rationale + trigger behavior; triggers on edfi.Student and
-    //  edfi.ProfileRootOnlyMergeItem manage dms.ReferentialIdentity for their
-    //  own rows, but descriptors need manual insertion.
+    //  comment for rationale.
     // ─────────────────────────────────────────────────────────────────────────
 
     public static async Task<short> GetResourceKeyIdAsync(
@@ -343,27 +341,6 @@ internal static class MssqlProfileRootOnlyFixtureSupport
         );
     }
 
-    public static async Task InsertReferentialIdentityRowAsync(
-        MssqlGeneratedDdlTestDatabase database,
-        Guid referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await database.ExecuteNonQueryAsync(
-            """
-            IF NOT EXISTS (
-                SELECT 1 FROM [dms].[ReferentialIdentity] WHERE [ReferentialId] = @referentialId
-            )
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            VALUES (@referentialId, @documentId, @resourceKeyId);
-            """,
-            new SqlParameter("@referentialId", referentialId),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
-
     public static async Task<long> SeedStudentAsync(
         MssqlGeneratedDdlTestDatabase database,
         Guid documentUuid,
@@ -396,7 +373,6 @@ internal static class MssqlProfileRootOnlyFixtureSupport
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "SchoolTypeDescriptor");
         await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
-        var uri = $"{@namespace}#{codeValue}";
         var descriptorId = await database.ExecuteScalarAsync<int>(
             """
             DECLARE @descriptor TABLE ([DescriptorId] int);
@@ -425,20 +401,6 @@ internal static class MssqlProfileRootOnlyFixtureSupport
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription)
         );
-
-        var descriptorResourceInfo = new BaseResourceInfo(
-            new ProjectName("Ed-Fi"),
-            new ResourceName("SchoolTypeDescriptor"),
-            true
-        );
-        var descriptorIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri.ToLowerInvariant()),
-        ]);
-        var referentialId = ReferentialIdTestHelper.ReferentialIdFrom(
-            descriptorResourceInfo,
-            descriptorIdentity
-        );
-        await InsertReferentialIdentityRowAsync(database, referentialId, documentId, resourceKeyId);
 
         return descriptorId;
     }

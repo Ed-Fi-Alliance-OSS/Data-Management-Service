@@ -4,4 +4,5 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 -- Test-only catalog mutation; the v3 EffectiveSchema fingerprint is deliberately unchanged.
-DROP INDEX "dms"."UX_Descriptor_ResourceKeyId_Uri";
+-- Keeps Uri non-persisted with the DMS identity collation, so only the definition comparison fails.
+ALTER TABLE [dms].[Descriptor] DROP COLUMN [Uri]; ALTER TABLE [dms].[Descriptor] ADD [Uri] AS (LOWER([Namespace]+N'#'+[CodeValue]));
