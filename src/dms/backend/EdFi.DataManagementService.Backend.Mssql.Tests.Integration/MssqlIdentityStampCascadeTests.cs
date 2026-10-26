@@ -288,6 +288,54 @@ public class MssqlIdentityStampCascadeTests
     }
 
     [Test]
+    [TestCaseSource(nameof(CollationScenarios))]
+    public async Task Cascaded_identity_update_propagates_the_exact_new_value_to_every_dependent(
+        string oldStudentUniqueId,
+        string newStudentUniqueId
+    )
+    {
+        // The identity columns compare these pairs as equal under the identity collation, so only the
+        // native cascade carries a case-only or whitespace-only change to the dependents.
+        var (studentDocumentId, resourceADocumentId, resourceBDocumentId, keyUnifiedDocumentId) =
+            await InsertStudentReferenceChainAsync(oldStudentUniqueId);
+        long[] dependentDocumentIds = [resourceADocumentId, resourceBDocumentId, keyUnifiedDocumentId];
+        string[] dependentTables = ["ResourceA", "ResourceB", "KeyUnifiedResource"];
+        var before = await GetContentVersionsAsync(dependentDocumentIds, dependentTables);
+
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[Student]
+            SET [StudentUniqueId] = @newId
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@newId", newStudentUniqueId),
+            new SqlParameter("@documentId", studentDocumentId)
+        );
+
+        // Ordinal comparison: a case-only or whitespace-only change must arrive verbatim.
+        (await ReadIdentityValueAsync("ResourceA", "StudentReference_StudentUniqueId", resourceADocumentId))
+            .Should()
+            .Be(newStudentUniqueId);
+        (await ReadIdentityValueAsync("ResourceB", "StudentReference_StudentUniqueId", resourceBDocumentId))
+            .Should()
+            .Be(newStudentUniqueId);
+        (await ReadIdentityValueAsync("KeyUnifiedResource", "StudentUniqueId_Unified", keyUnifiedDocumentId))
+            .Should()
+            .Be(newStudentUniqueId);
+
+        var after = await GetContentVersionsAsync(dependentDocumentIds, dependentTables);
+        for (var index = 0; index < dependentTables.Length; index++)
+        {
+            after[index]
+                .Should()
+                .BeGreaterThan(
+                    before[index],
+                    $"{dependentTables[index]} must be stamped by the propagated change"
+                );
+        }
+    }
+
+    [Test]
     public async Task Cascaded_identity_update_rolls_back_with_parent_transaction()
     {
         // SQL Server cascade is driven by native ON UPDATE CASCADE reference foreign keys,
@@ -736,6 +784,91 @@ public class MssqlIdentityStampCascadeTests
         cmd.Parameters.Add(new SqlParameter("@documentId", documentId));
 
         return Convert.ToString(await cmd.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
+    }
+
+    private static IEnumerable<TestCaseData> CollationScenarios()
+    {
+        yield return new TestCaseData("STU001", "STU002").SetName("Plain value change");
+        yield return new TestCaseData("STU001", "stu001").SetName("Case-only change");
+        yield return new TestCaseData("STU001", "STU001 ").SetName("Trailing space added");
+        yield return new TestCaseData("STU001 ", "STU001").SetName("Trailing space removed");
+        yield return new TestCaseData("STU001", " STU001").SetName("Leading space added");
+    }
+
+    /// <summary>
+    /// Inserts Student, ResourceA and ResourceB referencing it, and KeyUnifiedResource referencing both.
+    /// </summary>
+    private async Task<(
+        long StudentDocumentId,
+        long ResourceADocumentId,
+        long ResourceBDocumentId,
+        long KeyUnifiedDocumentId
+    )> InsertStudentReferenceChainAsync(string studentUniqueId)
+    {
+        var studentDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "Student");
+        await InsertStudentAsync(studentDocumentId, studentUniqueId);
+
+        var resourceADocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceA");
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[ResourceA] ([DocumentId], [ResourceAId], [StudentReference_DocumentId], [StudentReference_StudentUniqueId])
+            VALUES (@documentId, @resourceAId, @studentDocumentId, @studentUniqueId);
+            """,
+            new SqlParameter("@documentId", resourceADocumentId),
+            new SqlParameter("@resourceAId", "resA-1"),
+            new SqlParameter("@studentDocumentId", studentDocumentId),
+            new SqlParameter("@studentUniqueId", studentUniqueId)
+        );
+
+        var resourceBDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "ResourceB");
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[ResourceB] ([DocumentId], [ResourceBId], [StudentReference_DocumentId], [StudentReference_StudentUniqueId])
+            VALUES (@documentId, @resourceBId, @studentDocumentId, @studentUniqueId);
+            """,
+            new SqlParameter("@documentId", resourceBDocumentId),
+            new SqlParameter("@resourceBId", "resB-1"),
+            new SqlParameter("@studentDocumentId", studentDocumentId),
+            new SqlParameter("@studentUniqueId", studentUniqueId)
+        );
+
+        var keyUnifiedDocumentId = await InsertDocumentAsync(Guid.NewGuid(), "Ed-Fi", "KeyUnifiedResource");
+        await _database.ExecuteNonQueryAsync(
+            """
+            INSERT INTO [edfi].[KeyUnifiedResource] ([DocumentId], [KeyUnifiedResourceId], [ResourceAReference_DocumentId], [ResourceAReference_ResourceAId], [ResourceBReference_DocumentId], [ResourceBReference_ResourceBId], [StudentUniqueId_Unified])
+            VALUES (@documentId, @keyUnifiedResourceId, @resourceADocumentId, @resourceAId, @resourceBDocumentId, @resourceBId, @studentUniqueId);
+            """,
+            new SqlParameter("@documentId", keyUnifiedDocumentId),
+            new SqlParameter("@keyUnifiedResourceId", "unified-1"),
+            new SqlParameter("@resourceADocumentId", resourceADocumentId),
+            new SqlParameter("@resourceAId", "resA-1"),
+            new SqlParameter("@resourceBDocumentId", resourceBDocumentId),
+            new SqlParameter("@resourceBId", "resB-1"),
+            new SqlParameter("@studentUniqueId", studentUniqueId)
+        );
+
+        return (studentDocumentId, resourceADocumentId, resourceBDocumentId, keyUnifiedDocumentId);
+    }
+
+    private async Task<long[]> GetContentVersionsAsync(long[] documentIds, string[] rootTables)
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+
+        var versions = new long[documentIds.Length];
+        for (var index = 0; index < documentIds.Length; index++)
+        {
+            versions[index] = (
+                await GetDocumentStampStateAsync(
+                    connection,
+                    transaction: null,
+                    documentIds[index],
+                    rootTables[index]
+                )
+            ).ContentVersion;
+        }
+
+        return versions;
     }
 
     private async Task<IReadOnlyList<string>> ReadStudentKeysAsync()

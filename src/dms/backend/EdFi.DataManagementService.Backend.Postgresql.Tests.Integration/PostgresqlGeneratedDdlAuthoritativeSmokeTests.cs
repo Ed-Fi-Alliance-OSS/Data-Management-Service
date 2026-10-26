@@ -964,38 +964,37 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     [Test]
     public async Task It_should_not_record_key_changes_when_scalar_identity_column_is_self_assigned_alongside_content_change()
     {
-        // The pure same-value test above is filtered out by the trigger's outer no-op
-        // short-circuit before the inner identity-only gate runs. This test sends a
-        // content change AND a same-value self-assignment of the identity column in
-        // one UPDATE — the content change defeats the outer guard, so the inner
-        // IS DISTINCT FROM gate over identity-projection columns is what must keep the
-        // tracked-change trigger from recording a key change.
+        // The pure same-value test above is filtered out by the stamp trigger's outer no-op
+        // short-circuit. This test sends a content change AND a same-value self-assignment of
+        // Student's identity column in one UPDATE — the content change defeats the outer guard, so
+        // the trigger's OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId" gate is what
+        // must keep it from recording a key change in tracked_changes_edfi.Student.
 
-        await BackdateOwnerTimestampAsync(_seedData.SchoolDocumentId);
-        var beforeStamps = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
-        var schoolDocumentUuid = await GetDocumentUuidAsync(_seedData.SchoolDocumentId);
+        await BackdateOwnerTimestampAsync(_seedData.StudentDocumentId);
+        var beforeStamps = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
+        var studentDocumentUuid = await GetDocumentUuidAsync(_seedData.StudentDocumentId);
         var beforeTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
-            "School",
-            schoolDocumentUuid
+            "Student",
+            studentDocumentUuid
         );
 
         await _database.ExecuteNonQueryAsync(
             """
-            UPDATE "edfi"."School"
-            SET "NameOfInstitution" = @nameOfInstitution,
-                "SchoolId" = "SchoolId"
+            UPDATE "edfi"."Student"
+            SET "FirstName" = @firstName,
+                "StudentUniqueId" = "StudentUniqueId"
             WHERE "DocumentId" = @documentId;
             """,
-            new NpgsqlParameter("nameOfInstitution", "Alpha Academy Renamed"),
-            new NpgsqlParameter("documentId", _seedData.SchoolDocumentId)
+            new NpgsqlParameter("firstName", "Renamed"),
+            new NpgsqlParameter("documentId", _seedData.StudentDocumentId)
         );
 
-        var afterStamps = await GetDocumentStampStateAsync(_seedData.SchoolDocumentId);
+        var afterStamps = await GetDocumentStampStateAsync(_seedData.StudentDocumentId);
         var afterTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
-            "School",
-            schoolDocumentUuid
+            "Student",
+            studentDocumentUuid
         );
 
         afterStamps.ContentVersion.Should().BeGreaterThan(beforeStamps.ContentVersion);
