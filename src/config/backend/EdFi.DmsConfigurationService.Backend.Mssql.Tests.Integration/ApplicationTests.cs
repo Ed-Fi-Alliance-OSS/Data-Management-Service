@@ -2330,4 +2330,125 @@ public class ApplicationTests : DatabaseTest
             _secondClientUuidAfterRejectedUpdate.Should().Be(_secondClientUuid);
         }
     }
+
+    [TestFixture]
+    public class Given_an_application_inserted_without_a_client : ApplicationTests
+    {
+        private ApplicationInsertResult _result = null!;
+        private ApplicationInsertResult _missingProfileResult = null!;
+        private int _profileId;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IVendorRepository vendorRepository = new VendorRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            var vendorResult = await vendorRepository.InsertVendor(
+                new VendorInsertCommand
+                {
+                    Company = "Zero Client Company",
+                    ContactEmailAddress = "test@test.com",
+                    ContactName = "Fake Name",
+                    NamespacePrefixes = "FakePrefix1",
+                }
+            );
+            _vendorId = ((VendorInsertResult.Success)vendorResult).Id;
+
+            IProfileRepository profileRepository = new ProfileRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<ProfileRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            var profileResult = await profileRepository.InsertProfile(
+                new ProfileInsertCommand
+                {
+                    Name = "Zero Client Profile",
+                    Definition = "<Profile name=\"Zero Client Profile\"/>",
+                }
+            );
+            _profileId = ((ProfileInsertResult.Success)profileResult).Id;
+
+            _result = await _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "Zero Client Application",
+                    VendorId = _vendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [1, 255911001],
+                    ProfileIds = [_profileId],
+                    CreateDefaultCredentials = false,
+                },
+                // A fully populated client command shows the flag, not the argument, decides.
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+
+            _missingProfileResult = await _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "Zero Client Application With Missing Profile",
+                    VendorId = _vendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [1],
+                    ProfileIds = [_profileId + 1000],
+                    CreateDefaultCredentials = false,
+                },
+                // A fully populated client command shows the flag, not the argument, decides.
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+        }
+
+        private int ApplicationId => ((ApplicationInsertResult.Success)_result).Id;
+
+        [Test]
+        public void It_inserts_the_application() =>
+            _result.Should().BeOfType<ApplicationInsertResult.Success>();
+
+        [Test]
+        public async Task It_inserts_no_api_client()
+        {
+            (
+                await Connection!.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM dmscs.ApiClient WHERE ApplicationId = @ApplicationId;",
+                    new { ApplicationId }
+                )
+            )
+                .Should()
+                .Be(0);
+
+            var clients = await _applicationRepository.GetApplicationApiClients(ApplicationId);
+            clients.Should().BeOfType<ApplicationApiClientsResult.Success>().Which.Clients.Should().BeEmpty();
+        }
+
+        [Test]
+        public async Task It_stores_the_education_organizations_and_profiles()
+        {
+            var getResult = await _applicationRepository.GetApplication(ApplicationId);
+            var application = getResult
+                .Should()
+                .BeOfType<ApplicationGetResult.Success>()
+                .Which.ApplicationResponse;
+            application.ApplicationName.Should().Be("Zero Client Application");
+            application.EducationOrganizationIds.Should().BeEquivalentTo([1L, 255911001L]);
+            application.ProfileIds.Should().Equal(_profileId);
+        }
+
+        [Test]
+        public async Task It_rolls_back_an_insert_with_a_missing_profile()
+        {
+            _missingProfileResult.Should().BeOfType<ApplicationInsertResult.FailureProfileNotFound>();
+            (
+                await Connection!.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM dmscs.Application WHERE ApplicationName = @ApplicationName;",
+                    new { ApplicationName = "Zero Client Application With Missing Profile" }
+                )
+            )
+                .Should()
+                .Be(0);
+        }
+    }
 }

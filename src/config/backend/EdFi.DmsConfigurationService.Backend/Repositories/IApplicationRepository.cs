@@ -10,6 +10,13 @@ namespace EdFi.DmsConfigurationService.Backend.Repositories;
 
 public interface IApplicationRepository
 {
+    /// <summary>
+    /// Inserts an Application with its education organizations and profiles. When
+    /// <see cref="ApplicationInsertCommand.CreateDefaultCredentials"/> is true, the default API
+    /// client described by <paramref name="clientCommand"/> and its data store assignments are
+    /// inserted too; when false, the Application has no API client and the client command is
+    /// not used.
+    /// </summary>
     Task<ApplicationInsertResult> InsertApplication(
         ApplicationInsertCommand command,
         ApiClientCommand clientCommand
