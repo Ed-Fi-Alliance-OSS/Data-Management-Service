@@ -3,13 +3,13 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.3-alpine3.23@sha256:258b939d6d684ff05ad7ea16782b4bee55260de4acc6f99bec897fd11de7640c AS runtimebase
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.13-alpine3.24@sha256:819bd3649d8bf53f35527c68d62e17b348ef6f24ae73073f497f00a878348062 AS runtimebase
 
 LABEL maintainer="Ed-Fi Alliance, LLC and Contributors <techsupport@ed-fi.org>"
 
 # icu-libs is required by Microsoft.Data.SqlClient (the MSSQL backend), which does not
 # support Globalization Invariant Mode; the Alpine base image otherwise ships without ICU.
-RUN apk --no-cache add postgresql18-client=~18 jq=~1.8 icu-libs=~76
+RUN apk --no-cache add postgresql18-client=~18 jq=~1.8 icu-libs=~78
 
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
