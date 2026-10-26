@@ -53,10 +53,35 @@ An omitted or empty `scope` is treated as absent, as RFC 6749 section 3.2 requir
 Keycloak then issues the client's default client scopes.
 The `self-contained` provider issues the scopes registered for the client.
 
+In `self-contained` mode, any other `scope` value is split on spaces and commas, and each value is compared with the client's registered scopes, ignoring case.
+A `scope` that names none of them answers `400` with the RFC 6749 section 5.2 error body, served as `application/json`, and no token is issued or stored:
+
+```json
+{"error":"invalid_scope","error_description":"The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."}
+```
+
+This includes a value made only of spaces or commas, which is supplied and therefore not absent, and any `scope` sent by a client with no registered scopes.
+The client credentials are checked first, so a wrong secret still answers `401` whatever the `scope`.
+The answer carries no `correlationId` and no `WWW-Authenticate` header.
+It used to succeed with every scope registered for the client.
+
+A `scope` that names some of the client's registered scopes succeeds with only those, as RFC 6749 section 3.3 permits.
+Requested values the client does not hold are dropped, and so are registered scopes it did not request.
+The granted scopes keep the spelling and order of the request, and duplicates are not removed.
+
+A successful token response carries a `scope` member that lists the granted scopes separated by spaces, as RFC 6749 section 3.3 defines, for example `"scope":"edfi_admin_api/full_access edfi_admin_api/readonly_access"`.
+In `self-contained` mode the member is always present; it is `""` for a client with no registered scopes that omitted `scope`.
+Under Keycloak it is the `scope` Keycloak returns, passed through unchanged, and it is omitted when Keycloak returns none.
+The `scope` claim in a `self-contained` access token is unchanged: it lists the same granted scopes separated by commas, for example `edfi_admin_api/full_access,edfi_admin_api/readonly_access`.
+Read the granted scopes from the response member with a space as the separator, and from the claim with a comma.
+The claim's representation is tracked by [DMS-1486](https://edfi.atlassian.net/browse/DMS-1486).
+
 Under Keycloak, a requested scope that Keycloak rejects answers `400` with `type` `urn:ed-fi:management-api:bad-request` and `errors` of `["invalid_scope. <description>"]`, for example `invalid_scope. Invalid scopes: edfi_admin_api/readonly_access`.
 It used to answer `502`.
 Other Keycloak failures keep their previous answers: a failed connection, a 5xx or any other `400` error code answers `502`, and a name-resolution failure or a timeout answers `500`.
-The `self-contained` provider does not reject an ungranted scope: it issues the requested scopes the client holds, and the client's registered scopes when it holds none of them.
+The two modes therefore answer `invalid_scope` in different formats: `self-contained` with the RFC 6749 `error` and `error_description` body above, Keycloak with this problem details body.
+Every other `/connect/token` error, in both modes, is still a problem details body.
+[DMS-1491](https://edfi.atlassian.net/browse/DMS-1491) tracks moving them to the RFC 6749 format; until then, a client that handles `/connect/token` errors must accept both.
 
 Both `/openapi/v1.json` and `/metadata/specifications` declare an `oauth2_client_credentials` scheme whose `tokenUrl` is the document's own server URL (request scheme, host and path base) followed by `/connect/token`.
 The token URL follows the address the document was requested on, as the server URL and the DMS OpenAPI token URL do; the discovery document instead builds its endpoints from `IdentitySettings:Authority`, because services fetch it to validate tokens.
