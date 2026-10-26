@@ -15,11 +15,23 @@
     unchanged build-config.ps1 E2ETest against it, and removes the isolated stack afterwards unless
     -KeepStack is given. Nothing about the stock stack, or any stack another launcher owns, is touched.
 
-    Only the self-contained identity provider is supported: the isolation moves the self-contained
-    token endpoint and authority onto the isolated Configuration Service, but not Keycloak's.
+    The run fails closed before it changes anything in Docker: it refuses to start when the chosen
+    project has any container, volume or network, when a chosen container name or the network already
+    exists, or when anything listens on one of its host ports. It only ever removes a stack it started
+    itself in the same run. A stack an earlier -KeepStack run left is not taken as this run's: remove it
+    first with start-local-config.ps1 -d -v -EnvironmentFile <the derived file> and docker network rm.
+
+    Both identity providers are supported. The isolation moves the self-contained token endpoint and
+    authority onto the isolated Configuration Service, and Keycloak's published port, external token
+    endpoint and issuer onto the isolated Keycloak; inside the isolated network Keycloak keeps its
+    hostname, so the internal authority and metadata addresses are unchanged. -IsolationName names the
+    project, network, containers and image, so a launcher run can be given names no other stack uses.
 
 .EXAMPLE
     pwsh eng/docker-compose/tests/cms-isolation/Invoke-IsolatedConfigE2E.ps1 -Configuration Release
+
+.EXAMPLE
+    pwsh eng/docker-compose/tests/cms-isolation/Invoke-IsolatedConfigE2E.ps1 -IdentityProvider keycloak -IsolationName cms-e2e-ticket
 #>
 [CmdletBinding()]
 param(
@@ -30,11 +42,14 @@ param(
     [string]
     $Configuration = "Debug",
 
-    # Self-contained only: the isolation moves the self-contained identity URLs onto the isolated
-    # Configuration Service, and does not move Keycloak's.
-    [ValidateSet("self-contained")]
+    [ValidateSet("self-contained", "keycloak")]
     [string]
     $IdentityProvider = "self-contained",
+
+    # The base of the project, network, container and image names the isolated stack uses.
+    [ValidatePattern('^[a-z0-9][a-z0-9-]*$')]
+    [string]
+    $IsolationName = "cms-e2e-isolated",
 
     [string]
     $E2ETestFilter = "",
@@ -66,13 +81,13 @@ $sourceEnvironmentFile = [System.IO.Path]::GetFullPath($sourceEnvironmentFile)
 
 # The isolated identity: none of it may equal a name or port the stock stack uses.
 $isolation = [ordered]@{
-    CONFIGURATION_SERVICE_COMPOSE_PROJECT = "cms-e2e-isolated"
-    CONFIGURATION_SERVICE_COMPOSE_NETWORK = "cms-e2e-isolated"
+    CONFIGURATION_SERVICE_COMPOSE_PROJECT = $IsolationName
+    CONFIGURATION_SERVICE_COMPOSE_NETWORK = $IsolationName
     CONFIGURATION_SERVICE_COMPOSE_OVERLAY_FILES = "tests/cms-isolation/cms-e2e-isolation.yml"
-    CONFIGURATION_SERVICE_POSTGRES_CONTAINER = "cms-e2e-isolated-db"
-    CONFIGURATION_SERVICE_MSSQL_CONTAINER = "cms-e2e-isolated-db"
-    CONFIGURATION_SERVICE_KEYCLOAK_CONTAINER = "cms-e2e-isolated-keycloak"
-    CONFIGURATION_SERVICE_CONTAINER = "cms-e2e-isolated-config"
+    CONFIGURATION_SERVICE_POSTGRES_CONTAINER = "$IsolationName-db"
+    CONFIGURATION_SERVICE_MSSQL_CONTAINER = "$IsolationName-db"
+    CONFIGURATION_SERVICE_KEYCLOAK_CONTAINER = "$IsolationName-keycloak"
+    CONFIGURATION_SERVICE_CONTAINER = "$IsolationName-config"
     # The Configuration Service listens on the same port inside and outside its container, as the
     # stock stack does: it fetches its own OpenAPI document from the request's host and port.
     CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS = "8191"
@@ -84,7 +99,12 @@ $isolation = [ordered]@{
     POSTGRES_PORT = "5536"
     MSSQL_PORT = "1536"
     KEYCLOAK_PORT = "8145"
-    CONFIGURATION_SERVICE_DOCKER_IMAGE = "ed-fi-api-config-cms-e2e-isolated"
+    # Keycloak issues tokens for the host name it publishes (KC_HOSTNAME follows KEYCLOAK_PORT), so the
+    # external token endpoint and issuer move with the port. The internal authority and metadata
+    # addresses name the Keycloak hostname, which the isolated network also resolves, and stay as they are.
+    KEYCLOAK_OAUTH_TOKEN_ENDPOINT = "http://localhost:8145/realms/edfi/protocol/openid-connect/token"
+    KEYCLOAK_DMS_JWT_AUTHORITY = "http://localhost:8145/realms/edfi"
+    CONFIGURATION_SERVICE_DOCKER_IMAGE = "ed-fi-api-config-$IsolationName"
 }
 
 $derivedDirectory = Join-Path $composeDirectory ".derived"
@@ -129,6 +149,45 @@ try {
     # set in this process: a value inherited from the caller's shell cannot override any of them.
     foreach ($key in $isolation.Keys) {
         Set-HarnessVariable -Name $key -Value $isolation[$key]
+    }
+
+    # Fail closed before any Docker change: everything this run would create must not exist yet, so a
+    # stack, network or volume another workspace or an earlier -KeepStack run holds is never removed.
+    $projectLabel = "label=com.docker.compose.project=$($isolation.CONFIGURATION_SERVICE_COMPOSE_PROJECT)"
+    $inUse = @(
+        & docker ps --all --filter $projectLabel --format 'container {{.Names}}'
+        if ($LASTEXITCODE -ne 0) { throw "Listing containers failed; refusing to run." }
+        & docker volume ls --filter $projectLabel --format 'volume {{.Name}}'
+        if ($LASTEXITCODE -ne 0) { throw "Listing volumes failed; refusing to run." }
+        & docker network ls --filter $projectLabel --format 'network {{.Name}}'
+        if ($LASTEXITCODE -ne 0) { throw "Listing networks failed; refusing to run." }
+    )
+    $existingContainers = @(& docker ps --all --format '{{.Names}}')
+    $existingNetworks = @(& docker network ls --format '{{.Name}}')
+    if ($LASTEXITCODE -ne 0) { throw "Listing Docker resources failed; refusing to run." }
+    foreach ($container in @(
+            $isolation.CONFIGURATION_SERVICE_POSTGRES_CONTAINER
+            $isolation.CONFIGURATION_SERVICE_KEYCLOAK_CONTAINER
+            $isolation.CONFIGURATION_SERVICE_CONTAINER
+        ) | Select-Object -Unique) {
+        if ($existingContainers -ccontains $container) { $inUse += "container $container" }
+    }
+    if ($existingNetworks -ccontains $isolation.CONFIGURATION_SERVICE_COMPOSE_NETWORK) {
+        $inUse += "network $($isolation.CONFIGURATION_SERVICE_COMPOSE_NETWORK)"
+    }
+    foreach ($port in @($isolation.CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS, $isolation.POSTGRES_PORT, $isolation.MSSQL_PORT, $isolation.KEYCLOAK_PORT)) {
+        $probe = [System.Net.Sockets.TcpClient]::new()
+        try {
+            # A refused connection throws, which means the port is free.
+            $listening = try { $probe.ConnectAsync("127.0.0.1", [int]$port).Wait(1000) } catch { $false }
+        }
+        finally {
+            $probe.Dispose()
+        }
+        if ($listening) { $inUse += "host port $port" }
+    }
+    if ($inUse.Count -gt 0) {
+        throw "The isolation identity '$IsolationName' is in use ($(@($inUse | Select-Object -Unique) -join ', ')); refusing to run. Choose another -IsolationName, or remove what is listed if this workspace left it."
     }
 
     function Remove-IsolatedStack {
@@ -234,8 +293,6 @@ try {
         return
     }
 
-    Remove-IsolatedStack
-
     Push-Location $repoRoot
     try {
         $arguments = @{
@@ -251,7 +308,12 @@ try {
             $arguments.SkipDockerBuild = $true
         }
 
-        ./build-config.ps1 @arguments
+        # build-config.ps1 and the stack scripts it calls are written for, and run in CI, without strict
+        # mode; this harness's strict mode would otherwise reach them, and setup-keycloak.ps1 fails under it.
+        & {
+            Set-StrictMode -Off
+            ./build-config.ps1 @arguments
+        }
         $exitCode = $LASTEXITCODE
     }
     finally {
