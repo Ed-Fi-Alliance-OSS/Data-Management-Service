@@ -23,6 +23,7 @@ public class DeployTests : DatabaseTestBase
     /// </summary>
     private static readonly (string TableName, string ColumnName)[] ExpectedBigintColumns =
     [
+        ("ApiClientEducationOrganization", "EducationOrganizationId"),
         ("ApplicationEducationOrganization", "EducationOrganizationId"),
         ("AuthorizationStrategy", "TenantId"),
         ("ClaimSet", "TenantId"),
@@ -110,6 +111,7 @@ public class DeployTests : DatabaseTestBase
                 "openiddictkey",
                 "datastore",
                 "apiclientdatastore",
+                "apiclienteducationorganization",
                 "datastorecontext",
                 "datastorederivative",
                 "job",
@@ -207,6 +209,34 @@ public class DeployTests : DatabaseTestBase
     }
 
     [Test]
+    public async Task It_creates_the_non_unique_client_education_organization_lookup_index()
+    {
+        await using var connection = await OpenConnectionAsync();
+
+        string[] keyColumns = (
+            await connection.QueryAsync<string>(
+                """
+                SELECT column_info.name
+                FROM sys.indexes index_info
+                JOIN sys.index_columns index_column_info
+                    ON index_column_info.object_id = index_info.object_id
+                   AND index_column_info.index_id = index_info.index_id
+                JOIN sys.columns column_info
+                    ON column_info.object_id = index_column_info.object_id
+                   AND column_info.column_id = index_column_info.column_id
+                WHERE index_info.name = 'IX_ApiClientEducationOrganization_EducationOrganizationId'
+                  AND index_info.object_id = OBJECT_ID('dmscs.ApiClientEducationOrganization')
+                  AND index_info.is_unique = 0
+                  AND index_column_info.is_included_column = 0
+                ORDER BY index_column_info.key_ordinal;
+                """
+            )
+        ).ToArray();
+
+        keyColumns.Should().Equal("EducationOrganizationId", "ApplicationId");
+    }
+
+    [Test]
     public async Task It_creates_the_DataStoreDerivative_unique_constraint_over_the_intended_key_columns()
     {
         (string[] keyColumns, bool backingIndexIsUnique) = await UniqueConstraintShapeAsync(
@@ -258,6 +288,17 @@ public class DeployTests : DatabaseTestBase
         );
 
         keyColumns.Should().Equal("ClientUuid");
+        backingIndexIsUnique.Should().BeTrue();
+    }
+
+    [Test]
+    public async Task It_creates_the_ApiClient_id_and_application_unique_constraint_over_the_key_columns()
+    {
+        (string[] keyColumns, bool backingIndexIsUnique) = await UniqueConstraintShapeAsync(
+            "UX_ApiClient_Id_ApplicationId"
+        );
+
+        keyColumns.Should().Equal("Id", "ApplicationId");
         backingIndexIsUnique.Should().BeTrue();
     }
 

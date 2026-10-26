@@ -177,6 +177,24 @@ public class ApplicationRepository(
                     transaction
                 );
 
+                // The default client inherits, so its rows are the Application's list
+                sql = """
+                    INSERT INTO "dmscs"."ApiClientEducationOrganization" ("ApiClientId", "ApplicationId", "EducationOrganizationId", "CreatedBy")
+                    SELECT @ApiClientId, "ApplicationId", "EducationOrganizationId", @CreatedBy
+                    FROM "dmscs"."ApplicationEducationOrganization"
+                    WHERE "ApplicationId" = @ApplicationId;
+                    """;
+                await connection.ExecuteAsync(
+                    sql,
+                    new
+                    {
+                        ApiClientId = apiClientId,
+                        ApplicationId = id,
+                        CreatedBy = currentUser,
+                    },
+                    transaction
+                );
+
                 if (command.DataStoreIds.Length > 0)
                 {
                     if (!await AllDataStoresInTenant(connection, transaction, command.DataStoreIds))
@@ -573,9 +591,26 @@ public class ApplicationRepository(
                 return new ApplicationUpdateResult.FailureProfileNotFound();
             }
 
-            sql =
-                "DELETE FROM \"dmscs\".\"ApplicationEducationOrganization\" WHERE \"ApplicationId\" = @ApplicationId";
-            await connection.ExecuteAsync(sql, new { ApplicationId = command.Id }, transaction);
+            // Apply only the differences: deleting a row cascades to every API client's copy of it,
+            // so a surviving education organization must keep its row.
+            sql = """
+                SELECT "EducationOrganizationId" FROM "dmscs"."ApplicationEducationOrganization"
+                WHERE "ApplicationId" = @ApplicationId;
+                """;
+            long[] currentEducationOrganizationIds = (
+                await connection.QueryAsync<long>(sql, new { ApplicationId = command.Id }, transaction)
+            ).ToArray();
+            long[] requestedEducationOrganizationIds = command.EducationOrganizationIds.Distinct().ToArray();
+
+            sql = """
+                DELETE FROM "dmscs"."ApplicationEducationOrganization"
+                WHERE "ApplicationId" = @ApplicationId AND "EducationOrganizationId" = @EducationOrganizationId;
+                """;
+            var removedEducationOrganizations = currentEducationOrganizationIds
+                .Except(requestedEducationOrganizationIds)
+                .Select(e => new { ApplicationId = command.Id, EducationOrganizationId = e });
+
+            await connection.ExecuteAsync(sql, removedEducationOrganizations, transaction);
 
             sql = """
                 INSERT INTO "dmscs"."ApplicationEducationOrganization" ("ApplicationId", "EducationOrganizationId", "CreatedBy")
@@ -583,14 +618,16 @@ public class ApplicationRepository(
                 """;
 
             var currentUser = auditContext.GetCurrentUser();
-            var educationOrganizations = command.EducationOrganizationIds.Select(e => new
-            {
-                ApplicationId = command.Id,
-                EducationOrganizationId = e,
-                CreatedBy = currentUser,
-            });
+            var addedEducationOrganizations = requestedEducationOrganizationIds
+                .Except(currentEducationOrganizationIds)
+                .Select(e => new
+                {
+                    ApplicationId = command.Id,
+                    EducationOrganizationId = e,
+                    CreatedBy = currentUser,
+                });
 
-            await connection.ExecuteAsync(sql, educationOrganizations, transaction);
+            await connection.ExecuteAsync(sql, addedEducationOrganizations, transaction);
 
             string updateApiClientsql = """
                 UPDATE "dmscs"."ApiClient"
