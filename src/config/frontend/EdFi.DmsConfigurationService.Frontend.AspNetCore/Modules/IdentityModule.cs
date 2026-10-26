@@ -347,6 +347,7 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
             TokenResult.FailureLockTimeout => FailureResults.ConcurrentModification(
                 httpContext.TraceIdentifier
             ),
+            TokenResult.FailureInvalidScope => InvalidScope(),
             TokenResult.FailureIdentityProvider failureIdentityProvider =>
                 failureIdentityProvider.IdentityProviderError switch
                 {
@@ -1130,6 +1131,21 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
 
     private static IResult InvalidRequest(string errorDescription) =>
         OAuthErrorResponseWriter.Create(StatusCodes.Status400BadRequest, "invalid_request", errorDescription);
+
+    /// <summary>
+    /// RFC 6749 §5.2 answer for a self-contained scope rejection. The description is fixed and
+    /// service-owned, never caller content. Keycloak's <c>invalid_scope</c> still answers through
+    /// <c>FailureResults.InvalidScope</c> until DMS-1491.
+    /// </summary>
+    private const string InvalidScopeDescription =
+        "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client.";
+
+    private static IResult InvalidScope() =>
+        OAuthErrorResponseWriter.Create(
+            StatusCodes.Status400BadRequest,
+            "invalid_scope",
+            InvalidScopeDescription
+        );
 
     /// <summary>
     /// The RFC 6749 §5.2 response for a revocation or introspection caller that failed client

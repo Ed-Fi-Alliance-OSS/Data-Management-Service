@@ -1518,7 +1518,9 @@ public class TokenEndpointScopeForwardingTests
 /// contract (400 preserved) in place of the OAuth <c>{ error, error_description }</c> shape, while the
 /// protocol success responses stay untouched. <c>/connect/revoke</c> is the documented exception
 /// (DMS-1327 D-01): every revocation error is in the OAuth format, pinned here and in
-/// <c>RevocationRequestContractTests</c>. Non-fixture container; the
+/// <c>RevocationRequestContractTests</c>. A self-contained <c>/connect/token</c> scope rejection is
+/// another (DMS-1492): it answers the OAuth <c>invalid_scope</c> body, pinned in
+/// <c>TokenEndpointInvalidScopeTests</c>. Non-fixture container; the
 /// runnable fixtures are the nested <c>Given_…</c> classes.
 /// </summary>
 public class OAuthEndpointErrorTests
@@ -5711,12 +5713,13 @@ internal sealed class RevocationLogCapture : ILoggerProvider, ISupportExternalSc
 /// <summary>
 /// An identity-provider rejection of the request itself (<c>invalid_scope</c>) is answered with a 400 carrying the
 /// provider's <c>error</c> and <c>error_description</c>, or a fixed <c>invalid_scope</c> description when the
-/// provider sends none; any other provider failure keeps the 502. Non-fixture
-/// container; the runnable fixtures are the nested <c>Given_…</c> classes.
+/// provider sends none; any other provider failure keeps the 502. A self-contained scope rejection is
+/// answered in the RFC 6749 §5.2 OAuth error format instead, with a fixed description (DMS-1492).
+/// Non-fixture container; the runnable fixtures are the nested <c>Given_…</c> classes.
 /// </summary>
 public class TokenEndpointInvalidScopeTests
 {
-    public abstract class ProviderFailureRequest
+    public abstract class TokenFailureRequest
     {
         private const string UnreachableDatabase =
             "host=127.0.0.1;port=1;database=unreachable;username=none;timeout=1";
@@ -5726,7 +5729,8 @@ public class TokenEndpointInvalidScopeTests
         protected HttpResponseMessage Response = null!;
         protected string Body = string.Empty;
 
-        protected abstract IdentityProviderError ProviderError { get; }
+        protected abstract TokenResult Result { get; }
+        protected abstract string IdentityProvider { get; }
 
         [SetUp]
         public async Task Act()
@@ -5735,12 +5739,12 @@ public class TokenEndpointInvalidScopeTests
             A.CallTo(() =>
                     tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
                 )
-                .Returns(new TokenResult.FailureIdentityProvider(ProviderError));
+                .Returns(Result);
 
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
-                builder.UseSetting("AppSettings:IdentityProvider", "keycloak");
+                builder.UseSetting("AppSettings:IdentityProvider", IdentityProvider);
                 builder.UseSetting("DatabaseSettings:DatabaseConnection", UnreachableDatabase);
                 builder.ConfigureServices(collection =>
                 {
@@ -5768,6 +5772,56 @@ public class TokenEndpointInvalidScopeTests
             _client.Dispose();
             _factory.Dispose();
         }
+    }
+
+    /// <summary>A Keycloak failure, reported by the identity provider the manager calls.</summary>
+    public abstract class ProviderFailureRequest : TokenFailureRequest
+    {
+        protected abstract IdentityProviderError ProviderError { get; }
+
+        protected sealed override TokenResult Result =>
+            new TokenResult.FailureIdentityProvider(ProviderError);
+        protected sealed override string IdentityProvider => "keycloak";
+    }
+
+    [TestFixture]
+    public class Given_the_self_contained_provider_rejects_the_scope : TokenFailureRequest
+    {
+        protected override TokenResult Result => new TokenResult.FailureInvalidScope();
+        protected override string IdentityProvider => "self-contained";
+
+        [Test]
+        public void It_returns_400() => Response.StatusCode.Should().Be(HttpStatusCode.BadRequest, Body);
+
+        [Test]
+        public void It_returns_json() =>
+            (Response.Content.Headers.ContentType?.MediaType).Should().Be("application/json");
+
+        [Test]
+        public void It_returns_exactly_the_oauth_invalid_scope_error()
+        {
+            var expected = JsonNode.Parse(
+                """
+                {
+                  "error": "invalid_scope",
+                  "error_description": "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
+                }
+                """
+            );
+            JsonNode.DeepEquals(JsonNode.Parse(Body), expected).Should().BeTrue(Body);
+        }
+
+        [Test]
+        public void It_issues_no_access_token() =>
+            JsonNode.Parse(Body)!.AsObject().ContainsKey("access_token").Should().BeFalse(Body);
+
+        [Test]
+        public void It_carries_no_correlation_id() =>
+            JsonNode.Parse(Body)!.AsObject().ContainsKey("correlationId").Should().BeFalse(Body);
+
+        [Test]
+        public void It_sends_no_authentication_challenge() =>
+            Response.Headers.WwwAuthenticate.Should().BeEmpty();
     }
 
     [TestFixture]
