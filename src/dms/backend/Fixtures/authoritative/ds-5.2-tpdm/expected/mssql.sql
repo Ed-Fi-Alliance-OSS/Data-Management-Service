@@ -23732,7 +23732,7 @@ ADD CONSTRAINT [FK_StudentAssessmentRegistration_AssessmentAdministration_RefKey
 FOREIGN KEY ([AssessmentAdministration_AdministrationIdentifier], [AssessmentAdministration_AssessmentIdentifier], [AssessmentAdministration_Namespace], [AssessmentAdministration_AssigningEducationOrganizationId], [AssessmentAdministration_DocumentId])
 REFERENCES [edfi].[AssessmentAdministration] ([AdministrationIdentifier], [Assessment_AssessmentIdentifier], [Assessment_Namespace], [AssigningEducationOrganization_EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE CASCADE;
+ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -23809,7 +23809,7 @@ ADD CONSTRAINT [FK_StudentAssessmentRegistration_StudentSchoolAssociation_RefKey
 FOREIGN KEY ([StudentSchoolAssociation_EntryDate], [StudentSchoolAssociation_SchoolId], [StudentUniqueId_Unified], [StudentSchoolAssociation_DocumentId])
 REFERENCES [edfi].[StudentSchoolAssociation] ([EntryDate], [SchoolId_Unified], [Student_StudentUniqueId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -26944,7 +26944,7 @@ ADD CONSTRAINT [FK_StudentSectionAssociation_DualCreditEducationOrganization_Ref
 FOREIGN KEY ([DualCreditEducationOrganization_EducationOrganizationId], [DualCreditEducationOrganization_DocumentId])
 REFERENCES [edfi].[EducationOrganizationIdentity] ([EducationOrganizationId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE CASCADE;
+ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -26988,7 +26988,7 @@ ADD CONSTRAINT [FK_StudentSectionAssociation_Section_RefKey]
 FOREIGN KEY ([Section_LocalCourseCode], [Section_SchoolId], [Section_SchoolYear], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId])
 REFERENCES [edfi].[Section] ([CourseOffering_LocalCourseCode], [SchoolId_Unified], [CourseOffering_SchoolYear], [CourseOffering_SessionName], [SectionIdentifier], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -29232,7 +29232,7 @@ ADD CONSTRAINT [FK_EvaluationObjectiveRating_EvaluationObjective_RefKey]
 FOREIGN KEY ([EvaluationObjective_EvaluationObjectiveTitle], [EducationOrganizationId_Unified], [EvaluationPeriodDescriptor_Unified_DescriptorId], [EvaluationTitle_Unified], [PerformanceEvaluationTitle_Unified], [PerformanceEvaluationTypeDescriptor_Unified_DescriptorId], [SchoolYear_Unified], [TermDescriptor_Unified_DescriptorId], [EvaluationObjective_DocumentId])
 REFERENCES [tpdm].[EvaluationObjective] ([EvaluationObjectiveTitle], [Evaluation_EducationOrganizationId], [Evaluation_EvaluationPeriodDescriptor_DescriptorId], [Evaluation_EvaluationTitle], [Evaluation_PerformanceEvaluationTitle], [Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId], [Evaluation_SchoolYear], [Evaluation_TermDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE CASCADE;
+ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -29254,7 +29254,7 @@ ADD CONSTRAINT [FK_EvaluationObjectiveRating_EvaluationRating_RefKey]
 FOREIGN KEY ([EvaluationRating_EvaluationDate], [EducationOrganizationId_Unified], [EvaluationPeriodDescriptor_Unified_DescriptorId], [EvaluationTitle_Unified], [PerformanceEvaluationTitle_Unified], [PerformanceEvaluationTypeDescriptor_Unified_DescriptorId], [SchoolYear_Unified], [TermDescriptor_Unified_DescriptorId], [EvaluationRating_PersonId], [EvaluationRating_SourceSystemDescriptor_DescriptorId], [EvaluationRating_DocumentId])
 REFERENCES [tpdm].[EvaluationRating] ([EvaluationDate], [EducationOrganizationId_Unified], [EvaluationPeriodDescriptor_Unified_DescriptorId], [Evaluation_EvaluationTitle], [PerformanceEvaluationTitle_Unified], [PerformanceEvaluationTypeDescriptor_Unified_DescriptorId], [SchoolYear_Unified], [TermDescriptor_Unified_DescriptorId], [PerformanceEvaluationRating_PersonId], [PerformanceEvaluationRating_SourceSystemDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -29386,7 +29386,7 @@ ADD CONSTRAINT [FK_EvaluationRating_PerformanceEvaluationRating_RefKey]
 FOREIGN KEY ([EducationOrganizationId_Unified], [EvaluationPeriodDescriptor_Unified_DescriptorId], [PerformanceEvaluationTitle_Unified], [PerformanceEvaluationTypeDescriptor_Unified_DescriptorId], [SchoolYear_Unified], [TermDescriptor_Unified_DescriptorId], [PerformanceEvaluationRating_PersonId], [PerformanceEvaluationRating_SourceSystemDescriptor_DescriptorId], [PerformanceEvaluationRating_DocumentId])
 REFERENCES [tpdm].[PerformanceEvaluationRating] ([PerformanceEvaluation_EducationOrganizationId], [PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId], [PerformanceEvaluation_PerformanceEvaluationTitle], [PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId], [PerformanceEvaluation_SchoolYear], [PerformanceEvaluation_TermDescriptor_DescriptorId], [Person_PersonId], [Person_SourceSystemDescriptor_DescriptorId], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE CASCADE;
+ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
@@ -29419,7 +29419,7 @@ ADD CONSTRAINT [FK_EvaluationRating_Section_RefKey]
 FOREIGN KEY ([Section_LocalCourseCode], [Section_SchoolId], [SchoolYear_Unified], [Section_SessionName], [Section_SectionIdentifier], [Section_DocumentId])
 REFERENCES [edfi].[Section] ([CourseOffering_LocalCourseCode], [SchoolId_Unified], [CourseOffering_SchoolYear], [CourseOffering_SessionName], [SectionIdentifier], [DocumentId])
 ON DELETE NO ACTION
-ON UPDATE NO ACTION;
+ON UPDATE CASCADE;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
