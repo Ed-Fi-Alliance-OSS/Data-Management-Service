@@ -29,6 +29,20 @@ public class ApiClientModule : IEndpointModule
     private const string DuplicateNameError =
         "An API client with this name already exists for the application.";
 
+    private static IResult EducationOrganizationScopeConflict(
+        int applicationId,
+        long[] missingEducationOrganizationIds,
+        HttpContext httpContext
+    ) =>
+        Results.Json(
+            FailureResponse.ForEducationOrganizationScopeConflict(
+                $"The API client is narrowed to education organizations that are not on Application {applicationId}: {string.Join(", ", missingEducationOrganizationIds)}. To move it, send educationOrganizationIds on that Application or inheritsApplicationEducationOrganizations true.",
+                httpContext.TraceIdentifier
+            ),
+            contentType: "application/problem+json",
+            statusCode: (int)HttpStatusCode.Conflict
+        );
+
     private static IResult DuplicateName(HttpContext httpContext) =>
         FailureResults.DataValidation(
             [new ValidationFailure("Name", DuplicateNameError)],
@@ -246,6 +260,28 @@ public class ApiClientModule : IEndpointModule
             return nameFailure;
         }
 
+        // The rules that need the Application are applied before the identity provider is touched,
+        // so a rejected scope never provisions a provider client
+        ApiClientEducationOrganizationScopeResolution resolution =
+            ApiClientEducationOrganizationScopeResolver.Resolve(
+                command.EducationOrganizationIdsSupplied ? command.EducationOrganizationIds : null,
+                command.InheritsApplicationEducationOrganizations,
+                application.EducationOrganizationIds,
+                current: null
+            );
+        if (resolution is ApiClientEducationOrganizationScopeResolution.Invalid invalid)
+        {
+            return FailureResults.DataValidation([invalid.Failure], httpContext.TraceIdentifier);
+        }
+
+        // A create has no current scope to conflict with, so a valid request always resolves
+        if (resolution is not ApiClientEducationOrganizationScopeResolution.Resolved scope)
+        {
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
+
+        command.EducationOrganizationScope = scope.Scope;
+
         var clientId = Guid.NewGuid().ToString();
         var clientSecret = ClientSecretValidation.GenerateSecretWithMinimumLength(
             clientSecretValidationOptionsAccessor.Value
@@ -261,7 +297,7 @@ public class ApiClientModule : IEndpointModule
             application.ApplicationName,
             application.ClaimSetName,
             namespacePrefixes,
-            string.Join(",", application.EducationOrganizationIds),
+            scope.Claim,
             command.DataStoreIds,
             command.IsApproved
         );
@@ -341,6 +377,19 @@ public class ApiClientModule : IEndpointModule
                     ),
                     contentType: "application/problem+json",
                     statusCode: (int)HttpStatusCode.Conflict
+                );
+            case ApiClientInsertResult.FailureRequestedEducationOrganizationsNotOnApplication notOnApplication:
+                // Reached only after the row was inserted, which proved no row held the reported
+                // UUID. The Application lost one of the requested education organizations after
+                // the rules were applied.
+                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
+                return FailureResults.DataValidation(
+                    [
+                        ApiClientEducationOrganizationScopeResolver
+                            .NotOnApplication(notOnApplication.EducationOrganizationIds)
+                            .Failure,
+                    ],
+                    httpContext.TraceIdentifier
                 );
             case ApiClientInsertResult.FailureDataStoreNotFound:
                 // Reached only after the row was inserted, which proved no row held the reported UUID.
@@ -804,12 +853,75 @@ public class ApiClientModule : IEndpointModule
                     return FailureResults.Unknown(httpContext.TraceIdentifier);
             }
 
+            // The client's scope, read under the aggregate locks, resolves the request and is
+            // what a failed update restores in the identity provider.
+            ApiClientEducationOrganizationState originalScope;
+            switch (await apiClientRepository.GetApiClientEducationOrganizationState(id))
+            {
+                case ApiClientEducationOrganizationStateResult.Success stateSuccess:
+                    originalScope = stateSuccess.State;
+                    break;
+                case ApiClientEducationOrganizationStateResult.FailureNotFound:
+                    return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
+                case ApiClientEducationOrganizationStateResult.FailureUnknown stateFailure:
+                    logger.LogError(
+                        "Error reading the education organization scope of ApiClient {Id}: {Message}",
+                        id,
+                        SanitizeForLog(stateFailure.FailureMessage)
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                default:
+                    logger.LogError(
+                        "The education organization scope of ApiClient {Id} could not be resolved",
+                        id
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+
+            // An inheriting client's effective list is its original Application's list
+            string originalClaim = string.Join(
+                ",",
+                originalScope.InheritsApplicationEducationOrganizations
+                    ? originalApplication.EducationOrganizationIds.Order()
+                    : originalScope.StoredEducationOrganizationIds.Order()
+            );
+
+            // The rules are applied against the destination Application before the identity
+            // provider is touched, so a rejected scope or move changes nothing
+            ApiClientEducationOrganizationScopeResolution.Resolved scope;
+            switch (
+                ApiClientEducationOrganizationScopeResolver.Resolve(
+                    command.EducationOrganizationIdsSupplied ? command.EducationOrganizationIds : null,
+                    command.InheritsApplicationEducationOrganizations,
+                    application.EducationOrganizationIds,
+                    originalScope,
+                    moves: command.ApplicationId != existingApiClient.ApplicationId
+                )
+            )
+            {
+                case ApiClientEducationOrganizationScopeResolution.Resolved resolved:
+                    scope = resolved;
+                    break;
+                case ApiClientEducationOrganizationScopeResolution.ScopeConflict conflict:
+                    return EducationOrganizationScopeConflict(
+                        command.ApplicationId,
+                        conflict.MissingEducationOrganizationIds,
+                        httpContext
+                    );
+                case ApiClientEducationOrganizationScopeResolution.Invalid invalid:
+                    return FailureResults.DataValidation([invalid.Failure], httpContext.TraceIdentifier);
+                default:
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+
+            command.EducationOrganizationScope = scope.Scope;
+
             // Update client in identity provider FIRST
             var clientUpdateResult = await identityProviderRepository.UpdateClientAsync(
                 existingApiClient.ClientUuid.ToString(),
                 command.Name,
                 application.ClaimSetName,
-                string.Join(",", application.EducationOrganizationIds),
+                scope.Claim,
                 command.DataStoreIds,
                 command.IsApproved,
                 identitySettings.Value.ClientRole
@@ -889,7 +1001,7 @@ public class ApiClientModule : IEndpointModule
                                 updateSuccess.ClientUuid.ToString(),
                                 existingApiClient.Name,
                                 originalApplication.ClaimSetName,
-                                string.Join(",", originalApplication.EducationOrganizationIds),
+                                originalClaim,
                                 [.. existingApiClient.DataStoreIds],
                                 existingApiClient.IsApproved,
                                 identitySettings.Value.ClientRole
@@ -1080,7 +1192,12 @@ public class ApiClientModule : IEndpointModule
                         && resolved.IsApproved == command.IsApproved
                         && SetEquals(resolved.DataStoreIds, command.DataStoreIds)
                         && resolved.ClientId == existingApiClient.ClientId
-                        && resolved.ClientUuid == updateSuccess.ClientUuid;
+                        && resolved.ClientUuid == updateSuccess.ClientUuid
+                        && resolved.InheritsApplicationEducationOrganizations == scope.Inherits
+                        && SetEquals(
+                            resolved.StoredEducationOrganizationIds,
+                            scope.StoredEducationOrganizationIds
+                        );
 
                     bool MatchesOriginal(ApiClientResolutionState resolved) =>
                         resolved.Name == existingApiClient.Name
@@ -1088,7 +1205,13 @@ public class ApiClientModule : IEndpointModule
                         && resolved.IsApproved == existingApiClient.IsApproved
                         && SetEquals(resolved.DataStoreIds, existingApiClient.DataStoreIds)
                         && resolved.ClientId == existingApiClient.ClientId
-                        && resolved.ClientUuid == existingApiClient.ClientUuid;
+                        && resolved.ClientUuid == existingApiClient.ClientUuid
+                        && resolved.InheritsApplicationEducationOrganizations
+                            == originalScope.InheritsApplicationEducationOrganizations
+                        && SetEquals(
+                            resolved.StoredEducationOrganizationIds,
+                            originalScope.StoredEducationOrganizationIds
+                        );
 
                     // An unknown or thrown repository outcome is resolved with the authoritative
                     // row-locking read, which waits out any in-flight commit before classifying
@@ -1185,6 +1308,31 @@ public class ApiClientModule : IEndpointModule
                             }
 
                             return DuplicateName(httpContext);
+                        case ApiClientUpdateResult.FailureRequestedEducationOrganizationsNotOnApplication notOnApplication:
+                            if (!await TryCompensateAsync())
+                            {
+                                return FailureResults.Unknown(httpContext.TraceIdentifier);
+                            }
+
+                            return FailureResults.DataValidation(
+                                [
+                                    ApiClientEducationOrganizationScopeResolver
+                                        .NotOnApplication(notOnApplication.EducationOrganizationIds)
+                                        .Failure,
+                                ],
+                                httpContext.TraceIdentifier
+                            );
+                        case ApiClientUpdateResult.FailureEducationOrganizationsNotOnApplication notOnApplication:
+                            if (!await TryCompensateAsync())
+                            {
+                                return FailureResults.Unknown(httpContext.TraceIdentifier);
+                            }
+
+                            return EducationOrganizationScopeConflict(
+                                command.ApplicationId,
+                                notOnApplication.EducationOrganizationIds,
+                                httpContext
+                            );
                         case ApiClientUpdateResult.FailureDuplicateClientUuid:
                             // The provider reported a replacement UUID that another ApiClient row
                             // already holds: a provider inconsistency. Compensating would call
@@ -1394,7 +1542,7 @@ public class ApiClientModule : IEndpointModule
         }
     }
 
-    private static bool SetEquals(IEnumerable<int> first, IEnumerable<int> second) =>
+    private static bool SetEquals<T>(IEnumerable<T> first, IEnumerable<T> second) =>
         first.ToHashSet().SetEquals(second);
 
     private static async Task<IResult> DeleteApiClient(

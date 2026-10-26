@@ -1,0 +1,885 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Net;
+using System.Text;
+using System.Text.Json.Nodes;
+using Dapper;
+using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
+using FakeItEasy;
+using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
+
+/// <summary>
+/// The client education organization rules of POST and PUT /v3/apiClients, through the HTTP
+/// pipeline against the real database, with a fake identity provider that records the education
+/// organization claim each provider call sends. Application A holds 255901, 255902 and 255903;
+/// Application B, a move destination, holds 255901 and 255904. Neither has a default client.
+/// </summary>
+public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
+{
+    protected const long A1 = 255901;
+    protected const long A2 = 255902;
+    protected const long A3 = 255903;
+    protected const long B4 = 255904;
+    protected const string DataValidationType = "urn:ed-fi:management-api:bad-request:data";
+    protected const string ScopeConflictType =
+        "urn:ed-fi:management-api:conflict:education-organization-scope";
+
+    protected sealed record ProviderCreate(string ClientId, Guid ClientUuid, string EducationOrganizationIds);
+
+    protected sealed record ProviderUpdate(string ClientUuid, string EducationOrganizationIds);
+
+    protected sealed record ClientScope(int ApplicationId, bool Inherits, (int, long)[] Rows);
+
+    private WebApplicationFactory<Program> _factory = null!;
+
+    protected IIdentityProviderRepository IdentityProvider { get; private set; } = null!;
+    protected List<ProviderCreate> ProviderCreates { get; } = [];
+    protected List<ProviderUpdate> ProviderUpdates { get; } = [];
+    protected List<string> ProviderDeletes { get; } = [];
+
+    /// <summary>Runs once, inside the next provider create or update, before it returns.</summary>
+    protected Func<Task>? DuringNextProviderCall { get; set; }
+
+    protected int VendorId { get; private set; }
+    protected int ApplicationA { get; private set; }
+    protected int ApplicationB { get; private set; }
+
+    [SetUp]
+    public async Task StartHost()
+    {
+        ProviderCreates.Clear();
+        ProviderUpdates.Clear();
+        ProviderDeletes.Clear();
+        DuringNextProviderCall = null;
+
+        IdentityProvider = A.Fake<IIdentityProviderRepository>();
+        A.CallTo(() =>
+                IdentityProvider.CreateClientAsync(
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<int[]?>.Ignored,
+                    A<bool>.Ignored
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                Guid clientUuid = Guid.NewGuid();
+                ProviderCreates.Add(
+                    new(call.GetArgument<string>(0)!, clientUuid, call.GetArgument<string>(6)!)
+                );
+                await RunDuringProviderCallAsync();
+                return (ClientCreateResult)new ClientCreateResult.Success(clientUuid);
+            });
+        A.CallTo(() =>
+                IdentityProvider.UpdateClientAsync(
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<int[]?>.Ignored,
+                    A<bool>.Ignored,
+                    A<string>.Ignored
+                )
+            )
+            .ReturnsLazily(async call =>
+            {
+                string clientUuid = call.GetArgument<string>(0)!;
+                ProviderUpdates.Add(new(clientUuid, call.GetArgument<string>(3)!));
+                await RunDuringProviderCallAsync();
+                return (ClientUpdateResult)new ClientUpdateResult.Success(Guid.Parse(clientUuid));
+            });
+        A.CallTo(() => IdentityProvider.DeleteClientAsync(A<string>.Ignored))
+            .ReturnsLazily(call =>
+            {
+                ProviderDeletes.Add(call.GetArgument<string>(0)!);
+                return Task.FromResult<ClientDeleteResult>(new ClientDeleteResult.Success());
+            });
+
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.UseSetting("AppSettings:Datastore", "postgresql");
+            builder.UseSetting("AppSettings:MultiTenancy", "false");
+            builder.UseSetting(
+                "DatabaseSettings:DatabaseConnection",
+                Configuration.DatabaseOptions.Value.DatabaseConnection
+            );
+            builder.ConfigureServices(services =>
+            {
+                services.AddTestAuthentication();
+                services.AddTransient(_ => IdentityProvider);
+            });
+        });
+
+        VendorId = await CreateAsync(
+            "/v3/vendors/",
+            $$"""
+            {
+              "company": "Client Scope Vendor {{Guid.NewGuid():N}}",
+              "contactName": "Test Contact",
+              "contactEmailAddress": "test@test.test",
+              "namespacePrefixes": "uri://client-scope"
+            }
+            """
+        );
+        ApplicationA = await CreateApplicationAsync("Application A", [A1, A2, A3]);
+        ApplicationB = await CreateApplicationAsync("Application B", [A1, B4]);
+    }
+
+    [TearDown]
+    public async Task StopHost()
+    {
+        // Setup can fail before the host is assigned, so teardown disposes only a started host
+        // and clears the field for the next test.
+        if (_factory is not null)
+        {
+            await _factory.DisposeAsync();
+            _factory = null!;
+        }
+    }
+
+    private async Task RunDuringProviderCallAsync()
+    {
+        Func<Task>? action = DuringNextProviderCall;
+        DuringNextProviderCall = null;
+        if (action is not null)
+        {
+            await action();
+        }
+    }
+
+    protected async Task<(HttpStatusCode Status, JsonNode Body)> SendAsync(
+        HttpMethod method,
+        string path,
+        string? json = null
+    )
+    {
+        using HttpClient client = _factory.CreateClient();
+        using HttpRequestMessage request = new(method, path);
+        request.Headers.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+        if (json is not null)
+        {
+            request.Content = new StringContent(json, Encoding.UTF8, "application/json");
+        }
+
+        using HttpResponseMessage response = await client.SendAsync(request);
+        string content = await response.Content.ReadAsStringAsync();
+        return (response.StatusCode, content.Length == 0 ? new JsonObject() : JsonNode.Parse(content)!);
+    }
+
+    /// <summary>
+    /// Posts a resource and returns its id, read from the body when the endpoint returns one and
+    /// otherwise from the Location header (vendor creation returns no body).
+    /// </summary>
+    private async Task<int> CreateAsync(string path, string json)
+    {
+        using HttpClient client = _factory.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+        using HttpResponseMessage response = await client.PostAsync(
+            path,
+            new StringContent(json, Encoding.UTF8, "application/json")
+        );
+        string content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.Created, content);
+        return content.Length > 0
+            ? JsonNode.Parse(content)!["id"]!.GetValue<int>()
+            : int.Parse(response.Headers.Location!.Segments[^1]);
+    }
+
+    protected Task<int> CreateApplicationAsync(string name, long[] educationOrganizationIds) =>
+        CreateAsync(
+            "/v3/applications/",
+            $$"""
+            {
+              "applicationName": "{{name}} {{Guid.NewGuid():N}}",
+              "vendorId": {{VendorId}},
+              "claimSetName": "ClientScopeClaimSet",
+              "educationOrganizationIds": [{{string.Join(", ", educationOrganizationIds)}}],
+              "createDefaultCredentials": false
+            }
+            """
+        );
+
+    /// <summary>POSTs a client; <paramref name="scopeJson"/> is appended inside the body.</summary>
+    protected Task<(HttpStatusCode Status, JsonNode Body)> PostClientAsync(
+        int applicationId,
+        string scopeJson = "",
+        string? name = null
+    ) =>
+        SendAsync(
+            HttpMethod.Post,
+            "/v3/apiClients/",
+            $$"""
+            {
+              "applicationId": {{applicationId}},
+              "name": "{{name ?? "Client " + Guid.NewGuid().ToString("N")}}",
+              "isApproved": true,
+              "dataStoreIds": []{{scopeJson}}
+            }
+            """
+        );
+
+    /// <summary>Creates a client and returns its id and identity provider client UUID.</summary>
+    protected async Task<(int Id, string ClientUuid)> CreateClientAsync(
+        int applicationId,
+        string scopeJson = "",
+        string? name = null
+    )
+    {
+        var (status, body) = await PostClientAsync(applicationId, scopeJson, name);
+        status.Should().Be(HttpStatusCode.Created, body.ToJsonString());
+        string key = body["key"]!.GetValue<string>();
+        return (
+            body["id"]!.GetValue<int>(),
+            ProviderCreates.Single(c => c.ClientId == key).ClientUuid.ToString()
+        );
+    }
+
+    /// <summary>PUTs a client; <paramref name="scopeJson"/> is appended inside the body.</summary>
+    protected Task<(HttpStatusCode Status, JsonNode Body)> PutClientAsync(
+        int id,
+        int applicationId,
+        string scopeJson = "",
+        string? name = null
+    ) =>
+        SendAsync(
+            HttpMethod.Put,
+            $"/v3/apiClients/{id}",
+            $$"""
+            {
+              "id": {{id}},
+              "applicationId": {{applicationId}},
+              "name": "{{name ?? "Updated " + Guid.NewGuid().ToString("N")}}",
+              "isApproved": true,
+              "dataStoreIds": []{{scopeJson}}
+            }
+            """
+        );
+
+    protected static string List(params long[] ids) =>
+        $$""", "educationOrganizationIds": [{{string.Join(", ", ids)}}]""";
+
+    protected static string Flag(bool inherits) =>
+        $$""", "inheritsApplicationEducationOrganizations": {{(inherits ? "true" : "false")}}""";
+
+    protected async Task<ClientScope> ClientScopeAsync(int apiClientId)
+    {
+        await using var connection = await DataSource!.OpenConnectionAsync();
+        var client = await connection.QuerySingleAsync<(int ApplicationId, bool Inherits)>(
+            """SELECT "ApplicationId", "InheritsApplicationEducationOrganizations" FROM "dmscs"."ApiClient" WHERE "Id" = @Id;""",
+            new { Id = apiClientId }
+        );
+        var rows = await connection.QueryAsync<(int, long)>(
+            """SELECT "ApplicationId", "EducationOrganizationId" FROM "dmscs"."ApiClientEducationOrganization" WHERE "ApiClientId" = @Id ORDER BY "EducationOrganizationId";""",
+            new { Id = apiClientId }
+        );
+        return new(client.ApplicationId, client.Inherits, [.. rows]);
+    }
+
+    protected async Task<string> ClientNameAsync(int apiClientId)
+    {
+        await using var connection = await DataSource!.OpenConnectionAsync();
+        return await connection.QuerySingleAsync<string>(
+            """SELECT "Name" FROM "dmscs"."ApiClient" WHERE "Id" = @Id;""",
+            new { Id = apiClientId }
+        );
+    }
+
+    protected async Task<int> ApiClientCountAsync()
+    {
+        await using var connection = await DataSource!.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<int>("""SELECT COUNT(*) FROM "dmscs"."ApiClient";""");
+    }
+
+    /// <summary>Removes an education organization from an Application, cascading to its clients.</summary>
+    protected async Task RemoveApplicationEducationOrganizationAsync(
+        int applicationId,
+        long educationOrganizationId
+    )
+    {
+        await using var connection = await DataSource!.OpenConnectionAsync();
+        await connection.ExecuteAsync(
+            """DELETE FROM "dmscs"."ApplicationEducationOrganization" WHERE "ApplicationId" = @ApplicationId AND "EducationOrganizationId" = @EducationOrganizationId;""",
+            new { ApplicationId = applicationId, EducationOrganizationId = educationOrganizationId }
+        );
+    }
+
+    /// <summary>Adds an education organization to an Application without touching any client rows.</summary>
+    protected async Task AddApplicationEducationOrganizationAsync(
+        int applicationId,
+        long educationOrganizationId
+    )
+    {
+        await using var connection = await DataSource!.OpenConnectionAsync();
+        await connection.ExecuteAsync(
+            """INSERT INTO "dmscs"."ApplicationEducationOrganization" ("ApplicationId", "EducationOrganizationId") VALUES (@ApplicationId, @EducationOrganizationId);""",
+            new { ApplicationId = applicationId, EducationOrganizationId = educationOrganizationId }
+        );
+    }
+
+    protected async Task RenameClientAsync(int apiClientId, string name)
+    {
+        await using var connection = await DataSource!.OpenConnectionAsync();
+        await connection.ExecuteAsync(
+            """UPDATE "dmscs"."ApiClient" SET "Name" = @Name WHERE "Id" = @Id;""",
+            new { Id = apiClientId, Name = name }
+        );
+    }
+
+    protected static ClientScope Scope(int applicationId, bool inherits, params long[] ids) =>
+        new(applicationId, inherits, [.. ids.Order().Select(id => (applicationId, id))]);
+
+    protected static void ShouldMatch(ClientScope actual, ClientScope expected) =>
+        actual.Should().BeEquivalentTo(expected, options => options.WithStrictOrdering());
+
+    protected static void ShouldBeDataValidation(
+        (HttpStatusCode Status, JsonNode Body) response,
+        string field
+    )
+    {
+        response.Status.Should().Be(HttpStatusCode.BadRequest, response.Body.ToJsonString());
+        response.Body["type"]!.GetValue<string>().Should().Be(DataValidationType);
+        response.Body["validationErrors"]!.AsObject().Select(error => error.Key).Should().Equal(field);
+    }
+
+    protected static void ShouldBeScopeConflict((HttpStatusCode Status, JsonNode Body) response)
+    {
+        response.Status.Should().Be(HttpStatusCode.Conflict, response.Body.ToJsonString());
+        response.Body["type"]!.GetValue<string>().Should().Be(ScopeConflictType);
+    }
+
+    protected string[] ClaimsSentFor(string clientUuid) =>
+        [
+            .. ProviderUpdates
+                .Where(update => update.ClientUuid == clientUuid)
+                .Select(update => update.EducationOrganizationIds),
+        ];
+
+    [TestFixture]
+    public class Given_api_clients_created_with_each_education_organization_request
+        : ApiClientEducationOrganizationApiTests
+    {
+        private readonly Dictionary<string, (HttpStatusCode Status, int Id, string Claim)> _created = [];
+        private int _largeIdApplication;
+        private const long LargeId = 9007199254740993;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _largeIdApplication = await CreateApplicationAsync("Large Id Application", [A1, LargeId]);
+            var requests = new (string Name, int ApplicationId, string Json)[]
+            {
+                ("neither", ApplicationA, ""),
+                ("list", ApplicationA, List(A2)),
+                ("list equal to the Application", ApplicationA, List(A3, A1, A2)),
+                ("false with a repeated list", ApplicationA, List(A3, A1, A3) + Flag(false)),
+                ("true", ApplicationA, Flag(true)),
+                ("true with the Application list repeated", ApplicationA, List(A2, A3, A1, A3) + Flag(true)),
+                ("large id", _largeIdApplication, List(LargeId)),
+            };
+            foreach (var (name, applicationId, json) in requests)
+            {
+                var (status, body) = await PostClientAsync(applicationId, json);
+                string key = body["key"]!.GetValue<string>();
+                _created[name] = (
+                    status,
+                    body["id"]!.GetValue<int>(),
+                    ProviderCreates.Single(c => c.ClientId == key).EducationOrganizationIds
+                );
+            }
+        }
+
+        [Test]
+        public void It_creates_every_client() =>
+            _created.Values.Should().OnlyContain(created => created.Status == HttpStatusCode.Created);
+
+        [TestCase("neither", true, new[] { A1, A2, A3 })]
+        [TestCase("list", false, new[] { A2 })]
+        [TestCase("list equal to the Application", false, new[] { A1, A2, A3 })]
+        [TestCase("false with a repeated list", false, new[] { A1, A3 })]
+        [TestCase("true", true, new[] { A1, A2, A3 })]
+        [TestCase("true with the Application list repeated", true, new[] { A1, A2, A3 })]
+        public async Task It_stores_the_resolved_scope(string request, bool inherits, long[] ids) =>
+            ShouldMatch(await ClientScopeAsync(_created[request].Id), Scope(ApplicationA, inherits, ids));
+
+        [TestCase("neither", "255901,255902,255903")]
+        [TestCase("list", "255902")]
+        [TestCase("list equal to the Application", "255901,255902,255903")]
+        [TestCase("false with a repeated list", "255901,255903")]
+        [TestCase("true", "255901,255902,255903")]
+        [TestCase("true with the Application list repeated", "255901,255902,255903")]
+        [TestCase("large id", "9007199254740993")]
+        public void It_sends_the_effective_list_as_the_claim(string request, string claim) =>
+            _created[request].Claim.Should().Be(claim);
+
+        [Test]
+        public async Task It_stores_a_large_education_organization_id_exactly() =>
+            ShouldMatch(
+                await ClientScopeAsync(_created["large id"].Id),
+                Scope(_largeIdApplication, false, LargeId)
+            );
+    }
+
+    [TestFixture]
+    public class Given_api_client_creates_rejected_by_the_education_organization_rules
+        : ApiClientEducationOrganizationApiTests
+    {
+        private readonly Dictionary<string, (HttpStatusCode Status, JsonNode Body)> _responses = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var requests = new (string Name, string Json)[]
+            {
+                ("empty list", """, "educationOrganizationIds": []"""),
+                ("empty list with true", """, "educationOrganizationIds": []""" + Flag(true)),
+                ("null list", """, "educationOrganizationIds": null"""),
+                ("false without a list", Flag(false)),
+                ("null flag", """, "inheritsApplicationEducationOrganizations": null"""),
+                ("true with another list", List(A1, A2) + Flag(true)),
+                ("list not on the Application", List(A1, B4)),
+            };
+            foreach (var (name, json) in requests)
+            {
+                _responses[name] = await PostClientAsync(ApplicationA, json);
+            }
+        }
+
+        [TestCase("empty list", "EducationOrganizationIds")]
+        [TestCase("empty list with true", "EducationOrganizationIds")]
+        [TestCase("null list", "EducationOrganizationIds")]
+        [TestCase("false without a list", "InheritsApplicationEducationOrganizations")]
+        [TestCase("null flag", "InheritsApplicationEducationOrganizations")]
+        [TestCase("true with another list", "EducationOrganizationIds")]
+        [TestCase("list not on the Application", "EducationOrganizationIds")]
+        public void It_rejects_the_request_on_the_field(string request, string field) =>
+            ShouldBeDataValidation(_responses[request], field);
+
+        [Test]
+        public void It_names_the_education_organizations_not_on_the_Application() =>
+            _responses["list not on the Application"].Body["validationErrors"]!["EducationOrganizationIds"]![
+                0
+            ]!
+                .GetValue<string>()
+                .Should()
+                .EndWith("Not on the Application: 255904.");
+
+        [Test]
+        public void It_creates_no_identity_provider_client() => ProviderCreates.Should().BeEmpty();
+
+        [Test]
+        public async Task It_creates_no_client() => (await ApiClientCountAsync()).Should().Be(0);
+    }
+
+    [TestFixture]
+    public class Given_api_clients_created_on_an_Application_without_education_organizations
+        : ApiClientEducationOrganizationApiTests
+    {
+        private int _emptyApplication;
+        private (int Id, string ClientUuid) _neither;
+        private (int Id, string ClientUuid) _true;
+        private (HttpStatusCode Status, JsonNode Body) _emptyListWithTrue;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _emptyApplication = await CreateApplicationAsync("Empty Application", []);
+            _neither = await CreateClientAsync(_emptyApplication);
+            _true = await CreateClientAsync(_emptyApplication, Flag(true));
+            _emptyListWithTrue = await PostClientAsync(
+                _emptyApplication,
+                """, "educationOrganizationIds": []""" + Flag(true)
+            );
+        }
+
+        [Test]
+        public async Task It_makes_both_clients_inherit_the_empty_list()
+        {
+            ShouldMatch(await ClientScopeAsync(_neither.Id), Scope(_emptyApplication, true));
+            ShouldMatch(await ClientScopeAsync(_true.Id), Scope(_emptyApplication, true));
+        }
+
+        [Test]
+        public void It_sends_empty_claims() =>
+            ProviderCreates.Select(create => create.EducationOrganizationIds).Should().Equal("", "");
+
+        [Test]
+        public void It_still_rejects_an_empty_list_sent_with_true() =>
+            ShouldBeDataValidation(_emptyListWithTrue, "EducationOrganizationIds");
+    }
+
+    [TestFixture]
+    public class Given_api_client_updates_on_the_same_Application : ApiClientEducationOrganizationApiTests
+    {
+        private readonly Dictionary<
+            string,
+            ((int Id, string ClientUuid) Client, HttpStatusCode Status)
+        > _updates = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var requests = new (string Name, string CreateJson, string UpdateJson)[]
+            {
+                ("narrowed, neither", List(A2), ""),
+                ("inheriting, neither", "", ""),
+                ("narrowed, true", List(A2), Flag(true)),
+                ("narrowed, true with the Application list", List(A2), List(A3, A2, A1, A1) + Flag(true)),
+                ("inheriting, list", "", List(A3, A1)),
+                ("inheriting, list equal to the Application", "", List(A1, A2, A3)),
+                ("inheriting, false with a list", "", List(A2) + Flag(false)),
+            };
+            foreach (var (name, createJson, updateJson) in requests)
+            {
+                var client = await CreateClientAsync(ApplicationA, createJson);
+                var (status, _) = await PutClientAsync(client.Id, ApplicationA, updateJson);
+                _updates[name] = (client, status);
+            }
+        }
+
+        [Test]
+        public void It_updates_every_client() =>
+            _updates.Values.Should().OnlyContain(update => update.Status == HttpStatusCode.NoContent);
+
+        [TestCase("narrowed, neither", false, new[] { A2 })]
+        [TestCase("inheriting, neither", true, new[] { A1, A2, A3 })]
+        [TestCase("narrowed, true", true, new[] { A1, A2, A3 })]
+        [TestCase("narrowed, true with the Application list", true, new[] { A1, A2, A3 })]
+        [TestCase("inheriting, list", false, new[] { A1, A3 })]
+        [TestCase("inheriting, list equal to the Application", false, new[] { A1, A2, A3 })]
+        [TestCase("inheriting, false with a list", false, new[] { A2 })]
+        public async Task It_stores_the_resolved_scope(string request, bool inherits, long[] ids) =>
+            ShouldMatch(
+                await ClientScopeAsync(_updates[request].Client.Id),
+                Scope(ApplicationA, inherits, ids)
+            );
+
+        [TestCase("narrowed, neither", "255902")]
+        [TestCase("inheriting, neither", "255901,255902,255903")]
+        [TestCase("narrowed, true", "255901,255902,255903")]
+        [TestCase("narrowed, true with the Application list", "255901,255902,255903")]
+        [TestCase("inheriting, list", "255901,255903")]
+        [TestCase("inheriting, list equal to the Application", "255901,255902,255903")]
+        [TestCase("inheriting, false with a list", "255902")]
+        public void It_sends_the_effective_list_as_the_claim(string request, string claim) =>
+            ClaimsSentFor(_updates[request].Client.ClientUuid).Should().Equal(claim);
+    }
+
+    [TestFixture]
+    public class Given_api_client_updates_rejected_by_the_education_organization_rules
+        : ApiClientEducationOrganizationApiTests
+    {
+        private (int Id, string ClientUuid) _client;
+        private readonly Dictionary<string, (HttpStatusCode Status, JsonNode Body)> _responses = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = await CreateClientAsync(ApplicationA, List(A2), "Narrowed client");
+            var requests = new (string Name, string Json)[]
+            {
+                ("empty list", """, "educationOrganizationIds": []"""),
+                ("null list", """, "educationOrganizationIds": null"""),
+                ("false without a list", Flag(false)),
+                ("null flag", """, "inheritsApplicationEducationOrganizations": null"""),
+                ("true with another list", List(A2) + Flag(true)),
+                ("list not on the Application", List(B4)),
+            };
+            foreach (var (name, json) in requests)
+            {
+                _responses[name] = await PutClientAsync(_client.Id, ApplicationA, json);
+            }
+        }
+
+        [TestCase("empty list", "EducationOrganizationIds")]
+        [TestCase("null list", "EducationOrganizationIds")]
+        [TestCase("false without a list", "InheritsApplicationEducationOrganizations")]
+        [TestCase("null flag", "InheritsApplicationEducationOrganizations")]
+        [TestCase("true with another list", "EducationOrganizationIds")]
+        [TestCase("list not on the Application", "EducationOrganizationIds")]
+        public void It_rejects_the_request_on_the_field(string request, string field) =>
+            ShouldBeDataValidation(_responses[request], field);
+
+        [Test]
+        public void It_updates_no_identity_provider_client() => ProviderUpdates.Should().BeEmpty();
+
+        [Test]
+        public async Task It_leaves_the_client_narrowed_and_named() =>
+            (await ClientScopeAsync(_client.Id), await ClientNameAsync(_client.Id))
+                .Should()
+                .BeEquivalentTo((Scope(ApplicationA, false, A2), "Narrowed client"));
+    }
+
+    [TestFixture]
+    public class Given_narrowed_clients_left_without_education_organizations
+        : ApiClientEducationOrganizationApiTests
+    {
+        private (int Id, string ClientUuid) _kept;
+        private (int Id, string ClientUuid) _moved;
+        private HttpStatusCode _keptStatus;
+        private HttpStatusCode _movedStatus;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _kept = await CreateClientAsync(ApplicationA, List(A2));
+            _moved = await CreateClientAsync(ApplicationA, List(A2));
+            await RemoveApplicationEducationOrganizationAsync(ApplicationA, A2);
+
+            (_keptStatus, _) = await PutClientAsync(_kept.Id, ApplicationA);
+            (_movedStatus, _) = await PutClientAsync(_moved.Id, ApplicationB);
+        }
+
+        [Test]
+        public void It_accepts_both_updates()
+        {
+            _keptStatus.Should().Be(HttpStatusCode.NoContent);
+            _movedStatus.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        [Test]
+        public async Task It_keeps_the_client_narrowed_to_nothing() =>
+            ShouldMatch(await ClientScopeAsync(_kept.Id), Scope(ApplicationA, false));
+
+        [Test]
+        public async Task It_moves_the_empty_narrowed_client_without_a_conflict() =>
+            ShouldMatch(await ClientScopeAsync(_moved.Id), Scope(ApplicationB, false));
+
+        [Test]
+        public void It_sends_empty_claims()
+        {
+            ClaimsSentFor(_kept.ClientUuid).Should().Equal("");
+            ClaimsSentFor(_moved.ClientUuid).Should().Equal("");
+        }
+    }
+
+    [TestFixture]
+    public class Given_api_clients_moved_to_another_Application : ApiClientEducationOrganizationApiTests
+    {
+        private readonly Dictionary<
+            string,
+            ((int Id, string ClientUuid) Client, (HttpStatusCode Status, JsonNode Body) Response)
+        > _moves = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var requests = new (string Name, string CreateJson, string MoveJson)[]
+            {
+                ("inheriting, neither", "", ""),
+                ("narrowed fitting, neither", List(A1), ""),
+                ("narrowed not fitting, neither", List(A2), ""),
+                ("narrowed not fitting, replacement list", List(A2), List(B4)),
+                ("narrowed not fitting, true", List(A2), Flag(true)),
+                ("narrowed fitting, list only on the source", List(A1), List(A2)),
+            };
+            foreach (var (name, createJson, moveJson) in requests)
+            {
+                var client = await CreateClientAsync(ApplicationA, createJson);
+                _moves[name] = (client, await PutClientAsync(client.Id, ApplicationB, moveJson));
+            }
+        }
+
+        [TestCase("inheriting, neither")]
+        [TestCase("narrowed fitting, neither")]
+        [TestCase("narrowed not fitting, replacement list")]
+        [TestCase("narrowed not fitting, true")]
+        public void It_moves_the_client(string request) =>
+            _moves[request].Response.Status.Should().Be(HttpStatusCode.NoContent);
+
+        [TestCase("inheriting, neither", true, new[] { A1, B4 })]
+        [TestCase("narrowed fitting, neither", false, new[] { A1 })]
+        [TestCase("narrowed not fitting, replacement list", false, new[] { B4 })]
+        [TestCase("narrowed not fitting, true", true, new[] { A1, B4 })]
+        public async Task It_stores_the_scope_on_the_destination(string request, bool inherits, long[] ids) =>
+            ShouldMatch(
+                await ClientScopeAsync(_moves[request].Client.Id),
+                Scope(ApplicationB, inherits, ids)
+            );
+
+        [TestCase("inheriting, neither", "255901,255904")]
+        [TestCase("narrowed fitting, neither", "255901")]
+        [TestCase("narrowed not fitting, replacement list", "255904")]
+        [TestCase("narrowed not fitting, true", "255901,255904")]
+        public void It_sends_the_destination_effective_list_as_the_claim(string request, string claim) =>
+            ClaimsSentFor(_moves[request].Client.ClientUuid).Should().Equal(claim);
+
+        [Test]
+        public void It_rejects_the_move_of_a_narrowed_client_that_does_not_fit() =>
+            ShouldBeScopeConflict(_moves["narrowed not fitting, neither"].Response);
+
+        [Test]
+        public void It_rejects_a_replacement_list_not_on_the_destination() =>
+            ShouldBeDataValidation(
+                _moves["narrowed fitting, list only on the source"].Response,
+                "EducationOrganizationIds"
+            );
+
+        [TestCase("narrowed not fitting, neither", new[] { A2 })]
+        [TestCase("narrowed fitting, list only on the source", new[] { A1 })]
+        public async Task It_leaves_a_rejected_client_on_its_Application(string request, long[] ids) =>
+            ShouldMatch(await ClientScopeAsync(_moves[request].Client.Id), Scope(ApplicationA, false, ids));
+
+        [TestCase("narrowed not fitting, neither")]
+        [TestCase("narrowed fitting, list only on the source")]
+        public void It_updates_no_identity_provider_client_for_a_rejected_move(string request) =>
+            ClaimsSentFor(_moves[request].Client.ClientUuid).Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_a_narrowed_client_create_whose_list_leaves_the_Application_during_the_provider_call
+        : ApiClientEducationOrganizationApiTests
+    {
+        private (HttpStatusCode Status, JsonNode Body) _response;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            DuringNextProviderCall = () => RemoveApplicationEducationOrganizationAsync(ApplicationA, A2);
+            _response = await PostClientAsync(ApplicationA, List(A2));
+        }
+
+        [Test]
+        public void It_rejects_the_list() => ShouldBeDataValidation(_response, "EducationOrganizationIds");
+
+        [Test]
+        public void It_deletes_the_provider_client_it_created() =>
+            ProviderDeletes.Should().Equal(ProviderCreates.Single().ClientUuid.ToString());
+
+        [Test]
+        public async Task It_creates_no_client() => (await ApiClientCountAsync()).Should().Be(0);
+    }
+
+    [TestFixture]
+    public class Given_a_narrowed_client_move_whose_replacement_list_leaves_the_destination_during_the_provider_call
+        : ApiClientEducationOrganizationApiTests
+    {
+        private (int Id, string ClientUuid) _client;
+        private (HttpStatusCode Status, JsonNode Body) _response;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = await CreateClientAsync(ApplicationA, List(A3, A2));
+            DuringNextProviderCall = () => RemoveApplicationEducationOrganizationAsync(ApplicationB, B4);
+            _response = await PutClientAsync(_client.Id, ApplicationB, List(B4));
+        }
+
+        [Test]
+        public void It_rejects_the_list() => ShouldBeDataValidation(_response, "EducationOrganizationIds");
+
+        [Test]
+        public void It_restores_the_original_narrowed_claim() =>
+            ClaimsSentFor(_client.ClientUuid).Should().Equal("255904", "255902,255903");
+
+        [Test]
+        public async Task It_leaves_the_client_on_its_Application() =>
+            ShouldMatch(await ClientScopeAsync(_client.Id), Scope(ApplicationA, false, A2, A3));
+    }
+
+    [TestFixture]
+    public class Given_an_omitted_scope_move_whose_destination_loses_the_client_list_during_the_provider_call
+        : ApiClientEducationOrganizationApiTests
+    {
+        private (int Id, string ClientUuid) _client;
+        private (HttpStatusCode Status, JsonNode Body) _response;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = await CreateClientAsync(ApplicationA, List(A1));
+            DuringNextProviderCall = () => RemoveApplicationEducationOrganizationAsync(ApplicationB, A1);
+            _response = await PutClientAsync(_client.Id, ApplicationB);
+        }
+
+        [Test]
+        public void It_reports_a_scope_conflict() => ShouldBeScopeConflict(_response);
+
+        [Test]
+        public void It_restores_the_original_narrowed_claim() =>
+            ClaimsSentFor(_client.ClientUuid).Should().Equal("255901", "255901");
+
+        [Test]
+        public async Task It_leaves_the_client_on_its_Application() =>
+            ShouldMatch(await ClientScopeAsync(_client.Id), Scope(ApplicationA, false, A1));
+    }
+
+    [TestFixture]
+    public class Given_a_narrowed_client_move_that_fails_after_the_provider_update
+        : ApiClientEducationOrganizationApiTests
+    {
+        private (int Id, string ClientUuid) _client;
+        private (HttpStatusCode Status, JsonNode Body) _response;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = await CreateClientAsync(ApplicationA, List(A2), "Moving client");
+            var other = await CreateClientAsync(ApplicationB);
+
+            // The name is free when checked, and taken by the time the database update runs
+            DuringNextProviderCall = () => RenameClientAsync(other.Id, "Taken name");
+            _response = await PutClientAsync(_client.Id, ApplicationB, List(B4), "Taken name");
+        }
+
+        [Test]
+        public void It_reports_the_duplicate_name() => ShouldBeDataValidation(_response, "Name");
+
+        [Test]
+        public void It_restores_the_original_narrowed_claim() =>
+            ClaimsSentFor(_client.ClientUuid).Should().Equal("255904", "255902");
+
+        [Test]
+        public async Task It_leaves_the_client_on_its_Application_with_its_name()
+        {
+            ShouldMatch(await ClientScopeAsync(_client.Id), Scope(ApplicationA, false, A2));
+            (await ClientNameAsync(_client.Id)).Should().Be("Moving client");
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_inheriting_client_updated_after_its_Application_gains_an_education_organization
+        : ApiClientEducationOrganizationApiTests
+    {
+        private const long A5 = 255905;
+        private (int Id, string ClientUuid) _client;
+        private HttpStatusCode _status;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = await CreateClientAsync(ApplicationA);
+
+            // An Application save inserts only the added id; it does not copy it to the rows of
+            // the Application's inheriting clients
+            await AddApplicationEducationOrganizationAsync(ApplicationA, A5);
+            (_status, _) = await PutClientAsync(_client.Id, ApplicationA);
+        }
+
+        [Test]
+        public void It_updates_the_client() => _status.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public async Task It_keeps_the_client_inheriting_with_its_existing_rows() =>
+            ShouldMatch(await ClientScopeAsync(_client.Id), Scope(ApplicationA, true, A1, A2, A3));
+
+        [Test]
+        public void It_sends_the_expanded_effective_list_as_the_claim() =>
+            ClaimsSentFor(_client.ClientUuid).Should().Equal("255901,255902,255903,255905");
+    }
+}

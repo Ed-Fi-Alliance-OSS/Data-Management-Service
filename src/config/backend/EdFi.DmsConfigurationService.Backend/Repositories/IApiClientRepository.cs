@@ -139,7 +139,8 @@ public record ApiClientSyncPendingResult
 }
 
 /// <summary>
-/// The complete state an ApiClient update mutates, including the exact data store set.
+/// The complete state an ApiClient update mutates, including the exact data store set and the
+/// education organization scope: the inheritance flag and the client's own rows.
 /// </summary>
 public record ApiClientResolutionState(
     int ApplicationId,
@@ -147,7 +148,9 @@ public record ApiClientResolutionState(
     bool IsApproved,
     string ClientId,
     Guid ClientUuid,
-    int[] DataStoreIds
+    int[] DataStoreIds,
+    bool InheritsApplicationEducationOrganizations,
+    long[] StoredEducationOrganizationIds
 );
 
 public record ApiClientResolutionResult

@@ -71,6 +71,15 @@ public class ApiClientModuleTests
         A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
             .Returns(new ApiClientUuidReferenceResult.None());
 
+        // By default the client inherits the education organization [1] that the fixtures'
+        // Applications hold; fixtures that test a narrowed client override this.
+        A.CallTo(() => _apiClientRepository.GetApiClientEducationOrganizationState(A<int>.Ignored))
+            .ReturnsLazily(() =>
+                new ApiClientEducationOrganizationStateResult.Success(
+                    new ApiClientEducationOrganizationState(1, true, [1], [1], null)
+                )
+            );
+
         // By default no other client of the application holds the requested name, so the insert
         // and update name checks pass; fixtures that test a taken name override this.
         A.CallTo(() => _apiClientRepository.QueryApiClient(A<ApiClientQuery>.Ignored))
@@ -1234,7 +1243,16 @@ public class ApiClientModuleTests
             A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
                 .Returns(
                     new ApiClientResolutionResult.Success(
-                        new ApiClientResolutionState(1, "Test", true, "test-client", existingUuid, [1])
+                        new ApiClientResolutionState(
+                            1,
+                            "Test",
+                            true,
+                            "test-client",
+                            existingUuid,
+                            [1],
+                            true,
+                            [1]
+                        )
                     )
                 );
 
@@ -2681,7 +2699,7 @@ public class ApiClientModuleTests
         }
 
         protected ApiClientResolutionState SurvivingRowState() =>
-            new(1, "Test", true, "test-client", _providerClientUuid, [1]);
+            new(1, "Test", true, "test-client", _providerClientUuid, [1], true, [1]);
 
         protected async Task ActDeleteAsync()
         {
@@ -3324,7 +3342,9 @@ public class ApiClientModuleTests
 
         protected async Task ActUpdateAsync(
             int applicationId = 1,
-            Action<IServiceCollection>? configureServices = null
+            Action<IServiceCollection>? configureServices = null,
+            string name = "Updated",
+            string extraProperties = ""
         )
         {
             using var client = SetUpClient(configureServices: configureServices);
@@ -3335,9 +3355,9 @@ public class ApiClientModuleTests
                     {
                       "id": 1,
                       "applicationId": {{applicationId}},
-                      "name": "Updated",
+                      "name": "{{name}}",
                       "isApproved": true,
-                      "dataStoreIds": [1]
+                      "dataStoreIds": [1]{{extraProperties}}
                     }
                     """,
                     Encoding.UTF8,
@@ -3693,10 +3713,10 @@ public class ApiClientModuleTests
         }
 
         protected ApiClientResolutionState CommandMatchingState() =>
-            new(1, "Updated", true, "test-client", _updatedUuid, [1]);
+            new(1, "Updated", true, "test-client", _updatedUuid, [1], true, [1]);
 
         protected ApiClientResolutionState OriginalState() =>
-            new(1, "Test", true, "test-client", _existingUuid, [1]);
+            new(1, "Test", true, "test-client", _existingUuid, [1], true, [1]);
     }
 
     [TestFixture]
@@ -3814,6 +3834,212 @@ public class ApiClientModuleTests
             _syncCalls.Should().BeEmpty();
             _deletedClientIds.Should().BeEmpty();
         }
+    }
+
+    /// <summary>
+    /// An update that changes nothing but the education organization scope: a client narrowed to
+    /// {2} on an Application holding {1, 2} is sent inheritsApplicationEducationOrganizations true,
+    /// with its name, approval and data stores unchanged, and the provider updates it in place. The
+    /// command and the original state then differ only in their scope, so only the scope can tell
+    /// a committed write from a rolled-back one.
+    /// </summary>
+    public abstract class ScopeOnlyAmbiguousUpdateTestBase : ThrownApiClientRepositoryExceptionTestBase
+    {
+        protected List<string> _sentClaims = null!;
+
+        [SetUp]
+        public void SetUpScopeOnlyDefaults()
+        {
+            _sentClaims = [];
+
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [2, 1],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() => _apiClientRepository.GetApiClientEducationOrganizationState(A<int>.Ignored))
+                .Returns(
+                    new ApiClientEducationOrganizationStateResult.Success(
+                        new ApiClientEducationOrganizationState(1, false, [2], [2], null)
+                    )
+                );
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call =>
+                {
+                    _updatedClientUuids.Add(call.GetArgument<string>(0)!);
+                    _sentClaims.Add(call.GetArgument<string>(3)!);
+                })
+                .Returns(new ClientUpdateResult.Success(_existingUuid));
+        }
+
+        protected Task ActScopeOnlyUpdateAsync() =>
+            ActUpdateAsync(
+                name: "Test",
+                extraProperties: ", \"inheritsApplicationEducationOrganizations\": true"
+            );
+
+        protected ApiClientResolutionState InheritingState() =>
+            new(1, "Test", true, "test-client", _existingUuid, [1], true, [1, 2]);
+
+        protected ApiClientResolutionState NarrowedState() =>
+            new(1, "Test", true, "test-client", _existingUuid, [1], false, [2]);
+    }
+
+    [TestFixture]
+    public class Given_a_scope_only_update_whose_ambiguous_write_committed : ScopeOnlyAmbiguousUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .Returns(new ApiClientResolutionResult.Success(InheritingState()));
+
+            await ActScopeOnlyUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_the_recovered_success() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_sends_only_the_inherited_claim() => _sentClaims.Should().Equal("1,2");
+    }
+
+    [TestFixture]
+    public class Given_a_scope_only_update_whose_ambiguous_write_did_not_commit
+        : ScopeOnlyAmbiguousUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .Returns(new ApiClientResolutionResult.Success(NarrowedState()));
+
+            await ActScopeOnlyUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_restores_the_original_narrowed_claim() => _sentClaims.Should().Equal("1,2", "2");
+    }
+
+    [TestFixture]
+    public class Given_a_scope_only_update_whose_ambiguous_write_left_a_partial_scope
+        : ScopeOnlyAmbiguousUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            // The flag matches the command and the rows match the original
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .Returns(
+                    new ApiClientResolutionResult.Success(
+                        NarrowedState() with
+                        {
+                            InheritsApplicationEducationOrganizations = true,
+                        }
+                    )
+                );
+
+            await ActScopeOnlyUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_performs_no_compensation() => _sentClaims.Should().Equal("1,2");
+    }
+
+    [TestFixture]
+    public class Given_an_ambiguous_update_that_committed_for_an_inheriting_client_whose_rows_lag_its_Application
+        : ThrownApiClientRepositoryExceptionTestBase
+    {
+        private List<string> _sentClaims = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _sentClaims = [];
+
+            // The Application gained 2 after the client's rows were stored, which an Application
+            // save does not copy to an inheriting client's rows
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1, 2],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+            A.CallTo(() => _apiClientRepository.GetApiClientEducationOrganizationState(A<int>.Ignored))
+                .Returns(
+                    new ApiClientEducationOrganizationStateResult.Success(
+                        new ApiClientEducationOrganizationState(1, true, [1], [1, 2], null)
+                    )
+                );
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _sentClaims.Add(call.GetArgument<string>(3)!))
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.Success(_rollbackUuid)
+                );
+
+            // The rename committed and left the client's rows as they were
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .Returns(new ApiClientResolutionResult.Success(CommandMatchingState()));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_the_recovered_success() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_sends_the_effective_list_once_without_compensation() =>
+            _sentClaims.Should().Equal("1,2");
     }
 
     [TestFixture]

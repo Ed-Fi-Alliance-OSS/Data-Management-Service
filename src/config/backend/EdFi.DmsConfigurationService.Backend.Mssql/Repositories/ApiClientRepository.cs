@@ -1072,7 +1072,8 @@ public class ApiClientRepository(
             // Locking the ApiClient row waits out any in-flight update transaction, so the
             // reads below observe that transaction's final outcome.
             string clientSql = $"""
-                SELECT ac.ApplicationId, ac.Name, ac.IsApproved, ac.ClientId, ac.ClientUuid
+                SELECT ac.ApplicationId, ac.Name, ac.IsApproved, ac.ClientId, ac.ClientUuid,
+                    ac.InheritsApplicationEducationOrganizations
                 FROM dmscs.ApiClient ac WITH (UPDLOCK, HOLDLOCK)
                 WHERE ac.Id = @Id AND {TenantScopedApplicationCondition("ac")};
                 """;
@@ -1081,7 +1082,8 @@ public class ApiClientRepository(
                 string Name,
                 bool IsApproved,
                 string ClientId,
-                Guid ClientUuid
+                Guid ClientUuid,
+                bool InheritsApplicationEducationOrganizations
             )?>(clientSql, new { Id = id, TenantId }, transaction);
 
             if (client is null)
@@ -1101,6 +1103,14 @@ public class ApiClientRepository(
                 ),
             ];
 
+            // The client's own rows are read under the same row lock, so the flag and the rows
+            // come from one committed state
+            long[] storedEducationOrganizationIds = await StoredEducationOrganizationIdsAsync(
+                connection,
+                transaction,
+                id
+            );
+
             await transaction.CommitAsync();
 
             return new ApiClientResolutionResult.Success(
@@ -1110,7 +1120,9 @@ public class ApiClientRepository(
                     client.Value.IsApproved,
                     client.Value.ClientId,
                     client.Value.ClientUuid,
-                    dataStoreIds
+                    dataStoreIds,
+                    client.Value.InheritsApplicationEducationOrganizations,
+                    storedEducationOrganizationIds
                 )
             );
         }
