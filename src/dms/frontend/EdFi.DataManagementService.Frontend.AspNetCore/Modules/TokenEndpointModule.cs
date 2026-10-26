@@ -164,6 +164,7 @@ public class TokenEndpointModule : IEndpointModule
         // never append or relay, caller-supplied forwarding values so CMS can isolate source budgets.
         // CMS must explicitly trust this DMS proxy via its ReverseProxy settings. System-token refresh
         // uses a separate client and sends no forwarded source, retaining the DMS transport budget.
+        // Clear factory-configured defaults too, including when the connection has no source address.
         upstreamClient.DefaultRequestHeaders.Remove("X-Forwarded-For");
         if (httpContext.Connection.RemoteIpAddress is { } source)
         {

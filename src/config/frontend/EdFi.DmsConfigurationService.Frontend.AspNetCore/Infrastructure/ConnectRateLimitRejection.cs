@@ -11,7 +11,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 /// <summary>
 /// The 429 answer for a <c>/connect/*</c> request refused by <see cref="ConnectRateLimiter"/>, shared by
-/// the source gate (middleware, <see cref="WriteAsync"/>) and the client gate (handlers, <see cref="Create"/>)
+/// the source gate (middleware) and the client gate (handlers) through <see cref="Create"/>
 /// so both answer identically. The format follows the route's error contract, the same signal
 /// <see cref="GlobalExceptionHandler"/> uses: the OAuth body on routes carrying
 /// <see cref="OAuthErrorContractMetadata"/> (only <c>/connect/revoke</c>), Ed-Fi problem details otherwise.
@@ -24,32 +24,15 @@ internal static class ConnectRateLimitRejection
     /// <summary>RFC 6749 and RFC 7009 define no throttling code; DMS-1491 may revisit this value.</summary>
     public const string OAuthError = "temporarily_unavailable";
 
-    public const string Description =
-        "The number of allowed requests has been exceeded. Retry the request later.";
-
-    public static Task WriteAsync(HttpContext context, RateLimitLease lease, string gate, ILogger logger)
-    {
-        Prepare(context, lease, gate, logger);
-        return UsesOAuthContract(context)
-            ? OAuthErrorResponseWriter.WriteAsync(
-                context,
-                StatusCodes.Status429TooManyRequests,
-                OAuthError,
-                Description,
-                context.RequestAborted
-            )
-            : FailureResponseWriter.WriteAsync(
-                context,
-                FailureResponse.ForTooManyRequests(context.TraceIdentifier),
-                context.RequestAborted
-            );
-    }
-
     public static IResult Create(HttpContext context, RateLimitLease lease, string gate, ILogger logger)
     {
         Prepare(context, lease, gate, logger);
         return UsesOAuthContract(context)
-            ? OAuthErrorResponseWriter.Create(StatusCodes.Status429TooManyRequests, OAuthError, Description)
+            ? OAuthErrorResponseWriter.Create(
+                StatusCodes.Status429TooManyRequests,
+                OAuthError,
+                FailureResponse.TooManyRequestsDetail
+            )
             : FailureResults.TooManyRequests(context.TraceIdentifier);
     }
 
@@ -57,7 +40,7 @@ internal static class ConnectRateLimitRejection
     {
         // The gate and the route template are fixed, service-owned text. The client id, the address
         // and every credential stay out of the log.
-        logger.LogInformation(
+        logger.LogDebug(
             "Connect rate limit rejected a request at the {Gate} gate for route {Route}",
             gate,
             (context.GetEndpoint() as RouteEndpoint)?.RoutePattern.RawText ?? "unknown"

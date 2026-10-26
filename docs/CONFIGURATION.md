@@ -806,14 +806,19 @@ budgets apply, and a request must fit both:
   IPv6 address counts against its /64. Requests whose address is unknown share one budget.
 - **Per `client_id`**, across all sources, for `/connect/token` and `/connect/revoke` only, spent just
   before the client secret is verified. A request rejected earlier (malformed form, unsupported grant
-  type, missing token) does not spend it. For counting only, an invariant linguistic sort key ignores
-  case, accents, character width and kana type; trailing spaces and linguistically ignored suffixes are
-  removed before key generation. This conservatively merges common SQL Server lookup aliases on every provider, so distinct
-  PostgreSQL or Keycloak clients with these spellings also share a budget. Authentication receives the
+  type, missing token) does not spend it. For counting, case, accents, character width, kana type and
+  trailing padding are ignored. This conservatively merges common SQL Server lookup aliases on every
+  provider, so distinct PostgreSQL or Keycloak clients with these spellings also share a budget. Authentication receives the
   original client ID. This comparison does not reproduce every locale-specific SQL Server collation;
   deployments using other linguistic equivalences must assess those against their client IDs.
   The budget is spent whether or not the client exists, so a `429` reveals nothing about which clients
   exist.
+
+Token and revocation credentials accept a `client_id` of at most 1024 UTF-16 code units, including
+padding, with either Basic or form authentication. Longer IDs receive `400` in the route's validation
+format before client-budget processing or authentication. This bounds client-key processing and
+prevents oversized aliases from obtaining a separate budget. The validation limit also applies when
+rate limiting is disabled.
 
 | Parameter | Default | Description |
 | --- | --- | --- |
@@ -848,23 +853,23 @@ Sizing notes:
   vendors. Raising that limit alone does not resolve the availability risk. The shipped Compose
   stacks configure the dedicated link described below. Other deployments must configure their own
   trusted proxy addresses and should set `RequiredProxyAddress` to detect missing trust at startup.
-- Encoded client sort keys are truncated to 256 characters **after** linguistic equivalence is
-  established; inserting ignored characters before the bound cannot create another budget.
-  Partitions are held in memory per process. The source budget limits new client keys from each source
+- Partitions are held in memory per process. The source budget limits new client keys from each source
   per window; it does not impose a global memory cap across sources. Idle enabled partitions are
   removed by the framework. Disabled limiting uses one shared partition per budget.
-- The Ed-Fi API's own Configuration Service client caches its token, so it stays far below the client
-  limit. If it is ever refused, that request fails rather than retrying.
+- Anyone who knows a client ID can consume its allowance without knowing the secret. Repeating this
+  across windows can continuously deny token issuance and revocation for that client. This includes
+  the Ed-Fi API's own Configuration Service client: after its cached token expires, rejected refresh
+  requests fail and dependent Configuration Service calls fail. Caching and a higher client limit do
+  not prevent a targeted attack. Where public token issuance is exposed, configure a trusted gateway
+  to reject public requests naming internal system clients and their lookup aliases, while permitting
+  their private refresh path. Keep direct Configuration Service access restricted to trusted peers. Do not exempt an
+  anonymously supplied internal client ID from limiting.
 - The defaults come from expected traffic shape, not measured load. Real clients are already capped at
   15 active tokens (`IdentitySettings:BearerTokenPerClientLimit`) and should reuse them.
 
-The local and published DMS launchers add `dms-cms-proxy.yml` after both service files to reserve
-a dedicated internal `cms-proxy` network. It remains in the combined stack's infrastructure,
-DMS-only and teardown phases so successive phases use the same topology. For manual paired
-Compose invocations, include `-f dms-cms-proxy.yml` after the DMS and CMS files.
-The Ed-Fi API resolves `ed-fi-api-config` to the Configuration Service's address on this link, so both
-public token proxying and system-token refresh originate from the reserved DMS peer. CMS enables
-forwarding and trusts that exact peer; it does not trust the shared `dms` network. The defaults are:
+The local and published paired stacks use `dms-cms-proxy.yml` to give DMS a dedicated, exactly trusted
+CMS connection. Include it after both service files for manual paired Compose invocations; retain it
+across infrastructure, DMS-only and teardown phases. Defaults:
 
 ```dotenv
 DMS_CMS_PROXY_SUBNET=172.30.148.0/29
@@ -873,21 +878,16 @@ CMS_PROXY_IP=172.30.148.3
 ```
 
 Change all three values together if the subnet overlaps an existing network or another running stack.
-Both addresses must be distinct, usable IPv4 addresses in the subnet. Docker rejects addresses outside
-the configured subnet. Recreate both services and the `cms-proxy` network after changing them.
+Both addresses must be distinct, usable IPv4 addresses in the subnet. Recreate both services and the
+`cms-proxy` network after changing them.
 Additional trusted ingress proxies can be listed in `CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_PROXIES`;
 the reserved DMS peer is always added independently. Keep untrusted workloads off this link.
 
-**Standalone CMS and existing environment files:** keep
-`CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS=false` unless the standalone deployment uses a
-trusted proxy. The CMS-only launcher omits the paired overlay, network and `RequiredProxyAddress`;
-enabled rate limiting does not require forwarding for direct requests. The paired overlay explicitly
-enables forwarding independently of that environment variable. If a later custom overlay disables it
-while retaining `RequiredProxyAddress` and enabled limits, configuration validation reports the missing
-trust and CMS answers every request, including health checks, with `500` until corrected.
-`RequiredProxyAddress` checks the configured trust, not network reachability. If you replace the
-Compose CMS hostname or topology, update routing and the required trusted peer together. If DMS is behind an ingress, it also needs its
-own trusted-forwarding configuration so distinct callers reach it with distinct addresses.
+Standalone CMS omits the overlay and requires no forwarding for direct requests. Keep
+`CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS=false` unless it uses a trusted proxy. The paired
+overlay enables forwarding independently of that flag. A conflicting override fails configuration
+validation when `RequiredProxyAddress` remains set and limiting is enabled. This checks configured
+trust, not reachability. Update routing and the required peer together when changing topology.
 
 An IDE-hosted DMS connecting through a published CMS port bypasses this container link. In that
 workflow, add the actual host/gateway address CMS sees to its exact trusted proxies; the reserved

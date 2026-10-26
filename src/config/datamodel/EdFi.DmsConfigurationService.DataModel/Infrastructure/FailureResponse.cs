@@ -12,6 +12,9 @@ namespace EdFi.DmsConfigurationService.DataModel.Infrastructure;
 
 public static class FailureResponse
 {
+    public const string TooManyRequestsDetail =
+        "The number of allowed requests has been exceeded. Retry the request later.";
+
     private static readonly JsonSerializerOptions _serializerOptions = new()
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
@@ -105,7 +108,7 @@ public static class FailureResponse
     /// </summary>
     public static JsonNode ForTooManyRequests(string correlationId) =>
         CreateBaseJsonObject(
-            detail: "The number of allowed requests has been exceeded. Retry the request later.",
+            detail: TooManyRequestsDetail,
             type: _tooManyRequestsType,
             title: "Too Many Requests",
             status: 429,

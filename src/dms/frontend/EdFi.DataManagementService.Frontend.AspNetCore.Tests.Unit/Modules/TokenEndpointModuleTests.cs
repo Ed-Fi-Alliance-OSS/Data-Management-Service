@@ -1084,7 +1084,14 @@ public class TokenEndpointModuleTests
                 context.Response.Body = new MemoryStream();
                 await AspNetCore.Modules.TokenEndpointModule.HandleFormData(
                     context,
-                    Options.Create(new AppSettings { AuthenticationService = "http://cms/connect/token" }),
+                    Options.Create(
+                        new AppSettings
+                        {
+                            AuthenticationService = "http://cms/connect/token",
+                            Datastore = "postgresql",
+                            CorrelationIdHeader = "",
+                        }
+                    ),
                     new OAuthManager(NullLogger<OAuthManager>.Instance),
                     NullLogger<AspNetCore.Modules.TokenEndpointModule>.Instance,
                     clientFactory

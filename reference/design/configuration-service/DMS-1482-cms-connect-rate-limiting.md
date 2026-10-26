@@ -11,21 +11,28 @@ Original acceptance criteria (Jira, verified 2026-10-22):
 | ID | Criterion |
 |---|---|
 | REQ-1 | Requests to `/connect/*` are rate limited per client and per source address. Comment 98735: the source-address partition must be explicit and tested, because enumeration varies `client_id` on every request. |
-| REQ-2 | Exceeding the limit returns 429 with a body consistent with the Ed-Fi error contract (qualified by D1). |
+| REQ-2 | Exceeding the limit returns 429 with a body consistent with the Ed-Fi error contract. |
 | REQ-3 | Rate limiting occurs before client secret verification. |
 | REQ-4 | Limits are configurable, with documented defaults. |
 | REQ-5 | Tests cover the limit being enforced and the 429 response shape. |
 
-## 2. Approved decisions
+## 2. Design decisions
 
 | ID | Decision | Rationale |
 |---|---|---|
 | D1 | **Approved deviation from REQ-2's wording:** token, register and introspect return an Ed-Fi 429. Revoke returns a 429 with an OAuth body. | Revoke's OAuth error contract is deliberate (DMS-1327 D-01/D-17, CS-AUTH). DMS-1491 (Open) will move the remaining `/connect/*` errors to OAuth. Reversing revoke for one status would be undone by DMS-1491. |
-| D2 | Two independent budgets, and both must admit a request: **per source address** and **per `client_id` across all sources**. | Stops enumeration (source) and distributed guessing against one client (client). Accepted tradeoff: someone who knows a `client_id` can exhaust that client's window. The window bounds the impact, and real clients cache tokens. |
+| D2 | Two independent budgets, and both must admit a request: **per source address** and **per `client_id` across all sources**. | Stops enumeration (source) and distributed guessing against one client (client). Someone who knows a `client_id` can exhaust each successive window, indefinitely denying that client's requests. This includes system-token refresh after the cached token expires; caching bounds normal demand, not targeted denial. |
 | D3 | **Backoff excluded.** The failed-attempt counter with exponential backoff that the story and comment say to "consider" is deferred, as a possible follow-up ticket. | It needs handler-to-limiter outcome feedback and new state, carries its own lockout-DoS tradeoff, and overlaps DMS-1490. |
 | D4 | Enabled by default. Source 120, client 30, per 60-second fixed window. No queueing. Enforcement is per process. | Real per-client traffic is already capped by `BearerTokenPerClientLimit` (15 active tokens per 30-minute token lifetime). Proxy deployments require trusted source attribution; aggregate capacity alone does not provide caller isolation. |
 | D5 | Split admission: a source gate in middleware, plus a client gate inside the token and revoke handlers. | Reuses each route's existing credential parser. Avoids early form reads, so revoke's percent-encoding and UTF-8 validation is preserved. Client admission remains inside the route exception boundary. |
 | D6 | Native IPv6 sources are keyed on their /64 prefix. | A subscriber normally owns a whole /64, so per-address keys would allow free address rotation. |
+| D7 | DMS forwards its processed source address; paired Compose stacks configure an exactly trusted DMS peer. | Isolates public callers from each other and from unforwarded system refresh. The dedicated link makes the transport address deterministic without trusting the shared bridge. The readiness validator detects later overrides that break this trust. Standalone CMS retains its existing forwarding defaults. |
+| D8 | Client counting conservatively merges common linguistic aliases across providers. | SQL Server can authenticate width, accent, case and padding aliases as the same client. Ordinal comparison would give those aliases fresh budgets. Distinct PostgreSQL or Keycloak clients can consequently share capacity; arbitrary SQL collations are not emulated. |
+| D9 | Token and revoke reject parsed client IDs longer than 1024 UTF-16 code units with their existing 400 validation formats, before client admission. | Bounds linguistic processing and allocations. The limit leaves room above the stored MSSQL identifier size, applies to Basic and form credentials even when limiting is disabled, and does not truncate credentials. An oversized fallback partition would split long aliases from short IDs and reopen a bypass. |
+
+D1 is a documented exception to REQ-2, not literal satisfaction of it. The Jira story and comment do
+not independently record the story owner's acceptance of that exception; it remains an acceptance
+decision. The original requirement above is unchanged.
 
 Rejected approaches: a single middleware that extracts `client_id` itself would pre-read the form, bypassing revoke's `UrlEncodedFormValidatingStream` because `FormFeature` caches the result, and duplicate two deliberately different parsers. ASP.NET `AddRateLimiter`/`UseRateLimiter` endpoint policies can provide source admission, but cannot replace the client gate without extracting credentials before the handler. Keeping client admission after the existing parsers preserves validation order; the singleton owns and disposes both partitioned limiters.
 
@@ -40,7 +47,7 @@ Rejected approaches: a single middleware that extracts `client_id` itself would 
 - DMS-1484 header and `Cache-Control` changes.
 - Backoff (D3).
 - Distributed or cross-replica enforcement.
-- DMS limiter changes and forwarding `Retry-After` through the DMS proxy. Source-address forwarding is the narrow scope extension described in section 7.
+- DMS limiter changes and forwarding `Retry-After` through the DMS proxy. Source-address forwarding and recognizing the new CMS throttle without an unrecognized-response warning are narrow integration changes.
 - Backend, persistence, collation or `RelationalMappingVersion` changes.
 - Unrelated cleanup.
 
@@ -80,7 +87,7 @@ Handler gate positions:
 - **`GetClientAccessToken`:** after `validator.GuardAsync` and the grant-type check, before `tokenManager.GetAccessTokenAsync`.
 - **`RevokeToken`:** after the D-03 shape checks and credential parsing (Basic or form), before the revocation manager call.
 
-Malformed requests keep their current answers and order. Only requests that would reach secret verification use the client budget. The budget is spent whether or not the client exists, so a 429 is not an existence oracle.
+Existing malformed-request checks retain their order. Token validation and revoke's post-parsing length check reject oversized client IDs before linguistic processing (D9). Only requests that would reach secret verification use the client budget. The budget is spent whether or not the client exists, so a 429 is not an existence oracle.
 
 Route coverage:
 
@@ -100,6 +107,7 @@ Route-context suffixes, path base and path case are handled by endpoint routing,
   - Native IPv6 is masked to its /64 (D6).
   - A null address goes to one shared `"unknown"` partition, never exempt.
 - **Client:** the `client_id` produced by the route's existing parser.
+  - Both handlers enforce the 1024-code-unit input limit before key generation (D9).
   - An invariant linguistic sort key ignores case, accents, width and kana type. This merges common MSSQL lookup aliases, including full-width ASCII letters. It is deliberately conservative across providers and does not emulate every locale-specific SQL collation.
   - Trailing spaces and linguistically ignored suffix characters are removed before key generation, because SQL Server equality pads with spaces. The original credential is still passed unchanged to authentication. No Unicode normalization is performed, avoiding exceptions on malformed UTF-16.
   - The entire remaining ID is converted to a sort key, encoded as base64 and then truncated to 256 characters. Bounding after equivalence is established only merges keys; bounding raw input could split aliases containing inserted ignored characters.
@@ -116,7 +124,7 @@ Route-context suffixes, path base and path case are handled by endpoint routing,
     "status": 429, "correlationId": "<TraceIdentifier>", "validationErrors": {}, "errors": [] }
   ```
   - The type mirrors DMS's established `urn:ed-fi:api:too-many-requests`, allowed under DMS-1218's platform-convention rule.
-  - The middleware writes it through `FailureResponseWriter`; handlers return `FailureResults.TooManyRequests`.
+  - Both gates execute the same result from `ConnectRateLimitRejection.Create`, using `FailureResults.TooManyRequests`.
   - It is distinct from, and leaves unchanged, `…:security:authentication:too-many-tokens`.
 - **OAuth** (revoke): `OAuthErrorResponseWriter` with status 429, `error: "temporarily_unavailable"`, and the same fixed description. RFC 6749 and RFC 7009 define no throttling code; DMS-1491 may revisit this value.
 - **`Retry-After`:** the lease's `MetadataName.RetryAfter` rounded up to whole seconds; omitted when absent (DMS precedent).
@@ -134,8 +142,8 @@ Route-context suffixes, path base and path case are handled by endpoint routing,
 ## 5. Failure handling and regression safeguards
 
 - **Invalid configuration:** reported through the existing `ReportInvalidConfiguration` path. The limiter is never used, because that middleware short-circuits before routing.
-- **Logging:** one structured log per rejection, carrying the gate (`source`/`client`) and route template only. Client ID, IP, credentials and tokens are never logged. `RequestLoggingMiddleware` still logs the 429.
-- **Known operator risk, no code change:** DMS's own system client (`ConfigurationServiceTokenHandler.FetchTokenAsync`) throws on any non-token response, a 429 included. Token caching keeps its rate far below the client limit. This is documented.
+- **Logging:** a Debug-level rejection log carries the gate (`source`/`client`) and route template only. Client ID, IP, credentials and tokens are never logged. `RequestLoggingMiddleware` still records the 429. DMS recognizes the exact CMS throttle type/status and rebuilds its generic 429 without warning; unknown upstream responses retain their warning and no upstream text is relayed.
+- **Known operator risk:** DMS's system client (`ConfigurationServiceTokenHandler.FetchTokenAsync`) throws on any non-token response, a 429 included. An attacker can repeatedly spend that client's budget and prevent refresh once its cached token expires, causing dependent CMS calls to fail. Configure a trusted gateway to deny public token requests naming internal system clients and their lookup aliases and allow their private refresh path; restrict direct CMS access. Raising limits or caching alone does not prevent this. Exempting an anonymous client ID would undermine pre-verification protection.
 - **Preserved behavior:**
   - token's lenient Basic/form precedence and malformed-Basic fallback;
   - revoke's strict shape checks, D-03 first-error order, `%`/UTF-8 validation, ownership and indistinguishable outcomes;
@@ -146,7 +154,7 @@ Route-context suffixes, path base and path case are handled by endpoint routing,
 
 ## 6. AC → design → verification
 
-Tests follow NUnit, FluentAssertions and FakeItEasy, with `Given_` fixtures that arrange and act in setup and `It_` assertions. They exercise the real HTTP pipeline in the CMS frontend unit test project. Each fixture uses tiny limits (for example 2) on an isolated host. There are no sleeps or timing races. `FixedWindowRateLimiterOptions` takes no `TimeProvider`, so window renewal is not tested; a renewal test would need a real-time wait, which AGENTS.md disallows.
+Tests follow NUnit, FluentAssertions and FakeItEasy, with `Given_` fixtures that arrange and act in setup and `It_` assertions. They exercise the real HTTP pipeline in the CMS frontend unit test project. Each fixture uses tiny limits (for example 2) on an isolated host. There are no sleeps or timing races. `FixedWindowRateLimiterOptions` takes no `TimeProvider`, so window renewal is not covered by these deterministic fixtures; a real-time wait would introduce timing-dependent coverage.
 
 | AC | Design | Verification (each must fail if the feature is reverted) |
 |---|---|---|
@@ -165,4 +173,5 @@ Regression surfaces to leave unchanged: `IdentityModuleTests` (`TokenEndpointBas
 - **DMS-1490 (Open)** is independent. The client budget is spent regardless of whether the client exists, so this work adds no new oracle.
 - **Follow-up candidate:** a per-source failed-attempt backoff ticket (D3), if the product owner wants it.
 - **Remaining assumptions (not blockers):** the D4 numbers come from repository evidence (token-count cap, DMS-proxy topology), not measured production load. Operators can tune them, and the documentation says so. Proxy trust in each deployment remains an operator responsibility under the existing `ReverseProxy` settings.
-- **Review follow-up (2026-10-23):** CAR-001 extends the original proxy exclusion narrowly: DMS replaces forwarded source values with its already-trusted connection address on token proxy requests. System refresh remains unforwarded. The paired overlay supplies stable, exactly trusted source attribution without changing the shared environment files' default `false` or requiring forwarding for standalone CMS. The proxy-readiness validator protects that paired configuration against conflicting later overrides. Other topologies must configure their actual trusted peers; a higher shared limit alone is not a correction. Pipeline coverage distinguishes an exhausted caller, a second caller, an unforwarded system refresh and untrusted forged forwarding values; Compose-rendering coverage checks standalone compatibility, paired routing/trust alignment and subnet overrides. Tests have not been executed during remediation, by request; client-side Compose renders were inspected as static configuration checks. CAR-002 from the earlier review uses the conservative linguistic key above; locale-specific collation equivalences still require deployment assessment. Neither change revises the original acceptance criteria. D1 still explicitly deviates from REQ-2's literal wording.
+- **Proxy integration (D7):** other topologies must configure their actual trusted peers; a higher shared limit does not provide source isolation. Pipeline fixtures distinguish an exhausted caller, a second caller, an unforwarded system refresh and forged forwarding values. Compose fixtures cover standalone compatibility, paired routing/trust alignment and subnet overrides.
+- **Credential bounds (D9):** handler fixtures cover Basic/form credentials on token/revoke, the accepted length boundary, oversized padding before and after exhaustion, unchanged short-alias counting, and rejected calls not reaching either manager.

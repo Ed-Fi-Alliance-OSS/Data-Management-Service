@@ -39,12 +39,8 @@ public sealed class ConnectRateLimiter : IDisposable
     public ConnectRateLimiter(IOptions<ConnectRateLimitSettings> options)
     {
         ConnectRateLimitSettings settings = options.Value;
-        _sourceLimiter = CreateLimiter(settings, settings.SourcePermitLimit, StringComparer.Ordinal);
-
-        // SQL Server's linguistic lookups can ignore more than case. Conservatively merge width,
-        // accent and kana aliases for counting on every provider, without changing authentication.
-        // This is not an emulation of every locale-specific SQL collation.
-        _clientLimiter = CreateLimiter(settings, settings.ClientPermitLimit, StringComparer.Ordinal);
+        _sourceLimiter = CreateLimiter(settings, settings.SourcePermitLimit);
+        _clientLimiter = CreateLimiter(settings, settings.ClientPermitLimit);
     }
 
     public RateLimitLease AttemptSource(HttpContext context) =>
@@ -88,6 +84,9 @@ public sealed class ConnectRateLimiter : IDisposable
 
     internal static string ClientPartitionKey(string clientId)
     {
+        // Handlers validate client ID length before admission. SQL Server's linguistic lookups can
+        // ignore more than case: conservatively merge width, accent and kana aliases on every provider
+        // without changing authentication. This does not emulate every locale-specific SQL collation.
         CompareInfo comparison = CultureInfo.InvariantCulture.CompareInfo;
         int length = clientId.Length;
         while (length > 0)
@@ -117,8 +116,7 @@ public sealed class ConnectRateLimiter : IDisposable
 
     internal static PartitionedRateLimiter<string> CreateLimiter(
         ConnectRateLimitSettings settings,
-        int permitLimit,
-        IEqualityComparer<string> comparer
+        int permitLimit
     ) =>
         PartitionedRateLimiter.Create<string, string>(
             key =>
@@ -136,6 +134,6 @@ public sealed class ConnectRateLimiter : IDisposable
                     // No-op partitions never expire. Reuse one key so disabled mode does not retain
                     // state proportional to the number of source addresses or client ids seen.
                     : RateLimitPartition.GetNoLimiter(string.Empty),
-            comparer
+            StringComparer.Ordinal
         );
 }

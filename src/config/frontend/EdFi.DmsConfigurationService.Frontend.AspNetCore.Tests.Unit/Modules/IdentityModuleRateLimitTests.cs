@@ -33,6 +33,97 @@ public class IdentityModuleRateLimitTests
             )
             .MustHaveHappened(times, Times.Exactly);
 
+    [TestFixture("/connect/token", false)]
+    [TestFixture("/connect/token", true)]
+    [TestFixture("/connect/revoke", false)]
+    [TestFixture("/connect/revoke", true)]
+    public class Given_oversized_client_credentials(string path, bool useBasic)
+    {
+        private ITokenManager _tokenManager = null!;
+        private ITokenRevocationManager _revocationManager = null!;
+        private List<int> _statuses = [];
+        private JsonObject _body = null!;
+
+        private HttpRequestMessage Request(string clientId)
+        {
+            FormUrlEncodedContent form;
+            if (useBasic)
+            {
+                form = new FormUrlEncodedContent(
+                    path == "/connect/token"
+                        ? [new("grant_type", "client_credentials")]
+                        : [new("token", "opaque-token")]
+                );
+            }
+            else
+            {
+                form = path == "/connect/token" ? TokenForm(clientId) : RevokeForm(clientId);
+            }
+            HttpRequestMessage request = Post(path, form);
+            if (useBasic)
+            {
+                request.Headers.Authorization = Basic(clientId);
+            }
+            return request;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _tokenManager = SucceedingTokenManager();
+            _revocationManager = CompletingRevocationManager();
+            await using WebApplicationFactory<Program> factory = Create(
+                sourcePermitLimit: 1000,
+                clientPermitLimit: 1,
+                tokenManager: _tokenManager,
+                revocationManager: _revocationManager
+            );
+            using HttpClient client = factory.CreateClient();
+            using HttpResponseMessage oversized = await client.SendAsync(Request(new string('x', 1025)));
+            _body = JsonNode.Parse(await oversized.Content.ReadAsStringAsync())!.AsObject();
+            _statuses = [(int)oversized.StatusCode];
+            _statuses.AddRange(
+                await SendAll(
+                    client,
+                    [
+                        () => Request("ClientA" + new string(' ', 1_000_000)),
+                        () => Request(new string('x', 1024)),
+                        () => Request("ClientA"),
+                        () => Request("ClientA" + new string(' ', 1018)),
+                        () => Request("CLIENTA "),
+                    ]
+                )
+            );
+        }
+
+        [Test]
+        public void It_rejects_oversized_ids_before_counting_and_preserves_the_boundary() =>
+            _statuses.Should().Equal(400, 400, 200, 200, 400, 429);
+
+        [Test]
+        public void It_verifies_only_the_two_admitted_credentials()
+        {
+            ManagerCalls(_tokenManager, path == "/connect/token" ? 2 : 0);
+            RevocationCalls(_revocationManager, path == "/connect/revoke" ? 2 : 0);
+        }
+
+        [Test]
+        public void It_uses_the_routes_existing_validation_contract()
+        {
+            if (path == "/connect/revoke")
+            {
+                _body["error"]!.GetValue<string>().Should().Be("invalid_request");
+                _body["error_description"]!
+                    .GetValue<string>()
+                    .Should()
+                    .Be("The client_id must not exceed 1024 characters.");
+                return;
+            }
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:data");
+            _body["validationErrors"]!.AsObject().Should().ContainKey("client_id");
+        }
+    }
+
     [TestFixture]
     public class Given_a_client_over_its_token_limit
     {

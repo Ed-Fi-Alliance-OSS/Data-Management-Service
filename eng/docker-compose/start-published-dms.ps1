@@ -522,7 +522,6 @@ if ($DmsOnly -and -not $cmsIncludedInComposeSet) {
         throw "Unable to determine the existing DMS/CMS proxy topology. Docker network inventory failed."
     }
     if ($proxyNetworks.Count -gt 0) {
-        $cmsIncludedInComposeSet = $true
         $files += @("-f", "published-config.yml", "-f", "dms-cms-proxy.yml")
     }
 }

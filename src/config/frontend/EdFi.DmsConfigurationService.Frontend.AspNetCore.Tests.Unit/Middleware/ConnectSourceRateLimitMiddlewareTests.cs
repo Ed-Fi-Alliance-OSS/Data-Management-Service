@@ -13,6 +13,8 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Routing.Patterns;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -35,9 +37,9 @@ public class ConnectSourceRateLimitMiddlewareTests
             )
         );
 
-    private static DefaultHttpContext CreateContext(params object[] metadata)
+    private static DefaultHttpContext CreateContext(IServiceProvider services, params object[] metadata)
     {
-        var context = new DefaultHttpContext { TraceIdentifier = "trace-limit" };
+        var context = new DefaultHttpContext { TraceIdentifier = "trace-limit", RequestServices = services };
         context.Connection.RemoteIpAddress = IPAddress.Parse(RemoteIp);
         context.Response.Body = new MemoryStream();
         context.SetEndpoint(
@@ -67,6 +69,7 @@ public class ConnectSourceRateLimitMiddlewareTests
         public async Task Setup()
         {
             _nextCalls = 0;
+            using ServiceProvider services = new ServiceCollection().AddLogging().BuildServiceProvider();
             using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 1);
             var middleware = new ConnectSourceRateLimitMiddleware(_ =>
             {
@@ -76,7 +79,7 @@ public class ConnectSourceRateLimitMiddlewareTests
             for (int i = 0; i < 3; i++)
             {
                 await middleware.InvokeAsync(
-                    CreateContext(),
+                    CreateContext(services),
                     limiter,
                     new TestLogger<ConnectSourceRateLimitMiddleware>()
                 );
@@ -99,6 +102,7 @@ public class ConnectSourceRateLimitMiddlewareTests
         public async Task Setup()
         {
             _nextCalls = 0;
+            using ServiceProvider services = new ServiceCollection().AddLogging().BuildServiceProvider();
             using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 1);
             _logger = new TestLogger<ConnectSourceRateLimitMiddleware>();
             var middleware = new ConnectSourceRateLimitMiddleware(_ =>
@@ -106,8 +110,12 @@ public class ConnectSourceRateLimitMiddlewareTests
                 _nextCalls++;
                 return Task.CompletedTask;
             });
-            await middleware.InvokeAsync(CreateContext(ConnectRateLimitMetadata.Instance), limiter, _logger);
-            _rejected = CreateContext(ConnectRateLimitMetadata.Instance);
+            await middleware.InvokeAsync(
+                CreateContext(services, ConnectRateLimitMetadata.Instance),
+                limiter,
+                _logger
+            );
+            _rejected = CreateContext(services, ConnectRateLimitMetadata.Instance);
             await middleware.InvokeAsync(_rejected, limiter, _logger);
             _body = JsonNode.Parse(await BodyOf(_rejected))!.AsObject();
         }
@@ -143,7 +151,12 @@ public class ConnectSourceRateLimitMiddlewareTests
         [Test]
         public void It_logs_the_gate_and_route_only()
         {
-            string logged = _logger.Entries.Should().ContainSingle().Which.State!.ToString()!;
+            TestLogger<ConnectSourceRateLimitMiddleware>.LogEntry entry = _logger
+                .Entries.Should()
+                .ContainSingle()
+                .Which;
+            entry.Level.Should().Be(LogLevel.Debug);
+            string logged = entry.State!.ToString()!;
             logged.Should().Contain("source").And.Contain(TokenRoute).And.NotContain(RemoteIp);
         }
     }
@@ -157,15 +170,24 @@ public class ConnectSourceRateLimitMiddlewareTests
         [SetUp]
         public async Task Setup()
         {
+            using ServiceProvider services = new ServiceCollection().AddLogging().BuildServiceProvider();
             using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 1);
             var middleware = new ConnectSourceRateLimitMiddleware(_ => Task.CompletedTask);
             var logger = new TestLogger<ConnectSourceRateLimitMiddleware>();
             await middleware.InvokeAsync(
-                CreateContext(ConnectRateLimitMetadata.Instance, OAuthErrorContractMetadata.Instance),
+                CreateContext(
+                    services,
+                    ConnectRateLimitMetadata.Instance,
+                    OAuthErrorContractMetadata.Instance
+                ),
                 limiter,
                 logger
             );
-            _rejected = CreateContext(ConnectRateLimitMetadata.Instance, OAuthErrorContractMetadata.Instance);
+            _rejected = CreateContext(
+                services,
+                ConnectRateLimitMetadata.Instance,
+                OAuthErrorContractMetadata.Instance
+            );
             await middleware.InvokeAsync(_rejected, limiter, logger);
             _body = JsonNode.Parse(await BodyOf(_rejected))!.AsObject();
         }

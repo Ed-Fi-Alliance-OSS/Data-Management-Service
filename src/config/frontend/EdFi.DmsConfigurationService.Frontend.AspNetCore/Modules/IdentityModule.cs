@@ -543,6 +543,14 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
             bool basicAttempted
         ) = (ClientAuthenticatedForm.Accepted)form;
 
+        // Reject oversized aliases before generating a rate-limit partition key.
+        if (clientId.Length > TokenRequest.MaxClientIdLength)
+        {
+            return InvalidRequest(
+                $"The client_id must not exceed {TokenRequest.MaxClientIdLength} characters."
+            );
+        }
+
         // Apply the client gate after parsing credentials and before authenticating the caller.
         using RateLimitLease clientLease = rateLimiter.AttemptClient(clientId);
         if (!clientLease.IsAcquired)

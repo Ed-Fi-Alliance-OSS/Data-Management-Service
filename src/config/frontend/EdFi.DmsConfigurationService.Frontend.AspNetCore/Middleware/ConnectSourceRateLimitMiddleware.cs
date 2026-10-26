@@ -38,12 +38,9 @@ public class ConnectSourceRateLimitMiddleware(RequestDelegate next)
         using RateLimitLease lease = rateLimiter.AttemptSource(context);
         if (!lease.IsAcquired)
         {
-            await ConnectRateLimitRejection.WriteAsync(
-                context,
-                lease,
-                ConnectRateLimitRejection.SourceGate,
-                logger
-            );
+            await ConnectRateLimitRejection
+                .Create(context, lease, ConnectRateLimitRejection.SourceGate, logger)
+                .ExecuteAsync(context);
             return;
         }
 

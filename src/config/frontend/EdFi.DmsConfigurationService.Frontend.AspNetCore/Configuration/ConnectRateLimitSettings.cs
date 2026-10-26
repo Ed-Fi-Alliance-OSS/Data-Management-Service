@@ -82,9 +82,10 @@ public class ConnectRateLimitProxySettingsValidator(IOptions<ReverseProxySetting
         }
 
         ReverseProxySettings proxy = proxyOptions.Value;
-        bool explicitlyTrusted = proxy
-            .GetKnownProxies()
-            .Any(value => IPAddress.TryParse(value, out var address) && address.Equals(requiredAddress));
+        bool explicitlyTrusted = Array.Exists(
+            proxy.GetKnownProxies(),
+            value => IPAddress.TryParse(value, out var address) && address.Equals(requiredAddress)
+        );
         return proxy.UseForwardedHeaders && explicitlyTrusted
             ? ValidateOptionsResult.Success
             : ValidateOptionsResult.Fail(

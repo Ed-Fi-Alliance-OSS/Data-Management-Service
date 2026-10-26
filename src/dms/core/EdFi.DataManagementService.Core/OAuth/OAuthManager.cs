@@ -514,6 +514,23 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
 
             if (limit is null)
             {
+                // A non-object response has no fields to summarize.
+                JsonObject rateLimit = JsonObjectOrNull(body) ?? new();
+                if (
+                    ScalarValueOrNull(rateLimit["type"]) == "urn:ed-fi:management-api:too-many-requests"
+                    && rateLimit["status"] is JsonValue status
+                    && status.TryGetValue<int>(out int statusCode)
+                    && statusCode == 429
+                )
+                {
+                    // CMS source/client throttling is expected. Rebuild the generic answer without
+                    // relaying upstream content or warning on every rejected authentication attempt.
+                    return GenerateProblemDetailResponse(
+                        HttpStatusCode.TooManyRequests,
+                        FailureResponse.ForTooManyRequests(traceId)
+                    );
+                }
+
                 // Still a 429: the upstream *status* is trustworthy even when its body is not,
                 // and the generic rate-limit contract is also the honest answer when the 429 came
                 // from a gateway limiter rather than from the token limit.
@@ -522,9 +539,9 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 // (reference/adr-oauth-upstream-error-disclosure.md): the values of the RFC 6749
                 // error fields and the bare names of every other member, under the trace id the
                 // client was given. A body that is not a JSON object has no members to name.
-                (string standardFields, string otherFieldNames) = JsonObjectOrNull(body) is JsonObject obj
-                    ? SummarizeUpstreamFieldsForLogging(obj)
-                    : (NoUpstreamFieldsMarker, NoUpstreamFieldsMarker);
+                (string standardFields, string otherFieldNames) = SummarizeUpstreamFieldsForLogging(
+                    rateLimit
+                );
 
                 logger.LogWarning(
                     "Unrecognized 429 body from upstream identity service; its values are withheld "

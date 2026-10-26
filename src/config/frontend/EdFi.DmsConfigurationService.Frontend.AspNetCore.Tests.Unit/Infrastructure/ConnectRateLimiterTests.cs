@@ -257,16 +257,8 @@ public class ConnectRateLimiterTests
         public void Setup()
         {
             ConnectRateLimitSettings settings = new() { Enabled = false };
-            using PartitionedRateLimiter<string> sources = ConnectRateLimiter.CreateLimiter(
-                settings,
-                1,
-                StringComparer.Ordinal
-            );
-            using PartitionedRateLimiter<string> clients = ConnectRateLimiter.CreateLimiter(
-                settings,
-                1,
-                StringComparer.OrdinalIgnoreCase
-            );
+            using PartitionedRateLimiter<string> sources = ConnectRateLimiter.CreateLimiter(settings, 1);
+            using PartitionedRateLimiter<string> clients = ConnectRateLimiter.CreateLimiter(settings, 1);
             for (int i = 0; i < 256; i++)
             {
                 using RateLimitLease sourceLease = sources.AttemptAcquire($"198.51.100.{i}");
