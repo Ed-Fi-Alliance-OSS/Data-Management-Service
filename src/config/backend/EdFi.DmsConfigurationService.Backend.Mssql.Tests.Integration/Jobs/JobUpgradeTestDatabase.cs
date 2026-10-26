@@ -11,7 +11,7 @@ using Microsoft.Data.SqlClient;
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.Jobs;
 
 /// <summary>
-/// An isolated database for the DMS-1437, DMS-1341, DMS-1529 and DMS-1626 upgrade fixtures. Every deploy is bounded by
+/// An isolated database for the DMS-1437, DMS-1341, DMS-1529, DMS-1626 and DMS-1639 upgrade fixtures. Every deploy is bounded by
 /// script number through <see cref="Deploy.DatabaseDeploy.ScriptFilter"/>, so a fixture's exact journal
 /// assertions describe the migrations it names and are not changed by scripts added later.
 /// </summary>
@@ -26,6 +26,7 @@ internal sealed class JobUpgradeTestDatabase
     public const int NameUniquenessScript = 35;
     public const int IdentifierUniquenessScript = 36;
     public const int NamespacePrefixWideningScript = 37;
+    public const int ApiClientEducationOrganizationScript = 38;
 
     public const string JobScheduleScriptName = ScriptNamePrefix + "0033_Create_JobSchedule_Table.sql";
     public const string JobScriptName = ScriptNamePrefix + "0034_Create_Job_Table.sql";
@@ -35,6 +36,8 @@ internal sealed class JobUpgradeTestDatabase
         ScriptNamePrefix + "0036_Add_ApiClient_Identifier_Uniqueness.sql";
     public const string NamespacePrefixWideningScriptName =
         ScriptNamePrefix + "0037_Widen_VendorNamespacePrefix.sql";
+    public const string ApiClientEducationOrganizationScriptName =
+        ScriptNamePrefix + "0038_Create_ApiClientEducationOrganization_Table.sql";
 
     private readonly string _databaseName;
 

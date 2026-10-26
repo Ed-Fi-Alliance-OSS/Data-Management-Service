@@ -17,6 +17,7 @@ public class Given_CMS_PostgreSQL_database_shape
     [
         "ApiClient",
         "ApiClientDataStore",
+        "ApiClientEducationOrganization",
         "ApiClientOwnershipToken",
         "Application",
         "ApplicationEducationOrganization",
@@ -110,6 +111,28 @@ public class Given_CMS_PostgreSQL_database_shape
         new("UX_ApiClient_ApplicationId_Name", "ApiClient", "u", ["ApplicationId", "Name"], false),
         new("UX_ApiClient_ClientId", "ApiClient", "u", ["ClientId"], false),
         new("UX_ApiClient_ClientUuid", "ApiClient", "u", ["ClientUuid"], false),
+        new("UX_ApiClient_Id_ApplicationId", "ApiClient", "u", ["Id", "ApplicationId"], false),
+        new(
+            "PK_ApiClientEducationOrganization",
+            "ApiClientEducationOrganization",
+            "p",
+            ["ApiClientId", "EducationOrganizationId"],
+            false
+        ),
+        new(
+            "FK_ApiClientEducationOrganization_ApplicationEducationOrg",
+            "ApiClientEducationOrganization",
+            "f",
+            ["ApplicationId", "EducationOrganizationId"],
+            false
+        ),
+        new(
+            "FK_ApiClientEducationOrganization_ApiClient",
+            "ApiClientEducationOrganization",
+            "f",
+            ["ApiClientId", "ApplicationId"],
+            false
+        ),
     ];
 
     private static readonly string[] ExpectedNonUniqueLookupIndexes =
@@ -124,6 +147,7 @@ public class Given_CMS_PostgreSQL_database_shape
         "IX_OpenIddictToken_Subject",
         "IX_OpenIddictToken_ReferenceId",
         "IX_OpenIddictToken_ExpirationDate",
+        "IX_ApiClientEducationOrganization_EducationOrganizationId",
     ];
 
     /// <summary>
@@ -139,6 +163,7 @@ public class Given_CMS_PostgreSQL_database_shape
     /// </summary>
     private static readonly (string TableName, string ColumnName)[] ExpectedBigintColumns =
     [
+        ("ApiClientEducationOrganization", "EducationOrganizationId"),
         ("ApplicationEducationOrganization", "EducationOrganizationId"),
         ("AuthorizationStrategy", "TenantId"),
         ("ClaimSet", "TenantId"),
