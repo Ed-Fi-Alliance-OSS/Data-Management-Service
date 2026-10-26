@@ -18,8 +18,9 @@
 --
 -- InheritsApplicationEducationOrganizations is stored rather than derived: a client narrowed to
 -- every current education organization must not pick up ones added later.
--- IdentityProviderSyncPendingSince (UTC) marks a client whose identity provider claims still need
--- an Application change applied.
+-- IdentityProviderSyncPendingSince marks a client whose identity provider claims still need an
+-- Application change applied. It is an instant (TIMESTAMPTZ, as OpenIddictToken.ExpirationDate
+-- after 0032), so it round-trips whatever the session time zone.
 --
 -- Upgrade: every existing client inherits (the column default) and its rows are copied from its
 -- Application's current list. Nothing reads the identity providers.
@@ -82,7 +83,7 @@ BEGIN
 
     ALTER TABLE "dmscs"."ApiClient"
         ADD COLUMN IF NOT EXISTS "InheritsApplicationEducationOrganizations" BOOLEAN NOT NULL DEFAULT true,
-        ADD COLUMN IF NOT EXISTS "IdentityProviderSyncPendingSince" TIMESTAMP NULL;
+        ADD COLUMN IF NOT EXISTS "IdentityProviderSyncPendingSince" TIMESTAMPTZ NULL;
 
     INSERT INTO "dmscs"."ApiClientEducationOrganization" ("ApiClientId", "ApplicationId", "EducationOrganizationId")
     SELECT client."Id", client."ApplicationId", application_edorg."EducationOrganizationId"

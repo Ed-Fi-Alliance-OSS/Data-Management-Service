@@ -186,6 +186,24 @@ public class ApplicationRepository(
                     transaction
                 );
 
+                // The default client inherits, so its rows are the Application's list
+                sql = """
+                    INSERT INTO dmscs.ApiClientEducationOrganization (ApiClientId, ApplicationId, EducationOrganizationId, CreatedBy)
+                    SELECT @ApiClientId, ApplicationId, EducationOrganizationId, @CreatedBy
+                    FROM dmscs.ApplicationEducationOrganization
+                    WHERE ApplicationId = @ApplicationId;
+                    """;
+                await connection.ExecuteAsync(
+                    sql,
+                    new
+                    {
+                        ApiClientId = apiClientId,
+                        ApplicationId = id,
+                        CreatedBy = currentUser,
+                    },
+                    transaction
+                );
+
                 if (command.DataStoreIds.Length > 0)
                 {
                     if (!await AllDataStoresInTenant(connection, transaction, command.DataStoreIds))

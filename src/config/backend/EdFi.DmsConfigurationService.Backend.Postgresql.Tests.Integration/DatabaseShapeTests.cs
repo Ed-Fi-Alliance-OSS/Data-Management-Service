@@ -385,6 +385,26 @@ public class Given_CMS_PostgreSQL_database_shape
             );
     }
 
+    /// <summary>
+    /// DMS-1639: the repository writes and reads this column as a UTC instant. Declared without a
+    /// time zone, PostgreSQL would convert the bound instant through the session time zone, and two
+    /// instants an hour apart at a daylight-saving fall-back would be stored as the same wall clock.
+    /// </summary>
+    [Test]
+    public void It_should_declare_the_ApiClient_sync_pending_time_as_an_instant()
+    {
+        ColumnShape pendingColumn = _columns
+            .Should()
+            .ContainSingle(column =>
+                column.TableName == "ApiClient" && column.ColumnName == "IdentityProviderSyncPendingSince"
+            )
+            .Which;
+
+        pendingColumn
+            .DataType.Should()
+            .Be("timestamp with time zone", "the sync-pending time must round-trip in any session time zone");
+    }
+
     [Test]
     public void It_should_use_DMS_style_constraint_names_for_representative_core_tenant_and_OpenIddict_tables()
     {

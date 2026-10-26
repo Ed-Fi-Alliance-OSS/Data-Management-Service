@@ -115,6 +115,13 @@ public class ApiClientRepository(
                 return new ApiClientInsertResult.FailureApplicationNotFound();
             }
 
+            await InsertApplicationEducationOrganizationsAsync(
+                connection,
+                transaction,
+                apiClientId.Value,
+                command.ApplicationId
+            );
+
             if (command.DataStoreIds.Length > 0)
             {
                 if (!await AllDataStoresInTenant(connection, transaction, command.DataStoreIds))
@@ -401,20 +408,76 @@ public class ApiClientRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
-            // Check if ApiClient exists within the current tenant
+            // Lock the ApiClient within the current tenant; a move rewrites its education organization
+            // rows. XLOCK, not UPDLOCK, so a state read holding a shared lock never interleaves.
             string checkSql = $"""
-                SELECT COUNT(1) FROM dmscs.ApiClient
+                SELECT ApplicationId, InheritsApplicationEducationOrganizations
+                FROM dmscs.ApiClient WITH (XLOCK, ROWLOCK, HOLDLOCK)
                 WHERE Id = @Id AND {TenantScopedApplicationCondition()};
                 """;
-            int exists = await connection.ExecuteScalarAsync<int>(
-                checkSql,
-                new { command.Id, TenantId },
-                transaction
-            );
-            if (exists == 0)
+            var existing = await connection.QuerySingleOrDefaultAsync<(
+                int ApplicationId,
+                bool InheritsApplicationEducationOrganizations
+            )?>(checkSql, new { command.Id, TenantId }, transaction);
+            if (existing is null)
             {
                 await transaction.RollbackAsync();
                 return new ApiClientUpdateResult.FailureNotFound();
+            }
+
+            bool isMove = existing.Value.ApplicationId != command.ApplicationId;
+            long[] narrowedEducationOrganizationIds = [];
+
+            if (isMove)
+            {
+                string destinationSql =
+                    $"""SELECT CASE WHEN {ApplicationInTenantExistsCondition} THEN 1 ELSE 0 END;""";
+                if (
+                    await connection.ExecuteScalarAsync<int>(
+                        destinationSql,
+                        new { command.ApplicationId, TenantId },
+                        transaction
+                    ) == 0
+                )
+                {
+                    logger.LogWarning("Application not found");
+                    await transaction.RollbackAsync();
+                    return new ApiClientUpdateResult.FailureApplicationNotFound();
+                }
+
+                if (!existing.Value.InheritsApplicationEducationOrganizations)
+                {
+                    // A narrowed client keeps its list, so every id must be on the destination
+                    narrowedEducationOrganizationIds = await StoredEducationOrganizationIdsAsync(
+                        connection,
+                        transaction,
+                        command.Id
+                    );
+                    long[] missingIds = narrowedEducationOrganizationIds
+                        .Except(
+                            await ApplicationEducationOrganizationIdsAsync(
+                                connection,
+                                transaction,
+                                command.ApplicationId
+                            )
+                        )
+                        .ToArray();
+
+                    if (missingIds.Length > 0)
+                    {
+                        logger.LogWarning(
+                            "Update ApiClient failure: education organizations not on the destination Application"
+                        );
+                        await transaction.RollbackAsync();
+                        return new ApiClientUpdateResult.FailureEducationOrganizationsNotOnApplication(
+                            missingIds
+                        );
+                    }
+                }
+
+                // The rows reference the client's current Application with NO ACTION, so they go
+                // before the ApplicationId changes and are reinserted for the destination below
+                await DeleteStoredEducationOrganizationsAsync(connection, transaction, command.Id);
             }
 
             // Update ApiClient record; the target application must belong to the current tenant
@@ -447,6 +510,26 @@ public class ApiClientRepository(
                 logger.LogWarning("Application not found");
                 await transaction.RollbackAsync();
                 return new ApiClientUpdateResult.FailureApplicationNotFound();
+            }
+
+            if (isMove && existing.Value.InheritsApplicationEducationOrganizations)
+            {
+                await InsertApplicationEducationOrganizationsAsync(
+                    connection,
+                    transaction,
+                    command.Id,
+                    command.ApplicationId
+                );
+            }
+            else if (isMove)
+            {
+                await InsertStoredEducationOrganizationsAsync(
+                    connection,
+                    transaction,
+                    command.Id,
+                    command.ApplicationId,
+                    narrowedEducationOrganizationIds
+                );
             }
 
             if (
@@ -533,9 +616,10 @@ public class ApiClientRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
-            // Check if ApiClient exists within the current tenant
+            // Check if ApiClient exists within the current tenant, locking it before its education
+            // organization rows go, so a state read holding a shared lock never interleaves
             string checkSql = $"""
-                SELECT COUNT(1) FROM dmscs.ApiClient
+                SELECT COUNT(1) FROM dmscs.ApiClient WITH (XLOCK, ROWLOCK, HOLDLOCK)
                 WHERE Id = @Id AND {TenantScopedApplicationCondition()};
                 """;
             int exists = await connection.ExecuteScalarAsync<int>(
@@ -572,6 +656,353 @@ public class ApiClientRepository(
             return new ApiClientDeleteResult.FailureUnknown(ex.Message);
         }
     }
+
+    /// <summary>
+    /// A concurrent move between reading a client's Application and locking it restarts the read;
+    /// this bounds the restarts.
+    /// </summary>
+    private const int StateReadAttempts = 3;
+
+    public async Task<ApiClientEducationOrganizationStateResult> GetApiClientEducationOrganizationState(
+        int id
+    )
+    {
+        try
+        {
+            for (int attempt = 0; attempt < StateReadAttempts; attempt++)
+            {
+                ApiClientEducationOrganizationStateResult? result =
+                    await TryReadEducationOrganizationStateAsync(id);
+                if (result is not null)
+                {
+                    return result;
+                }
+            }
+
+            logger.LogWarning("Get ApiClient education organization state failure: the client kept moving");
+            return new ApiClientEducationOrganizationStateResult.FailureUnknown(
+                "The API client moved to another Application during every read attempt."
+            );
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Get ApiClient education organization state failure");
+            return new ApiClientEducationOrganizationStateResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Reads the state under shared locks held to commit, taken Application first and then the
+    /// client and its rows, the order an Application save takes them. The Application lock excludes
+    /// an Application save, and the client lock excludes scope writes, moves and deletes, which lock
+    /// the client exclusively first. Returns null when the client moved before its lock was taken.
+    /// </summary>
+    private async Task<ApiClientEducationOrganizationStateResult?> TryReadEducationOrganizationStateAsync(
+        int id
+    )
+    {
+        await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+
+        int? applicationId = await connection.ExecuteScalarAsync<int?>(
+            $"""
+            SELECT ApplicationId FROM dmscs.ApiClient
+            WHERE Id = @Id AND {TenantScopedApplicationCondition()};
+            """,
+            new { Id = id, TenantId },
+            transaction
+        );
+
+        if (applicationId is null)
+        {
+            return new ApiClientEducationOrganizationStateResult.FailureNotFound();
+        }
+
+        await connection.ExecuteAsync(
+            "SELECT Id FROM dmscs.Application WITH (HOLDLOCK, ROWLOCK) WHERE Id = @ApplicationId;",
+            new { ApplicationId = applicationId },
+            transaction
+        );
+
+        var client = await connection.QuerySingleOrDefaultAsync<(
+            int ApplicationId,
+            bool InheritsApplicationEducationOrganizations,
+            DateTime? IdentityProviderSyncPendingSince
+        )?>(
+            $"""
+            SELECT ApplicationId, InheritsApplicationEducationOrganizations, IdentityProviderSyncPendingSince
+            FROM dmscs.ApiClient WITH (HOLDLOCK, ROWLOCK)
+            WHERE Id = @Id AND {TenantScopedApplicationCondition()};
+            """,
+            new { Id = id, TenantId },
+            transaction
+        );
+
+        if (client is null)
+        {
+            return new ApiClientEducationOrganizationStateResult.FailureNotFound();
+        }
+
+        if (client.Value.ApplicationId != applicationId)
+        {
+            return null;
+        }
+
+        long[] storedIds = (
+            await connection.QueryAsync<long>(
+                """
+                SELECT EducationOrganizationId FROM dmscs.ApiClientEducationOrganization WITH (HOLDLOCK)
+                WHERE ApiClientId = @ApiClientId
+                ORDER BY EducationOrganizationId;
+                """,
+                new { ApiClientId = id },
+                transaction
+            )
+        ).ToArray();
+
+        long[] effectiveIds = client.Value.InheritsApplicationEducationOrganizations
+            ? (
+                await connection.QueryAsync<long>(
+                    """
+                    SELECT EducationOrganizationId FROM dmscs.ApplicationEducationOrganization WITH (HOLDLOCK)
+                    WHERE ApplicationId = @ApplicationId
+                    ORDER BY EducationOrganizationId;
+                    """,
+                    new { ApplicationId = applicationId },
+                    transaction
+                )
+            ).ToArray()
+            : storedIds;
+
+        await transaction.CommitAsync();
+        return new ApiClientEducationOrganizationStateResult.Success(
+            new ApiClientEducationOrganizationState(
+                client.Value.ApplicationId,
+                client.Value.InheritsApplicationEducationOrganizations,
+                storedIds,
+                effectiveIds,
+                client.Value.IdentityProviderSyncPendingSince is DateTime pendingSince
+                    ? DateTime.SpecifyKind(pendingSince, DateTimeKind.Utc)
+                    : null
+            )
+        );
+    }
+
+    public async Task<ApiClientEducationOrganizationScopeResult> SetApiClientEducationOrganizationScope(
+        int id,
+        long[]? narrowedEducationOrganizationIds
+    )
+    {
+        await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        try
+        {
+            string clientSql = $"""
+                SELECT ApplicationId FROM dmscs.ApiClient WITH (XLOCK, ROWLOCK, HOLDLOCK)
+                WHERE Id = @Id AND {TenantScopedApplicationCondition()};
+                """;
+            int? applicationId = await connection.ExecuteScalarAsync<int?>(
+                clientSql,
+                new { Id = id, TenantId },
+                transaction
+            );
+
+            if (applicationId is null)
+            {
+                await transaction.RollbackAsync();
+                return new ApiClientEducationOrganizationScopeResult.FailureNotFound();
+            }
+
+            long[] applicationIds = await ApplicationEducationOrganizationIdsAsync(
+                connection,
+                transaction,
+                applicationId.Value
+            );
+            long[] storedIds = narrowedEducationOrganizationIds?.Distinct().ToArray() ?? applicationIds;
+            long[] missingIds = storedIds.Except(applicationIds).ToArray();
+
+            if (missingIds.Length > 0)
+            {
+                logger.LogWarning(
+                    "Set ApiClient education organization scope failure: education organizations not on the Application"
+                );
+                await transaction.RollbackAsync();
+                return new ApiClientEducationOrganizationScopeResult.FailureNotOnApplication(missingIds);
+            }
+
+            await DeleteStoredEducationOrganizationsAsync(connection, transaction, id);
+            await InsertStoredEducationOrganizationsAsync(
+                connection,
+                transaction,
+                id,
+                applicationId.Value,
+                storedIds
+            );
+
+            string updateSql = """
+                UPDATE dmscs.ApiClient
+                SET InheritsApplicationEducationOrganizations = @Inherits,
+                    LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
+                WHERE Id = @Id;
+                """;
+            await connection.ExecuteAsync(
+                updateSql,
+                new
+                {
+                    Id = id,
+                    Inherits = narrowedEducationOrganizationIds is null,
+                    LastModifiedAt = auditContext.GetCurrentTimestamp(),
+                    ModifiedBy = auditContext.GetCurrentUser(),
+                },
+                transaction
+            );
+
+            await transaction.CommitAsync();
+            return new ApiClientEducationOrganizationScopeResult.Success();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Set ApiClient education organization scope failure");
+            await RollbackSafelyAsync(transaction);
+            return new ApiClientEducationOrganizationScopeResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    public async Task<ApiClientSyncPendingResult> SetApiClientIdentityProviderSyncPending(
+        int id,
+        DateTime? pendingSince
+    )
+    {
+        if (pendingSince is { Kind: not DateTimeKind.Utc })
+        {
+            throw new ArgumentException("The sync-pending time must be UTC.", nameof(pendingSince));
+        }
+
+        try
+        {
+            await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
+            await connection.OpenAsync();
+
+            string sql = $"""
+                UPDATE dmscs.ApiClient
+                SET IdentityProviderSyncPendingSince = @PendingSince
+                WHERE Id = @Id AND {TenantScopedApplicationCondition()};
+                """;
+            int updatedRows = await connection.ExecuteAsync(
+                sql,
+                new
+                {
+                    Id = id,
+                    PendingSince = pendingSince,
+                    TenantId,
+                }
+            );
+
+            return updatedRows == 0
+                ? new ApiClientSyncPendingResult.FailureNotFound()
+                : new ApiClientSyncPendingResult.Success();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Set ApiClient sync-pending failure");
+            return new ApiClientSyncPendingResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    private static async Task<long[]> StoredEducationOrganizationIdsAsync(
+        SqlConnection connection,
+        DbTransaction transaction,
+        int apiClientId
+    ) =>
+        (
+            await connection.QueryAsync<long>(
+                """
+                SELECT EducationOrganizationId FROM dmscs.ApiClientEducationOrganization
+                WHERE ApiClientId = @ApiClientId
+                ORDER BY EducationOrganizationId;
+                """,
+                new { ApiClientId = apiClientId },
+                transaction
+            )
+        ).ToArray();
+
+    private static async Task<long[]> ApplicationEducationOrganizationIdsAsync(
+        SqlConnection connection,
+        DbTransaction transaction,
+        int applicationId
+    ) =>
+        (
+            await connection.QueryAsync<long>(
+                """
+                SELECT EducationOrganizationId FROM dmscs.ApplicationEducationOrganization
+                WHERE ApplicationId = @ApplicationId
+                ORDER BY EducationOrganizationId;
+                """,
+                new { ApplicationId = applicationId },
+                transaction
+            )
+        ).ToArray();
+
+    private static Task DeleteStoredEducationOrganizationsAsync(
+        SqlConnection connection,
+        DbTransaction transaction,
+        int apiClientId
+    ) =>
+        connection.ExecuteAsync(
+            """DELETE FROM dmscs.ApiClientEducationOrganization WHERE ApiClientId = @ApiClientId;""",
+            new { ApiClientId = apiClientId },
+            transaction
+        );
+
+    private Task InsertStoredEducationOrganizationsAsync(
+        SqlConnection connection,
+        DbTransaction transaction,
+        int apiClientId,
+        int applicationId,
+        long[] educationOrganizationIds
+    )
+    {
+        string currentUser = auditContext.GetCurrentUser();
+        return connection.ExecuteAsync(
+            """
+            INSERT INTO dmscs.ApiClientEducationOrganization (ApiClientId, ApplicationId, EducationOrganizationId, CreatedBy)
+            VALUES (@ApiClientId, @ApplicationId, @EducationOrganizationId, @CreatedBy);
+            """,
+            educationOrganizationIds.Select(educationOrganizationId => new
+            {
+                ApiClientId = apiClientId,
+                ApplicationId = applicationId,
+                EducationOrganizationId = educationOrganizationId,
+                CreatedBy = currentUser,
+            }),
+            transaction
+        );
+    }
+
+    /// <summary>Stores the Application's current list as an inheriting client's rows.</summary>
+    private Task InsertApplicationEducationOrganizationsAsync(
+        SqlConnection connection,
+        DbTransaction transaction,
+        int apiClientId,
+        int applicationId
+    ) =>
+        connection.ExecuteAsync(
+            """
+            INSERT INTO dmscs.ApiClientEducationOrganization (ApiClientId, ApplicationId, EducationOrganizationId, CreatedBy)
+            SELECT @ApiClientId, ApplicationId, EducationOrganizationId, @CreatedBy
+            FROM dmscs.ApplicationEducationOrganization
+            WHERE ApplicationId = @ApplicationId;
+            """,
+            new
+            {
+                ApiClientId = apiClientId,
+                ApplicationId = applicationId,
+                CreatedBy = auditContext.GetCurrentUser(),
+            },
+            transaction
+        );
 
     public async Task<ApiClientResolutionResult> GetApiClientResolutionState(int id)
     {
