@@ -111,6 +111,7 @@ catalog mutations against the same reviewed focused manifest.
 
 The integration cases execute test-only mutations under `tests/fixtures`, including a legacy core
 descriptor table with bigint DocumentId primary key, physically stored URI and discriminator, a
+lowered SQL Server URI, a
 missing or cascading composite document FK, a missing or stale lowered whole-URI index, and a
 leftover unlowered whole-URI index.
 Every mutation preserves the current schema fingerprint and is rolled back. Old schemas fail the

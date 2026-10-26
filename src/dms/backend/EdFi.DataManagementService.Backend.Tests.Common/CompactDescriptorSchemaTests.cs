@@ -399,7 +399,7 @@ public abstract class CompactDescriptorSchemaTests
     protected Task AssertDescriptorAliasMutationAsync(string mutation) =>
         AssertCatalogMutationRejectedAsync(mutation, "*Compact descriptor baseline:*descriptor alias*");
 
-    private Task AssertCatalogMutationRejectedAsync(string mutation, string expectedMessage) =>
+    protected Task AssertCatalogMutationRejectedAsync(string mutation, string expectedMessage) =>
         AssertCatalogMutationRejectedAsync(mutation, expectedMessage, _assertionSql);
 
     private async Task AssertCatalogMutationRejectedAsync(
