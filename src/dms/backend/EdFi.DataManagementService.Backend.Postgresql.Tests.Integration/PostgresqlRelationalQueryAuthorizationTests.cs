@@ -986,8 +986,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     }
 
     /// <summary>
-    /// Course and CourseTranscript are seeded for the transitive person pathway with the tables' own triggers
-    /// left enabled, so each row carries the values the product would store.
+    /// Course and CourseTranscript are seeded for the transitive person pathway.
     /// </summary>
     public async Task SeedCourseAsync(CourseSeed seed)
     {

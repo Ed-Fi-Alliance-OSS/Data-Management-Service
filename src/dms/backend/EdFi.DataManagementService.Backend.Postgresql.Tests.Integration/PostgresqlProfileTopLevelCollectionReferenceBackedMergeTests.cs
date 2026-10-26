@@ -557,8 +557,8 @@ public class Given_A_Postgresql_Profiled_TopLevelCollection_ReferenceBackedIdent
     {
         await _database.ResetAsync();
 
-        // Pre-seed all Program documents so every
-        // program that any test may reference (either in seed or in a profiled PUT body).
+        // Pre-seed all Program documents so every program any test may reference (in the seed or a
+        // profiled PUT body) already exists and resolves by natural key.
         await ReferenceBackedTopLevelCollectionMergeSupport.SeedProgramAsync(
             _database,
             AlphaProgramUuid,

@@ -339,7 +339,7 @@ public class MssqlIdentityStampCascadeTests
     public async Task Cascaded_identity_update_rolls_back_with_parent_transaction()
     {
         // SQL Server cascade is driven by native ON UPDATE CASCADE reference foreign keys,
-        // so explicitly assert the cascaded recompute reverts on parent rollback.
+        // so explicitly assert the cascaded identity propagation reverts on parent rollback.
         const string OldStudentUniqueId = "STU-RBK-OLD";
         const string NewStudentUniqueId = "STU-RBK-NEW";
 

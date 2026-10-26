@@ -3013,9 +3013,6 @@ public class Given_CoreDdlEmitter_Descriptor_Stamping_Trigger_Metadata
 }
 
 /// <summary>
-/// Helpers for asserting on one statement inside emitted core DDL.
-/// </summary>
-/// <summary>
 /// The full authoritative DS 5.2 DDL installs no referential-identity artifact: no table, trigger,
 /// <c>uuidv5</c> function, <c>digest()</c> call, <c>pgcrypto</c> extension or unlowered descriptor URI
 /// index. The lowered descriptor URI index stays.
@@ -3057,6 +3054,9 @@ public class Given_The_Authoritative_Ds52_Full_Ddl(SqlDialect dialect)
     }
 }
 
+/// <summary>
+/// Helpers for asserting on one statement inside emitted core DDL.
+/// </summary>
 internal static class CoreDdlStatements
 {
     /// <summary>
