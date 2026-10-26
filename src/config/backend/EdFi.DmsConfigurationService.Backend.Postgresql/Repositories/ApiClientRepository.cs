@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -71,6 +72,38 @@ public class ApiClientRepository(
         );
         return count == dataStoreIds.Distinct().Count();
     }
+
+    /// <summary>
+    /// The effective education organization ids of the ApiClient aliased <c>ac</c>, comma-separated
+    /// in ascending order, as a column named EducationOrganizationIds; null when there are none. An
+    /// inheriting client reads its Application's current ids, which its own rows can lag behind; a
+    /// narrowed client reads its own rows. Computed in the statement that reads the client row, so
+    /// the list always belongs to that row's flag and Application.
+    /// </summary>
+    private const string EffectiveEducationOrganizationIdsColumn = """
+        CASE WHEN ac."InheritsApplicationEducationOrganizations"
+            THEN (
+                SELECT string_agg(aeo."EducationOrganizationId"::text, ',' ORDER BY aeo."EducationOrganizationId")
+                FROM "dmscs"."ApplicationEducationOrganization" aeo
+                WHERE aeo."ApplicationId" = ac."ApplicationId"
+            )
+            ELSE (
+                SELECT string_agg(ace."EducationOrganizationId"::text, ',' ORDER BY ace."EducationOrganizationId")
+                FROM "dmscs"."ApiClientEducationOrganization" ace
+                WHERE ace."ApiClientId" = ac."Id"
+            )
+        END AS "EducationOrganizationIds"
+        """;
+
+    private static List<long> ParseEducationOrganizationIds(string? educationOrganizationIds) =>
+        string.IsNullOrEmpty(educationOrganizationIds)
+            ? []
+            :
+            [
+                .. educationOrganizationIds
+                    .Split(',')
+                    .Select(id => long.Parse(id, CultureInfo.InvariantCulture)),
+            ];
 
     private const string DuplicateNameConstraint = "UX_ApiClient_ApplicationId_Name";
     private const string DuplicateClientIdConstraint = "UX_ApiClient_ClientId";
@@ -295,16 +328,20 @@ public class ApiClientRepository(
             string outerOrderByClause = BuildOrderByClause(query, "ac");
             string sql = $"""
                 SELECT ac."Id", ac."ApplicationId", ac."ClientId", ac."ClientUuid", ac."Name", ac."IsApproved",
+                       ac."InheritsApplicationEducationOrganizations", {EffectiveEducationOrganizationIdsColumn},
                        acd."DataStoreId"
                 FROM (SELECT * FROM "dmscs"."ApiClient" {filterClause} {orderByClause} {query.BuildPagingClause()}) AS ac
                 LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
                 {outerOrderByClause};
                 """;
 
-            var apiClients = await connection.QueryAsync<ApiClientResponse, int?, ApiClientResponse>(
+            var apiClients = await connection.QueryAsync<ApiClientResponse, string?, int?, ApiClientResponse>(
                 sql,
-                (apiClient, dataStoreId) =>
+                (apiClient, educationOrganizationIds, dataStoreId) =>
                 {
+                    apiClient.EducationOrganizationIds = ParseEducationOrganizationIds(
+                        educationOrganizationIds
+                    );
                     if (dataStoreId is not null)
                     {
                         apiClient.DataStoreIds.Add(dataStoreId.Value);
@@ -318,7 +355,7 @@ public class ApiClientRepository(
                     query.ApplicationId,
                     TenantId,
                 },
-                splitOn: "DataStoreId"
+                splitOn: "EducationOrganizationIds,DataStoreId"
             );
 
             var returnApiClients = apiClients
@@ -349,16 +386,20 @@ public class ApiClientRepository(
         {
             string sql = $"""
                 SELECT ac."Id", ac."ApplicationId", ac."ClientId", ac."ClientUuid", ac."Name", ac."IsApproved",
+                       ac."InheritsApplicationEducationOrganizations", {EffectiveEducationOrganizationIdsColumn},
                        acd."DataStoreId"
                 FROM "dmscs"."ApiClient" ac
                 LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
                 WHERE ac."ClientId" = @ClientId AND {TenantScopedApplicationCondition("ac")};
                 """;
 
-            var apiClients = await connection.QueryAsync<ApiClientResponse, int?, ApiClientResponse>(
+            var apiClients = await connection.QueryAsync<ApiClientResponse, string?, int?, ApiClientResponse>(
                 sql,
-                (apiClient, dataStoreId) =>
+                (apiClient, educationOrganizationIds, dataStoreId) =>
                 {
+                    apiClient.EducationOrganizationIds = ParseEducationOrganizationIds(
+                        educationOrganizationIds
+                    );
                     if (dataStoreId is not null)
                     {
                         apiClient.DataStoreIds.Add(dataStoreId.Value);
@@ -366,7 +407,7 @@ public class ApiClientRepository(
                     return apiClient;
                 },
                 param: new { ClientId = clientId, TenantId },
-                splitOn: "DataStoreId"
+                splitOn: "EducationOrganizationIds,DataStoreId"
             );
 
             ApiClientResponse? returnApiClient = apiClients
@@ -403,16 +444,20 @@ public class ApiClientRepository(
         {
             string sql = $"""
                 SELECT ac."Id", ac."ApplicationId", ac."ClientId", ac."ClientUuid", ac."Name", ac."IsApproved",
+                       ac."InheritsApplicationEducationOrganizations", {EffectiveEducationOrganizationIdsColumn},
                        acd."DataStoreId"
                 FROM "dmscs"."ApiClient" ac
                 LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
                 WHERE ac."Id" = @Id AND {TenantScopedApplicationCondition("ac")};
                 """;
 
-            var apiClients = await connection.QueryAsync<ApiClientResponse, int?, ApiClientResponse>(
+            var apiClients = await connection.QueryAsync<ApiClientResponse, string?, int?, ApiClientResponse>(
                 sql,
-                (apiClient, dataStoreId) =>
+                (apiClient, educationOrganizationIds, dataStoreId) =>
                 {
+                    apiClient.EducationOrganizationIds = ParseEducationOrganizationIds(
+                        educationOrganizationIds
+                    );
                     if (dataStoreId is not null)
                     {
                         apiClient.DataStoreIds.Add(dataStoreId.Value);
@@ -420,7 +465,7 @@ public class ApiClientRepository(
                     return apiClient;
                 },
                 param: new { Id = id, TenantId },
-                splitOn: "DataStoreId"
+                splitOn: "EducationOrganizationIds,DataStoreId"
             );
 
             ApiClientResponse? returnApiClient = apiClients

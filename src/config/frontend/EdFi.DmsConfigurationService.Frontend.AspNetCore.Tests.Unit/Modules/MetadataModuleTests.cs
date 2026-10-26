@@ -117,6 +117,7 @@ public class MetadataModuleTests
         "ApiClientResponse.creatorOwnershipTokenId int32",
         "ApiClientResponse.ownershipTokenIds int32",
         "ApiClientResponse.dataStoreIds int32",
+        "ApiClientResponse.educationOrganizationIds int64",
         "ApiClientUpdateCommand.id int32",
         "ApiClientUpdateCommand.applicationId int32",
         "ApiClientUpdateCommand.dataStoreIds int32",

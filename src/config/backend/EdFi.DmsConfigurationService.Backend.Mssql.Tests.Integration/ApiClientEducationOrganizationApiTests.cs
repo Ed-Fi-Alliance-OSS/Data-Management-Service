@@ -219,7 +219,8 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
     protected Task<(HttpStatusCode Status, JsonNode Body)> PostClientAsync(
         int applicationId,
         string scopeJson = "",
-        string? name = null
+        string? name = null,
+        int[]? dataStoreIds = null
     ) =>
         SendAsync(
             HttpMethod.Post,
@@ -229,10 +230,65 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
               "applicationId": {{applicationId}},
               "name": "{{name ?? "Client " + Guid.NewGuid().ToString("N")}}",
               "isApproved": true,
-              "dataStoreIds": []{{scopeJson}}
+              "dataStoreIds": [{{string.Join(", ", dataStoreIds ?? [])}}]{{scopeJson}}
             }
             """
         );
+
+    protected sealed record ReadScope(bool Inherits, long[] EducationOrganizationIds);
+
+    protected static ReadScope ReadScopeOf(JsonNode apiClient) =>
+        new(
+            apiClient["inheritsApplicationEducationOrganizations"]!.GetValue<bool>(),
+            [.. apiClient["educationOrganizationIds"]!.AsArray().Select(id => id!.GetValue<long>())]
+        );
+
+    /// <summary>Creates a client and returns its id and OAuth client key.</summary>
+    protected async Task<(int Id, string Key)> CreateKeyedClientAsync(
+        int applicationId,
+        string scopeJson = "",
+        int[]? dataStoreIds = null
+    )
+    {
+        var (status, body) = await PostClientAsync(applicationId, scopeJson, dataStoreIds: dataStoreIds);
+        status.Should().Be(HttpStatusCode.Created, body.ToJsonString());
+        return (body["id"]!.GetValue<int>(), body["key"]!.GetValue<string>());
+    }
+
+    protected async Task<int> CreateDataStoreAsync() =>
+        await CreateAsync(
+            "/v3/dataStores/",
+            $$"""
+            {
+              "dataStoreType": "Production",
+              "name": "ClientScope-{{Guid.NewGuid():N}}",
+              "connectionString": "Server=db;Database=edfi;User Id=edfi;Password=secret"
+            }
+            """
+        );
+
+    /// <summary>
+    /// Reads a client from the collection, by its numeric id and by its OAuth client key, keyed
+    /// by the read used.
+    /// </summary>
+    protected async Task<Dictionary<string, JsonNode>> ReadEveryWayAsync((int Id, string Key) client)
+    {
+        var (collectionStatus, collection) = await SendAsync(
+            HttpMethod.Get,
+            "/v3/apiClients/?offset=0&limit=500"
+        );
+        var (idStatus, byId) = await SendAsync(HttpMethod.Get, $"/v3/apiClients/{client.Id}");
+        var (keyStatus, byKey) = await SendAsync(HttpMethod.Get, $"/v3/apiClients/{client.Key}");
+        collectionStatus.Should().Be(HttpStatusCode.OK);
+        idStatus.Should().Be(HttpStatusCode.OK);
+        keyStatus.Should().Be(HttpStatusCode.OK);
+        return new()
+        {
+            ["collection"] = collection.AsArray().Single(item => item!["id"]!.GetValue<int>() == client.Id)!,
+            ["id"] = byId,
+            ["key"] = byKey,
+        };
+    }
 
     /// <summary>Creates a client and returns its id and identity provider client UUID.</summary>
     protected async Task<(int Id, string ClientUuid)> CreateClientAsync(
@@ -881,5 +937,179 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
         [Test]
         public void It_sends_the_expanded_effective_list_as_the_claim() =>
             ClaimsSentFor(_client.ClientUuid).Should().Equal("255901,255902,255903,255905");
+    }
+
+    [TestFixture]
+    public class Given_api_clients_read_with_their_effective_education_organizations
+        : ApiClientEducationOrganizationApiTests
+    {
+        private const long A5 = 255905;
+        private const long C6 = 255906;
+        private const long LargeId = 9007199254740993;
+        private readonly Dictionary<string, (int Id, string Key)> _clients = [];
+        private readonly Dictionary<string, Dictionary<string, JsonNode>> _reads = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            int emptyApplication = await CreateApplicationAsync("Empty Application", []);
+            int cascadeApplication = await CreateApplicationAsync("Cascade Application", [C6]);
+            int largeIdApplication = await CreateApplicationAsync("Large Id Application", [A1, LargeId]);
+
+            _clients["inheriting"] = await CreateKeyedClientAsync(ApplicationA);
+            _clients["narrowed subset"] = await CreateKeyedClientAsync(ApplicationA, List(A2));
+            _clients["narrowed to the Application list"] = await CreateKeyedClientAsync(
+                ApplicationA,
+                List(A1, A2, A3)
+            );
+            _clients["inheriting an empty Application"] = await CreateKeyedClientAsync(emptyApplication);
+            _clients["narrowed then emptied"] = await CreateKeyedClientAsync(cascadeApplication, List(C6));
+            _clients["large id"] = await CreateKeyedClientAsync(largeIdApplication, List(LargeId));
+
+            // An Application addition reaches the inheriting client's effective list, not its rows,
+            // and never a narrowed client; a removal cascades to the narrowed client's rows
+            await AddApplicationEducationOrganizationAsync(ApplicationA, A5);
+            await RemoveApplicationEducationOrganizationAsync(cascadeApplication, C6);
+
+            foreach (var (name, client) in _clients)
+            {
+                _reads[name] = await ReadEveryWayAsync(client);
+            }
+        }
+
+        [TestCase("inheriting", true, new[] { A1, A2, A3, A5 })]
+        [TestCase("narrowed subset", false, new[] { A2 })]
+        [TestCase("narrowed to the Application list", false, new[] { A1, A2, A3 })]
+        [TestCase("inheriting an empty Application", true, new long[0])]
+        [TestCase("narrowed then emptied", false, new long[0])]
+        [TestCase("large id", false, new[] { LargeId })]
+        public void It_returns_the_flag_and_effective_list_from_every_read(
+            string client,
+            bool inherits,
+            long[] ids
+        ) =>
+            _reads[client]
+                .Values.Select(ReadScopeOf)
+                .Should()
+                .AllSatisfy(read =>
+                    read.Should().BeEquivalentTo(new ReadScope(inherits, ids), o => o.WithStrictOrdering())
+                )
+                .And.HaveCount(3);
+
+        [TestCase("inheriting an empty Application")]
+        [TestCase("narrowed then emptied")]
+        public void It_serializes_no_education_organizations_as_an_empty_array(string client) =>
+            _reads[client]
+                .Values.Should()
+                .OnlyContain(read =>
+                    read["educationOrganizationIds"] is JsonArray
+                    && read["educationOrganizationIds"]!.AsArray().Count == 0
+                );
+
+        [Test]
+        public async Task It_keeps_the_inheriting_client_rows_behind_its_effective_list() =>
+            ShouldMatch(
+                await ClientScopeAsync(_clients["inheriting"].Id),
+                Scope(ApplicationA, true, A1, A2, A3)
+            );
+    }
+
+    [TestFixture]
+    public class Given_api_clients_read_after_moves : ApiClientEducationOrganizationApiTests
+    {
+        private Dictionary<string, JsonNode> _inheriting = null!;
+        private Dictionary<string, JsonNode> _narrowed = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var inheriting = await CreateKeyedClientAsync(ApplicationA);
+            var narrowed = await CreateKeyedClientAsync(ApplicationA, List(A1));
+            (await PutClientAsync(inheriting.Id, ApplicationB)).Status.Should().Be(HttpStatusCode.NoContent);
+            (await PutClientAsync(narrowed.Id, ApplicationB)).Status.Should().Be(HttpStatusCode.NoContent);
+
+            _inheriting = await ReadEveryWayAsync(inheriting);
+            _narrowed = await ReadEveryWayAsync(narrowed);
+        }
+
+        [Test]
+        public void It_returns_the_destination_list_for_the_inheriting_client() =>
+            _inheriting
+                .Values.Should()
+                .AllSatisfy(read =>
+                {
+                    read["applicationId"]!.GetValue<int>().Should().Be(ApplicationB);
+                    ReadScopeOf(read)
+                        .Should()
+                        .BeEquivalentTo(new ReadScope(true, [A1, B4]), o => o.WithStrictOrdering());
+                });
+
+        [Test]
+        public void It_returns_the_kept_list_for_the_narrowed_client() =>
+            _narrowed
+                .Values.Should()
+                .AllSatisfy(read =>
+                {
+                    read["applicationId"]!.GetValue<int>().Should().Be(ApplicationB);
+                    ReadScopeOf(read)
+                        .Should()
+                        .BeEquivalentTo(new ReadScope(false, [A1]), o => o.WithStrictOrdering());
+                });
+    }
+
+    [TestFixture]
+    public class Given_a_page_of_one_api_client_with_several_education_organizations_and_data_stores
+        : ApiClientEducationOrganizationApiTests
+    {
+        private int[] _dataStores = [];
+        private (int Id, string Key) _second;
+        private (HttpStatusCode Status, JsonNode Body) _page;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _dataStores =
+            [
+                await CreateDataStoreAsync(),
+                await CreateDataStoreAsync(),
+                await CreateDataStoreAsync(),
+            ];
+            await CreateKeyedClientAsync(ApplicationA, List(A1, A2), [_dataStores[0], _dataStores[1]]);
+            _second = await CreateKeyedClientAsync(
+                ApplicationA,
+                List(A2, A3),
+                [_dataStores[1], _dataStores[2]]
+            );
+            await CreateKeyedClientAsync(ApplicationA, "", [_dataStores[0], _dataStores[2]]);
+
+            // Clients are paged before their education organizations and data stores join, so
+            // the second page of one holds exactly the second client with all of its ids
+            _page = await SendAsync(
+                HttpMethod.Get,
+                $"/v3/apiClients/?offset=1&limit=1&orderBy=id&applicationid={ApplicationA}"
+            );
+        }
+
+        [Test]
+        public void It_returns_exactly_the_second_client()
+        {
+            _page.Status.Should().Be(HttpStatusCode.OK);
+            _page.Body.AsArray().Select(client => client!["id"]!.GetValue<int>()).Should().Equal(_second.Id);
+        }
+
+        [Test]
+        public void It_returns_each_of_its_education_organizations_once() =>
+            ReadScopeOf(_page.Body[0]!)
+                .Should()
+                .BeEquivalentTo(new ReadScope(false, [A2, A3]), o => o.WithStrictOrdering());
+
+        [Test]
+        public void It_returns_each_of_its_data_stores_once() =>
+            _page.Body[0]!["dataStoreIds"]!
+                .AsArray()
+                .Select(id => id!.GetValue<int>())
+                .Order()
+                .Should()
+                .Equal(_dataStores[1], _dataStores[2]);
     }
 }
