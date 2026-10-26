@@ -48,16 +48,18 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     /// <summary>
     /// Selects the convergence cuts: repeatedly finds the earliest remaining convergence across
     /// origins in stable order, retains the first survivor whose competing incoming edges all pass
-    /// the structural safe-cut test, and assigns full-composite ON UPDATE NO ACTION to the cuts.
-    /// When a convergence has no locally safe survivor, the nearest earlier decision that assigned
-    /// an action to one of this convergence's own incoming edges is retried with its next stable
-    /// survivor; a merely reachable, carrier-related, or disjoint earlier decision is never
-    /// retried. When neither a safe survivor nor a shared-FK retry exists, a convergence discovered
-    /// from an immutable abstract-identity origin (one with no transitively-mutable concrete
-    /// subclass) is rescued by retaining the next still-available candidate and cutting the rest:
-    /// that origin never renames the shared columns, so the cut guards a rename that cannot happen.
-    /// Once backtracking has exhausted that origin's candidates, or for a genuinely mutable origin,
-    /// derivation fails as NoSafeSqlServerForeignKeyPruning.
+    /// the directly-mutable-intermediate coverage check and the structural safe-cut test, and
+    /// assigns full-composite ON UPDATE NO ACTION to the cuts. When a convergence has no locally
+    /// safe survivor, the nearest earlier decision that assigned an action to one of this
+    /// convergence's own incoming edges is retried with its next stable survivor; a merely
+    /// reachable, carrier-related, or disjoint earlier decision is never retried. When neither a
+    /// safe survivor nor a shared-FK retry exists, a convergence discovered from an immutable
+    /// abstract-identity origin (one with no transitively-mutable concrete subclass) is rescued by
+    /// retaining the first still-available candidate whose cuts pass the intermediate coverage
+    /// check and cutting the rest: that origin never renames the shared columns, so only its own
+    /// rename checks are waived. Once backtracking has exhausted that origin's candidates, when no
+    /// candidate passes intermediate coverage, or for a genuinely mutable origin, derivation fails
+    /// as NoSafeSqlServerForeignKeyPruning.
     /// </summary>
     internal static HashSet<PruningEdgeKey> SelectCutEdges(
         IReadOnlyList<string> origins,
@@ -65,6 +67,9 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
         IReadOnlySet<string> immutableAbstractOrigins
     )
     {
+        // Abstract identity tables have no incoming candidate edges, so on a cut path only the
+        // directly mutable concrete roots (allowIdentityUpdates) ever match this set.
+        var mutableOrigins = origins.ToHashSet(StringComparer.Ordinal);
         List<PruningDecision> decisions = [];
         HashSet<PruningEdgeKey> cutEdges = [];
         Dictionary<PruningEdgeKey, int> retainedEdgeCounts = [];
@@ -96,6 +101,7 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
                 convergence,
                 startIndex,
                 origin,
+                mutableOrigins,
                 retainedEdgeCounts
             );
 
@@ -120,19 +126,39 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
                 // An immutable abstract-identity origin never renames the shared columns, so a
                 // convergence discovered from it guards a rename that cannot happen. With no
                 // locally safe survivor and no earlier shared-FK decision to retry, retain the
-                // next still-available candidate and cut the rest instead of failing: fewer
-                // cascades never violate SQL Server's single-cascade-path rule, and no real update
-                // is left uncovered. Once backtracking has advanced startIndex past the last
-                // candidate, fall through and fail deterministically instead of wrapping to a
-                // candidate already tried. Genuinely mutable origins still fail here.
-                if (
-                    immutableAbstractOrigins.Contains(origin)
-                    && startIndex < convergence.IncomingChoices.Count
-                )
+                // first still-available candidate whose cuts leave no directly mutable
+                // intermediate rename uncarried, and cut the rest instead of failing: fewer
+                // cascades never violate SQL Server's single-cascade-path rule, and no reachable
+                // update is left uncovered. The rescue waives only the origin's own rename; an
+                // intermediate rename can still happen. The shared-FK check is unnecessary because
+                // no earlier decision assigned an action to these edges. The scan never wraps, so
+                // once backtracking has advanced startIndex past the last candidate, or no
+                // candidate passes, derivation fails deterministically. Genuinely mutable origins
+                // still fail here.
+                if (immutableAbstractOrigins.Contains(origin))
                 {
-                    CommitSurvivor(origin, convergence, startIndex, cutEdges, retainedEdgeCounts, decisions);
+                    var (rescueIndex, coverageFailure) = TrySelectRescueSurvivor(
+                        convergence,
+                        startIndex,
+                        origin,
+                        mutableOrigins
+                    );
 
-                    continue;
+                    if (rescueIndex >= 0)
+                    {
+                        CommitSurvivor(
+                            origin,
+                            convergence,
+                            rescueIndex,
+                            cutEdges,
+                            retainedEdgeCounts,
+                            decisions
+                        );
+
+                        continue;
+                    }
+
+                    firstFailedCondition = coverageFailure ?? firstFailedCondition;
                 }
 
                 throw BuildNoSafePruningException(origin, convergence, firstFailedCondition);
@@ -208,15 +234,17 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
     /// <summary>
     /// Tries survivor choices in stable order starting at the given index. Returns the index of
-    /// the first survivor for which every competing incoming edge passes the structural safe-cut
-    /// test and cuts no edge retained by an earlier decision (one physical constraint has one
-    /// action; reversing an earlier retained cascade is a shared-FK action conflict resolved only
-    /// through retry), or (-1, first failed condition) when none qualifies.
+    /// the first survivor for which every competing incoming edge cuts no edge retained by an
+    /// earlier decision (one physical constraint has one action; reversing an earlier retained
+    /// cascade is a shared-FK action conflict resolved only through retry), leaves no directly
+    /// mutable intermediate rename uncarried, and passes the structural safe-cut test, or
+    /// (-1, first failed condition) when none qualifies.
     /// </summary>
     private static (int SurvivorIndex, string? FirstFailedCondition) TrySelectSurvivor(
         ConvergenceDiscovery convergence,
         int startIndex,
         string origin,
+        IReadOnlySet<string> mutableOrigins,
         IReadOnlyDictionary<PruningEdgeKey, int> retainedEdgeCounts
     )
     {
@@ -242,7 +270,14 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
                     break;
                 }
 
-                failure = EvaluateSafeCut(cut, survivor, convergence.PredecessorEdgeByVertex, origin);
+                failure =
+                    EvaluateIntermediateCoverage(
+                        cut,
+                        survivor,
+                        convergence.PredecessorEdgeByVertex,
+                        origin,
+                        mutableOrigins
+                    ) ?? EvaluateSafeCut(cut, survivor, convergence.PredecessorEdgeByVertex, origin);
 
                 if (failure is not null)
                 {
@@ -262,6 +297,110 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     }
 
     /// <summary>
+    /// The immutable-origin rescue's survivor choice: tries survivor choices in stable order
+    /// starting at the given index and returns the first whose competing incoming edges all pass
+    /// <see cref="EvaluateIntermediateCoverage"/>, or (-1, first failed condition) when none
+    /// qualifies or no choice remains. The origin's own rename checks are waived because the
+    /// origin cannot rename.
+    /// </summary>
+    private static (int SurvivorIndex, string? FirstFailedCondition) TrySelectRescueSurvivor(
+        ConvergenceDiscovery convergence,
+        int startIndex,
+        string origin,
+        IReadOnlySet<string> mutableOrigins
+    )
+    {
+        string? firstFailedCondition = null;
+
+        for (var index = startIndex; index < convergence.IncomingChoices.Count; index++)
+        {
+            var survivor = convergence.IncomingChoices[index];
+            var failure = convergence
+                .IncomingChoices.Where(cut => !ReferenceEquals(cut, survivor))
+                .Select(cut =>
+                    EvaluateIntermediateCoverage(
+                        cut,
+                        survivor,
+                        convergence.PredecessorEdgeByVertex,
+                        origin,
+                        mutableOrigins
+                    )
+                )
+                .FirstOrDefault(condition => condition is not null);
+
+            if (failure is null)
+            {
+                return (index, null);
+            }
+
+            firstFailedCondition ??= failure;
+        }
+
+        return (-1, firstFailedCondition);
+    }
+
+    /// <summary>
+    /// The directly-mutable-intermediate rule of the safe-cut test (design-docs/sql-server-pruning.md,
+    /// "Safe-Cut Test"): if a directly mutable intermediate identity change would require a cut
+    /// tuple to change without a retained carrier, the survivor is unsafe. For each cut identity
+    /// column, the first-arrival trace from the cut's target is followed to the nearest directly
+    /// mutable resource other than the walked origin. When one exists, the survivor carries its
+    /// rename only when it is a required binding that updates the same canonical local column and
+    /// its own trace passes through the same pairing. Checking only the nearest pairing is
+    /// sufficient: each vertex has one predecessor edge, so two traces that meet stay identical
+    /// upstream. The walked origin's own rename is left to <see cref="EvaluateSafeCut"/>. Returns
+    /// null when covered, otherwise the native-coverage failure. The trace is discarded after
+    /// this evaluation.
+    /// </summary>
+    private static string? EvaluateIntermediateCoverage(
+        PruningCandidate cut,
+        PruningCandidate survivor,
+        IReadOnlyDictionary<string, PruningCandidate> predecessorEdgeByVertex,
+        string origin,
+        IReadOnlySet<string> mutableOrigins
+    )
+    {
+        for (var index = 0; index < cut.LocalColumns.Count - 1; index++)
+        {
+            var intermediate = TraceToSource(
+                    FormatTable(cut.TargetTable),
+                    cut.TargetColumns[index],
+                    predecessorEdgeByVertex,
+                    out _
+                )
+                .Find(pairing => pairing.Table != origin && mutableOrigins.Contains(pairing.Table));
+
+            if (intermediate == default)
+            {
+                continue;
+            }
+
+            var column = cut.LocalColumns[index];
+            var survivorIndex = FindColumnIndex(survivor.LocalColumns, column);
+            var carried =
+                survivorIndex >= 0
+                && survivorIndex < survivor.LocalColumns.Count - 1
+                && survivor.LocalDocumentIdIsRequired
+                && TraceToSource(
+                        FormatTable(survivor.TargetTable),
+                        survivor.TargetColumns[survivorIndex],
+                        predecessorEdgeByVertex,
+                        out _
+                    )
+                    .Contains(intermediate);
+
+            if (!carried)
+            {
+                return $"native coverage: cut '{cut.ConstraintName}' column '{column.Value}' changes when "
+                    + $"directly mutable '{intermediate.Table}' updates its identity, and retained "
+                    + $"'{survivor.ConstraintName}' does not carry that change";
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// The structural, fail-closed safe-cut test. The carrier obligation applies to the cut's
     /// canonical local identity columns that the retained survivor's native cascade also updates
     /// (shared canonical storage on the same physical receiver table) and that this origin's
@@ -271,8 +410,10 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     /// steps through a DocumentId anchor depends on a reference replacement no native cascade can
     /// carry. A cut column the survivor does not update has no carrier obligation: the cut keeps
     /// enforcing it as an ordinary NO ACTION reference (SQL Server rejects a rename pinned by such
-    /// a reference at runtime, exactly like any non-cascade reference). Returns null when safe,
-    /// otherwise the first failed condition. The trace is compared edge by edge and discarded; no
+    /// a reference at runtime, exactly like any non-cascade reference). This test covers only the
+    /// walked origin's rename; a directly mutable intermediate's rename is covered by
+    /// <see cref="EvaluateIntermediateCoverage"/>. Returns null when safe, otherwise the first
+    /// failed condition. The trace is compared edge by edge and discarded; no
     /// composed mapping or route artifact is created.
     /// </summary>
     private static string? EvaluateSafeCut(
@@ -308,7 +449,9 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
                 // not occur in standard Ed-Fi; its surviving NO ACTION reference is a complete,
                 // enforced full-composite reference, and a rename is rejected at runtime by it (a
                 // clean SQL Server error, never a corrupt tuple). This is settled, intended behavior,
-                // deliberately left to fail closed rather than to fail derivation. See
+                // deliberately left to fail closed rather than to fail derivation. The skip is safe
+                // for the walked origin's rename only; a directly mutable intermediate's rename is
+                // checked by EvaluateIntermediateCoverage before this test runs. See
                 // design-docs/sql-server-pruning.md, "Safe cut".
                 continue;
             }
@@ -324,13 +467,13 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
                 survivor.TargetColumns[survivorIndex],
                 predecessorEdgeByVertex,
                 out var survivorDocumentIdPairing
-            );
+            )[^1];
             var cutSource = TraceToSource(
                 FormatTable(cut.TargetTable),
                 cut.TargetColumns[index],
                 predecessorEdgeByVertex,
                 out var cutDocumentIdPairing
-            );
+            )[^1];
 
             if (survivorDocumentIdPairing || cutDocumentIdPairing)
             {
@@ -386,11 +529,13 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
     /// <summary>
     /// Follows a column's existing FK pairings backward along the first-arrival predecessor edges
-    /// until the column is no longer fed by an upstream cascade edge, returning the ultimate
-    /// source column. Sets the DocumentId flag when the pairing steps through a local reference
-    /// DocumentId anchor. Follows only the traced chain; it never searches alternate routes.
+    /// until the column is no longer fed by an upstream cascade edge, returning every pairing it
+    /// visits: the starting pairing first and the ultimate source column last. Sets the DocumentId
+    /// flag when the pairing steps through a local reference DocumentId anchor. Follows only the
+    /// traced chain; it never searches alternate routes, and the caller discards the pairings after
+    /// one evaluation.
     /// </summary>
-    private static (string Table, string Column) TraceToSource(
+    private static List<(string Table, string Column)> TraceToSource(
         string table,
         DbColumnName column,
         IReadOnlyDictionary<string, PruningCandidate> predecessorEdgeByVertex,
@@ -398,6 +543,7 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     )
     {
         documentIdPairing = false;
+        List<(string Table, string Column)> pairings = [(table, column.Value)];
 
         while (predecessorEdgeByVertex.TryGetValue(table, out var edge))
         {
@@ -416,9 +562,10 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
             column = edge.TargetColumns[index];
             table = FormatTable(edge.TargetTable);
+            pairings.Add((table, column.Value));
         }
 
-        return (table, column.Value);
+        return pairings;
     }
 
     /// <summary>
