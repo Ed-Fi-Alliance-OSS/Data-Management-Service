@@ -95,7 +95,15 @@ public class ApiClientModule : IEndpointModule
                     return Task.CompletedTask;
                 }
             );
-        endpoints.MapSecuredDelete($"/v3/apiClients/{{id}}", DeleteApiClient);
+        endpoints
+            .MapSecuredDelete($"/v3/apiClients/{{id}}", DeleteApiClient)
+            .Produces(204)
+            .WithDescription(
+                "Deletes the API client. Deleting an Application's last API client keeps the "
+                    + "Application, which then has no API clients: it reports enabled false and "
+                    + "dataStoreIds [], and its reset-credential returns 409. Create another API client "
+                    + "with POST /v3/apiClients."
+            );
         endpoints
             .MapSecuredPut($"/v3/apiClients/{{id}}/reset-credential", ResetCredential)
             .Produces<ApiClientCredentialsResponse>(200);
