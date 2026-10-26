@@ -210,3 +210,18 @@ Feature: Token validation
             Given token received
              When a GET request is made to "/v3/vendors"
              Then it should respond with 200
+
+        # The self-contained provider rejects a scope the client does not hold in the RFC 6749 §5.2
+        # error format instead of issuing a token with the client's registered scope.
+        @SelfContainedOnly
+        Scenario: 09 A scope the client does not hold is rejected as an OAuth invalid_scope error
+            Given client "DmsConfigurationService" credentials with "edfi_admin_api/readonly_access" scope
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_scope" with description "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
+
+        # A request naming a held and an unheld scope is granted the held one, and the response says so.
+        @SelfContainedOnly
+        Scenario: 10 A partially held scope is granted as the held subset
+            Given client "DmsConfigurationService" credentials with "edfi_admin_api/full_access edfi_admin_api/readonly_access" scope
+             Then it should respond with 200
+              And the token response scope is "edfi_admin_api/full_access"

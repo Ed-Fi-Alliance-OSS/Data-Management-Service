@@ -968,6 +968,14 @@ public partial class StepDefinitions(
             .NotBeNullOrWhiteSpace("access_token should be non-empty");
     }
 
+    [Then("the token response scope is {string}")]
+    public async Task ThenTheTokenResponseScopeIs(string expectedScope)
+    {
+        string content = await _apiResponse.TextAsync();
+        string? scope = JsonNode.Parse(content)!["scope"]?.GetValue<string>();
+        scope.Should().Be(expectedScope, content);
+    }
+
     [Then("the token response body is valid")]
     public async Task ThenTheTokenResponseBodyIsValid()
     {
