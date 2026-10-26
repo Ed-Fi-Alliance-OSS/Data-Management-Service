@@ -45,10 +45,11 @@ Failed form credentials get `400 invalid_client`, as at `/connect/revoke`: RFC 6
 See [Token introspection](#token-introspection).
 
 All four `/connect/*` endpoints are rate limited per source address, and `/connect/token` and
-`/connect/revoke` also per `client_id`, immediately before the client secret is verified (DMS-1482).
+`/connect/revoke` also per source address and `client_id` pair, immediately before the client secret is
+verified (DMS-1482). Different sources cannot spend one another's client allowance.
 A refusal is `429` with `Retry-After`: an Ed-Fi problem-details body of type
-`urn:ed-fi:management-api:too-many-requests`, except on `/connect/revoke`, which answers in the OAuth
-format with `error` `temporarily_unavailable`. Limits, defaults and sizing are in
+`urn:ed-fi:management-api:too-many-requests` on all four routes. Other revocation errors retain their
+OAuth format. Limits, defaults and sizing are in
 [CONFIGURATION.md](../../../docs/CONFIGURATION.md#connectratelimit); the design is
 [DMS-1482](./DMS-1482-cms-connect-rate-limiting.md).
 
@@ -162,8 +163,9 @@ values (Keycloak's endpoint does not read it either).
 
 ### Responses
 
-`200 OK` with an empty body is the only success. Every other status is an RFC 6749 §5.2
-JSON object served as `application/json`, with a **fixed** CMS `error_description` that
+`200 OK` with an empty body is the only success. Rate-limit rejections use the Ed-Fi `429` contract
+described above. Every other error status is an RFC 6749 §5.2 JSON object served as
+`application/json`, with a **fixed** CMS `error_description` that
 never echoes provider text:
 
 ```json
@@ -174,6 +176,7 @@ never echoes provider text:
 | --- | --- |
 | Authenticated owner, supported live token | `200`, empty; token revoked |
 | Authenticated caller; unknown, invalid, expired, already revoked, or another client's token | `200`, empty; nothing changes |
+| Source or source-plus-client rate limit exceeded | `429`, Ed-Fi problem details with `Retry-After` |
 | Not a form body, malformed form, duplicated parameter or `Authorization` header, mixed mechanisms, missing or empty `token` | `400 invalid_request` |
 | Missing, incomplete or invalid credentials **without** an HTTP Basic attempt | `400 invalid_client` |
 | Malformed or invalid HTTP Basic credentials | `401 invalid_client` with `WWW-Authenticate: Basic realm="EdFi.DmsConfigurationService"` |
@@ -188,10 +191,10 @@ authentication error, because request shape is checked first. A public client is
 with the same `invalid_client` description as a wrong secret, so the response does not
 reveal the client's type.
 
-This endpoint and `/connect/introspect` are the two CMS endpoints that do not answer in the
-`application/problem+json` contract of [DMS-1218](./DMS-1218-cms-error-response-compliance.md), and the departure is
+Except for rate-limit rejections introduced by DMS-1482, this endpoint and `/connect/introspect` do not answer in the `application/problem+json`
+contract of [DMS-1218](./DMS-1218-cms-error-response-compliance.md), and the departure is
 deliberate: both are OAuth endpoints, and an OAuth client reads `error` off the
-root of the body. It covers every error the endpoint produces, including the missing-token
+root of the body. It covers the other errors the endpoint produces, including the missing-token
 `400` (which DMS-1218 had converted to problem details) and the `500` for an unexpected
 fault. Responses produced before the endpoint is selected (Kestrel request-line and header
 limits, TLS failures) are transport failures and keep their framework form.

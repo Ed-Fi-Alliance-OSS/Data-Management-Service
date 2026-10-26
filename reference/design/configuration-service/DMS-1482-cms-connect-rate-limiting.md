@@ -4,6 +4,14 @@
 **Story:** [DMS-1482](https://edfi.atlassian.net/browse/DMS-1482) (parent DMS-1475), including comment 98735.
 **Baseline:** `DMS-1482` at `6bb7d328a` (equal to `origin/main` on 2026-10-22).
 
+**Review remediation (2026-10-26):** D2 now uses a source-plus-client budget alongside the independent
+source budget, as proposed by the story. The original global client budget let public failed attempts
+exhaust DMS's private CMS refresh allowance (CAR-001). Trusted forwarding now isolates both budgets.
+Complete canonical client keys replace prefix truncation to keep distinct long IDs independent.
+For CAR-002, the user chose to align every new rate-limit rejection with REQ-2's Ed-Fi contract,
+including revoke, while preserving the existing OAuth errors for other statuses. D1 records this
+decision; the acceptance criteria remain unchanged.
+
 ## 1. Requirements
 
 Original acceptance criteria (Jira, verified 2026-10-22):
@@ -20,8 +28,8 @@ Original acceptance criteria (Jira, verified 2026-10-22):
 
 | ID | Decision | Rationale |
 |---|---|---|
-| D1 | **Approved deviation from REQ-2's wording:** token, register and introspect return an Ed-Fi 429. Revoke returns a 429 with an OAuth body. | Revoke's OAuth error contract is deliberate (DMS-1327 D-01/D-17, CS-AUTH). DMS-1491 (Open) will move the remaining `/connect/*` errors to OAuth. Reversing revoke for one status would be undone by DMS-1491. |
-| D2 | Two independent budgets, and both must admit a request: **per source address** and **per `client_id` across all sources**. | Stops enumeration (source) and distributed guessing against one client (client). Someone who knows a `client_id` can exhaust each successive window, indefinitely denying that client's requests. This includes system-token refresh after the cached token expires; caching bounds normal demand, not targeted denial. |
+| D1 | All four routes return an Ed-Fi 429 for rate-limit rejection. Other errors retain their existing contracts. | Aligns with REQ-2 and the user's 2026-10-26 resolution of CAR-002. This supersedes the original design's OAuth 429 exception for revoke; DMS-1327's existing non-429 OAuth errors remain unchanged. DMS-1491 owns any future OAuth migration. |
+| D2 | Two budgets, and both must admit a request: **per source address** and **per source address and `client_id` pair**. | The independent source budget stops enumeration that varies client IDs. The pair budget limits guessing against one client at that source without letting public failed attempts exhaust another source's private refresh allowance. Distributed sources have separate allowances. Callers behind one NAT or IPv6 /64 still share both budgets. |
 | D3 | **Backoff excluded.** The failed-attempt counter with exponential backoff that the story and comment say to "consider" is deferred, as a possible follow-up ticket. | It needs handler-to-limiter outcome feedback and new state, carries its own lockout-DoS tradeoff, and overlaps DMS-1490. |
 | D4 | Enabled by default. Source 120, client 30, per 60-second fixed window. No queueing. Enforcement is per process. | Real per-client traffic is already capped by `BearerTokenPerClientLimit` (15 active tokens per 30-minute token lifetime). Proxy deployments require trusted source attribution; aggregate capacity alone does not provide caller isolation. |
 | D5 | Split admission: a source gate in middleware, plus a client gate inside the token and revoke handlers. | Reuses each route's existing credential parser. Avoids early form reads, so revoke's percent-encoding and UTF-8 validation is preserved. Client admission remains inside the route exception boundary. |
@@ -29,10 +37,6 @@ Original acceptance criteria (Jira, verified 2026-10-22):
 | D7 | DMS forwards its processed source address; paired Compose stacks configure an exactly trusted DMS peer. | Isolates public callers from each other and from unforwarded system refresh. The dedicated link makes the transport address deterministic without trusting the shared bridge. The readiness validator detects later overrides that break this trust. Standalone CMS retains its existing forwarding defaults. |
 | D8 | Client counting conservatively merges common linguistic aliases across providers. | SQL Server can authenticate width, accent, case and padding aliases as the same client. Ordinal comparison would give those aliases fresh budgets. Distinct PostgreSQL or Keycloak clients can consequently share capacity; arbitrary SQL collations are not emulated. |
 | D9 | Token and revoke reject parsed client IDs longer than 1024 UTF-16 code units with their existing 400 validation formats, before client admission. | Bounds linguistic processing and allocations. The limit leaves room above the stored MSSQL identifier size, applies to Basic and form credentials even when limiting is disabled, and does not truncate credentials. An oversized fallback partition would split long aliases from short IDs and reopen a bypass. |
-
-D1 is a documented exception to REQ-2, not literal satisfaction of it. The Jira story and comment do
-not independently record the story owner's acceptance of that exception; it remains an acceptance
-decision. The original requirement above is unchanged.
 
 Rejected approaches: a single middleware that extracts `client_id` itself would pre-read the form, bypassing revoke's `UrlEncodedFormValidatingStream` because `FormFeature` caches the result, and duplicate two deliberately different parsers. ASP.NET `AddRateLimiter`/`UseRateLimiter` endpoint policies can provide source admission, but cannot replace the client gate without extracting credentials before the handler. Keeping client admission after the existing parsers preserves validation order; the singleton owns and disposes both partitioned limiters.
 
@@ -58,7 +62,7 @@ Rejected approaches: a single middleware that extracts `client_id` itself would 
 | Component | Responsibility |
 |---|---|
 | `Configuration/ConnectRateLimitSettings` + validator | Binds the top-level `ConnectRateLimit` section: `Enabled` (bool, default `true`), `SourcePermitLimit` (120), `ClientPermitLimit` (30), `WindowSeconds` (60). When enabled, every number must be a positive integer. Added to the `ReportInvalidConfiguration` options check in `Program.cs`, beside `IdentitySettings`. |
-| `ConnectRateLimiter` (DI singleton, disposed by the host) | Holds two `PartitionedRateLimiter<string>` instances, each a `FixedWindowRateLimiter` with `QueueLimit = 0` and `AutoReplenishment = true`. `AttemptSource(HttpContext)` and `AttemptClient(string clientId)` return a `RateLimitLease` from the synchronous `AttemptAcquire`. When disabled, each budget uses one shared `RateLimitPartition.GetNoLimiter` partition, independent of caller-supplied keys. |
+| `ConnectRateLimiter` (DI singleton, disposed by the host) | Holds two `PartitionedRateLimiter<string>` instances, each a `FixedWindowRateLimiter` with `QueueLimit = 0` and `AutoReplenishment = true`. `AttemptSource(HttpContext)` and `AttemptClient(HttpContext, string clientId)` return a `RateLimitLease` from the synchronous `AttemptAcquire`. When disabled, each budget uses one shared `RateLimitPartition.GetNoLimiter` partition, independent of caller-supplied keys. |
 | `ConnectRateLimitMetadata` | Marker added with `.WithMetadata` to all four routes in `IdentityModule.MapEndpoints`. |
 | `Middleware/ConnectSourceRateLimitMiddleware` | Passes the request through unless the matched endpoint carries the marker. Otherwise it calls `AttemptSource` and, if rejected, writes the 429 (§4.4) and stops the pipeline. |
 | `FailureResponse.ForTooManyRequests(correlationId)` (data model) | Ed-Fi 429 body (§4.4). |
@@ -106,18 +110,18 @@ Route-context suffixes, path base and path case are handled by endpoint routing,
   - IPv4-mapped IPv6 converts to IPv4.
   - Native IPv6 is masked to its /64 (D6).
   - A null address goes to one shared `"unknown"` partition, never exempt.
-- **Client:** the `client_id` produced by the route's existing parser.
+- **Client:** the source key above paired with the `client_id` produced by the route's existing parser.
   - Both handlers enforce the 1024-code-unit input limit before key generation (D9).
   - An invariant linguistic sort key ignores case, accents, width and kana type. This merges common MSSQL lookup aliases, including full-width ASCII letters. It is deliberately conservative across providers and does not emulate every locale-specific SQL collation.
   - Trailing spaces and linguistically ignored suffix characters are removed before key generation, because SQL Server equality pads with spaces. The original credential is still passed unchanged to authentication. No Unicode normalization is performed, avoiding exceptions on malformed UTF-16.
-  - The entire remaining ID is converted to a sort key, encoded as base64 and then truncated to 256 characters. Bounding after equivalence is established only merges keys; bounding raw input could split aliases containing inserted ignored characters.
+  - The entire remaining ID is converted to a sort key and encoded as base64, with no truncation. The validated input length bounds retained state without merging distinct significant suffixes. The source and base64 key are joined with `|`, which neither component can contain.
   - The source budget limits how many new client partitions one source can create per window, and the framework removes idle partitions.
 - No database lookup or credential verification is used to build any key.
 
 ### 4.4 Rejection contracts
 
-- **Format selection:** both gates choose the format from the endpoint's `OAuthErrorContractMetadata`, the same signal `GlobalExceptionHandler` uses.
-- **Ed-Fi** (token, register, introspect): `application/problem+json`, status 429.
+- **Format:** both gates return Ed-Fi problem details on every route, independently of the endpoint's `OAuthErrorContractMetadata`. That metadata continues to select the contract for other errors.
+- **Ed-Fi** (token, register, introspect, revoke): `application/problem+json`, status 429.
   ```json
   { "detail": "The number of allowed requests has been exceeded. Retry the request later.",
     "type": "urn:ed-fi:management-api:too-many-requests", "title": "Too Many Requests",
@@ -126,7 +130,6 @@ Route-context suffixes, path base and path case are handled by endpoint routing,
   - The type mirrors DMS's established `urn:ed-fi:api:too-many-requests`, allowed under DMS-1218's platform-convention rule.
   - Both gates execute the same result from `ConnectRateLimitRejection.Create`, using `FailureResults.TooManyRequests`.
   - It is distinct from, and leaves unchanged, `…:security:authentication:too-many-tokens`.
-- **OAuth** (revoke): `OAuthErrorResponseWriter` with status 429, `error: "temporarily_unavailable"`, and the same fixed description. RFC 6749 and RFC 7009 define no throttling code; DMS-1491 may revisit this value.
 - **`Retry-After`:** the lease's `MetadataName.RetryAfter` rounded up to whole seconds; omitted when absent (DMS precedent).
 - **No new headers:** `Cache-Control` is not added; that belongs to DMS-1484.
 
@@ -136,14 +139,14 @@ Route-context suffixes, path base and path case are handled by endpoint routing,
 - **Compose:** `eng/docker-compose/local-config.yml` and `published-config.yml` map `CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_{ENABLED,SOURCE_PERMIT_LIMIT,CLIENT_PERMIT_LIMIT,WINDOW_SECONDS}` with the same defaults. `.env.example` documents them.
 - **Proxy readiness:** the DMS launchers apply `eng/docker-compose/dms-cms-proxy.yml` after both service files when CMS is included in the combined stack, consistently across infrastructure, DMS-only and teardown phases. The overlay reserves an internal `cms-proxy` subnet and peers via `DMS_CMS_PROXY_SUBNET`, `DMS_CMS_PROXY_IP` and `CMS_PROXY_IP`. DMS pins `ed-fi-api-config` to the CMS peer. The overlay explicitly enables CMS forwarding and adds the exact DMS peer independently of the standalone forwarding flag and optional ingress trust. It also sets `ConnectRateLimit:RequiredProxyAddress`; a cross-options validator rejects enabled limiting if forwarding is subsequently disabled or that exact IP is absent from `KnownProxies`. CMS-only deployments omit the overlay, retain the default `false` flag and empty required peer, and allocate no dedicated subnet. The isolated paired secret-resolution harness uses a distinct subnet.
 - **CI environment files:** E2E profiles and the local `.env.smoke` / `.env.smoke.ds61` profiles use generous permit limits with limiting enabled. The scheduled smoke workflow additionally disables limiting for its stack startup because the pinned smoke utility requests a token per resource GET. Focused HTTP tests exercise enforcement with small limits.
-- **`docs/CONFIGURATION.md`:** a new `ConnectRateLimit` section covering defaults, the units, per-process and per-replica scope, NAT and DMS-proxy sharing of one source budget, IPv6 /64, `Enabled=false`, and the two response formats.
+- **`docs/CONFIGURATION.md`:** a new `ConnectRateLimit` section covering defaults, the units, per-process and per-replica scope, NAT and DMS-proxy sharing of one source budget, IPv6 /64, `Enabled=false`, and the Ed-Fi rejection format.
 - **Other notes:** a short note in `reference/design/configuration-service/CS-AUTH.md`, and a changelog entry in the current unreleased changelog file.
 
 ## 5. Failure handling and regression safeguards
 
 - **Invalid configuration:** reported through the existing `ReportInvalidConfiguration` path. The limiter is never used, because that middleware short-circuits before routing.
 - **Logging:** a Debug-level rejection log carries the gate (`source`/`client`) and route template only. Client ID, IP, credentials and tokens are never logged. `RequestLoggingMiddleware` still records the 429. DMS recognizes the exact CMS throttle type/status and rebuilds its generic 429 without warning; unknown upstream responses retain their warning and no upstream text is relayed.
-- **Known operator risk:** DMS's system client (`ConfigurationServiceTokenHandler.FetchTokenAsync`) throws on any non-token response, a 429 included. An attacker can repeatedly spend that client's budget and prevent refresh once its cached token expires, causing dependent CMS calls to fail. Configure a trusted gateway to deny public token requests naming internal system clients and their lookup aliases and allow their private refresh path; restrict direct CMS access. Raising limits or caching alone does not prevent this. Exempting an anonymous client ID would undermine pre-verification protection.
+- **Availability boundary:** DMS's system client (`ConfigurationServiceTokenHandler.FetchTokenAsync`) throws on any non-token response, a 429 included. With trusted forwarding configured, public attempts and private refresh use separate source-plus-client budgets even when they name the same identity. No anonymous client ID is exempt. Callers sharing a source, including a NAT or IPv6 /64, still share capacity; deployments must preserve trusted source attribution. The regression fixture exhausts public failed attempts and then calls the actual DMS refresh handler with an empty cache on the private path, while public attempts remain rejected.
 - **Preserved behavior:**
   - token's lenient Basic/form precedence and malformed-Basic fallback;
   - revoke's strict shape checks, D-03 first-error order, `%`/UTF-8 validation, ownership and indistinguishable outcomes;
@@ -158,8 +161,8 @@ Tests follow NUnit, FluentAssertions and FakeItEasy, with `Given_` fixtures that
 
 | AC | Design | Verification (each must fail if the feature is reverted) |
 |---|---|---|
-| REQ-1 | §4.2 source and client gates; §4.3 keys; D2, D6 | Source: N admitted and N+1 → 429 when only `client_id` varies, and when Host, `Tenant` header, route-context suffix or path case vary. A different remote IP (via `RemoteIpStartupFilter`) is still admitted. Untrusted `X-Forwarded-For` doesn't change the bucket; a trusted proxy's does. IPv6 addresses in one /64 share a budget. Client: client A exhausted while client B from the same IP is admitted; case and trailing-space variants of A share a budget across token and revoke. All four routes are source-limited. `/v3/*` and look-alike paths (for example `/connectx/token`) are never limited. |
-| REQ-2 | §4.4 | Exact Ed-Fi body, media type and status/body agreement on token, register and introspect, for both source and client rejection. Exact OAuth body on revoke. `Retry-After` present and rounded up. Security headers present. `FailureResponse.ForTooManyRequests` unit test. Existing too-many-tokens fixtures unchanged. |
+| REQ-1 | §4.2 source and client gates; §4.3 keys; D2, D6 | Source: N admitted and N+1 → 429 when only `client_id` varies, and when Host, `Tenant` header, route-context suffix or path case vary. A different remote IP (via `RemoteIpStartupFilter`) is still admitted. Untrusted `X-Forwarded-For` doesn't change the bucket; a trusted proxy's does. IPv6 addresses in one /64 share both budgets. Client: client A exhausted while client B from the same IP is admitted; case and trailing-space variants of A share a budget across token and revoke at that source; a different source has its own allowance. Private system refresh succeeds through the real DMS token handler after public attempts against the same identity exhaust either gate, while public attempts remain rejected. Long IDs with significant suffix differences stay independent. All four routes are source-limited. `/v3/*` and look-alike paths (for example `/connectx/token`) are never limited. |
+| REQ-2 | §4.4 | Exact Ed-Fi body, media type and status/body agreement on all four routes for source rejection, and on token and revoke for client rejection. `Retry-After` present and rounded up. Security headers present. A malformed revoke within the allowance retains its OAuth 400. `FailureResponse.ForTooManyRequests` unit test. Existing too-many-tokens fixtures unchanged. |
 | REQ-3 | §4.2 gate positions | With a fake `ITokenManager` and `ITokenRevocationManager`: an admitted known client reaches the manager (control); a client-rejected request makes zero manager calls. A source-rejected revoke with a malformed body gets 429 (the body was not read), while an admitted malformed `%GG` revoke still gets 400 with limiting enabled. |
 | REQ-4 | §4.1 settings; §4.5 | Shipped `appsettings.json` values (enabled, 120/30/60) read as in `ClientSecretHashingIterationsSettingsTests`. Environment and in-memory overrides take effect. Invalid values (zero, negative) are reported at startup (pattern: `JobOptionsStartupTests`). `Enabled=false` means no 429 past the limits. Documentation updated. |
 | REQ-5 | All of the above | The rows above, plus: `ConnectRateLimiter` is disposed with the host. |
@@ -169,7 +172,7 @@ Regression surfaces to leave unchanged: `IdentityModuleTests` (`TokenEndpointBas
 ## 7. Dependencies, coordination and remaining items
 
 - **DMS-1479 (In QA)** adds caller authentication to introspect. Whichever change merges second adds the client gate to introspect immediately before its token validation, keyed on the authenticated caller's `client_id`. That's one call and doesn't change this design.
-- **DMS-1491 (Open)** owns any later change to the throttle response format or codes. Comment on DMS-1491 noting the new Ed-Fi 429 and revoke's `temporarily_unavailable` 429. Optional; no blocking dependency.
+- **DMS-1491** owns any later change to the throttle response format or codes. The current Ed-Fi 429 on all four routes follows REQ-2; a future OAuth migration must update both rejection paths and their tests. No blocking dependency.
 - **DMS-1490 (Open)** is independent. The client budget is spent regardless of whether the client exists, so this work adds no new oracle.
 - **Follow-up candidate:** a per-source failed-attempt backoff ticket (D3), if the product owner wants it.
 - **Remaining assumptions (not blockers):** the D4 numbers come from repository evidence (token-count cap, DMS-proxy topology), not measured production load. Operators can tune them, and the documentation says so. Proxy trust in each deployment remains an operator responsibility under the existing `ReverseProxy` settings.

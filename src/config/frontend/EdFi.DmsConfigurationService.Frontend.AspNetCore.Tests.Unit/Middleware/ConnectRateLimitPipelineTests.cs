@@ -146,11 +146,11 @@ public class ConnectRateLimitPipelineTests
             _statuses.Should().Equal(200, 429, 200);
     }
 
-    [TestFixture("/connect/token", false)]
-    [TestFixture("/connect/register", false)]
-    [TestFixture("/connect/introspect", false)]
-    [TestFixture("/connect/revoke", true)]
-    public class Given_a_connect_route_over_the_source_limit(string path, bool oauthContract)
+    [TestFixture("/connect/token")]
+    [TestFixture("/connect/register")]
+    [TestFixture("/connect/introspect")]
+    [TestFixture("/connect/revoke")]
+    public class Given_a_connect_route_over_the_source_limit(string path)
     {
         private HttpResponseMessage _response = null!;
         private JsonObject _body = null!;
@@ -175,17 +175,8 @@ public class ConnectRateLimitPipelineTests
         public void It_answers_429() => ((int)_response.StatusCode).Should().Be(429);
 
         [Test]
-        public void It_answers_in_the_route_contract()
+        public void It_answers_in_the_ed_fi_contract()
         {
-            if (oauthContract)
-            {
-                _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
-                _body.Count.Should().Be(2);
-                _body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
-                _body["error_description"]!.GetValue<string>().Should().Be(Detail);
-                return;
-            }
-
             _response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
             _body.Count.Should().Be(7);
             _body["detail"]!.GetValue<string>().Should().Be(Detail);
@@ -312,6 +303,8 @@ public class ConnectRateLimitPipelineTests
         public void It_still_rejects_the_encoding_within_the_limit()
         {
             _withinLimit.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            _withinLimit.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+            JsonNode.Parse(_withinLimitBody)!["error"]!.GetValue<string>().Should().Be("invalid_request");
             JsonNode.Parse(_withinLimitBody)!["error_description"]!
                 .GetValue<string>()
                 .Should()
@@ -460,7 +453,9 @@ public class ConnectRateLimitPipelineTests
         [Test]
         public void It_disposes_the_limiter() =>
             FluentActions
-                .Invoking(() => _limiter.AttemptClient("a"))
+                .Invoking(() =>
+                    _limiter.AttemptClient(new Microsoft.AspNetCore.Http.DefaultHttpContext(), "a")
+                )
                 .Should()
                 .Throw<ObjectDisposedException>();
     }

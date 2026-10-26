@@ -196,15 +196,17 @@ public class ConnectSourceRateLimitMiddlewareTests
         public void It_answers_429() => _rejected.Response.StatusCode.Should().Be(429);
 
         [Test]
-        public void It_uses_the_oauth_content_type() =>
-            _rejected.Response.ContentType.Should().Be("application/json; charset=utf-8");
+        public void It_uses_the_problem_details_content_type() =>
+            _rejected.Response.ContentType.Should().Be("application/problem+json");
 
         [Test]
-        public void It_writes_the_oauth_error_body()
+        public void It_writes_ed_fi_problem_details_despite_the_oauth_route_metadata()
         {
-            _body.Count.Should().Be(2);
-            _body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
-            _body["error_description"]!
+            _body.Count.Should().Be(7);
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:too-many-requests");
+            _body["status"]!.GetValue<int>().Should().Be(429);
+            _body["correlationId"]!.GetValue<string>().Should().Be("trace-limit");
+            _body["detail"]!
                 .GetValue<string>()
                 .Should()
                 .Be("The number of allowed requests has been exceeded. Retry the request later.");

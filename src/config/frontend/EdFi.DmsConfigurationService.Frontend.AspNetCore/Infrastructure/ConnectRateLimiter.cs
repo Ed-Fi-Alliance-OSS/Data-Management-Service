@@ -14,7 +14,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 /// <summary>
 /// The two independent <c>/connect/*</c> budgets: one per source address and one per
-/// <c>client_id</c> across all sources. A request must be admitted by every budget that applies to it.
+/// source and <c>client_id</c> pair. A request must be admitted by every budget that applies to it.
 /// Each budget is a fixed window with no queue, so a rejection is immediate; enforcement is per process.
 /// Keys come from the transport address and the parsed <c>client_id</c> only, never from a lookup, so a
 /// rejection says nothing about whether a client exists. A singleton; the container disposes it.
@@ -23,9 +23,6 @@ public sealed class ConnectRateLimiter : IDisposable
 {
     /// <summary>The one partition for requests whose remote address is unknown; never exempt.</summary>
     internal const string UnknownSourceKey = "unknown";
-
-    /// <summary>Bound the encoded linguistic key only after equivalence is established.</summary>
-    internal const int MaxClientKeyLength = 256;
 
     private const CompareOptions ClientComparison =
         CompareOptions.IgnoreCase
@@ -46,8 +43,13 @@ public sealed class ConnectRateLimiter : IDisposable
     public RateLimitLease AttemptSource(HttpContext context) =>
         _sourceLimiter.AttemptAcquire(SourcePartitionKey(context.Connection.RemoteIpAddress));
 
-    public RateLimitLease AttemptClient(string clientId) =>
-        _clientLimiter.AttemptAcquire(ClientPartitionKey(clientId));
+    public RateLimitLease AttemptClient(HttpContext context, string clientId) =>
+        // Neither source keys nor base64 client keys contain '|', so pairs cannot collide. Use the
+        // same trusted source identity as the source gate; public attempts cannot spend a different
+        // source's private refresh allowance just by naming its client ID.
+        _clientLimiter.AttemptAcquire(
+            $"{SourcePartitionKey(context.Connection.RemoteIpAddress)}|{ClientPartitionKey(clientId)}"
+        );
 
     public void Dispose()
     {
@@ -105,13 +107,10 @@ public sealed class ConnectRateLimiter : IDisposable
             length -= characterLength;
         }
 
-        // Canonicalize the entire ID before bounding retained state: truncating the input first
-        // would split equivalent IDs when an attacker inserts ignored characters before the bound.
+        // Keep the entire canonical key: prefix truncation merges distinct long IDs. The handler's
+        // input length limit bounds retained state without discarding significant suffixes.
         // Sort keys handle malformed UTF-16 without the exceptions Unicode normalization can raise.
-        string key = Convert.ToBase64String(
-            comparison.GetSortKey(clientId[..length], ClientComparison).KeyData
-        );
-        return key.Length > MaxClientKeyLength ? key[..MaxClientKeyLength] : key;
+        return Convert.ToBase64String(comparison.GetSortKey(clientId[..length], ClientComparison).KeyData);
     }
 
     internal static PartitionedRateLimiter<string> CreateLimiter(

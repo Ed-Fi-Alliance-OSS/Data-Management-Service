@@ -204,8 +204,8 @@ public class IdentityModuleRateLimitTests
         }
 
         [Test]
-        public void It_limits_the_client_across_case_variants_and_sources_but_not_other_clients() =>
-            _statuses.Should().Equal(200, 200, 429, 429);
+        public void It_limits_aliases_at_one_source_and_keeps_other_sources_and_clients_independent() =>
+            _statuses.Should().Equal(200, 200, 429, 200);
     }
 
     [TestFixture]
@@ -277,16 +277,16 @@ public class IdentityModuleRateLimitTests
                 client,
                 [
                     () => Post("/connect/token", TokenForm("\uFF23lientA"), "198.51.100.1"),
-                    () => Post("/connect/token", TokenForm("ClientA"), "198.51.100.2"),
-                    () => Post("/connect/revoke", RevokeForm("\uFF23lientA"), "198.51.100.3"),
+                    () => Post("/connect/token", TokenForm("ClientA"), "198.51.100.1"),
+                    () => Post("/connect/revoke", RevokeForm("\uFF23lientA"), "198.51.100.1"),
                     () => Post("/connect/revoke", RevokeForm("\uFF23lientB"), "198.51.100.1"),
-                    () => Post("/connect/token", TokenForm("ClientB"), "198.51.100.2"),
+                    () => Post("/connect/token", TokenForm("ClientB"), "198.51.100.1"),
                 ]
             );
         }
 
         [Test]
-        public void It_shares_the_client_budget_across_routes_and_sources() =>
+        public void It_shares_the_client_budget_across_routes_at_one_source() =>
             _statuses.Should().Equal(200, 429, 429, 200, 429);
 
         [Test]
@@ -474,14 +474,23 @@ public class IdentityModuleRateLimitTests
         public void It_admits_up_to_the_limit() => _statuses.Should().Equal(200, 200);
 
         [Test]
-        public void It_answers_429_in_the_oauth_format()
+        public void It_answers_429_in_the_ed_fi_format()
         {
             ((int)_rejected.StatusCode).Should().Be(429);
-            _rejected.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
-            _body.Count.Should().Be(2);
-            _body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
-            _body["error_description"]!.GetValue<string>().Should().Be(Detail);
+            _rejected.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            _body.Count.Should().Be(7);
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:too-many-requests");
+            _body["detail"]!.GetValue<string>().Should().Be(Detail);
+            _body["title"]!.GetValue<string>().Should().Be("Too Many Requests");
+            _body["status"]!.GetValue<int>().Should().Be(429);
+            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!.AsArray().Count.Should().Be(0);
         }
+
+        [Test]
+        public void It_sends_a_whole_second_retry_after() =>
+            _rejected.Headers.RetryAfter!.Delta!.Value.TotalSeconds.Should().BeInRange(1, 60);
 
         [Test]
         public void It_does_not_revoke_for_the_rejected_request() => RevocationCalls(_revocationManager, 2);

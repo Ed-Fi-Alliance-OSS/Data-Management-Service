@@ -330,7 +330,7 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
         // DMS-1482 client gate: after the request is known to be well formed and before the manager
         // verifies the secret. The budget is spent whether or not the client exists, so a 429 says
         // nothing about existence; a malformed request keeps its answer and spends nothing.
-        using RateLimitLease clientLease = rateLimiter.AttemptClient(model.client_id);
+        using RateLimitLease clientLease = rateLimiter.AttemptClient(httpContext, model.client_id);
         if (!clientLease.IsAcquired)
         {
             return ConnectRateLimitRejection.Create(
@@ -551,8 +551,10 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
             );
         }
 
-        // Apply the client gate after parsing credentials and before authenticating the caller.
-        using RateLimitLease clientLease = rateLimiter.AttemptClient(clientId);
+        // DMS-1482 client gate: after the D-03 shape checks and credential parsing, before the manager
+        // authenticates the caller. Spent whether or not the client exists; rate-limit rejections use
+        // Ed-Fi problem details, while this route's other errors retain their OAuth contract.
+        using RateLimitLease clientLease = rateLimiter.AttemptClient(httpContext, clientId);
         if (!clientLease.IsAcquired)
         {
             return ConnectRateLimitRejection.Create(

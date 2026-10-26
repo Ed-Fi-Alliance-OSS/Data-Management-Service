@@ -804,7 +804,7 @@ budgets apply, and a request must fit both:
 - **Per source address**, across all four routes. The address is the connection's remote address after
   [forwarded headers](#reverse-proxy-and-forwarded-headers) from trusted proxies are applied. A native
   IPv6 address counts against its /64. Requests whose address is unknown share one budget.
-- **Per `client_id`**, across all sources, for `/connect/token` and `/connect/revoke` only, spent just
+- **Per source address and `client_id` pair**, for `/connect/token` and `/connect/revoke` only, spent just
   before the client secret is verified. A request rejected earlier (malformed form, unsupported grant
   type, missing token) does not spend it. For counting, case, accents, character width, kana type and
   trailing padding are ignored. This conservatively merges common SQL Server lookup aliases on every
@@ -824,7 +824,7 @@ rate limiting is disabled.
 | --- | --- | --- |
 | `Enabled` | `true` | `false` turns all `/connect/*` limiting off. |
 | `SourcePermitLimit` | `120` | Requests per source address in each window. Must be > 0 when enabled. |
-| `ClientPermitLimit` | `30` | Token and revocation requests per `client_id` in each window. Must be > 0 when enabled. |
+| `ClientPermitLimit` | `30` | Token and revocation requests per source address and `client_id` pair in each window. Must be > 0 when enabled. |
 | `WindowSeconds` | `60` | Fixed-window length in seconds. Must be > 0 when enabled. |
 | `RequiredProxyAddress` | empty | When set and limiting is enabled, requires forwarded-header processing and this exact IP in `AppSettings:ReverseProxy:KnownProxies`. Compose sets this to its reserved DMS peer. Leave empty for direct deployments. |
 
@@ -856,14 +856,12 @@ Sizing notes:
 - Partitions are held in memory per process. The source budget limits new client keys from each source
   per window; it does not impose a global memory cap across sources. Idle enabled partitions are
   removed by the framework. Disabled limiting uses one shared partition per budget.
-- Anyone who knows a client ID can consume its allowance without knowing the secret. Repeating this
-  across windows can continuously deny token issuance and revocation for that client. This includes
-  the Ed-Fi API's own Configuration Service client: after its cached token expires, rejected refresh
-  requests fail and dependent Configuration Service calls fail. Caching and a higher client limit do
-  not prevent a targeted attack. Where public token issuance is exposed, configure a trusted gateway
-  to reject public requests naming internal system clients and their lookup aliases, while permitting
-  their private refresh path. Keep direct Configuration Service access restricted to trusted peers. Do not exempt an
-  anonymously supplied internal client ID from limiting.
+- Anyone who knows a client ID can consume its allowance at their source address without knowing the
+  secret. Callers sharing that source (including a NAT or an IPv6 /64) share the client allowance too.
+  Different sources have independent client allowances; public attempts against the Ed-Fi API's
+  Configuration Service client do not consume its private refresh allowance when trusted forwarding
+  is configured as above. No client ID is exempt. Distributed attempts from different sources are
+  limited independently; there is no cross-source client lockout.
 - The defaults come from expected traffic shape, not measured load. Real clients are already capped at
   15 active tokens (`IdentitySettings:BearerTokenPerClientLimit`) and should reuse them.
 
@@ -896,8 +894,8 @@ container address alone does not attribute those requests. Do not trust the enti
 ### Rejection response
 
 A refused request receives `429 Too Many Requests` with a `Retry-After` header: the limiter's
-recommended delay rounded up to whole seconds, omitted if the limiter supplies none. `/connect/token`,
-`/connect/register` and `/connect/introspect` answer with an Ed-Fi problem-details body served as
+recommended delay rounded up to whole seconds, omitted if the limiter supplies none. All four
+`/connect/*` routes, including `/connect/revoke`, answer with an Ed-Fi problem-details body served as
 `application/problem+json`. Its `correlationId` is the request's trace identifier:
 
 ```json
@@ -912,16 +910,8 @@ recommended delay rounded up to whole seconds, omitted if the limiter supplies n
 }
 ```
 
-`/connect/revoke` keeps its OAuth error format (see
-[CS-AUTH](../reference/design/configuration-service/CS-AUTH.md#token-revocation)) and answers
-`application/json`:
-
-```json
-{
-  "error": "temporarily_unavailable",
-  "error_description": "The number of allowed requests has been exceeded. Retry the request later."
-}
-```
+`/connect/revoke` keeps its OAuth error format for other statuses (see
+[CS-AUTH](../reference/design/configuration-service/CS-AUTH.md#token-revocation)).
 
 This `429` is distinct from the active-token limit's `429`
 (`urn:ed-fi:management-api:security:authentication:too-many-tokens`), which is unchanged.

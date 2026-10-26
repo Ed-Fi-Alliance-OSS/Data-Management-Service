@@ -81,15 +81,18 @@ public class ConnectRateLimiterTests
                 .NotBe(ConnectRateLimiter.ClientPartitionKey("ClientA"));
 
         [Test]
-        public void It_removes_trailing_spaces_before_truncating() =>
+        public void It_removes_trailing_spaces_from_long_ids() =>
             ConnectRateLimiter
                 .ClientPartitionKey(new string('c', 255) + new string(' ', 30))
                 .Should()
                 .Be(ConnectRateLimiter.ClientPartitionKey(new string('c', 255)));
 
         [Test]
-        public void It_truncates_a_long_id_to_256_characters() =>
-            ConnectRateLimiter.ClientPartitionKey(new string('x', 300)).Length.Should().Be(256);
+        public void It_preserves_significant_suffixes_of_long_ids() =>
+            ConnectRateLimiter
+                .ClientPartitionKey(new string('x', 300) + "-one")
+                .Should()
+                .NotBe(ConnectRateLimiter.ClientPartitionKey(new string('x', 300) + "-two"));
     }
 
     [TestFixture]
@@ -107,9 +110,9 @@ public class ConnectRateLimiterTests
         public void It_spends_one_budget_for_both_spellings(string storedId, string alias)
         {
             using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 10, clientLimit: 1);
-            Admits(limiter.AttemptClient(storedId)).Should().BeTrue();
-            Admits(limiter.AttemptClient(alias)).Should().BeFalse();
-            Admits(limiter.AttemptClient("OtherClient")).Should().BeTrue();
+            Admits(limiter.AttemptClient(ContextFrom("198.51.100.7"), storedId)).Should().BeTrue();
+            Admits(limiter.AttemptClient(ContextFrom("198.51.100.7"), alias)).Should().BeFalse();
+            Admits(limiter.AttemptClient(ContextFrom("198.51.100.7"), "OtherClient")).Should().BeTrue();
         }
 
         [Test]
@@ -117,16 +120,18 @@ public class ConnectRateLimiterTests
         {
             using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 10, clientLimit: 1);
             string malformed = "Client" + (char)0xD800;
-            Admits(limiter.AttemptClient(malformed)).Should().BeTrue();
-            Admits(limiter.AttemptClient(malformed)).Should().BeFalse();
+            Admits(limiter.AttemptClient(ContextFrom("198.51.100.7"), malformed)).Should().BeTrue();
+            Admits(limiter.AttemptClient(ContextFrom("198.51.100.7"), malformed)).Should().BeFalse();
         }
 
         [Test]
-        public void It_compares_the_whole_id_before_bounding_the_key()
+        public void It_counts_inserted_ignored_characters_as_the_same_identity()
         {
             using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 10, clientLimit: 1);
-            Admits(limiter.AttemptClient("ClientA")).Should().BeTrue();
-            Admits(limiter.AttemptClient("Client" + new string('\0', 300) + "A")).Should().BeFalse();
+            Admits(limiter.AttemptClient(ContextFrom("198.51.100.7"), "ClientA")).Should().BeTrue();
+            Admits(limiter.AttemptClient(ContextFrom("198.51.100.7"), "Client" + new string('\0', 300) + "A"))
+                .Should()
+                .BeFalse();
         }
     }
 
@@ -145,15 +150,15 @@ public class ConnectRateLimiterTests
         {
             _sameClient = [];
             using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 2, clientLimit: 2);
-            _sameClient.Add(Admits(limiter.AttemptClient("ClientA")));
-            _sameClient.Add(Admits(limiter.AttemptClient("ClientA")));
-            using (RateLimitLease rejected = limiter.AttemptClient("ClientA"))
+            _sameClient.Add(Admits(limiter.AttemptClient(ContextFrom("198.51.100.7"), "ClientA")));
+            _sameClient.Add(Admits(limiter.AttemptClient(ContextFrom("198.51.100.7"), "ClientA")));
+            using (RateLimitLease rejected = limiter.AttemptClient(ContextFrom("198.51.100.7"), "ClientA"))
             {
                 _sameClient.Add(rejected.IsAcquired);
                 _retryAfterPresent = rejected.TryGetMetadata(MetadataName.RetryAfter, out _retryAfter);
             }
-            _caseVariant = Admits(limiter.AttemptClient("CLIENTA"));
-            _otherClient = Admits(limiter.AttemptClient("ClientB"));
+            _caseVariant = Admits(limiter.AttemptClient(ContextFrom("198.51.100.7"), "CLIENTA"));
+            _otherClient = Admits(limiter.AttemptClient(ContextFrom("198.51.100.7"), "ClientB"));
             _sourceAfterClientExhausted = Admits(limiter.AttemptSource(ContextFrom("198.51.100.7")));
         }
 
@@ -190,12 +195,33 @@ public class ConnectRateLimiterTests
         {
             using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 10, clientLimit: 1);
             string prefix = new('c', 256);
-            _ = Admits(limiter.AttemptClient(prefix + "-one"));
-            _second = Admits(limiter.AttemptClient(prefix + "-two"));
+            _ = Admits(limiter.AttemptClient(ContextFrom("198.51.100.7"), prefix + "-one"));
+            _second = Admits(limiter.AttemptClient(ContextFrom("198.51.100.7"), prefix + "-two"));
         }
 
         [Test]
-        public void It_shares_one_budget() => _second.Should().BeFalse();
+        public void It_keeps_distinct_clients_independent() => _second.Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_one_client_at_different_sources
+    {
+        [TestCase("198.51.100.7", "::ffff:198.51.100.7", false)]
+        [TestCase("198.51.100.7", "198.51.100.8", true)]
+        [TestCase("2001:db8::1", "2001:db8::2", false)]
+        [TestCase("2001:db8::1", "2001:db8:0:1::1", true)]
+        [TestCase(null, null, false)]
+        [TestCase(null, "198.51.100.7", true)]
+        public void It_uses_the_same_source_identity_as_the_source_gate(
+            string? first,
+            string? second,
+            bool admitted
+        )
+        {
+            using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 10, clientLimit: 1);
+            Admits(limiter.AttemptClient(ContextFrom(first), "ClientA")).Should().BeTrue();
+            Admits(limiter.AttemptClient(ContextFrom(second), "CLIENTA ")).Should().Be(admitted);
+        }
     }
 
     [TestFixture]
@@ -238,7 +264,7 @@ public class ConnectRateLimiterTests
             using ConnectRateLimiter limiter = CreateLimiter(sourceLimit: 1, clientLimit: 1, enabled: false);
             for (int i = 0; i < 256; i++)
             {
-                _results.Add(Admits(limiter.AttemptClient($"Client{i}")));
+                _results.Add(Admits(limiter.AttemptClient(ContextFrom("198.51.100.7"), $"Client{i}")));
                 _results.Add(Admits(limiter.AttemptSource(ContextFrom($"198.51.100.{i}"))));
             }
         }
@@ -296,7 +322,7 @@ public class ConnectRateLimiterTests
         [Test]
         public void It_refuses_further_use() =>
             FluentActions
-                .Invoking(() => _limiter.AttemptClient("ClientA"))
+                .Invoking(() => _limiter.AttemptClient(ContextFrom("198.51.100.7"), "ClientA"))
                 .Should()
                 .Throw<ObjectDisposedException>();
     }
