@@ -40,5 +40,11 @@ public record TokenResult
     /// </summary>
     public record FailureLockTimeout : TokenResult;
 
+    /// <summary>
+    /// A non-empty scope was requested and none of its values is registered for the client, so no
+    /// token was minted or stored. A request with an omitted or empty scope never produces this result.
+    /// </summary>
+    public record FailureInvalidScope : TokenResult;
+
     public record FailureUnknown(string FailureMessage) : TokenResult;
 }
