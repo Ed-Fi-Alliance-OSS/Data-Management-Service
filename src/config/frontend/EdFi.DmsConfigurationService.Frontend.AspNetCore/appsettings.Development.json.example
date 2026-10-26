@@ -25,7 +25,10 @@
         // nonempty registered scopes consisting only of recognized CMS admin scopes
         // (case-sensitive).
         // See docs/CONFIGURATION.md.
-        "BearerTokenPerClientLimit": 15
+        "BearerTokenPerClientLimit": 15,
+        // Local-only: a Keycloak identity provider on this machine is reached over plain http.
+        // Keep true for any identity provider reachable over an untrusted network (docs/CONFIGURATION.md).
+        "RequireHttpsMetadata": false
     },
     "Serilog": {
         "MinimumLevel": {

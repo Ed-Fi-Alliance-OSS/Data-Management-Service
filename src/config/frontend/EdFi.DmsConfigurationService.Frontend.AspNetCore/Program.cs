@@ -90,6 +90,11 @@ var app = builder.Build();
 // registration problem stops startup before any schema deployment and before a request can be served.
 await AuditPluginRegistrations(app);
 
+// Before the DatabaseOptions gate, the token-revocation check and ReportInvalidConfiguration,
+// so a host that goes on to run in configuration-report mode still logs it. Reads the flag
+// from configuration without binding and resolves nothing from the container.
+RequireHttpsMetadataStartupWarning.Emit(app.Logger, app.Environment, app.Configuration);
+
 var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");
 if (!string.IsNullOrEmpty(pathBase))
 {

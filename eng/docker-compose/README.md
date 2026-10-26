@@ -1026,6 +1026,7 @@ The artifact includes:
 | `AppSettings:AuthenticationService` | `http://localhost:8081/connect/token` |
 | `JwtAuthentication:Authority` | `http://localhost:8081` (must exactly match the self-contained Configuration Service issuer configured in `.env.ide`) |
 | `JwtAuthentication:MetadataAddress` | `http://localhost:8081/.well-known/openid-configuration` (must share the advertised JWKS origin) |
+| `JwtAuthentication:RequireHttpsMetadata` | `false` (local http Configuration Service; the shipped default is `true`, see [docs/CONFIGURATION.md](../../docs/CONFIGURATION.md#jwtauthentication-parameters-in-appsettingsjson-dms-api-service)) |
 | `JwtAuthentication:ClientRole` | `dms-client` |
 | `JwtAuthentication:RoleClaimType` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
 

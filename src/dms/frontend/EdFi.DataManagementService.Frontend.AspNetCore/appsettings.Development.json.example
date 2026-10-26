@@ -19,6 +19,9 @@
   "JwtAuthentication": {
     "Authority": "http://localhost:8081",
     "MetadataAddress": "http://localhost:8081/.well-known/openid-configuration",
+    // Local-only: the Configuration Service above is reached over plain http on this machine.
+    // Keep true for any identity provider reachable over an untrusted network (docs/CONFIGURATION.md).
+    "RequireHttpsMetadata": false,
     "ClientRole": "dms-client",
     "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
   },
