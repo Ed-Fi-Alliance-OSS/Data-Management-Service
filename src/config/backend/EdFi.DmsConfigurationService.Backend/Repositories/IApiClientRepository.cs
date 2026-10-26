@@ -42,6 +42,100 @@ public interface IApiClientRepository
     /// compensation deletion and exposes no tenant data.
     /// </summary>
     Task<ApiClientUuidReferenceResult> HasApiClientUuidReference(Guid clientUuid);
+
+    /// <summary>
+    /// Reads an ApiClient's education organization state: its inheritance flag, stored list,
+    /// effective list and identity-provider sync-pending timestamp, as one committed state: never
+    /// a mix of states before and after a concurrent scope write, move or Application save.
+    /// PostgreSQL reads it in one statement, which sees one snapshot. SQL Server holds shared
+    /// locks to commit, taken Application first and then the client and its rows, the order an
+    /// Application save takes them; it restarts, a bounded number of times, when the client moves
+    /// before its lock is taken.
+    /// </summary>
+    Task<ApiClientEducationOrganizationStateResult> GetApiClientEducationOrganizationState(int id);
+
+    /// <summary>
+    /// Atomically stores an ApiClient's education organization scope. A null list makes the client
+    /// inherit, and its stored list becomes its Application's current list. A list narrows the client
+    /// to those ids, after removing duplicates; every id must be on the client's Application, or
+    /// nothing is written. Rejecting an empty list is left to the API.
+    /// </summary>
+    Task<ApiClientEducationOrganizationScopeResult> SetApiClientEducationOrganizationScope(
+        int id,
+        long[]? narrowedEducationOrganizationIds
+    );
+
+    /// <summary>
+    /// Sets or, with null, clears the UTC time since which an ApiClient awaits an identity-provider
+    /// update for an Application change.
+    /// </summary>
+    Task<ApiClientSyncPendingResult> SetApiClientIdentityProviderSyncPending(int id, DateTime? pendingSince);
+}
+
+/// <summary>
+/// An ApiClient's education organization state. <paramref name="StoredEducationOrganizationIds"/>
+/// are the client's own rows; <paramref name="EffectiveEducationOrganizationIds"/> are the current
+/// Application's rows for an inheriting client and the stored rows for a narrowed one. Both are
+/// sorted, and either can be empty.
+/// </summary>
+public record ApiClientEducationOrganizationState(
+    int ApplicationId,
+    bool InheritsApplicationEducationOrganizations,
+    long[] StoredEducationOrganizationIds,
+    long[] EffectiveEducationOrganizationIds,
+    DateTime? IdentityProviderSyncPendingSince
+);
+
+public record ApiClientEducationOrganizationStateResult
+{
+    public record Success(ApiClientEducationOrganizationState State)
+        : ApiClientEducationOrganizationStateResult();
+
+    /// <summary>
+    /// The ApiClient does not exist in the current tenant.
+    /// </summary>
+    public record FailureNotFound() : ApiClientEducationOrganizationStateResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ApiClientEducationOrganizationStateResult();
+}
+
+public record ApiClientEducationOrganizationScopeResult
+{
+    public record Success() : ApiClientEducationOrganizationScopeResult();
+
+    /// <summary>
+    /// The ApiClient does not exist in the current tenant; nothing was written.
+    /// </summary>
+    public record FailureNotFound() : ApiClientEducationOrganizationScopeResult();
+
+    /// <summary>
+    /// These education organizations are not on the client's Application; nothing was written.
+    /// </summary>
+    public record FailureNotOnApplication(long[] EducationOrganizationIds)
+        : ApiClientEducationOrganizationScopeResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ApiClientEducationOrganizationScopeResult();
+}
+
+public record ApiClientSyncPendingResult
+{
+    public record Success() : ApiClientSyncPendingResult();
+
+    /// <summary>
+    /// The ApiClient does not exist in the current tenant; nothing was written.
+    /// </summary>
+    public record FailureNotFound() : ApiClientSyncPendingResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ApiClientSyncPendingResult();
 }
 
 /// <summary>
@@ -237,6 +331,13 @@ public record ApiClientUpdateResult
     /// client; nothing was written
     /// </summary>
     public record FailureDuplicateClientUuid() : ApiClientUpdateResult();
+
+    /// <summary>
+    /// The update moves a narrowed client to an Application that lacks some of its education
+    /// organizations; nothing was written
+    /// </summary>
+    public record FailureEducationOrganizationsNotOnApplication(long[] EducationOrganizationIds)
+        : ApiClientUpdateResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught
