@@ -553,6 +553,11 @@ public class ApiClientRepository(
             string deleteMappingsSql = "DELETE FROM dmscs.ApiClientDataStore WHERE ApiClientId = @Id;";
             await connection.ExecuteAsync(deleteMappingsSql, new { Id = id }, transaction);
 
+            // Education organization rows reference the client with NO ACTION, so they go first
+            string deleteEducationOrganizationsSql =
+                "DELETE FROM dmscs.ApiClientEducationOrganization WHERE ApiClientId = @Id;";
+            await connection.ExecuteAsync(deleteEducationOrganizationsSql, new { Id = id }, transaction);
+
             // Delete ApiClient record
             string deleteSql = "DELETE FROM dmscs.ApiClient WHERE Id = @Id;";
             await connection.ExecuteAsync(deleteSql, new { Id = id }, transaction);
