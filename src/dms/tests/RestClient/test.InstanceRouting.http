@@ -22,7 +22,7 @@ Content-Type: application/x-www-form-urlencoded
 grant_type=client_credentials
 &client_id={{configClientId}}
 &client_secret={{configClientSecret}}
-&scope=edfi_dms_configuration_service_api
+&scope=edfi_admin_api/full_access
 
 ###
 
