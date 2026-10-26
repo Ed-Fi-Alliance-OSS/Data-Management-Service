@@ -329,6 +329,42 @@ internal static class PruningTopologyTestHelpers
         return builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
 
+    /// <summary>
+    /// Builds a hand-made cascade candidate for fixtures that call
+    /// <see cref="MssqlForeignKeyPruningPass.SelectCutEdges"/> directly. The trailing local and
+    /// target columns are the DocumentId anchor pairing.
+    /// </summary>
+    public static MssqlForeignKeyPruningPass.PruningCandidate BuildCandidate(
+        string name,
+        DbTableName receiver,
+        IReadOnlyList<string> localColumns,
+        DbTableName target,
+        IReadOnlyList<string> targetColumns,
+        bool required = true
+    )
+    {
+        var foreignKey = new TableConstraint.ForeignKey(
+            name,
+            [.. localColumns.Select(column => new DbColumnName(column))],
+            target,
+            [.. targetColumns.Select(column => new DbColumnName(column))],
+            ReferentialAction.NoAction,
+            ReferentialAction.Cascade
+        );
+
+        return new MssqlForeignKeyPruningPass.PruningCandidate(
+            MssqlForeignKeyPruningPass.PruningEdgeKey.From(receiver, foreignKey),
+            name,
+            receiver,
+            target,
+            foreignKey.Columns,
+            foreignKey.Columns[^1],
+            LocalDocumentIdIsRequired: required,
+            foreignKey.TargetColumns,
+            ReferentialAction.NoAction
+        );
+    }
+
     public static TableConstraint.ForeignKey FindForeignKeyOnTable(
         DerivedRelationalModelSet result,
         string resourceName,
@@ -1566,6 +1602,482 @@ public class Given_Mssql_Pruning_With_Disjoint_Convergences_On_One_Receiver
 }
 
 /// <summary>
+/// DMS-1624 regression on the real DS 5.2 shape: from the immutable
+/// <c>EducationOrganizationIdentity</c> origin, <c>StudentSectionAssociation</c> converges through
+/// the optional DualCreditEducationOrganization edge and the Section edge
+/// (EducationOrganizationIdentity → Course → CourseOffering → Section). The DualCredit edge sorts
+/// first, but keeping it would cut the Section edge although Section, an intermediate on that
+/// path, can change its own key; a Section key change then fails with error 547. The candidates
+/// use the column lists of the authoritative DS 5.2 golden.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_Of_The_Ds52_Student_Section_Association_Convergence
+{
+    private static readonly DbTableName _educationOrganizationIdentity = new(
+        new DbSchemaName("edfi"),
+        "EducationOrganizationIdentity"
+    );
+    private static readonly DbTableName _course = new(new DbSchemaName("edfi"), "Course");
+    private static readonly DbTableName _courseOffering = new(new DbSchemaName("edfi"), "CourseOffering");
+    private static readonly DbTableName _section = new(new DbSchemaName("edfi"), "Section");
+    private static readonly DbTableName _studentSectionAssociation = new(
+        new DbSchemaName("edfi"),
+        "StudentSectionAssociation"
+    );
+
+    private MssqlForeignKeyPruningPass.PruningCandidate _dualCreditEdge = default!;
+    private MssqlForeignKeyPruningPass.PruningCandidate _sectionEdge = default!;
+    private HashSet<MssqlForeignKeyPruningPass.PruningEdgeKey> _cutEdges = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var courseEdge = PruningTopologyTestHelpers.BuildCandidate(
+            "FK_Course_EducationOrganization_RefKey",
+            _course,
+            ["EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId"],
+            _educationOrganizationIdentity,
+            ["EducationOrganizationId", "DocumentId"]
+        );
+        var courseOfferingEdge = PruningTopologyTestHelpers.BuildCandidate(
+            "FK_CourseOffering_Course_RefKey",
+            _courseOffering,
+            ["Course_CourseCode", "Course_EducationOrganizationId", "Course_DocumentId"],
+            _course,
+            ["CourseCode", "EducationOrganization_EducationOrganizationId", "DocumentId"]
+        );
+        var sectionCourseOfferingEdge = PruningTopologyTestHelpers.BuildCandidate(
+            "FK_Section_CourseOffering_RefKey",
+            _section,
+            [
+                "CourseOffering_LocalCourseCode",
+                "SchoolId_Unified",
+                "CourseOffering_SchoolYear",
+                "CourseOffering_SessionName",
+                "CourseOffering_DocumentId",
+            ],
+            _courseOffering,
+            ["LocalCourseCode", "SchoolId_Unified", "Session_SchoolYear", "Session_SessionName", "DocumentId"]
+        );
+        _sectionEdge = PruningTopologyTestHelpers.BuildCandidate(
+            "FK_StudentSectionAssociation_Section_RefKey",
+            _studentSectionAssociation,
+            [
+                "Section_LocalCourseCode",
+                "Section_SchoolId",
+                "Section_SchoolYear",
+                "Section_SessionName",
+                "Section_SectionIdentifier",
+                "Section_DocumentId",
+            ],
+            _section,
+            [
+                "CourseOffering_LocalCourseCode",
+                "SchoolId_Unified",
+                "CourseOffering_SchoolYear",
+                "CourseOffering_SessionName",
+                "SectionIdentifier",
+                "DocumentId",
+            ]
+        );
+        _dualCreditEdge = PruningTopologyTestHelpers.BuildCandidate(
+            "FK_StudentSectionAssociation_DualCreditEducationOrganization_RefKey",
+            _studentSectionAssociation,
+            [
+                "DualCreditEducationOrganization_EducationOrganizationId",
+                "DualCreditEducationOrganization_DocumentId",
+            ],
+            _educationOrganizationIdentity,
+            ["EducationOrganizationId", "DocumentId"],
+            required: false
+        );
+
+        _cutEdges = MssqlForeignKeyPruningPass.SelectCutEdges(
+            ["edfi.EducationOrganizationIdentity", "edfi.Section"],
+            new[] { courseEdge, courseOfferingEdge, sectionCourseOfferingEdge, _sectionEdge, _dualCreditEdge }
+                .OrderBy(candidate => candidate.EdgeKey)
+                .ToArray(),
+            new HashSet<string> { "edfi.EducationOrganizationIdentity" }
+        );
+    }
+
+    /// <summary>
+    /// It should keep the Section edge cascading and cut only the DualCredit edge, matching ODS.
+    /// </summary>
+    [Test]
+    public void It_should_cut_exactly_the_dual_credit_edge()
+    {
+        _cutEdges.Should().BeEquivalentTo([_dualCreditEdge.EdgeKey]);
+    }
+}
+
+/// <summary>
+/// The directly-mutable-intermediate rule on a schema-built topology: Origin → Middle → Bridge →
+/// Receiver, with Receiver also referencing Origin under the AlternateOrigin role, which sorts
+/// first. Middle allows identity updates, so cutting the Bridge edge would leave a Middle key
+/// change without a carrier. The cut's own target (Bridge) is not directly mutable, so a rule that
+/// checked only the cut's target would still keep AlternateOrigin.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_A_Directly_Mutable_Intermediate_On_The_Cut_Path
+{
+    private DerivedRelationalModelSet _result = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _result = PruningTopologyTestHelpers.BuildMssqlModelSet(
+            MutableIntermediateTopology.Build(middleAllowsIdentityUpdates: true)
+        );
+    }
+
+    /// <summary>
+    /// It should keep the Bridge edge cascading and cut the AlternateOrigin edge, leaving every
+    /// upstream edge cascading.
+    /// </summary>
+    [Test]
+    public void It_should_keep_the_edge_through_the_mutable_intermediate()
+    {
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Receiver", "Bridge_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Receiver", "AlternateOrigin_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Bridge", "Middle_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Middle", "Origin_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+    }
+}
+
+/// <summary>
+/// The same topology with Middle only transitively mutable: it cannot change its own key, so the
+/// rule does not apply and the first stable survivor (AlternateOrigin) stands.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_A_Transitively_Mutable_Intermediate_On_The_Cut_Path
+{
+    private DerivedRelationalModelSet _result = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _result = PruningTopologyTestHelpers.BuildMssqlModelSet(
+            MutableIntermediateTopology.Build(middleAllowsIdentityUpdates: false)
+        );
+    }
+
+    /// <summary>
+    /// It should keep the AlternateOrigin edge cascading and cut the Bridge edge.
+    /// </summary>
+    [Test]
+    public void It_should_keep_the_first_stable_survivor()
+    {
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Receiver", "AlternateOrigin_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Receiver", "Bridge_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+    }
+}
+
+/// <summary>
+/// Origin → Middle → Bridge → Receiver plus Receiver → Origin under the AlternateOrigin role, shared
+/// by the directly and transitively mutable intermediate fixtures.
+/// </summary>
+internal static class MutableIntermediateTopology
+{
+    public static System.Text.Json.Nodes.JsonObject Build(bool middleAllowsIdentityUpdates) =>
+        PruningTestSchemaBuilder.BuildProjectSchema(
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Origin",
+                AllowIdentityUpdates: true,
+                IdentityScalars: ["originKey"]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Middle",
+                AllowIdentityUpdates: middleAllowsIdentityUpdates,
+                IdentityScalars: ["middleKey"],
+                References: [new PruningTestSchemaBuilder.ReferenceSpec("Origin", PartOfIdentity: true)]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Bridge",
+                IdentityScalars: ["bridgeKey"],
+                References: [new PruningTestSchemaBuilder.ReferenceSpec("Middle", PartOfIdentity: true)]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Receiver",
+                IdentityScalars: ["receiverKey"],
+                References:
+                [
+                    new PruningTestSchemaBuilder.ReferenceSpec("Origin", RoleName: "AlternateOrigin"),
+                    new PruningTestSchemaBuilder.ReferenceSpec("Bridge"),
+                ]
+            )
+        );
+}
+
+/// <summary>
+/// A carried intermediate rename: Alpha → Middle → BridgeOne and BridgeTwo → Receiver, with
+/// Middle directly mutable and the middle and alpha keys unified across both bridge references.
+/// Alpha sorts before Middle, so Alpha's walk owns the Receiver convergence. Cutting BridgeTwo is
+/// safe because the required BridgeOne edge updates the same canonical columns through the same
+/// Middle pairings, so a Middle key change is still carried.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_A_Carried_Intermediate_Rename
+{
+    private DerivedRelationalModelSet _result = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = PruningTestSchemaBuilder.BuildProjectSchema(
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Alpha",
+                AllowIdentityUpdates: true,
+                IdentityScalars: ["alphaKey"]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Middle",
+                AllowIdentityUpdates: true,
+                IdentityScalars: ["middleKey"],
+                References: [new PruningTestSchemaBuilder.ReferenceSpec("Alpha", PartOfIdentity: true)]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "BridgeOne",
+                IdentityScalars: ["bridgeOneKey"],
+                References: [new PruningTestSchemaBuilder.ReferenceSpec("Middle", PartOfIdentity: true)]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "BridgeTwo",
+                IdentityScalars: ["bridgeTwoKey"],
+                References: [new PruningTestSchemaBuilder.ReferenceSpec("Middle", PartOfIdentity: true)]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Receiver",
+                IdentityScalars: ["receiverKey"],
+                References:
+                [
+                    new PruningTestSchemaBuilder.ReferenceSpec("BridgeOne"),
+                    new PruningTestSchemaBuilder.ReferenceSpec("BridgeTwo"),
+                ],
+                EqualityConstraints:
+                [
+                    ("$.bridgeOneReference.middleKey", "$.bridgeTwoReference.middleKey"),
+                    ("$.bridgeOneReference.alphaKey", "$.bridgeTwoReference.alphaKey"),
+                ]
+            )
+        );
+
+        _result = PruningTopologyTestHelpers.BuildMssqlModelSet(projectSchema);
+    }
+
+    /// <summary>
+    /// It should derive, keeping BridgeOne cascading and cutting BridgeTwo.
+    /// </summary>
+    [Test]
+    public void It_should_cut_the_second_bridge_edge()
+    {
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Receiver", "BridgeOne_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Receiver", "BridgeTwo_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+    }
+}
+
+/// <summary>
+/// Uncarried intermediate renames under a genuinely mutable origin: Alpha → SectionA and SectionB
+/// → Receiver, where both sections allow identity updates and their references are not unified.
+/// Whichever edge is kept, cutting the other leaves that section's key change without a carrier,
+/// so no survivor is safe and derivation fails.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_Uncarried_Intermediate_Renames
+{
+    internal static System.Text.Json.Nodes.JsonObject BuildProjectSchema() =>
+        PruningTestSchemaBuilder.BuildProjectSchema(
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Alpha",
+                AllowIdentityUpdates: true,
+                IdentityScalars: ["alphaKey"]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "SectionA",
+                AllowIdentityUpdates: true,
+                IdentityScalars: ["sectionAKey"],
+                References: [new PruningTestSchemaBuilder.ReferenceSpec("Alpha", PartOfIdentity: true)]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "SectionB",
+                AllowIdentityUpdates: true,
+                IdentityScalars: ["sectionBKey"],
+                References: [new PruningTestSchemaBuilder.ReferenceSpec("Alpha", PartOfIdentity: true)]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Receiver",
+                IdentityScalars: ["receiverKey"],
+                References:
+                [
+                    new PruningTestSchemaBuilder.ReferenceSpec("SectionA"),
+                    new PruningTestSchemaBuilder.ReferenceSpec("SectionB"),
+                ]
+            )
+        );
+
+    /// <summary>
+    /// It should fail with the no-safe-pruning diagnostic naming the origin, the receiver, both
+    /// constraints, and the native-coverage condition.
+    /// </summary>
+    [Test]
+    public void It_should_fail_with_the_native_coverage_diagnostic()
+    {
+        var act = () => PruningTopologyTestHelpers.BuildMssqlModelSet(BuildProjectSchema());
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "NoSafeSqlServerForeignKeyPruning:*"
+                    + "mutable origin 'edfi.Alpha'*"
+                    + "convergence receiver 'edfi.Receiver'*"
+                    + "'FK_Receiver_SectionA_RefKey'*"
+                    + "'FK_Receiver_SectionB_RefKey'*"
+                    + "First failed condition: native coverage*"
+            );
+    }
+}
+
+/// <summary>
+/// The immutable-origin rescue waives only the origin's own rename. Hand-built candidates: from
+/// the immutable Origin, Receiver converges through the optional First edge (Origin → Receiver)
+/// and the optional Second edge (Origin → Middle → Bridge → Receiver), where edfi.Middle stands in
+/// for a directly mutable resource. Both edges share SharedKey, which traces to Origin.OriginKey on
+/// both sides, and both are optional, so neither survivor is locally safe and the convergence
+/// reaches the rescue. Keeping First would cut Second, whose Second_MiddleKey traces to the
+/// uncarried Middle.MiddleKey, so the rescue must keep Second instead.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_Rescue_With_A_Directly_Mutable_Intermediate
+{
+    private static readonly DbTableName _origin = new(new DbSchemaName("edfi"), "Origin");
+    private static readonly DbTableName _middle = new(new DbSchemaName("edfi"), "Middle");
+    private static readonly DbTableName _middle2 = new(new DbSchemaName("edfi"), "Middle2");
+    private static readonly DbTableName _bridge = new(new DbSchemaName("edfi"), "Bridge");
+    private static readonly DbTableName _receiver = new(new DbSchemaName("edfi"), "Receiver");
+
+    private static MssqlForeignKeyPruningPass.PruningCandidate[] BuildSecondPath() =>
+        [
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Middle_Origin",
+                _middle,
+                ["Origin_OriginKey", "Origin_DocumentId"],
+                _origin,
+                ["OriginKey", "DocumentId"]
+            ),
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Bridge_Middle",
+                _bridge,
+                ["Middle_OriginKey", "Middle_MiddleKey", "Middle_DocumentId"],
+                _middle,
+                ["Origin_OriginKey", "MiddleKey", "DocumentId"]
+            ),
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Receiver_Second",
+                _receiver,
+                ["SharedKey", "Second_MiddleKey", "Second_DocumentId"],
+                _bridge,
+                ["Middle_OriginKey", "Middle_MiddleKey", "DocumentId"],
+                required: false
+            ),
+        ];
+
+    private static HashSet<MssqlForeignKeyPruningPass.PruningEdgeKey> Select(
+        IReadOnlyList<string> origins,
+        IEnumerable<MssqlForeignKeyPruningPass.PruningCandidate> candidates
+    ) =>
+        MssqlForeignKeyPruningPass.SelectCutEdges(
+            origins,
+            candidates.OrderBy(candidate => candidate.EdgeKey).ToArray(),
+            new HashSet<string> { "edfi.Origin" }
+        );
+
+    /// <summary>
+    /// It should keep the Second edge, cutting exactly the First edge, whose only identity column
+    /// traces to the walked origin alone.
+    /// </summary>
+    [Test]
+    public void It_should_keep_the_first_candidate_whose_cuts_leave_no_uncarried_intermediate()
+    {
+        var first = PruningTopologyTestHelpers.BuildCandidate(
+            "FK_Receiver_First",
+            _receiver,
+            ["SharedKey", "First_DocumentId"],
+            _origin,
+            ["OriginKey", "DocumentId"],
+            required: false
+        );
+
+        var cutEdges = Select(["edfi.Middle", "edfi.Origin"], [first, .. BuildSecondPath()]);
+
+        cutEdges.Should().BeEquivalentTo([first.EdgeKey]);
+    }
+
+    /// <summary>
+    /// It should fail with the native-coverage condition when First also runs through a directly
+    /// mutable intermediate (edfi.Middle2) that Second does not carry, so every rescue candidate
+    /// leaves an intermediate rename uncarried.
+    /// </summary>
+    [Test]
+    public void It_should_fail_when_every_candidate_leaves_an_intermediate_uncarried()
+    {
+        MssqlForeignKeyPruningPass.PruningCandidate[] firstPath =
+        [
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Middle2_Origin",
+                _middle2,
+                ["Origin_OriginKey", "Origin_DocumentId"],
+                _origin,
+                ["OriginKey", "DocumentId"]
+            ),
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Receiver_First",
+                _receiver,
+                ["SharedKey", "First_Middle2Key", "First_DocumentId"],
+                _middle2,
+                ["Origin_OriginKey", "Middle2Key", "DocumentId"],
+                required: false
+            ),
+        ];
+
+        var act = () =>
+            Select(["edfi.Middle", "edfi.Middle2", "edfi.Origin"], [.. firstPath, .. BuildSecondPath()]);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "NoSafeSqlServerForeignKeyPruning:*"
+                    + "mutable origin 'edfi.Origin'*"
+                    + "convergence receiver 'edfi.Receiver'*"
+                    + "First failed condition: native coverage*"
+            );
+    }
+}
+
+/// <summary>
 /// Design verification case 13 (parallel FKs): two distinct physical FKs between the same tables
 /// are a convergence in the multigraph; one survives and the other is cut.
 /// </summary>
@@ -2037,6 +2549,26 @@ public class Given_Pgsql_Derivation_Of_Sql_Server_Only_Failure_Topologies
             .Be(ReferentialAction.Cascade);
         PruningTopologyTestHelpers
             .FindReferenceForeignKey(result, "Receiver", "BridgeThree_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+    }
+
+    /// <summary>
+    /// It should derive the uncarried-intermediate topology with both cascades retained.
+    /// </summary>
+    [Test]
+    public void It_should_derive_the_uncarried_intermediate_topology_with_cascades_retained()
+    {
+        var result = PruningTopologyTestHelpers.BuildPgsqlModelSet(
+            Given_Mssql_Pruning_With_Uncarried_Intermediate_Renames.BuildProjectSchema()
+        );
+
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "SectionA_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "SectionB_DocumentId")
             .OnUpdate.Should()
             .Be(ReferentialAction.Cascade);
     }
