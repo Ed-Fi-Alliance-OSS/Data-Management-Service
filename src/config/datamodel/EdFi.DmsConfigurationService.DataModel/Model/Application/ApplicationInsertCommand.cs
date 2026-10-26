@@ -34,9 +34,12 @@ public class ApplicationInsertCommand
 
     [Description(
         "Whether to create the Application's default API client. Optional, default true. When "
-            + "false, no API client is created, the response's key and secret are null, and "
-            + "enabled or dataStoreIds in the request are rejected."
+            + "false, no API client is created and the response's key and secret are null. The "
+            + "request must then omit enabled and dataStoreIds: either one present is rejected "
+            + "with 400 whatever its value, including enabled: false and dataStoreIds: []. "
+            + "Create API clients afterward with POST /v3/apiClients."
     )]
+    [DefaultValue(true)]
     public bool CreateDefaultCredentials { get; set; } = true;
 
     /// <summary>

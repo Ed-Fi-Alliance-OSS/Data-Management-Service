@@ -18,6 +18,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.Extensions.Options;
+using Microsoft.OpenApi;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -41,17 +42,179 @@ public class ApplicationModule : IEndpointModule
             statusCode: (int)HttpStatusCode.Conflict
         );
 
+    /// <summary>
+    /// How the Application reads compute enabled and dataStoreIds from the Application's API
+    /// clients. Shared with the vendor's applications read, which computes them the same way.
+    /// </summary>
+    internal const string ApplicationClientStateDescription =
+        "enabled is true only when the Application has at least one API client and every one is "
+        + "approved; an Application with no API clients reports false. dataStoreIds is the union of "
+        + "the data stores assigned to the Application's API clients, and [] for an Application with "
+        + "no API clients.";
+
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapSecuredPost("/v3/applications/", InsertApplication);
-        endpoints.MapSecuredGet("/v3/applications/", GetAll).Produces<List<ApplicationResponse>>(200);
+        endpoints
+            .MapSecuredPost("/v3/applications/", InsertApplication)
+            .Produces<ApplicationInsertResponse>(201)
+            .ProducesProblem(400)
+            .ProducesProblem(409)
+            .WithDescription(
+                "Creates an Application and, unless createDefaultCredentials is false, its default "
+                    + "API client. With createDefaultCredentials false no API client is created, the "
+                    + "201 response carries key and secret as null, and a request that includes "
+                    + "enabled or dataStoreIds, with any value, is rejected with 400."
+            )
+            .AddOpenApiOperationTransformer(
+                (operation, context, ct) =>
+                {
+                    SetInsertExamples(operation);
+                    SetResponseDescription(
+                        operation,
+                        "400",
+                        "The request is invalid, including enabled or dataStoreIds sent with "
+                            + "createDefaultCredentials false."
+                    );
+                    return Task.CompletedTask;
+                }
+            );
+        endpoints
+            .MapSecuredGet("/v3/applications/", GetAll)
+            .Produces<List<ApplicationResponse>>(200)
+            .WithDescription(ApplicationClientStateDescription);
         // Limited access: DMS reads an application's profile assignments through this endpoint, so the
         // limited scope its service account uses for its other reads must cover it too.
-        endpoints.MapLimitedAccess($"/v3/applications/{{id}}", GetById).Produces<ApplicationResponse>(200);
+        endpoints
+            .MapLimitedAccess($"/v3/applications/{{id}}", GetById)
+            .Produces<ApplicationResponse>(200)
+            .WithDescription(ApplicationClientStateDescription);
         endpoints.MapSecuredPut($"/v3/applications/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v3/applications/{{id}}", Delete);
 
-        endpoints.MapSecuredPut($"/v3/applications/{{id}}/reset-credential", ResetCredential);
+        endpoints
+            .MapSecuredPut($"/v3/applications/{{id}}/reset-credential", ResetCredential)
+            .Produces<ApplicationCredentialsResponse>(200)
+            .ProducesProblem(404)
+            .ProducesProblem(409)
+            .WithDescription(
+                "Rotates the secret of the Application's only API client. An Application with no "
+                    + "API clients, or with more than one, has no single client to reset and returns "
+                    + "409; reset a specific client with PUT /v3/apiClients/{id}/reset-credential."
+            )
+            .AddOpenApiOperationTransformer(
+                (operation, context, ct) =>
+                {
+                    SetResponseDescription(operation, "404", "The Application does not exist.");
+                    SetResponseDescription(
+                        operation,
+                        "409",
+                        "The Application has no API clients or more than one, or a concurrent change "
+                            + "to it held the request up; retry in that last case."
+                    );
+                    return Task.CompletedTask;
+                }
+            );
+    }
+
+    /// <summary>
+    /// Publishes a request and a 201 example for each credentials mode. The example without
+    /// default credentials omits enabled and dataStoreIds, which that mode rejects.
+    /// </summary>
+    private static void SetInsertExamples(OpenApiOperation operation)
+    {
+        if (
+            operation.RequestBody is OpenApiRequestBody requestBody
+            && requestBody.Content is not null
+            && requestBody.Content.TryGetValue("application/json", out var requestMediaType)
+        )
+        {
+            requestMediaType.Examples = new Dictionary<string, IOpenApiExample>
+            {
+                ["defaultCredentials"] = new OpenApiExample
+                {
+                    Summary = "Create the Application and its default API client",
+                    Value = JsonNode.Parse(
+                        """
+                        {
+                          "applicationName": "Sample Application",
+                          "vendorId": 1,
+                          "claimSetName": "SIS-Vendor",
+                          "educationOrganizationIds": [255901],
+                          "dataStoreIds": [1],
+                          "profileIds": []
+                        }
+                        """
+                    ),
+                },
+                ["withoutDefaultCredentials"] = new OpenApiExample
+                {
+                    Summary = "Create the Application without an API client",
+                    Value = JsonNode.Parse(
+                        """
+                        {
+                          "applicationName": "Sample Application",
+                          "vendorId": 1,
+                          "claimSetName": "SIS-Vendor",
+                          "educationOrganizationIds": [255901],
+                          "profileIds": [],
+                          "createDefaultCredentials": false
+                        }
+                        """
+                    ),
+                },
+            };
+        }
+
+        if (
+            operation.Responses is not null
+            && operation.Responses.TryGetValue("201", out var iResponse)
+            && iResponse is OpenApiResponse response
+            && response.Content is not null
+            && response.Content.TryGetValue("application/json", out var responseMediaType)
+        )
+        {
+            responseMediaType.Examples = new Dictionary<string, IOpenApiExample>
+            {
+                ["defaultCredentials"] = new OpenApiExample
+                {
+                    Summary = "The default API client's credentials",
+                    Value = JsonNode.Parse(
+                        """
+                        {
+                          "id": 1,
+                          "key": "6f3f0c2e-6d0b-4f4c-9a51-2f8f0a8d3c11",
+                          "secret": "s3cr3t-Example-Value-Of-Minimum-Length-32!"
+                        }
+                        """
+                    ),
+                },
+                ["withoutDefaultCredentials"] = new OpenApiExample
+                {
+                    Summary = "No API client was created",
+                    Value = JsonNode.Parse(
+                        """
+                        {
+                          "id": 2,
+                          "key": null,
+                          "secret": null
+                        }
+                        """
+                    ),
+                },
+            };
+        }
+    }
+
+    private static void SetResponseDescription(OpenApiOperation operation, string status, string description)
+    {
+        if (
+            operation.Responses is not null
+            && operation.Responses.TryGetValue(status, out var iResponse)
+            && iResponse is OpenApiResponse response
+        )
+        {
+            response.Description = description;
+        }
     }
 
     private async Task<IResult> InsertApplication(
@@ -167,7 +330,7 @@ public class ApplicationModule : IEndpointModule
                         var request = httpContext.Request;
                         return Results.Created(
                             $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
-                            new ApplicationCredentialsResponse()
+                            new ApplicationInsertResponse()
                             {
                                 Id = success.Id,
                                 Key = clientId,
@@ -313,11 +476,11 @@ public class ApplicationModule : IEndpointModule
                 var request = httpContext.Request;
                 return Results.Created(
                     $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
-                    new JsonObject
+                    new ApplicationInsertResponse()
                     {
-                        ["id"] = success.Id,
-                        ["key"] = null,
-                        ["secret"] = null,
+                        Id = success.Id,
+                        Key = null,
+                        Secret = null,
                     }
                 );
             case ApplicationInsertResult.FailureVendorNotFound:

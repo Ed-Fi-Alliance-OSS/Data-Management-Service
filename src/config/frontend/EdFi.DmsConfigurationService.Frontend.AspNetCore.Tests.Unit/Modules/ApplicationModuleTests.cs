@@ -30,7 +30,7 @@ using NUnit.Framework;
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 [TestFixture]
-public class ApplicationModuleTests
+public partial class ApplicationModuleTests
 {
     private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
     private readonly IApiClientRepository _apiClientRepository = A.Fake<IApiClientRepository>();
