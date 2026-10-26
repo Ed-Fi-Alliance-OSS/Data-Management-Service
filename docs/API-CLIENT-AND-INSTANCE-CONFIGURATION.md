@@ -160,6 +160,64 @@ Those operations run only when an identity provider plugin is registered; withou
 This section documents only how to provision such a client in the Configuration Service and confirm its credentials work.
 How quickly a deletion, a credential reset or a claim set change reaches the identity operations is in [How long a change takes to apply](./IDENTITY-MANAGEMENT.md#how-long-a-change-takes-to-apply), and the rest of the operator's side is in [Identity Management](./IDENTITY-MANAGEMENT.md).
 
+### Applications Without API Clients
+
+`POST /v3/applications` accepts an optional `createDefaultCredentials` flag. It
+defaults to `true`, which keeps the existing flow: the Configuration Service
+creates the application's initial API client, assigns it the request's
+`dataStoreIds`, and returns its `key` and `secret`.
+
+With `"createDefaultCredentials": false`, the Configuration Service creates the
+application, its education organizations and its profiles, and creates no API
+client and no identity provider client. The request must omit `enabled` and
+`dataStoreIds`, which describe the initial client:
+
+```json
+{
+  "applicationName": "District SIS",
+  "vendorId": 1,
+  "claimSetName": "SIS-Vendor",
+  "educationOrganizationIds": [255901],
+  "profileIds": [],
+  "createDefaultCredentials": false
+}
+```
+
+The response is `201 Created` with explicit null credentials:
+
+```json
+{
+  "id": 7,
+  "key": null,
+  "secret": null
+}
+```
+
+Sending `enabled` or `dataStoreIds` together with `false` returns `400` with an
+`Enabled` or `DataStoreIds` validation error, whatever the value, so `false`,
+`null` and `[]` are rejected too. When the flag is omitted or `true`, `enabled`
+is ignored, as before. Add clients afterwards with `POST /v3/apiClients`.
+
+An application can also reach zero clients when its last client is deleted with
+`DELETE /v3/apiClients/{id}`. That leaves the application in place, and it
+behaves the same as one created without clients:
+
+- `GET /v3/applications`, `GET /v3/applications/{id}` and
+  `GET /v3/vendors/{id}/applications` report `"enabled": false` and
+  `"dataStoreIds": []`. `enabled` is `true` only when the application has at
+  least one client and every client is approved, and `dataStoreIds` is the
+  union of its clients' data store assignments.
+- `PUT /v3/applications/{id}/reset-credential` returns `409 Conflict`, as it
+  does for an application with more than one client, and resets nothing. A
+  missing application still returns `404`. Reset a specific client with
+  `PUT /v3/apiClients/{id}/reset-credential`.
+- `POST /v3/apiClients` adds a client to it, and
+  `DELETE /v3/applications/{id}` deletes it.
+
+`PUT /v3/applications/{id}` still returns `404` for an application with no
+clients. Support for it is planned under
+[DMS-1642](https://edfi.atlassian.net/browse/DMS-1642).
+
 ### Context-Based Routing
 
 Alternatively, the DMS supports **context-based routing**, which allows a
