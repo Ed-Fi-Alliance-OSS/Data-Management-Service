@@ -2069,7 +2069,7 @@ Describe "PostgreSQL CMS-target agreement predicate (ordinal-exact, PostgreSQL-O
         $enclosingNames | Should -Be @(
             'Confirm-CmsDatabaseTopologyAgreement',
             'Confirm-CmsDatabaseTopologyAgreement'
-        ) -Because "both Confirm comparisons (segments and ambient) are the only adopters; MSSQL renders no offline name verdict anywhere"
+        ) -Because "both Confirm comparisons (segments and ambient) are the only adopters; the CMS topology checks render no offline MSSQL name verdict"
 
         foreach ($call in $adopterCalls) {
             $guarded = $false
@@ -3869,7 +3869,7 @@ Describe "Get-DatabaseNameFromConnectionString spells 'Initial Catalog' the same
         @{ Case = 'uppercase'; Key = 'INITIAL CATALOG' }
         @{ Case = 'outer whitespace, which the parser trims'; Key = '  Initial Catalog  ' }
     ) {
-        $names = @(Get-DatabaseNameFromConnectionString -ConnectionString "Server=s;$Key=d;" -EnvironmentValues @{})
+        $names = @(Get-DatabaseNameFromConnectionString -ConnectionString "Server=s;$Key=d;")
 
         $names.Count | Should -Be 1
         $names | Should -Contain 'd'
@@ -3881,7 +3881,7 @@ Describe "Get-DatabaseNameFromConnectionString spells 'Initial Catalog' the same
         @{ Case = 'non-breaking space'; ConnectionString = "Server=s;Initial$([char]0x00A0)Catalog=edfi_configurationservice;" }
         @{ Case = 'beside a valid Database sibling'; ConnectionString = 'Server=s;Database=edfi_datamanagementservice;Initial  Catalog=edfi_configurationservice;' }
     ) {
-        $thrown = { Get-DatabaseNameFromConnectionString -ConnectionString $ConnectionString -EnvironmentValues @{} } |
+        $thrown = { Get-DatabaseNameFromConnectionString -ConnectionString $ConnectionString } |
             Should -Throw -PassThru
 
         $thrown.Exception.Message | Should -BeLike "*separated by other whitespace*"
@@ -3896,7 +3896,7 @@ Describe "Get-DatabaseNameFromConnectionString spells 'Initial Catalog' the same
         # The mutated-spelling refusal moved out of the parse try/catch; the wrap it sits next to
         # must still apply to a real parse error. A key holding a control character is one the
         # generic parser rejects outright.
-        $thrown = { Get-DatabaseNameFromConnectionString -ConnectionString "Server=s;Initial`tCatalog=d;" -EnvironmentValues @{} } |
+        $thrown = { Get-DatabaseNameFromConnectionString -ConnectionString "Server=s;Initial`tCatalog=d;" } |
             Should -Throw -PassThru
 
         $thrown.Exception.Message | Should -BeLike "*Could not safely parse a protected database connection string*"
