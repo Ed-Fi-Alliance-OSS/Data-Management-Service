@@ -3278,9 +3278,45 @@ public class OpenIddictTokenManagerTests
             [FullAccessScope, ReadOnlyScope]
         );
 
+    // A client with no registered scopes that omits scope is still issued a token, but the granted
+    // set is empty and RFC 6749 section 3.3 defines no empty scope value, so the response carries
+    // no scope while the token's claim is unchanged.
     [TestFixture]
-    public class Given_GetAccessTokenAsync_WithoutAScopeForAClientHoldingNoScopes()
-        : ScopeGrant([], GrantCredentials, []);
+    public class Given_GetAccessTokenAsync_WithoutAScopeForAClientHoldingNoScopes
+        : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // No scopes: the client is registered with no permissions.
+            ArrangeGrantableClient();
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
+
+            _result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(GrantCredentials());
+        }
+
+        [Test]
+        public void It_returns_a_success_result() => _result.Should().BeOfType<TokenResult.Success>();
+
+        [Test]
+        public void It_reports_no_scope_in_the_response()
+        {
+            System.Text.Json.JsonElement body = System
+                .Text.Json.JsonDocument.Parse(_result.Should().BeOfType<TokenResult.Success>().Subject.Token)
+                .RootElement;
+            (body.TryGetProperty("scope", out System.Text.Json.JsonElement scope) ? scope.GetString() : null)
+                .Should()
+                .BeNull();
+        }
+
+        [Test]
+        public void It_keeps_the_empty_scope_claim_in_the_token() => ScopeClaimOf(_result).Should().BeEmpty();
+
+        [Test]
+        public void It_stores_the_token_once() => StoreMustHaveHappenedOnce();
+    }
 
     [TestFixture]
     public class Given_GetAccessTokenAsync_WithAllRequestedScopesHeld()

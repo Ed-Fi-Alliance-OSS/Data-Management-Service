@@ -70,7 +70,7 @@ Requested values the client does not hold are dropped, and so are registered sco
 The granted scopes keep the spelling and order of the request, and duplicates are not removed.
 
 A successful token response carries a `scope` member that lists the granted scopes separated by spaces, as RFC 6749 section 3.3 defines, for example `"scope":"edfi_admin_api/full_access edfi_admin_api/readonly_access"`.
-In `self-contained` mode the member is always present; it is `""` for a client with no registered scopes that omitted `scope`.
+In `self-contained` mode the member is present whenever at least one scope is granted; it is omitted for a client with no registered scopes that omitted `scope`, because RFC 6749 section 3.3 defines no empty scope value.
 Under Keycloak it is the `scope` Keycloak returns, passed through unchanged, and it is omitted when Keycloak returns none.
 The `scope` claim in a `self-contained` access token is unchanged: it lists the same granted scopes separated by commas, for example `edfi_admin_api/full_access,edfi_admin_api/readonly_access`.
 Read the granted scopes from the response member with a space as the separator, and from the claim with a comma.

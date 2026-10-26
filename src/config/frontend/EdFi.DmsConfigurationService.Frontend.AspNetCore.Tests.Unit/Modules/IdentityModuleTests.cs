@@ -1621,6 +1621,18 @@ public class TokenEndpointScopeResponseTests
             """{"access_token":"input123token","expires_in":900,"token_type":"bearer"}""";
     }
 
+    // The self-contained manager reports an empty granted set, from a client with no registered scopes
+    // that omitted scope, as a null scope; the response leaves it out rather than sending "scope":"".
+    [TestFixture]
+    public class Given_self_contained_mode_and_a_manager_body_with_a_null_scope : ManagerBodyWithoutAScope
+    {
+        protected override string IdentityProvider => "self-contained";
+        protected override string ManagerBody =>
+            """{"access_token":"input123token","expires_in":900,"refresh_expires_in":0,"token_type":"Bearer","scope":null}""";
+        protected override string ExpectedBody =>
+            """{"access_token":"input123token","expires_in":900,"token_type":"Bearer"}""";
+    }
+
     [TestFixture]
     public class Given_keycloak_mode_and_a_provider_body_carrying_a_scope : ManagerBodyCarryingAScope
     {
