@@ -1,0 +1,47 @@
+Step 2, SQL Server (LocalDB): pre-registration, written before any collection (2026-10-26)
+
+Why this run: the accepted step 1 run measured a5c4b7570. Commit
+d86bb6e95cc61c4014fd456a3ff97f4d40da5e1d changes the absent-client code path (the
+placeholder is generated once at host startup; a request now only reads a field and verifies,
+where it previously awaited a published holder task), so step 1 no longer measures the code
+under review. This is one repetition of the step 1 procedure on the new code. Nothing else
+about the procedure changes.
+
+Code under test: the checkout C:\dev\simpat\Data-Management-Service-DMS-1490 at
+d86bb6e95cc61c4014fd456a3ff97f4d40da5e1d. The Configuration Service runs as a host process from
+that checkout's Release build, on LocalDB instance DMS1490 with a freshly recreated database; the
+configuration is eng/docker-compose/.env.config.mssql.e2e (210,000 hashing iterations). The
+collector is the existing [Explicit] fixture Given_token_endpoint_requests_measured_for_timing_evidence,
+unchanged. The setup script is the step 1 script with only its output folders, run label (step2)
+and seed changed.
+
+Sample plan (fixed now, identical to step 1):
+- one run; warm-up 1,200 rounds (discarded, kept in their own file); measured N = 2,000 rounds;
+- each round sends one request per arm (absent, wrong_secret, unapproved_correct_secret) in an order
+  shuffled by System.Random(seed); seed 502 (not used by any earlier run).
+
+Decision rule (fixed now, identical to step 1), primary comparison median(absent) -
+median(wrong_secret), delta = 250 us, analyze_timing.py method v1 (95% percentile moving-block
+bootstrap, L = ceil(N^(1/3)) = 13, 5,000 resamples, seed 1), with diagnostics.py for the 2L interval,
+flags and half differences:
+- EQUIVALENT only if ALL hold: the CI at L lies inside [-250, +250]; the CI at 2L lies inside it;
+  diagnostics.py raises no flag (exit 0); and the absent - wrong_secret difference in each half of
+  the run lies inside [-250, +250];
+- NOT EQUIVALENT if the CI at L is disjoint from [-250, +250];
+- otherwise INCONCLUSIVE, which is not a pass and is reported as such.
+Secondary, descriptive only: unapproved_correct_secret - wrong_secret, same method.
+
+What this run cannot show: every measured request follows 1,200 warm-up rounds, so it says
+nothing about the first requests after startup. That behaviour (no hash generated on any request;
+the placeholder exists before the first request) is shown by deterministic tests, not by timing.
+
+Conduct:
+- a run that produces a complete measured file is final: it is analysed and reported whatever it
+  shows, and it is not repeated;
+- a setup failure before the collector writes its measured file is not a result: it is recorded
+  here and the setup may be corrected and started again;
+- every file the collector writes (samples, warm-up, header) is kept unmodified; no round is trimmed;
+- the power line status is read before and after the run and reported (no other host monitoring).
+
+Correction before collection: the first draft of this file gave a mistyped full SHA for the
+commit; it was replaced with git rev-parse HEAD output before the run started.

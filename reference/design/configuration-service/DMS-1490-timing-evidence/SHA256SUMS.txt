@@ -12,3 +12,13 @@ dceb23dfc37ac2955ad0f2bfc51859a2f4818a72721d82701a058e8f439ef609  4382  step1-ms
 173360c0f6b655317fec0976aefd180b6681c644766575d1f0e211ac2760f946  454737  step1-mssql/step1-endpoint-mssql-20261025T070738Z.csv
 4944bb312736ed8879dc541de0611b12889b3f55f9e6065071ead8c9aa8b4fdb  1745  step1-mssql/step1-endpoint-mssql-20261025T070738Z.json
 e3de33bba566dc37beaa598177812291725b048bcf237dbfefce101cdf6d4ccc  271537  step1-mssql/step1-warmup-endpoint-mssql-20261025T070738Z.csv
+8cbd7d03427e0fdf82e3b3e1c835ad67a26a0556ea3cab7f7dfd30b016ac84a4  522  step2-mssql/SHA256SUMS-raw.txt
+9ae0068d6660abb98553d7d350cce70ea055c62d2844b46182bb1a1ad6f4f6b4  4380  step2-mssql/analysis/analyze-absent-vs-wrong_secret.json
+859f650f79edcac16c001d041df1673f9fe66ce429910f2c072e6375b75cea48  4400  step2-mssql/analysis/analyze-unapproved-vs-wrong_secret.json
+ba6c214d11f7e8445f7f0c08ee00ca27751cd5667fd0eea960b019b9648dd9aa  683  step2-mssql/analysis/commands.log
+127f17bf04b5cd63d24099ce1461d30e76efdc40c7d5efbedbf8eb674f4373d6  10417  step2-mssql/analysis/diagnostics.json
+0a12f31d53f4d73450935c5dd047aaa9f27f252241f7bf24e4a248721f51000a  3164  step2-mssql/pre-registration-mssql.txt
+f9cb15a6f05c552baf7e96f25fc29d4ff20f18bb214e1e5097d35b1f92c61566  793  step2-mssql/run-mssql-20261026T171015Z.log
+b0032f8c2a0530a0c291c58a77cbf1a21281fc500f19cce2cd3a4cbffcfe03a9  448737  step2-mssql/step2-endpoint-mssql-20261026T171034Z.csv
+169ae183a016226beb5071af07c59ed1c74d587e4929a1966b13658ec6496f33  1745  step2-mssql/step2-endpoint-mssql-20261026T171034Z.json
+eb03c28f397e294e556a9d8543fda9f0daafe2257866fd105153f41dc35eba86  267937  step2-mssql/step2-warmup-endpoint-mssql-20261026T171034Z.csv

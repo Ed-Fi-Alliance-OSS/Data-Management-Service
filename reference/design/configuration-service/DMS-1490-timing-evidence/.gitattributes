@@ -2,4 +2,5 @@
 # and in each analysis output, so line endings must not be normalised.
 a5-final/** -text
 step1-mssql/** -text
+step2-mssql/** -text
 SHA256SUMS.txt -text
