@@ -290,6 +290,50 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
         };
     }
 
+    protected async Task<string> ApplicationNameAsync(int applicationId)
+    {
+        var (status, application) = await SendAsync(HttpMethod.Get, $"/v3/applications/{applicationId}");
+        status.Should().Be(HttpStatusCode.OK);
+        return application["applicationName"]!.GetValue<string>();
+    }
+
+    /// <summary>PUTs an Application under its current name unless another is given.</summary>
+    protected async Task<(HttpStatusCode Status, JsonNode Body)> PutApplicationAsync(
+        int applicationId,
+        long[] educationOrganizationIds,
+        string? name = null
+    ) =>
+        await SendAsync(
+            HttpMethod.Put,
+            $"/v3/applications/{applicationId}",
+            $$"""
+            {
+              "id": {{applicationId}},
+              "applicationName": "{{name ?? await ApplicationNameAsync(applicationId)}}",
+              "vendorId": {{VendorId}},
+              "claimSetName": "ClientScopeClaimSet",
+              "educationOrganizationIds": [{{string.Join(", ", educationOrganizationIds)}}],
+              "profileIds": []
+            }
+            """
+        );
+
+    protected async Task<long[]> ApplicationEducationOrganizationIdsAsync(int applicationId)
+    {
+        var (_, application) = await SendAsync(HttpMethod.Get, $"/v3/applications/{applicationId}");
+        return
+        [
+            .. application["educationOrganizationIds"]!.AsArray().Select(id => id!.GetValue<long>()).Order(),
+        ];
+    }
+
+    protected async Task<ReadScope> ReadByIdAsync(int apiClientId)
+    {
+        var (status, apiClient) = await SendAsync(HttpMethod.Get, $"/v3/apiClients/{apiClientId}");
+        status.Should().Be(HttpStatusCode.OK);
+        return ReadScopeOf(apiClient);
+    }
+
     /// <summary>Creates a client and returns its id and identity provider client UUID.</summary>
     protected async Task<(int Id, string ClientUuid)> CreateClientAsync(
         int applicationId,
@@ -1111,5 +1155,194 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
                 .Order()
                 .Should()
                 .Equal(_dataStores[1], _dataStores[2]);
+    }
+
+    [TestFixture]
+    public class Given_application_additions_for_narrowed_first_clients
+        : ApiClientEducationOrganizationApiTests
+    {
+        private const long A5 = 255905;
+        private int _subsetApplication;
+        private int _fullListApplication;
+        private (int Id, string ClientUuid) _subsetClient;
+        private (int Id, string ClientUuid) _fullListClient;
+        private HttpStatusCode _subsetStatus;
+        private HttpStatusCode _fullListStatus;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _subsetApplication = await CreateApplicationAsync("Subset Application", [A1, A2, A3]);
+            _fullListApplication = await CreateApplicationAsync("Full List Application", [A1, A2, A3]);
+            _subsetClient = await CreateClientAsync(_subsetApplication, List(A2));
+            _fullListClient = await CreateClientAsync(_fullListApplication, List(A1, A2, A3));
+
+            (_subsetStatus, _) = await PutApplicationAsync(_subsetApplication, [A1, A2, A3, A5]);
+            (_fullListStatus, _) = await PutApplicationAsync(_fullListApplication, [A1, A2, A3, A5]);
+        }
+
+        [Test]
+        public void It_updates_both_Applications()
+        {
+            _subsetStatus.Should().Be(HttpStatusCode.NoContent);
+            _fullListStatus.Should().Be(HttpStatusCode.NoContent);
+        }
+
+        [Test]
+        public void It_sends_each_first_client_its_unchanged_narrowed_claim()
+        {
+            ClaimsSentFor(_subsetClient.ClientUuid).Should().Equal("255902");
+            ClaimsSentFor(_fullListClient.ClientUuid).Should().Equal("255901,255902,255903");
+        }
+
+        [Test]
+        public async Task It_keeps_each_client_narrowed_without_the_added_id()
+        {
+            ShouldMatch(await ClientScopeAsync(_subsetClient.Id), Scope(_subsetApplication, false, A2));
+            ShouldMatch(
+                await ClientScopeAsync(_fullListClient.Id),
+                Scope(_fullListApplication, false, A1, A2, A3)
+            );
+            (await ReadByIdAsync(_fullListClient.Id))
+                .Should()
+                .BeEquivalentTo(new ReadScope(false, [A1, A2, A3]), o => o.WithStrictOrdering());
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_application_removal_that_empties_a_narrowed_first_client
+        : ApiClientEducationOrganizationApiTests
+    {
+        private (int Id, string ClientUuid) _client;
+        private HttpStatusCode _status;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = await CreateClientAsync(ApplicationA, List(A2));
+            (_status, _) = await PutApplicationAsync(ApplicationA, [A1, A3]);
+        }
+
+        [Test]
+        public void It_updates_the_Application() => _status.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_sends_an_empty_claim() => ClaimsSentFor(_client.ClientUuid).Should().Equal("");
+
+        [Test]
+        public async Task It_leaves_the_client_narrowed_to_nothing_and_approved()
+        {
+            ShouldMatch(await ClientScopeAsync(_client.Id), Scope(ApplicationA, false));
+            var (_, apiClient) = await SendAsync(HttpMethod.Get, $"/v3/apiClients/{_client.Id}");
+            ReadScopeOf(apiClient).Should().BeEquivalentTo(new ReadScope(false, []));
+            apiClient["isApproved"]!.GetValue<bool>().Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_application_addition_for_an_inheriting_first_client_with_lagging_rows
+        : ApiClientEducationOrganizationApiTests
+    {
+        private const long A5 = 255905;
+        private const long A6 = 255906;
+        private (int Id, string ClientUuid) _client;
+        private HttpStatusCode _status;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = await CreateClientAsync(ApplicationA);
+
+            // An earlier addition already left the client's rows behind its Application
+            await AddApplicationEducationOrganizationAsync(ApplicationA, A5);
+            (_status, _) = await PutApplicationAsync(ApplicationA, [A1, A2, A3, A5, A6]);
+        }
+
+        [Test]
+        public void It_updates_the_Application() => _status.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_sends_the_requested_list() =>
+            ClaimsSentFor(_client.ClientUuid).Should().Equal("255901,255902,255903,255905,255906");
+
+        [Test]
+        public async Task It_keeps_the_client_rows_and_returns_the_full_effective_list()
+        {
+            ShouldMatch(await ClientScopeAsync(_client.Id), Scope(ApplicationA, true, A1, A2, A3));
+            (await ReadByIdAsync(_client.Id))
+                .Should()
+                .BeEquivalentTo(new ReadScope(true, [A1, A2, A3, A5, A6]), o => o.WithStrictOrdering());
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_application_addition_with_a_narrowed_first_client_and_an_inheriting_second_client
+        : ApiClientEducationOrganizationApiTests
+    {
+        private const long A5 = 255905;
+        private (int Id, string ClientUuid) _first;
+        private (int Id, string ClientUuid) _second;
+        private HttpStatusCode _status;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _first = await CreateClientAsync(ApplicationA, List(A2));
+            _second = await CreateClientAsync(ApplicationA);
+            (_status, _) = await PutApplicationAsync(ApplicationA, [A1, A2, A3, A5]);
+        }
+
+        [Test]
+        public void It_updates_the_Application() => _status.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_sends_only_the_first_client_its_narrowed_claim() =>
+            ProviderUpdates.Should().Equal(new ProviderUpdate(_first.ClientUuid, "255902"));
+
+        [Test]
+        public async Task It_keeps_the_first_client_narrowed() =>
+            (await ReadByIdAsync(_first.Id)).Should().BeEquivalentTo(new ReadScope(false, [A2]));
+
+        [Test]
+        public async Task It_reports_the_second_client_inheriting_the_new_list() =>
+            (await ReadByIdAsync(_second.Id))
+                .Should()
+                .BeEquivalentTo(new ReadScope(true, [A1, A2, A3, A5]), o => o.WithStrictOrdering());
+    }
+
+    [TestFixture]
+    public class Given_an_application_update_that_fails_after_the_narrowed_first_client_provider_update
+        : ApiClientEducationOrganizationApiTests
+    {
+        private const long A5 = 255905;
+        private (int Id, string ClientUuid) _client;
+        private (HttpStatusCode Status, JsonNode Body) _response;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _client = await CreateClientAsync(ApplicationA, List(A2));
+
+            // Application names are checked only by the save, after the provider update
+            _response = await PutApplicationAsync(
+                ApplicationA,
+                [A1, A2, A3, A5],
+                await ApplicationNameAsync(ApplicationB)
+            );
+        }
+
+        [Test]
+        public void It_reports_the_duplicate_name() => ShouldBeDataValidation(_response, "ApplicationName");
+
+        [Test]
+        public void It_restores_the_original_narrowed_claim() =>
+            ClaimsSentFor(_client.ClientUuid).Should().Equal("255902", "255902");
+
+        [Test]
+        public async Task It_leaves_the_Application_and_the_client_scope()
+        {
+            (await ApplicationEducationOrganizationIdsAsync(ApplicationA)).Should().Equal(A1, A2, A3);
+            ShouldMatch(await ClientScopeAsync(_client.Id), Scope(ApplicationA, false, A2));
+        }
     }
 }

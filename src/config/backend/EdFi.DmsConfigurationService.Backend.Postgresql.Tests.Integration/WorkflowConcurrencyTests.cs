@@ -341,6 +341,8 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                                     state.ClientId,
                                     state.ClientUuid,
                                     true,
+                                    [1],
+                                    true,
                                     [1]
                                 )
                             )

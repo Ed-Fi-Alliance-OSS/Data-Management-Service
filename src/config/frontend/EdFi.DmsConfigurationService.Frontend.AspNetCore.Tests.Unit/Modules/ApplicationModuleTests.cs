@@ -62,7 +62,9 @@ public partial class ApplicationModuleTests
                         "clientId",
                         Guid.NewGuid(),
                         true,
-                        [1]
+                        [1],
+                        true,
+                        [9]
                     )
                 )
             );
@@ -1088,7 +1090,9 @@ public partial class ApplicationModuleTests
                             "clientId",
                             originalUuid,
                             true,
-                            [1]
+                            [1],
+                            true,
+                            [9]
                         )
                     )
                 );
@@ -1467,7 +1471,9 @@ public partial class ApplicationModuleTests
                 "clientId",
                 originalUuid,
                 true,
-                [42]
+                [42],
+                true,
+                [9]
             );
 
             A.CallTo(() =>
@@ -1979,7 +1985,9 @@ public partial class ApplicationModuleTests
                             "clientId",
                             originalUuid,
                             true,
-                            [1]
+                            [1],
+                            true,
+                            [9]
                         )
                     )
                 );
@@ -2146,16 +2154,17 @@ public partial class ApplicationModuleTests
     public abstract class UpdateRollbackTestBase : ApplicationModuleTests
     {
         // DataStoreIds is intentionally stale: it models a caller written before the update stopped applying it.
-        private const string UpdateRequestBody = """
-            {
-                "Id": 1,
-                "ApplicationName": "Test Application",
-                "ClaimSetName": "TestClaimSet",
-                "VendorId": 1,
-                "EducationOrganizationIds": [1],
-                "DataStoreIds": [1]
-            }
-            """;
+        private static string UpdateRequestBody(long[] educationOrganizationIds) =>
+            $$"""
+                {
+                    "Id": 1,
+                    "ApplicationName": "Test Application",
+                    "ClaimSetName": "TestClaimSet",
+                    "VendorId": 1,
+                    "EducationOrganizationIds": [{{string.Join(", ", educationOrganizationIds)}}],
+                    "DataStoreIds": [1]
+                }
+                """;
 
         private HttpClient _client = null!;
         protected HttpResponseMessage _updateResponse = null!;
@@ -2175,7 +2184,9 @@ public partial class ApplicationModuleTests
                 "clientId",
                 _originalClientUuid,
                 true,
-                [1]
+                [1],
+                true,
+                [9]
             );
 
             // A replacement UUID the provider reports is unreferenced unless a fixture says
@@ -2229,14 +2240,220 @@ public partial class ApplicationModuleTests
             _client?.Dispose();
         }
 
-        protected async Task ActUpdateAsync(Action<IServiceCollection>? configureServices = null)
+        protected async Task ActUpdateAsync(
+            Action<IServiceCollection>? configureServices = null,
+            long[]? educationOrganizationIds = null
+        )
         {
             _client = SetUpClient(configureServices: configureServices);
             _updateResponse = await _client.PutAsync(
                 "/v3/applications/1",
-                new StringContent(UpdateRequestBody, Encoding.UTF8, "application/json")
+                new StringContent(
+                    UpdateRequestBody(educationOrganizationIds ?? [1]),
+                    Encoding.UTF8,
+                    "application/json"
+                )
             );
         }
+    }
+
+    /// <summary>
+    /// An Application update whose repository write throws, so its outcome is resolved from the
+    /// authoritative state, for a first client with its own education organization scope. The
+    /// provider updates the client in place and records each claim it is sent.
+    /// </summary>
+    public abstract class ScopedFirstClientUpdateTestBase : UpdateRollbackTestBase
+    {
+        protected List<string> _sentClaims = null!;
+
+        [SetUp]
+        public void SetUpScopedFirstClientDefaults()
+        {
+            _sentClaims = [];
+            A.CallTo(() =>
+                    _clientRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _sentClaims.Add(call.GetArgument<string>(3)!))
+                .ReturnsLazily(call =>
+                    Task.FromResult<ClientUpdateResult>(
+                        new ClientUpdateResult.Success(Guid.Parse(call.GetArgument<string>(0)!))
+                    )
+                );
+            A.CallTo(() =>
+                    _applicationRepository.UpdateApplication(
+                        A<ApplicationUpdateCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Throws(new InvalidOperationException("ambiguous"));
+        }
+
+        /// <summary>The client's original state on an Application holding the given ids.</summary>
+        protected ApplicationUpdateState Original(long[] applicationIds, bool inherits, long[] storedIds) =>
+            new(
+                "Test Application",
+                1,
+                "TestClaimSet",
+                applicationIds,
+                [],
+                "clientId",
+                _originalClientUuid,
+                true,
+                [1],
+                inherits,
+                storedIds
+            );
+
+        protected Task ActScopedUpdateAsync(
+            ApplicationUpdateState original,
+            ApplicationUpdateState resolved,
+            long[] requestedIds
+        )
+        {
+            A.CallTo(() =>
+                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
+                )
+                .ReturnsNextFromSequence(
+                    new ApplicationUpdateStateResult.Success(original),
+                    new ApplicationUpdateStateResult.Success(resolved)
+                );
+            return ActUpdateAsync(educationOrganizationIds: requestedIds);
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_application_addition_whose_ambiguous_write_committed_for_a_narrowed_first_client
+        : ScopedFirstClientUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            var original = Original([1, 2, 3], false, [2]);
+            await ActScopedUpdateAsync(
+                original,
+                original with
+                {
+                    EducationOrganizationIds = [1, 2, 3, 4],
+                },
+                [1, 2, 3, 4]
+            );
+        }
+
+        [Test]
+        public void It_returns_the_recovered_success() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_sends_only_the_narrowed_list_without_compensation() => _sentClaims.Should().Equal("2");
+    }
+
+    [TestFixture]
+    public class Given_an_application_addition_whose_ambiguous_write_did_not_commit_for_a_narrowed_first_client
+        : ScopedFirstClientUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            var original = Original([1, 2, 3], false, [2]);
+            await ActScopedUpdateAsync(original, original, [1, 2, 3, 4]);
+        }
+
+        [Test]
+        public async Task It_returns_an_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, "ambiguous");
+
+        [Test]
+        public void It_restores_the_original_narrowed_claim() => _sentClaims.Should().Equal("2", "2");
+    }
+
+    [TestFixture]
+    public class Given_an_application_update_whose_ambiguous_write_left_a_partial_client_scope
+        : ScopedFirstClientUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            // The Application fields committed, but the client's rows gained an added id
+            var original = Original([1, 2, 3], false, [2]);
+            await ActScopedUpdateAsync(
+                original,
+                original with
+                {
+                    EducationOrganizationIds = [1, 2, 3, 4],
+                    ClientStoredEducationOrganizationIds = [2, 4],
+                },
+                [1, 2, 3, 4]
+            );
+        }
+
+        [Test]
+        public async Task It_returns_an_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, "ambiguous");
+
+        [Test]
+        public void It_performs_no_compensation() => _sentClaims.Should().Equal("2");
+    }
+
+    [TestFixture]
+    public class Given_an_application_addition_whose_ambiguous_write_committed_for_an_inheriting_first_client_with_lagging_rows
+        : ScopedFirstClientUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            // The client's rows already lag its Application's 2, and the save adds no row for 3
+            var original = Original([1, 2], true, [1]);
+            await ActScopedUpdateAsync(
+                original,
+                original with
+                {
+                    EducationOrganizationIds = [1, 2, 3],
+                },
+                [1, 2, 3]
+            );
+        }
+
+        [Test]
+        public void It_returns_the_recovered_success() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_sends_the_requested_list() => _sentClaims.Should().Equal("1,2,3");
+    }
+
+    [TestFixture]
+    public class Given_an_application_removal_whose_ambiguous_write_committed_for_a_narrowed_first_client
+        : ScopedFirstClientUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            var original = Original([1, 2, 3], false, [2]);
+            await ActScopedUpdateAsync(
+                original,
+                original with
+                {
+                    EducationOrganizationIds = [1, 3],
+                    ClientStoredEducationOrganizationIds = [],
+                },
+                [1, 3]
+            );
+        }
+
+        [Test]
+        public void It_returns_the_recovered_success() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_sends_an_empty_claim() => _sentClaims.Should().Equal("");
     }
 
     protected static async Task AssertSanitizedInternalServerError(
@@ -5265,7 +5482,20 @@ public partial class ApplicationModuleTests
         }
 
         protected ApplicationUpdateState CommandMatchingState() =>
-            new("Test Application", 1, "TestClaimSet", [1], [], "clientId", _updatedUuid, true, [1]);
+            // The save removed the original 9 from the client's rows and added none
+            new(
+                "Test Application",
+                1,
+                "TestClaimSet",
+                [1],
+                [],
+                "clientId",
+                _updatedUuid,
+                true,
+                [1],
+                true,
+                []
+            );
     }
 
     [TestFixture]
@@ -5506,7 +5736,9 @@ public partial class ApplicationModuleTests
                 "clientId",
                 _originalClientUuid,
                 true,
-                [1]
+                [1],
+                true,
+                [9]
             );
             A.CallTo(() =>
                     _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)

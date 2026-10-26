@@ -881,6 +881,40 @@ public class ApplicationModule : IEndpointModule
                             return FailureResults.Unknown(httpContext.TraceIdentifier);
                     }
 
+                    // The client keeps its own scope. An inheriting client's claim follows the
+                    // requested list; a narrowed client's claim is its list less the removed
+                    // education organizations, and never gains added ones. The save only applies
+                    // the list's differences, so the client's rows lose removed ids and gain none.
+                    long[] requestedEducationOrganizationIds =
+                    [
+                        .. command.EducationOrganizationIds.Distinct().Order(),
+                    ];
+                    string updatedClaim = string.Join(
+                        ",",
+                        originalState.ClientInheritsApplicationEducationOrganizations
+                            ? requestedEducationOrganizationIds
+                            :
+                            [
+                                .. originalState
+                                    .ClientStoredEducationOrganizationIds.Intersect(
+                                        requestedEducationOrganizationIds
+                                    )
+                                    .Order(),
+                            ]
+                    );
+                    string originalClaim = string.Join(
+                        ",",
+                        originalState.ClientInheritsApplicationEducationOrganizations
+                            ? originalState.EducationOrganizationIds.Distinct().Order()
+                            : originalState.ClientStoredEducationOrganizationIds.Order()
+                    );
+                    long[] expectedStoredEducationOrganizationIds =
+                    [
+                        .. originalState.ClientStoredEducationOrganizationIds.Intersect(
+                            requestedEducationOrganizationIds
+                        ),
+                    ];
+
                     logger.LogInformation("Updating client {ClientId}", originalState.ClientId);
                     // The client's existing data stores are re-sent unchanged: data store
                     // assignment is per client (PUT /v3/apiClients/{id}), and a null set would
@@ -889,7 +923,7 @@ public class ApplicationModule : IEndpointModule
                         originalState.ClientUuid.ToString(),
                         command.ApplicationName,
                         command.ClaimSetName,
-                        string.Join(",", command.EducationOrganizationIds),
+                        updatedClaim,
                         originalState.ClientDataStoreIds,
                         originalState.IsApproved,
                         identitySettings.Value.ClientRole
@@ -951,7 +985,7 @@ public class ApplicationModule : IEndpointModule
                                         updateSuccess.ClientUuid.ToString(),
                                         originalState.ApplicationName,
                                         originalState.ClaimSetName,
-                                        string.Join(",", originalState.EducationOrganizationIds),
+                                        originalClaim,
                                         originalState.ClientDataStoreIds,
                                         originalState.IsApproved,
                                         identitySettings.Value.ClientRole
@@ -1158,7 +1192,13 @@ public class ApplicationModule : IEndpointModule
                                 && SetEquals(resolved.ClientDataStoreIds, originalState.ClientDataStoreIds)
                                 && resolved.ClientId == originalState.ClientId
                                 && resolved.IsApproved == originalState.IsApproved
-                                && resolved.ClientUuid == updateSuccess.ClientUuid;
+                                && resolved.ClientUuid == updateSuccess.ClientUuid
+                                && resolved.ClientInheritsApplicationEducationOrganizations
+                                    == originalState.ClientInheritsApplicationEducationOrganizations
+                                && SetEquals(
+                                    resolved.ClientStoredEducationOrganizationIds,
+                                    expectedStoredEducationOrganizationIds
+                                );
 
                             bool MatchesOriginal(ApplicationUpdateState resolved) =>
                                 resolved.ApplicationName == originalState.ApplicationName
@@ -1172,7 +1212,13 @@ public class ApplicationModule : IEndpointModule
                                 && SetEquals(resolved.ClientDataStoreIds, originalState.ClientDataStoreIds)
                                 && resolved.ClientId == originalState.ClientId
                                 && resolved.IsApproved == originalState.IsApproved
-                                && resolved.ClientUuid == originalState.ClientUuid;
+                                && resolved.ClientUuid == originalState.ClientUuid
+                                && resolved.ClientInheritsApplicationEducationOrganizations
+                                    == originalState.ClientInheritsApplicationEducationOrganizations
+                                && SetEquals(
+                                    resolved.ClientStoredEducationOrganizationIds,
+                                    originalState.ClientStoredEducationOrganizationIds
+                                );
 
                             // An unknown or thrown repository outcome is resolved with the
                             // authoritative row-locking read, which waits out any in-flight
