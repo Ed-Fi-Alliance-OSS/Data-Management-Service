@@ -441,7 +441,7 @@ public class ApplicationModuleTests
                   "correlationId": "{correlationId}",
                   "validationErrors": {
                     "ApplicationName": [
-                      "The length of 'Application Name' must be 256 characters or fewer. You entered 266 characters."
+                      "The length of 'Application Name' must be 50 characters or fewer. You entered 266 characters."
                     ],
                     "ClaimSetName": [
                       "'Claim Set Name' must not be empty."
