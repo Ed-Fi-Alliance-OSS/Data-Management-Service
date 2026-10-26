@@ -101,7 +101,7 @@ public class Given_Canonical_Stored_Column_Resolution
 }
 
 /// <summary>
-/// Pure-function tests for selecting the single hash-element column out of a same-site logical
+/// Pure-function tests for selecting the single identity-element column out of a same-site logical
 /// reference field group, where key unification can fan one identity JSON path out to multiple
 /// physical member columns that all share one canonical storage column.
 /// </summary>
@@ -165,7 +165,7 @@ public class Given_Key_Unified_Identity_Element_Column_Selection
     }
 
     /// <summary>
-    /// It should throw for an empty member column list, because an identity hash element must be
+    /// It should throw for an empty member column list, because an identity element must be
     /// represented by at least one column.
     /// </summary>
     [Test]
@@ -222,7 +222,7 @@ public class Given_Key_Unified_Identity_Element_Column_Selection
 
     /// <summary>
     /// It should throw when members resolve to different canonical storage columns, because multiple
-    /// stored values for one identity JSON path cannot be collapsed into a single hash element.
+    /// stored values for one identity JSON path cannot be collapsed into a single identity element.
     /// </summary>
     [Test]
     public void It_should_throw_when_members_resolve_to_different_canonical_columns()

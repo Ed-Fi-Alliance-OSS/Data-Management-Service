@@ -255,9 +255,10 @@ initializer: at compatibility level 90 or above, `ANSI_WARNINGS ON` implies effe
 provisioning-only settings do not survive onto runtime connections.
 
 DMS DDL emits no `dms.ReferentialIdentity` table, no referential-identity triggers or functions,
-no PostgreSQL `dms.uuidv5()` function and no `pgcrypto` extension. Resource POST upsert existence
-detection uses the own-natural-key capture, descriptor writes use the lowered-URI probe, and
-reference resolution and descriptor filters use the lowered-URI probes described in
+no `dms.uuidv5()` function on either engine and no PostgreSQL `pgcrypto` extension. Resource
+POST upsert existence detection uses the own-natural-key capture, descriptor writes use the
+lowered-URI probe, and reference resolution and descriptor filters use the lowered-URI probes
+described in
 [natural-key-resolution.md](natural-key-resolution.md).
 
 `IX_Descriptor_ResourceKeyId_DocumentId` remains core-owned;
