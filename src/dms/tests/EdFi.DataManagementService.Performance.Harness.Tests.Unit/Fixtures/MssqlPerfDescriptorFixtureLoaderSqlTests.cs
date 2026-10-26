@@ -68,4 +68,21 @@ public class Given_The_Mssql_Descriptor_Loader_Sql
                     .Select(query => (query.Name, query.ExpectedValue))
             );
     }
+
+    [Test]
+    public void It_compares_code_value_bytes_so_trailing_spaces_fail()
+    {
+        PerfVerificationQuery uriShape = MssqlPerfDescriptorFixtureLoaderSql
+            .VerificationQueries(
+                new PerfDescriptorFixtureDefinition(PerfDescriptorFixtureKind.Descriptors25k)
+            )
+            .Single(query => query.Name == "uri-shape-count");
+
+        uriShape.Sql.Should().Contain("CAST(r.[CodeValue] AS varbinary(100))");
+        uriShape
+            .Sql.Should()
+            .Contain(
+                "= CAST(N'perf-' + RIGHT(REPLICATE(N'0', 9) + CAST(r.[DocumentId] AS nvarchar(19)), 9) AS varbinary(100))"
+            );
+    }
 }

@@ -123,7 +123,9 @@ public static class MssqlPerfDescriptorFixtureLoaderSql
                 INNER JOIN [dms].[ResourceKey] rk ON rk.[ResourceKeyId] = r.[ResourceKeyId]
                 WHERE rk.[ProjectName] = '{PerfDescriptorFixtureDefinition.ProjectName}'
                     AND rk.[ResourceName] = '{PerfDescriptorFixtureDefinition.ResourceName}'
-                    AND r.[CodeValue] = 'perf-' + RIGHT(REPLICATE('0', 9) + CAST(r.[DocumentId] AS varchar(19)), 9)
+                    -- SQL Server's = ignores trailing spaces, so the CodeValue bytes are compared
+                    AND CAST(r.[CodeValue] AS varbinary(100))
+                        = CAST(N'perf-' + RIGHT(REPLICATE(N'0', 9) + CAST(r.[DocumentId] AS nvarchar(19)), 9) AS varbinary(100))
                     AND r.[Uri]
                         = CASE WHEN r.[DocumentId] % 2 = 1 THEN N'{PerfDescriptorFixtureDefinition.AccessibleNamespace}' ELSE N'{PerfDescriptorFixtureDefinition.InaccessibleNamespace}' END
                             + N'#perf-' + RIGHT(REPLICATE('0', 9) + CAST(r.[DocumentId] AS varchar(19)), 9);
