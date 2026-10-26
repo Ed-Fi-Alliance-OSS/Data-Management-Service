@@ -130,18 +130,20 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
                 // intermediate rename uncarried, and cut the rest instead of failing: fewer
                 // cascades never violate SQL Server's single-cascade-path rule, and no reachable
                 // update is left uncovered. The rescue waives only the origin's own rename; an
-                // intermediate rename can still happen. The shared-FK check is unnecessary because
-                // no earlier decision assigned an action to these edges. The scan never wraps, so
+                // intermediate rename can still happen. The shared-FK check never fires here
+                // because no earlier decision assigned an action to these edges. The scan never wraps, so
                 // once backtracking has advanced startIndex past the last candidate, or no
                 // candidate passes, derivation fails deterministically. Genuinely mutable origins
                 // still fail here.
                 if (immutableAbstractOrigins.Contains(origin))
                 {
-                    var (rescueIndex, coverageFailure) = TrySelectRescueSurvivor(
+                    var (rescueIndex, coverageFailure) = TrySelectSurvivor(
                         convergence,
                         startIndex,
                         origin,
-                        mutableOrigins
+                        mutableOrigins,
+                        retainedEdgeCounts,
+                        waiveOriginRename: true
                     );
 
                     if (rescueIndex >= 0)
@@ -238,14 +240,17 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     /// earlier decision (one physical constraint has one action; reversing an earlier retained
     /// cascade is a shared-FK action conflict resolved only through retry), leaves no directly
     /// mutable intermediate rename uncarried, and passes the structural safe-cut test, or
-    /// (-1, first failed condition) when none qualifies.
+    /// (-1, first failed condition) when none qualifies. The immutable-origin rescue sets
+    /// <paramref name="waiveOriginRename"/> to skip only the safe-cut test, because that origin
+    /// cannot rename; intermediate coverage still applies.
     /// </summary>
     private static (int SurvivorIndex, string? FirstFailedCondition) TrySelectSurvivor(
         ConvergenceDiscovery convergence,
         int startIndex,
         string origin,
         IReadOnlySet<string> mutableOrigins,
-        IReadOnlyDictionary<PruningEdgeKey, int> retainedEdgeCounts
+        IReadOnlyDictionary<PruningEdgeKey, int> retainedEdgeCounts,
+        bool waiveOriginRename = false
     )
     {
         string? firstFailedCondition = null;
@@ -277,56 +282,18 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
                         convergence.PredecessorEdgeByVertex,
                         origin,
                         mutableOrigins
-                    ) ?? EvaluateSafeCut(cut, survivor, convergence.PredecessorEdgeByVertex, origin);
+                    )
+                    ?? (
+                        waiveOriginRename
+                            ? null
+                            : EvaluateSafeCut(cut, survivor, convergence.PredecessorEdgeByVertex, origin)
+                    );
 
                 if (failure is not null)
                 {
                     break;
                 }
             }
-
-            if (failure is null)
-            {
-                return (index, null);
-            }
-
-            firstFailedCondition ??= failure;
-        }
-
-        return (-1, firstFailedCondition);
-    }
-
-    /// <summary>
-    /// The immutable-origin rescue's survivor choice: tries survivor choices in stable order
-    /// starting at the given index and returns the first whose competing incoming edges all pass
-    /// <see cref="EvaluateIntermediateCoverage"/>, or (-1, first failed condition) when none
-    /// qualifies or no choice remains. The origin's own rename checks are waived because the
-    /// origin cannot rename.
-    /// </summary>
-    private static (int SurvivorIndex, string? FirstFailedCondition) TrySelectRescueSurvivor(
-        ConvergenceDiscovery convergence,
-        int startIndex,
-        string origin,
-        IReadOnlySet<string> mutableOrigins
-    )
-    {
-        string? firstFailedCondition = null;
-
-        for (var index = startIndex; index < convergence.IncomingChoices.Count; index++)
-        {
-            var survivor = convergence.IncomingChoices[index];
-            var failure = convergence
-                .IncomingChoices.Where(cut => !ReferenceEquals(cut, survivor))
-                .Select(cut =>
-                    EvaluateIntermediateCoverage(
-                        cut,
-                        survivor,
-                        convergence.PredecessorEdgeByVertex,
-                        origin,
-                        mutableOrigins
-                    )
-                )
-                .FirstOrDefault(condition => condition is not null);
 
             if (failure is null)
             {
