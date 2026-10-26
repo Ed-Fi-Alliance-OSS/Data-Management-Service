@@ -153,48 +153,53 @@ public class ApplicationRepository(
 
             await connection.ExecuteAsync(sql, educationOrganizations, transaction);
 
-            sql = """
-                INSERT INTO "dmscs"."ApiClient" ("ApplicationId", "ClientId", "ClientUuid", "Name", "IsApproved", "CreatedBy")
-                VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved, @CreatedBy)
-                RETURNING "Id";
-                """;
-
-            int apiClientId = await connection.ExecuteScalarAsync<int>(
-                sql,
-                new
-                {
-                    ApplicationId = id,
-                    clientCommand.ClientId,
-                    clientCommand.ClientUuid,
-                    Name = command.ApplicationName,
-                    IsApproved = true,
-                    CreatedBy = currentUser,
-                },
-                transaction
-            );
-
-            if (command.DataStoreIds.Length > 0)
+            // Without default credentials the Application is created with no API client, so
+            // there is no client row for data store assignments to attach to.
+            if (command.CreateDefaultCredentials)
             {
-                if (!await AllDataStoresInTenant(connection, transaction, command.DataStoreIds))
-                {
-                    logger.LogWarning("Data store not found");
-                    await transaction.RollbackAsync();
-                    return new ApplicationInsertResult.FailureDataStoreNotFound();
-                }
-
                 sql = """
-                    INSERT INTO "dmscs"."ApiClientDataStore" ("ApiClientId", "DataStoreId", "CreatedBy")
-                    VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
+                    INSERT INTO "dmscs"."ApiClient" ("ApplicationId", "ClientId", "ClientUuid", "Name", "IsApproved", "CreatedBy")
+                    VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved, @CreatedBy)
+                    RETURNING "Id";
                     """;
 
-                var dataStoreMappings = command.DataStoreIds.Select(dataStoreId => new
-                {
-                    ApiClientId = apiClientId,
-                    DataStoreId = dataStoreId,
-                    CreatedBy = currentUser,
-                });
+                int apiClientId = await connection.ExecuteScalarAsync<int>(
+                    sql,
+                    new
+                    {
+                        ApplicationId = id,
+                        clientCommand.ClientId,
+                        clientCommand.ClientUuid,
+                        Name = command.ApplicationName,
+                        IsApproved = true,
+                        CreatedBy = currentUser,
+                    },
+                    transaction
+                );
 
-                await connection.ExecuteAsync(sql, dataStoreMappings, transaction);
+                if (command.DataStoreIds.Length > 0)
+                {
+                    if (!await AllDataStoresInTenant(connection, transaction, command.DataStoreIds))
+                    {
+                        logger.LogWarning("Data store not found");
+                        await transaction.RollbackAsync();
+                        return new ApplicationInsertResult.FailureDataStoreNotFound();
+                    }
+
+                    sql = """
+                        INSERT INTO "dmscs"."ApiClientDataStore" ("ApiClientId", "DataStoreId", "CreatedBy")
+                        VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
+                        """;
+
+                    var dataStoreMappings = command.DataStoreIds.Select(dataStoreId => new
+                    {
+                        ApiClientId = apiClientId,
+                        DataStoreId = dataStoreId,
+                        CreatedBy = currentUser,
+                    });
+
+                    await connection.ExecuteAsync(sql, dataStoreMappings, transaction);
+                }
             }
 
             if (command.ProfileIds.Length > 0)
@@ -367,7 +372,7 @@ public class ApplicationRepository(
             string outerOrderByClause = BuildOrderByClause(query, "a");
             string sql = $"""
                 SELECT a."Id", a."ApplicationName", a."VendorId", a."ClaimSetName",
-                       (SELECT COALESCE(BOOL_AND(ac2."IsApproved"), true)
+                       (SELECT COALESCE(BOOL_AND(ac2."IsApproved"), false)
                         FROM "dmscs"."ApiClient" ac2
                         WHERE ac2."ApplicationId" = a."Id") AS "Enabled",
                        e."EducationOrganizationId", acd."DataStoreId", ap."ProfileId"
@@ -446,7 +451,7 @@ public class ApplicationRepository(
         {
             string sql = $"""
                 SELECT a."Id", a."ApplicationName", a."VendorId", a."ClaimSetName",
-                       (SELECT COALESCE(BOOL_AND(ac2."IsApproved"), true)
+                       (SELECT COALESCE(BOOL_AND(ac2."IsApproved"), false)
                         FROM "dmscs"."ApiClient" ac2
                         WHERE ac2."ApplicationId" = a."Id") AS "Enabled",
                        e."EducationOrganizationId", acd."DataStoreId", ap."ProfileId"
