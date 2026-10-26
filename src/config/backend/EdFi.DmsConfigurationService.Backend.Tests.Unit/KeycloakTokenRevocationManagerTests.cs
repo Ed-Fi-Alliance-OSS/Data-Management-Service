@@ -74,11 +74,12 @@ public class KeycloakTokenRevocationManagerTests
     protected Task<TokenRevocationResult> Revoke(
         TokenTypeHint hint = TokenTypeHint.None,
         CancellationToken cancellationToken = default,
-        string clientSecret = CallerSecret
+        string clientSecret = CallerSecret,
+        string clientId = CallerClientId
     ) =>
         CreateManager()
             .RevokeTokenAsync(
-                new TokenRevocationRequest(CallerClientId, clientSecret, Token, hint),
+                new TokenRevocationRequest(clientId, clientSecret, Token, hint),
                 cancellationToken
             );
 
@@ -339,6 +340,126 @@ public class KeycloakTokenRevocationManagerTests
 
         [Test]
         public void It_sends_no_revoke_request() => _handler.Requests.Should().BeEmpty();
+    }
+
+    protected const string LongClientIdSentinel = "LONG-CLIENT-ID-SENTINEL";
+
+    /// <summary>A client id of <paramref name="length"/> characters that starts with a sentinel.</summary>
+    protected static string ClientIdOfLength(int length) =>
+        LongClientIdSentinel + new string('c', length - LongClientIdSentinel.Length);
+
+    /// <summary>
+    /// 255 characters is the longest client id Keycloak can hold (observed on 26.1.4 and 26.7.5), so a
+    /// client id of that length still goes through the client-type lookup.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_id_of_keycloaks_maximum_length : KeycloakTokenRevocationManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            GateAnswers(ConfidentialClient(ClientIdOfLength(255)));
+            _result = await Revoke(clientId: ClientIdOfLength(255));
+        }
+
+        [Test]
+        public void It_reads_the_client_type() =>
+            A.CallTo(() =>
+                    _facade.GetClientsByClientIdAsync(
+                        A<string>._,
+                        ClientIdOfLength(255),
+                        A<TimeSpan>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_revokes() => _handler.Requests.Should().ContainSingle();
+
+        [Test]
+        public void It_completes() => _result.Should().Be(new TokenRevocationResult.Completed());
+    }
+
+    /// <summary>
+    /// Each length with what the admin API answers its client-type lookup: no client just past the
+    /// maximum, and 414 once the id makes the lookup URL too long (past 32718 characters).
+    /// </summary>
+    public static IEnumerable<TestFixtureData> ClientIdsLongerThanKeycloaksMaximum()
+    {
+        yield return new TestFixtureData(256, null).SetArgDisplayNames("256 characters");
+        yield return new TestFixtureData(32719, FlurlStatusException(414)).SetArgDisplayNames(
+            "too long for the lookup URL"
+        );
+    }
+
+    /// <summary>
+    /// A longer client id names no Keycloak client, so it is refused without the client-type lookup or
+    /// the revoke request, and the caller-sized value never reaches a log.
+    /// </summary>
+    [TestFixtureSource(
+        typeof(KeycloakTokenRevocationManagerTests),
+        nameof(ClientIdsLongerThanKeycloaksMaximum)
+    )]
+    public class Given_a_client_id_longer_than_keycloaks_maximum(int length, Exception? lookupFailure)
+        : KeycloakTokenRevocationManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            if (lookupFailure is null)
+            {
+                GateAnswers();
+            }
+            else
+            {
+                GateThrows(lookupFailure);
+            }
+
+            _result = await Revoke(clientId: ClientIdOfLength(length));
+        }
+
+        [Test]
+        public void It_is_an_invalid_client() =>
+            _result.Should().Be(new TokenRevocationResult.InvalidClient());
+
+        [Test]
+        public void It_reads_no_client_type() =>
+            A.CallTo(() =>
+                    _facade.GetClientsByClientIdAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<TimeSpan>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_sends_no_revoke_request() => _handler.Requests.Should().BeEmpty();
+
+        [Test]
+        public void It_logs_the_refusal_once_at_information() =>
+            _logger
+                .Entries.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<KeycloakCapturedLogEntry>(entry =>
+                    entry.Level == LogLevel.Information
+                    && entry.Message
+                        == "Revocation refused: the client id is longer than any Keycloak client id"
+                );
+
+        [Test]
+        public void It_logs_neither_the_client_id_the_token_nor_the_secret()
+        {
+            _logger.AllText().Should().NotContain(LongClientIdSentinel);
+            AssertNoDisclosure();
+        }
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -836,6 +957,119 @@ public class KeycloakTokenRevocationManagerTests
             KeycloakTokenRevocationManager
                 .OwnershipMismatchDescription.Should()
                 .Be(OwnershipMismatchDescriptionFromEvidence);
+    }
+
+    /// <summary>
+    /// Keycloak's answer to a form value over its form attribute limit (128 KiB by default), recorded on
+    /// 26.1.4 and 26.7.5 with valid and wrong credentials alike: it rejects the body before it
+    /// authenticates the caller.
+    /// </summary>
+    protected const string FormLimitAnswer = """{"error":"HTTP 413 Request Entity Too Large"}""";
+
+    public static IEnumerable<TestFixtureData> TooLargeAnswers()
+    {
+        yield return new TestFixtureData(FormLimitAnswer).SetArgDisplayNames("recorded body");
+        yield return new TestFixtureData("").SetArgDisplayNames("empty body");
+        yield return new TestFixtureData($"<html><body>{Sentinel}</body></html>").SetArgDisplayNames(
+            "HTML body"
+        );
+        yield return new TestFixtureData(
+            OAuthError("invalid_client", "Invalid client or Invalid client credentials")
+        ).SetArgDisplayNames("an authentication error body");
+        yield return new TestFixtureData(
+            new string(' ', KeycloakTokenRevocationManager.MaxResponseBodyBytes + 1)
+        ).SetArgDisplayNames("a body over the read cap");
+    }
+
+    /// <summary>
+    /// The caller chose the oversized value, and Keycloak rejected it before judging the caller, so the
+    /// status alone decides the answer: neither an outage nor rejected credentials, whatever the body.
+    /// </summary>
+    [TestFixtureSource(typeof(KeycloakTokenRevocationManagerTests), nameof(TooLargeAnswers))]
+    public class Given_keycloak_rejects_the_revoke_request_as_too_large(string body)
+        : KeycloakTokenRevocationManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            KeycloakAnswers(() => Response(413, body));
+            _result = await Revoke();
+        }
+
+        [Test]
+        public void It_is_an_invalid_request() =>
+            _result.Should().Be(new TokenRevocationResult.InvalidRequest());
+
+        [Test]
+        public void It_had_passed_the_client_type_gate_before_the_revoke_request() =>
+            _events.Should().Equal("client-type-read", "revoke");
+
+        [Test]
+        public void It_logs_the_rejection_once_at_information() =>
+            _logger
+                .Entries.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<KeycloakCapturedLogEntry>(entry =>
+                    entry.Level == LogLevel.Information
+                    && entry.Message
+                        == "Keycloak rejected a revocation request as too large (HTTP 413) before authenticating the caller"
+                );
+
+        [Test]
+        public void It_logs_no_client_id_field() =>
+            _logger
+                .Entries.SelectMany(entry => entry.State)
+                .Should()
+                .NotContain(pair => pair.Key == "ClientId");
+
+        [Test]
+        public void It_logs_no_failure() =>
+            _logger.Entries.Should().NotContain(entry => entry.Level >= LogLevel.Warning);
+
+        [Test]
+        public void It_logs_neither_the_token_the_secret_nor_the_body() => AssertNoDisclosure();
+    }
+
+    /// <summary>
+    /// Keycloak authenticated no one, so the rejection is logged without the caller's client id, even
+    /// one of the longest length Keycloak can hold.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_long_client_id_whose_revoke_request_keycloak_rejects_as_too_large
+        : KeycloakTokenRevocationManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            GateAnswers(ConfidentialClient(ClientIdOfLength(255)));
+            KeycloakAnswers(() => Response(413, FormLimitAnswer));
+            _result = await Revoke(clientId: ClientIdOfLength(255));
+        }
+
+        [Test]
+        public void It_reached_the_revoke_request() => _handler.Requests.Should().ContainSingle();
+
+        [Test]
+        public void It_is_an_invalid_request() =>
+            _result.Should().Be(new TokenRevocationResult.InvalidRequest());
+
+        [Test]
+        public void It_logs_the_rejection_once_at_information() =>
+            _logger.Entries.Should().ContainSingle().Which.Level.Should().Be(LogLevel.Information);
+
+        [Test]
+        public void It_logs_neither_the_client_id_the_token_nor_the_secret() =>
+            _logger
+                .AllText()
+                .Should()
+                .NotContain(LongClientIdSentinel)
+                .And.NotContain(Token)
+                .And.NotContain(CallerSecret);
     }
 
     [TestFixture]

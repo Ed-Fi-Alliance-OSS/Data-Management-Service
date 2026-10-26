@@ -185,7 +185,7 @@ never echoes provider text:
 | Malformed or invalid HTTP Basic credentials | `401 invalid_client` with `WWW-Authenticate: Basic realm="EdFi.DmsConfigurationService"` |
 | A Keycloak public or bearer-only client | `invalid_client` by the same rule: `401` with the challenge when it attempted HTTP Basic, `400` otherwise |
 | A token type the identity provider does not revoke (Keycloak: an ID token) | `400 unsupported_token_type`; reveals nothing about the token's owner |
-| Keycloak rejected the request shape for a reason CMS could not anticipate | `400 invalid_request` ("The identity provider rejected the revocation request.") |
+| Keycloak rejected the request shape for a reason CMS could not anticipate, or rejected a value over its form attribute limit (see below) | `400 invalid_request` ("The identity provider rejected the revocation request.") |
 | Database or identity provider failure, timeout, or an unusable provider answer | `503 temporarily_unavailable` |
 | An unexpected fault in CMS | `500 server_error` |
 
@@ -193,6 +193,13 @@ A request without credentials and without `token` gets `400 invalid_request`, no
 authentication error, because request shape is checked first. A public client is answered
 with the same `invalid_client` description as a wrong secret, so the response does not
 reveal the client's type.
+
+In `keycloak` mode, a `client_id` longer than 255 characters (Keycloak's maximum) is answered `invalid_client` without calling Keycloak.
+
+In `keycloak` mode, a `client_secret` or `token` longer than Keycloak's form attribute limit (128 KiB by default) is answered `400 invalid_request` and logged at Information.
+CMS accepts form values up to 4 MiB, so such a request reaches Keycloak, which rejects it with `413` before it authenticates the caller.
+The answer is therefore not `invalid_client`, and it is not `503`, because Keycloak is not failing.
+`/connect/introspect` answers the same way (see [Token introspection](#token-introspection)).
 
 Except for rate-limit rejections introduced by DMS-1482, this endpoint and `/connect/introspect` do not answer in the `application/problem+json`
 contract of [DMS-1218](./DMS-1218-cms-error-response-compliance.md), and the departure is
@@ -307,15 +314,15 @@ path:
   before treating the answer as confirmation.
   A protected CMS request with the token
   answers `401`.
-- **`keycloak`**: CMS `/connect/introspect` passes the owner's credentials to Keycloak's
-  introspection and reports only an access token's state, only to its owner (see
-  [Token introspection](#token-introspection)). From Keycloak 26.4.12 it answers
-  `{"active": false}` for a live token unless the owner is in the token's `aud`, which a
-  client the Configuration Service creates is not, so there it proves nothing. Use Keycloak's own endpoint,
+- **`keycloak`**: CMS `/connect/introspect` with `token=<target>`, authenticated with the token owner's client credentials, passes them to Keycloak's introspection and reports `{"active": false}` once an access token is revoked (see [Token introspection](#token-introspection)).
+  It cannot observe a refresh token, which it never describes, or a public client's token, because Keycloak refuses a public client at introspection.
+  From Keycloak 26.6.2 it confirms only a token whose `aud` contains the owner's client id: Keycloak answers `active:false` to an introspecting client outside the token's `aud`, live token or not.
+  Every client CMS creates is in its own tokens' audience, but a token issued before its client gained that audience is not, so decode the token and check its `aud` before treating the answer as confirmation.
+  Otherwise use Keycloak's own endpoint,
   `POST {Keycloak base URL}/realms/{realm}/protocol/openid-connect/token/introspect`,
   authenticated as a **confidential** client:
-  - Access tokens. From Keycloak 26.4.12 (Red Hat's statement; observed on 26.7.5, not on
-    26.1.4), the introspecting client must be in the token's `aud`, or the answer is
+  - Access tokens. From Keycloak 26.6.2 (the Red Hat build of Keycloak 26.4.12; observed on
+    26.7.5, not on 26.1.4), the introspecting client must be in the token's `aud`, or the answer is
     `active:false` for a live token, which proves nothing. Put the introspecting client into
     the audience of the tokens you observe: an `Audience` mapper whose included client
     audience is the introspecting client, added to the clients that **receive** those tokens
@@ -535,14 +542,24 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
   Keycloak does not check ownership: any confidential client it authenticates may introspect any token in the realm.
   The Configuration Service therefore describes a token only when Keycloak reports it active and its `azp` equals the caller's client id, ordinally, and copies only the members listed above, never Keycloak's other claims.
   Credentials Keycloak rejects, and a public client (which Keycloak refuses at introspection), answer `invalid_client` by the same rules as `self-contained` mode.
-  Any other Keycloak answer, a timeout (`AppSettings:TokenRequestTimeoutSeconds`) or an unreachable Keycloak is `503 temporarily_unavailable`.
-  Unlike an undecided token in `self-contained` mode it is not `{"active": false}`, because the same Keycloak call authenticates the caller: without a usable answer the caller is not authenticated either.
+  A `client_id` longer than 255 characters (Keycloak's maximum) is answered `invalid_client` without calling Keycloak.
+  A `client_secret` or `token` longer than Keycloak's form attribute limit (128 KiB by default) is answered `400 invalid_request` ("The identity provider rejected the introspection request.") and logged at Information, as at `/connect/revoke`.
+  The Configuration Service accepts form values up to 4 MiB, and Keycloak rejects such a request with `413` before it authenticates the caller, so the answer is neither `invalid_client` nor `503`.
+  Any other Keycloak answer, a timeout or an unreachable Keycloak is `503 temporarily_unavailable`.
+  The timeout is one `AppSettings:TokenRequestTimeoutSeconds` budget for Keycloak's response headers and another for reading its body, so a request can wait up to twice that setting.
+  Unlike an undecided token in `self-contained` mode, a `503` here is not `{"active": false}`, because the same Keycloak call authenticates the caller: without a usable answer the caller is not authenticated either.
   Retrying is safe.
-- **From Keycloak 26.4.12, an owner may see its own live token as inactive.**
-  From that version (Red Hat's statement; observed on 26.7.5, not on 26.1.4) Keycloak answers `active:false` to an introspecting client that is not in the token's `aud`.
-  A client the Configuration Service creates is not in its own tokens' audience, so on those versions its own live token answers `{"active": false}`.
+- **Each Keycloak client the Configuration Service creates is in its own tokens' audience.**
+  From Keycloak 26.6.2 (the Red Hat build of Keycloak 26.4.12; observed on 26.7.5, not on 26.1.4) Keycloak answers `active:false` to an introspecting client that is not in the token's `aud`; `azp` alone does not count.
+  The Configuration Service therefore adds an audience mapper (`oidc-audience-mapper`, with the client's own client id as its included client audience) to every Keycloak client it creates.
+  `eng/docker-compose/setup-keycloak.ps1` adds the same mapper to the clients it creates, such as `DmsConfigurationService`.
+  The client's access tokens carry `aud` `["<client id>", "account"]`, and its owner receives its own token's metadata on Keycloak 26.1.x and on 26.6.2 or later.
+  DMS and the Configuration Service validate `aud` against their configured audience (`account` by default), which the array still contains.
+  A client created by an earlier version gains the mapper the next time the Configuration Service rewrites it in Keycloak, even with unchanged values: `PUT /v3/apiClients/{id}` rewrites that API client, `PUT /v3/applications/{id}` the application's first API client, and `PUT /v3/vendors/{id}` every API client of the vendor's applications.
+  On Keycloak 26.6.2 or later, an earlier client that is never updated that way is answered `{"active": false}` for its own live token until an operator adds the same mapper in Keycloak: in the client's `<client id>-dedicated` scope, an *Audience* mapper with *Included Client Audience* set to the client itself and *Add to access token* and *Add to token introspection* on.
+  Only tokens issued after the mapper is added carry the audience.
+  Keycloak also has opt-outs, the server option `allow-token-introspection-without-audience-check` and the client setting *Allow token introspection without audience check*, but both are deprecated and not recommended.
   The compose files pin Keycloak 26.1.4; the Azure VM reference deployment runs 26.7.
-  Keycloak's own introspection endpoint, called by a client placed in the token's audience, is the way to observe such a token (see [Confirming that a revocation actually took effect](#confirming-that-a-revocation-actually-took-effect)).
 - **Discovery.**
   `introspection_endpoint_auth_methods_supported` and `revocation_endpoint_auth_methods_supported` are both `["client_secret_basic", "client_secret_post"]`.
 
@@ -1000,6 +1017,10 @@ Clients holding tokens signed with the old certificate must obtain new ones.
 | Introspection answered inactive for another client's token | Debug | `Introspection answered inactive: the supplied token does not belong to the calling client {CallerClientId}` |
 | Keycloak introspection could not be completed (`keycloak`, answers `503`) | Error | `Introspection for client {ClientId} could not be completed: Keycloak answered HTTP {StatusCode} …` or `…: the Keycloak introspection request failed ({Reason}, {ExceptionTypes})`, followed by the same Warning as above |
 | Keycloak refused the caller's credentials (`keycloak`) | Information | `Keycloak refused the introspection request for client {ClientId} (HTTP {StatusCode}, {ProviderError})` |
+| Keycloak rejected an introspection form value over its form attribute limit (`keycloak`, answers `400 invalid_request`) | Information | `Keycloak rejected an introspection request as too large (HTTP 413) before authenticating the caller` |
+| Keycloak rejected a revocation form value over its form attribute limit (`keycloak`, answers `400 invalid_request`) | Information | `Keycloak rejected a revocation request as too large (HTTP 413) before authenticating the caller` |
+| Introspection client id longer than any Keycloak client id (`keycloak`, answers `invalid_client`) | Information | `Introspection refused: the client id is longer than any Keycloak client id` |
+| Revocation client id longer than any Keycloak client id (`keycloak`, answers `invalid_client`) | Information | `Revocation refused: the client id is longer than any Keycloak client id` |
 | Keycloak reported another client's token (`keycloak`, answers `{"active": false}`) | Debug | `Introspection answered inactive: the supplied token was not issued to the calling client {ClientId}` |
 | Introspection Basic credentials malformed | Information | `Introspection Basic credentials were malformed at the {Stage} stage` |
 

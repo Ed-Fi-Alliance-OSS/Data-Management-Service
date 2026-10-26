@@ -55,9 +55,10 @@ public sealed record IntrospectedToken(
 /// <summary>
 /// The outcome of one introspection attempt. A failure that prevents authenticating the caller is
 /// kept apart from the authentication and token outcomes, so it is never answered as rejected
-/// credentials. Once the caller is authenticated, every token outcome is
-/// <see cref="Inactive"/>, including, under the self-contained provider, a token that could not be
-/// decided because a dependency failed.
+/// credentials. A request the provider rejects before judging the caller is
+/// <see cref="InvalidRequest"/>, answered neither as rejected credentials nor as an outage. Once the
+/// caller is authenticated, every token outcome is <see cref="Inactive"/>, including, under the
+/// self-contained provider, a token that could not be decided because a dependency failed.
 /// </summary>
 public abstract record TokenIntrospectionResult
 {
@@ -79,6 +80,12 @@ public abstract record TokenIntrospectionResult
     /// unapproved client or a public client.
     /// </summary>
     public sealed record InvalidClient : TokenIntrospectionResult;
+
+    /// <summary>
+    /// The provider rejected the request shape for a reason the endpoint could not pre-empt, before
+    /// it judged the caller: under Keycloak, a form value over its form attribute limit.
+    /// </summary>
+    public sealed record InvalidRequest : TokenIntrospectionResult;
 
     /// <summary>
     /// An operational failure that prevented authenticating the caller, such as a client store that

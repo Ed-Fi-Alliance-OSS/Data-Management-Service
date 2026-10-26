@@ -844,6 +844,20 @@ public partial class StepDefinitions(
         _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
     }
 
+    /// <summary>
+    /// Unlike the step above, the captured client becomes the scenario's current client: its key and
+    /// secret are what the "current client" and "its owner" steps authenticate with, and the token
+    /// issued to it is the current token.
+    /// </summary>
+    [When("the credentials captured as {string} obtain the current token with scope {string}")]
+    public async Task WhenTheCredentialsCapturedAsObtainTheCurrentToken(string slot, string scope)
+    {
+        _credentialSlots.Should().ContainKey(slot, $"credentials should have been captured as '{slot}'");
+        (string key, string secret) = _credentialSlots[slot];
+        await GetClientAccessToken(key, secret, scope);
+        await TokenReceived();
+    }
+
     [Then("the token has an empty dataStoreIds claim")]
     public async Task ThenTheTokenHasAnEmptyDataStoreIdsClaim()
     {

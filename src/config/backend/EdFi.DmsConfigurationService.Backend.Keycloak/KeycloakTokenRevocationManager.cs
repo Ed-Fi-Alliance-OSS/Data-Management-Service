@@ -75,6 +75,15 @@ public sealed class KeycloakTokenRevocationManager(
             return new TokenRevocationResult.InvalidClient();
         }
 
+        // Decided here: a longer id can name no Keycloak client, the admin API's client-type lookup
+        // fails on the URL length once the id is long enough, and the caller-sized id is kept out of
+        // every log.
+        if (request.ClientId.Length > KeycloakProviderAnswer.MaxClientIdLength)
+        {
+            logger.LogInformation("Revocation refused: the client id is longer than any Keycloak client id");
+            return new TokenRevocationResult.InvalidClient();
+        }
+
         HttpClient httpClient = httpClientFactory.CreateClient(HttpClientName);
 
         TokenRevocationResult? refusal = await EnsureConfidentialClientAsync(
@@ -306,9 +315,22 @@ public sealed class KeycloakTokenRevocationManager(
     /// <summary>
     /// D-10, restricted to the characterized answers. Keycloak's status never decides between 400
     /// and 401 for the caller; the endpoint does that (D-03).
+    /// 413 is for a form value over Keycloak's form attribute limit (128 KiB by default), answered on
+    /// 26.1.4 and 26.7.5 before the caller is authenticated; the caller chose that value, so it is
+    /// <see cref="TokenRevocationResult.InvalidRequest"/>, decided on the status alone whatever the body.
     /// </summary>
     private TokenRevocationResult MapErrorResponse(int statusCode, ProviderErrorBody body, string clientId)
     {
+        if (statusCode == (int)HttpStatusCode.RequestEntityTooLarge)
+        {
+            // Information, not Error: a request any caller can repeat at will, not an outage. No
+            // client id: the oversized value may be the id itself, and no one was authenticated.
+            logger.LogInformation(
+                "Keycloak rejected a revocation request as too large (HTTP 413) before authenticating the caller"
+            );
+            return new TokenRevocationResult.InvalidRequest();
+        }
+
         string category = KeycloakProviderAnswer.ProviderErrorCategory(body.Error);
 
         if (statusCode is not (400 or 401))

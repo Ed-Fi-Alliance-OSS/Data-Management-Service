@@ -102,6 +102,21 @@ public partial class StepDefinitions
             BasicAuthorization(PublicClient.ClientId, ArbitraryPublicClientSecret)
         );
 
+    [When(
+        "an introspection of a {int}-character token is attempted with the current client's Basic credentials"
+    )]
+    public async Task WhenAnIntrospectionOfATokenOfALengthIsAttempted(int length) =>
+        await PostIntrospection(
+            new() { { "token", TokenOfLength(length) } },
+            BasicAuthorization(_lastClientId, _lastClientSecret)
+        );
+
+    /// <summary>
+    /// A garbage token of exactly <paramref name="length"/> characters: one letter repeated, which form
+    /// encoding leaves unchanged, so the identity provider receives a form value of that length.
+    /// </summary>
+    private static string TokenOfLength(int length) => new('A', length);
+
     [When("the current token is introspected with the credentials captured as {string}")]
     public async Task WhenTheCurrentTokenIsIntrospectedWithTheCredentialsCapturedAs(string slot)
     {

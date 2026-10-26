@@ -102,6 +102,48 @@ public class KeycloakClientRepositoryTests
             Config = new Dictionary<string, string> { { "multivalued", "true" } },
         };
 
+    protected const string AudienceMapperType = "oidc-audience-mapper";
+    protected const string SelfAudienceMapperName = "Client's own audience";
+
+    /// <summary>
+    /// The configuration of the mapper that puts a client into its own tokens' <c>aud</c>: access
+    /// and introspection tokens carry the client, ID tokens and lightweight access tokens do not.
+    /// </summary>
+    protected static Dictionary<string, string> SelfAudienceConfig(string clientId) =>
+        new()
+        {
+            { "included.client.audience", clientId },
+            { "id.token.claim", "false" },
+            { "access.token.claim", "true" },
+            { "introspection.token.claim", "true" },
+            { "lightweight.claim", "false" },
+        };
+
+    protected static ClientProtocolMapper AudienceMapper(string name, string audience) =>
+        new()
+        {
+            Name = name,
+            Protocol = "openid-connect",
+            ProtocolMapper = AudienceMapperType,
+            Config = SelfAudienceConfig(audience),
+        };
+
+    /// <summary>
+    /// The audience mappers that name the given client, whatever the mappers are called.
+    /// </summary>
+    protected static List<ClientProtocolMapper> AudienceMappersNaming(Client client, string audience) =>
+        [
+            .. client.ProtocolMappers.Where(mapper =>
+                mapper.ProtocolMapper == AudienceMapperType
+                && mapper.Config is not null
+                && mapper.Config.TryGetValue("included.client.audience", out string? included)
+                && included == audience
+            ),
+        ];
+
+    protected static List<string> MapperNames(Client client) =>
+        [.. client.ProtocolMappers.Select(mapper => mapper.Name)];
+
     [TestFixture]
     public class Given_ResetCredentialsAsync : KeycloakClientRepositoryTests
     {
@@ -603,6 +645,194 @@ public class KeycloakClientRepositoryTests
                 .Should()
                 .NotContain($"remove:{RealmDefaultScopeId}")
                 .And.NotContain($"remove:{ServiceAccountScopeId}");
+    }
+
+    /// <summary>
+    /// A client created before clients were put into their own audience carries no audience
+    /// mapper, as the base arrangement's stored client does. Its next update adds the mapper so
+    /// the client can introspect its own tokens on Keycloak 26.6.2 and later.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_update_of_a_client_lacking_its_own_audience : InPlaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act() => await ActUpdateAsync();
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientUpdateResult.Success>();
+
+        [Test]
+        public void It_adds_one_mapper_naming_the_client_as_its_own_audience() =>
+            AudienceMappersNaming(AppliedClient(), "test-client").Should().ContainSingle();
+
+        [Test]
+        public void It_configures_the_added_mapper_exactly()
+        {
+            ClientProtocolMapper added = AudienceMappersNaming(AppliedClient(), "test-client").Single();
+            added.Name.Should().Be(SelfAudienceMapperName);
+            added.Protocol.Should().Be("openid-connect");
+            added.Config.Should().BeEquivalentTo(SelfAudienceConfig("test-client"));
+        }
+
+        [Test]
+        public void It_preserves_every_other_mapper() =>
+            MapperNames(AppliedClient())
+                .Should()
+                .BeEquivalentTo(
+                    "Configuration service role mapper",
+                    "Education Organization Ids",
+                    "Data Store IDs",
+                    SelfAudienceMapperName
+                );
+    }
+
+    [TestFixture]
+    public class Given_an_update_of_a_client_already_carrying_its_own_audience : InPlaceUpdateTestBase
+    {
+        private ClientProtocolMapper _existingSelfAudience = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _existingSelfAudience = AudienceMapper(SelfAudienceMapperName, "test-client");
+            _storedClient.ProtocolMappers = [.. _storedClient.ProtocolMappers, _existingSelfAudience];
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientUpdateResult.Success>();
+
+        [Test]
+        public void It_keeps_the_existing_mapper_without_adding_a_duplicate() =>
+            AudienceMappersNaming(AppliedClient(), "test-client")
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeSameAs(_existingSelfAudience);
+
+        [Test]
+        public void It_leaves_the_existing_mapper_configuration_unchanged() =>
+            _existingSelfAudience.Config.Should().BeEquivalentTo(SelfAudienceConfig("test-client"));
+    }
+
+    /// <summary>
+    /// An audience mapper is recognized by its type and the audience it names, not by its name, so
+    /// one an operator added under another name already satisfies the client.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_update_of_a_client_naming_itself_through_a_differently_named_mapper
+        : InPlaceUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            _storedClient.ProtocolMappers =
+            [
+                .. _storedClient.ProtocolMappers,
+                AudienceMapper("Operator audience", "test-client"),
+            ];
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientUpdateResult.Success>();
+
+        [Test]
+        public void It_adds_no_further_audience_mapper() =>
+            AudienceMappersNaming(AppliedClient(), "test-client")
+                .Should()
+                .ContainSingle()
+                .Which.Name.Should()
+                .Be("Operator audience");
+
+        [Test]
+        public void It_adds_no_mapper_under_the_self_audience_name() =>
+            MapperNames(AppliedClient()).Should().NotContain(SelfAudienceMapperName);
+    }
+
+    [TestFixture]
+    public class Given_an_update_of_a_client_whose_audience_mapper_names_another_client
+        : InPlaceUpdateTestBase
+    {
+        private ClientProtocolMapper _otherAudience = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _otherAudience = AudienceMapper("Other audience", "other-client");
+            _storedClient.ProtocolMappers = [.. _storedClient.ProtocolMappers, _otherAudience];
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientUpdateResult.Success>();
+
+        [Test]
+        public void It_adds_the_mapper_naming_the_client_as_its_own_audience() =>
+            AudienceMappersNaming(AppliedClient(), "test-client")
+                .Should()
+                .ContainSingle()
+                .Which.Name.Should()
+                .Be(SelfAudienceMapperName);
+
+        [Test]
+        public void It_leaves_the_other_audience_mapper_untouched()
+        {
+            AppliedClient().ProtocolMappers.Should().Contain(_otherAudience);
+            _otherAudience.Config.Should().BeEquivalentTo(SelfAudienceConfig("other-client"));
+        }
+    }
+
+    /// <summary>
+    /// Keycloak requires protocol mapper names to be unique per client, so a mapper already holding
+    /// the self-audience name without naming the client blocks the addition. The update leaves that
+    /// mapper as it is and proceeds, and warns that the client may not introspect its own tokens.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_update_whose_client_holds_the_self_audience_name_for_another_audience
+        : InPlaceUpdateTestBase
+    {
+        private ClientProtocolMapper _collidingMapper = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _collidingMapper = AudienceMapper(SelfAudienceMapperName, "other-client");
+            _storedClient.ProtocolMappers = [.. _storedClient.ProtocolMappers, _collidingMapper];
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientUpdateResult.Success>();
+
+        [Test]
+        public void It_does_not_add_a_second_mapper_under_the_same_name() =>
+            MapperNames(AppliedClient())
+                .Where(name => name == SelfAudienceMapperName)
+                .Should()
+                .ContainSingle();
+
+        [Test]
+        public void It_leaves_the_colliding_mapper_untouched()
+        {
+            AppliedClient().ProtocolMappers.Should().Contain(_collidingMapper);
+            _collidingMapper.Config.Should().BeEquivalentTo(SelfAudienceConfig("other-client"));
+        }
+
+        [Test]
+        public void It_warns_that_the_client_lacks_its_own_audience() =>
+            _logger
+                .LoggedEntries()
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Level == LogLevel.Warning
+                    && entry.Message.Contains(SelfAudienceMapperName)
+                    && entry.Message.Contains("test-client")
+                );
     }
 
     [TestFixture]
@@ -1340,6 +1570,73 @@ public class KeycloakClientRepositoryTests
         public void It_never_deletes_or_recreates_the_client() => AssertClientIdentityPreserved();
     }
 
+    /// <summary>
+    /// The base arrangement's stored client predates clients being put into their own audience, so
+    /// the namespace-claim update adds the mapper too.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_namespace_claim_update_of_a_client_lacking_its_own_audience
+        : NamespaceClaimUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act() => await ActUpdateAsync();
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientUpdateResult.Success>();
+
+        [Test]
+        public void It_adds_one_mapper_naming_the_client_as_its_own_audience() =>
+            AudienceMappersNaming(AppliedClient(), "test-client").Should().ContainSingle();
+
+        [Test]
+        public void It_configures_the_added_mapper_exactly()
+        {
+            ClientProtocolMapper added = AudienceMappersNaming(AppliedClient(), "test-client").Single();
+            added.Name.Should().Be(SelfAudienceMapperName);
+            added.Protocol.Should().Be("openid-connect");
+            added.Config.Should().BeEquivalentTo(SelfAudienceConfig("test-client"));
+        }
+
+        [Test]
+        public void It_preserves_every_other_mapper() =>
+            MapperNames(AppliedClient())
+                .Should()
+                .BeEquivalentTo(
+                    "Configuration service role mapper",
+                    "Namespace Prefixes",
+                    "Education Organization Ids",
+                    "Data Store IDs",
+                    SelfAudienceMapperName
+                );
+    }
+
+    [TestFixture]
+    public class Given_a_namespace_claim_update_of_a_client_already_carrying_its_own_audience
+        : NamespaceClaimUpdateTestBase
+    {
+        private ClientProtocolMapper _existingSelfAudience = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _existingSelfAudience = AudienceMapper(SelfAudienceMapperName, "test-client");
+            _storedClient.ProtocolMappers = [.. _storedClient.ProtocolMappers, _existingSelfAudience];
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientUpdateResult.Success>();
+
+        [Test]
+        public void It_keeps_the_existing_mapper_without_adding_a_duplicate() =>
+            AudienceMappersNaming(AppliedClient(), "test-client")
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeSameAs(_existingSelfAudience);
+    }
+
     [TestFixture]
     public class Given_a_namespace_claim_update_whose_client_carries_duplicate_claims
         : NamespaceClaimUpdateTestBase
@@ -1963,6 +2260,27 @@ public class KeycloakClientRepositoryTests
         [Test]
         public void It_assigns_the_role_after_creating_the_client() =>
             _callOrder.Should().Equal("create-client", "service-account", "role-mapping");
+
+        [Test]
+        public void It_adds_exactly_one_audience_mapper() =>
+            _createdClients
+                .Single()
+                .ProtocolMappers.Where(mapper => mapper.ProtocolMapper == AudienceMapperType)
+                .Should()
+                .ContainSingle();
+
+        [Test]
+        public void It_names_the_client_itself_as_the_audience() =>
+            AudienceMappersNaming(_createdClients.Single(), ClientKey).Should().ContainSingle();
+
+        [Test]
+        public void It_configures_the_self_audience_mapper_exactly()
+        {
+            ClientProtocolMapper mapper = AudienceMappersNaming(_createdClients.Single(), ClientKey).Single();
+            mapper.Name.Should().Be(SelfAudienceMapperName);
+            mapper.Protocol.Should().Be("openid-connect");
+            mapper.Config.Should().BeEquivalentTo(SelfAudienceConfig(ClientKey));
+        }
     }
 
     [TestFixture]
@@ -1976,7 +2294,10 @@ public class KeycloakClientRepositoryTests
         {
             ClientProtocolMapper mapper = _createdClients
                 .Single()
-                .ProtocolMappers.Single(mapper => mapper.Config["claim.name"] == "namespacePrefixes");
+                .ProtocolMappers.Single(mapper =>
+                    mapper.Config.TryGetValue("claim.name", out string? claimName)
+                    && claimName == "namespacePrefixes"
+                );
 
             mapper.Config["claim.value"].Should().Be("\"\"");
             mapper.Config["jsonType.label"].Should().Be("JSON");
@@ -2032,6 +2353,10 @@ public class KeycloakClientRepositoryTests
         [Test]
         public void It_registers_the_caller_chosen_key() =>
             _createdClients.Should().ContainSingle().Which.ClientId.Should().Be(CallerChosenKey);
+
+        [Test]
+        public void It_names_the_caller_chosen_key_as_its_own_audience() =>
+            AudienceMappersNaming(_createdClients.Single(), CallerChosenKey).Should().ContainSingle();
     }
 
     /// <summary>

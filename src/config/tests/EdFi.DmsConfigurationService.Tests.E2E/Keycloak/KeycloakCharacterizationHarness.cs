@@ -1148,11 +1148,10 @@ public sealed class CharacterizationRealm : IAsyncDisposable
         _publicUser = new CharacterizationUser(userUuid, username, password);
 
         // Observed in P1.1: Keycloak 26.7.5 denies introspection unless the introspecting client is in
-        // the token's audience claim, while the pinned 26.1.4 image has no such check (the Red Hat
-        // build of Keycloak 26.4 migration guide attributes the check to 26.4.12). A per-run client
-        // scope adds the observer to the audience of every subject and public-client token so the
-        // observer works on both. The scope changes the audience claim only and is removed with the
-        // other run resources.
+        // the token's audience claim, while the pinned 26.1.4 image has no such check (upstream
+        // Keycloak added it in 26.6.2, the Red Hat build's 26.4.12). A per-run client scope adds the
+        // observer to the audience of every subject and public-client token so the observer works on
+        // both. The scope changes the audience claim only and is removed with the other run resources.
         _observerAudienceScopeUuid = await Api.CreateClientScopeAsync(
             adminToken,
             new JsonObject

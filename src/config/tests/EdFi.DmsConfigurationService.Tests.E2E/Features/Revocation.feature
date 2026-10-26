@@ -136,3 +136,29 @@ Feature: Token revocation endpoint
                   }
                   """
               And the public client's token is active at the identity provider
+
+        # Keycloak refuses any form value over 131072 characters with 413 before it authenticates the
+        # caller; the Configuration Service answers that as the caller's own invalid request.
+        @KeycloakOnly
+        Scenario: 11 A token over Keycloak's form attribute limit is rejected as invalid_request
+             When a revocation of a 131073-character token is attempted with the current client's Basic credentials
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_request" with description "The identity provider rejected the revocation request."
+              And the response header "WWW-Authenticate" is not present
+
+        # Keycloak answers this garbage token with 200 and an invalid_token body. The Configuration
+        # Service reads only the status and, as RFC 7009 has it for any invalid token, answers an empty 200.
+        @KeycloakOnly
+        Scenario: 12 A token at Keycloak's form attribute limit is answered as revoked
+             When a revocation of a 131072-character token is attempted with the current client's Basic credentials
+             Then it should respond with 200
+              And the response body is empty
+
+        # Longer than any Keycloak client id, and long enough that Keycloak's admin API refuses the
+        # client-type lookup URL, so under keycloak the Configuration Service must refuse it itself.
+        Scenario: 13 A client id longer than any client id is rejected as invalid_client and revokes nothing
+             When a revocation of the current token is attempted with a 32719-character form client id
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
+              And the response header "WWW-Authenticate" is not present
+              And the current token is active at the identity provider

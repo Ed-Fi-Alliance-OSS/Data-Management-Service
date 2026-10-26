@@ -6115,6 +6115,65 @@ public class IntrospectionRequestContractTests
         public void It_does_not_claim_the_token_is_inactive() => Content.Should().NotContain("active");
     }
 
+    /// <summary>
+    /// Keycloak rejects any form value over its form attribute limit (128 KiB by default) with this
+    /// answer before it authenticates the caller, with valid and wrong credentials alike (recorded on
+    /// 26.1.4 and 26.7.5). The Configuration Service accepts form values up to 4 MiB, so the caller
+    /// controls whether Keycloak sees one.
+    /// </summary>
+    private const string KeycloakFormLimitAnswer = """{"error":"HTTP 413 Request Entity Too Large"}""";
+
+    /// <summary>One character over Keycloak's default form attribute limit of 131072 characters.</summary>
+    private static readonly string _overFormLimit = new('x', 131073);
+
+    public abstract class KeycloakRejectsAnOversizedValue : KeycloakIntrospectionFixture
+    {
+        protected override (int Status, string Body)[] KeycloakAnswers => [(413, KeycloakFormLimitAnswer)];
+
+        /// <summary>The form field the caller made oversized.</summary>
+        protected abstract string OversizedField { get; }
+
+        [Test]
+        public void It_answers_400_invalid_request() =>
+            AssertOAuthError(
+                HttpStatusCode.BadRequest,
+                "invalid_request",
+                "The identity provider rejected the introspection request."
+            );
+
+        [Test]
+        public void It_does_not_send_a_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_forwarded_the_oversized_value_to_keycloak() =>
+            Keycloak
+                .Requests.Should()
+                .ContainSingle()
+                .Which.FormFields.Should()
+                .Contain(new KeyValuePair<string, string>(OversizedField, _overFormLimit));
+    }
+
+    [TestFixture]
+    public class Given_keycloak_mode_and_a_basic_caller_whose_token_is_over_keycloaks_form_limit
+        : KeycloakRejectsAnOversizedValue
+    {
+        protected override string OversizedField => "token";
+
+        protected override HttpContent Body => Form(("token", _overFormLimit));
+
+        protected override IEnumerable<string> AuthorizationValues => [_validBasic];
+    }
+
+    [TestFixture]
+    public class Given_keycloak_mode_and_a_form_caller_whose_secret_is_over_keycloaks_form_limit
+        : KeycloakRejectsAnOversizedValue
+    {
+        protected override string OversizedField => "client_secret";
+
+        protected override HttpContent Body =>
+            Form(("client_id", ClientId), ("client_secret", _overFormLimit), ("token", Token));
+    }
+
     [TestFixture]
     public class Given_keycloak_mode_and_an_introspection_without_a_token : KeycloakIntrospectionFixture
     {

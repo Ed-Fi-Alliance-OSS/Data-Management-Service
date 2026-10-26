@@ -7,14 +7,17 @@ namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
 /// <summary>
 /// Handling of Keycloak's answers shared by the delegated revocation and introspection requests:
-/// a bounded body read, the loggable provider error categories and the failure classification and
-/// logging helpers. Nothing here returns anything from a provider body or a dependency exception
+/// a bounded body read, the longest client id Keycloak can hold, the loggable provider error
+/// categories and the failure classification and logging helpers. Nothing here returns anything from a provider body or a dependency exception
 /// except an allowlisted error category and exception type names.
 /// </summary>
 internal static class KeycloakProviderAnswer
 {
     /// <summary>The largest answer body read; a larger one is treated as unparseable.</summary>
     internal const int MaxResponseBodyBytes = 64 * 1024;
+
+    /// <summary>The longest client id Keycloak can hold; a longer one names no client.</summary>
+    internal const int MaxClientIdLength = 255;
 
     /// <summary>The provider <c>error</c> values that may be logged verbatim; every other value is <c>unrecognized</c>.</summary>
     private static readonly HashSet<string> _loggableProviderErrors = new(StringComparer.Ordinal)

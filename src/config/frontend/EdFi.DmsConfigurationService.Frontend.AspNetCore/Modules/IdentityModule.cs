@@ -454,6 +454,9 @@ public class IdentityModule : IEndpointModule
                 basicAttempted,
                 InvalidClientCredentialsDescription
             ),
+            TokenIntrospectionResult.InvalidRequest => InvalidRequest(
+                "The identity provider rejected the introspection request."
+            ),
             TokenIntrospectionResult.TemporarilyUnavailable unavailable => IntrospectionUnavailable(
                 logger,
                 clientId,

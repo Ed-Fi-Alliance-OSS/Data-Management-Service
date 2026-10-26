@@ -90,6 +90,25 @@ public partial class StepDefinitions
             BasicAuthorization(_lastClientId, $"{_lastClientSecret}-wrong")
         );
 
+    [When("a revocation of the current token is attempted with a {int}-character form client id")]
+    public async Task WhenARevocationIsAttemptedWithAClientIdOfALength(int length) =>
+        await PostRevocation(
+            new()
+            {
+                { "token", _token },
+                { "client_id", new string('c', length) },
+                { "client_secret", _lastClientSecret },
+            },
+            authorization: null
+        );
+
+    [When("a revocation of a {int}-character token is attempted with the current client's Basic credentials")]
+    public async Task WhenARevocationOfATokenOfALengthIsAttempted(int length) =>
+        await PostRevocation(
+            new() { { "token", TokenOfLength(length) } },
+            BasicAuthorization(_lastClientId, _lastClientSecret)
+        );
+
     [When("a revocation of the current token is attempted with the credentials captured as {string}")]
     public async Task WhenARevocationIsAttemptedWithTheCredentialsCapturedAs(string slot)
     {

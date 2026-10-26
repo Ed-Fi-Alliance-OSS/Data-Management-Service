@@ -420,6 +420,32 @@ function Add_Custom_Claim([string] $ClientId) {
     Write-Output "Custom claim added to client '$script:NewClientName'."
 }
 
+function Add_Self_Audience([string] $ClientId) {
+    # From Keycloak 26.6.2 token introspection answers active:false unless the introspecting client
+    # is in the token's audience, so the client names itself there, as the Configuration Service does
+    # for the clients it creates.
+    $selfAudienceProtocolMapperPayload = @{
+        name           = "Client's own audience"
+        protocol       = "openid-connect"
+        protocolMapper = "oidc-audience-mapper"
+        config         = @{
+            "included.client.audience"  = $script:NewClientId
+            "id.token.claim"            = "false"
+            "access.token.claim"        = "true"
+            "introspection.token.claim" = "true"
+            "lightweight.claim"         = "false"
+        }
+    } | ConvertTo-Json
+
+    Invoke-RestMethod -Uri "$script:KeycloakServer/admin/realms/$script:Realm/clients/$ClientId/protocol-mappers/models" `
+        -Method Post `
+        -Headers @{ "Authorization" = "Bearer $access_token" } `
+        -Body $selfAudienceProtocolMapperPayload `
+        -ContentType "application/json"
+
+    Write-Output "Own audience added to client '$script:NewClientName'."
+}
+
 function Create_Client() {
     # Define the new client configuration
     $ClientData = @{
@@ -498,4 +524,5 @@ else {
     $clientScope = Get_ClientScope $script:ClientScopeName
     Add_Scope $clientScope.id
     Add_Custom_Claim $clientId
+    Add_Self_Audience $clientId
 }
