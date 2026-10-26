@@ -29,8 +29,8 @@ multiple-cascade-path convergence.
 8. For the walked origin's rename, a cut column the retained cascade does not update is a plain full-composite
    `NO ACTION` reference, not an unsupported cut: the safe-cut test passes it and it derives. A directly mutable
    intermediate's rename on such a column is different: it makes the survivor unsafe (see Safe-Cut Test), unless the
-   survivor is another role of that same intermediate, which is this decision's shape seen from an upstream origin and is
-   passed the same way. The one shape this does not specially guard is a genuinely mutable
+   survivor's own first-arrival chain also runs through that intermediate (another role of it, or a reference to a
+   resource below it), which is this decision's shape seen from an upstream origin and is passed the same way. The one shape this does not specially guard is a genuinely mutable
    resource referenced through two disjoint, non-unified roles by one receiver. That shape does not occur in standard
    Ed-Fi (every disjoint role there resolves to an immutable abstract identity), and it is deliberately left to fail
    closed at runtime — a clean SQL Server error on a rename, never a corrupt tuple — rather than to fail derivation. This
@@ -275,8 +275,8 @@ Safe-cut rule 1 applies only to a column the survivor also updates, so a column 
 cut a plain full-composite `NO ACTION` reference and the test passes it. The directly mutable intermediate rule above is
 checked separately and is not waived by this pass-through: a cut column whose trace reaches a directly mutable
 intermediate needs a retained carrier even when the survivor does not update it. The one exception is a survivor whose
-own trace also runs through that intermediate. It is then another, disjoint role of the same resource, which is the
-Settled Decision 8 shape, and the column is passed exactly as that intermediate's own walk would pass it, so the outcome
+own trace also runs through that intermediate. The survivor then reaches the receiver from that same resource by a
+disjoint route, which is the Settled Decision 8 shape, and the column is passed exactly as that intermediate's own walk would pass it, so the outcome
 does not depend on which origin's walk reaches the convergence first. This is a safe, supported result of the safe-cut test — not an unsupported
 cut, and it does not fail derivation. (This is distinct from the no-safe-survivor case above, where a genuinely mutable
 origin does fail derivation.) When the origin is immutable — the standard-Ed-Fi case, where disjoint role references

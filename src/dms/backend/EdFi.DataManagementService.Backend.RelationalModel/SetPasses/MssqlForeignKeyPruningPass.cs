@@ -316,8 +316,9 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     /// its own trace passes through the same pairing. Checking only the nearest pairing is
     /// sufficient: each vertex has one predecessor edge, so two traces that meet stay identical
     /// upstream. A column the survivor does not update is exempt when the survivor's own chain also
-    /// runs through the intermediate: the survivor is then another role of that resource, which
-    /// Settled Decision 8 leaves to fail closed at runtime, exactly as the intermediate's own walk
+    /// runs through the intermediate: the survivor (another role of that resource, or a reference
+    /// to a resource below it) then reaches the receiver from that resource by a disjoint route,
+    /// which Settled Decision 8 leaves to fail closed at runtime, exactly as the intermediate's own walk
     /// decides. The walked origin's own rename is left to <see cref="EvaluateSafeCut"/>. Returns
     /// null when covered, otherwise the native-coverage failure. The trace is discarded after
     /// this evaluation.
@@ -362,7 +363,8 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
             if (!carried)
             {
                 // Settled Decision 8: when the survivor does not update this column and runs
-                // through the same intermediate, it is another, disjoint role of that resource.
+                // through the same intermediate, it reaches the receiver from that resource by a
+                // disjoint route: another role of it, or a reference to a resource below it.
                 // The convergence is then the intermediate's own, and its own walk passes the
                 // column as a plain NO ACTION reference that fails closed at runtime. Skipping
                 // it here makes the outcome independent of which origin's walk reaches it first.

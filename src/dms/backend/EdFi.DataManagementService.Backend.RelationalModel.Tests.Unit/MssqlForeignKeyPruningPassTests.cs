@@ -2129,6 +2129,142 @@ public class Given_Mssql_Pruning_Of_Disjoint_Section_Roles_Under_An_Immutable_Or
 }
 
 /// <summary>
+/// Settled Decision 8 through a directly mutable descendant: from an immutable origin, Middle and
+/// Descendant (whose identity includes Middle) both allow identity updates, and Receiver references
+/// Descendant and, under the non-unified RoleMiddle role, Middle itself. The retained Descendant
+/// edge reaches Receiver from Middle by a disjoint route, so the upstream walk must exempt the
+/// RoleMiddle cut exactly as Middle's own walk does, whichever origin sorts first.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_Of_Disjoint_Roles_Through_A_Directly_Mutable_Descendant
+{
+    private static readonly DbTableName _middle = new(new DbSchemaName("edfi"), "Middle");
+    private static readonly DbTableName _descendant = new(new DbSchemaName("edfi"), "Descendant");
+    private static readonly DbTableName _receiver = new(new DbSchemaName("edfi"), "Receiver");
+
+    /// <summary>
+    /// It should cut exactly the RoleMiddle edge both when the origin sorts first (Alpha) and when it
+    /// sorts last (Zulu).
+    /// </summary>
+    [TestCase("Alpha")]
+    [TestCase("Zulu")]
+    public void It_should_cut_the_middle_role_regardless_of_origin_order(string originName)
+    {
+        var origin = new DbTableName(new DbSchemaName("edfi"), originName);
+        var roleMiddleEdge = PruningTopologyTestHelpers.BuildCandidate(
+            "FK_Receiver_RoleMiddle",
+            _receiver,
+            ["RoleMiddle_OriginKey", "RoleMiddle_MiddleKey", "RoleMiddle_DocumentId"],
+            _middle,
+            ["Origin_OriginKey", "MiddleKey", "DocumentId"]
+        );
+        MssqlForeignKeyPruningPass.PruningCandidate[] candidates =
+        [
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Middle_Origin",
+                _middle,
+                ["Origin_OriginKey", "Origin_DocumentId"],
+                origin,
+                ["OriginKey", "DocumentId"]
+            ),
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Descendant_Middle",
+                _descendant,
+                ["Middle_OriginKey", "Middle_MiddleKey", "Middle_DocumentId"],
+                _middle,
+                ["Origin_OriginKey", "MiddleKey", "DocumentId"]
+            ),
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Receiver_Descendant",
+                _receiver,
+                [
+                    "Descendant_OriginKey",
+                    "Descendant_MiddleKey",
+                    "Descendant_DescendantKey",
+                    "Descendant_DocumentId",
+                ],
+                _descendant,
+                ["Middle_OriginKey", "Middle_MiddleKey", "DescendantKey", "DocumentId"]
+            ),
+            roleMiddleEdge,
+        ];
+
+        var cutEdges = MssqlForeignKeyPruningPass.SelectCutEdges(
+            new[] { $"edfi.{originName}", "edfi.Descendant", "edfi.Middle" }
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .ToArray(),
+            candidates.OrderBy(candidate => candidate.EdgeKey).ToArray(),
+            new HashSet<string> { $"edfi.{originName}" }
+        );
+
+        cutEdges.Should().BeEquivalentTo([roleMiddleEdge.EdgeKey]);
+    }
+}
+
+/// <summary>
+/// The Decision 8 exemption covers only non-unified roles: from an immutable origin, Receiver
+/// references the directly mutable Middle under two optional roles that share a unified origin-key
+/// column. Neither optional role can carry the shared column, so Middle's own walk fails with the
+/// required-binding condition, and the upstream walk must fail too, whichever origin sorts first.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_Of_Unified_Optional_Roles_To_A_Directly_Mutable_Intermediate
+{
+    private static readonly DbTableName _middle = new(new DbSchemaName("edfi"), "Middle");
+    private static readonly DbTableName _receiver = new(new DbSchemaName("edfi"), "Receiver");
+
+    /// <summary>
+    /// It should fail derivation both when the origin sorts first (Alpha) and when it sorts last
+    /// (Zulu).
+    /// </summary>
+    [TestCase("Alpha")]
+    [TestCase("Zulu")]
+    public void It_should_fail_derivation_regardless_of_origin_order(string originName)
+    {
+        var origin = new DbTableName(new DbSchemaName("edfi"), originName);
+        MssqlForeignKeyPruningPass.PruningCandidate[] candidates =
+        [
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Middle_Origin",
+                _middle,
+                ["Origin_OriginKey", "Origin_DocumentId"],
+                origin,
+                ["OriginKey", "DocumentId"]
+            ),
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Receiver_FirstMiddle",
+                _receiver,
+                ["OriginKey_Unified", "FirstMiddle_MiddleKey", "FirstMiddle_DocumentId"],
+                _middle,
+                ["Origin_OriginKey", "MiddleKey", "DocumentId"],
+                required: false
+            ),
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Receiver_SecondMiddle",
+                _receiver,
+                ["OriginKey_Unified", "SecondMiddle_MiddleKey", "SecondMiddle_DocumentId"],
+                _middle,
+                ["Origin_OriginKey", "MiddleKey", "DocumentId"],
+                required: false
+            ),
+        ];
+
+        var act = () =>
+            MssqlForeignKeyPruningPass.SelectCutEdges(
+                new[] { $"edfi.{originName}", "edfi.Middle" }
+                    .OrderBy(name => name, StringComparer.Ordinal)
+                    .ToArray(),
+                candidates.OrderBy(candidate => candidate.EdgeKey).ToArray(),
+                new HashSet<string> { $"edfi.{originName}" }
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("NoSafeSqlServerForeignKeyPruning:*convergence receiver 'edfi.Receiver'*");
+    }
+}
+
+/// <summary>
 /// The immutable-origin rescue waives only the origin's own rename. Hand-built candidates: from
 /// the immutable Origin, Receiver converges through the optional First edge (Origin → Receiver)
 /// and the optional Second edge (Origin → Middle → Bridge → Receiver), where edfi.Middle stands in
