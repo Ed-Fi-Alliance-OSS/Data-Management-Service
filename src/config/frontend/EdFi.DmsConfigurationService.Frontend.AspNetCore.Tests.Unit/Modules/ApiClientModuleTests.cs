@@ -31,7 +31,7 @@ using NUnit.Framework;
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 [TestFixture]
-public class ApiClientModuleTests
+public partial class ApiClientModuleTests
 {
     private readonly IApiClientRepository _apiClientRepository = A.Fake<IApiClientRepository>();
     private IApplicationLockManager _lockManager = A.Fake<IApplicationLockManager>();

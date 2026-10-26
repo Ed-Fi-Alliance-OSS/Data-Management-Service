@@ -5,7 +5,6 @@
 
 using System.Globalization;
 using System.Net;
-using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -20,7 +19,6 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorizat
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation.Results;
 using Microsoft.Extensions.Options;
-using Microsoft.OpenApi;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -72,39 +70,53 @@ public class ApiClientModule : IEndpointModule
         endpoints
             .MapSecuredPost("/v3/apiClients/", InsertApiClient)
             .Produces<ApiClientCredentialsResponse>(201)
+            .ProducesProblem(400)
+            .ProducesProblem(401)
+            .ProducesProblem(403)
+            .ProducesProblem(409)
+            .ProducesProblem(500)
+            .ProducesProblem(502)
+            .WithDescription(ApiClientOpenApiMetadata.InsertDescription)
             .AddOpenApiOperationTransformer(
                 (operation, context, ct) =>
                 {
-                    SetEmptyDataStoreAssignmentExample(
+                    ApiClientOpenApiMetadata.SetInsertExamples(operation);
+                    ApiClientOpenApiMetadata.SetResponseDescriptions(
                         operation,
-                        """
-                        {
-                          "applicationId": 1,
-                          "name": "Identity Only Client",
-                          "isApproved": true,
-                          "dataStoreIds": []
-                        }
-                        """
+                        ("400", ApiClientOpenApiMetadata.InsertBadRequest),
+                        ("401", ApiClientOpenApiMetadata.Unauthorized),
+                        ("403", ApiClientOpenApiMetadata.Forbidden),
+                        ("409", ApiClientOpenApiMetadata.InsertConflict),
+                        ("500", ApiClientOpenApiMetadata.ServerError),
+                        ("502", ApiClientOpenApiMetadata.InsertBadGateway)
                     );
                     return Task.CompletedTask;
                 }
             );
         endpoints
             .MapSecuredPut($"/v3/apiClients/{{id}}", UpdateApiClient)
+            .Produces(204)
+            .ProducesProblem(400)
+            .ProducesProblem(401)
+            .ProducesProblem(403)
+            .ProducesProblem(404)
+            .ProducesProblem(409)
+            .ProducesProblem(500)
+            .ProducesProblem(502)
+            .WithDescription(ApiClientOpenApiMetadata.UpdateDescription)
             .AddOpenApiOperationTransformer(
                 (operation, context, ct) =>
                 {
-                    SetEmptyDataStoreAssignmentExample(
+                    ApiClientOpenApiMetadata.SetUpdateExamples(operation);
+                    ApiClientOpenApiMetadata.SetResponseDescriptions(
                         operation,
-                        """
-                        {
-                          "id": 1,
-                          "applicationId": 1,
-                          "name": "Identity Only Client",
-                          "isApproved": true,
-                          "dataStoreIds": []
-                        }
-                        """
+                        ("400", ApiClientOpenApiMetadata.UpdateBadRequest),
+                        ("401", ApiClientOpenApiMetadata.Unauthorized),
+                        ("403", ApiClientOpenApiMetadata.Forbidden),
+                        ("404", ApiClientOpenApiMetadata.NotFound),
+                        ("409", ApiClientOpenApiMetadata.UpdateConflict),
+                        ("500", ApiClientOpenApiMetadata.UpdateServerError),
+                        ("502", ApiClientOpenApiMetadata.UpdateBadGateway)
                     );
                     return Task.CompletedTask;
                 }
@@ -112,17 +124,85 @@ public class ApiClientModule : IEndpointModule
         endpoints
             .MapSecuredDelete($"/v3/apiClients/{{id}}", DeleteApiClient)
             .Produces(204)
+            .ProducesProblem(400)
+            .ProducesProblem(401)
+            .ProducesProblem(403)
+            .ProducesProblem(404)
+            .ProducesProblem(409)
+            .ProducesProblem(500)
+            .ProducesProblem(502)
             .WithDescription(
                 "Deletes the API client. Deleting an Application's last API client keeps the "
                     + "Application, which then has no API clients: it reports enabled false and "
                     + "dataStoreIds [], and its reset-credential returns 409. Create another API client "
                     + "with POST /v3/apiClients."
+            )
+            .AddOpenApiOperationTransformer(
+                (operation, context, ct) =>
+                {
+                    ApiClientOpenApiMetadata.SetResponseDescriptions(
+                        operation,
+                        ("400", ApiClientOpenApiMetadata.InvalidId),
+                        ("401", ApiClientOpenApiMetadata.Unauthorized),
+                        ("403", ApiClientOpenApiMetadata.Forbidden),
+                        ("404", ApiClientOpenApiMetadata.NotFound),
+                        ("409", ApiClientOpenApiMetadata.ConcurrentChange),
+                        ("500", ApiClientOpenApiMetadata.ServerError),
+                        ("502", ApiClientOpenApiMetadata.DeleteBadGateway)
+                    );
+                    return Task.CompletedTask;
+                }
             );
         endpoints
             .MapSecuredPut($"/v3/apiClients/{{id}}/reset-credential", ResetCredential)
-            .Produces<ApiClientCredentialsResponse>(200);
+            .Produces<ApiClientCredentialsResponse>(200)
+            .ProducesProblem(400)
+            .ProducesProblem(401)
+            .ProducesProblem(403)
+            .ProducesProblem(404)
+            .ProducesProblem(409)
+            .ProducesProblem(500)
+            .ProducesProblem(502)
+            .WithDescription(ApiClientOpenApiMetadata.ResetDescription)
+            .AddOpenApiOperationTransformer(
+                (operation, context, ct) =>
+                {
+                    ApiClientOpenApiMetadata.SetResponseDescriptions(
+                        operation,
+                        ("400", ApiClientOpenApiMetadata.InvalidId),
+                        ("401", ApiClientOpenApiMetadata.Unauthorized),
+                        ("403", ApiClientOpenApiMetadata.Forbidden),
+                        ("404", ApiClientOpenApiMetadata.NotFound),
+                        ("409", ApiClientOpenApiMetadata.ConcurrentChange),
+                        ("500", ApiClientOpenApiMetadata.ServerError),
+                        ("502", ApiClientOpenApiMetadata.ResetBadGateway)
+                    );
+                    return Task.CompletedTask;
+                }
+            );
         // Limited access endpoints - accessible by service accounts for internal DMS operations
-        endpoints.MapLimitedAccess("/v3/apiClients/", GetAll).Produces<List<ApiClientResponse>>(200);
+        endpoints
+            .MapLimitedAccess("/v3/apiClients/", GetAll)
+            .Produces<List<ApiClientResponse>>(200)
+            .ProducesProblem(400)
+            .ProducesProblem(401)
+            .ProducesProblem(403)
+            .ProducesProblem(500)
+            .WithDescription(ApiClientOpenApiMetadata.ReadDescription)
+            .AddOpenApiOperationTransformer(
+                (operation, context, ct) =>
+                {
+                    ApiClientOpenApiMetadata.SetReadCollectionExamples(operation);
+                    ApiClientOpenApiMetadata.SetResponseDescriptions(
+                        operation,
+                        ("400", ApiClientOpenApiMetadata.CollectionBadRequest),
+                        ("401", ApiClientOpenApiMetadata.Unauthorized),
+                        ("403", ApiClientOpenApiMetadata.Forbidden),
+                        ("500", ApiClientOpenApiMetadata.ServerError)
+                    );
+                    return Task.CompletedTask;
+                }
+            );
         // One route carries both identifier forms. The OAuth client key is resolved first and wins
         // outright, because ClientId has no format constraint: a stored key of "12345" is possible
         // and must never be shadowed by the unrelated row whose primary key is 12345. Registering a
@@ -131,30 +211,33 @@ public class ApiClientModule : IEndpointModule
         endpoints
             .MapLimitedAccess("/v3/apiClients/{id}", GetByIdentifier)
             .Produces<ApiClientResponse>(200)
+            .ProducesProblem(401)
+            .ProducesProblem(403)
+            .ProducesProblem(404)
+            .ProducesProblem(500)
             .WithSummary("Retrieves a specific apiClient by OAuth client key or by numeric identifier.")
             .WithDescription(
                 "The path segment is resolved key-first. It is matched against the OAuth client key "
                     + "('clientId' in responses, 'key' when credentials are issued), and that match "
                     + "wins whenever it exists. Only when no client key matches, and the segment is a "
                     + "valid 32-bit integer, is it resolved as the numeric ApiClient identifier ('id' "
-                    + "in responses)."
+                    + "in responses). "
+                    + ApiClientOpenApiMetadata.ReadDescription
+            )
+            .AddOpenApiOperationTransformer(
+                (operation, context, ct) =>
+                {
+                    ApiClientOpenApiMetadata.SetReadItemExamples(operation);
+                    ApiClientOpenApiMetadata.SetResponseDescriptions(
+                        operation,
+                        ("401", ApiClientOpenApiMetadata.Unauthorized),
+                        ("403", ApiClientOpenApiMetadata.Forbidden),
+                        ("404", ApiClientOpenApiMetadata.NotFound),
+                        ("500", ApiClientOpenApiMetadata.ServerError)
+                    );
+                    return Task.CompletedTask;
+                }
             );
-    }
-
-    /// <summary>
-    /// Publishes a request example whose dataStoreIds is empty, so the documented default for an
-    /// API client is the identity-only shape rather than an assignment callers must invent.
-    /// </summary>
-    private static void SetEmptyDataStoreAssignmentExample(OpenApiOperation operation, string example)
-    {
-        if (
-            operation.RequestBody is OpenApiRequestBody requestBody
-            && requestBody.Content is not null
-            && requestBody.Content.TryGetValue("application/json", out var mediaType)
-        )
-        {
-            mediaType.Example = JsonNode.Parse(example);
-        }
     }
 
     private async Task<IResult> InsertApiClient(

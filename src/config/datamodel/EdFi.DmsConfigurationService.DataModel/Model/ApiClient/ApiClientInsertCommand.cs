@@ -43,9 +43,11 @@ public class ApiClientInsertCommand
 
     [Description(
         "Whether the API client inherits its Application's education organizations and follows "
-            + "later changes to them. Optional. true inherits; a list sent with true must equal the "
-            + "Application's list. false narrows the client and requires educationOrganizationIds. "
-            + "An explicit null is rejected."
+            + "later changes to them. Optional, with no fixed default: a list sent without it narrows "
+            + "the client. true inherits; a list sent with true must equal the Application's list, in "
+            + "any order. false narrows the client and requires educationOrganizationIds. With neither "
+            + "field, a create inherits and an update keeps the client's flag and list. An explicit "
+            + "null is rejected."
     )]
     public bool? InheritsApplicationEducationOrganizations
     {
