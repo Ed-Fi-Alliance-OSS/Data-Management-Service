@@ -1962,6 +1962,173 @@ public class Given_Mssql_Pruning_With_Uncarried_Intermediate_Renames
 }
 
 /// <summary>
+/// Settled Decision 8 for a directly mutable intermediate: Upstream → Middle → Receiver, where
+/// Receiver references Middle under two non-unified roles and both Upstream and Middle allow
+/// identity updates. Middle's own walk passes the disjoint cut as a plain NO ACTION reference, so
+/// the upstream walk must reach the same result whichever origin sorts first.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_Of_Disjoint_Roles_To_A_Directly_Mutable_Intermediate
+{
+    private static DerivedRelationalModelSet Build(string upstreamName) =>
+        PruningTopologyTestHelpers.BuildMssqlModelSet(
+            PruningTestSchemaBuilder.BuildProjectSchema(
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    upstreamName,
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["upstreamKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Middle",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["middleKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec(upstreamName, PartOfIdentity: true),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Receiver",
+                    IdentityScalars: ["receiverKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Middle", RoleName: "FirstMiddle"),
+                        new PruningTestSchemaBuilder.ReferenceSpec("Middle", RoleName: "SecondMiddle"),
+                    ]
+                )
+            )
+        );
+
+    /// <summary>
+    /// It should keep the first role cascading and cut the second, both when the upstream origin
+    /// sorts before Middle (Alpha) and when it sorts after (Zulu).
+    /// </summary>
+    [TestCase("Alpha")]
+    [TestCase("Zulu")]
+    public void It_should_cut_the_second_role_regardless_of_origin_order(string upstreamName)
+    {
+        var result = Build(upstreamName);
+
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "FirstMiddle_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "SecondMiddle_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+    }
+}
+
+/// <summary>
+/// The same Decision 8 shape under the immutable <c>EducationOrganizationIdentity</c> origin, on
+/// the real DS 5.2 Section chain: Receiver references Section under two non-unified roles.
+/// EducationOrganizationIdentity sorts before Section, so its walk owns the convergence and must
+/// not fail derivation where Section's own walk would derive.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_Of_Disjoint_Section_Roles_Under_An_Immutable_Origin
+{
+    private static readonly DbTableName _educationOrganizationIdentity = new(
+        new DbSchemaName("edfi"),
+        "EducationOrganizationIdentity"
+    );
+    private static readonly DbTableName _course = new(new DbSchemaName("edfi"), "Course");
+    private static readonly DbTableName _courseOffering = new(new DbSchemaName("edfi"), "CourseOffering");
+    private static readonly DbTableName _section = new(new DbSchemaName("edfi"), "Section");
+    private static readonly DbTableName _receiver = new(new DbSchemaName("edfi"), "Receiver");
+
+    private static readonly string[] _sectionKey =
+    [
+        "CourseOffering_LocalCourseCode",
+        "SchoolId_Unified",
+        "CourseOffering_SchoolYear",
+        "CourseOffering_SessionName",
+        "SectionIdentifier",
+        "DocumentId",
+    ];
+
+    private MssqlForeignKeyPruningPass.PruningCandidate _secondSectionEdge = default!;
+    private HashSet<MssqlForeignKeyPruningPass.PruningEdgeKey> _cutEdges = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _secondSectionEdge = SectionRoleEdge("SecondSection");
+
+        _cutEdges = MssqlForeignKeyPruningPass.SelectCutEdges(
+            ["edfi.EducationOrganizationIdentity", "edfi.Section"],
+            new[]
+            {
+                PruningTopologyTestHelpers.BuildCandidate(
+                    "FK_Course_EducationOrganization_RefKey",
+                    _course,
+                    ["EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId"],
+                    _educationOrganizationIdentity,
+                    ["EducationOrganizationId", "DocumentId"]
+                ),
+                PruningTopologyTestHelpers.BuildCandidate(
+                    "FK_CourseOffering_Course_RefKey",
+                    _courseOffering,
+                    ["Course_CourseCode", "Course_EducationOrganizationId", "Course_DocumentId"],
+                    _course,
+                    ["CourseCode", "EducationOrganization_EducationOrganizationId", "DocumentId"]
+                ),
+                PruningTopologyTestHelpers.BuildCandidate(
+                    "FK_Section_CourseOffering_RefKey",
+                    _section,
+                    [
+                        "CourseOffering_LocalCourseCode",
+                        "SchoolId_Unified",
+                        "CourseOffering_SchoolYear",
+                        "CourseOffering_SessionName",
+                        "CourseOffering_DocumentId",
+                    ],
+                    _courseOffering,
+                    [
+                        "LocalCourseCode",
+                        "SchoolId_Unified",
+                        "Session_SchoolYear",
+                        "Session_SessionName",
+                        "DocumentId",
+                    ]
+                ),
+                SectionRoleEdge("FirstSection"),
+                _secondSectionEdge,
+            }
+                .OrderBy(candidate => candidate.EdgeKey)
+                .ToArray(),
+            new HashSet<string> { "edfi.EducationOrganizationIdentity" }
+        );
+    }
+
+    private static MssqlForeignKeyPruningPass.PruningCandidate SectionRoleEdge(string role) =>
+        PruningTopologyTestHelpers.BuildCandidate(
+            $"FK_Receiver_{role}_RefKey",
+            _receiver,
+            [
+                $"{role}_LocalCourseCode",
+                $"{role}_SchoolId",
+                $"{role}_SchoolYear",
+                $"{role}_SessionName",
+                $"{role}_SectionIdentifier",
+                $"{role}_DocumentId",
+            ],
+            _section,
+            _sectionKey
+        );
+
+    /// <summary>
+    /// It should derive and cut exactly the second Section role.
+    /// </summary>
+    [Test]
+    public void It_should_cut_exactly_the_second_section_role()
+    {
+        _cutEdges.Should().BeEquivalentTo([_secondSectionEdge.EdgeKey]);
+    }
+}
+
+/// <summary>
 /// The immutable-origin rescue waives only the origin's own rename. Hand-built candidates: from
 /// the immutable Origin, Receiver converges through the optional First edge (Origin → Receiver)
 /// and the optional Second edge (Origin → Middle → Bridge → Receiver), where edfi.Middle stands in

@@ -348,7 +348,10 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     /// rename only when it is a required binding that updates the same canonical local column and
     /// its own trace passes through the same pairing. Checking only the nearest pairing is
     /// sufficient: each vertex has one predecessor edge, so two traces that meet stay identical
-    /// upstream. The walked origin's own rename is left to <see cref="EvaluateSafeCut"/>. Returns
+    /// upstream. A column the survivor does not update is exempt when the survivor's own chain also
+    /// runs through the intermediate: the survivor is then another role of that resource, which
+    /// Settled Decision 8 leaves to fail closed at runtime, exactly as the intermediate's own walk
+    /// decides. The walked origin's own rename is left to <see cref="EvaluateSafeCut"/>. Returns
     /// null when covered, otherwise the native-coverage failure. The trace is discarded after
     /// this evaluation.
     /// </summary>
@@ -391,6 +394,16 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
             if (!carried)
             {
+                // Settled Decision 8: when the survivor does not update this column and runs
+                // through the same intermediate, it is another, disjoint role of that resource.
+                // The convergence is then the intermediate's own, and its own walk passes the
+                // column as a plain NO ACTION reference that fails closed at runtime. Skipping
+                // it here makes the outcome independent of which origin's walk reaches it first.
+                if (survivorIndex < 0 && PassesThrough(survivor, intermediate.Table, predecessorEdgeByVertex))
+                {
+                    continue;
+                }
+
                 return $"native coverage: cut '{cut.ConstraintName}' column '{column.Value}' changes when "
                     + $"directly mutable '{intermediate.Table}' updates its identity, and retained "
                     + $"'{survivor.ConstraintName}' does not carry that change";
@@ -398,6 +411,32 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Whether the edge's first-arrival chain, followed by table from its target back toward the
+    /// walked origin, passes through the given table. Follows only the traced chain; it never
+    /// searches alternate routes.
+    /// </summary>
+    private static bool PassesThrough(
+        PruningCandidate edge,
+        string table,
+        IReadOnlyDictionary<string, PruningCandidate> predecessorEdgeByVertex
+    )
+    {
+        var current = FormatTable(edge.TargetTable);
+
+        while (current != table)
+        {
+            if (!predecessorEdgeByVertex.TryGetValue(current, out var predecessor))
+            {
+                return false;
+            }
+
+            current = FormatTable(predecessor.TargetTable);
+        }
+
+        return true;
     }
 
     /// <summary>
