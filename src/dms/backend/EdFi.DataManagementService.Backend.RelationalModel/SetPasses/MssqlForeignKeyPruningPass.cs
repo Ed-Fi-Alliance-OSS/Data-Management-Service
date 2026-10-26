@@ -793,7 +793,8 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     /// mutable. Every abstract identity table is treated as a mutable origin by
     /// <see cref="CollectMutableOriginsInStableOrder"/> so its multi-cascade-path topology is still
     /// pruned, but a convergence discovered from an origin in this set guards a rename that never
-    /// happens, so a cut there is always safe. Returned as formatted receiver-table names matching
+    /// happens, so a cut there is safe for the origin's own rename; a directly mutable
+    /// intermediate's rename is still checked. Returned as formatted receiver-table names matching
     /// the origin strings the selector walks.
     /// </summary>
     internal static IReadOnlySet<string> CollectImmutableAbstractOrigins(
