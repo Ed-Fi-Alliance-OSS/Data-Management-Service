@@ -6492,4 +6492,356 @@ public class ApplicationModuleTests
         [Test]
         public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
     }
+
+    public abstract class CreateDefaultCredentialsTestBase : ApplicationModuleTests
+    {
+        protected readonly List<ApiClientCommand> InsertedClientCommands = [];
+        protected readonly List<string> ProvisionedSecrets = [];
+        protected readonly List<ApplicationInsertCommand> InsertedCommands = [];
+
+        // NUnit reuses the fixture instance across its tests, so each test starts from no
+        // recorded calls; base-class SetUp runs before the derived fixture's arrange and act.
+        [SetUp]
+        public void ClearRecordedRequests()
+        {
+            InsertedClientCommands.Clear();
+            InsertedCommands.Clear();
+            ProvisionedSecrets.Clear();
+            Fake.ClearRecordedCalls(_applicationRepository);
+            Fake.ClearRecordedCalls(_clientRepository);
+        }
+
+        protected void ArrangeVendorAndInsert(ApplicationInsertResult insertResult)
+        {
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
+                        {
+                            Company = "any",
+                            ContactName = "any",
+                            ContactEmailAddress = "any",
+                            NamespacePrefixes = "any",
+                        }
+                    )
+                );
+
+            A.CallTo(() =>
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Invokes(
+                    (ApplicationInsertCommand command, ApiClientCommand clientCommand) =>
+                    {
+                        InsertedCommands.Add(command);
+                        InsertedClientCommands.Add(clientCommand);
+                    }
+                )
+                .Returns(insertResult);
+
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .Invokes(call => ProvisionedSecrets.Add(call.GetArgument<string>(1)!))
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+        }
+
+        protected async Task<HttpResponseMessage> PostApplicationAsync(string additionalFields)
+        {
+            using var client = SetUpClient();
+            return await client.PostAsync(
+                "/v3/applications",
+                new StringContent(
+                    $$"""
+                    {
+                      {{additionalFields}}
+                      "applicationName": "Application 11",
+                      "claimSetName": "Test",
+                      "vendorId": 1,
+                      "educationOrganizationIds": [1, 2],
+                      "profileIds": [3]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        protected void AssertNoProviderClientWasCreatedOrDeleted()
+        {
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        protected void AssertProviderClientWasCreatedOnce() =>
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+    }
+
+    [TestFixture]
+    public class Given_an_application_created_without_default_credentials : CreateDefaultCredentialsTestBase
+    {
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeVendorAndInsert(new ApplicationInsertResult.Success(5));
+            _response = await PostApplicationAsync("\"createDefaultCredentials\": false,");
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [Test]
+        public void It_returns_created() => _response.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        [Test]
+        public void It_returns_the_application_id() => _body["id"]!.GetValue<int>().Should().Be(5);
+
+        [Test]
+        public void It_returns_an_explicit_null_key()
+        {
+            _body.ContainsKey("key").Should().BeTrue();
+            _body["key"].Should().BeNull();
+        }
+
+        [Test]
+        public void It_returns_an_explicit_null_secret()
+        {
+            _body.ContainsKey("secret").Should().BeTrue();
+            _body["secret"].Should().BeNull();
+        }
+
+        [Test]
+        public void It_creates_no_identity_provider_client() => AssertNoProviderClientWasCreatedOrDeleted();
+
+        [Test]
+        public void It_inserts_the_application_without_default_credentials() =>
+            InsertedCommands.Should().ContainSingle().Which.CreateDefaultCredentials.Should().BeFalse();
+
+        [Test]
+        public void It_inserts_the_requested_education_organizations_and_profiles()
+        {
+            InsertedCommands.Should().ContainSingle();
+            InsertedCommands[0].EducationOrganizationIds.Should().Equal(1, 2);
+            InsertedCommands[0].ProfileIds.Should().Equal(3);
+        }
+    }
+
+    [TestFixture("")]
+    [TestFixture("\"createDefaultCredentials\": true,")]
+    [TestFixture("\"enabled\": false,")]
+    public class Given_an_application_created_with_default_credentials(string additionalFields)
+        : CreateDefaultCredentialsTestBase
+    {
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeVendorAndInsert(new ApplicationInsertResult.Success(5));
+            _response = await PostApplicationAsync(additionalFields);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [Test]
+        public void It_returns_created() => _response.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        [Test]
+        public void It_creates_one_identity_provider_client() => AssertProviderClientWasCreatedOnce();
+
+        [Test]
+        public void It_inserts_the_application_with_default_credentials() =>
+            InsertedCommands.Should().ContainSingle().Which.CreateDefaultCredentials.Should().BeTrue();
+
+        [Test]
+        public void It_returns_the_stored_client_key() =>
+            _body["key"]!
+                .GetValue<string>()
+                .Should()
+                .Be(InsertedClientCommands.Should().ContainSingle().Subject.ClientId);
+
+        [Test]
+        public void It_returns_the_provisioned_secret() =>
+            _body["secret"]!
+                .GetValue<string>()
+                .Should()
+                .Be(ProvisionedSecrets.Should().ContainSingle().Subject);
+    }
+
+    [TestFixture("\"enabled\": false,", "Enabled")]
+    [TestFixture("\"enabled\": true,", "Enabled")]
+    [TestFixture("\"enabled\": null,", "Enabled")]
+    [TestFixture("\"Enabled\": true,", "Enabled")]
+    [TestFixture("\"dataStoreIds\": [],", "DataStoreIds")]
+    [TestFixture("\"dataStoreIds\": null,", "DataStoreIds")]
+    [TestFixture("\"dataStoreIds\": [1],", "DataStoreIds")]
+    [TestFixture("\"enabled\": true, \"dataStoreIds\": [1],", "Enabled,DataStoreIds")]
+    public class Given_an_application_created_without_default_credentials_and_default_client_fields(
+        string defaultClientFields,
+        string expectedFields
+    ) : CreateDefaultCredentialsTestBase
+    {
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeVendorAndInsert(new ApplicationInsertResult.Success(5));
+            _response = await PostApplicationAsync(
+                $"\"createDefaultCredentials\": false, {defaultClientFields}"
+            );
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [Test]
+        public void It_returns_bad_request() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_a_data_validation_problem() =>
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:data");
+
+        [Test]
+        public void It_reports_each_supplied_default_client_field() =>
+            _body["validationErrors"]!
+                .AsObject()
+                .Select(e => e.Key)
+                .Should()
+                .BeEquivalentTo(expectedFields.Split(','));
+
+        [Test]
+        public void It_writes_nothing() =>
+            A.CallTo(() =>
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_creates_no_identity_provider_client() => AssertNoProviderClientWasCreatedOrDeleted();
+    }
+
+    [TestFixture]
+    public class Given_an_application_created_without_default_credentials_for_a_missing_vendor
+        : CreateDefaultCredentialsTestBase
+    {
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeVendorAndInsert(new ApplicationInsertResult.Success(5));
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
+                .Returns(new VendorGetResult.FailureNotFound());
+            _response = await PostApplicationAsync("\"createDefaultCredentials\": false,");
+        }
+
+        [Test]
+        public void It_returns_conflict() => _response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_writes_nothing() =>
+            A.CallTo(() =>
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_creates_no_identity_provider_client() => AssertNoProviderClientWasCreatedOrDeleted();
+    }
+
+    [TestFixture]
+    public class Given_an_application_created_without_default_credentials_whose_insert_fails
+        : CreateDefaultCredentialsTestBase
+    {
+        private HttpResponseMessage _profileResponse = null!;
+        private HttpResponseMessage _vendorResponse = null!;
+        private HttpResponseMessage _duplicateResponse = null!;
+        private HttpResponseMessage _unknownResponse = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeVendorAndInsert(new ApplicationInsertResult.FailureProfileNotFound());
+            const string Flag = "\"createDefaultCredentials\": false,";
+            _profileResponse = await PostApplicationAsync(Flag);
+
+            ArrangeVendorAndInsert(new ApplicationInsertResult.FailureVendorNotFound());
+            _vendorResponse = await PostApplicationAsync(Flag);
+
+            ArrangeVendorAndInsert(new ApplicationInsertResult.FailureDuplicateApplication("Application 11"));
+            _duplicateResponse = await PostApplicationAsync(Flag);
+
+            ArrangeVendorAndInsert(new ApplicationInsertResult.FailureUnknown("boom"));
+            _unknownResponse = await PostApplicationAsync(Flag);
+        }
+
+        [Test]
+        public void It_returns_conflict_for_a_missing_profile() =>
+            _profileResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_returns_conflict_for_a_vendor_removed_before_the_insert() =>
+            _vendorResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public async Task It_returns_the_duplicate_name_validation_failure()
+        {
+            _duplicateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var body = JsonNode.Parse(await _duplicateResponse.Content.ReadAsStringAsync())!;
+            body["validationErrors"]!["ApplicationName"].Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_returns_internal_server_error_for_an_unknown_failure() =>
+            _unknownResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_never_calls_the_identity_provider() => AssertNoProviderClientWasCreatedOrDeleted();
+    }
 }

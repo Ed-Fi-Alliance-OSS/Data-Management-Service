@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -70,11 +71,6 @@ public class ApplicationModule : IEndpointModule
         logger.LogDebug("Entering UpsertApplication");
         await validator.GuardAsync(command);
 
-        var clientId = Guid.NewGuid().ToString();
-        var clientSecret = ClientSecretValidation.GenerateSecretWithMinimumLength(
-            clientSecretValidationOptionsAccessor.Value
-        );
-
         string namespacePrefixes;
         switch (await vendorRepository.GetVendor(command.VendorId))
         {
@@ -107,6 +103,16 @@ public class ApplicationModule : IEndpointModule
         {
             return dataStoreFailure;
         }
+
+        if (!command.CreateDefaultCredentials)
+        {
+            return await InsertApplicationWithoutClient(command, httpContext, applicationRepository, logger);
+        }
+
+        var clientId = Guid.NewGuid().ToString();
+        var clientSecret = ClientSecretValidation.GenerateSecretWithMinimumLength(
+            clientSecretValidationOptionsAccessor.Value
+        );
 
         var clientCreateResult = await clientRepository.CreateClientAsync(
             clientId,
@@ -281,6 +287,77 @@ public class ApplicationModule : IEndpointModule
 
         logger.LogError("Failure creating client");
         return FailureResults.Unknown(httpContext.TraceIdentifier);
+    }
+
+    /// <summary>
+    /// Creates an Application with no API client. No identity-provider client is provisioned, so
+    /// a failed insert has nothing to compensate, and the response carries explicit null
+    /// credentials.
+    /// </summary>
+    private static async Task<IResult> InsertApplicationWithoutClient(
+        ApplicationInsertCommand command,
+        HttpContext httpContext,
+        IApplicationRepository applicationRepository,
+        ILogger logger
+    )
+    {
+        // The repository does not use the client command when CreateDefaultCredentials is false.
+        var repositoryResult = await applicationRepository.InsertApplication(
+            command,
+            new() { ClientId = "", ClientUuid = Guid.Empty }
+        );
+
+        switch (repositoryResult)
+        {
+            case ApplicationInsertResult.Success success:
+                var request = httpContext.Request;
+                return Results.Created(
+                    $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
+                    new JsonObject
+                    {
+                        ["id"] = success.Id,
+                        ["key"] = null,
+                        ["secret"] = null,
+                    }
+                );
+            case ApplicationInsertResult.FailureVendorNotFound:
+                return Results.Json(
+                    FailureResponse.ForUnresolvedReference(
+                        "Reference 'VendorId' does not exist.",
+                        httpContext.TraceIdentifier
+                    ),
+                    contentType: "application/problem+json",
+                    statusCode: (int)HttpStatusCode.Conflict
+                );
+            case ApplicationInsertResult.FailureProfileNotFound:
+                return Results.Json(
+                    FailureResponse.ForUnresolvedReference(
+                        "Profile does not exist.",
+                        httpContext.TraceIdentifier
+                    ),
+                    contentType: "application/problem+json",
+                    statusCode: (int)HttpStatusCode.Conflict
+                );
+            case ApplicationInsertResult.FailureDuplicateApplication duplicateApp:
+                throw new ValidationException([
+                    new ValidationFailure(
+                        "ApplicationName",
+                        $"Application '{duplicateApp.ApplicationName}' already exists for vendor."
+                    ),
+                ]);
+            case ApplicationInsertResult.FailureUnknown failure:
+                logger.LogError(
+                    "Failure inserting the application row: {FailureMessage}",
+                    SanitizeForLog(failure.FailureMessage)
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            default:
+                logger.LogError(
+                    "Unexpected result inserting an application without a client: {Result}",
+                    repositoryResult.GetType().Name
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
     }
 
     /// <summary>

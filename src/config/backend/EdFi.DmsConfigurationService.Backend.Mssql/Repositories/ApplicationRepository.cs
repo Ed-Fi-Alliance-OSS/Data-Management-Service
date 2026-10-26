@@ -162,48 +162,53 @@ public class ApplicationRepository(
 
             await connection.ExecuteAsync(sql, educationOrganizations, transaction);
 
-            sql = """
-                INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid, Name, IsApproved, CreatedBy)
-                OUTPUT INSERTED.Id
-                VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved, @CreatedBy);
-                """;
-
-            int apiClientId = await connection.ExecuteScalarAsync<int>(
-                sql,
-                new
-                {
-                    ApplicationId = id,
-                    clientCommand.ClientId,
-                    clientCommand.ClientUuid,
-                    Name = command.ApplicationName,
-                    IsApproved = true,
-                    CreatedBy = currentUser,
-                },
-                transaction
-            );
-
-            if (command.DataStoreIds.Length > 0)
+            // Without default credentials the Application is created with no API client, so
+            // there is no client row for data store assignments to attach to.
+            if (command.CreateDefaultCredentials)
             {
-                if (!await AllDataStoresInTenant(connection, transaction, command.DataStoreIds))
-                {
-                    logger.LogWarning("Data store not found");
-                    await transaction.RollbackAsync();
-                    return new ApplicationInsertResult.FailureDataStoreNotFound();
-                }
-
                 sql = """
-                    INSERT INTO dmscs.ApiClientDataStore (ApiClientId, DataStoreId, CreatedBy)
-                    VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
+                    INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid, Name, IsApproved, CreatedBy)
+                    OUTPUT INSERTED.Id
+                    VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved, @CreatedBy);
                     """;
 
-                var dataStoreMappings = command.DataStoreIds.Select(dataStoreId => new
-                {
-                    ApiClientId = apiClientId,
-                    DataStoreId = dataStoreId,
-                    CreatedBy = currentUser,
-                });
+                int apiClientId = await connection.ExecuteScalarAsync<int>(
+                    sql,
+                    new
+                    {
+                        ApplicationId = id,
+                        clientCommand.ClientId,
+                        clientCommand.ClientUuid,
+                        Name = command.ApplicationName,
+                        IsApproved = true,
+                        CreatedBy = currentUser,
+                    },
+                    transaction
+                );
 
-                await connection.ExecuteAsync(sql, dataStoreMappings, transaction);
+                if (command.DataStoreIds.Length > 0)
+                {
+                    if (!await AllDataStoresInTenant(connection, transaction, command.DataStoreIds))
+                    {
+                        logger.LogWarning("Data store not found");
+                        await transaction.RollbackAsync();
+                        return new ApplicationInsertResult.FailureDataStoreNotFound();
+                    }
+
+                    sql = """
+                        INSERT INTO dmscs.ApiClientDataStore (ApiClientId, DataStoreId, CreatedBy)
+                        VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
+                        """;
+
+                    var dataStoreMappings = command.DataStoreIds.Select(dataStoreId => new
+                    {
+                        ApiClientId = apiClientId,
+                        DataStoreId = dataStoreId,
+                        CreatedBy = currentUser,
+                    });
+
+                    await connection.ExecuteAsync(sql, dataStoreMappings, transaction);
+                }
             }
 
             if (command.ProfileIds.Length > 0)
