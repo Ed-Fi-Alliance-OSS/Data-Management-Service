@@ -386,8 +386,10 @@ public class TokenRevocationStartupTests
                         new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
                     ])
                 );
-                JsonNode? body = JsonNode.Parse(await response.Content.ReadAsStringAsync());
-                _answers.Add((response.StatusCode, body?["errors"]?[0]?.GetValue<string>()));
+                JsonNode body =
+                    JsonNode.Parse(await response.Content.ReadAsStringAsync())
+                    ?? throw new InvalidOperationException("The token response body was JSON null.");
+                _answers.Add((response.StatusCode, body["errors"]?[0]?.GetValue<string>()));
             }
         }
 
