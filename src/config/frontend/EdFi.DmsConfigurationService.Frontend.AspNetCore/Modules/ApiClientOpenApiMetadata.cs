@@ -18,17 +18,26 @@ internal static class ApiClientOpenApiMetadata
         "educationOrganizationIds and inheritsApplicationEducationOrganizations set the API client's "
         + "education organization scope. A list without the flag, or with false, narrows the client to "
         + "that list, even when it equals the Application's list; duplicate ids are removed. true "
-        + "without a list, or with a list equal to the Application's list in any order, makes the "
-        + "client inherit its Application's education organizations and follow later changes to them. "
+        + "without a list, or with a list equal to the Application's non-empty list in any order, makes the "
+        + "client inherit its Application's education organizations, and its effective list follows later "
+        + "changes to them. "
         + "400 (urn:ed-fi:management-api:bad-request:data, with the error on the field concerned) "
         + "rejects an empty or null list, a null flag, false without a list, true with any other list, "
         + "and a list with an education organization that is not on the client's Application, its new "
-        + "Application on a move. Scope changes reach the client's token at its next token request.";
+        + "Application on a move. A successful create or update applies the client's effective list to "
+        + "tokens requested afterwards; tokens already issued keep their claims until they expire.";
+
+    private const string ApplicationSync =
+        "An Application update (PUT /v3/applications/{id}) refreshes the identity provider claims of "
+        + "the Application's first API client only. Every client's effective list reflects the "
+        + "Application change at once, but another client's tokens can keep its earlier list until "
+        + "that client is updated with PUT /v3/apiClients/{id}.";
 
     public const string InsertDescription =
         "Creates an API client of an Application and returns its credentials. "
         + ScopeRules
-        + " With neither field the client inherits.";
+        + " With neither field the client inherits. "
+        + ApplicationSync;
 
     public const string UpdateDescription =
         "Updates an API client. "
@@ -40,14 +49,16 @@ internal static class ApiClientOpenApiMetadata
         + "urn:ed-fi:management-api:conflict:education-organization-scope and nothing changes. To move "
         + "it anyway, send educationOrganizationIds on the new Application or "
         + "inheritsApplicationEducationOrganizations true. dataStoreIds is a full replacement, "
-        + "independent of the scope.";
+        + "independent of the scope. "
+        + ApplicationSync;
 
     public const string ReadDescription =
         "inheritsApplicationEducationOrganizations and educationOrganizationIds report the API "
         + "client's scope. educationOrganizationIds is its effective list, in ascending order: its "
         + "Application's current list when it inherits, its own list when it is narrowed. It is never "
         + "null; [] means no education organization access, which a narrowed client reaches only when "
-        + "every one of its education organizations is removed from its Application.";
+        + "every one of its education organizations is removed from its Application. "
+        + ApplicationSync;
 
     public const string ResetDescription =
         "Generates a new secret for the API client; the previous secret stops working. Only the "
