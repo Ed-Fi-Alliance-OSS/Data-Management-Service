@@ -259,6 +259,13 @@ public record ApiClientInsertResult
     public record FailureDuplicateClientUuid() : ApiClientInsertResult();
 
     /// <summary>
+    /// The requested narrowed scope has education organizations that are not on the Application;
+    /// nothing was written
+    /// </summary>
+    public record FailureRequestedEducationOrganizationsNotOnApplication(long[] EducationOrganizationIds)
+        : ApiClientInsertResult();
+
+    /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ApiClientInsertResult();
@@ -333,10 +340,17 @@ public record ApiClientUpdateResult
     public record FailureDuplicateClientUuid() : ApiClientUpdateResult();
 
     /// <summary>
-    /// The update moves a narrowed client to an Application that lacks some of its education
-    /// organizations; nothing was written
+    /// The update requests no scope and moves a narrowed client to an Application that lacks some
+    /// of its education organizations; nothing was written
     /// </summary>
     public record FailureEducationOrganizationsNotOnApplication(long[] EducationOrganizationIds)
+        : ApiClientUpdateResult();
+
+    /// <summary>
+    /// The requested narrowed scope has education organizations that are not on the client's
+    /// Application, its new one on a move; nothing was written
+    /// </summary>
+    public record FailureRequestedEducationOrganizationsNotOnApplication(long[] EducationOrganizationIds)
         : ApiClientUpdateResult();
 
     /// <summary>

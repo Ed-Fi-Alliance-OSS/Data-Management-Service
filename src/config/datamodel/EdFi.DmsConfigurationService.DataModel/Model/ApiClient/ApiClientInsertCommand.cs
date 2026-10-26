@@ -25,6 +25,13 @@ public class ApiClientInsertCommand
     )]
     public int[] DataStoreIds { get; set; } = [];
 
+    /// <summary>
+    /// The education organization scope to store with the client; null makes it inherit.
+    /// Not part of the HTTP request body.
+    /// </summary>
+    [JsonIgnore]
+    public ApiClientEducationOrganizationScope? EducationOrganizationScope { get; set; }
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
 
