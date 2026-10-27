@@ -250,6 +250,23 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             Encoding.UTF8.GetBytes($"{Uri.EscapeDataString(clientId)}:{Uri.EscapeDataString(clientSecret)}")
         );
 
+    /// <summary>
+    /// Whether the header's scheme - the whole run of non-whitespace characters after any leading
+    /// whitespace - is <c>Basic</c>, compared without regard to case. A bare <c>Basic</c> counts.
+    /// </summary>
+    private static bool HasBasicScheme(string authorizationHeader)
+    {
+        ReadOnlySpan<char> value = authorizationHeader.AsSpan().TrimStart();
+
+        int schemeLength = 0;
+        while (schemeLength < value.Length && !char.IsWhiteSpace(value[schemeLength]))
+        {
+            schemeLength++;
+        }
+
+        return value[..schemeLength].Equals("Basic", StringComparison.OrdinalIgnoreCase);
+    }
+
     public async Task<HttpResponseMessage> GetAccessTokenAsync(
         IHttpClientWrapper httpClient,
         string grantType,
@@ -281,12 +298,13 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 );
             }
 
-            // The same lenient test DMS has always applied, so a caller that authenticates with a
-            // Basic header sees no change. Known limitation, kept deliberately: a header of another
-            // scheme that merely contains "basic" anywhere passes it, and is treated as Basic
-            // rather than rejected (see the DMS-1604 ADR). Any other scheme is not client
-            // authentication, and body credentials do not rescue the request.
-            if (!authHeaderString.Contains("basic", StringComparison.InvariantCultureIgnoreCase))
+            // Only the Basic scheme is client authentication. Any other scheme, including one that
+            // merely contains or starts with "basic" such as "Bearer xbasicx" or "Basicxyz:secret",
+            // is rejected here, before the body and the grant type are looked at, so body
+            // credentials do not rescue the request (DMS-1495; see the DMS-1604 ADR). Only the
+            // scheme is judged: the header is forwarded as sent, and its parameter is left to the
+            // header-add guard below and to the upstream.
+            if (!HasBasicScheme(authHeaderString))
             {
                 return OAuthErrorResponse.Create(
                     HttpStatusCode.Unauthorized,
@@ -375,10 +393,10 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         }
         catch (FormatException)
         {
-            // A caller-supplied header that passed the lenient Basic test above but is not a valid
-            // Authorization value, such as "Basicxyz:secret" or two headers joined with a comma.
-            // The exception's message quotes the whole header, so it is neither logged nor passed
-            // on; the ODS/API answers such a header 400 as well.
+            // A caller-supplied header whose scheme is Basic but that is not a valid Authorization
+            // value, such as two headers joined with a comma ("Basic abc,Basic def") or a
+            // parameter carrying a line break. The exception's message quotes the whole header, so
+            // it is neither logged nor passed on; the ODS/API answers such a header 400 as well.
             return OAuthErrorResponse.Create(
                 HttpStatusCode.BadRequest,
                 InvalidRequestError,
@@ -437,9 +455,12 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                     );
                 default:
                     var content = await response.Content.ReadAsStringAsync();
+                    // The original status is logged because the client only ever sees the 502:
+                    // without it an operator cannot tell an upstream 500 from a 503.
                     logger.LogWarning(
-                        "Error from upstream identity service - {TraceId} - {Content}",
+                        "Error from upstream identity service - {TraceId} - {UpstreamStatusCode} - {Content}",
                         traceId.Value,
+                        (int)response.StatusCode,
                         LoggingSanitizer.SanitizeFreeTextForLogging(content, MaxLoggedUpstreamContentLength)
                     );
                     return OAuthErrorResponse.Create(

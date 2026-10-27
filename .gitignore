@@ -497,6 +497,8 @@ tmpclaude*
 *.lscache
 
 docs/superpowers/
+docs/.superpowers/
+.superpowers/
 
 # Local folder feed the packed contract fixture plugins restore their contract
 # packages from. Written by the integration test project's PackedContractFixturePlugins.targets.

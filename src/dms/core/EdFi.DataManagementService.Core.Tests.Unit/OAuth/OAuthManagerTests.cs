@@ -1666,12 +1666,13 @@ public class OAuthManagerTests
     private const string ExpectedMalformedAuthorizationDetail = "Malformed Authorization header";
 
     /// <summary>
-    /// A header that passes the lenient "contains basic" test but that <c>HttpHeaders.Add</c>
-    /// cannot parse, such as two Authorization headers the frontend joined with a comma. Adding it
-    /// throws a FormatException whose message quotes the whole header, so the request is answered
-    /// 400 before anything is sent, and neither the header nor the exception may reach the log.
+    /// A header whose scheme is genuinely Basic but that <c>HttpHeaders.Add</c> cannot parse, such
+    /// as two Authorization headers the frontend joined with a comma. Adding it throws a
+    /// FormatException whose message quotes the whole header, so the request is answered 400
+    /// before anything is sent, and neither the header nor the exception may reach the log. A
+    /// header such as <c>Basicxyz:secret</c>, whose scheme is not Basic at all, is answered by
+    /// <see cref="Given_A_Header_Whose_Scheme_Is_Not_Basic"/> instead.
     /// </summary>
-    [TestFixture("Basicxyz:s3cr3t-sentinel")]
     [TestFixture("Basic abc,Basic s3cr3t-sentinel")]
     [TestFixture("Basic abc,s3cr3t-sentinel")]
     [TestFixture("Basic \"s3cr3t-sentinel")]
@@ -1743,6 +1744,234 @@ public class OAuthManagerTests
     }
 
     /// <summary>
+    /// The scheme is the whole leading run of non-whitespace characters, compared with Basic
+    /// exactly but without regard to case. A header that merely contains "basic", or whose scheme
+    /// only starts with it, is not Basic: it gets the early <c>401 invalid_client</c> before the
+    /// mixed-mechanism, missing-credential, length-cap and grant-type checks, so neither body
+    /// credentials nor an unsupported grant type change the answer (DMS-1495).
+    /// </summary>
+    [TestFixtureSource(nameof(Cases))]
+    [Parallelizable]
+    public class Given_A_Header_Whose_Scheme_Is_Not_Basic(
+        string authHeader,
+        string grantType,
+        string clientId,
+        string clientSecret
+    )
+    {
+        private const string HeaderSentinel = "s3cr3t-sentinel";
+
+        private const string BodySecret = "b0dy-s3cr3t-sentinel";
+
+        private static IEnumerable<object[]> Cases()
+        {
+            string[] headers =
+            [
+                "Bearer xbasicx",
+                "Digest username=\"basic-user\"",
+                $"BasicX {HeaderSentinel}",
+                $"Basicxyz:{HeaderSentinel}",
+                $"Basic,Basic {HeaderSentinel}",
+            ];
+
+            // An empty string is an omitted field, as TokenRequestCredentials treats it.
+            foreach (string header in headers)
+            {
+                yield return [header, "client_credentials", "", ""];
+                yield return [header, "client_credentials", "my-client", BodySecret];
+                yield return [header, "client_credentials", "my-client", ""];
+                yield return [header, "client_credentials", "", BodySecret];
+            }
+
+            yield return
+            [
+                "Bearer xbasicx",
+                "client_credentials",
+                new string('i', ExpectedMaxBodyCredentialLength + 1),
+                BodySecret,
+            ];
+            yield return ["Bearer xbasicx", "password", "", ""];
+            yield return [$"Basicxyz:{HeaderSentinel}", "password", "", ""];
+        }
+
+        private RecordingLogger<OAuthManager> _logger = default!;
+        private IHttpClientWrapper _httpClient = default!;
+        private HttpResponseMessage _response = default!;
+        private string _rawBody = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new RecordingLogger<OAuthManager>();
+            _httpClient = A.Fake<IHttpClientWrapper>();
+
+            _response = await new OAuthManager(_logger).GetAccessTokenAsync(
+                _httpClient,
+                grantType,
+                authHeader,
+                new TokenRequestCredentials(clientId, clientSecret),
+                "http://example.com/oauth/token",
+                new TraceId(CorrelationId)
+            );
+            _rawBody = await _response.Content.ReadAsStringAsync();
+        }
+
+        [Test]
+        public void It_returns_the_existing_non_basic_response()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            JsonNode body = JsonNode.Parse(_rawBody)!;
+            body["title"]!.GetValue<string>().Should().Be(ExpectedInvalidClientError);
+            body["detail"]!.GetValue<string>().Should().Be(ExpectedNonBasicDetail);
+        }
+
+        [Test]
+        public void It_sends_nothing_upstream()
+        {
+            A.CallTo(() => _httpClient.SendAsync(A<HttpRequestMessage>._)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_does_not_echo_credentials_or_header_exceptions()
+        {
+            _rawBody.Should().NotContain(HeaderSentinel).And.NotContain(BodySecret);
+
+            // Guards against passing vacuously on a run that logged nothing at all.
+            _logger
+                .Records.Should()
+                .Contain(record => record.Message == $"GetAccessTokenAsync - {CorrelationId}");
+            foreach (LogRecord record in _logger.Records)
+            {
+                record.Message.Should().NotContain(HeaderSentinel).And.NotContain(BodySecret);
+                record.Exception.Should().BeNull();
+            }
+        }
+    }
+
+    /// <summary>
+    /// The scheme is recognized after leading whitespace, and ends at any whitespace character,
+    /// not only a space. With an unsupported grant type, reaching the grant-type check shows the
+    /// header passed the scheme test without the parameter being judged: a bare <c>Basic</c> has
+    /// no parameter at all, and validating the parameter stays with the header-add guard and the
+    /// upstream.
+    /// </summary>
+    [TestFixture("Basic")]
+    [TestFixture(" \tBaSiC abc:123")]
+    [TestFixture("Basic\tabc:123")]
+    [TestFixture("Basic\u2003abc:123")]
+    [Parallelizable]
+    public class Given_Basic_Scheme_Recognition_Before_Grant_Validation(string authHeader)
+        : When_Getting_An_Access_Token
+    {
+        [SetUp]
+        public async Task SetUp()
+        {
+            await Act(authHeader, HttpStatusCode.OK, "{}", "password", TokenRequestCredentials.None);
+        }
+
+        [Test]
+        public async Task It_reaches_the_grant_type_check()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await ResponseDetail()).Should().Be("Unsupported grant type");
+        }
+
+        [Test]
+        public void It_sends_nothing_upstream()
+        {
+            _upstreamRequest.Should().BeNull();
+        }
+    }
+
+    /// <summary>
+    /// The scheme comparison ignores case, and a recognized header is forwarded exactly as sent.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Mixed_Case_Basic_Header : When_Getting_An_Access_Token
+    {
+        private const string AuthHeader = "BaSiC Y2xpZW50OnNlY3JldA==";
+
+        [SetUp]
+        public async Task SetUp()
+        {
+            await Act(AuthHeader);
+        }
+
+        [Test]
+        public void It_responds_with_ok()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_forwards_the_original_header()
+        {
+            UpstreamAuthorization().Should().Be(AuthHeader);
+        }
+    }
+
+    /// <summary>
+    /// A genuine Basic scheme followed by a parameter <c>HttpHeaders.Add</c> cannot parse is not
+    /// rejected at the scheme test, and the grant type still outranks the header-add guard.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Unparseable_Genuine_Basic_Header_And_An_Unsupported_Grant
+    {
+        private const string Sentinel = "s3cr3t-sentinel";
+
+        private RecordingLogger<OAuthManager> _logger = default!;
+        private IHttpClientWrapper _httpClient = default!;
+        private HttpResponseMessage _response = default!;
+        private string _rawBody = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = new RecordingLogger<OAuthManager>();
+            _httpClient = A.Fake<IHttpClientWrapper>();
+
+            _response = await new OAuthManager(_logger).GetAccessTokenAsync(
+                _httpClient,
+                "password",
+                $"Basic abc,Basic {Sentinel}",
+                TokenRequestCredentials.None,
+                "http://example.com/oauth/token",
+                new TraceId(CorrelationId)
+            );
+            _rawBody = await _response.Content.ReadAsStringAsync();
+        }
+
+        [Test]
+        public void It_responds_400_with_the_unsupported_grant_detail()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode.Parse(_rawBody)!["detail"]!.GetValue<string>().Should().Be("Unsupported grant type");
+        }
+
+        [Test]
+        public void It_sends_nothing_upstream()
+        {
+            A.CallTo(() => _httpClient.SendAsync(A<HttpRequestMessage>._)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_does_not_echo_the_header_or_an_exception()
+        {
+            _rawBody.Should().NotContain(Sentinel);
+
+            _logger.Records.Should().NotBeEmpty();
+            foreach (LogRecord record in _logger.Records)
+            {
+                record.Message.Should().NotContain(Sentinel);
+                record.Exception.Should().BeNull();
+            }
+        }
+    }
+
+    /// <summary>
     /// FR-LOG-6 regression guard for the upstream-error (non-200, non-401) branch. OAuthManager
     /// produces a 502's log record and its response body from separate expressions in two
     /// places — this branch and the <c>catch</c> branch below it — so both must pass
@@ -1798,6 +2027,17 @@ public class OAuthManagerTests
         {
             LogRecord warning = _logger.Records.Single(record => record.Level == LogLevel.Warning);
             warning.Properties["TraceId"].Should().Be(UpstreamCorrelationId);
+        }
+
+        [Test]
+        public void It_logs_the_original_upstream_status_beside_the_correlation_id()
+        {
+            LogRecord warning = _logger.Records.Single(record => record.Level == LogLevel.Warning);
+            warning
+                .Properties.Should()
+                .ContainKey("UpstreamStatusCode")
+                .WhoseValue.Should()
+                .Be((int)HttpStatusCode.InternalServerError);
         }
 
         [Test]
@@ -2418,9 +2658,15 @@ public class OAuthManagerTests
         return record!.Message;
     }
 
-    [TestFixture]
+    /// <summary>
+    /// The client gets the same generic 502 whichever failure status the upstream answered with,
+    /// so the original status survives only on the log entry, where an operator can tell a 500
+    /// from a 503.
+    /// </summary>
+    [TestFixture(HttpStatusCode.InternalServerError)]
+    [TestFixture(HttpStatusCode.ServiceUnavailable)]
     [Parallelizable]
-    public class Given_An_Upstream_Error_Body_Carrying_Internal_Details
+    public class Given_An_Upstream_Error_Body_Carrying_Internal_Details(HttpStatusCode upstreamStatus)
     {
         private const string InternalHostSentinel = "idp-internal-07.corp.local";
 
@@ -2430,6 +2676,16 @@ public class OAuthManagerTests
             { "error": "server_error", "error_description": "upstream connect to {{InternalHostSentinel}}:8443 failed", "trace": "{{StackFrameSentinel}}" }
             """;
 
+        /// <summary>
+        /// Written out rather than computed with the sanitizer, so the test does not merely repeat
+        /// whatever the production code does. The body has no control characters and is far under
+        /// the cap, so it is logged unchanged.
+        /// </summary>
+        private const string ExpectedLoggedContent =
+            "{ \"error\": \"server_error\", \"error_description\": \"upstream connect to "
+            + "idp-internal-07.corp.local:8443 failed\", \"trace\": "
+            + "\"at Acme.Identity.TokenEndpoint.Issue(TokenRequest)\" }";
+
         private HttpResponseMessage _response = default!;
         private RecordingLogger<OAuthManager> _logger = default!;
         private string _rawResponseBody = default!;
@@ -2438,9 +2694,36 @@ public class OAuthManagerTests
         [SetUp]
         public async Task Setup()
         {
-            (_response, _logger) = await UpstreamResponds(HttpStatusCode.InternalServerError, _upstreamBody);
+            (_response, _logger) = await UpstreamResponds(upstreamStatus, _upstreamBody);
             _rawResponseBody = await _response.Content.ReadAsStringAsync();
             _body = JsonNode.Parse(_rawResponseBody)!;
+        }
+
+        [Test]
+        public void It_logs_a_single_warning()
+        {
+            _logger.Records.Should().ContainSingle(record => record.Level == LogLevel.Warning);
+        }
+
+        [Test]
+        public void It_logs_the_original_upstream_status_as_an_integer()
+        {
+            LogRecord warning = _logger.Records.Single(record => record.Level == LogLevel.Warning);
+            warning
+                .Properties.Should()
+                .ContainKey("UpstreamStatusCode")
+                .WhoseValue.Should()
+                .BeOfType<int>()
+                .Which.Should()
+                .Be((int)upstreamStatus);
+        }
+
+        [Test]
+        public void It_logs_the_exact_trace_id_and_sanitized_content()
+        {
+            LogRecord warning = _logger.Records.Single(record => record.Level == LogLevel.Warning);
+            warning.Properties["TraceId"].Should().Be(CorrelationId);
+            warning.Properties["Content"].Should().Be(ExpectedLoggedContent);
         }
 
         [Test]
@@ -2549,6 +2832,68 @@ public class OAuthManagerTests
             // The strict Method/Path allowlist would have stripped every quote, brace and comma
             // here, leaving a run of bare words; the free-text sanitizer keeps them.
             _loggedContent.Should().Contain("\"error_description\": \"realm not found\"");
+        }
+    }
+
+    /// <summary>
+    /// A gateway or proxy in front of the identity service answers with an HTML page rather than
+    /// JSON. Only the body text is HTML here (the shared helper labels it JSON), which is enough:
+    /// this branch never reads the content type. The body is logged as text, never parsed, and the
+    /// client still gets the generic 502.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Non_Json_Upstream_Failure
+    {
+        private const string InternalHostSentinel = "idp-internal-07.corp.local";
+
+        private const string UpstreamBody = "<html>\r\n\tidp-internal-07.corp.local</html>";
+
+        private const string ExpectedLoggedContent = "<html>idp-internal-07.corp.local</html>";
+
+        private HttpResponseMessage _response = default!;
+        private RecordingLogger<OAuthManager> _logger = default!;
+        private string _rawResponseBody = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_response, _logger) = await UpstreamResponds(HttpStatusCode.ServiceUnavailable, UpstreamBody);
+            _rawResponseBody = await _response.Content.ReadAsStringAsync();
+        }
+
+        [Test]
+        public void It_responds_with_the_generic_bad_gateway()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            JsonNode.Parse(_rawResponseBody)!["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be(ExpectedGatewayDetail);
+        }
+
+        [Test]
+        public void It_does_not_disclose_the_upstream_internal_hostname()
+        {
+            _rawResponseBody.Should().NotContain(InternalHostSentinel);
+        }
+
+        [Test]
+        public void It_logs_exactly_the_sanitized_body()
+        {
+            LoggedUpstreamContent(_logger).Should().Be(ExpectedLoggedContent);
+        }
+
+        [Test]
+        public void It_logs_the_original_upstream_status()
+        {
+            LogRecord warning = _logger.Records.Single(record => record.Level == LogLevel.Warning);
+            warning
+                .Properties.Should()
+                .ContainKey("UpstreamStatusCode")
+                .WhoseValue.Should()
+                .Be((int)HttpStatusCode.ServiceUnavailable);
         }
     }
 
@@ -2800,18 +3145,24 @@ public class OAuthManagerTests
     {
         private JsonNode _fromUpstreamResponse = default!;
         private JsonNode _fromThrownException = default!;
+        private RecordingLogger<OAuthManager> _exceptionPathLogger = default!;
 
         /// <summary>
         /// Drives OAuthManager against a faked upstream whose send throws, exercising the
         /// <c>catch</c> branch's 502.
         /// </summary>
-        private static async Task<HttpResponseMessage> UpstreamThrows(string message)
+        private static async Task<(
+            HttpResponseMessage Response,
+            RecordingLogger<OAuthManager> Logger
+        )> UpstreamThrows(string message)
         {
+            var logger = new RecordingLogger<OAuthManager>();
+
             var httpClient = A.Fake<IHttpClientWrapper>();
             A.CallTo(() => httpClient.SendAsync(A<HttpRequestMessage>._))
                 .ThrowsAsync(() => new InvalidOperationException(message));
 
-            return await new OAuthManager(new RecordingLogger<OAuthManager>()).GetAccessTokenAsync(
+            HttpResponseMessage response = await new OAuthManager(logger).GetAccessTokenAsync(
                 httpClient,
                 "client_credentials",
                 "basic abc:123",
@@ -2819,6 +3170,8 @@ public class OAuthManagerTests
                 "http://example.com/oauth/token",
                 new TraceId(CorrelationId)
             );
+
+            return (response, logger);
         }
 
         [SetUp]
@@ -2830,8 +3183,29 @@ public class OAuthManagerTests
             );
             _fromUpstreamResponse = JsonNode.Parse(await responsePath.Content.ReadAsStringAsync())!;
 
-            HttpResponseMessage exceptionPath = await UpstreamThrows("this is a problem");
+            (HttpResponseMessage exceptionPath, _exceptionPathLogger) = await UpstreamThrows(
+                "this is a problem"
+            );
             _fromThrownException = JsonNode.Parse(await exceptionPath.Content.ReadAsStringAsync())!;
+        }
+
+        [Test]
+        public void It_logs_one_error_with_the_trace_id_value_on_the_exception_path()
+        {
+            LogRecord error = _exceptionPathLogger
+                .Records.Should()
+                .ContainSingle(record => record.Level == LogLevel.Error)
+                .Subject;
+            error.Properties["TraceId"].Should().Be(CorrelationId);
+        }
+
+        [Test]
+        public void It_does_not_invent_an_upstream_status_on_the_exception_path()
+        {
+            // No response exists when the send throws, so there is no status to report.
+            _exceptionPathLogger
+                .Records.Should()
+                .NotContain(record => record.Properties.ContainsKey("UpstreamStatusCode"));
         }
 
         [Test]

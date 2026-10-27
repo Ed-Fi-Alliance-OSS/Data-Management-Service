@@ -134,8 +134,8 @@ Feature: Client credentials at the token endpoint
     @DMS-1604
     @DMS-1606
     @e2e-ci-shard-1
-    Scenario: 07 A Bearer Authorization header is rejected even with credentials in the body
-      When a token request is made with Authorization header "Bearer some-access-token", content type "application/x-www-form-urlencoded" and body
+    Scenario: 07 A Bearer Authorization header containing "basic" is rejected even with credentials in the body
+      When a token request is made with Authorization header "Bearer xbasicx", content type "application/x-www-form-urlencoded" and body
         """
         grant_type=client_credentials&client_id={clientId}&client_secret={clientSecret}
         """
