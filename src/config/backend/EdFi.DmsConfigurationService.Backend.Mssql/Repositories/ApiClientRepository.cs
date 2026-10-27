@@ -240,7 +240,16 @@ public class ApiClientRepository(
         }
         catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateNameConstraint))
         {
-            logger.LogWarning(ex, "API client name must be unique within the application");
+            // The SQL Server message names the conflicting key, which carries the client-supplied name,
+            // so only fixed text, the error number and the matched constraint are logged, never the
+            // exception or its message.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "API client name must be unique within the application ({ErrorNumber}, {ConstraintName})",
+                ex.Number,
+                DuplicateNameConstraint
+            );
+#pragma warning restore S6667
             await transaction.RollbackAsync();
             return new ApiClientInsertResult.FailureDuplicateName();
         }
@@ -686,7 +695,16 @@ public class ApiClientRepository(
         }
         catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateNameConstraint))
         {
-            logger.LogWarning(ex, "API client name must be unique within the application");
+            // The SQL Server message names the conflicting key, which carries the client-supplied name,
+            // so only fixed text, the error number and the matched constraint are logged, never the
+            // exception or its message.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "API client name must be unique within the application ({ErrorNumber}, {ConstraintName})",
+                ex.Number,
+                DuplicateNameConstraint
+            );
+#pragma warning restore S6667
             await RollbackSafelyAsync(transaction);
             return new ApiClientUpdateResult.FailureDuplicateName();
         }

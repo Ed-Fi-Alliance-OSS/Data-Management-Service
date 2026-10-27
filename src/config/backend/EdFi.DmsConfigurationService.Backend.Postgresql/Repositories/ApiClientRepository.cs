@@ -245,7 +245,15 @@ public class ApiClientRepository(
                 && ex.ConstraintName == DuplicateNameConstraint
             )
         {
-            logger.LogWarning(ex, "API client name must be unique within the application");
+            // With IncludeErrorDetail the exception carries the conflicting client-supplied name, so only
+            // the fixed text and the safe diagnostic fields are logged, never the exception itself.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "API client name must be unique within the application ({SqlState}, {ConstraintName})",
+                ex.SqlState,
+                ex.ConstraintName
+            );
+#pragma warning restore S6667
             await transaction.RollbackAsync();
             return new ApiClientInsertResult.FailureDuplicateName();
         }
@@ -699,7 +707,15 @@ public class ApiClientRepository(
                 && ex.ConstraintName == DuplicateNameConstraint
             )
         {
-            logger.LogWarning(ex, "API client name must be unique within the application");
+            // With IncludeErrorDetail the exception carries the conflicting client-supplied name, so only
+            // the fixed text and the safe diagnostic fields are logged, never the exception itself.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "API client name must be unique within the application ({SqlState}, {ConstraintName})",
+                ex.SqlState,
+                ex.ConstraintName
+            );
+#pragma warning restore S6667
             await RollbackSafelyAsync(transaction);
             return new ApiClientUpdateResult.FailureDuplicateName();
         }

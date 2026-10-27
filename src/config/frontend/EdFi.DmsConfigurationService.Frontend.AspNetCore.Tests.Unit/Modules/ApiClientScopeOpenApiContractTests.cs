@@ -581,10 +581,9 @@ public partial class ApiClientModuleTests
         {
             _inserts[example].Status.Should().Be(HttpStatusCode.Created);
             _createdClaims[_inserts.Keys.ToList().IndexOf(example)].Should().Be(claim);
-            ApiClientEducationOrganizationScope? scope = _insertCommands[
-                _inserts.Keys.ToList().IndexOf(example)
-            ].EducationOrganizationScope;
-            (scope?.GetType()).Should().Be(scopeType);
+            (_insertCommands[_inserts.Keys.ToList().IndexOf(example)].EducationOrganizationScope?.GetType())
+                .Should()
+                .Be(scopeType);
         }
 
         [Test]
