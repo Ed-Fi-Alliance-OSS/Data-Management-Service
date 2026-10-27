@@ -74,14 +74,16 @@ public class Given_an_Application_save_while_a_state_read_is_paused
         DateTime ceiling = DateTime.UtcNow + BlockingWaitCeiling;
         while (DateTime.UtcNow < ceiling)
         {
-            short? blockedSession = await connection.ExecuteScalarAsync<short?>(
-                "SELECT TOP (1) session_id FROM sys.dm_exec_requests WHERE blocking_session_id = @BlockingSession;",
-                new { BlockingSession = blockingSession },
-                transaction
-            );
-            if (blockedSession is not null)
+            if (
+                await connection.ExecuteScalarAsync<short?>(
+                    "SELECT TOP (1) session_id FROM sys.dm_exec_requests WHERE blocking_session_id = @BlockingSession;",
+                    new { BlockingSession = blockingSession },
+                    transaction
+                )
+                is short blockedSession
+            )
             {
-                return blockedSession.Value;
+                return blockedSession;
             }
 
             await Task.Delay(TimeSpan.FromMilliseconds(50));
@@ -191,14 +193,16 @@ public abstract class ClientWriterWhileAStateReadIsPausedFixture
         DateTime ceiling = DateTime.UtcNow + BlockingWaitCeiling;
         while (DateTime.UtcNow < ceiling)
         {
-            short? blockedSession = await connection.ExecuteScalarAsync<short?>(
-                "SELECT TOP (1) session_id FROM sys.dm_exec_requests WHERE blocking_session_id = @BlockingSession;",
-                new { BlockingSession = blockingSession },
-                transaction
-            );
-            if (blockedSession is not null)
+            if (
+                await connection.ExecuteScalarAsync<short?>(
+                    "SELECT TOP (1) session_id FROM sys.dm_exec_requests WHERE blocking_session_id = @BlockingSession;",
+                    new { BlockingSession = blockingSession },
+                    transaction
+                )
+                is short blockedSession
+            )
             {
-                return blockedSession.Value;
+                return blockedSession;
             }
 
             await Task.Delay(TimeSpan.FromMilliseconds(50));

@@ -206,6 +206,16 @@ public static class FailureResponse
             []
         );
 
+    public static JsonNode ForEducationOrganizationScopeConflict(string detail, string correlationId) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: $"{_conflictTypePrefix}:education-organization-scope",
+            title: "Education Organization Scope Conflict",
+            status: 409,
+            correlationId: correlationId,
+            []
+        );
+
     public static JsonNode ForUnresolvedReference(string detail, string correlationId) =>
         CreateBaseJsonObject(
             detail: detail,

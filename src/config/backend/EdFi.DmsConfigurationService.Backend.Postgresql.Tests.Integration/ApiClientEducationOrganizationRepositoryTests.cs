@@ -258,7 +258,30 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
             .BeOfType<ApiClientEducationOrganizationStateResult.Success>()
             .Subject.State;
 
-    protected Task<ApiClientUpdateResult> UpdateApiClientAsync(int id, int applicationId, string name) =>
+    protected Task<ApiClientInsertResult> InsertApiClientWithScopeAsync(
+        int applicationId,
+        ApiClientEducationOrganizationScope? scope,
+        int[]? dataStoreIds = null
+    ) =>
+        ApiClientRepository.InsertApiClient(
+            new ApiClientInsertCommand
+            {
+                ApplicationId = applicationId,
+                Name = $"Client {Guid.NewGuid():N}",
+                IsApproved = true,
+                DataStoreIds = dataStoreIds ?? [],
+                EducationOrganizationScope = scope,
+            },
+            new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+        );
+
+    protected Task<ApiClientUpdateResult> UpdateApiClientAsync(
+        int id,
+        int applicationId,
+        string name,
+        ApiClientEducationOrganizationScope? scope = null,
+        int[]? dataStoreIds = null
+    ) =>
         ApiClientRepository.UpdateApiClient(
             new ApiClientUpdateCommand
             {
@@ -266,8 +289,28 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
                 ApplicationId = applicationId,
                 Name = name,
                 IsApproved = true,
+                DataStoreIds = dataStoreIds ?? [],
+                EducationOrganizationScope = scope,
             }
         );
+
+    /// <summary>A data store id no tenant has, so a write that assigns it fails after its other changes.</summary>
+    protected const int MissingDataStoreId = int.MaxValue;
+
+    /// <summary>Inserts an Application holding 1001, 1003 and 1005, which lacks the narrowed client's 1002.</summary>
+    protected Task<int> InsertDestinationApplicationAsync() =>
+        InsertApplicationAsync(
+            "Destination Application",
+            [1001, 1003, 1005],
+            Guid.NewGuid().ToString(),
+            Guid.NewGuid()
+        );
+
+    protected async Task<ClientRow[]> ClientRowsOfAsync(int apiClientId) =>
+        (await ClientRowsAsync()).Where(row => row.ApiClientId == apiClientId).ToArray();
+
+    protected ClientRow[] ClientRowsBeforeOf(int apiClientId) =>
+        ClientRowsBefore.Where(row => row.ApiClientId == apiClientId).ToArray();
 
     protected async Task<(int ApplicationId, string Name)> ClientApplicationAndNameAsync(int apiClientId) =>
         await Connection!.QuerySingleAsync<(int, string)>(
@@ -1177,5 +1220,456 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
             (await ClientApplicationAndNameAsync(SecondNarrowedClientId))
                 .ApplicationId.Should()
                 .Be(ScopedApplicationId);
+    }
+
+    [TestFixture]
+    public class Given_a_client_inserted_with_a_narrowed_scope : ApiClientEducationOrganizationRepositoryTests
+    {
+        private ApiClientInsertResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+            _result = await InsertApiClientWithScopeAsync(
+                ScopedApplicationId,
+                new ApiClientEducationOrganizationScope.Narrow([1003, 1001, 1003])
+            );
+        }
+
+        private int InsertedClientId => _result.Should().BeOfType<ApiClientInsertResult.Success>().Subject.Id;
+
+        [Test]
+        public void It_succeeds() => _result.Should().BeOfType<ApiClientInsertResult.Success>();
+
+        [Test]
+        public async Task It_stores_the_client_narrowed_to_the_distinct_list() =>
+            ShouldMatch(
+                await StateAsync(InsertedClientId),
+                State(ScopedApplicationId, false, [1001, 1003], [1001, 1003])
+            );
+
+        [Test]
+        public async Task It_points_the_client_rows_at_its_Application() =>
+            (await ClientRowsOfAsync(InsertedClientId))
+                .Select(row => (row.ApplicationId, row.EducationOrganizationId))
+                .Should()
+                .Equal((ScopedApplicationId, 1001L), (ScopedApplicationId, 1003L));
+    }
+
+    [TestFixture]
+    public class Given_clients_inserted_with_an_inheriting_and_an_empty_narrowed_scope
+        : ApiClientEducationOrganizationRepositoryTests
+    {
+        private int _inheritingClientId;
+        private int _emptyClientId;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+            _inheritingClientId = (
+                await InsertApiClientWithScopeAsync(
+                    ScopedApplicationId,
+                    new ApiClientEducationOrganizationScope.Inherit()
+                )
+            )
+                .Should()
+                .BeOfType<ApiClientInsertResult.Success>()
+                .Subject.Id;
+            _emptyClientId = (
+                await InsertApiClientWithScopeAsync(
+                    ScopedApplicationId,
+                    new ApiClientEducationOrganizationScope.Narrow([])
+                )
+            )
+                .Should()
+                .BeOfType<ApiClientInsertResult.Success>()
+                .Subject.Id;
+        }
+
+        [Test]
+        public async Task It_makes_the_inheriting_client_inherit_with_the_Application_list() =>
+            ShouldMatch(
+                await StateAsync(_inheritingClientId),
+                State(ScopedApplicationId, true, [1001, 1002, 1003], [1001, 1002, 1003])
+            );
+
+        [Test]
+        public async Task It_stores_the_empty_narrowed_client_without_rows() =>
+            ShouldMatch(await StateAsync(_emptyClientId), State(ScopedApplicationId, false, [], []));
+    }
+
+    [TestFixture]
+    public class Given_a_client_insert_with_a_narrowed_scope_not_on_the_Application
+        : ApiClientEducationOrganizationRepositoryTests
+    {
+        private ApiClientInsertResult _result = null!;
+        private int[] _clientIdsBefore = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+            _clientIdsBefore = await ApiClientIdsAsync();
+            _result = await InsertApiClientWithScopeAsync(
+                ScopedApplicationId,
+                new ApiClientEducationOrganizationScope.Narrow([1001, 1004])
+            );
+        }
+
+        [Test]
+        public void It_reports_the_ids_not_on_the_Application() =>
+            _result
+                .Should()
+                .BeOfType<ApiClientInsertResult.FailureRequestedEducationOrganizationsNotOnApplication>()
+                .Which.EducationOrganizationIds.Should()
+                .Equal(1004);
+
+        [Test]
+        public async Task It_inserts_no_client() =>
+            (await ApiClientIdsAsync()).Should().Equal(_clientIdsBefore);
+
+        [Test]
+        public async Task It_inserts_no_client_rows() =>
+            (await ClientRowsAsync()).Should().Equal(ClientRowsBefore);
+    }
+
+    [TestFixture]
+    public class Given_a_narrowed_client_insert_that_fails_on_its_data_stores
+        : ApiClientEducationOrganizationRepositoryTests
+    {
+        private ApiClientInsertResult _result = null!;
+        private int[] _clientIdsBefore = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+            _clientIdsBefore = await ApiClientIdsAsync();
+            _result = await InsertApiClientWithScopeAsync(
+                ScopedApplicationId,
+                new ApiClientEducationOrganizationScope.Narrow([1001]),
+                [MissingDataStoreId]
+            );
+        }
+
+        [Test]
+        public void It_fails_on_the_data_stores() =>
+            _result.Should().BeOfType<ApiClientInsertResult.FailureDataStoreNotFound>();
+
+        [Test]
+        public async Task It_inserts_no_client() =>
+            (await ApiClientIdsAsync()).Should().Equal(_clientIdsBefore);
+
+        [Test]
+        public async Task It_rolls_back_the_scope_rows() =>
+            (await ClientRowsAsync()).Should().Equal(ClientRowsBefore);
+    }
+
+    [TestFixture]
+    public class Given_scopes_requested_by_updates_on_the_same_Application
+        : ApiClientEducationOrganizationRepositoryTests
+    {
+        private ApiClientUpdateResult _narrowResult = null!;
+        private ApiClientUpdateResult _inheritResult = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+            await ApiClientRepository.SetApiClientIdentityProviderSyncPending(
+                InheritingClientId,
+                PendingSince
+            );
+            await ApiClientRepository.SetApiClientIdentityProviderSyncPending(NarrowedClientId, PendingSince);
+            _narrowResult = await UpdateApiClientAsync(
+                InheritingClientId,
+                ScopedApplicationId,
+                "Narrowed by update",
+                new ApiClientEducationOrganizationScope.Narrow([1002])
+            );
+            _inheritResult = await UpdateApiClientAsync(
+                NarrowedClientId,
+                ScopedApplicationId,
+                "Inheriting by update",
+                new ApiClientEducationOrganizationScope.Inherit()
+            );
+        }
+
+        [Test]
+        public void It_narrows_the_inheriting_client() =>
+            _narrowResult.Should().BeOfType<ApiClientUpdateResult.Success>();
+
+        [Test]
+        public async Task It_stores_the_narrowed_list_and_keeps_the_pending_time() =>
+            ShouldMatch(
+                await StateAsync(InheritingClientId),
+                State(ScopedApplicationId, false, [1002], [1002], PendingSince)
+            );
+
+        [Test]
+        public void It_makes_the_narrowed_client_inherit() =>
+            _inheritResult.Should().BeOfType<ApiClientUpdateResult.Success>();
+
+        [Test]
+        public async Task It_gives_the_inheriting_client_the_Application_list_and_keeps_the_pending_time() =>
+            ShouldMatch(
+                await StateAsync(NarrowedClientId),
+                State(ScopedApplicationId, true, [1001, 1002, 1003], [1001, 1002, 1003], PendingSince)
+            );
+
+        [Test]
+        public async Task It_saves_the_other_client_changes() =>
+            (await ClientApplicationAndNameAsync(NarrowedClientId)).Name.Should().Be("Inheriting by update");
+
+        [Test]
+        public async Task It_leaves_the_other_clients_rows_untouched() =>
+            (await ClientRowsAsync())
+                .Where(row => row.ApiClientId != InheritingClientId && row.ApiClientId != NarrowedClientId)
+                .Should()
+                .Equal(
+                    ClientRowsBefore.Where(row =>
+                        row.ApiClientId != InheritingClientId && row.ApiClientId != NarrowedClientId
+                    )
+                );
+    }
+
+    [TestFixture]
+    public class Given_a_client_that_does_not_fit_moved_with_a_replacement_list_that_does
+        : ApiClientEducationOrganizationRepositoryTests
+    {
+        private int _destinationApplicationId;
+        private ApiClientUpdateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+            _destinationApplicationId = await InsertDestinationApplicationAsync();
+            _result = await UpdateApiClientAsync(
+                NarrowedClientId,
+                _destinationApplicationId,
+                "Moved narrowed client",
+                new ApiClientEducationOrganizationScope.Narrow([1005, 1001])
+            );
+        }
+
+        [Test]
+        public void It_succeeds() => _result.Should().BeOfType<ApiClientUpdateResult.Success>();
+
+        [Test]
+        public async Task It_narrows_the_client_on_the_destination_to_the_replacement_list() =>
+            ShouldMatch(
+                await StateAsync(NarrowedClientId),
+                State(_destinationApplicationId, false, [1001, 1005], [1001, 1005])
+            );
+
+        [Test]
+        public async Task It_points_the_client_rows_at_the_destination() =>
+            (await ClientRowsOfAsync(NarrowedClientId))
+                .Select(row => (row.ApplicationId, row.EducationOrganizationId))
+                .Should()
+                .Equal((_destinationApplicationId, 1001L), (_destinationApplicationId, 1005L));
+    }
+
+    [TestFixture]
+    public class Given_a_client_that_does_not_fit_moved_to_inherit
+        : ApiClientEducationOrganizationRepositoryTests
+    {
+        private int _destinationApplicationId;
+        private ApiClientUpdateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+            _destinationApplicationId = await InsertDestinationApplicationAsync();
+            _result = await UpdateApiClientAsync(
+                NarrowedClientId,
+                _destinationApplicationId,
+                "Moved narrowed client",
+                new ApiClientEducationOrganizationScope.Inherit()
+            );
+        }
+
+        [Test]
+        public void It_succeeds() => _result.Should().BeOfType<ApiClientUpdateResult.Success>();
+
+        [Test]
+        public async Task It_makes_the_client_inherit_the_destination_list() =>
+            ShouldMatch(
+                await StateAsync(NarrowedClientId),
+                State(_destinationApplicationId, true, [1001, 1003, 1005], [1001, 1003, 1005])
+            );
+
+        [Test]
+        public async Task It_points_the_client_rows_at_the_destination() =>
+            (await ClientRowsOfAsync(NarrowedClientId))
+                .Should()
+                .OnlyContain(row => row.ApplicationId == _destinationApplicationId)
+                .And.HaveCount(3);
+    }
+
+    [TestFixture]
+    public class Given_a_client_moved_with_a_replacement_list_only_on_its_current_Application
+        : ApiClientEducationOrganizationRepositoryTests
+    {
+        private ApiClientUpdateResult _result = null!;
+        private (int ApplicationId, string Name) _clientBefore;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+            int destinationApplicationId = await InsertDestinationApplicationAsync();
+            _clientBefore = await ClientApplicationAndNameAsync(SecondNarrowedClientId);
+
+            // 1002 is on the current Application but not on the destination, which the list is
+            // checked against; the omitted scope would have fit, since {1001, 1003} is on both
+            _result = await UpdateApiClientAsync(
+                SecondNarrowedClientId,
+                destinationApplicationId,
+                "Unmoved narrowed client",
+                new ApiClientEducationOrganizationScope.Narrow([1001, 1002])
+            );
+        }
+
+        [Test]
+        public void It_reports_the_requested_ids_not_on_the_destination() =>
+            _result
+                .Should()
+                .BeOfType<ApiClientUpdateResult.FailureRequestedEducationOrganizationsNotOnApplication>()
+                .Which.EducationOrganizationIds.Should()
+                .Equal(1002);
+
+        [Test]
+        public async Task It_leaves_the_client_Application_and_name() =>
+            (await ClientApplicationAndNameAsync(SecondNarrowedClientId)).Should().Be(_clientBefore);
+
+        [Test]
+        public async Task It_leaves_the_client_scope() =>
+            ShouldMatch(
+                await StateAsync(SecondNarrowedClientId),
+                State(ScopedApplicationId, false, [1001, 1003], [1001, 1003])
+            );
+
+        [Test]
+        public async Task It_leaves_the_client_rows() =>
+            (await ClientRowsOfAsync(SecondNarrowedClientId))
+                .Should()
+                .Equal(ClientRowsBeforeOf(SecondNarrowedClientId));
+    }
+
+    [TestFixture]
+    public class Given_a_requested_scope_on_the_same_Application_not_on_it
+        : ApiClientEducationOrganizationRepositoryTests
+    {
+        private ApiClientUpdateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+            _result = await UpdateApiClientAsync(
+                InheritingClientId,
+                ScopedApplicationId,
+                "Renamed client",
+                new ApiClientEducationOrganizationScope.Narrow([1001, 1005])
+            );
+        }
+
+        [Test]
+        public void It_reports_the_requested_ids_not_on_the_Application() =>
+            _result
+                .Should()
+                .BeOfType<ApiClientUpdateResult.FailureRequestedEducationOrganizationsNotOnApplication>()
+                .Which.EducationOrganizationIds.Should()
+                .Equal(1005);
+
+        [Test]
+        public async Task It_leaves_the_client_inheriting() =>
+            ShouldMatch(
+                await StateAsync(InheritingClientId),
+                State(ScopedApplicationId, true, [1001, 1002, 1003], [1001, 1002, 1003])
+            );
+
+        [Test]
+        public async Task It_leaves_the_client_name() =>
+            (await ClientApplicationAndNameAsync(InheritingClientId)).Name.Should().Be("Scoped Application");
+
+        [Test]
+        public async Task It_leaves_every_client_row_untouched() =>
+            (await ClientRowsAsync()).Should().Equal(ClientRowsBefore);
+    }
+
+    [TestFixture]
+    public class Given_requested_scope_updates_that_fail_after_their_rows_are_replaced
+        : ApiClientEducationOrganizationRepositoryTests
+    {
+        private ApiClientUpdateResult _sameApplicationResult = null!;
+        private ApiClientUpdateResult _moveResult = null!;
+        private (int ApplicationId, string Name) _sameApplicationClientBefore;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+            _sameApplicationClientBefore = await ClientApplicationAndNameAsync(NarrowedClientId);
+
+            // A missing data store fails the update after the scope rows and the flag are written
+            _sameApplicationResult = await UpdateApiClientAsync(
+                NarrowedClientId,
+                ScopedApplicationId,
+                "Renamed client",
+                new ApiClientEducationOrganizationScope.Inherit(),
+                [MissingDataStoreId]
+            );
+
+            // The destination's default client is named after the Application, so the move violates
+            // UX_ApiClient_ApplicationId_Name after its rows are deleted
+            int destinationApplicationId = await InsertDestinationApplicationAsync();
+            _moveResult = await UpdateApiClientAsync(
+                InheritingClientId,
+                destinationApplicationId,
+                "Destination Application",
+                new ApiClientEducationOrganizationScope.Narrow([1005])
+            );
+        }
+
+        [Test]
+        public void It_fails_the_same_Application_update_on_its_data_stores() =>
+            _sameApplicationResult.Should().BeOfType<ApiClientUpdateResult.FailureDataStoreNotFound>();
+
+        [Test]
+        public async Task It_keeps_the_same_Application_client_narrowed() =>
+            ShouldMatch(
+                await StateAsync(NarrowedClientId),
+                State(ScopedApplicationId, false, [1002], [1002])
+            );
+
+        [Test]
+        public async Task It_rolls_back_the_same_Application_client_rows_and_name()
+        {
+            (await ClientRowsOfAsync(NarrowedClientId)).Should().Equal(ClientRowsBeforeOf(NarrowedClientId));
+            (await ClientApplicationAndNameAsync(NarrowedClientId)).Should().Be(_sameApplicationClientBefore);
+        }
+
+        [Test]
+        public void It_fails_the_move_on_the_client_name() =>
+            _moveResult.Should().BeOfType<ApiClientUpdateResult.FailureDuplicateName>();
+
+        [Test]
+        public async Task It_keeps_the_moved_client_inheriting_on_its_Application() =>
+            ShouldMatch(
+                await StateAsync(InheritingClientId),
+                State(ScopedApplicationId, true, [1001, 1002, 1003], [1001, 1002, 1003])
+            );
+
+        [Test]
+        public async Task It_rolls_back_the_moved_client_rows() =>
+            (await ClientRowsOfAsync(InheritingClientId))
+                .Should()
+                .Equal(ClientRowsBeforeOf(InheritingClientId));
     }
 }

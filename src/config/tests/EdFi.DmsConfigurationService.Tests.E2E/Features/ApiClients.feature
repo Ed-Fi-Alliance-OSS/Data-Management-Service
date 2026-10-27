@@ -44,7 +44,9 @@ Feature: ApiClients endpoints
                           "isApproved": true,
                           "creatorOwnershipTokenId": null,
                           "ownershipTokenIds": [],
-                          "dataStoreIds": [{dataStoreId}]
+                          "dataStoreIds": [{dataStoreId}],
+                          "inheritsApplicationEducationOrganizations": true,
+                          "educationOrganizationIds": []
                       }]
                   """
 
@@ -71,7 +73,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -216,7 +220,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -309,7 +315,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -462,7 +470,9 @@ Feature: ApiClients endpoints
                     "isApproved": false,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -656,7 +666,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a POST request is made to "/v3/apiClients" with
@@ -688,7 +700,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a PUT request is made to "/v3/apiClients/{initialApiClientId}" with
@@ -726,7 +740,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a GET request is made to "/v3/apiClients/{additionalKey}"
@@ -742,7 +758,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a token is requested with the credentials captured as "initial" and scope "TestClaim01"
@@ -784,7 +802,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a GET request is made to "/v3/apiClients/{additionalKey}"
@@ -800,7 +820,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a DELETE request is made to "/v3/apiClients/{additionalApiClientId}"
@@ -820,7 +842,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -954,7 +978,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a PUT request is made to "/v3/apiClients/{client23Id}" with
@@ -980,7 +1006,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
               # An omitted list on create must fall back to the command's own empty default, the
@@ -1010,7 +1038,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -1070,7 +1100,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -1113,7 +1145,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
               # The OAuth client key resolves the same client, so neither lookup was repurposed.
@@ -1130,7 +1164,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -1235,7 +1271,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a POST request is made to "/v3/applications" with

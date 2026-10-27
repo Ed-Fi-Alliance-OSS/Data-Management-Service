@@ -56,7 +56,9 @@ public interface IApplicationRepository
 /// The complete state an Application update touches: the Application scalars, its mapping sets,
 /// and the selected client's identity and approval. The selected client's exact data store set
 /// is read so the update can re-send it unchanged to the identity provider; the update never
-/// changes it.
+/// changes it. The selected client's inheritance flag and own education organization rows decide
+/// its effective list: an inheriting client's rows can lag the Application's list, since an
+/// Application save never copies added education organizations to them.
 /// </summary>
 public record ApplicationUpdateState(
     string ApplicationName,
@@ -69,7 +71,9 @@ public record ApplicationUpdateState(
     string ClientId,
     Guid ClientUuid,
     bool IsApproved,
-    int[] ClientDataStoreIds
+    int[] ClientDataStoreIds,
+    bool ClientInheritsApplicationEducationOrganizations,
+    long[] ClientStoredEducationOrganizationIds
 );
 
 public record ApplicationUpdateStateResult

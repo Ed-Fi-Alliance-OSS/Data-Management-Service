@@ -60,6 +60,16 @@ public static class AuthorizationDataProvider
     internal static ClientCredentials CurrentClientCredentials => _clientCredentials;
 
     /// <summary>
+    /// The vendor, data store and Application the most recent call to CreateClientCredentials()
+    /// created, for scenarios that add API clients or Applications beside them.
+    /// </summary>
+    internal static int CurrentVendorId { get; private set; }
+
+    internal static int CurrentDataStoreId { get; private set; }
+
+    internal static int CurrentApplicationId { get; private set; }
+
+    /// <summary>
     /// HTTP client configured to communicate with the Configuration Management Service (CMS).
     /// Used for vendor and application registration operations.
     /// </summary>
@@ -296,6 +306,7 @@ public static class AuthorizationDataProvider
         string dataStoreBody = await dataStoreGetResponse.Content.ReadAsStringAsync();
 
         int dataStoreId = JsonDocument.Parse(dataStoreBody).RootElement.GetProperty("id").GetInt32();
+        CurrentDataStoreId = dataStoreId;
 
         await AttachDataStoreDerivatives(dataStoreId, derivativeArrangement);
 
@@ -327,6 +338,7 @@ public static class AuthorizationDataProvider
         string vendorBody = await vendorGetResponse.Content.ReadAsStringAsync();
 
         int vendorId = JsonDocument.Parse(vendorBody).RootElement.GetProperty("id").GetInt32();
+        CurrentVendorId = vendorId;
 
         long[] educationOrganizationIds = [];
         if (!string.IsNullOrEmpty(edOrgIds))
@@ -362,6 +374,7 @@ public static class AuthorizationDataProvider
         }
 
         var applicationJson = JsonDocument.Parse(applicationBody);
+        CurrentApplicationId = applicationJson.RootElement.GetProperty("id").GetInt32();
 
         if (
             !applicationJson.RootElement.TryGetProperty("key", out var keyProperty)
@@ -405,15 +418,83 @@ public static class AuthorizationDataProvider
     /// <returns>A valid OAuth access token as a string</returns>
     public static Task<string> GetToken() => GetToken("oauth/token");
 
-    public static async Task<string> GetToken(string tokenUrl)
+    public static Task<string> GetToken(string tokenUrl) => GetToken(tokenUrl, _clientCredentials);
+
+    /// <summary>
+    /// Creates an API client of an Application through the Configuration Service and returns its
+    /// credentials. <paramref name="clientJson"/> holds the scope fields to append, such as
+    /// <c>"educationOrganizationIds": [255901]</c>; the client is assigned the current data store.
+    /// </summary>
+    public static async Task<ClientCredentials> CreateApiClient(
+        int applicationId,
+        string clientJson,
+        string systemAdministratorToken
+    )
+    {
+        _configurationServiceClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            systemAdministratorToken
+        );
+
+        string requestJson = $$"""
+            {
+              "applicationId": {{applicationId}},
+              "name": "E2E Client {{Guid.NewGuid():N}}",
+              "isApproved": true,
+              "dataStoreIds": [{{CurrentDataStoreId}}],
+              {{clientJson}}
+            }
+            """;
+        using StringContent content = new(requestJson, Encoding.UTF8, "application/json");
+        using HttpResponseMessage response = await _configurationServiceClient.PostAsync(
+            "v3/apiClients",
+            content
+        );
+        string body = await response.Content.ReadAsStringAsync();
+
+        if (response.StatusCode != HttpStatusCode.Created)
+        {
+            throw new InvalidOperationException(
+                $"Failed to create API client. Status: {response.StatusCode}, Response: {body}"
+            );
+        }
+
+        JsonElement root = JsonDocument.Parse(body).RootElement;
+        return new ClientCredentials(
+            root.GetProperty("key").GetString() ?? "",
+            root.GetProperty("secret").GetString() ?? ""
+        );
+    }
+
+    /// <summary>
+    /// Sends a request with the system administrator's token to the Configuration Service and
+    /// returns the response status and body.
+    /// </summary>
+    public static async Task<(HttpStatusCode Status, string Body)> SendToConfigurationService(
+        HttpMethod method,
+        string path,
+        string json,
+        string systemAdministratorToken
+    )
+    {
+        using HttpRequestMessage request = new(method, path)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", systemAdministratorToken);
+        using HttpResponseMessage response = await _configurationServiceClient.SendAsync(request);
+        return (response.StatusCode, await response.Content.ReadAsStringAsync());
+    }
+
+    public static async Task<string> GetToken(string tokenUrl, ClientCredentials clientCredentials)
     {
         var formData = new FormUrlEncodedContent(
             new[] { new KeyValuePair<string, string>("grant_type", "client_credentials") }
         );
 
         string basicB64 = OAuthClientCredentialsEncoder.CreateBasicSchemeParameter(
-            _clientCredentials.key,
-            _clientCredentials.secret
+            clientCredentials.key,
+            clientCredentials.secret
         );
 
         _dmsClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue($"Basic", basicB64);

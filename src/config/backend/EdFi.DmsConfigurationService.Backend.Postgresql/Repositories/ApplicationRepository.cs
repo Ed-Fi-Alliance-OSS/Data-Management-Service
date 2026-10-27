@@ -807,7 +807,7 @@ public class ApplicationRepository(
             }
 
             string clientSql = """
-                SELECT "Id", "ClientUuid", "IsApproved"
+                SELECT "Id", "ClientUuid", "IsApproved", "InheritsApplicationEducationOrganizations"
                 FROM "dmscs"."ApiClient"
                 WHERE "ClientId" = @ClientId AND "ApplicationId" = @ApplicationId
                 FOR UPDATE;
@@ -815,7 +815,8 @@ public class ApplicationRepository(
             var client = await connection.QuerySingleOrDefaultAsync<(
                 int Id,
                 Guid ClientUuid,
-                bool IsApproved
+                bool IsApproved,
+                bool InheritsApplicationEducationOrganizations
             )?>(clientSql, new { ClientId = clientId, ApplicationId = applicationId }, transaction);
 
             if (client is null)
@@ -859,6 +860,18 @@ public class ApplicationRepository(
                 ),
             ];
 
+            long[] clientStoredEducationOrganizationIds =
+            [
+                .. await connection.QueryAsync<long>(
+                    """
+                    SELECT "EducationOrganizationId" FROM "dmscs"."ApiClientEducationOrganization"
+                    WHERE "ApiClientId" = @ApiClientId;
+                    """,
+                    new { ApiClientId = client.Value.Id },
+                    transaction
+                ),
+            ];
+
             await transaction.CommitAsync();
 
             return new ApplicationUpdateStateResult.Success(
@@ -871,7 +884,9 @@ public class ApplicationRepository(
                     clientId,
                     client.Value.ClientUuid,
                     client.Value.IsApproved,
-                    clientDataStoreIds
+                    clientDataStoreIds,
+                    client.Value.InheritsApplicationEducationOrganizations,
+                    clientStoredEducationOrganizationIds
                 )
             );
         }
