@@ -5,7 +5,6 @@
 
 using System.CommandLine;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace EdFi.DmsConfigurationService.SecurityMetadataTools;
 
@@ -50,67 +49,24 @@ internal static class CommandHost
         return root;
     }
 
-    private static int Convert(string inputPath, string outputPath, bool force, TextWriter error)
-    {
-        try
-        {
-            // Complete conversion, CMS validation, and serialization before touching the destination.
-            string json;
-            using (FileStream input = File.OpenRead(inputPath))
+    private static int Convert(string inputPath, string outputPath, bool force, TextWriter error) =>
+        CommandDiagnostics.Execute(
+            error,
+            "Conversion",
+            () =>
             {
-                json = OdsXmlToClaimsConverter
-                    .Convert(input)
-                    .ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-            }
-            string destination = Path.GetFullPath(outputPath);
-            if (File.Exists(destination) && !force)
-            {
-                throw new IOException("Output file already exists. Use --force to replace it.");
-            }
-
-            // Stage beside the destination so a failed write cannot truncate an existing file.
-            // Move also enforces no-overwrite if a destination appears after the existence check.
-            string temporaryPath = Path.Combine(
-                Path.GetDirectoryName(destination)!,
-                $".security-metadata-tools-{Guid.NewGuid():N}.tmp"
-            );
-            var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write);
-            try
-            {
-                using (stream)
-                using (var writer = new StreamWriter(stream))
+                // Complete conversion, CMS validation, and serialization before touching the destination.
+                string json;
+                using (FileStream input = File.OpenRead(inputPath))
                 {
-                    writer.Write(json);
+                    json = OdsXmlToClaimsConverter
+                        .Convert(input)
+                        .ToJsonString(new JsonSerializerOptions { WriteIndented = true });
                 }
 
-                File.Move(temporaryPath, destination, overwrite: force);
+                ProtectedFileOutput.Write(outputPath, json, force);
             }
-            finally
-            {
-                File.Delete(temporaryPath);
-            }
-
-            return 0;
-        }
-        catch (Exception exception)
-            when (exception
-                    is IOException
-                        or UnauthorizedAccessException
-                        or ArgumentException
-                        or NotSupportedException
-                        or InvalidOperationException
-            )
-        {
-            // Escape controls, format characters, and line separators once, preserving readable Unicode.
-            string message = Regex.Replace(
-                exception.Message,
-                @"[\p{Cc}\p{Cf}\u2028\u2029]",
-                match => $"\\u{(int)match.Value[0]:X4}"
-            );
-            error.WriteLine($"Conversion failed: {message}");
-            return 1;
-        }
-    }
+        );
 
     internal static Task<int> InvokeAsync(string[] args, TextWriter output, TextWriter error) =>
         CreateCommand(error)
