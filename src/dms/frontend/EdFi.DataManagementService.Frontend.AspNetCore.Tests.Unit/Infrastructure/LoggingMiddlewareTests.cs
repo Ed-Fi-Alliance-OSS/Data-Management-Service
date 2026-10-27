@@ -559,6 +559,79 @@ public class Given_LoggingMiddleware
             .State.ContainStructuredProperty("StatusCode", StatusCodes.Status413PayloadTooLarge);
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_logs_token_size_rejections_even_when_the_error_response_write_fails(bool canceled)
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        var httpContext = new DefaultHttpContext { RequestAborted = cancellationSource.Token };
+        httpContext.Request.Method = HttpMethods.Post;
+        httpContext.Request.Path = "/oauth/token";
+        httpContext.Request.Headers["x-correlation-id"] = "token-write-failure";
+        httpContext.SetEndpoint(
+            new Endpoint(null, new EndpointMetadataCollection(TokenEndpointMetadata.Instance), "token")
+        );
+        Exception writeException = canceled
+            ? new OperationCanceledException(cancellationSource.Token)
+            : new IOException("Response stream failed");
+        using var responseBody = new FailingResponseStream(() =>
+        {
+            if (canceled)
+            {
+                cancellationSource.Cancel();
+            }
+            throw writeException;
+        });
+        httpContext.Response.Body = responseBody;
+        var logger = new TestLogger<LoggingMiddleware>();
+        var middleware = new LoggingMiddleware(
+            _ =>
+                throw new BadHttpRequestException(
+                    "Request body too large.",
+                    StatusCodes.Status413PayloadTooLarge
+                ),
+            AppSettingsWithCorrelationHeader("x-correlation-id")
+        );
+
+        Func<Task> invoke = () => middleware.Invoke(httpContext, logger);
+        var thrown = await invoke.Should().ThrowAsync<Exception>();
+
+        thrown.Which.GetBaseException().Should().BeSameAs(writeException);
+        logger.Entries.Should().ContainSingle(entry => entry.EventId.Name == "HttpRequestCompleted");
+        var entry = logger.Entries.Single(entry => entry.EventId.Name == "HttpRequestCompleted");
+        entry.Level.Should().Be(LogLevel.Information);
+        entry.Exception.Should().BeNull();
+        entry.State.ContainStructuredProperty("StatusCode", StatusCodes.Status413PayloadTooLarge);
+        entry.State.ContainStructuredProperty("TraceId", "token-write-failure");
+        entry
+            .ActiveScopes.Should()
+            .Contain(scope => scope.HasStructuredProperty("TraceId", "token-write-failure"));
+        logger.Entries.Should().NotContain(log => log.EventId.Name == "HttpRequestFailed");
+    }
+
+    private sealed class FailingResponseStream(Action failWrite) : MemoryStream
+    {
+        public override Task WriteAsync(
+            byte[] buffer,
+            int offset,
+            int count,
+            CancellationToken cancellationToken
+        )
+        {
+            failWrite();
+            return Task.CompletedTask;
+        }
+
+        public override ValueTask WriteAsync(
+            ReadOnlyMemory<byte> buffer,
+            CancellationToken cancellationToken = default
+        )
+        {
+            failWrite();
+            return ValueTask.CompletedTask;
+        }
+    }
+
     [Test]
     public async Task It_does_not_rewrite_a_started_token_response()
     {

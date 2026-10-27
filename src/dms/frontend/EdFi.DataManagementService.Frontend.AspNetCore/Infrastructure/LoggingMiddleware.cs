@@ -116,49 +116,52 @@ public class LoggingMiddleware
                 stopwatch.Stop();
 
                 var response = context.Response;
-                if (!response.HasStarted)
+                try
                 {
-                    response.StatusCode = StatusCodes.Status413PayloadTooLarge;
-                    // Preserve the completion diagnostic after disconnect without attempting
-                    // to write the token error body to a canceled request.
-                    if (IsTokenEndpoint(context) && !context.RequestAborted.IsCancellationRequested)
+                    if (!response.HasStarted)
                     {
-                        using var tokenError = OAuthErrorResponse.Create(
-                            HttpStatusCode.RequestEntityTooLarge,
-                            "invalid_request",
-                            OAuthErrorResponse.PayloadTooLargeDescription,
-                            ingestion.TraceId
-                        );
-                        await TokenErrorResponseWriter.WriteAsync(
-                            context,
-                            tokenError,
-                            context.RequestAborted
-                        );
+                        response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+                        // Preserve the completion diagnostic after disconnect without attempting
+                        // to write the token error body to a canceled request.
+                        if (IsTokenEndpoint(context) && !context.RequestAborted.IsCancellationRequested)
+                        {
+                            using var tokenError = OAuthErrorResponse.Create(
+                                HttpStatusCode.RequestEntityTooLarge,
+                                "invalid_request",
+                                OAuthErrorResponse.PayloadTooLargeDescription,
+                                ingestion.TraceId
+                            );
+                            await TokenErrorResponseWriter.WriteAsync(
+                                context,
+                                tokenError,
+                                context.RequestAborted
+                            );
+                        }
                     }
                 }
-
-                // An oversized body is a client error the pipeline responded to, so it participates
-                // in the request-log contract as a completion event. The logged status must be the
-                // status the client actually received, which is only 413 when the response had not
-                // already started. The caught exception is expected control flow, not a failure, so
-                // it is deliberately not attached to this Information-level completion event.
-                var statusCode = response.StatusCode;
-#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception as a parameter
-                if (logger.IsEnabled(LogLevel.Information))
+                finally
                 {
-                    logger.Log(
-                        LogLevel.Information,
-                        RequestLoggingEventIds.HttpRequestCompleted,
-                        "{EventName}: DMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
-                        RequestLoggingEventIds.HttpRequestCompleted.Name,
-                        sanitizedMethod,
-                        sanitizedPath,
-                        statusCode,
-                        stopwatch.ElapsedMilliseconds,
-                        traceId
-                    );
-                }
+                    // Preserve the completion diagnostic even if writing fails or the client
+                    // disconnects during the write. Record the response status (413 only when
+                    // writable), without attaching the expected body-limit exception.
+                    var statusCode = response.StatusCode;
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception as a parameter
+                    if (logger.IsEnabled(LogLevel.Information))
+                    {
+                        logger.Log(
+                            LogLevel.Information,
+                            RequestLoggingEventIds.HttpRequestCompleted,
+                            "{EventName}: DMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                            RequestLoggingEventIds.HttpRequestCompleted.Name,
+                            sanitizedMethod,
+                            sanitizedPath,
+                            statusCode,
+                            stopwatch.ElapsedMilliseconds,
+                            traceId
+                        );
+                    }
 #pragma warning restore S6667
+                }
             }
             catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
             {
