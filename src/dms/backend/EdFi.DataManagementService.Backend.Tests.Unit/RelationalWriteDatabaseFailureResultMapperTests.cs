@@ -395,56 +395,99 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             );
     }
 
-    [TestCase(RelationalWriteOperationKind.Post)]
-    [TestCase(RelationalWriteOperationKind.Put)]
-    public void It_qualifies_repeated_identity_leaf_names_with_their_reference_path(
+    [TestFixture(RelationalWriteOperationKind.Post)]
+    [TestFixture(RelationalWriteOperationKind.Put)]
+    public class Given_Repeated_Identity_Leaf_Names_With_Different_Values(
         RelationalWriteOperationKind operationKind
     )
     {
-        // Two reference-backed identity elements end in the same property (educationOrganizationId) and carry
-        // different values. Each must be reported under its own reference path so the two values cannot be
-        // confused, in referential-identity metadata order (which the test data makes non-alphabetical).
-        var request = CreateRepeatedIdentityLeafRequest(
-            operationKind,
-            """{"educationOrganizationReference":{"educationOrganizationId":255901001},"programReference":{"educationOrganizationId":255901002},"beginDate":"2024-08-01"}"""
-        );
+        private bool _isMapped;
+        private RelationalWriteExecutorResult _result = null!;
 
-        var (resourceName, duplicateIdentityValues) = MapRepeatedIdentityLeafConflict(request);
-
-        resourceName.Should().Be(new ResourceName("StudentProgramAssociation"));
-        duplicateIdentityValues
-            .Select(static pair => (pair.Key, pair.Value))
-            .Should()
-            .Equal(
-                ("programReference.educationOrganizationId", "255901002"),
-                ("educationOrganizationReference.educationOrganizationId", "255901001")
+        [SetUp]
+        public void Setup()
+        {
+            // Two reference-backed identity elements end in the same property (educationOrganizationId) and
+            // carry different values. Each must be reported under its own reference path so the two values
+            // cannot be confused, in referential-identity metadata order (which the test data makes
+            // non-alphabetical).
+            var request = CreateRepeatedIdentityLeafRequest(
+                operationKind,
+                """{"educationOrganizationReference":{"educationOrganizationId":255901001},"programReference":{"educationOrganizationId":255901002},"beginDate":"2024-08-01"}"""
             );
+
+            _isMapped = MapRepeatedIdentityLeafConflict(request, out var result);
+            _result = result!;
+        }
+
+        [Test]
+        public void It_maps_the_database_failure()
+        {
+            _isMapped.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_reports_the_concrete_resource_name()
+        {
+            GetRepeatedIdentityLeafConflict(_result, operationKind)
+                .ResourceName.Should()
+                .Be(new ResourceName("StudentProgramAssociation"));
+        }
+
+        [Test]
+        public void It_qualifies_each_repeated_leaf_with_its_reference_path_in_metadata_order()
+        {
+            GetRepeatedIdentityLeafConflict(_result, operationKind)
+                .DuplicateIdentityValues.Select(static pair => (pair.Key, pair.Value))
+                .Should()
+                .Equal(
+                    ("programReference.educationOrganizationId", "255901002"),
+                    ("educationOrganizationReference.educationOrganizationId", "255901001")
+                );
+        }
     }
 
-    [Test]
-    public void It_omits_identity_values_missing_from_the_request_body_and_qualifies_the_rest()
+    [TestFixture]
+    public class Given_A_Repeated_Identity_Leaf_Value_Missing_From_The_Request_Body
     {
-        // A value absent from the selected body is still omitted rather than reported empty; the value that is
-        // present keeps its full reference path.
-        var request = CreateRepeatedIdentityLeafRequest(
-            RelationalWriteOperationKind.Post,
-            """{"educationOrganizationReference":{"educationOrganizationId":255901001},"beginDate":"2024-08-01"}"""
-        );
+        private bool _isMapped;
+        private RelationalWriteExecutorResult _result = null!;
 
-        var (_, duplicateIdentityValues) = MapRepeatedIdentityLeafConflict(request);
+        [SetUp]
+        public void Setup()
+        {
+            // A value absent from the selected body is still omitted rather than reported empty; the value that
+            // is present keeps its full reference path.
+            var request = CreateRepeatedIdentityLeafRequest(
+                RelationalWriteOperationKind.Post,
+                """{"educationOrganizationReference":{"educationOrganizationId":255901001},"beginDate":"2024-08-01"}"""
+            );
 
-        duplicateIdentityValues
-            .Select(static pair => (pair.Key, pair.Value))
-            .Should()
-            .Equal(("educationOrganizationReference.educationOrganizationId", "255901001"));
+            _isMapped = MapRepeatedIdentityLeafConflict(request, out var result);
+            _result = result!;
+        }
+
+        [Test]
+        public void It_maps_the_database_failure()
+        {
+            _isMapped.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_omits_the_missing_value_and_qualifies_the_rest()
+        {
+            GetRepeatedIdentityLeafConflict(_result, RelationalWriteOperationKind.Post)
+                .DuplicateIdentityValues.Select(static pair => (pair.Key, pair.Value))
+                .Should()
+                .Equal(("educationOrganizationReference.educationOrganizationId", "255901001"));
+        }
     }
 
-    // Drives the real resolver through the mapper for the repeated-leaf model and returns the identity-conflict
-    // payload for either operation kind, failing the test if the result is not an identity conflict.
-    private static (
-        ResourceName ResourceName,
-        IEnumerable<KeyValuePair<string, string>> DuplicateIdentityValues
-    ) MapRepeatedIdentityLeafConflict(RelationalWriteExecutorRequest request)
+    // Drives the real resolver through the mapper for the repeated-leaf model.
+    private static bool MapRepeatedIdentityLeafConflict(
+        RelationalWriteExecutorRequest request,
+        out RelationalWriteExecutorResult? result
+    )
     {
         var classifier = new RecordingRelationalWriteExceptionClassifier
         {
@@ -457,11 +500,20 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             new RelationalWriteConstraintResolver()
         );
 
-        var isMapped = mapper.TryBuild(request, new StubDbException("unique violation"), out var result);
+        return mapper.TryBuild(request, new StubDbException("unique violation"), out result);
+    }
 
-        isMapped.Should().BeTrue();
-
-        if (request.OperationKind == RelationalWriteOperationKind.Put)
+    // Returns the identity-conflict payload for either operation kind, failing the test if the result is not an
+    // identity conflict.
+    private static (
+        ResourceName ResourceName,
+        IEnumerable<KeyValuePair<string, string>> DuplicateIdentityValues
+    ) GetRepeatedIdentityLeafConflict(
+        RelationalWriteExecutorResult? result,
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        if (operationKind == RelationalWriteOperationKind.Put)
         {
             var updateConflict = result
                 .Should()
