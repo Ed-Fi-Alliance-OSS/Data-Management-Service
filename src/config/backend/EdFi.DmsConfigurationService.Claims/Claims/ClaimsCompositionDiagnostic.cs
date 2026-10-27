@@ -18,6 +18,10 @@ public enum ClaimsCompositionDiagnosticCode
     NoResourceClaims,
     UnmatchedGrantTarget,
     InvalidClaimSetRegistration,
+    UnappliedPolicyField,
+    ChildCollectionMissing,
+    InvalidChildName,
+    NullPolicyEntry,
 }
 
 /// <summary>

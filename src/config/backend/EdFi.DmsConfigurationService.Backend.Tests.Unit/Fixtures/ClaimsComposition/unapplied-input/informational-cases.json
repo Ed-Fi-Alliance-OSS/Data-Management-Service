@@ -1,0 +1,296 @@
+[
+  {
+    "name": "actions-enabled-overrides-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "id": 123,
+          "isParent": false,
+          "isEnabled": false,
+          "description": "informational",
+          "isSystemReserved": true,
+          "actions": [
+            {
+              "name": "Delete",
+              "enabled": true
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "actions-enabled-overrides-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "id": 123,
+          "isParent": false,
+          "isEnabled": false,
+          "description": "informational",
+          "isSystemReserved": true,
+          "actions": [
+            {
+              "name": "Delete",
+              "enabled": true
+            }
+          ],
+          "authorizationStrategyOverridesForCRUD": []
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "actions-enabled-overrides-applied",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "id": 123,
+          "isParent": false,
+          "isEnabled": false,
+          "description": "informational",
+          "isSystemReserved": true,
+          "actions": [
+            {
+              "name": "Delete",
+              "enabled": true
+            }
+          ],
+          "authorizationStrategyOverridesForCRUD": [
+            {
+              "actionName": "Read",
+              "authorizationStrategies": [
+                {
+                  "name": "Applied"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "override-grant.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "actions-disabled-overrides-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "id": 123,
+          "isParent": false,
+          "isEnabled": false,
+          "description": "informational",
+          "isSystemReserved": true,
+          "actions": [
+            {
+              "name": "Delete",
+              "enabled": false
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "actions-disabled-overrides-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "id": 123,
+          "isParent": false,
+          "isEnabled": false,
+          "description": "informational",
+          "isSystemReserved": true,
+          "actions": [
+            {
+              "name": "Delete",
+              "enabled": false
+            }
+          ],
+          "authorizationStrategyOverridesForCRUD": []
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "actions-disabled-overrides-applied",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "id": 123,
+          "isParent": false,
+          "isEnabled": false,
+          "description": "informational",
+          "isSystemReserved": true,
+          "actions": [
+            {
+              "name": "Delete",
+              "enabled": false
+            }
+          ],
+          "authorizationStrategyOverridesForCRUD": [
+            {
+              "actionName": "Read",
+              "authorizationStrategies": [
+                {
+                  "name": "Applied"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "override-grant.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "actions-absent-overrides-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "id": 123,
+          "isParent": false,
+          "isEnabled": false,
+          "description": "informational",
+          "isSystemReserved": true
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "actions-absent-overrides-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "id": 123,
+          "isParent": false,
+          "isEnabled": false,
+          "description": "informational",
+          "isSystemReserved": true,
+          "authorizationStrategyOverridesForCRUD": []
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "actions-absent-overrides-applied",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "id": 123,
+          "isParent": false,
+          "isEnabled": false,
+          "description": "informational",
+          "isSystemReserved": true,
+          "authorizationStrategyOverridesForCRUD": [
+            {
+              "actionName": "Read",
+              "authorizationStrategies": [
+                {
+                  "name": "Applied"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "override-grant.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  }
+]

@@ -438,18 +438,26 @@ public class ClaimsFragmentComposer
         for (int index = 0; index < claimSetData.ResourceClaims.Count; index++)
         {
             ResourceClaim resourceClaim = claimSetData.ResourceClaims[index];
+            ClaimsCompositionDiagnostic context = new(
+                ClaimsCompositionDiagnosticCode.UnappliedPolicyField,
+                fragmentFilePath,
+                resourceClaim.Name ?? "",
+                claimSetName,
+                $"$.resourceClaims[{index}]"
+            );
             if (resourceClaim.IsParent)
             {
-                ApplyParentResourceClaim(resourceClaim, existingClaims);
+                ApplyParentResourceClaim(resourceClaim, existingClaims, context, diagnostics);
             }
             else
             {
+                DiagnoseIgnoredPolicy(resourceClaim, context, diagnostics);
                 ApplyChildResourceClaim(
                     fragmentFilePath,
                     resourceClaim,
                     existingClaims,
                     claimSetName,
-                    $"$.resourceClaims[{index}].name",
+                    context,
                     diagnostics
                 );
                 definesClaimSet = true;
@@ -465,11 +473,68 @@ public class ClaimsFragmentComposer
     /// </summary>
     private static void ApplyParentResourceClaim(
         ResourceClaim resourceClaim,
-        List<TransformationClaim> existingClaims
+        List<TransformationClaim> existingClaims,
+        ClaimsCompositionDiagnostic context,
+        List<ClaimsCompositionDiagnostic> diagnostics
     )
     {
+        DiagnoseIgnoredCollection(
+            resourceClaim.AuthorizationStrategyOverridesForCRUD?.Count ?? 0,
+            "authorizationStrategyOverridesForCRUD",
+            context,
+            diagnostics
+        );
+        for (int index = 0; index < resourceClaim.Children.Count; index++)
+        {
+            ResourceClaim child = resourceClaim.Children[index];
+            ClaimsCompositionDiagnostic childContext = context with
+            {
+                ClaimName = child.Name ?? "",
+                JsonPath = $"{context.JsonPath}.children[{index}]",
+            };
+            DiagnoseIgnoredPolicy(child, childContext, diagnostics);
+            DiagnoseIgnoredCollection(
+                child.AuthorizationStrategyOverridesForCRUD?.Count ?? 0,
+                "authorizationStrategyOverridesForCRUD",
+                childContext,
+                diagnostics
+            );
+        }
         if (FindClaim(existingClaims, resourceClaim.Name!) is TransformationClaim existingClaim)
         {
+            DiagnoseIgnoredCollection(resourceClaim.ClaimSets?.Count ?? 0, "claimSets", context, diagnostics);
+            DiagnoseIgnoredCollection(
+                resourceClaim.DefaultAuthorizationStrategiesForCRUD?.Count ?? 0,
+                "_defaultAuthorizationStrategiesForCrud",
+                context,
+                diagnostics
+            );
+            for (int index = 0; index < resourceClaim.Children.Count; index++)
+            {
+                string childPath = $"{context.JsonPath}.children[{index}]";
+                if (string.IsNullOrEmpty(resourceClaim.Children[index].Name))
+                {
+                    diagnostics.Add(
+                        context with
+                        {
+                            Code = ClaimsCompositionDiagnosticCode.InvalidChildName,
+                            ClaimName = existingClaim.Name ?? "",
+                            JsonPath = $"{childPath}.name",
+                        }
+                    );
+                }
+                else if (existingClaim.Claims is null)
+                {
+                    diagnostics.Add(
+                        context with
+                        {
+                            Code = ClaimsCompositionDiagnosticCode.ChildCollectionMissing,
+                            ClaimName = existingClaim.Name ?? "",
+                            JsonPath = childPath,
+                        }
+                    );
+                }
+            }
             // Add additional child claims
             List<TransformationClaim> childClaims = resourceClaim
                 .Children.Where(x => !string.IsNullOrEmpty(x.Name))
@@ -482,6 +547,17 @@ public class ClaimsFragmentComposer
         }
         else
         {
+            if (resourceClaim.DefaultAuthorizationStrategiesForCRUD is not null)
+            {
+                DiagnoseNullPolicyEntries(
+                    resourceClaim.DefaultAuthorizationStrategiesForCRUD,
+                    context with
+                    {
+                        JsonPath = $"{context.JsonPath}._defaultAuthorizationStrategiesForCrud",
+                    },
+                    diagnostics
+                );
+            }
             // Add claim at root level
             existingClaims.Add(
                 new TransformationClaim
@@ -567,7 +643,7 @@ public class ClaimsFragmentComposer
         ResourceClaim resourceClaim,
         List<TransformationClaim> existingClaims,
         string claimSetName,
-        string jsonPath,
+        ClaimsCompositionDiagnostic context,
         List<ClaimsCompositionDiagnostic> diagnostics
     )
     {
@@ -580,7 +656,7 @@ public class ClaimsFragmentComposer
                     fragmentFilePath,
                     name,
                     claimSetName,
-                    jsonPath
+                    $"{context.JsonPath}.name"
                 )
             );
             _logger.LogWarning(
@@ -592,6 +668,17 @@ public class ClaimsFragmentComposer
         }
         else
         {
+            if (resourceClaim.AuthorizationStrategyOverridesForCRUD is not null)
+            {
+                DiagnoseNullPolicyEntries(
+                    resourceClaim.AuthorizationStrategyOverridesForCRUD,
+                    context with
+                    {
+                        JsonPath = $"{context.JsonPath}.authorizationStrategyOverridesForCRUD",
+                    },
+                    diagnostics
+                );
+            }
             List<TransformationClaimSetAction> actions = new List<TransformationClaimSetAction>();
             foreach (
                 ClaimSetResourceClaimActionAuthStrategies actionAuthStrategy in resourceClaim.AuthorizationStrategyOverridesForCRUD?.OfType<ClaimSetResourceClaimActionAuthStrategies>()
@@ -629,6 +716,57 @@ public class ClaimsFragmentComposer
                         new TransformationClaimSet { Name = claimSetName, Actions = actions }
                     );
                 }
+            }
+        }
+    }
+
+    // These fields are discarded on non-parent entries and on children copied by name only.
+    private static void DiagnoseIgnoredPolicy(
+        ResourceClaim resourceClaim,
+        ClaimsCompositionDiagnostic context,
+        List<ClaimsCompositionDiagnostic> diagnostics
+    )
+    {
+        DiagnoseIgnoredCollection(resourceClaim.Children?.Count ?? 0, "children", context, diagnostics);
+        DiagnoseIgnoredCollection(resourceClaim.ClaimSets?.Count ?? 0, "claimSets", context, diagnostics);
+        DiagnoseIgnoredCollection(
+            resourceClaim.DefaultAuthorizationStrategiesForCRUD?.Count ?? 0,
+            "_defaultAuthorizationStrategiesForCrud",
+            context,
+            diagnostics
+        );
+    }
+
+    private static void DiagnoseIgnoredCollection(
+        int count,
+        string field,
+        ClaimsCompositionDiagnostic context,
+        List<ClaimsCompositionDiagnostic> diagnostics
+    )
+    {
+        if (count > 0)
+        {
+            diagnostics.Add(context with { JsonPath = $"{context.JsonPath}.{field}" });
+        }
+    }
+
+    private static void DiagnoseNullPolicyEntries(
+        List<ClaimSetResourceClaimActionAuthStrategies?> entries,
+        ClaimsCompositionDiagnostic context,
+        List<ClaimsCompositionDiagnostic> diagnostics
+    )
+    {
+        for (int index = 0; index < entries.Count; index++)
+        {
+            if (entries[index] is null)
+            {
+                diagnostics.Add(
+                    context with
+                    {
+                        Code = ClaimsCompositionDiagnosticCode.NullPolicyEntry,
+                        JsonPath = $"{context.JsonPath}[{index}]",
+                    }
+                );
             }
         }
     }

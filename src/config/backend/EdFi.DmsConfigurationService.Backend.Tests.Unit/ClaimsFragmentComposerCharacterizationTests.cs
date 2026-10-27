@@ -176,7 +176,7 @@ public class Given_ClaimsFragmentComposer_characterization(string scenario)
     {
         _sharedResult
             .IsComplete.Should()
-            .Be(scenario is "empty" or "first-wins" or "reverse-wins" or "base-wins" or "discarded-children");
+            .Be(scenario is "empty" or "first-wins" or "reverse-wins" or "base-wins");
     }
 
     [Test]
