@@ -2061,6 +2061,34 @@ public class RevocationOwnershipTests
             .Returns(new ApplicationInfo { ClientId = clientId, IsApproved = true });
 
     /// <summary>
+    /// A faked token repository whose client credential, unless a test arranges one, is read from
+    /// the application the test arranges for that client id, as the shipped repositories read both
+    /// from the same row.
+    /// </summary>
+    internal static IOpenIddictTokenRepository NewTokenRepository()
+    {
+        IOpenIddictTokenRepository tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        A.CallTo(() => tokenRepository.GetClientCredentialAsync(A<string>._))
+            .ReturnsLazily(
+                (string clientId) => CredentialOfArrangedApplicationAsync(tokenRepository, clientId)
+            );
+        return tokenRepository;
+    }
+
+    private static async Task<ClientCredential?> CredentialOfArrangedApplicationAsync(
+        IOpenIddictTokenRepository tokenRepository,
+        string clientId
+    ) =>
+        await tokenRepository.GetApplicationByClientIdAsync(clientId) is { } application
+            ? new ClientCredential(
+                application.Id,
+                application.ClientId,
+                application.ClientSecret,
+                application.IsApproved
+            )
+            : null;
+
+    /// <summary>
     /// A host whose <see cref="ITokenManager"/> and <see cref="ITokenRevocationManager"/> are the real manager over
     /// <paramref name="tokenRepository"/>. The owner is registered through a factory, so the host's container owns it
     /// and disposes it with the host.
@@ -2178,7 +2206,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_with_no_token_and_no_credentials
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -2223,7 +2251,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_with_credentials_in_the_form_body
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -2297,7 +2325,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_for_a_token_the_caller_owns
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -2356,7 +2384,7 @@ public class RevocationOwnershipTests
     {
         private const string NonCanonicalClientId = "REVOKE-Owner-Client";
 
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -2415,7 +2443,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_with_no_client_credentials
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -2477,7 +2505,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_with_invalid_client_credentials
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -2554,7 +2582,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_with_a_wrong_client_secret
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -2597,7 +2625,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_from_an_unapproved_client
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -2634,7 +2662,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_for_a_token_owned_by_another_client
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -2688,7 +2716,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_with_a_forged_token_naming_the_caller
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -2740,7 +2768,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_with_a_malformed_token
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -2790,7 +2818,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_when_the_application_lookup_fails
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -2828,7 +2856,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_when_the_secret_hasher_fails
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -2867,7 +2895,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_when_the_token_update_fails
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -2917,7 +2945,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_whose_update_commits_but_the_response_is_lost
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -2972,7 +3000,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_when_the_ownership_comparison_faults
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly IClientSecretHasher _secretHasher = A.Fake<IClientSecretHasher>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -3069,7 +3097,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_when_the_real_hasher_cannot_verify
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly ILogger<ClientSecretHasher> _hasherLogger = A.Fake<ILogger<ClientSecretHasher>>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -3134,7 +3162,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_when_the_stored_hash_is_truncated
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private readonly ILogger<ClientSecretHasher> _hasherLogger = A.Fake<ILogger<ClientSecretHasher>>();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
@@ -3207,7 +3235,7 @@ public class RevocationOwnershipTests
     [TestFixture]
     public class Given_a_revocation_request_with_a_wrong_secret_checked_by_the_real_hasher
     {
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        private readonly IOpenIddictTokenRepository _tokenRepository = NewTokenRepository();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
         private HttpResponseMessage _response = null!;
@@ -3251,8 +3279,8 @@ public class RevocationOwnershipTests
     }
 
     /// <summary>
-    /// Revocation over HTTP through a repository that also offers the narrow credential read, as
-    /// the shipped repositories do, with the real hasher. The caller is authenticated from the
+    /// Revocation over HTTP through a repository whose credential read and full application lookup
+    /// are arranged separately, with the real hasher. The caller is authenticated from the
     /// credential alone: an absent caller, a wrong secret and an unapproved caller receive the same
     /// invalid_client answer; the caller's own token is revoked under its application id even when
     /// the stored client id is spelled differently from the one presented; a token issued to
@@ -3275,9 +3303,7 @@ public class RevocationOwnershipTests
             ("an unapproved caller with its secret", UnapprovedCallerId, RealHasherSecret),
         ];
 
-        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>(
-            options => options.Implements<IClientCredentialReader>()
-        );
+        private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
         private readonly Guid _ownerApplicationId = Guid.NewGuid();
         private readonly Guid _ownJti = Guid.NewGuid();
         private readonly Guid _foreignJti = Guid.NewGuid();
@@ -3290,8 +3316,6 @@ public class RevocationOwnershipTests
         private HttpStatusCode _foreignTokenStatus;
         private HttpResponseMessage _faultResponse = null!;
         private JsonObject _faultBody = null!;
-
-        private IClientCredentialReader Reader => (IClientCredentialReader)_tokenRepository;
 
         private async Task<HttpResponseMessage> RevokeAs(string clientId, string secret, string token)
         {
@@ -3307,9 +3331,9 @@ public class RevocationOwnershipTests
                     NullLogger<ClientSecretHasher>.Instance
                 )
                 .HashSecretAsync(RealHasherSecret);
-            A.CallTo(() => Reader.CanReadClientCredentials).Returns(true);
-            A.CallTo(() => Reader.GetClientCredentialAsync(AbsentCallerId)).Returns((ClientCredential?)null);
-            A.CallTo(() => Reader.GetClientCredentialAsync(OwnerClientId))
+            A.CallTo(() => _tokenRepository.GetClientCredentialAsync(AbsentCallerId))
+                .Returns((ClientCredential?)null);
+            A.CallTo(() => _tokenRepository.GetClientCredentialAsync(OwnerClientId))
                 .Returns(
                     new ClientCredential(
                         _ownerApplicationId,
@@ -3318,11 +3342,11 @@ public class RevocationOwnershipTests
                         IsApproved: true
                     )
                 );
-            A.CallTo(() => Reader.GetClientCredentialAsync(UnapprovedCallerId))
+            A.CallTo(() => _tokenRepository.GetClientCredentialAsync(UnapprovedCallerId))
                 .Returns(
                     new ClientCredential(Guid.NewGuid(), UnapprovedCallerId, storedHash, IsApproved: false)
                 );
-            A.CallTo(() => Reader.GetClientCredentialAsync(FaultingCallerId))
+            A.CallTo(() => _tokenRepository.GetClientCredentialAsync(FaultingCallerId))
                 .Throws(new InvalidOperationException("credential store unavailable"));
 
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
@@ -3434,7 +3458,7 @@ public class RevocationOwnershipTests
 
         [Test]
         public void It_authenticates_every_request_from_the_credential() =>
-            A.CallTo(() => Reader.GetClientCredentialAsync(A<string>._))
+            A.CallTo(() => _tokenRepository.GetClientCredentialAsync(A<string>._))
                 .MustHaveHappened(_failureCases.Length + 3, Times.Exactly);
 
         [Test]
@@ -3514,7 +3538,8 @@ public class IntrospectionOwnershipTests
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
 
-        protected readonly IOpenIddictTokenRepository TokenRepository = A.Fake<IOpenIddictTokenRepository>();
+        protected readonly IOpenIddictTokenRepository TokenRepository =
+            RevocationOwnershipTests.NewTokenRepository();
         protected readonly IClientSecretHasher SecretHasher = A.Fake<IClientSecretHasher>();
         protected readonly Guid Jti = Guid.NewGuid();
         protected readonly Guid OwnerApplicationId = Guid.NewGuid();
@@ -6094,16 +6119,9 @@ public class TokenEndpointInvalidScopeTests
 /// client, with credentials in the form or in HTTP Basic, all receive the same 401 body apart from
 /// the request's own correlation id. The requests share one host, because each host start is
 /// costly and every request is independent of the others.
-/// <para>
-/// It runs over both ways the manager can authenticate: <c>legacy</c>, a repository that only
-/// offers the full application lookup, and <c>credential</c>, a repository that also offers
-/// <see cref="IClientCredentialReader"/>, as the shipped repositories do. The call-shape tests
-/// prove which one each run took.
-/// </para>
 /// </summary>
-[TestFixture("legacy")]
-[TestFixture("credential")]
-public class Given_TokenEndpoint_requests_that_fail_client_authentication(string repositoryPath)
+[TestFixture]
+public class Given_TokenEndpoint_requests_that_fail_client_authentication
 {
     private const string AbsentClientId = "absent-client";
     private const string KnownClientId = "known-client";
@@ -6235,10 +6253,7 @@ public class Given_TokenEndpoint_requests_that_fail_client_authentication(string
             RevocationOwnershipTests.RealHasherIterations,
             NullLogger<ClientSecretHasher>.Instance
         );
-        _tokenRepository =
-            repositoryPath == "credential"
-                ? A.Fake<IOpenIddictTokenRepository>(options => options.Implements<IClientCredentialReader>())
-                : A.Fake<IOpenIddictTokenRepository>();
+        _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
         ApplicationInfo known = Application(
             KnownClientId,
             await hasher.HashSecretAsync(KnownSecret),
@@ -6249,30 +6264,20 @@ public class Given_TokenEndpoint_requests_that_fail_client_authentication(string
             await hasher.HashSecretAsync(UnapprovedSecret),
             isApproved: false
         );
-        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(AbsentClientId))
-            .Returns((ApplicationInfo?)null);
         A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(KnownClientId)).Returns(known);
-        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(UnapprovedClientId))
-            .Returns(unapproved);
-        if (_tokenRepository is IClientCredentialReader credentialReader)
-        {
-            A.CallTo(() => credentialReader.CanReadClientCredentials).Returns(true);
-            A.CallTo(() => credentialReader.GetClientCredentialAsync(AbsentClientId))
-                .Returns((ClientCredential?)null);
-            A.CallTo(() => credentialReader.GetClientCredentialAsync(KnownClientId))
-                .Returns(
-                    new ClientCredential(known.Id, known.ClientId, known.ClientSecret, known.IsApproved)
-                );
-            A.CallTo(() => credentialReader.GetClientCredentialAsync(UnapprovedClientId))
-                .Returns(
-                    new ClientCredential(
-                        unapproved.Id,
-                        unapproved.ClientId,
-                        unapproved.ClientSecret,
-                        unapproved.IsApproved
-                    )
-                );
-        }
+        A.CallTo(() => _tokenRepository.GetClientCredentialAsync(AbsentClientId))
+            .Returns((ClientCredential?)null);
+        A.CallTo(() => _tokenRepository.GetClientCredentialAsync(KnownClientId))
+            .Returns(new ClientCredential(known.Id, known.ClientId, known.ClientSecret, known.IsApproved));
+        A.CallTo(() => _tokenRepository.GetClientCredentialAsync(UnapprovedClientId))
+            .Returns(
+                new ClientCredential(
+                    unapproved.Id,
+                    unapproved.ClientId,
+                    unapproved.ClientSecret,
+                    unapproved.IsApproved
+                )
+            );
         ArrangeIssuance();
 
         _factory = RevocationOwnershipTests.CreateFactory(_tokenRepository, hasher);
@@ -6341,27 +6346,17 @@ public class Given_TokenEndpoint_requests_that_fail_client_authentication(string
         _success.Body["access_token"]!.GetValue<string>().Should().NotBeNullOrEmpty();
 
     [Test]
-    public void It_authenticates_through_the_repository_path_under_test()
-    {
-        if (repositoryPath == "credential")
-        {
-            A.CallTo(() => ((IClientCredentialReader)_tokenRepository).GetClientCredentialAsync(A<string>._))
-                .MustHaveHappened(_requestCount, Times.Exactly);
-        }
-        else
-        {
-            _tokenRepository.Should().NotBeAssignableTo<IClientCredentialReader>();
-        }
-    }
+    public void It_authenticates_every_request_from_the_credential() =>
+        A.CallTo(() => _tokenRepository.GetClientCredentialAsync(A<string>._))
+            .MustHaveHappened(_requestCount, Times.Exactly);
 
     /// <summary>
-    /// On the credential path only the successful grant loads the full application; a failed
-    /// authentication never does. Without the capability every request loads it, once.
+    /// Only the successful grant loads the full application; a failed authentication never does.
     /// </summary>
     [Test]
-    public void It_loads_the_full_application_only_where_its_path_reads_it() =>
+    public void It_loads_the_full_application_only_for_the_successful_grant() =>
         A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(A<string>._))
-            .MustHaveHappened(repositoryPath == "credential" ? 1 : _requestCount, Times.Exactly);
+            .MustHaveHappenedOnceExactly();
 }
 
 /// <summary>
@@ -6398,7 +6393,8 @@ public class Given_TokenEndpoint_requests_with_a_replacement_client_secret_hashe
         public bool IsSecretHashed(string secret) => secret.StartsWith(Prefix, StringComparison.Ordinal);
     }
 
-    private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+    private readonly IOpenIddictTokenRepository _tokenRepository =
+        RevocationOwnershipTests.NewTokenRepository();
     private IClientSecretHasher _hasher = null!;
     private WebApplicationFactory<Program> _factory = null!;
     private HttpClient _client = null!;

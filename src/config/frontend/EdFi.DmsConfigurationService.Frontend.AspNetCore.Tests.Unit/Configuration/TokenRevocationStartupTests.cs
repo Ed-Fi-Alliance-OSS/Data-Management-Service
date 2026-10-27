@@ -177,14 +177,6 @@ public class TokenRevocationStartupTests
                 );
 
         [Test]
-        public void It_resolves_a_token_repository_that_reads_client_credentials() =>
-            Resolve<IOpenIddictTokenRepository>()
-                .Should()
-                .BeAssignableTo<IClientCredentialReader>()
-                .Which.CanReadClientCredentials.Should()
-                .BeTrue();
-
-        [Test]
         public void It_resolves_the_self_contained_token_manager() =>
             Resolve<ITokenManager>().Should().BeOfType<OpenIddictTokenManager>();
     }
@@ -361,8 +353,8 @@ public class TokenRevocationStartupTests
             _hasher = A.Fake<IClientSecretHasher>();
             A.CallTo(() => _hasher.HashSecretAsync(A<string>._)).Returns(StartupPlaceholder);
             IOpenIddictTokenRepository repository = A.Fake<IOpenIddictTokenRepository>();
-            A.CallTo(() => repository.GetApplicationByClientIdAsync(AbsentClientId))
-                .Returns((ApplicationInfo?)null);
+            A.CallTo(() => repository.GetClientCredentialAsync(AbsentClientId))
+                .Returns((ClientCredential?)null);
 
             _boot = RevocationBoot.Run(
                 "self-contained",
@@ -1428,6 +1420,10 @@ public class TokenRevocationStartupTests
             CertificatePath = Path.Combine(_directory, "devcert.pfx");
             WriteDevelopmentCertificate(CertificatePath);
 
+            A.CallTo(() => Repository.GetClientCredentialAsync(ClientId))
+                .ReturnsLazily(() =>
+                    new ClientCredential(ApplicationId, ClientId, _storedSecret, IsApproved: true)
+                );
             A.CallTo(() => Repository.GetApplicationByClientIdAsync(ClientId))
                 .ReturnsLazily(() =>
                     new ApplicationInfo

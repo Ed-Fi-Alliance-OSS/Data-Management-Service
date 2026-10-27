@@ -41,6 +41,11 @@ public class OpenIddictTokenManagerTests
         _secretHasher = A.Fake<IClientSecretHasher>();
         _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
 
+        // Unless a test arranges a credential itself, it is read from the application the test arranges
+        // for the client id, as the shipped repositories read both from the same row.
+        A.CallTo(() => _tokenRepository.GetClientCredentialAsync(A<string>._))
+            .ReturnsLazily((string clientId) => CredentialOfArrangedApplicationAsync(clientId));
+
         // The real provider over the faked repository, so key reads go through the same snapshot, source and parser
         // as in production. Created per test: NUnit reuses fixture instances.
         _signingKeyProvider = NewSigningKeyProvider();
@@ -54,6 +59,16 @@ public class OpenIddictTokenManagerTests
         _placeholderHash = await InitializedPlaceholderAsync(DefaultPlaceholderHash);
         _tokenManager = NewTokenManager(new IdentityOptions());
     }
+
+    private async Task<ClientCredential?> CredentialOfArrangedApplicationAsync(string clientId) =>
+        await _tokenRepository.GetApplicationByClientIdAsync(clientId) is { } application
+            ? new ClientCredential(
+                application.Id,
+                application.ClientId,
+                application.ClientSecret,
+                application.IsApproved
+            )
+            : null;
 
     /// <summary>
     /// A placeholder initialized through a stub hasher of its own that returns
@@ -75,23 +90,6 @@ public class OpenIddictTokenManagerTests
             TimeProvider.System,
             NullLogger<SigningKeySnapshotProvider>.Instance
         );
-
-    /// <summary>
-    /// Replaces the faked repository with one that also implements
-    /// <see cref="IClientCredentialReader"/>, reporting <paramref name="canReadClientCredentials"/>,
-    /// and rebuilds the key provider over it. Call before arranging anything on the repository.
-    /// </summary>
-    private IClientCredentialReader UseCredentialReadingRepository(bool canReadClientCredentials = true)
-    {
-        _signingKeyProvider.Dispose();
-        _tokenRepository = A.Fake<IOpenIddictTokenRepository>(options =>
-            options.Implements<IClientCredentialReader>()
-        );
-        var credentialReader = (IClientCredentialReader)_tokenRepository;
-        A.CallTo(() => credentialReader.CanReadClientCredentials).Returns(canReadClientCredentials);
-        _signingKeyProvider = NewSigningKeyProvider();
-        return credentialReader;
-    }
 
     [TearDown]
     public void DisposeSigningKeyServices()
@@ -238,6 +236,16 @@ public class OpenIddictTokenManagerTests
                         "Invalid client or Invalid client credentials"
                     )
                 );
+
+        [Test]
+        public void It_verifies_the_presented_secret_against_the_stored_hash() =>
+            A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", "hashed-secret"))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_verifies_no_other_secret() =>
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._))
+                .MustHaveHappenedOnceExactly();
     }
 
     [TestFixture]
@@ -317,6 +325,11 @@ public class OpenIddictTokenManagerTests
         public void It_verifies_the_presented_secret_against_the_placeholder() =>
             A.CallTo(() => _secretHasher.VerifySecretAsync("plain-secret", DefaultPlaceholderHash))
                 .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_verifies_no_other_secret() =>
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._))
+                .MustHaveHappenedOnceExactly();
     }
 
     [TestFixture]
@@ -358,6 +371,16 @@ public class OpenIddictTokenManagerTests
                         "Invalid client or Invalid client credentials"
                     )
                 );
+
+        [Test]
+        public void It_verifies_the_presented_secret_against_the_stored_hash() =>
+            A.CallTo(() => _secretHasher.VerifySecretAsync("wrong-secret", "hashed-secret"))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_verifies_no_other_secret() =>
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._))
+                .MustHaveHappenedOnceExactly();
     }
 
     // AuthenticateClientAsync authenticates an RFC 7009 revocation caller using the same
@@ -2776,54 +2799,99 @@ public class OpenIddictTokenManagerTests
                 .MustNotHaveHappened();
     }
 
+    // A failure of the placeholder verification is not absorbed: an unknown client's request ends
+    // exactly as a known client's does when its verification fails, so the status code cannot tell
+    // the two apart. The hasher's own exception, which may carry the secret, reaches neither the
+    // result nor the log.
     [TestFixture]
     public class Given_GetAccessTokenAsync_WhenAnUnknownClientsPlaceholderVerificationThrows
         : OpenIddictTokenManagerTests
     {
         private ILogger<OpenIddictTokenManager> _logger = null!;
-        private TokenResult _result = null!;
+        private TokenResult _unknownClientResult = null!;
+        private TokenResult _knownClientResult = null!;
+
+        private static string[] Sentinels() => [PresentedSecret, DefaultPlaceholderHash];
 
         [SetUp]
         public async Task Act()
         {
             _logger = A.Fake<ILogger<OpenIddictTokenManager>>();
             StubUnknownClient();
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("known-client"))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        ClientId = "known-client",
+                        ClientSecret = "hashed-secret",
+                        IsApproved = true,
+                    }
+                );
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._))
-                .Throws(new InvalidOperationException($"verification failed for {PresentedSecret}"));
+                .ReturnsLazily(
+                    (string presented, string hashed) =>
+                        Task.FromException<bool>(
+                            new InvalidOperationException(
+                                $"verification failed for {presented} {hashed}",
+                                new InvalidOperationException($"inner detail {presented} {hashed}")
+                            )
+                        )
+                );
 
-            _result = await NewTokenManager(new IdentityOptions(), _logger)
+            _unknownClientResult = await NewTokenManager(new IdentityOptions(), _logger)
                 .GetAccessTokenAsync(UnknownClientCredentials());
+            _knownClientResult = await _tokenManager.GetAccessTokenAsync([
+                new("client_id", "known-client"),
+                new("client_secret", PresentedSecret),
+            ]);
         }
 
         [Test]
-        public void It_returns_invalid_client() => _result.Should().BeEquivalentTo(InvalidClientFailure);
+        public void It_plants_non_empty_sentinels() => Sentinels().Should().OnlyContain(s => s.Length > 0);
 
         [Test]
-        public void It_logs_one_warning_naming_the_exception_type() =>
-            LogMessagesAt(_logger, LogLevel.Warning)
+        public void It_returns_an_unknown_failure_for_the_unknown_client() =>
+            _unknownClientResult.Should().BeOfType<TokenResult.FailureUnknown>();
+
+        [Test]
+        public void It_ends_the_known_clients_request_the_same_way() =>
+            _knownClientResult.Should().BeOfType<TokenResult.FailureUnknown>();
+
+        [Test]
+        public void It_keeps_the_secrets_out_of_the_failure_detail() =>
+            _unknownClientResult
                 .Should()
-                .ContainSingle()
-                .Which.Should()
-                .Contain("System.InvalidOperationException");
+                .BeOfType<TokenResult.FailureUnknown>()
+                .Which.FailureMessage.Should()
+                .NotContainAny(Sentinels());
 
         [Test]
-        public void It_keeps_the_secret_and_the_placeholder_out_of_the_log() =>
-            LogMessagesAt(_logger, LogLevel.Warning)
+        public void It_names_the_hashers_exception_type_in_the_failure_detail() =>
+            _unknownClientResult
                 .Should()
-                .OnlyContain(message =>
-                    !message.Contains(PresentedSecret) && !message.Contains(DefaultPlaceholderHash)
-                );
+                .BeOfType<TokenResult.FailureUnknown>()
+                .Which.FailureMessage.Should()
+                .Contain("System.InvalidOperationException -> System.InvalidOperationException");
 
         [Test]
-        public void It_attaches_no_exception_to_the_log() =>
+        public void It_keeps_the_secrets_out_of_every_log_message() =>
+            LogMessagesAt(_logger, LogLevel.Warning)
+                .Concat(LogMessagesAt(_logger, LogLevel.Error))
+                .Should()
+                .OnlyContain(message => !Sentinels().Any(message.Contains));
+
+        [Test]
+        public void It_keeps_the_secrets_out_of_every_logged_exception() =>
             Fake.GetCalls(_logger)
-                .Where(call => call.Method.Name == nameof(ILogger.Log) && call.Arguments[3] is not null)
+                .Where(call => call.Method.Name == nameof(ILogger.Log))
+                .Select(call => call.Arguments[3] as Exception)
+                .OfType<Exception>()
                 .Should()
-                .BeEmpty();
+                .OnlyContain(exception => !Sentinels().Any(exception.ToString().Contains));
     }
 
-    // Cancellation is not absorbed by the placeholder verification: an unknown client's request
-    // ends exactly as a known client's does when its verification is cancelled.
+    // Cancellation is not absorbed by the placeholder verification either: an unknown client's
+    // request ends exactly as a known client's does when its verification is cancelled.
     [TestFixture]
     public class Given_GetAccessTokenAsync_WhenTheSecretVerificationIsCancelled : OpenIddictTokenManagerTests
     {
@@ -2862,8 +2930,8 @@ public class OpenIddictTokenManagerTests
             _knownClientResult.Should().BeOfType<TokenResult.FailureUnknown>();
     }
 
-    // Revocation verifies an unknown caller on the lenient path even when the hasher can preserve
-    // failures: the answer is InvalidClient either way, so a failure must not turn it into a 503.
+    // Revocation verifies an unknown caller on the same failure-preserving path as a known caller, so
+    // a failure the hasher reports is answered as an outage whether or not the client id exists.
     [TestFixture]
     public class Given_RevokeTokenAsync_WhenTheCallerIsUnknown_WithAFailurePreservingHasher
         : OpenIddictTokenManagerTests
@@ -2888,19 +2956,18 @@ public class OpenIddictTokenManagerTests
             _result.Should().BeOfType<TokenRevocationResult.InvalidClient>();
 
         [Test]
-        public void It_verifies_against_the_placeholder_on_the_lenient_path() =>
-            A.CallTo(() => _hasher.VerifySecretAsync(PresentedSecret, DefaultPlaceholderHash))
+        public void It_verifies_against_the_placeholder_on_the_failure_preserving_path() =>
+            A.CallTo(() =>
+                    ((IFailurePreservingSecretVerifier)_hasher).VerifySecretPreservingFailuresAsync(
+                        PresentedSecret,
+                        DefaultPlaceholderHash
+                    )
+                )
                 .MustHaveHappenedOnceExactly();
 
         [Test]
-        public void It_does_not_use_the_failure_preserving_path() =>
-            A.CallTo(() =>
-                    ((IFailurePreservingSecretVerifier)_hasher).VerifySecretPreservingFailuresAsync(
-                        A<string>._,
-                        A<string>._
-                    )
-                )
-                .MustNotHaveHappened();
+        public void It_does_not_use_the_lenient_path() =>
+            A.CallTo(() => _hasher.VerifySecretAsync(A<string>._, A<string>._)).MustNotHaveHappened();
     }
 
     [TestFixture]
@@ -2921,8 +2988,12 @@ public class OpenIddictTokenManagerTests
         }
 
         [Test]
-        public void It_still_reports_invalid_client() =>
-            _result.Should().BeOfType<TokenRevocationResult.InvalidClient>();
+        public void It_reports_temporarily_unavailable_at_the_authentication_boundary_as_for_a_known_caller() =>
+            _result
+                .Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("client-authentication");
     }
 
     [TestFixture]
@@ -5260,10 +5331,9 @@ public class OpenIddictTokenManagerTests
             _validated.Should().HaveCount(Callers).And.OnlyContain(valid => valid);
     }
 
-    // The fixtures below cover the two ways a client authenticates. A repository that offers
-    // IClientCredentialReader is read for the credential alone, and the token endpoint loads the
-    // full application only after the secret is verified and the client is approved. Any other
-    // repository is read once, for the full application, which the token endpoint issues from.
+    // The fixtures below arrange the credential and the full application separately. Authentication
+    // reads the credential alone, and the token endpoint loads the full application only after the
+    // secret is verified and the client is approved.
 
     private const string CredentialClientId = "credential-client";
     private const string StoredCredentialClientId = "Credential-Client";
@@ -5296,16 +5366,13 @@ public class OpenIddictTokenManagerTests
         };
 
     /// <summary>
-    /// Arranges, on a credential-reading repository, an approved client whose presented secret
-    /// matches, and the full application stored for it. Returns the reader and the application.
+    /// Arranges an approved client whose presented secret matches, and the full application stored
+    /// for it. Returns the application.
     /// </summary>
-    private (IClientCredentialReader Reader, ApplicationInfo Application) ArrangeCredentialClient(
-        string storedClientId = StoredCredentialClientId
-    )
+    private ApplicationInfo ArrangeCredentialClient(string storedClientId = StoredCredentialClientId)
     {
-        IClientCredentialReader reader = UseCredentialReadingRepository();
         Guid applicationId = Guid.NewGuid();
-        A.CallTo(() => reader.GetClientCredentialAsync(CredentialClientId))
+        A.CallTo(() => _tokenRepository.GetClientCredentialAsync(CredentialClientId))
             .Returns(
                 new ClientCredential(applicationId, storedClientId, StoredCredentialHash, IsApproved: true)
             );
@@ -5315,7 +5382,7 @@ public class OpenIddictTokenManagerTests
             .Returns(application);
         A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, StoredCredentialHash)).Returns(true);
         A.CallTo(() => _tokenRepository.GetClientRolesAsync(applicationId)).Returns(["cms-client"]);
-        return (reader, application);
+        return application;
     }
 
     private static JwtSecurityToken MintedToken(TokenResult result)
@@ -5335,7 +5402,6 @@ public class OpenIddictTokenManagerTests
     public class Given_GetAccessTokenAsync_OnTheCredentialPath_ForAnApprovedClient
         : OpenIddictTokenManagerTests
     {
-        private IClientCredentialReader _reader = null!;
         private ApplicationInfo _application = null!;
         private StoredTokenCall _call = null!;
         private TokenResult _result = null!;
@@ -5343,7 +5409,7 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            (_reader, _application) = ArrangeCredentialClient();
+            _application = ArrangeCredentialClient();
             StubActiveKeyPair();
             ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => _call = call);
 
@@ -5355,7 +5421,7 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_reads_the_credential_verifies_it_and_only_then_loads_the_application() =>
-            A.CallTo(() => _reader.GetClientCredentialAsync(CredentialClientId))
+            A.CallTo(() => _tokenRepository.GetClientCredentialAsync(CredentialClientId))
                 .MustHaveHappenedOnceExactly()
                 .Then(
                     A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, StoredCredentialHash))
@@ -5408,15 +5474,13 @@ public class OpenIddictTokenManagerTests
     public class Given_GetAccessTokenAsync_OnTheCredentialPath_WhenAuthenticationFails(string failure)
         : OpenIddictTokenManagerTests
     {
-        private IClientCredentialReader _reader = null!;
         private TokenResult _result = null!;
 
         [SetUp]
         public async Task Act()
         {
-            _reader = UseCredentialReadingRepository();
             Guid applicationId = Guid.NewGuid();
-            A.CallTo(() => _reader.GetClientCredentialAsync(CredentialClientId))
+            A.CallTo(() => _tokenRepository.GetClientCredentialAsync(CredentialClientId))
                 .Returns(
                     failure == "absent"
                         ? null
@@ -5439,13 +5503,23 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_reads_the_credential_once() =>
-            A.CallTo(() => _reader.GetClientCredentialAsync(CredentialClientId))
+            A.CallTo(() => _tokenRepository.GetClientCredentialAsync(CredentialClientId))
                 .MustHaveHappenedOnceExactly();
 
         [Test]
         public void It_verifies_one_secret() =>
-            A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, A<string>._))
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._))
                 .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_verifies_against_the_placeholder_only_when_the_client_is_absent() =>
+            A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, DefaultPlaceholderHash))
+                .MustHaveHappened(failure == "absent" ? 1 : 0, Times.Exactly);
+
+        [Test]
+        public void It_verifies_against_the_stored_hash_only_when_the_client_exists() =>
+            A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, StoredCredentialHash))
+                .MustHaveHappened(failure == "absent" ? 0 : 1, Times.Exactly);
 
         [Test]
         public void It_does_not_load_the_full_application() =>
@@ -5485,7 +5559,7 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            (_, ApplicationInfo application) = ArrangeCredentialClient();
+            ApplicationInfo application = ArrangeCredentialClient();
             StubActiveKeyPair();
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(CredentialClientId))
                 .Returns(
@@ -5623,7 +5697,7 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            (_, ApplicationInfo application) = ArrangeCredentialClient();
+            ApplicationInfo application = ArrangeCredentialClient();
             _applicationId = application.Id;
             (string token, Guid jti) = ArrangeRevocableToken(StoredCredentialClientId);
             _jti = jti;
@@ -5657,7 +5731,7 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            (_, ApplicationInfo application) = ArrangeCredentialClient(storedClientId: string.Empty);
+            ApplicationInfo application = ArrangeCredentialClient(storedClientId: string.Empty);
             _applicationId = application.Id;
             (string token, Guid jti) = ArrangeRevocableToken(CredentialClientId);
             _jti = jti;
@@ -5721,11 +5795,11 @@ public class OpenIddictTokenManagerTests
             _secretHasher = A.Fake<IClientSecretHasher>(options =>
                 options.Implements<IFailurePreservingSecretVerifier>()
             );
-            (IClientCredentialReader reader, _) = ArrangeCredentialClient();
+            ArrangeCredentialClient();
             var verifier = (IFailurePreservingSecretVerifier)_secretHasher;
             if (fault == "credential-read")
             {
-                A.CallTo(() => reader.GetClientCredentialAsync(CredentialClientId))
+                A.CallTo(() => _tokenRepository.GetClientCredentialAsync(CredentialClientId))
                     .Throws(new InvalidOperationException("The credential could not be read."));
             }
             else
@@ -5766,8 +5840,7 @@ public class OpenIddictTokenManagerTests
             using var cancellation = new CancellationTokenSource();
             cancellation.Cancel();
             CancellationToken token = cancellation.Token;
-            IClientCredentialReader reader = UseCredentialReadingRepository();
-            A.CallTo(() => reader.GetClientCredentialAsync(CredentialClientId))
+            A.CallTo(() => _tokenRepository.GetClientCredentialAsync(CredentialClientId))
                 .Throws(new OperationCanceledException(token));
 
             _act = () =>
@@ -5794,7 +5867,7 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            (_, ApplicationInfo application) = ArrangeCredentialClient();
+            ApplicationInfo application = ArrangeCredentialClient();
             _applicationId = application.Id;
             var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
             StubActivePublicKey(keyId, publicKeySpki);
@@ -5826,154 +5899,5 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_does_not_load_the_full_application() =>
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(A<string>._)).MustNotHaveHappened();
-    }
-
-    // A repository without the capability, or one that reports it cannot read credentials, is read
-    // exactly once, for the full application, whatever the outcome; the token is issued from that
-    // one record.
-    [TestFixture]
-    public class Given_GetAccessTokenAsync_OnTheLegacyPath_ForAnApprovedClient : OpenIddictTokenManagerTests
-    {
-        private Guid _applicationId;
-        private TokenResult _result = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _applicationId = ArrangeGrantableClient();
-            ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
-
-            _result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(GrantCredentials());
-        }
-
-        [Test]
-        public void It_returns_a_success_result() => _result.Should().BeOfType<TokenResult.Success>();
-
-        [Test]
-        public void It_loads_the_application_once_before_the_roles_and_the_store() =>
-            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(GrantClientId))
-                .MustHaveHappenedOnceExactly()
-                .Then(
-                    A.CallTo(() => _tokenRepository.GetClientRolesAsync(_applicationId))
-                        .MustHaveHappenedOnceExactly()
-                )
-                .Then(
-                    A.CallTo(() =>
-                            _tokenRepository.StoreTokenAsync(
-                                A<Guid>._,
-                                _applicationId,
-                                A<string>._,
-                                A<DateTimeOffset>._,
-                                A<int>._
-                            )
-                        )
-                        .MustHaveHappenedOnceExactly()
-                );
-    }
-
-    [TestFixture]
-    public class Given_RevokeTokenAsync_OnTheLegacyPath_ForTheCallersOwnToken : OpenIddictTokenManagerTests
-    {
-        private readonly Guid _applicationId = Guid.NewGuid();
-        private Guid _jti;
-        private TokenRevocationResult _result = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
-                .Returns(
-                    new ApplicationInfo
-                    {
-                        Id = _applicationId,
-                        ClientId = OwnerClientId,
-                        ClientSecret = "hashed-secret",
-                        IsApproved = true,
-                    }
-                );
-            A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, "hashed-secret")).Returns(true);
-            (string token, Guid jti) = ArrangeRevocableToken(OwnerClientId);
-            _jti = jti;
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti, _applicationId)).Returns(true);
-
-            _result = await CreateConfiguredTokenManager()
-                .RevokeTokenAsync(RevocationRequestFor(OwnerClientId, token), CancellationToken.None);
-        }
-
-        [Test]
-        public void It_reports_completed() => _result.Should().BeOfType<TokenRevocationResult.Completed>();
-
-        [Test]
-        public void It_loads_the_application_once() =>
-            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
-                .MustHaveHappenedOnceExactly();
-
-        [Test]
-        public void It_revokes_the_token_of_the_authenticated_application() =>
-            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_jti, _applicationId))
-                .MustHaveHappenedOnceExactly();
-    }
-
-    [TestFixture("approved")]
-    [TestFixture("absent")]
-    [TestFixture("wrong_secret")]
-    [TestFixture("unapproved")]
-    public class Given_GetAccessTokenAsync_WhenTheRepositoryCannotReadCredentials(string outcome)
-        : OpenIddictTokenManagerTests
-    {
-        private IClientCredentialReader _reader = null!;
-        private TokenResult _result = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _reader = UseCredentialReadingRepository(canReadClientCredentials: false);
-            if (outcome == "absent")
-            {
-                A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(GrantClientId))
-                    .Returns((ApplicationInfo?)null);
-            }
-            else
-            {
-                Guid applicationId = ArrangeGrantableClient();
-                A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(GrantClientId))
-                    .Returns(
-                        new ApplicationInfo
-                        {
-                            Id = applicationId,
-                            ClientId = GrantClientId,
-                            ClientSecret = "hashed-secret",
-                            IsApproved = outcome != "unapproved",
-                            ProtocolMappers = "[]",
-                        }
-                    );
-                A.CallTo(() => _secretHasher.VerifySecretAsync(GrantClientSecret, "hashed-secret"))
-                    .Returns(outcome != "wrong_secret");
-            }
-
-            _result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(GrantCredentials());
-        }
-
-        [Test]
-        public void It_answers_as_without_the_capability()
-        {
-            if (outcome == "approved")
-            {
-                _result.Should().BeOfType<TokenResult.Success>();
-            }
-            else
-            {
-                _result.Should().BeEquivalentTo(_invalidClient);
-            }
-        }
-
-        [Test]
-        public void It_loads_the_application_exactly_once() =>
-            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(GrantClientId))
-                .MustHaveHappenedOnceExactly();
-
-        [Test]
-        public void It_never_reads_a_credential() =>
-            A.CallTo(() => _reader.GetClientCredentialAsync(A<string>._)).MustNotHaveHappened();
     }
 }

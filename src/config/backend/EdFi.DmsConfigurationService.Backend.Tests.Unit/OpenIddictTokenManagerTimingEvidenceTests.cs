@@ -48,8 +48,9 @@ public class Given_in_process_token_requests_measured_for_timing_evidence
     private int _arms;
 
     /// <summary>
-    /// Answers every lookup from precomputed results, so the repository adds the same small cost to
-    /// every arm. An absent client's lookup can be made to busy-wait, never sleep, for a fixed time.
+    /// Answers every credential read from precomputed results, so the repository adds the same small
+    /// cost to every arm. An absent client's read can be made to busy-wait, never sleep, for a fixed
+    /// time. No arm authenticates, so the full application is never loaded.
     /// </summary>
     private sealed class FixedCostTokenRepository(
         string knownClientId,
@@ -57,21 +58,15 @@ public class Given_in_process_token_requests_measured_for_timing_evidence
         TimeSpan absentLookupWait
     ) : IOpenIddictTokenRepository
     {
-        private readonly Task<ApplicationInfo?> _absent = Task.FromResult<ApplicationInfo?>(null);
+        private readonly Task<ClientCredential?> _absent = Task.FromResult<ClientCredential?>(null);
 
-        private readonly Task<ApplicationInfo?> _known = Task.FromResult<ApplicationInfo?>(
-            new ApplicationInfo
-            {
-                Id = Guid.NewGuid(),
-                ClientId = knownClientId,
-                ClientSecret = storedHash,
-                IsApproved = true,
-            }
+        private readonly Task<ClientCredential?> _known = Task.FromResult<ClientCredential?>(
+            new ClientCredential(Guid.NewGuid(), knownClientId, storedHash, IsApproved: true)
         );
 
         private readonly long _waitTicks = (long)(absentLookupWait.TotalSeconds * Stopwatch.Frequency);
 
-        public Task<ApplicationInfo?> GetApplicationByClientIdAsync(string clientId)
+        public Task<ClientCredential?> GetClientCredentialAsync(string clientId)
         {
             if (string.Equals(clientId, knownClientId, StringComparison.Ordinal))
             {
@@ -86,6 +81,9 @@ public class Given_in_process_token_requests_measured_for_timing_evidence
 
             return _absent;
         }
+
+        public Task<ApplicationInfo?> GetApplicationByClientIdAsync(string clientId) =>
+            throw new NotSupportedException();
 
         public Task<TokenInfo?> GetTokenByIdAsync(Guid tokenId) => throw new NotSupportedException();
 

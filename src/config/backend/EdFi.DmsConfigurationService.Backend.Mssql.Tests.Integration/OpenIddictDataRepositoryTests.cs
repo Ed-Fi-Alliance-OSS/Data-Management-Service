@@ -115,36 +115,23 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     protected static OpenIddictTokenManager CreateTokenManager(
         OpenIddictDataRepository dataRepository,
         IdentityOptions options
-    ) => CreateTokenManagerOver(dataRepository, options, readsClientCredentials: false).Manager;
+    ) => CreateTokenManagerOver(dataRepository, options).Manager;
 
     /// <summary>
     /// A token manager over a fake that wraps <paramref name="dataRepository"/>, returned with that
-    /// fake so a test can observe the reads. With <paramref name="readsClientCredentials"/>, the
-    /// fake also offers <see cref="IClientCredentialReader"/> and answers it from the real
-    /// repository, so the manager authenticates from the real credential query.
+    /// fake so a test can observe the reads. The manager authenticates from the real credential
+    /// query.
     /// </summary>
     protected static (
         OpenIddictTokenManager Manager,
         IOpenIddictDataRepository ObservedRepository
-    ) CreateTokenManagerOver(
-        OpenIddictDataRepository dataRepository,
-        IdentityOptions options,
-        bool readsClientCredentials
-    )
+    ) CreateTokenManagerOver(OpenIddictDataRepository dataRepository, IdentityOptions options)
     {
         // All lookup and storage operations use the real dialect repository. Only the signing
         // key read is replaced so these grant tests do not depend on key rotation/encryption.
-        IOpenIddictDataRepository signingRepository = readsClientCredentials
-            ? A.Fake<IOpenIddictDataRepository>(configuration =>
-                configuration.Wrapping(dataRepository).Implements<IClientCredentialReader>()
-            )
-            : A.Fake<IOpenIddictDataRepository>(configuration => configuration.Wrapping(dataRepository));
-        if (signingRepository is IClientCredentialReader credentialReader)
-        {
-            A.CallTo(() => credentialReader.CanReadClientCredentials).Returns(true);
-            A.CallTo(() => credentialReader.GetClientCredentialAsync(A<string>._))
-                .ReturnsLazily((string clientId) => dataRepository.GetClientCredentialAsync(clientId));
-        }
+        IOpenIddictDataRepository signingRepository = A.Fake<IOpenIddictDataRepository>(configuration =>
+            configuration.Wrapping(dataRepository)
+        );
         using System.Security.Cryptography.RSA rsa = System.Security.Cryptography.RSA.Create(2048);
         A.CallTo(() => signingRepository.GetActivePrivateKeyInternalAsync("integration-signing-key"))
             .Returns((Convert.ToBase64String(rsa.ExportPkcs8PrivateKey()), "integration-key"));
@@ -2343,7 +2330,6 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         private Guid _applicationId;
         private ClientCredential _credential = null!;
         private ApplicationInfo _application = null!;
-        private bool _wrapperCanRead;
         private ClientCredential? _throughWrapper;
 
         [SetUp]
@@ -2374,7 +2360,6 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 ?? throw new InvalidOperationException("Seeded application was not found.");
 
             OpenIddictTokenRepository tokenRepository = new(repository);
-            _wrapperCanRead = tokenRepository.CanReadClientCredentials;
             _throughWrapper = await tokenRepository.GetClientCredentialAsync(clientId);
         }
 
@@ -2410,11 +2395,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 .HaveCount(registration.EndsWith("two-data-stores", StringComparison.Ordinal) ? 2 : 0);
 
         [Test]
-        public void It_reads_the_same_credential_through_the_token_repository()
-        {
-            _wrapperCanRead.Should().BeTrue();
+        public void It_reads_the_same_credential_through_the_token_repository() =>
             _throughWrapper.Should().Be(_credential);
-        }
     }
 
     [TestFixture]
@@ -2560,8 +2542,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
             (OpenIddictTokenManager manager, _observedRepository) = CreateTokenManagerOver(
                 repository,
-                new IdentityOptions(),
-                readsClientCredentials: true
+                new IdentityOptions()
             );
             _result = await manager.GetAccessTokenAsync([
                 new("client_id", _clientId),
@@ -2591,7 +2572,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
         [Test]
         public void It_reads_the_credential_once() =>
-            A.CallTo(() => ((IClientCredentialReader)_observedRepository).GetClientCredentialAsync(_clientId))
+            A.CallTo(() => _observedRepository.GetClientCredentialAsync(_clientId))
                 .MustHaveHappenedOnceExactly();
 
         [Test]

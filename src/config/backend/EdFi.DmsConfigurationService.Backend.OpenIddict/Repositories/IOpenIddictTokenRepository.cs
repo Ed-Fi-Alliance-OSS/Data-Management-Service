@@ -110,6 +110,17 @@ public interface IOpenIddictTokenRepository
     Task<ApplicationInfo?> GetApplicationByClientIdAsync(string clientId);
 
     /// <summary>
+    /// Reads only what client authentication needs, before the presented secret is verified.
+    /// <see cref="GetApplicationByClientIdAsync"/> also loads an application's scopes, permissions,
+    /// data stores and protocol mappers, so it does more work when the client exists than when it
+    /// does not; the token manager authenticates from this narrow read and loads the full
+    /// application only once the secret has been verified and the client is approved.
+    /// </summary>
+    /// <param name="clientId">The client ID to search for.</param>
+    /// <returns>The credential, or <c>null</c> when no application is registered under the client id.</returns>
+    Task<ClientCredential?> GetClientCredentialAsync(string clientId);
+
+    /// <summary>
     /// Gets the roles associated with a client.
     /// </summary>
     /// <param name="clientId">The client ID.</param>

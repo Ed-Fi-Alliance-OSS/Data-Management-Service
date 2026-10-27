@@ -19,8 +19,8 @@ using PostgresqlTokenRepository = EdFi.DmsConfigurationService.Backend.Postgresq
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
 /// <summary>
-/// Each engine's shipped token repository offers the credential read exactly when the data
-/// repository it wraps does, and the token manager takes its single full lookup when it does not.
+/// Each engine's shipped token repository forwards the credential read to the data repository it
+/// wraps, and a grant through it reads the credential before the full application.
 /// </summary>
 public class OpenIddictTokenRepositoryCredentialTests
 {
@@ -41,116 +41,29 @@ public class OpenIddictTokenRepositoryCredentialTests
             _ => throw new ArgumentOutOfRangeException(nameof(engine), engine, null),
         };
 
-    private static IClientCredentialReader CredentialReaderOver(
-        string engine,
-        IOpenIddictDataRepository dataRepository
-    ) => (IClientCredentialReader)TokenRepositoryOver(engine, dataRepository);
-
-    /// <summary>A data repository fake that also implements the credential read.</summary>
-    private static IOpenIddictDataRepository CredentialReadingDataRepository(bool canReadClientCredentials)
-    {
-        IOpenIddictDataRepository dataRepository = A.Fake<IOpenIddictDataRepository>(options =>
-            options.Implements<IClientCredentialReader>()
-        );
-        A.CallTo(() => ((IClientCredentialReader)dataRepository).CanReadClientCredentials)
-            .Returns(canReadClientCredentials);
-        return dataRepository;
-    }
-
-    /// <summary>
-    /// Arranges an approved client on <paramref name="dataRepository"/>, with a signing key, so a
-    /// grant through the token manager can succeed. Returns the application id.
-    /// </summary>
-    private static Guid ArrangeGrantableClient(IOpenIddictDataRepository dataRepository)
-    {
-        Guid applicationId = Guid.NewGuid();
-        A.CallTo(() => dataRepository.GetApplicationByClientIdAsync(ClientId))
-            .Returns(
-                new ApplicationInfo
-                {
-                    Id = applicationId,
-                    ClientId = ClientId,
-                    ClientSecret = StoredSecret,
-                    IsApproved = true,
-                    ProtocolMappers = "[]",
-                }
-            );
-        using RSA rsa = RSA.Create(2048);
-        A.CallTo(() => dataRepository.GetActivePrivateKeyInternalAsync(EncryptionKey))
-            .Returns((Convert.ToBase64String(rsa.ExportPkcs8PrivateKey()), "wrapper-key"));
-        A.CallTo(() => dataRepository.GetClientRolesAsync(applicationId)).Returns([]);
-        A.CallTo(() =>
-                dataRepository.StoreTokenAsync(
-                    A<Guid>._,
-                    A<Guid>._,
-                    A<string>._,
-                    A<DateTimeOffset>._,
-                    A<int>._
-                )
-            )
-            .Returns(TokenStoreOutcome.Stored);
-        return applicationId;
-    }
-
-    private static async Task<TokenResult> GrantThroughAsync(IOpenIddictTokenRepository tokenRepository)
-    {
-        IClientSecretHasher secretHasher = A.Fake<IClientSecretHasher>();
-        A.CallTo(() => secretHasher.VerifySecretAsync(ClientSecret, StoredSecret)).Returns(true);
-        A.CallTo(() => secretHasher.HashSecretAsync(A<string>._)).Returns("wrapper-placeholder");
-        ClientSecretPlaceholderHash placeholderHash = new(secretHasher);
-        await placeholderHash.InitializeAsync();
-        IdentityOptions options = new()
-        {
-            Authority = "https://cms.example.test",
-            Audience = "wrapper-tests",
-            EncryptionKey = EncryptionKey,
-        };
-        OpenIddictTokenManager manager = new(
-            Options.Create(options),
-            NullLogger<OpenIddictTokenManager>.Instance,
-            secretHasher,
-            tokenRepository,
-            A.Fake<ISigningKeySnapshotProvider>(),
-            new DevelopmentCertificateStore(
-                Options.Create(options),
-                NullLogger<DevelopmentCertificateStore>.Instance
-            ),
-            placeholderHash
-        );
-        return await manager.GetAccessTokenAsync([
-            new("client_id", ClientId),
-            new("client_secret", ClientSecret),
-        ]);
-    }
-
     [TestFixture("postgresql")]
     [TestFixture("mssql")]
-    public class Given_a_token_repository_over_a_data_repository_that_reads_credentials(string engine)
+    public class Given_a_token_repository_over_a_data_repository(string engine)
         : OpenIddictTokenRepositoryCredentialTests
     {
         private IOpenIddictDataRepository _dataRepository = null!;
         private ClientCredential _stored = null!;
-        private bool _canRead;
         private ClientCredential? _forwarded;
         private ClientCredential? _forwardedAbsence;
 
         [SetUp]
         public async Task Setup()
         {
-            _dataRepository = CredentialReadingDataRepository(canReadClientCredentials: true);
-            var reader = (IClientCredentialReader)_dataRepository;
+            _dataRepository = A.Fake<IOpenIddictDataRepository>();
             _stored = new ClientCredential(Guid.NewGuid(), ClientId, StoredSecret, IsApproved: true);
-            A.CallTo(() => reader.GetClientCredentialAsync(ClientId)).Returns(_stored);
-            A.CallTo(() => reader.GetClientCredentialAsync("absent-client")).Returns((ClientCredential?)null);
-            IClientCredentialReader tokenRepository = CredentialReaderOver(engine, _dataRepository);
+            A.CallTo(() => _dataRepository.GetClientCredentialAsync(ClientId)).Returns(_stored);
+            A.CallTo(() => _dataRepository.GetClientCredentialAsync("absent-client"))
+                .Returns((ClientCredential?)null);
+            IOpenIddictTokenRepository tokenRepository = TokenRepositoryOver(engine, _dataRepository);
 
-            _canRead = tokenRepository.CanReadClientCredentials;
             _forwarded = await tokenRepository.GetClientCredentialAsync(ClientId);
             _forwardedAbsence = await tokenRepository.GetClientCredentialAsync("absent-client");
         }
-
-        [Test]
-        public void It_reports_that_it_reads_credentials() => _canRead.Should().BeTrue();
 
         [Test]
         public void It_returns_the_wrapped_repositorys_credential() => _forwarded.Should().BeSameAs(_stored);
@@ -160,87 +73,89 @@ public class OpenIddictTokenRepositoryCredentialTests
 
         [Test]
         public void It_reads_each_credential_once() =>
-            A.CallTo(() => ((IClientCredentialReader)_dataRepository).GetClientCredentialAsync(ClientId))
-                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _dataRepository.GetClientCredentialAsync(ClientId)).MustHaveHappenedOnceExactly();
     }
 
-    [TestFixture("postgresql", "legacy-only")]
-    [TestFixture("postgresql", "reports-it-cannot-read")]
-    [TestFixture("mssql", "legacy-only")]
-    [TestFixture("mssql", "reports-it-cannot-read")]
-    public class Given_a_token_repository_over_a_data_repository_that_cannot_read_credentials(
-        string engine,
-        string dataRepositoryKind
-    ) : OpenIddictTokenRepositoryCredentialTests
-    {
-        private IOpenIddictDataRepository _dataRepository = null!;
-        private IClientCredentialReader _tokenRepository = null!;
-
-        [SetUp]
-        public void Setup()
-        {
-            _dataRepository =
-                dataRepositoryKind == "legacy-only"
-                    ? A.Fake<IOpenIddictDataRepository>()
-                    : CredentialReadingDataRepository(canReadClientCredentials: false);
-            _tokenRepository = CredentialReaderOver(engine, _dataRepository);
-        }
-
-        [Test]
-        public void It_reports_that_it_does_not_read_credentials() =>
-            _tokenRepository.CanReadClientCredentials.Should().BeFalse();
-
-        [Test]
-        public async Task It_refuses_a_direct_credential_read_as_unsupported() =>
-            await _tokenRepository
-                .Invoking(repository => repository.GetClientCredentialAsync(ClientId))
-                .Should()
-                .ThrowAsync<NotSupportedException>();
-    }
-
-    // The manager's choice follows the wrapped data repository: over a legacy-only one it takes
-    // the single full lookup and issues from it; over a reader it reads the credential first.
     [TestFixture("postgresql")]
     [TestFixture("mssql")]
-    public class Given_a_token_grant_through_a_token_repository_over_a_legacy_data_repository(string engine)
+    public class Given_a_token_grant_through_a_token_repository(string engine)
         : OpenIddictTokenRepositoryCredentialTests
     {
         private IOpenIddictDataRepository _dataRepository = null!;
         private TokenResult _result = null!;
 
+        /// <summary>
+        /// Arranges an approved client on <paramref name="dataRepository"/>, with a signing key, so a
+        /// grant through the token manager can succeed. Returns the application id.
+        /// </summary>
+        private static Guid ArrangeGrantableClient(IOpenIddictDataRepository dataRepository)
+        {
+            Guid applicationId = Guid.NewGuid();
+            A.CallTo(() => dataRepository.GetApplicationByClientIdAsync(ClientId))
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        Id = applicationId,
+                        ClientId = ClientId,
+                        ClientSecret = StoredSecret,
+                        IsApproved = true,
+                        ProtocolMappers = "[]",
+                    }
+                );
+            using RSA rsa = RSA.Create(2048);
+            A.CallTo(() => dataRepository.GetActivePrivateKeyInternalAsync(EncryptionKey))
+                .Returns((Convert.ToBase64String(rsa.ExportPkcs8PrivateKey()), "wrapper-key"));
+            A.CallTo(() => dataRepository.GetClientRolesAsync(applicationId)).Returns([]);
+            A.CallTo(() =>
+                    dataRepository.StoreTokenAsync(
+                        A<Guid>._,
+                        A<Guid>._,
+                        A<string>._,
+                        A<DateTimeOffset>._,
+                        A<int>._
+                    )
+                )
+                .Returns(TokenStoreOutcome.Stored);
+            return applicationId;
+        }
+
+        private static async Task<TokenResult> GrantThroughAsync(IOpenIddictTokenRepository tokenRepository)
+        {
+            IClientSecretHasher secretHasher = A.Fake<IClientSecretHasher>();
+            A.CallTo(() => secretHasher.VerifySecretAsync(ClientSecret, StoredSecret)).Returns(true);
+            A.CallTo(() => secretHasher.HashSecretAsync(A<string>._)).Returns("wrapper-placeholder");
+            ClientSecretPlaceholderHash placeholderHash = new(secretHasher);
+            await placeholderHash.InitializeAsync();
+            IdentityOptions options = new()
+            {
+                Authority = "https://cms.example.test",
+                Audience = "wrapper-tests",
+                EncryptionKey = EncryptionKey,
+            };
+            OpenIddictTokenManager manager = new(
+                Options.Create(options),
+                NullLogger<OpenIddictTokenManager>.Instance,
+                secretHasher,
+                tokenRepository,
+                A.Fake<ISigningKeySnapshotProvider>(),
+                new DevelopmentCertificateStore(
+                    Options.Create(options),
+                    NullLogger<DevelopmentCertificateStore>.Instance
+                ),
+                placeholderHash
+            );
+            return await manager.GetAccessTokenAsync([
+                new("client_id", ClientId),
+                new("client_secret", ClientSecret),
+            ]);
+        }
+
         [SetUp]
         public async Task Setup()
         {
             _dataRepository = A.Fake<IOpenIddictDataRepository>();
-            ArrangeGrantableClient(_dataRepository);
-
-            _result = await GrantThroughAsync(TokenRepositoryOver(engine, _dataRepository));
-        }
-
-        [Test]
-        public void It_issues_a_token() => _result.Should().BeOfType<TokenResult.Success>();
-
-        [Test]
-        public void It_loads_the_application_exactly_once() =>
-            A.CallTo(() => _dataRepository.GetApplicationByClientIdAsync(ClientId))
-                .MustHaveHappenedOnceExactly();
-    }
-
-    [TestFixture("postgresql")]
-    [TestFixture("mssql")]
-    public class Given_a_token_grant_through_a_token_repository_over_a_credential_reading_data_repository(
-        string engine
-    ) : OpenIddictTokenRepositoryCredentialTests
-    {
-        private IOpenIddictDataRepository _dataRepository = null!;
-        private TokenResult _result = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            _dataRepository = CredentialReadingDataRepository(canReadClientCredentials: true);
             Guid applicationId = ArrangeGrantableClient(_dataRepository);
-            A.CallTo(() => ((IClientCredentialReader)_dataRepository).GetClientCredentialAsync(ClientId))
+            A.CallTo(() => _dataRepository.GetClientCredentialAsync(ClientId))
                 .Returns(new ClientCredential(applicationId, ClientId, StoredSecret, IsApproved: true));
 
             _result = await GrantThroughAsync(TokenRepositoryOver(engine, _dataRepository));
@@ -251,7 +166,7 @@ public class OpenIddictTokenRepositoryCredentialTests
 
         [Test]
         public void It_reads_the_credential_and_then_the_application_once_each() =>
-            A.CallTo(() => ((IClientCredentialReader)_dataRepository).GetClientCredentialAsync(ClientId))
+            A.CallTo(() => _dataRepository.GetClientCredentialAsync(ClientId))
                 .MustHaveHappenedOnceExactly()
                 .Then(
                     A.CallTo(() => _dataRepository.GetApplicationByClientIdAsync(ClientId))

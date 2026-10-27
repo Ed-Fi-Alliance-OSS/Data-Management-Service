@@ -903,8 +903,8 @@ public class OpenIddictServiceCollectionExtensionsTests
                     : services.AddMssqlOpenIddictStores(configuration, "http://localhost");
 
             IOpenIddictTokenRepository repository = A.Fake<IOpenIddictTokenRepository>();
-            A.CallTo(() => repository.GetApplicationByClientIdAsync(UnknownClientId))
-                .Returns((ApplicationInfo?)null);
+            A.CallTo(() => repository.GetClientCredentialAsync(UnknownClientId))
+                .Returns((ClientCredential?)null);
             services.AddSingleton(repository);
 
             _replacement = A.Fake<IClientSecretHasher>();
@@ -1039,7 +1039,7 @@ public class OpenIddictServiceCollectionExtensionsTests
                 );
 
         [Test]
-        public void It_resolves_the_engines_data_repository_as_a_credential_reader() =>
+        public void It_resolves_the_engines_data_repository() =>
             _provider
                 .GetRequiredService<IOpenIddictDataRepository>()
                 .Should()
@@ -1047,17 +1047,7 @@ public class OpenIddictServiceCollectionExtensionsTests
                     registration == "postgresql"
                         ? typeof(Postgresql.OpenIddict.Repositories.OpenIddictDataRepository)
                         : typeof(Mssql.OpenIddict.Repositories.OpenIddictDataRepository)
-                )
-                .And.BeAssignableTo<IClientCredentialReader>();
-
-        [Test]
-        public void It_resolves_a_token_repository_that_reads_client_credentials() =>
-            _provider
-                .GetRequiredService<IOpenIddictTokenRepository>()
-                .Should()
-                .BeAssignableTo<IClientCredentialReader>()
-                .Which.CanReadClientCredentials.Should()
-                .BeTrue();
+                );
 
         [Test]
         public void It_keeps_the_replacement_hasher() =>

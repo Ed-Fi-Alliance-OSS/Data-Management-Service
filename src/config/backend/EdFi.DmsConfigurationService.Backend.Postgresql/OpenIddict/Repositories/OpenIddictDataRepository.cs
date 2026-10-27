@@ -17,8 +17,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
     /// Handles all database operations for OpenIddict using PostgreSQL-specific connections and SQL.
     /// </summary>
     public class OpenIddictDataRepository(IOptions<DatabaseOptions> databaseOptions)
-        : IOpenIddictDataRepository,
-            IClientCredentialReader
+        : IOpenIddictDataRepository
     {
         private readonly string _connectionString = databaseOptions.Value.DatabaseConnection;
 
@@ -356,11 +355,6 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                 new { ClientId = clientId }
             );
         }
-
-        /// <summary>
-        /// This repository always reads credentials with its own query.
-        /// </summary>
-        public bool CanReadClientCredentials => true;
 
         /// <summary>
         /// One statement and no joins: the application's id, stored client id and stored secret,

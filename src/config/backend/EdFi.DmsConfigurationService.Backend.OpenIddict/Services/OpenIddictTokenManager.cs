@@ -192,25 +192,23 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     return new TokenResult.FailureUnknown("Missing client_id or client_secret");
                 }
 
-                var (authenticatedClient, credentialErrorCode) = await ValidateClientSecretAsync(
-                    clientId,
-                    clientSecret,
-                    preserveVerificationFailures: false
-                );
-
-                if (authenticatedClient is null)
+                if (
+                    await ValidateClientSecretAsync(
+                        clientId,
+                        clientSecret,
+                        preserveVerificationFailures: false
+                    )
+                    is not { } authenticatedClient
+                )
                 {
                     return new TokenResult.FailureAuthentication(
-                        credentialErrorCode,
+                        InvalidClientError,
                         "Invalid client or Invalid client credentials"
                     );
                 }
 
                 if (
-                    (
-                        authenticatedClient.LoadedApplication
-                        ?? await LoadAuthenticatedApplicationAsync(authenticatedClient, clientId)
-                    )
+                    await LoadAuthenticatedApplicationAsync(authenticatedClient, clientId)
                     is not { } applicationInfo
                 )
                 {
@@ -374,7 +372,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             AuthenticatedClient? authenticatedClient;
             try
             {
-                (authenticatedClient, _) = await ValidateClientSecretAsync(
+                authenticatedClient = await ValidateClientSecretAsync(
                     request.ClientId,
                     request.ClientSecret,
                     preserveVerificationFailures: true
@@ -498,7 +496,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             AuthenticatedClient? authenticatedClient;
             try
             {
-                (authenticatedClient, _) = await ValidateClientSecretAsync(
+                authenticatedClient = await ValidateClientSecretAsync(
                     request.ClientId,
                     request.ClientSecret,
                     preserveVerificationFailures: true
@@ -894,38 +892,26 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// <summary>
         /// A client that has just authenticated, held for one request only. The application id
         /// and canonical client id are what revocation needs; the token endpoint also needs the
-        /// full application, which is <see cref="LoadedApplication"/> when authentication already
-        /// read it, and is otherwise loaded by <see cref="LoadAuthenticatedApplicationAsync"/>.
+        /// full application, which <see cref="LoadAuthenticatedApplicationAsync"/> loads.
         /// </summary>
         /// <param name="ApplicationId">The stored id of the application that authenticated.</param>
         /// <param name="EffectiveClientId">
         /// The stored client id, or the requested one when the stored value is empty.
         /// </param>
         /// <param name="VerifiedStoredSecret">The stored secret the presented secret was verified against.</param>
-        /// <param name="LoadedApplication">
-        /// The full application when authentication read it; <c>null</c> when it read only the
-        /// client's credential.
-        /// </param>
         private sealed record AuthenticatedClient(
             Guid ApplicationId,
             string EffectiveClientId,
-            string VerifiedStoredSecret,
-            ApplicationInfo? LoadedApplication
+            string VerifiedStoredSecret
         );
 
         /// <summary>
-        /// Looks up the client and verifies the secret against the stored (potentially hashed)
-        /// value. Returns a null client on failure, always with
-        /// <see cref="InvalidClientError"/> as the error code: an unknown client, a wrong secret and
-        /// an unapproved client are reported identically, so the code does not reveal whether the
-        /// client id exists. An unknown client's secret is still verified, against a placeholder
-        /// hash, so its rejection does not return before a secret verification has been performed.
-        /// <para>
-        /// When the repository can read a client's credential on its own
-        /// (<see cref="IClientCredentialReader"/>), only the credential is read here, and the token
-        /// endpoint loads the full application after this succeeds. Otherwise the full application
-        /// is read once, here, and the token endpoint issues from that same record.
-        /// </para>
+        /// Reads the client's credential and verifies the secret against the stored (potentially
+        /// hashed) value. Returns <c>null</c> for an unknown client, a wrong secret and an
+        /// unapproved client alike, so the caller answers all three identically. An unknown
+        /// client's secret is still verified, against a placeholder hash, so its rejection does not
+        /// return before a secret verification has been performed. Only the credential is read
+        /// here; the token endpoint loads the full application after this succeeds.
         /// </summary>
         /// <param name="preserveVerificationFailures">
         /// <c>false</c> for the token endpoint, which keeps the hasher's established behaviour of
@@ -935,84 +921,45 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// of being reported as wrong credentials. Catching around a dependency is not enough when
         /// the dependency suppresses its own failures.
         /// </param>
-        private async Task<(AuthenticatedClient? Client, string ErrorCode)> ValidateClientSecretAsync(
+        private async Task<AuthenticatedClient?> ValidateClientSecretAsync(
             string clientId,
             string clientSecret,
             bool preserveVerificationFailures
         )
         {
+            if (await _tokenRepository.GetClientCredentialAsync(clientId) is not { } credential)
+            {
+                await VerifyAgainstPlaceholderAsync(clientSecret, preserveVerificationFailures);
+                return null;
+            }
+
             if (
-                _tokenRepository is IClientCredentialReader
-                {
-                    CanReadClientCredentials: true
-                } credentialReader
+                !await VerifyStoredSecretAsync(
+                    clientSecret,
+                    credential.StoredClientSecret,
+                    preserveVerificationFailures
+                )
             )
             {
-                if (await credentialReader.GetClientCredentialAsync(clientId) is not { } credential)
-                {
-                    await VerifyAgainstPlaceholderAsync(clientSecret);
-                    return (null, InvalidClientError);
-                }
-
-                if (
-                    !await VerifyStoredSecretAsync(
-                        clientSecret,
-                        credential.StoredClientSecret,
-                        preserveVerificationFailures
-                    )
-                )
-                {
-                    return (null, InvalidClientError);
-                }
-
-                if (!credential.IsApproved)
-                {
-                    return (null, InvalidClientError);
-                }
-
-                return (
-                    new AuthenticatedClient(
-                        credential.ApplicationId,
-                        CanonicalClientId(credential.StoredClientId, clientId),
-                        credential.StoredClientSecret,
-                        LoadedApplication: null
-                    ),
-                    string.Empty
-                );
+                return null;
             }
 
-            var applicationInfo = await _tokenRepository.GetApplicationByClientIdAsync(clientId);
-            if (applicationInfo is null)
+            if (!credential.IsApproved)
             {
-                await VerifyAgainstPlaceholderAsync(clientSecret);
-                return (null, InvalidClientError);
+                return null;
             }
 
-            string storedSecret = applicationInfo.ClientSecret ?? string.Empty;
-            if (!await VerifyStoredSecretAsync(clientSecret, storedSecret, preserveVerificationFailures))
-            {
-                return (null, InvalidClientError);
-            }
-
-            if (!applicationInfo.IsApproved)
-            {
-                return (null, InvalidClientError);
-            }
-
-            return (
-                new AuthenticatedClient(
-                    applicationInfo.Id,
-                    CanonicalClientId(applicationInfo, clientId),
-                    storedSecret,
-                    applicationInfo
-                ),
-                string.Empty
+            return new AuthenticatedClient(
+                credential.ApplicationId,
+                CanonicalClientId(credential.StoredClientId, clientId),
+                credential.StoredClientSecret
             );
         }
 
         /// <summary>
-        /// Verifies <paramref name="presentedSecret"/> against a known client's stored secret, with
-        /// the failure semantics <paramref name="preserveVerificationFailures"/> selects (see
+        /// Verifies <paramref name="presentedSecret"/> against a stored secret, or against the
+        /// placeholder for an unknown client, with the failure semantics
+        /// <paramref name="preserveVerificationFailures"/> selects (see
         /// <see cref="ValidateClientSecretAsync"/>).
         /// </summary>
         private Task<bool> VerifyStoredSecretAsync(
@@ -1026,12 +973,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
 
         /// <summary>
         /// Loads the full application for a client that authenticated from its credential alone,
-        /// under the client id the request named, as the single lookup does. Returns <c>null</c>
+        /// under the client id the request named. Returns <c>null</c>
         /// when the application is no longer the one that authenticated: gone, replaced under the
         /// same client id, no longer approved, or holding a different stored secret. The stored
         /// secrets are compared as stored strings; no secret is derived again and neither value
-        /// leaves this method. A change after this check is not detected here, as a change after
-        /// the single lookup is not.
+        /// leaves this method. A change after this check is not detected here.
         /// </summary>
         private async Task<ApplicationInfo?> LoadAuthenticatedApplicationAsync(
             AuthenticatedClient authenticatedClient,
@@ -1062,44 +1008,43 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// wrong secret costs. The result is discarded: the caller rejects the client whatever this
         /// verification answers, so a placeholder that happened to match could never authenticate.
         /// <para>
-        /// Both endpoints use the lenient verification here. An ordinary failure is logged by
-        /// exception type and absorbed, because the client's absence is already established and the
-        /// answer is the same either way. Cancellation is not absorbed: it reaches
-        /// the caller's own handling, as it would from a known client's verification, but as a new
-        /// exception with a fixed message, the original token and no inner exception: the
-        /// hasher's own exception may carry the secret it was given, and the caller's handling
-        /// logs and returns whatever exception reaches it.
+        /// The verification is the one a known client gets on the same endpoint, and a failure is
+        /// not absorbed either: it reaches the caller's own handling, as it would from a known
+        /// client's verification, so an outage is answered the same way whether or not the client
+        /// id exists. It arrives as a new exception with a fixed message, the exception type names
+        /// and, for a cancellation, the original token, but no inner exception: the hasher's own
+        /// exception may carry the secret it was given, and the token endpoint's handling logs and
+        /// returns whatever exception reaches it.
         /// </para>
         /// </summary>
-        private async Task VerifyAgainstPlaceholderAsync(string presentedSecret)
+        private async Task VerifyAgainstPlaceholderAsync(
+            string presentedSecret,
+            bool preserveVerificationFailures
+        )
         {
             try
             {
-                _ = await _secretHasher.VerifySecretAsync(presentedSecret, _placeholderHash);
+                _ = await VerifyStoredSecretAsync(
+                    presentedSecret,
+                    _placeholderHash,
+                    preserveVerificationFailures
+                );
             }
             catch (OperationCanceledException ex)
             {
                 throw SanitizedCancellation(ex);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception ex)
             {
-                LogPlaceholderVerificationFailure(ex);
+                throw new InvalidOperationException(
+                    $"The secret verification for an unknown client failed ({ExceptionTypeChain(ex)})."
+                );
             }
         }
 
         private static OperationCanceledException SanitizedCancellation(
             OperationCanceledException exception
         ) => new("The secret verification for an unknown client was canceled.", exception.CancellationToken);
-
-        /// <summary>
-        /// Records only the chain of exception type names: a replacement hasher's exception message
-        /// may carry anything, including the secret it was given.
-        /// </summary>
-        private void LogPlaceholderVerificationFailure(Exception exception) =>
-            _logger.LogWarning(
-                "Verifying a secret against the placeholder client secret hash failed ({ExceptionTypes}); the unknown client is still rejected",
-                ExceptionTypeChain(exception)
-            );
 
         /// <summary>
         /// Mints a JWT and attempts to store it, subject to the configured per-client token limit.
