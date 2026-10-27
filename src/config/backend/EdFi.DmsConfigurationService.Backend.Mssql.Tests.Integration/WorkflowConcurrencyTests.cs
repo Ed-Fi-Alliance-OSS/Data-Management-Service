@@ -20,7 +20,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
-using RepositoryApiClient = EdFi.DmsConfigurationService.Backend.Repositories.ApiClient;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration;
 
@@ -131,7 +130,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
     private TaskCompletionSource _repositoryUpdateReleased = new();
     private int _pausedProviderCall;
     private bool _pauseFirstApiClientRepositoryUpdate;
-    private ApplicationUpdateResult _applicationUpdateResult = new ApplicationUpdateResult.Success();
+    private bool _providerPreservesUuid;
 
     private TaskCompletionSource _namespaceCallStarted = new();
     private TaskCompletionSource _namespaceCallReleased = new();
@@ -145,7 +144,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
     private int _namespaceCalls;
     private int _apiClientRepositoryUpdates;
     private int _apiClientReads;
-    private int _applicationApiClientsReads;
+    private int _applicationSaves;
     private int _vendorStateReads;
     private List<ProviderUpdate> _providerUpdates = [];
     private List<NamespaceUpdate> _namespaceUpdates = [];
@@ -221,12 +220,12 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         _failingNamespaceCall = 0;
         _pauseVendorRepositoryUpdate = false;
         _pauseFirstApiClientRepositoryUpdate = false;
-        _applicationUpdateResult = new ApplicationUpdateResult.Success();
+        _providerPreservesUuid = false;
         _providerCalls = 0;
         _namespaceCalls = 0;
         _apiClientRepositoryUpdates = 0;
         _apiClientReads = 0;
-        _applicationApiClientsReads = 0;
+        _applicationSaves = 0;
         _vendorStateReads = 0;
         _providerUpdates = [];
         _namespaceUpdates = [];
@@ -295,128 +294,55 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                 }
             });
 
-        A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
+        // The save marks every client of the Application, as a rename does, and reports them pending
+        // from the shared client state at the moment it runs.
+        A.CallTo(() => _applicationRepository.SaveApplication(A<ApplicationUpdateCommand>.Ignored))
             .ReturnsLazily(call =>
             {
-                Interlocked.Increment(ref _applicationApiClientsReads);
-                int applicationId = call.GetArgument<int>(0);
+                Interlocked.Increment(ref _applicationSaves);
+                ApplicationUpdateCommand command = call.GetArgument<ApplicationUpdateCommand>(0)!;
                 lock (_stateLock)
                 {
-                    RepositoryApiClient[] applicationClients =
+                    ApplicationSyncPendingClient[] pendingClients =
                     [
                         .. _clients
-                            .Values.Where(client => client.ApplicationId == applicationId)
-                            .Select(client => new RepositoryApiClient(
-                                client.ClientId,
-                                client.ClientUuid,
-                                true
+                            .Where(entry => entry.Value.ApplicationId == command.Id)
+                            .OrderBy(entry => entry.Key)
+                            .Select(entry => new ApplicationSyncPendingClient(
+                                entry.Key,
+                                entry.Value.ClientId,
+                                entry.Value.ClientUuid,
+                                true,
+                                [1],
+                                [1],
+                                DateTime.UtcNow
                             )),
                     ];
-                    return Task.FromResult<ApplicationApiClientsResult>(
-                        new ApplicationApiClientsResult.Success(applicationClients)
-                    );
-                }
-            });
-
-        A.CallTo(() => _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored))
-            .ReturnsLazily(call =>
-            {
-                int applicationId = call.GetArgument<int>(0);
-                string clientId = call.GetArgument<string>(1)!;
-                lock (_stateLock)
-                {
-                    ClientState? state = _clients.Values.FirstOrDefault(client =>
-                        client.ApplicationId == applicationId && client.ClientId == clientId
-                    );
-                    return Task.FromResult<ApplicationUpdateStateResult>(
-                        state is null
-                            ? new ApplicationUpdateStateResult.FailureNotExists()
-                            : new ApplicationUpdateStateResult.Success(
-                                new ApplicationUpdateState(
-                                    "Test Application",
-                                    1,
-                                    "TestClaimSet",
-                                    [1],
-                                    [],
-                                    state.ClientId,
-                                    state.ClientUuid,
-                                    true,
-                                    [1],
-                                    true,
-                                    [1]
-                                )
+                    return Task.FromResult<ApplicationSaveResult>(
+                        new ApplicationSaveResult.Success(
+                            new ApplicationSyncState(
+                                command.ApplicationName,
+                                command.VendorId,
+                                command.ClaimSetName,
+                                [1],
+                                [],
+                                pendingClients
                             )
+                        )
                     );
                 }
             });
 
         A.CallTo(() =>
-                _applicationRepository.SyncApplicationApiClientUuid(
+                _apiClientRepository.SetApiClientIdentityProviderSyncPending(
                     A<int>.Ignored,
-                    A<string>.Ignored,
-                    A<Guid>.Ignored,
-                    A<Guid>.Ignored
+                    A<DateTime?>.Ignored
                 )
             )
-            .ReturnsLazily(call =>
-            {
-                int applicationId = call.GetArgument<int>(0);
-                string clientId = call.GetArgument<string>(1)!;
-                Guid expectedUuid = call.GetArgument<Guid>(2);
-                Guid newUuid = call.GetArgument<Guid>(3);
-                lock (_stateLock)
-                {
-                    ClientState? state = _clients.Values.FirstOrDefault(client =>
-                        client.ApplicationId == applicationId
-                        && client.ClientId == clientId
-                        && client.ClientUuid == expectedUuid
-                    );
-                    if (state is null)
-                    {
-                        return Task.FromResult<ApiClientUuidSyncResult>(
-                            new ApiClientUuidSyncResult.FailureUnknown(
-                                "The stored state does not match the expected UUID."
-                            )
-                        );
-                    }
-
-                    state.ClientUuid = newUuid;
-                    return Task.FromResult<ApiClientUuidSyncResult>(new ApiClientUuidSyncResult.Success());
-                }
-            });
-
-        A.CallTo(() =>
-                _applicationRepository.UpdateApplication(
-                    A<ApplicationUpdateCommand>.Ignored,
-                    A<ApiClientCommand>.Ignored
-                )
-            )
-            .ReturnsLazily(call =>
-            {
-                ApplicationUpdateCommand command = call.GetArgument<ApplicationUpdateCommand>(0)!;
-                ApiClientCommand apiClientCommand = call.GetArgument<ApiClientCommand>(1)!;
-                if (_applicationUpdateResult is not ApplicationUpdateResult.Success)
-                {
-                    return Task.FromResult(_applicationUpdateResult);
-                }
-
-                lock (_stateLock)
-                {
-                    ClientState? state = _clients.Values.FirstOrDefault(client =>
-                        client.ApplicationId == command.Id && client.ClientId == apiClientCommand.ClientId
-                    );
-                    if (state is not null)
-                    {
-                        state.ClientUuid = apiClientCommand.ClientUuid;
-                    }
-                }
-
-                return Task.FromResult<ApplicationUpdateResult>(new ApplicationUpdateResult.Success());
-            });
+            .Returns(new ApiClientSyncPendingResult.Success());
 
         // Answers from the shared client state, as the real repository answers from the ApiClient
-        // table: a UUID the provider issued that no workflow persisted is unreferenced, so the
-        // compensation ownership check lets a failed update roll its replacement client back.
+        // table: a UUID the provider issued that no workflow persisted is unreferenced.
         A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
             .ReturnsLazily(call =>
             {
@@ -675,7 +601,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
             await _providerCallReleased.Task;
         }
 
-        var issuedUuid = Guid.NewGuid();
+        Guid issuedUuid = _providerPreservesUuid ? Guid.Parse(targetedUuid) : Guid.NewGuid();
         lock (_stateLock)
         {
             _providerUpdates.Add(new ProviderUpdate(targetedUuid, issuedUuid));
@@ -790,12 +716,12 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
             """
         );
 
-    private protected int ApplicationApiClientsReads => Volatile.Read(ref _applicationApiClientsReads);
+    private protected int ApplicationSaves => Volatile.Read(ref _applicationSaves);
 
     private static StringContent JsonBody(string json) => new(json, Encoding.UTF8, "application/json");
 
     [TestFixture]
-    public class Given_an_api_client_update_during_a_compensating_application_update
+    public class Given_an_api_client_update_during_an_application_update_provider_call
         : WorkflowConcurrencyTestBase
     {
         private static async Task WaitForAsync(Func<bool> condition)
@@ -815,8 +741,8 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         private Guid _originalClientUuid;
         private HttpStatusCode _applicationStatus;
         private HttpStatusCode _apiClientStatus;
-        private bool _apiClientCompletedWhileCompensationPaused;
-        private int _apiClientReadsWhileCompensationPaused;
+        private bool _apiClientCompletedWhileApplicationPaused;
+        private int _apiClientReadsWhileApplicationPaused;
         private int _apiClientReadsAfterCompletion;
         private ProviderUpdate[] _updates = [];
 
@@ -825,11 +751,10 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         {
             SetUpWorkflowFakes((5, 10));
             _originalClientUuid = CurrentClientUuid(5);
-            // The application repository update fails, and the compensation's provider
-            // rollback is the second provider mutation of the run; the workflow pauses
-            // there while it still holds the aggregate lock.
-            _applicationUpdateResult = new ApplicationUpdateResult.FailureVendorNotFound();
-            _pausedProviderCall = 2;
+            // The Application update's provider call for its pending client is the first provider
+            // mutation of the run; the workflow pauses there while it still holds the aggregate lock.
+            _providerPreservesUuid = true;
+            _pausedProviderCall = 1;
             using var client = SetUpWorkflowClient();
 
             Task<HttpResponseMessage> updatingApplication = TrackRequest(
@@ -842,8 +767,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                           "applicationName": "Renamed Application",
                           "claimSetName": "TestClaimSet",
                           "vendorId": 1,
-                          "educationOrganizationIds": [1],
-                          "dataStoreIds": [1]
+                          "educationOrganizationIds": [1]
                         }
                         """
                     )
@@ -869,11 +793,11 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
             );
 
             // The pre-read precedes the lock acquisition, so once it is observed the
-            // contender is waiting on the aggregate lock the paused compensation holds.
+            // contender is waiting on the aggregate lock the paused Application update holds.
             await WaitForAsync(() => ApiClientReads >= 1);
             await Task.Delay(300);
-            _apiClientCompletedWhileCompensationPaused = updatingApiClient.IsCompleted;
-            _apiClientReadsWhileCompensationPaused = ApiClientReads;
+            _apiClientCompletedWhileApplicationPaused = updatingApiClient.IsCompleted;
+            _apiClientReadsWhileApplicationPaused = ApiClientReads;
 
             _providerCallReleased.SetResult();
             _applicationStatus = (await updatingApplication).StatusCode;
@@ -883,33 +807,29 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         }
 
         [Test]
-        public void It_holds_the_api_client_update_at_its_pre_read_while_compensation_is_paused()
+        public void It_holds_the_api_client_update_at_its_pre_read_while_the_application_update_is_paused()
         {
-            _apiClientCompletedWhileCompensationPaused.Should().BeFalse();
-            _apiClientReadsWhileCompensationPaused.Should().Be(1);
+            _apiClientCompletedWhileApplicationPaused.Should().BeFalse();
+            _apiClientReadsWhileApplicationPaused.Should().Be(1);
         }
 
         [Test]
-        public void It_compensates_from_the_exact_original_state()
+        public void It_updates_the_client_for_the_application_before_the_api_client_update()
         {
-            _updates.Should().HaveCount(3);
+            _updates.Should().HaveCount(2);
             _updates[0].TargetedUuid.Should().Be(_originalClientUuid.ToString());
-            _updates[1].TargetedUuid.Should().Be(_updates[0].IssuedUuid.ToString());
+            _updates[1].TargetedUuid.Should().Be(_originalClientUuid.ToString());
         }
 
         [Test]
-        public void It_rereads_and_targets_the_compensated_client_under_the_lock()
-        {
-            _apiClientReadsAfterCompletion.Should().Be(2);
-            _updates[2].TargetedUuid.Should().Be(_updates[1].IssuedUuid.ToString());
-        }
+        public void It_rereads_the_client_under_the_lock() => _apiClientReadsAfterCompletion.Should().Be(2);
 
         [Test]
-        public void It_returns_the_original_conflict_for_the_failed_application_update() =>
-            _applicationStatus.Should().Be(HttpStatusCode.Conflict);
+        public void It_completes_the_application_update() =>
+            _applicationStatus.Should().Be(HttpStatusCode.NoContent);
 
         [Test]
-        public void It_completes_the_api_client_update_against_the_compensated_client() =>
+        public void It_completes_the_api_client_update() =>
             _apiClientStatus.Should().Be(HttpStatusCode.NoContent);
     }
 
@@ -920,8 +840,8 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         private HttpStatusCode _moveStatus;
         private HttpStatusCode _applicationStatus;
         private bool _applicationCompletedWhileMoveCommitPending;
-        private int _applicationReadsWhileMoveCommitPending;
-        private int _applicationReadsAfterCompletion;
+        private int _applicationSavesWhileMoveCommitPending;
+        private int _applicationSavesAfterCompletion;
         private int _movedClientParentAfterCommit;
         private ProviderUpdate[] _updates = [];
 
@@ -931,8 +851,9 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
             SetUpWorkflowFakes((7, 60));
             // The move pauses inside its repository commit, still holding the source and
             // target aggregate locks, so the target application's update must block
-            // before any of its under-lock reads and then act on the committed move.
+            // before its save and then act on the committed move.
             _pauseFirstApiClientRepositoryUpdate = true;
+            _providerPreservesUuid = true;
             using var client = SetUpWorkflowClient();
 
             Task<HttpResponseMessage> movingApiClient = TrackRequest(
@@ -963,8 +884,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                           "applicationName": "Renamed Target",
                           "claimSetName": "TestClaimSet",
                           "vendorId": 1,
-                          "educationOrganizationIds": [1],
-                          "dataStoreIds": [1]
+                          "educationOrganizationIds": [1]
                         }
                         """
                     )
@@ -972,12 +892,12 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
             );
             await Task.Delay(300);
             _applicationCompletedWhileMoveCommitPending = updatingApplication.IsCompleted;
-            _applicationReadsWhileMoveCommitPending = ApplicationApiClientsReads;
+            _applicationSavesWhileMoveCommitPending = ApplicationSaves;
 
             _repositoryUpdateReleased.SetResult();
             _moveStatus = (await movingApiClient).StatusCode;
             _applicationStatus = (await updatingApplication).StatusCode;
-            _applicationReadsAfterCompletion = ApplicationApiClientsReads;
+            _applicationSavesAfterCompletion = ApplicationSaves;
             _movedClientParentAfterCommit = CurrentClientApplicationId(7);
             _updates = ProviderUpdatesSnapshot();
         }
@@ -986,16 +906,16 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         public void It_blocks_the_target_application_update_while_the_move_commit_is_pending()
         {
             _applicationCompletedWhileMoveCommitPending.Should().BeFalse();
-            _applicationReadsWhileMoveCommitPending.Should().Be(0);
+            _applicationSavesWhileMoveCommitPending.Should().Be(0);
         }
 
         [Test]
-        public void It_selects_and_targets_the_committed_moved_client()
+        public void It_updates_the_committed_moved_client_for_the_target_application()
         {
-            _applicationReadsAfterCompletion.Should().Be(1);
+            _applicationSavesAfterCompletion.Should().Be(1);
             _movedClientParentAfterCommit.Should().Be(61);
             _updates.Should().HaveCount(2);
-            _updates[1].TargetedUuid.Should().Be(_updates[0].IssuedUuid.ToString());
+            _updates[1].TargetedUuid.Should().Be(CurrentClientUuid(7).ToString());
         }
 
         [Test]
@@ -1098,25 +1018,27 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
     }
 
     [TestFixture]
-    public class Given_a_vendor_update_during_a_compensating_application_update : WorkflowConcurrencyTestBase
+    public class Given_a_vendor_update_during_an_application_update_provider_call
+        : WorkflowConcurrencyTestBase
     {
+        private Guid _originalClientUuid;
         private HttpStatusCode _applicationStatus;
         private HttpStatusCode _vendorStatus;
-        private bool _vendorCompletedWhileCompensationPaused;
-        private int _vendorStateReadsWhileCompensationPaused;
+        private bool _vendorCompletedWhileApplicationPaused;
+        private int _vendorStateReadsWhileApplicationPaused;
         private int _vendorStateReadsAfterCompletion;
-        private ProviderUpdate[] _updates = [];
         private NamespaceUpdate[] _claimUpdates = [];
 
         [SetUp]
         public async Task Act()
         {
             SetUpWorkflowFakes((5, 10), (6, 30));
-            // The application repository update fails, and the compensation's provider rollback
-            // is the second provider mutation of the run; the workflow pauses there while it
-            // still holds the aggregate lock for application 10.
-            _applicationUpdateResult = new ApplicationUpdateResult.FailureVendorNotFound();
-            _pausedProviderCall = 2;
+            _originalClientUuid = CurrentClientUuid(5);
+            // The Application update's provider call for its pending client is the first provider
+            // mutation of the run; the workflow pauses there while it still holds the aggregate lock
+            // for application 10.
+            _providerPreservesUuid = true;
+            _pausedProviderCall = 1;
             using var client = SetUpWorkflowClient();
 
             Task<HttpResponseMessage> updatingApplication = TrackRequest(
@@ -1129,8 +1051,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                           "applicationName": "Renamed Application",
                           "claimSetName": "TestClaimSet",
                           "vendorId": 1,
-                          "educationOrganizationIds": [1],
-                          "dataStoreIds": [1]
+                          "educationOrganizationIds": [1]
                         }
                         """
                     )
@@ -1143,25 +1064,24 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
             );
 
             // The pre-read precedes the lock acquisition, so once it is observed the vendor
-            // update is waiting on the aggregate lock the paused compensation holds.
+            // update is waiting on the aggregate lock the paused Application update holds.
             await WaitUntilAsync(() => VendorStateReads >= 1);
             await Task.Delay(300);
-            _vendorCompletedWhileCompensationPaused = updatingVendor.IsCompleted;
-            _vendorStateReadsWhileCompensationPaused = VendorStateReads;
+            _vendorCompletedWhileApplicationPaused = updatingVendor.IsCompleted;
+            _vendorStateReadsWhileApplicationPaused = VendorStateReads;
 
             _providerCallReleased.SetResult();
             _applicationStatus = (await updatingApplication).StatusCode;
             _vendorStatus = (await updatingVendor).StatusCode;
             _vendorStateReadsAfterCompletion = VendorStateReads;
-            _updates = ProviderUpdatesSnapshot();
             _claimUpdates = NamespaceClaimUpdates();
         }
 
         [Test]
-        public void It_holds_the_vendor_update_at_its_pre_read_while_compensation_is_paused()
+        public void It_holds_the_vendor_update_at_its_pre_read_while_the_application_update_is_paused()
         {
-            _vendorCompletedWhileCompensationPaused.Should().BeFalse();
-            _vendorStateReadsWhileCompensationPaused.Should().Be(1);
+            _vendorCompletedWhileApplicationPaused.Should().BeFalse();
+            _vendorStateReadsWhileApplicationPaused.Should().Be(1);
         }
 
         [Test]
@@ -1169,15 +1089,15 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
             _vendorStateReadsAfterCompletion.Should().Be(2);
 
         [Test]
-        public void It_targets_the_client_the_compensation_left_behind() =>
-            _claimUpdates[0].TargetedUuid.Should().Be(_updates[1].IssuedUuid.ToString());
+        public void It_targets_the_client_the_application_update_kept() =>
+            _claimUpdates[0].TargetedUuid.Should().Be(_originalClientUuid.ToString());
 
         [Test]
         public void It_updates_every_client_of_the_vendor() => _claimUpdates.Should().HaveCount(2);
 
         [Test]
-        public void It_returns_the_original_conflict_for_the_failed_application_update() =>
-            _applicationStatus.Should().Be(HttpStatusCode.Conflict);
+        public void It_completes_the_application_update() =>
+            _applicationStatus.Should().Be(HttpStatusCode.NoContent);
 
         [Test]
         public void It_completes_the_vendor_update() => _vendorStatus.Should().Be(HttpStatusCode.NoContent);
@@ -1431,8 +1351,8 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         private HttpStatusCode _vendorStatus;
         private HttpStatusCode _applicationStatus;
         private bool _applicationCompletedWhileCommitPending;
-        private int _applicationReadsWhileCommitPending;
-        private int _applicationReadsAfterCompletion;
+        private int _applicationSavesWhileCommitPending;
+        private int _applicationSavesAfterCompletion;
         private ProviderUpdate[] _updates = [];
         private NamespaceUpdate[] _claimUpdates = [];
 
@@ -1441,9 +1361,10 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         {
             SetUpWorkflowFakes((9, 50), (11, 60));
             // The vendor update pauses inside its repository commit, still holding the aggregate
-            // locks for both applications, so an application update must block before any of its
-            // under-lock reads and then act on the committed client UUIDs.
+            // locks for both applications, so an application update must block before its save and
+            // then act on the committed client UUIDs.
             _pauseVendorRepositoryUpdate = true;
+            _providerPreservesUuid = true;
             using var client = SetUpWorkflowClient();
 
             Task<HttpResponseMessage> updatingVendor = TrackRequest(
@@ -1470,12 +1391,12 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
             );
             await Task.Delay(300);
             _applicationCompletedWhileCommitPending = updatingApplication.IsCompleted;
-            _applicationReadsWhileCommitPending = ApplicationApiClientsReads;
+            _applicationSavesWhileCommitPending = ApplicationSaves;
 
             _vendorRepositoryUpdateReleased.SetResult();
             _vendorStatus = (await updatingVendor).StatusCode;
             _applicationStatus = (await updatingApplication).StatusCode;
-            _applicationReadsAfterCompletion = ApplicationApiClientsReads;
+            _applicationSavesAfterCompletion = ApplicationSaves;
             _updates = ProviderUpdatesSnapshot();
             _claimUpdates = NamespaceClaimUpdates();
         }
@@ -1484,12 +1405,12 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         public void It_blocks_the_application_update_while_the_commit_is_pending()
         {
             _applicationCompletedWhileCommitPending.Should().BeFalse();
-            _applicationReadsWhileCommitPending.Should().Be(0);
+            _applicationSavesWhileCommitPending.Should().Be(0);
         }
 
         [Test]
-        public void It_lets_the_application_read_once_the_commit_completes() =>
-            _applicationReadsAfterCompletion.Should().Be(1);
+        public void It_lets_the_application_save_once_the_commit_completes() =>
+            _applicationSavesAfterCompletion.Should().Be(1);
 
         [Test]
         public void It_lets_the_application_update_target_the_uuid_the_vendor_persisted() =>

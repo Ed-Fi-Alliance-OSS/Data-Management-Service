@@ -247,6 +247,28 @@ public static class FailureResponse
             errors: errors
         );
 
+    /// <summary>
+    /// 502 <c>urn:ed-fi:management-api:bad-gateway:partial-sync</c>: the Application change is saved,
+    /// but the synchronization of the API clients in <paramref name="apiClientIds"/> with the identity
+    /// provider is not confirmed, so they remain pending until a later request completes it. A listed
+    /// client's provider update may have failed, or may have succeeded with its completion unrecorded.
+    /// </summary>
+    public static JsonNode ForPartialSync(int[] apiClientIds, string correlationId)
+    {
+        JsonObject response = CreateBaseJsonObject(
+            detail: apiClientIds.Length == 1
+                ? "The Application change is saved, but 1 API client is still pending synchronization with the identity provider. Send the same request again to retry it."
+                : $"The Application change is saved, but {apiClientIds.Length} API clients are still pending synchronization with the identity provider. Send the same request again to retry them.",
+            type: $"{_badGatewayTypePrefix}:partial-sync",
+            title: "Bad Gateway",
+            status: 502,
+            correlationId: correlationId,
+            errors: []
+        );
+        response["apiClientIds"] = JsonSerializer.SerializeToNode(apiClientIds, _serializerOptions);
+        return response;
+    }
+
     public static JsonNode ForUnknown(string correlationId) =>
         CreateBaseJsonObject(
             detail: "",

@@ -1188,11 +1188,8 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
         }
 
         [Test]
-        public void It_sends_each_first_client_its_unchanged_narrowed_claim()
-        {
-            ClaimsSentFor(_subsetClient.ClientUuid).Should().Equal("255902");
-            ClaimsSentFor(_fullListClient.ClientUuid).Should().Equal("255901,255902,255903");
-        }
+        public void It_leaves_the_narrowed_clients_untouched_in_the_identity_provider() =>
+            ProviderUpdates.Should().BeEmpty();
 
         [Test]
         public async Task It_keeps_each_client_narrowed_without_the_added_id()
@@ -1295,8 +1292,8 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
         public void It_updates_the_Application() => _status.Should().Be(HttpStatusCode.NoContent);
 
         [Test]
-        public void It_sends_only_the_first_client_its_narrowed_claim() =>
-            ProviderUpdates.Should().Equal(new ProviderUpdate(_first.ClientUuid, "255902"));
+        public void It_sends_only_the_inheriting_client_the_new_list() =>
+            ProviderUpdates.Should().Equal(new ProviderUpdate(_second.ClientUuid, "255901,255902,255903,255905"));
 
         [Test]
         public async Task It_keeps_the_first_client_narrowed() =>
@@ -1310,7 +1307,7 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
     }
 
     [TestFixture]
-    public class Given_an_application_update_that_fails_after_the_narrowed_first_client_provider_update
+    public class Given_an_application_update_rejected_for_a_duplicate_name_with_a_narrowed_client
         : ApiClientEducationOrganizationApiTests
     {
         private const long A5 = 255905;
@@ -1322,7 +1319,7 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
         {
             _client = await CreateClientAsync(ApplicationA, List(A2));
 
-            // Application names are checked only by the save, after the provider update
+            // The save rejects the name before any provider call
             _response = await PutApplicationAsync(
                 ApplicationA,
                 [A1, A2, A3, A5],
@@ -1334,8 +1331,7 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
         public void It_reports_the_duplicate_name() => ShouldBeDataValidation(_response, "ApplicationName");
 
         [Test]
-        public void It_restores_the_original_narrowed_claim() =>
-            ClaimsSentFor(_client.ClientUuid).Should().Equal("255902", "255902");
+        public void It_makes_no_provider_update() => ProviderUpdates.Should().BeEmpty();
 
         [Test]
         public async Task It_leaves_the_Application_and_the_client_scope()

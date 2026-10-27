@@ -194,6 +194,53 @@ public class FailureResponseTests
         }
     }
 
+    [TestFixture]
+    public class Given_a_partial_sync_failure
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForPartialSync([4, 9, 12], CorrelationId);
+
+        [Test]
+        public void It_says_the_change_is_saved_and_counts_the_pending_clients() =>
+            _result["detail"]
+                ?.GetValue<string>()
+                .Should()
+                .Be(
+                    "The Application change is saved, but 3 API clients are still pending synchronization with the identity provider. Send the same request again to retry them."
+                );
+
+        [Test]
+        public void It_lists_the_pending_client_ids_as_numbers_in_order() =>
+            _result["apiClientIds"]!.AsArray().Select(id => id!.GetValue<int>()).Should().Equal(4, 9, 12);
+
+        [Test]
+        public void It_has_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_extension_members()
+        {
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+            _result["errors"]?.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_partial_sync_failure_for_one_client
+    {
+        [Test]
+        public void It_counts_one_pending_client() =>
+            FailureResponse
+                .ForPartialSync([5], CorrelationId)["detail"]
+                ?.GetValue<string>()
+                .Should()
+                .Be(
+                    "The Application change is saved, but 1 API client is still pending synchronization with the identity provider. Send the same request again to retry it."
+                );
+    }
+
     [Test]
     public void ForDataValidation_ShouldReturnCorrectJsonNode()
     {
@@ -631,6 +678,13 @@ public class FailureResponseTests
                 nameof(FailureResponse.ForBadGateway),
                 () => FailureResponse.ForBadGateway("Bad gateway", CorrelationId),
                 "urn:ed-fi:management-api:bad-gateway",
+                502,
+                "Bad Gateway"
+            ),
+            new(
+                nameof(FailureResponse.ForPartialSync),
+                () => FailureResponse.ForPartialSync([7], CorrelationId),
+                "urn:ed-fi:management-api:bad-gateway:partial-sync",
                 502,
                 "Bad Gateway"
             ),
