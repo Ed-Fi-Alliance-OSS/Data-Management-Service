@@ -413,6 +413,13 @@ clients that are not pending, and a credential reset neither refreshes claims
 nor completes a pending update. The Application update never changes client
 keys, secrets, names, approval, data stores or scope choices.
 
+Renaming a claim set (`PUT /v3/claimSets/{id}`) also renames it on every
+Application that uses it and marks every client of those Applications pending,
+but it does not update the identity provider itself. Until a client is updated
+by one of the ways above, its tokens carry the old claim set name, which DMS no
+longer recognizes, so its requests are refused. After a rename, send each
+affected Application's `PUT /v3/applications/{id}` again, unchanged.
+
 #### Upgrading from 8.0
 
 Before 8.1, an Application update refreshed only the Application's first client,
