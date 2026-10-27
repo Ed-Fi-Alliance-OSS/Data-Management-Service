@@ -75,6 +75,14 @@ public static class FailureResponse
         );
 
     /// <summary>
+    /// The <c>error</c> of the CMS <c>/connect/token</c> 429. The DMS <c>/oauth/token</c> proxy's 429
+    /// parser (<c>OAuthManager</c> in <c>src/dms</c>) believes a token-limit answer only with this code
+    /// and <see cref="TooManyTokensMessage"/>'s sentence, and DMS's <c>OAuthManagerTests</c> builds its
+    /// envelope from both, so changing either here fails the DMS unit suite.
+    /// </summary>
+    public const string TooManyTokensError = "temporarily_unavailable";
+
+    /// <summary>
     /// The canonical token-limit sentence, formatted with the culture-invariant limit. This is the one
     /// copy of the cross-service text: the CMS <c>/connect/token</c> endpoint returns it as the
     /// <c>error_description</c> of its 429, and the DMS <c>/oauth/token</c> proxy's 429 parser

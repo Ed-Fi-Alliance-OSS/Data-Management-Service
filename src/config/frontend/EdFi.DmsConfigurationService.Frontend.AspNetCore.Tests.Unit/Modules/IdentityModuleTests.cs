@@ -1482,6 +1482,16 @@ public class TokenEndpointScopeForwardingTests
 /// </summary>
 public class OAuthEndpointErrorTests
 {
+    // Provider failure texts for the 502 fixtures, declared here so the fixture attributes can name them.
+    private const string UnreachableMessage =
+        "No connection could be made because SENTINEL_PROVIDER_TEXT refused it.";
+    private const string NotFoundBody =
+        """{"error":"invalid_grant","error_description":"Realm does not exist SENTINEL_PROVIDER_TEXT"}""";
+    private const string ForbiddenBody =
+        """{"error":"invalid_request","error_description":"HTTPS required SENTINEL_PROVIDER_TEXT"}""";
+    private const string GenericBody =
+        """{"error":"invalid_request","error_description":"Missing form parameter SENTINEL_PROVIDER_TEXT"}""";
+
     private static WebApplicationFactory<Program> CreateFactory(
         Action<IServiceCollection>? configureServices,
         bool keycloak = false
@@ -1518,6 +1528,7 @@ public class OAuthEndpointErrorTests
         protected const string BasicChallenge = "Basic realm=\"EdFi.DmsConfigurationService\"";
 
         protected readonly ITokenManager TokenManager = A.Fake<ITokenManager>();
+        private protected RevocationLogCapture Logs { get; } = new();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
         protected HttpResponseMessage Response = null!;
@@ -1533,7 +1544,14 @@ public class OAuthEndpointErrorTests
         public async Task Setup()
         {
             ArrangeManager();
-            _factory = CreateFactory(collection => collection.AddTransient(_ => TokenManager), KeycloakMode);
+            _factory = CreateFactory(
+                collection =>
+                {
+                    collection.AddTransient(_ => TokenManager);
+                    collection.AddSingleton<ILoggerProvider>(Logs);
+                },
+                KeycloakMode
+            );
             _client = _factory.CreateClient();
             Response = await _client.SendAsync(BuildRequest());
             Content = await Response.Content.ReadAsStringAsync();
@@ -1716,6 +1734,58 @@ public class OAuthEndpointErrorTests
         public void It_does_not_challenge() => AssertNoChallenge();
     }
 
+    /// <summary>
+    /// A client id or secret of only whitespace is as missing as an empty one: it is answered before
+    /// the token manager, which would report it as a failure the service cannot classify.
+    /// </summary>
+    [TestFixture("client_id")]
+    [TestFixture("client_secret")]
+    public class Given_a_token_request_with_a_whitespace_credential(string parameter) : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest() =>
+            Post([
+                new("client_id", parameter == "client_id" ? " " : "CSClient1"),
+                new("client_secret", parameter == "client_secret" ? "\t" : "test123@Puiu"),
+                new("grant_type", "client_credentials"),
+            ]);
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_client_body() =>
+            AssertOAuthError("invalid_client", "Client authentication is required.");
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
+    }
+
+    [TestFixture]
+    public class Given_a_token_request_with_whitespace_basic_credentials : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest() =>
+            Post(
+                [new("grant_type", "client_credentials")],
+                "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes(" : "))
+            );
+
+        [Test]
+        public void It_returns_401() => AssertStatus(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_client_body() =>
+            AssertOAuthError("invalid_client", "Client authentication is required.");
+
+        [Test]
+        public void It_challenges_for_basic_authentication() => AssertBasicChallenge();
+
+        [Test]
+        public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
+    }
+
     [TestFixture]
     public class Given_a_token_request_with_an_undecodable_basic_header_and_no_form_credentials
         : TokenErrorRequest
@@ -1855,6 +1925,11 @@ public class OAuthEndpointErrorTests
         }
     }
 
+    /// <summary>
+    /// A failed client authentication is <c>invalid_client</c> whatever code the token manager
+    /// reports: RFC 6749 §5.2 defines no other code for it, and a second code would tell the caller
+    /// whether the client id it sent exists.
+    /// </summary>
     [TestFixture(true)]
     [TestFixture(false)]
     public class Given_a_service_owned_authentication_failure(bool basic) : ManagerOutcomeRequest(basic)
@@ -1870,20 +1945,18 @@ public class OAuthEndpointErrorTests
             );
 
         [Test]
-        public void It_answers_client_authentication_failure_with_the_manager_code_and_description() =>
+        public void It_answers_invalid_client_with_the_manager_description() =>
             AssertClientAuthenticationAnswer(
-                "unauthorized_client",
+                "invalid_client",
                 "Invalid client or Invalid client credentials"
             );
     }
 
-    [TestFixture]
-    public class Given_the_token_manager_reports_an_unknown_failure : ManagerOutcomeRequest
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_the_token_manager_reports_an_unknown_failure(bool basic) : ManagerOutcomeRequest(basic)
     {
         private const string Sentinel = "SENTINEL_UNKNOWN_FAILURE_must_not_leak";
-
-        public Given_the_token_manager_reports_an_unknown_failure()
-            : base(false) { }
 
         protected override bool KeycloakMode => false;
 
@@ -1904,9 +1977,57 @@ public class OAuthEndpointErrorTests
     }
 
     /// <summary>
+    /// The token limit and a lock timeout are not client authentication failures, so a caller that
+    /// attempted Basic gets no challenge with them.
+    /// </summary>
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_the_token_manager_reports_the_token_limit(bool basic) : ManagerOutcomeRequest(basic)
+    {
+        protected override bool KeycloakMode => false;
+
+        protected override void ArrangeManager() => Returns(new TokenResult.FailureTokenLimitExceeded(3));
+
+        [Test]
+        public void It_returns_429() => AssertStatus(HttpStatusCode.TooManyRequests);
+
+        [Test]
+        public void It_answers_temporarily_unavailable_with_the_limit() =>
+            AssertOAuthError(
+                "temporarily_unavailable",
+                "Too many access tokens have been requested (limit is 3). Access tokens should be reused until they expire."
+            );
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+    }
+
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_the_token_manager_reports_a_lock_timeout(bool basic) : ManagerOutcomeRequest(basic)
+    {
+        protected override bool KeycloakMode => false;
+
+        protected override void ArrangeManager() => Returns(new TokenResult.FailureLockTimeout());
+
+        [Test]
+        public void It_returns_409() => AssertStatus(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_answers_temporarily_unavailable() =>
+            AssertOAuthError(
+                "temporarily_unavailable",
+                "The token request could not be completed because of concurrent requests for the same client. Retry the request."
+            );
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+    }
+
+    /// <summary>
     /// A Keycloak 401 or the provider's invalid_client answer, in both the Basic and the form shape.
-    /// The provider's code and description pass through only when they are a complete structured pair
-    /// with a code RFC 6749 §5.2 defines.
+    /// The answer is always <c>invalid_client</c>; the provider's description passes through only
+    /// when it comes in a complete structured pair with a code RFC 6749 §5.2 defines.
     /// </summary>
     [TestFixture(true, "Unauthorized")]
     [TestFixture(false, "Unauthorized")]
@@ -1927,8 +2048,33 @@ public class OAuthEndpointErrorTests
             );
 
         [Test]
-        public void It_answers_with_the_provider_code_and_description() =>
+        public void It_answers_invalid_client_with_the_provider_description() =>
             AssertClientAuthenticationAnswer("invalid_client", "Invalid client secret");
+    }
+
+    /// <summary>
+    /// Keycloak answers a wrong secret with a 401 carrying <c>unauthorized_client</c>; the caller still
+    /// gets <c>invalid_client</c>.
+    /// </summary>
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_the_identity_provider_rejects_the_client_credentials_with_another_defined_code(
+        bool basic
+    ) : ManagerOutcomeRequest(basic)
+    {
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(
+                new IdentityProviderError.Unauthorized(
+                    """{"error":"unauthorized_client","error_description":"Invalid client or Invalid client credentials"}"""
+                )
+            );
+
+        [Test]
+        public void It_answers_invalid_client_with_the_provider_description() =>
+            AssertClientAuthenticationAnswer(
+                "invalid_client",
+                "Invalid client or Invalid client credentials"
+            );
     }
 
     [TestFixture(true)]
@@ -1983,82 +2129,18 @@ public class OAuthEndpointErrorTests
 
         protected override void ArrangeManager() =>
             ReturnsProviderFailure(
-                new IdentityProviderError.Forbidden(
-                    """{"error":"Invalid_Grant","error_description":"SENTINEL_CASE"}"""
+                new IdentityProviderError.Unauthorized(
+                    """{"error":"Invalid_Client","error_description":"SENTINEL_CASE"}"""
                 )
             );
 
         [Test]
-        public void It_replaces_the_code_that_differs_only_in_case() =>
-            AssertOAuthError("unauthorized_client", "The client is not authorized to request a token.");
-    }
-
-    [TestFixture]
-    public class Given_the_identity_provider_forbids_the_request : ManagerOutcomeRequest
-    {
-        public Given_the_identity_provider_forbids_the_request()
-            : base(true) { }
-
-        protected override void ArrangeManager() =>
-            ReturnsProviderFailure(
-                new IdentityProviderError.Forbidden(
-                    """{"error":"unauthorized_client","error_description":"Client not allowed for this grant"}"""
-                )
-            );
+        public void It_replaces_the_description_of_a_code_that_differs_only_in_case() =>
+            AssertOAuthError("invalid_client", "Invalid client or Invalid client credentials");
 
         [Test]
-        public void It_returns_403() => AssertStatus(HttpStatusCode.Forbidden);
-
-        [Test]
-        public void It_answers_with_the_provider_code_and_description() =>
-            AssertOAuthError("unauthorized_client", "Client not allowed for this grant");
-
-        [Test]
-        public void It_does_not_challenge() => AssertNoChallenge();
-    }
-
-    [TestFixture]
-    public class Given_the_identity_provider_forbids_the_request_without_a_structured_body
-        : ManagerOutcomeRequest
-    {
-        public Given_the_identity_provider_forbids_the_request_without_a_structured_body()
-            : base(false) { }
-
-        protected override void ArrangeManager() =>
-            ReturnsProviderFailure(new IdentityProviderError.Forbidden("Insufficient Permissions"));
-
-        [Test]
-        public void It_returns_403() => AssertStatus(HttpStatusCode.Forbidden);
-
-        [Test]
-        public void It_answers_with_the_fixed_unauthorized_client_description() =>
-            AssertOAuthError("unauthorized_client", "The client is not authorized to request a token.");
-
-        [Test]
-        public void It_does_not_challenge() => AssertNoChallenge();
-    }
-
-    [TestFixture]
-    public class Given_the_identity_provider_forbids_the_request_with_an_undefined_code
-        : ManagerOutcomeRequest
-    {
-        public Given_the_identity_provider_forbids_the_request_with_an_undefined_code()
-            : base(false) { }
-
-        protected override void ArrangeManager() =>
-            ReturnsProviderFailure(
-                new IdentityProviderError.Forbidden(
-                    """{"error":"access_denied","error_description":"SENTINEL_PROVIDER_DESCRIPTION"}"""
-                )
-            );
-
-        [Test]
-        public void It_replaces_the_provider_code_and_description_with_the_fixed_ones() =>
-            AssertOAuthError("unauthorized_client", "The client is not authorized to request a token.");
-
-        [Test]
-        public void It_does_not_echo_the_provider_text() =>
-            Content.Should().NotContain("access_denied").And.NotContain("SENTINEL_PROVIDER_DESCRIPTION");
+        public void It_does_not_echo_the_provider_description() =>
+            Content.Should().NotContain("SENTINEL_CASE");
     }
 
     [TestFixture]
@@ -2132,19 +2214,24 @@ public class OAuthEndpointErrorTests
 
     /// <summary>
     /// Every provider failure that is not the caller's to fix, whatever its text, is the same 502 with
-    /// a fixed description: provider text, structured or not, never reaches the body.
+    /// a fixed description: provider text, structured or not, never reaches the body. A provider 403
+    /// is one of them, since the one Keycloak's token endpoint sends reports the provider's own
+    /// configuration, such as a realm that requires HTTPS. The log records the failure kind and, from a
+    /// structured body with a code RFC 6749 §5.2 defines, its code and description, never the body.
     /// </summary>
-    [TestFixture("Unreachable", "No connection could be made because SENTINEL_PROVIDER_TEXT refused it.")]
-    [TestFixture(
-        "NotFound",
-        """{"error":"invalid_grant","error_description":"Realm does not exist SENTINEL_PROVIDER_TEXT"}"""
-    )]
-    [TestFixture(
-        "Generic",
-        """{"error":"invalid_request","error_description":"Missing form parameter SENTINEL_PROVIDER_TEXT"}"""
-    )]
-    public class Given_the_identity_provider_fails_in_a_way_the_caller_cannot_fix(string kind, string message)
-        : ManagerOutcomeRequest(false)
+    [TestFixture("Unreachable", UnreachableMessage, false)]
+    [TestFixture("Unreachable", UnreachableMessage, true)]
+    [TestFixture("NotFound", NotFoundBody, false)]
+    [TestFixture("NotFound", NotFoundBody, true)]
+    [TestFixture("Forbidden", ForbiddenBody, false)]
+    [TestFixture("Forbidden", ForbiddenBody, true)]
+    [TestFixture("Generic", GenericBody, false)]
+    [TestFixture("Generic", GenericBody, true)]
+    public class Given_the_identity_provider_fails_in_a_way_the_caller_cannot_fix(
+        string kind,
+        string message,
+        bool basic
+    ) : ManagerOutcomeRequest(basic)
     {
         protected override void ArrangeManager() =>
             ReturnsProviderFailure(
@@ -2152,9 +2239,23 @@ public class OAuthEndpointErrorTests
                 {
                     "Unreachable" => new IdentityProviderError.Unreachable(message),
                     "NotFound" => new IdentityProviderError.NotFound(message),
+                    "Forbidden" => new IdentityProviderError.Forbidden(message),
                     _ => new IdentityProviderError(message),
                 }
             );
+
+        [Test]
+        public void It_logs_the_failure_kind_at_warning() =>
+            Logs
+                .Records.Should()
+                .Contain(record =>
+                    record.Level == LogLevel.Warning
+                    && record.Message.Contains(kind == "Generic" ? nameof(IdentityProviderError) : kind)
+                );
+
+        [Test]
+        public void It_logs_the_provider_description_only_from_a_structured_body() =>
+            Logs.AllCapturedText().Contains("SENTINEL_PROVIDER_TEXT").Should().Be(kind != "Unreachable");
 
         [Test]
         public void It_returns_502() => AssertStatus(HttpStatusCode.BadGateway);

@@ -37,10 +37,9 @@ public class IdentityModule : IEndpointModule
             .DisableAntiforgery()
             .WithMetadata(OAuthEndpointMetadata.Instance, ConnectRateLimitMetadata.Instance);
         // The token endpoint answers every failure in the OAuth format (RFC 6749 §5.2, DMS-1491),
-        // including one that escapes the handler. Apart from the no-store and rate-limit markers
-        // every /connect route carries, it has none of the sibling routes' markers: it keeps the
-        // standard exception logging, and, since it is the route where a client gets its first
-        // credential-backed response, no authentication exemption or client-credential marker either.
+        // including one that escapes the handler. Unlike the sibling routes it keeps the standard
+        // exception logging, and, since it is the route where a client gets its first
+        // credential-backed response, it has no authentication exemption or client-credential marker.
         endpoints
             .MapPost("connect/token/{**contextPath}", GetClientAccessToken)
             .DisableAntiforgery()
@@ -260,8 +259,8 @@ public class IdentityModule : IEndpointModule
     /// <summary>
     /// RFC 6749 §4.4 client credentials grant. The request is checked without throwing, in the order
     /// request shape before credentials (DMS-1327 D-03): a missing <c>grant_type</c> is
-    /// <c>invalid_request</c>, an unsupported one is <c>unsupported_grant_type</c>, and a missing
-    /// client id or secret, after the lenient Basic parsing and the form fallback, is
+    /// <c>invalid_request</c>, an unsupported one is <c>unsupported_grant_type</c>, and a missing or
+    /// blank client id or secret, after the lenient Basic parsing and the form fallback, is
     /// <c>invalid_client</c>, with the Basic challenge only when the caller attempted Basic. Every
     /// failure is answered in the OAuth format.
     /// </summary>
@@ -330,7 +329,7 @@ public class IdentityModule : IEndpointModule
 
         bool basicAttempted = GetTextAfterBasicScheme(httpContext.Request.Headers.Authorization) is not null;
 
-        if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
+        if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
         {
             return InvalidClient(httpContext, basicAttempted, ClientAuthenticationRequiredDescription);
         }
@@ -373,16 +372,17 @@ public class IdentityModule : IEndpointModule
             TokenResult.Success tokenSuccess => Results.Ok(
                 JsonSerializer.Deserialize<TokenResponse>(tokenSuccess.Token)
             ),
-            // The manager's code and description are service-owned, so they are used as they are.
-            TokenResult.FailureAuthentication authenticationFailure => ClientAuthenticationFailure(
+            // A failed client authentication is invalid_client whatever code the manager reports:
+            // RFC 6749 §5.2 defines no other code for it, and a second code would tell the caller
+            // whether the client id it sent exists. The description is service-owned.
+            TokenResult.FailureAuthentication authenticationFailure => InvalidClient(
                 httpContext,
                 basicAttempted,
-                authenticationFailure.Error,
                 authenticationFailure.ErrorDescription
             ),
             TokenResult.FailureTokenLimitExceeded tokenLimitExceeded => OAuthErrorResponseWriter.Create(
                 StatusCodes.Status429TooManyRequests,
-                TemporarilyUnavailableCode,
+                FailureResponse.TooManyTokensError,
                 FailureResponse.TooManyTokensMessage(tokenLimitExceeded.Limit)
             ),
             // Kept as 409 rather than the 503 RFC 6749 suggests for temporarily_unavailable: the DMS
@@ -393,6 +393,7 @@ public class IdentityModule : IEndpointModule
                 ConcurrentTokenRequestsDescription
             ),
             TokenResult.FailureIdentityProvider failureIdentityProvider => IdentityProviderTokenFailure(
+                logger,
                 httpContext,
                 basicAttempted,
                 failureIdentityProvider.IdentityProviderError
@@ -403,13 +404,15 @@ public class IdentityModule : IEndpointModule
 
     /// <summary>
     /// Answers an identity provider failure to a token request in the OAuth format. A provider's own
-    /// <c>error</c> and <c>error_description</c> are used only when the provider sent a complete
-    /// structured body and its <c>error</c> is one of the codes RFC 6749 §5.2 defines for a token
-    /// endpoint; anything else is replaced by the fixed code and description for that failure, so
-    /// provider text outside that contract never reaches the caller. A failure that is not the
-    /// caller's to fix is a 502 with no provider text at all.
+    /// <c>error_description</c> is used only when the provider sent a complete structured body and
+    /// its <c>error</c> is one of the codes RFC 6749 §5.2 defines for a token endpoint; anything else
+    /// is replaced by the fixed description for that failure, so provider text outside that contract
+    /// never reaches the caller. The <c>error</c> is always the service's own. A failure that is not
+    /// the caller's to fix, a provider 403 included, is a 502 with no provider text at all; the log
+    /// records the failure kind and, from a usable body, the provider's code and description.
     /// </summary>
     private static IResult IdentityProviderTokenFailure(
+        ILogger<IdentityModule> logger,
         HttpContext httpContext,
         bool basicAttempted,
         IdentityProviderError providerError
@@ -421,36 +424,38 @@ public class IdentityModule : IEndpointModule
             out string description
         );
 
-        return providerError switch
+        switch (providerError)
         {
-            IdentityProviderError.InvalidClient or IdentityProviderError.Unauthorized =>
-                ClientAuthenticationFailure(
+            case IdentityProviderError.InvalidClient or IdentityProviderError.Unauthorized:
+                return InvalidClient(
                     httpContext,
                     basicAttempted,
-                    usable ? code : "invalid_client",
                     usable ? description : InvalidClientCredentialsDescription
-                ),
-            IdentityProviderError.Forbidden => OAuthErrorResponseWriter.Create(
-                StatusCodes.Status403Forbidden,
-                usable ? code : "unauthorized_client",
-                usable ? description : ClientNotAuthorizedDescription
-            ),
-            IdentityProviderError.InvalidScope => OAuthErrorResponseWriter.Create(
-                StatusCodes.Status400BadRequest,
-                "invalid_scope",
-                usable ? description : InvalidScopeDescription
-            ),
-            _ => OAuthErrorResponseWriter.Create(
-                StatusCodes.Status502BadGateway,
-                "server_error",
-                UnexpectedProviderResponseDescription
-            ),
-        };
+                );
+            case IdentityProviderError.InvalidScope:
+                return OAuthErrorResponseWriter.Create(
+                    StatusCodes.Status400BadRequest,
+                    "invalid_scope",
+                    usable ? description : InvalidScopeDescription
+                );
+            default:
+                logger.LogWarning(
+                    "The identity provider failed a token request ({ProviderFailure}, error {ProviderError}: {ProviderErrorDescription}); answering 502",
+                    providerError.GetType().Name,
+                    usable ? LoggingUtility.SanitizeForLog(code) : "none",
+                    usable ? LoggingUtility.SanitizeForLog(description) : "none"
+                );
+                return OAuthErrorResponseWriter.Create(
+                    StatusCodes.Status502BadGateway,
+                    "server_error",
+                    UnexpectedProviderResponseDescription
+                );
+        }
     }
 
     /// <summary>
-    /// The error codes RFC 6749 §5.2 defines for a token endpoint, other than the ones the service
-    /// names itself. Compared ordinally, since the codes are case-sensitive.
+    /// The six error codes RFC 6749 §5.2 defines for a token endpoint. Compared ordinally, since the
+    /// codes are case-sensitive.
     /// </summary>
     private static readonly HashSet<string> _providerTokenErrorCodes = new(StringComparer.Ordinal)
     {
@@ -581,7 +586,6 @@ public class IdentityModule : IEndpointModule
 
     private const string ConcurrentTokenRequestsDescription =
         "The token request could not be completed because of concurrent requests for the same client. Retry the request.";
-    private const string ClientNotAuthorizedDescription = "The client is not authorized to request a token.";
     private const string InvalidScopeDescription =
         "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client.";
     private const string UnexpectedProviderResponseDescription =
@@ -1275,19 +1279,9 @@ public class IdentityModule : IEndpointModule
         OAuthErrorResponseWriter.Create(StatusCodes.Status400BadRequest, "invalid_request", errorDescription);
 
     /// <summary>
-    /// The RFC 6749 §5.2 <c>invalid_client</c> response for a caller that failed client
-    /// authentication. See <see cref="ClientAuthenticationFailure"/> for the status and challenge rules.
-    /// </summary>
-    private static IResult InvalidClient(
-        HttpContext httpContext,
-        bool basicAttempted,
-        string errorDescription
-    ) => ClientAuthenticationFailure(httpContext, basicAttempted, "invalid_client", errorDescription);
-
-    /// <summary>
-    /// The RFC 6749 §5.2 response for a caller that failed client authentication, with the OAuth
-    /// <c>error</c> code supplied by the caller. A caller that attempted Basic authentication gets 401
-    /// with the <c>WWW-Authenticate</c> challenge
+    /// The RFC 6749 §5.2 response for a token, revocation or introspection caller that failed client
+    /// authentication. A caller that attempted Basic authentication gets 401 with the
+    /// <c>WWW-Authenticate</c> challenge
     /// §5.2 requires; any other caller gets 400, since offering a challenge would invite a scheme it
     /// did not choose.
     ///
@@ -1298,19 +1292,26 @@ public class IdentityModule : IEndpointModule
     /// root object, cannot find it. The <c>/connect</c> endpoints are OAuth endpoints and answer in
     /// the OAuth error format.
     /// </summary>
-    private static IResult ClientAuthenticationFailure(
+    private static IResult InvalidClient(
         HttpContext httpContext,
         bool basicAttempted,
-        string error,
         string errorDescription
     )
     {
         if (!basicAttempted)
         {
-            return OAuthErrorResponseWriter.Create(StatusCodes.Status400BadRequest, error, errorDescription);
+            return OAuthErrorResponseWriter.Create(
+                StatusCodes.Status400BadRequest,
+                "invalid_client",
+                errorDescription
+            );
         }
 
         httpContext.Response.Headers.WWWAuthenticate = $"Basic realm=\"{ClientCredentialRealm}\"";
-        return OAuthErrorResponseWriter.Create(StatusCodes.Status401Unauthorized, error, errorDescription);
+        return OAuthErrorResponseWriter.Create(
+            StatusCodes.Status401Unauthorized,
+            "invalid_client",
+            errorDescription
+        );
     }
 }

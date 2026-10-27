@@ -359,27 +359,13 @@ The behaviors above are exercised by automated tests:
   field gets `400 invalid_request`, since the request-shape check runs first. Every error
   is checked against the **OAuth error contract**, and pipeline fixtures show an
   unexpected fault is `500 server_error` in the same format. `/connect/token` answers in
-  the same contract (DMS-1491): the `TokenErrorRequest` fixtures in the same file cover an
-  unsupported, missing or empty `grant_type` (`Given_a_token_request_with_an_unsupported_grant_type`,
-  `Given_a_token_request_without_a_grant_type_but_with_valid_credentials`), a JSON body, a malformed
-  form payload, a Bearer header, and missing or empty client credentials, each as
-  `400` with no `WWW-Authenticate` challenge and with the request-shape check before the
-  credential check, plus a token manager that faults (`500 server_error`). The
-  `ManagerOutcomeRequest` family drives every token manager and identity provider outcome
-  in both the Basic-attempted (`401` with the challenge) and form-credential (`400`, no
-  challenge) variants: `invalid_client`, the service-owned authentication failure, an
-  unknown failure, `403`, the `429` and `409` `temporarily_unavailable` answers, `502
-  server_error` and the Keycloak `invalid_scope` answer. Provider pass-through is pinned
-  case by case: only one of the six RFC 6749 section 5.2 token codes, matched
-  case-sensitively and in a complete structured body, is used (for example
-  `Given_the_identity_provider_matches_error_codes_case_sensitively`,
-  `Given_a_provider_body_with_an_extra_member` and
-  `Given_a_provider_body_whose_description_is_not_a_string`); everything else takes the fixed
-  text. The DMS proxy side is pinned in `OAuthManagerTests.cs`, where
-  `Given_An_Unauthorized_Upstream_Body_Built_As_The_Configuration_Service_Now_Answers` and
-  `Given_A_Token_Limit_Rejection_In_The_OAuth_Envelope_Built_By_The_Configuration_Service` feed the
-  parser the bodies the CMS now writes, and `Given_A_Deviating_OAuth_Envelope_429` shows a deviating
-  envelope degrades to the generic `429`. A further fixture
+  the same contract (DMS-1491).
+  The `TokenErrorRequest` fixtures in the same file cover an unsupported or missing `grant_type` (`Given_a_token_request_with_an_unsupported_grant_type`, `Given_a_token_request_without_a_grant_type_but_with_valid_credentials`), a JSON body, a malformed form payload, a Bearer header, and missing, empty or whitespace-only client credentials, with the request-shape check before the credential check, plus a token manager that faults (`500 server_error`).
+  Form credentials get `400` with no `WWW-Authenticate` challenge, and an HTTP Basic header without usable credentials gets `401` with the challenge.
+  The `ManagerOutcomeRequest` family drives the token manager and identity provider outcomes: the client authentication failures, always `invalid_client`, and the unknown-failure `500`, the `429` and `409` `temporarily_unavailable` answers and the `502 server_error` answers, a provider `403` among them, each run in both the Basic-attempted and form-credential variants, which shows only a client authentication failure carries the challenge; the Keycloak `invalid_scope` answer has its own fixtures.
+  Provider pass-through is pinned case by case: a provider's `error_description` is used only with one of the six RFC 6749 section 5.2 token codes, matched case-sensitively, in a complete structured body (for example `Given_the_identity_provider_matches_error_codes_case_sensitively`, `Given_a_provider_body_with_an_extra_member` and `Given_a_provider_body_whose_description_is_not_a_string`); everything else takes the fixed text, and the `error` is always the service's own.
+  The DMS proxy side is pinned in `OAuthManagerTests.cs`: `Given_the_Client_Credentials_Are_Invalid` shows an upstream OAuth `401` body becomes the DMS `title` and `detail`, `Given_A_Token_Limit_Rejection_In_The_OAuth_Envelope_Built_By_The_Configuration_Service` builds the token-limit body from the CMS DataModel's own code and sentence, and `Given_A_Deviating_OAuth_Envelope_429` shows a deviating envelope degrades to the generic `429`.
+  A further fixture
   drives the **canonical-casing path end to end over HTTP**: the repository resolves a
   mis-cased `client_id` the way SQL Server's collation does, and the token minted under
   the canonical spelling is still revoked — the case that would otherwise be a silent

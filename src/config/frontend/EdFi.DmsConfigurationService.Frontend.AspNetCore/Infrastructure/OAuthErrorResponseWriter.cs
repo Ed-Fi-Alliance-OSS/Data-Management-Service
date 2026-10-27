@@ -14,8 +14,10 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 /// The single definition of the RFC 6749 §5.2 error body: a JSON object whose <c>error</c> and
 /// <c>error_description</c> are top-level members, served as <c>application/json</c>. Endpoints return it
 /// through <see cref="Create"/>; <see cref="GlobalExceptionHandler"/>, which cannot return an
-/// <see cref="IResult"/>, writes the same bytes through <see cref="WriteAsync"/>. Callers pass fixed,
-/// service-owned descriptions only, never caller or provider content.
+/// <see cref="IResult"/>, writes the same bytes through <see cref="WriteAsync"/>. Descriptions are
+/// service-owned text, except that <c>/connect/token</c> passes through an identity provider's own
+/// <c>error_description</c> when the provider sent a complete structured body with a code RFC 6749
+/// §5.2 defines.
 /// </summary>
 internal static class OAuthErrorResponseWriter
 {

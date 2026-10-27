@@ -169,10 +169,8 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         "urn:ed-fi:management-api:security:authentication:too-many-tokens";
 
     /// <summary>
-    /// The <c>error</c> value of the OAuth-envelope token-limit answer, an RFC 6749 section 5.2
-    /// code the Configuration Service uses so the caller sees the same envelope as any other
-    /// token-endpoint error. It is only believed together with a canonical
-    /// <c>error_description</c>.
+    /// The <c>error</c> value of the OAuth-envelope token-limit answer. It is only believed together
+    /// with a canonical <c>error_description</c>.
     /// </summary>
     private const string TokenLimitOAuthError = "temporarily_unavailable";
 

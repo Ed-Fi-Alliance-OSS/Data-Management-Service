@@ -86,15 +86,14 @@ Responses produced before the endpoint is selected, such as the `405` for anothe
 
 | Condition | Status | `error` |
 | --- | --- | --- |
-| Client authentication failed, HTTP Basic attempted | `401` with `WWW-Authenticate: Basic realm="EdFi.DmsConfigurationService"` | `invalid_client`, or the code the token manager or provider reports (see below) |
-| Client authentication failed or missing, no HTTP Basic attempt | `400` | `invalid_client`, or the code the token manager or provider reports |
+| Client authentication failed, or client id or secret missing or blank, HTTP Basic attempted | `401` with `WWW-Authenticate: Basic realm="EdFi.DmsConfigurationService"` | `invalid_client` |
+| Client authentication failed, or client id or secret missing or blank, no HTTP Basic attempt | `400` | `invalid_client` |
 | `grant_type` missing or empty | `400` | `invalid_request` |
 | Unsupported `grant_type` | `400` | `unsupported_grant_type` |
 | Keycloak rejected the requested scope | `400` | `invalid_scope` |
-| The identity provider says the client may not request a token | `403` | `unauthorized_client`, or the provider's code |
 | Token limit reached | `429` | `temporarily_unavailable`, with the canonical limit sentence as `error_description` |
 | Concurrent token requests for the same client (lock timeout) | `409` | `temporarily_unavailable` |
-| Identity provider failure that is not the caller's to fix | `502` | `server_error` |
+| Identity provider failure that is not the caller's to fix, a provider `403` included | `502` | `server_error` |
 | Unexpected fault in CMS | `500` | `server_error` |
 
 The `invalid_client` house rule is the one `/connect/revoke` and `/connect/introspect` follow.
@@ -102,18 +101,23 @@ A caller that attempted HTTP Basic gets `401` with the `Basic` challenge that RF
 Any other caller, including one that sent form credentials, one that sent no credentials at all and one whose `Authorization` header is not `Basic`, gets `400` with no challenge, because a challenge would invite a scheme the caller did not choose.
 Before this rule a failed form credential answered `401` and a missing one answered a validation `400`.
 
-The handler checks the request without throwing, in this order: `grant_type` missing, then `grant_type` unsupported, then client id or secret missing (after the lenient Basic parsing and the form fallback), and only then the token manager.
+The handler checks the request without throwing, in this order: `grant_type` missing, then `grant_type` unsupported, then client id or secret missing or only whitespace (after the lenient Basic parsing and the form fallback), and only then the token manager.
 A request that is wrong in the request shape is therefore told so before its credentials are examined.
 
 The token limit and the lock timeout keep the statuses they always had, `429` and `409`, and take the OAuth body.
 The `409` keeps its status rather than the `503` RFC 6749 suggests for `temporarily_unavailable`, because the DMS `/oauth/token` proxy recognizes the condition by status.
 The `429` `error_description` is `Too many access tokens have been requested (limit is N). Access tokens should be reused until they expire.`, which the DMS proxy parses to rebuild its own answer.
 
-An identity provider's `error` is used as the OAuth `error` only when the provider sent a complete structured body and its `error` is one of the six codes RFC 6749 section 5.2 defines for a token endpoint: `invalid_request`, `invalid_client`, `invalid_grant`, `unauthorized_client`, `unsupported_grant_type` and `invalid_scope`.
+A failed client authentication is `invalid_client` whatever code the self-contained token manager or Keycloak reports.
+RFC 6749 section 5.2 defines no other code for it, and passing on a second code, such as the `unauthorized_client` both providers report for a wrong secret, would tell the caller whether the client id it sent exists.
+An identity provider's `error_description` is used only when the provider sent a complete structured body (an `error` string and an `error_description` string) and its `error` is one of the six codes RFC 6749 section 5.2 defines for a token endpoint: `invalid_request`, `invalid_client`, `invalid_grant`, `unauthorized_client`, `unsupported_grant_type` and `invalid_scope`.
 The comparison is ordinal, so `Invalid_Client` is not recognized.
-Its `error_description` is used only together with such a code, and only from a complete structured body (an `error` string and an `error_description` string).
-Otherwise the fixed code for the failure and a fixed, service-owned description apply, so provider text outside that contract never reaches the caller.
-The code and description a service-owned failure carries, such as the self-contained wrong-secret answer, are used as they are.
+Otherwise a fixed, service-owned description applies, so provider text outside that contract never reaches the caller.
+The description a service-owned failure carries is used as it is.
+
+A provider failure that is not the caller's to fix answers `502 server_error` with a fixed description and no provider text.
+That includes a Keycloak `403`, whose known cause is the provider's own configuration, such as a realm that requires HTTPS, so a `403` would wrongly blame the caller.
+The `502` is logged at Warning with the failure kind and, from a structured body with one of the six codes, the provider's `error` and `error_description`, sanitized; the provider body itself is never logged.
 
 `/connect/register` keeps the Ed-Fi problem-details contract of [DMS-1218](./DMS-1218-cms-error-response-compliance.md).
 It is a CMS bootstrap endpoint and not an RFC 6749 or RFC 7591 endpoint: it takes PascalCase form fields, answers with a `{title, status}` success body and reports field-level `validationErrors`.

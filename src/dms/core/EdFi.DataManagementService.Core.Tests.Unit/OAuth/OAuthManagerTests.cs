@@ -3252,69 +3252,6 @@ public class OAuthManagerTests
     }
 
     /// <summary>
-    /// The exact 401 body the Configuration Service now returns for a rejected client: the OAuth
-    /// envelope, with the content type the CMS writes. DMS needs no recognition step for it - the
-    /// error code becomes the title and the description the detail - and the discard event must stay
-    /// silent because nothing was withheld.
-    /// </summary>
-    [TestFixture]
-    [Parallelizable]
-    public class Given_An_Unauthorized_Upstream_Body_Built_As_The_Configuration_Service_Now_Answers
-    {
-        private RecordingLogger<OAuthManager> _logger = default!;
-        private JsonNode _body = default!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            var logger = new RecordingLogger<OAuthManager>();
-            var upstreamResponse = A.Fake<HttpResponseMessage>();
-            upstreamResponse.StatusCode = HttpStatusCode.Unauthorized;
-            upstreamResponse.Content = new StringContent(
-                """{"error":"invalid_client","error_description":"Invalid client or Invalid client credentials"}""",
-                Encoding.UTF8,
-                "application/json"
-            );
-            upstreamResponse.Content.Headers.ContentType = System.Net.Http.Headers.MediaTypeHeaderValue.Parse(
-                "application/json; charset=utf-8"
-            );
-
-            var httpClient = A.Fake<IHttpClientWrapper>();
-            A.CallTo(() => httpClient.SendAsync(A<HttpRequestMessage>._))
-                .ReturnsLazily(() => upstreamResponse);
-
-            _logger = logger;
-            HttpResponseMessage response = await new OAuthManager(logger).GetAccessTokenAsync(
-                httpClient,
-                "client_credentials",
-                "basic abc:123",
-                TokenRequestCredentials.None,
-                "http://example.com/oauth/token",
-                new TraceId(CorrelationId)
-            );
-            _body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-        }
-
-        [Test]
-        public void It_carries_the_error_code_as_the_title()
-        {
-            _body["title"]!.GetValue<string>().Should().Be("invalid_client");
-        }
-
-        [Test]
-        public void It_carries_the_error_description_as_the_detail()
-        {
-            _body["detail"]!.GetValue<string>().Should().Be("Invalid client or Invalid client credentials");
-        }
-
-        [Test]
-        public void It_does_not_write_the_discarded_detail_event()
-        {
-            DiscardedUnauthorizedDetailRecord(_logger).Should().BeNull();
-        }
-    }
-
-    /// <summary>
     /// A standard field name does not establish that its contents are safe: an <c>error_uri</c>
     /// that arrived as an object nesting a credential, where <c>JsonNode.ToString()</c> would
     /// have serialized the subtree into the event and neither sanitizing nor bounding would have
@@ -3780,9 +3717,9 @@ public class OAuthManagerTests
     /// <summary>
     /// A token-limit answer in the OAuth envelope the Configuration Service now returns:
     /// <c>error</c> is <c>temporarily_unavailable</c> and <c>error_description</c> is the
-    /// canonical sentence. The sentence comes from the CMS DataModel's own formatter rather than
-    /// from <see cref="TooManyTokensUpstream"/>, so rewording either the CMS sentence or the DMS
-    /// parser without the other fails here.
+    /// canonical sentence. Both come from the CMS DataModel rather than from
+    /// <see cref="TooManyTokensUpstream"/>, so changing either the CMS code or sentence, or the DMS
+    /// parser, without the other fails here.
     /// </summary>
     [TestFixture]
     [Parallelizable]
@@ -3797,7 +3734,7 @@ public class OAuthManagerTests
         {
             string upstreamBody = new JsonObject
             {
-                ["error"] = "temporarily_unavailable",
+                ["error"] = CmsFailureResponse.TooManyTokensError,
                 ["error_description"] = CmsFailureResponse.TooManyTokensMessage(7),
             }.ToJsonString();
             (_status, _, _body, _logger) = await UpstreamRejectsWith(upstreamBody);

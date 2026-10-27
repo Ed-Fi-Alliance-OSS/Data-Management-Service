@@ -1399,7 +1399,7 @@ function New-ProofSmokeClient {
     $script:secret += @($client.Secret)
 
     # A client the Configuration Service just created is not yet one its token endpoint will
-    # accept; the first exchange can 401. New-SeedLoaderCredentials waits for the same reason.
+    # accept; the first exchange can fail. New-SeedLoaderCredentials waits for the same reason.
     Write-ProofLog "Wait-CmsClientAvailable $ConfigurationServiceUrl"
     Wait-CmsClientAvailable -CmsUrl $ConfigurationServiceUrl -ClientId $client.Key -ClientSecret $client.Secret
 

@@ -198,7 +198,7 @@ Feature: Client credentials at the token endpoint
 
     @DMS-1491
     @e2e-ci-shard-1
-    Scenario: 40 The CMS error code and description reach the DMS client for an unknown client
+    Scenario: 40 The upstream error code and description reach the DMS client for an unknown client
       When a token request is made with content type "application/x-www-form-urlencoded" and body
         """
         grant_type=client_credentials&client_id=unknown-client-DMS-1491&client_secret=wrong-secret
