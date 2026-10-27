@@ -8,6 +8,8 @@ CMS ordering and authorization IDs. CLI tests can link these files as content.
 - `inheritance`: ancestor and child grants, nearest per-action defaults, a nearer
   empty strategy list shadowing an ancestor default, child overrides, multiple
   strategies in deliberately unsorted order, and defaults that do not grant actions.
+  The ancestor Read override loses to Zebra's own overrides and to the nearer empty
+  Read grants for Beta/Alpha, which select the nearest defaults instead.
   Depth-first traversal encounters Zebra before Beta/Alpha; returned claims are
   sorted, but IDs follow traversal. Equivalent Beta/Alpha permissions reuse the
   first encountered action/strategy sequences. Catalog order is Zoo, Empty, Alpha;

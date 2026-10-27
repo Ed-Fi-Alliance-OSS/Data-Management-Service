@@ -58,7 +58,11 @@
           "actions": [
             {
               "name": "Read",
-              "authorizationStrategyOverrides": []
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "AncestorRead"
+                }
+              ]
             },
             {
               "name": "Delete",
@@ -141,6 +145,10 @@
               "actions": [
                 {
                   "name": "Update",
+                  "authorizationStrategyOverrides": []
+                },
+                {
+                  "name": "Read",
                   "authorizationStrategyOverrides": []
                 }
               ]

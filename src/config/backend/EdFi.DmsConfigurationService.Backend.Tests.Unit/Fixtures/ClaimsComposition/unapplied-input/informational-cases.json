@@ -180,7 +180,7 @@
           "isSystemReserved": true,
           "actions": [
             {
-              "name": "Delete",
+              "name": "Read",
               "enabled": false
             }
           ],
