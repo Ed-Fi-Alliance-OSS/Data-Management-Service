@@ -32,6 +32,12 @@ public class ClaimsFragmentComposer : IClaimsFragmentComposer
         // exposes them to offline callers without changing that CMS behavior.
         foreach (ClaimsFailure failure in result.Failures)
         {
+            // Null fragment structures are fatal in CMS. Throw before the provider's normal
+            // composition-failure fallback; the shared result remains usable by offline callers.
+            if (failure.FailureType == "NullFragmentStructure")
+            {
+                throw new InvalidOperationException(failure.Message);
+            }
             if (failure.Exception is UnauthorizedAccessException exception)
             {
                 ExceptionDispatchInfo.Capture(exception).Throw();

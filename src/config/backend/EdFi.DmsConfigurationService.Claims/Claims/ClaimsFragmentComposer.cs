@@ -96,10 +96,12 @@ public class ClaimsFragmentComposer
                     LoggingUtility.SanitizeForLog(fragmentFile)
                 );
                 sourcePath = fragmentFile;
-                if (
-                    ApplyFragmentTransformation(fragmentFile, baseClaims, diagnostics)
-                    is ClaimSetDefinition definition
-                )
+                var transformation = ApplyFragmentTransformation(fragmentFile, baseClaims, diagnostics);
+                if (transformation.Failure is ClaimsFailure failure)
+                {
+                    return new(new ClaimsLoadResult(null, [failure]), diagnostics.ToArray());
+                }
+                if (transformation.Definition is ClaimSetDefinition definition)
                 {
                     // An invalid name is not registered, but the composition continues: failing it
                     // would make Hybrid mode fall back to the base claims and drop every fragment
@@ -401,11 +403,11 @@ public class ClaimsFragmentComposer
 
     /// <summary>
     /// Applies a fragment's parent claims and claim-set grants to the existing hierarchy.
-    /// Returns the claim set name the fragment defines, or null when it defines none. A fragment
+    /// Returns the claim set definition, if any, or a fatal structural failure. A fragment
     /// defines its top-level name (or file name) as a claim set when it has a non-parent resource
     /// claim, because those grants are attached under that name.
     /// </summary>
-    private ClaimSetDefinition? ApplyFragmentTransformation(
+    private (ClaimSetDefinition? Definition, ClaimsFailure? Failure) ApplyFragmentTransformation(
         string fragmentFilePath,
         List<TransformationClaim> existingClaims,
         List<ClaimsCompositionDiagnostic> diagnostics
@@ -430,7 +432,7 @@ public class ClaimsFragmentComposer
                 "Fragment file {FilePath} has no resource claims",
                 LoggingUtility.SanitizeForLog(fragmentFilePath)
             );
-            return null;
+            return (null, null);
         }
 
         string claimSetName = claimSetData.Name ?? Path.GetFileNameWithoutExtension(fragmentFilePath);
@@ -441,13 +443,23 @@ public class ClaimsFragmentComposer
             ClaimsCompositionDiagnostic context = new(
                 ClaimsCompositionDiagnosticCode.UnappliedPolicyField,
                 fragmentFilePath,
-                resourceClaim.Name ?? "",
+                resourceClaim?.Name ?? "",
                 claimSetName,
                 $"$.resourceClaims[{index}]"
             );
+            if (resourceClaim is null)
+            {
+                return (null, NullStructureFailure(context, diagnostics));
+            }
             if (resourceClaim.IsParent)
             {
-                ApplyParentResourceClaim(resourceClaim, existingClaims, context, diagnostics);
+                if (
+                    ApplyParentResourceClaim(resourceClaim, existingClaims, context, diagnostics)
+                    is ClaimsFailure failure
+                )
+                {
+                    return (null, failure);
+                }
             }
             else
             {
@@ -465,19 +477,32 @@ public class ClaimsFragmentComposer
         }
 
         string namePath = claimSetData.Name is null ? "" : "$.name";
-        return definesClaimSet ? new ClaimSetDefinition(claimSetName, fragmentFilePath, namePath) : null;
+        return (
+            definesClaimSet ? new ClaimSetDefinition(claimSetName, fragmentFilePath, namePath) : null,
+            null
+        );
     }
 
     /// <summary>
     /// Applies parent resource claim transformation
     /// </summary>
-    private static void ApplyParentResourceClaim(
+    private static ClaimsFailure? ApplyParentResourceClaim(
         ResourceClaim resourceClaim,
         List<TransformationClaim> existingClaims,
         ClaimsCompositionDiagnostic context,
         List<ClaimsCompositionDiagnostic> diagnostics
     )
     {
+        if (resourceClaim.Children is null)
+        {
+            return NullStructureFailure(
+                context with
+                {
+                    JsonPath = $"{context.JsonPath}.children",
+                },
+                diagnostics
+            );
+        }
         DiagnoseIgnoredCollection(
             resourceClaim.AuthorizationStrategyOverridesForCRUD?.Count ?? 0,
             "authorizationStrategyOverridesForCRUD",
@@ -487,6 +512,16 @@ public class ClaimsFragmentComposer
         for (int index = 0; index < resourceClaim.Children.Count; index++)
         {
             ResourceClaim child = resourceClaim.Children[index];
+            if (child is null)
+            {
+                return NullStructureFailure(
+                    context with
+                    {
+                        JsonPath = $"{context.JsonPath}.children[{index}]",
+                    },
+                    diagnostics
+                );
+            }
             ClaimsCompositionDiagnostic childContext = context with
             {
                 ClaimName = child.Name ?? "",
@@ -631,6 +666,20 @@ public class ClaimsFragmentComposer
                 }
             );
         }
+        return null;
+    }
+
+    private static ClaimsFailure NullStructureFailure(
+        ClaimsCompositionDiagnostic context,
+        List<ClaimsCompositionDiagnostic> diagnostics
+    )
+    {
+        diagnostics.Add(context with { Code = ClaimsCompositionDiagnosticCode.MalformedFragment });
+        return new ClaimsFailure(
+            "NullFragmentStructure",
+            "Fragment contains a null resource claim or children collection.",
+            context.SourcePath
+        );
     }
 
     /// <summary>

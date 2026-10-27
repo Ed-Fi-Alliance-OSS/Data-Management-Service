@@ -588,3 +588,120 @@ public class Given_ClaimsFragmentComposer_logging_sanitization(string separatorN
         }
     }
 }
+
+[TestFixture("resource-claim", "", "$.resourceClaims[1]")]
+[TestFixture("children", "edfi/parent\u2028name", "$.resourceClaims[1].children")]
+[TestFixture("child", "edfi/parent\u2028name", "$.resourceClaims[1].children[1]")]
+public class Given_ClaimsFragmentComposer_null_structure(string scenario, string claimName, string jsonPath)
+    : ClaimsFragmentComposerDiagnosticsTests
+{
+    private ClaimsCompositionResult _result = null!;
+    private CmsComposer _cms = null!;
+    private string _file = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        string fixtures = Path.Combine(
+            TestContext.CurrentContext.TestDirectory,
+            "Fixtures",
+            "ClaimsComposition"
+        );
+        // Apply a valid fragment first so fatal loading cannot silently return partial policy.
+        File.Copy(
+            Path.Combine(fixtures, "first-wins", "fragments", "a-claims.json"),
+            Path.Combine(DirectoryPath, "001-valid-claims.json")
+        );
+        _file = Path.Combine(DirectoryPath, "002-invalid-claims.json");
+        File.Copy(Path.Combine(fixtures, "null-structures", "fragments", $"{scenario}-claims.json"), _file);
+        SharedComposer shared = new(NullLogger.Instance);
+        _cms = new(shared);
+        _result = shared.ComposeClaimsFromFragments(BaseDocument, DirectoryPath);
+    }
+
+    [Test]
+    public void It_returns_a_source_aware_malformed_failure_without_partial_policy()
+    {
+        _result.IsComplete.Should().BeFalse();
+        _result.LoadResult.Nodes.Should().BeNull();
+        _result.LoadResult.Failures.Should().ContainSingle().Which.Path.Should().Be(_file);
+        _result
+            .Diagnostics.Where(d => d.IsIncomplete)
+            .Should()
+            .Equal(
+                new ClaimsCompositionDiagnostic(
+                    ClaimsCompositionDiagnosticCode.MalformedFragment,
+                    _file,
+                    claimName,
+                    "Policy\nName",
+                    jsonPath
+                )
+            );
+    }
+
+    [Test]
+    public void It_keeps_CMS_composition_fatal()
+    {
+        Action compose = () => _cms.ComposeClaimsFromFragments(BaseDocument, DirectoryPath);
+        compose.Should().Throw<Exception>();
+    }
+
+    [Test]
+    public void It_keeps_CMS_loading_fatal_instead_of_returning_base_or_partial_policy()
+    {
+        Action load = () => Provider(_cms).GetClaimsDocumentNodes();
+        load.Should().Throw<Exception>();
+    }
+}
+
+[TestFixture("omitted")]
+[TestFixture("empty")]
+[TestFixture("name-only")]
+public class Given_ClaimsFragmentComposer_supported_children(string scenario)
+    : ClaimsFragmentComposerDiagnosticsTests
+{
+    private ClaimsCompositionResult _result = null!;
+    private ClaimsLoadResult _cmsResult = null!;
+    private ClaimsDocument _providerResult = null!;
+    private ClaimsDocument _expected = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        JsonObject parent = new() { ["name"] = "edfi/domain", ["isParent"] = true };
+        if (scenario != "omitted")
+        {
+            parent["ChIlDrEn"] =
+                scenario == "empty"
+                    ? new JsonArray()
+                    : new JsonArray(new JsonObject { ["name"] = "edfi/added" });
+        }
+        File.WriteAllText(
+            Path.Combine(DirectoryPath, "valid-claims.json"),
+            new JsonObject { ["resourceClaims"] = new JsonArray(parent) }.ToJsonString()
+        );
+        _expected = new(BaseDocument.ClaimSetsNode.DeepClone(), BaseDocument.ClaimsHierarchyNode.DeepClone());
+        if (scenario == "name-only")
+        {
+            _expected.ClaimsHierarchyNode[0]!["claims"]!
+                .AsArray()
+                .Add(new JsonObject { ["name"] = "edfi/added" });
+        }
+        SharedComposer shared = new(NullLogger.Instance);
+        _result = shared.ComposeClaimsFromFragments(BaseDocument, DirectoryPath);
+        CmsComposer cms = new(shared);
+        _cmsResult = cms.ComposeClaimsFromFragments(BaseDocument, DirectoryPath);
+        _providerResult = Provider(cms).GetClaimsDocumentNodes();
+    }
+
+    [Test]
+    public void It_preserves_exact_shared_and_CMS_composition()
+    {
+        _result.IsComplete.Should().BeTrue();
+        _result.Diagnostics.Should().BeEmpty();
+        _cmsResult.Failures.Should().BeEmpty();
+        AssertDocument(_result.LoadResult.Nodes!, _expected);
+        AssertDocument(_cmsResult.Nodes!, _expected);
+        AssertDocument(_providerResult, _expected);
+    }
+}

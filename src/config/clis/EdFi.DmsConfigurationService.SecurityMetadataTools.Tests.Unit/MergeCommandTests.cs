@@ -652,3 +652,42 @@ public class Given_MergeCommand_bundled_composition(string version) : MergeComma
             .Equal("NoFurtherAuthorizationRequired");
     }
 }
+
+[TestFixture("resource-claim", "", "$.resourceClaims[1]")]
+[TestFixture("children", "edfi/parent\\u2028name", "$.resourceClaims[1].children")]
+[TestFixture("child", "edfi/parent\\u2028name", "$.resourceClaims[1].children[1]")]
+public class Given_MergeCommand_null_structure(string scenario, string safeClaimName, string jsonPath)
+    : MergeCommandTests
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        File.Copy(
+            Path.Combine(Fixtures, "null-structures", "fragments", $"{scenario}-claims.json"),
+            Path.Combine(Fragments, "input-claims.json")
+        );
+        await File.WriteAllTextAsync(Destination, Sentinel);
+        await RunFixture(Path.Combine(Fixtures, "base.json"));
+    }
+
+    [Test]
+    public void It_reports_sanitized_context_without_a_stack_trace_and_preserves_existing_bytes_with_force()
+    {
+        AssertNoOutput(true);
+        string source = Path.Combine(Fragments, "input-claims.json");
+        Error
+            .Should()
+            .Be(
+                $"Merge failed: MalformedFragment: source '{source}', claim '{safeClaimName}', claim set 'Policy\\u000AName', path '{jsonPath}'.{Environment.NewLine}"
+                    + $"Merge failed: NullFragmentStructure at '{source}': Fragment contains a null resource claim or children collection.{Environment.NewLine}"
+            );
+    }
+
+    [Test]
+    public async Task It_creates_no_destination_or_staging_residue()
+    {
+        File.Delete(Destination);
+        await RunFixture(Path.Combine(Fixtures, "base.json"));
+        AssertNoOutput(false);
+    }
+}
