@@ -4854,6 +4854,134 @@ public partial class ApiClientModuleTests
             client.PutAsync("/v3/apiClients/1", new StringContent(body, Encoding.UTF8, "application/json"));
     }
 
+    /// <summary>
+    /// A create reads its Application, provisions the provider client from that read and inserts
+    /// the row, all under the Application's aggregate lock, so an Application save cannot commit
+    /// and sync its existing clients in between and leave this one with stale claims.
+    /// </summary>
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_insert_under_the_application_lock : DataStoreAssignmentTestBase
+    {
+        private readonly List<string> _calls = [];
+        private RecordingLockManager _recordingLockManager = null!;
+        private HttpResponseMessage _response = new();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeStoredClient([]);
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
+                .Invokes(() => _calls.Add($"GetApplication:{OpenLockCount()}"))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 7,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DataStoreIds = [],
+                        }
+                    )
+                );
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .Invokes(() => _calls.Add($"CreateClientAsync:{OpenLockCount()}"))
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(
+                        A<ApiClientInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Invokes(() => _calls.Add($"InsertApiClient:{OpenLockCount()}"))
+                .Returns(new ApiClientInsertResult.Success(1));
+
+            using var client = SetUpClient();
+            _response = await PostApiClientAsync(
+                client,
+                """
+                {
+                  "applicationId": 7,
+                  "name": "Locked Client",
+                  "isApproved": true
+                }
+                """
+            );
+        }
+
+        private int OpenLockCount() => _recordingLockManager.Handles.Count(handle => !handle.Disposed);
+
+        [Test]
+        public void It_creates_the_api_client() => _response.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        [Test]
+        public void It_locks_the_requested_application_once() =>
+            _recordingLockManager.Acquisitions.Should().BeEquivalentTo([new[] { 7 }]);
+
+        [Test]
+        public void It_reads_provisions_and_inserts_while_the_lock_is_held() =>
+            _calls.Should().Equal("GetApplication:1", "CreateClientAsync:1", "InsertApiClient:1");
+
+        [Test]
+        public void It_releases_the_lock() =>
+            _recordingLockManager.Handles.Should().ContainSingle().Which.Disposed.Should().BeTrue();
+    }
+
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_insert_when_the_application_lock_times_out : DataStoreAssignmentTestBase
+    {
+        private readonly List<string> _dependencyCalls = [];
+        private HttpResponseMessage _response = new();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeStoredClient([]);
+            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
+                .Returns(new ApplicationLockResult.FailureTimeout());
+            A.CallTo(_identityProviderRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_apiClientRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+
+            using var client = SetUpClient();
+            _response = await PostApiClientAsync(
+                client,
+                """
+                {
+                  "applicationId": 1,
+                  "name": "Locked Out Client",
+                  "isApproved": true
+                }
+                """
+            );
+        }
+
+        [Test]
+        public async Task It_returns_the_retriable_conflict_contract() =>
+            await AssertLockConflictContract(_response);
+
+        [Test]
+        public void It_reads_and_provisions_nothing() => _dependencyCalls.Should().BeEmpty();
+    }
+
     // Instance per test case so each test gets its own fakes: NUnit otherwise shares one fixture
     // instance across the fixture, and the request issued in Setup would be recorded once per test
     // method, breaking the call-count assertions below.

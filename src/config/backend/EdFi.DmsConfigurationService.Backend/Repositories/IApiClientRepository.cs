@@ -15,6 +15,7 @@ public interface IApiClientRepository
         ApiClientInsertCommand command,
         ApiClientCommand clientCommand
     );
+
     /// <summary>
     /// Saves an API client update. When <see cref="ApiClientUpdateCommand.CompletesIdentityProviderSync"/>
     /// is set, the same transaction also clears the client's pending identity provider
@@ -60,17 +61,6 @@ public interface IApiClientRepository
     Task<ApiClientEducationOrganizationStateResult> GetApiClientEducationOrganizationState(int id);
 
     /// <summary>
-    /// Atomically stores an ApiClient's education organization scope. A null list makes the client
-    /// inherit, and its stored list becomes its Application's current list. A list narrows the client
-    /// to those ids, after removing duplicates; every id must be on the client's Application, or
-    /// nothing is written. Rejecting an empty list is left to the API.
-    /// </summary>
-    Task<ApiClientEducationOrganizationScopeResult> SetApiClientEducationOrganizationScope(
-        int id,
-        long[]? narrowedEducationOrganizationIds
-    );
-
-    /// <summary>
     /// Sets or, with null, clears the UTC time since which an ApiClient awaits an identity-provider
     /// update for an Application change.
     /// </summary>
@@ -105,27 +95,6 @@ public record ApiClientEducationOrganizationStateResult
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ApiClientEducationOrganizationStateResult();
-}
-
-public record ApiClientEducationOrganizationScopeResult
-{
-    public record Success() : ApiClientEducationOrganizationScopeResult();
-
-    /// <summary>
-    /// The ApiClient does not exist in the current tenant; nothing was written.
-    /// </summary>
-    public record FailureNotFound() : ApiClientEducationOrganizationScopeResult();
-
-    /// <summary>
-    /// These education organizations are not on the client's Application; nothing was written.
-    /// </summary>
-    public record FailureNotOnApplication(long[] EducationOrganizationIds)
-        : ApiClientEducationOrganizationScopeResult();
-
-    /// <summary>
-    /// Unexpected exception thrown and caught
-    /// </summary>
-    public record FailureUnknown(string FailureMessage) : ApiClientEducationOrganizationScopeResult();
 }
 
 public record ApiClientSyncPendingResult

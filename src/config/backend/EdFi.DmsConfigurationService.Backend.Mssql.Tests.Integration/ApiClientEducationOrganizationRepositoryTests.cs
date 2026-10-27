@@ -7,11 +7,13 @@ using Dapper;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration;
@@ -107,20 +109,8 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
 
         InheritingClientId = await ClientIdAsync(_inheritingClientUuid);
         UnrelatedClientId = await ClientIdAsync(UnrelatedClientUuid);
-        NarrowedClientId = await InsertApiClientAsync(ScopedApplicationId);
-        SecondNarrowedClientId = await InsertApiClientAsync(ScopedApplicationId);
-
-        (await ApiClientRepository.SetApiClientEducationOrganizationScope(NarrowedClientId, [1002]))
-            .Should()
-            .BeOfType<ApiClientEducationOrganizationScopeResult.Success>();
-        (
-            await ApiClientRepository.SetApiClientEducationOrganizationScope(
-                SecondNarrowedClientId,
-                [1001, 1003]
-            )
-        )
-            .Should()
-            .BeOfType<ApiClientEducationOrganizationScopeResult.Success>();
+        NarrowedClientId = await InsertNarrowedApiClientAsync([1002]);
+        SecondNarrowedClientId = await InsertNarrowedApiClientAsync([1001, 1003]);
 
         await Connection!.ExecuteAsync(
             """
@@ -135,11 +125,12 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
     }
 
     /// <summary>Saves the scoped Application under a new name with the given education organizations.</summary>
-    protected Task<ApplicationUpdateResult> UpdateScopedApplicationAsync(
+    protected Task<ApplicationSaveResult> SaveRenamedScopedApplicationAsync(
         long[] educationOrganizationIds,
-        Guid? clientUuid = null
+        int[]? profileIds = null,
+        IApplicationRepository? applicationRepository = null
     ) =>
-        ApplicationRepository.UpdateApplication(
+        (applicationRepository ?? ApplicationRepository).SaveApplication(
             new ApplicationUpdateCommand
             {
                 Id = ScopedApplicationId,
@@ -147,13 +138,27 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
                 VendorId = VendorId,
                 ClaimSetName = "Test Claim set",
                 EducationOrganizationIds = educationOrganizationIds,
-            },
-            new ApiClientCommand
-            {
-                ClientId = _inheritingClientKey,
-                ClientUuid = clientUuid ?? _inheritingClientUuid,
+                ProfileIds = profileIds ?? [],
             }
         );
+
+    /// <summary>Saves the scoped Application, asserting success.</summary>
+    protected async Task SaveRenamedScopedApplicationSucceedsAsync(long[] educationOrganizationIds) =>
+        (await SaveRenamedScopedApplicationAsync(educationOrganizationIds))
+            .Should()
+            .BeOfType<ApplicationSaveResult.Success>();
+
+    /// <summary>
+    /// Saves the scoped Application, asserting success, then clears the identity provider sync
+    /// markers the save set, for fixtures about the education organization rows alone.
+    /// </summary>
+    protected async Task SaveRenamedScopedApplicationUnmarkedAsync(long[] educationOrganizationIds)
+    {
+        await SaveRenamedScopedApplicationSucceedsAsync(educationOrganizationIds);
+        await Connection!.ExecuteAsync(
+            """UPDATE dmscs.ApiClient SET IdentityProviderSyncPendingSince = NULL;"""
+        );
+    }
 
     protected async Task<string> ScopedApplicationNameAsync() =>
         await Connection!.ExecuteScalarAsync<string>(
@@ -273,6 +278,17 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
             new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
         );
 
+    private async Task<int> InsertNarrowedApiClientAsync(long[] educationOrganizationIds) =>
+        (
+            await InsertApiClientWithScopeAsync(
+                ScopedApplicationId,
+                new ApiClientEducationOrganizationScope.Narrow(educationOrganizationIds)
+            )
+        )
+            .Should()
+            .BeOfType<ApiClientInsertResult.Success>()
+            .Subject.Id;
+
     protected Task<ApiClientUpdateResult> UpdateApiClientAsync(
         int id,
         int applicationId,
@@ -338,21 +354,39 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
 
     protected static readonly DateTime PendingSince = new(2030, 4, 5, 6, 7, 8, DateTimeKind.Utc);
 
+    /// <summary>Audit values for tests, running a callback on one numbered user lookup.</summary>
+    protected sealed class CallbackAuditContext(int userLookupCallingBack, Action callback) : IAuditContext
+    {
+        private int _userLookups;
+
+        public string GetCurrentUser()
+        {
+            if (Interlocked.Increment(ref _userLookups) == userLookupCallingBack)
+            {
+                callback();
+            }
+
+            return "test-user";
+        }
+
+        public DateTime GetCurrentTimestamp() => DateTime.UtcNow;
+    }
+
     [TestFixture]
     public class Given_an_Application_saved_with_its_education_organizations_unchanged
         : ApiClientEducationOrganizationRepositoryTests
     {
-        private ApplicationUpdateResult _result = null!;
+        private ApplicationSaveResult _result = null!;
 
         [SetUp]
         public async Task Setup()
         {
             await SeedAsync(new TenantContextProvider());
-            _result = await UpdateScopedApplicationAsync([1001, 1002, 1003]);
+            _result = await SaveRenamedScopedApplicationAsync([1001, 1002, 1003]);
         }
 
         [Test]
-        public void It_succeeds() => _result.Should().BeOfType<ApplicationUpdateResult.Success>();
+        public void It_succeeds() => _result.Should().BeOfType<ApplicationSaveResult.Success>();
 
         [Test]
         public async Task It_saves_the_other_Application_changes() =>
@@ -368,45 +402,20 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
     }
 
     [TestFixture]
-    public class Given_an_Application_saved_with_its_education_organizations_reordered_and_repeated
-        : ApiClientEducationOrganizationRepositoryTests
-    {
-        private ApplicationUpdateResult _result = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            await SeedAsync(new TenantContextProvider());
-            _result = await UpdateScopedApplicationAsync([1003, 1001, 1002, 1003, 1001]);
-        }
-
-        [Test]
-        public void It_succeeds() => _result.Should().BeOfType<ApplicationUpdateResult.Success>();
-
-        [Test]
-        public async Task It_leaves_every_client_row_untouched() =>
-            (await ClientRowsAsync()).Should().Equal(ClientRowsBefore);
-
-        [Test]
-        public async Task It_keeps_every_Application_row_with_its_audit_values() =>
-            (await ApplicationRowsAsync()).Should().Equal(ApplicationRowsBefore);
-    }
-
-    [TestFixture]
     public class Given_an_Application_saved_with_an_added_education_organization
         : ApiClientEducationOrganizationRepositoryTests
     {
-        private ApplicationUpdateResult _result = null!;
+        private ApplicationSaveResult _result = null!;
 
         [SetUp]
         public async Task Setup()
         {
             await SeedAsync(new TenantContextProvider());
-            _result = await UpdateScopedApplicationAsync([1001, 1002, 1003, 1004, 1004]);
+            _result = await SaveRenamedScopedApplicationAsync([1001, 1002, 1003, 1004, 1004]);
         }
 
         [Test]
-        public void It_succeeds() => _result.Should().BeOfType<ApplicationUpdateResult.Success>();
+        public void It_succeeds() => _result.Should().BeOfType<ApplicationSaveResult.Success>();
 
         [Test]
         public async Task It_changes_no_client_rows_not_even_an_inheriting_client() =>
@@ -431,17 +440,17 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
     public class Given_an_Application_saved_with_removed_education_organizations
         : ApiClientEducationOrganizationRepositoryTests
     {
-        private ApplicationUpdateResult _result = null!;
+        private ApplicationSaveResult _result = null!;
 
         [SetUp]
         public async Task Setup()
         {
             await SeedAsync(new TenantContextProvider());
-            _result = await UpdateScopedApplicationAsync([1002, 1003]);
+            _result = await SaveRenamedScopedApplicationAsync([1002, 1003]);
         }
 
         [Test]
-        public void It_succeeds() => _result.Should().BeOfType<ApplicationUpdateResult.Success>();
+        public void It_succeeds() => _result.Should().BeOfType<ApplicationSaveResult.Success>();
 
         [Test]
         public async Task It_removes_the_education_organization_from_every_client_of_the_Application_only() =>
@@ -470,17 +479,17 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
     public class Given_an_Application_saved_without_education_organizations
         : ApiClientEducationOrganizationRepositoryTests
     {
-        private ApplicationUpdateResult _result = null!;
+        private ApplicationSaveResult _result = null!;
 
         [SetUp]
         public async Task Setup()
         {
             await SeedAsync(new TenantContextProvider());
-            _result = await UpdateScopedApplicationAsync([]);
+            _result = await SaveRenamedScopedApplicationAsync([]);
         }
 
         [Test]
-        public void It_succeeds() => _result.Should().BeOfType<ApplicationUpdateResult.Success>();
+        public void It_succeeds() => _result.Should().BeOfType<ApplicationSaveResult.Success>();
 
         [Test]
         public async Task It_leaves_rows_only_for_the_unrelated_Application_client() =>
@@ -502,25 +511,96 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
                 ]);
     }
 
+    /// <summary>
+    /// The profile the save assigns is deleted after the save has checked it and changed the education
+    /// organizations, so the profile insert that follows fails on its foreign key and the whole save,
+    /// client marking included, rolls back.
+    /// </summary>
     [TestFixture]
     public class Given_an_Application_save_that_fails_after_its_education_organizations_change
         : ApiClientEducationOrganizationRepositoryTests
     {
-        private ApplicationUpdateResult _result = null!;
+        private ApplicationSaveResult _result = null!;
+        private bool _removalInProgressAtCallback;
 
         [SetUp]
         public async Task Setup()
         {
             await SeedAsync(new TenantContextProvider());
+            int profileId = await Connection!.ExecuteScalarAsync<int>(
+                """
+                INSERT INTO dmscs.Profile (ProfileName, Definition)
+                OUTPUT INSERTED.Id VALUES (@ProfileName, '<Profile/>');
+                """,
+                new { ProfileName = $"Deleted Profile {Guid.NewGuid()}" }
+            );
 
-            // The client update after the education organization changes takes the unrelated
-            // client's identity-provider UUID and violates UX_ApiClient_ClientUuid.
-            _result = await UpdateScopedApplicationAsync([1002, 1004], UnrelatedClientUuid);
+            // The save's second audit user lookup comes after the education organization removal
+            // and before the profile rows are written.
+            ApplicationRepository failingRepository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<ApplicationRepository>.Instance,
+                new CallbackAuditContext(
+                    userLookupCallingBack: 2,
+                    () =>
+                    {
+                        _removalInProgressAtCallback = RemovedRowIsLocked();
+                        Connection!.Execute(
+                            """DELETE FROM dmscs.Profile WHERE Id = @Id;""",
+                            new { Id = profileId }
+                        );
+                    }
+                ),
+                new TenantContextProvider()
+            );
+            _result = await SaveRenamedScopedApplicationAsync([1002, 1004], [profileId], failingRepository);
+        }
+
+        /// <summary>
+        /// True when the save's transaction already holds the row of the removed education
+        /// organization 1003, which proves the callback fired after the removal began.
+        /// </summary>
+        private bool RemovedRowIsLocked()
+        {
+            try
+            {
+                Connection!.Execute(
+                    """
+                    SET LOCK_TIMEOUT 0;
+                    SELECT 1 FROM dmscs.ApplicationEducationOrganization WITH (UPDLOCK, ROWLOCK)
+                    WHERE ApplicationId = @ApplicationId AND EducationOrganizationId = 1003;
+                    """,
+                    new { ApplicationId = ScopedApplicationId }
+                );
+                return false;
+            }
+            catch (SqlException exception) when (exception.Number == 1222)
+            {
+                return true;
+            }
+            finally
+            {
+                Connection!.Execute("SET LOCK_TIMEOUT -1;");
+            }
         }
 
         [Test]
-        public void It_fails_on_the_client_update() =>
-            _result.Should().BeOfType<ApplicationUpdateResult.FailureDuplicateClientUuid>();
+        public void It_deletes_the_profile_after_the_removal_began() =>
+            _removalInProgressAtCallback.Should().BeTrue();
+
+        [Test]
+        public void It_fails_on_the_deleted_profile() =>
+            _result.Should().BeOfType<ApplicationSaveResult.FailureProfileNotFound>();
+
+        [Test]
+        public async Task It_rolls_back_the_client_marking() =>
+            (
+                await Connection!.ExecuteScalarAsync<int>(
+                    """SELECT COUNT(*) FROM dmscs.ApiClient WHERE IdentityProviderSyncPendingSince IS NOT NULL;"""
+                )
+            )
+                .Should()
+                .Be(0);
 
         [Test]
         public async Task It_rolls_back_the_client_row_removals() =>
@@ -657,21 +737,22 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
     public class Given_a_client_narrowed_to_repeated_education_organizations
         : ApiClientEducationOrganizationRepositoryTests
     {
-        private ApiClientEducationOrganizationScopeResult _result = null!;
+        private ApiClientUpdateResult _result = null!;
 
         [SetUp]
         public async Task Setup()
         {
             await SeedAsync(new TenantContextProvider());
-            _result = await ApiClientRepository.SetApiClientEducationOrganizationScope(
+            _result = await UpdateApiClientAsync(
                 InheritingClientId,
-                [1003, 1001, 1003]
+                ScopedApplicationId,
+                "Narrowed client",
+                new ApiClientEducationOrganizationScope.Narrow([1003, 1001, 1003])
             );
         }
 
         [Test]
-        public void It_succeeds() =>
-            _result.Should().BeOfType<ApiClientEducationOrganizationScopeResult.Success>();
+        public void It_succeeds() => _result.Should().BeOfType<ApiClientUpdateResult.Success>();
 
         [Test]
         public async Task It_stores_the_narrowed_flag_and_each_education_organization_once() =>
@@ -692,22 +773,23 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
     [TestFixture]
     public class Given_a_narrowed_client_set_to_inherit : ApiClientEducationOrganizationRepositoryTests
     {
-        private ApiClientEducationOrganizationScopeResult _result = null!;
+        private ApiClientUpdateResult _result = null!;
 
         [SetUp]
         public async Task Setup()
         {
             await SeedAsync(new TenantContextProvider());
-            await UpdateScopedApplicationAsync([1001, 1002, 1003, 1004]);
-            _result = await ApiClientRepository.SetApiClientEducationOrganizationScope(
+            await SaveRenamedScopedApplicationUnmarkedAsync([1001, 1002, 1003, 1004]);
+            _result = await UpdateApiClientAsync(
                 NarrowedClientId,
-                null
+                ScopedApplicationId,
+                "Inheriting client",
+                new ApiClientEducationOrganizationScope.Inherit()
             );
         }
 
         [Test]
-        public void It_succeeds() =>
-            _result.Should().BeOfType<ApiClientEducationOrganizationScopeResult.Success>();
+        public void It_succeeds() => _result.Should().BeOfType<ApiClientUpdateResult.Success>();
 
         [Test]
         public async Task It_stores_the_inheriting_flag_and_the_Application_current_list() =>
@@ -721,15 +803,17 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
     public class Given_a_narrowed_scope_with_an_education_organization_not_on_the_Application
         : ApiClientEducationOrganizationRepositoryTests
     {
-        private ApiClientEducationOrganizationScopeResult _result = null!;
+        private ApiClientUpdateResult _result = null!;
 
         [SetUp]
         public async Task Setup()
         {
             await SeedAsync(new TenantContextProvider());
-            _result = await ApiClientRepository.SetApiClientEducationOrganizationScope(
+            _result = await UpdateApiClientAsync(
                 NarrowedClientId,
-                [1001, 9999]
+                ScopedApplicationId,
+                "Renamed client",
+                new ApiClientEducationOrganizationScope.Narrow([1001, 9999])
             );
         }
 
@@ -737,7 +821,7 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
         public void It_reports_the_education_organization_not_on_the_Application() =>
             _result
                 .Should()
-                .BeOfType<ApiClientEducationOrganizationScopeResult.FailureNotOnApplication>()
+                .BeOfType<ApiClientUpdateResult.FailureRequestedEducationOrganizationsNotOnApplication>()
                 .Which.EducationOrganizationIds.Should()
                 .Equal(9999);
 
@@ -767,25 +851,31 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
             await SeedAsync(new TenantContextProvider());
 
             // The second narrowed client is narrowed to every current education organization
-            await ApiClientRepository.SetApiClientEducationOrganizationScope(
-                SecondNarrowedClientId,
-                [1001, 1002, 1003]
-            );
+            (
+                await UpdateApiClientAsync(
+                    SecondNarrowedClientId,
+                    ScopedApplicationId,
+                    "Narrowed to every education organization",
+                    new ApiClientEducationOrganizationScope.Narrow([1001, 1002, 1003])
+                )
+            )
+                .Should()
+                .BeOfType<ApiClientUpdateResult.Success>();
             int[] clientIds = [InheritingClientId, NarrowedClientId, SecondNarrowedClientId];
 
-            await UpdateScopedApplicationAsync([1001, 1002, 1003, 1004]);
+            await SaveRenamedScopedApplicationUnmarkedAsync([1001, 1002, 1003, 1004]);
             foreach (int clientId in clientIds)
             {
                 _afterAddition[clientId] = await StateAsync(clientId);
             }
 
-            await UpdateScopedApplicationAsync([1001, 1003, 1004]);
+            await SaveRenamedScopedApplicationUnmarkedAsync([1001, 1003, 1004]);
             foreach (int clientId in clientIds)
             {
                 _afterRemoval[clientId] = await StateAsync(clientId);
             }
 
-            await UpdateScopedApplicationAsync([1001, 1002, 1003, 1004]);
+            await SaveRenamedScopedApplicationUnmarkedAsync([1001, 1002, 1003, 1004]);
             _narrowedAfterReaddition = await StateAsync(NarrowedClientId);
         }
 
@@ -853,8 +943,17 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
             (await UpdateApiClientAsync(SecondNarrowedClientId, ScopedApplicationId, "Renamed client"))
                 .Should()
                 .BeOfType<ApiClientUpdateResult.Success>();
-            await ApiClientRepository.SetApiClientEducationOrganizationScope(SecondNarrowedClientId, [1001]);
-            await UpdateScopedApplicationAsync([1001, 1003]);
+            (
+                await UpdateApiClientAsync(
+                    SecondNarrowedClientId,
+                    ScopedApplicationId,
+                    "Renamed client",
+                    new ApiClientEducationOrganizationScope.Narrow([1001])
+                )
+            )
+                .Should()
+                .BeOfType<ApiClientUpdateResult.Success>();
+            await SaveRenamedScopedApplicationSucceedsAsync([1001, 1003]);
             _afterUnrelatedChanges = await StateAsync(SecondNarrowedClientId);
 
             _clearResult = await ApiClientRepository.SetApiClientIdentityProviderSyncPending(
@@ -1097,9 +1196,16 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
 
         [Test]
         public async Task It_reports_a_scope_write_not_found() =>
-            (await ApiClientRepository.SetApiClientEducationOrganizationScope(MissingClientId, [1001]))
+            (
+                await UpdateApiClientAsync(
+                    MissingClientId,
+                    ScopedApplicationId,
+                    "Missing client",
+                    new ApiClientEducationOrganizationScope.Narrow([1001])
+                )
+            )
                 .Should()
-                .BeOfType<ApiClientEducationOrganizationScopeResult.FailureNotFound>();
+                .BeOfType<ApiClientUpdateResult.FailureNotFound>();
 
         [Test]
         public async Task It_reports_a_pending_time_write_not_found() =>
@@ -1115,7 +1221,7 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
         private ApiClientRepository _otherTenantRepository = null!;
         private int _otherTenantApplicationId;
         private ApiClientEducationOrganizationStateResult _stateResult = null!;
-        private ApiClientEducationOrganizationScopeResult _scopeResult = null!;
+        private ApiClientUpdateResult _scopeResult = null!;
         private ApiClientSyncPendingResult _pendingResult = null!;
         private ApiClientUpdateResult _moveResult = null!;
 
@@ -1171,9 +1277,15 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
             _stateResult = await _otherTenantRepository.GetApiClientEducationOrganizationState(
                 SecondNarrowedClientId
             );
-            _scopeResult = await _otherTenantRepository.SetApiClientEducationOrganizationScope(
-                SecondNarrowedClientId,
-                [1001]
+            _scopeResult = await _otherTenantRepository.UpdateApiClient(
+                new ApiClientUpdateCommand
+                {
+                    Id = SecondNarrowedClientId,
+                    ApplicationId = ScopedApplicationId,
+                    Name = "Narrowed across tenants",
+                    IsApproved = true,
+                    EducationOrganizationScope = new ApiClientEducationOrganizationScope.Narrow([1001]),
+                }
             );
             _pendingResult = await _otherTenantRepository.SetApiClientIdentityProviderSyncPending(
                 SecondNarrowedClientId,
@@ -1196,7 +1308,7 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
 
         [Test]
         public void It_reports_the_scope_write_not_found() =>
-            _scopeResult.Should().BeOfType<ApiClientEducationOrganizationScopeResult.FailureNotFound>();
+            _scopeResult.Should().BeOfType<ApiClientUpdateResult.FailureNotFound>();
 
         [Test]
         public void It_reports_the_pending_time_write_not_found() =>

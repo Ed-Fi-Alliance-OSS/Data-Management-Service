@@ -970,15 +970,15 @@ public abstract class ApplicationSaveRepositoryTests : ApiClientEducationOrganiz
     }
 
     /// <summary>
-    /// The transitional update waiting on the Application row while another transaction adds the
-    /// education organization it requests: it reads the list only once it holds the row, so it
-    /// keeps the added id rather than inserting it a second time.
+    /// A save waiting on the Application row while another transaction adds the education
+    /// organization it requests: it reads the list only once it holds the row, so it keeps the added
+    /// id rather than inserting it a second time, and sees no change to mark clients for.
     /// </summary>
     [TestFixture]
-    public class Given_a_legacy_update_waiting_behind_a_writer_that_adds_the_requested_education_organization
+    public class Given_a_save_waiting_behind_a_writer_that_adds_the_requested_education_organization
         : ApplicationSaveRepositoryTests
     {
-        private ApplicationUpdateResult _result = null!;
+        private ApplicationSaveResult _result = null!;
 
         [SetUp]
         public async Task Setup()
@@ -997,7 +997,7 @@ public abstract class ApplicationSaveRepositoryTests : ApiClientEducationOrganiz
                 transaction
             );
 
-            Task<ApplicationUpdateResult> update = UpdateScopedApplicationAsync([1001, 1002, 1003, 1004]);
+            Task<ApplicationSaveResult> update = SaveScopedApplicationAsync([1001, 1002, 1003, 1004]);
             await WaitUntilBlockedByAsync(writer, transaction, writerSession, update);
             await writer.ExecuteAsync(
                 """
@@ -1012,7 +1012,11 @@ public abstract class ApplicationSaveRepositoryTests : ApiClientEducationOrganiz
         }
 
         [Test]
-        public void It_succeeds() => _result.Should().BeOfType<ApplicationUpdateResult.Success>();
+        public void It_succeeds_with_no_pending_client() =>
+            ShouldSucceed(_result).PendingClients.Should().BeEmpty();
+
+        [Test]
+        public async Task It_marks_no_client() => (await PendingClientsAsync()).Should().BeEmpty();
 
         [Test]
         public async Task It_leaves_exactly_the_requested_list() =>

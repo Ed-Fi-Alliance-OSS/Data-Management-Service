@@ -249,6 +249,7 @@ public class ApiClientModule : IEndpointModule
         IVendorRepository vendorRepository,
         IDataStoreRepository dataStoreRepository,
         IIdentityProviderRepository clientRepository,
+        IApplicationLockManager lockManager,
         IOptions<IdentitySettings> identitySettings,
         IOptions<ClientSecretValidationOptions> clientSecretValidationOptionsAccessor,
         ILogger<ApiClientModule> logger
@@ -256,6 +257,21 @@ public class ApiClientModule : IEndpointModule
     {
         logger.LogDebug("Entering InsertApiClient");
         await validator.GuardAsync(command);
+
+        // The Application read, the provider client built from it and the row insert all happen
+        // under the Application's aggregate lock. Without it, an Application save could commit and
+        // sync its existing clients between the read and the insert, and this client would keep the
+        // pre-save claims without being marked pending. Invalid input above never consumes a lock.
+        ApplicationLockResult lockResult = await lockManager.AcquireAsync(
+            command.ApplicationId,
+            httpContext.RequestAborted
+        );
+        if (LockFailureResult(lockResult, httpContext, logger) is { } lockFailure)
+        {
+            return lockFailure;
+        }
+
+        await using var applicationLock = ((ApplicationLockResult.Acquired)lockResult).Handle;
 
         // Validate Application exists and get application details
         ApplicationGetResult applicationResult = await applicationRepository.GetApplication(

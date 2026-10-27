@@ -3,7 +3,7 @@
 | Field | Value |
 |---|---|
 | Jira | [DMS-1642](https://edfi.atlassian.net/browse/DMS-1642), scope item "First, measure" |
-| Recorded | 2026-10-27, branch `DMS-1642` at `765c002185cd10315ada284c2418b9b7bb11a9a0` (DMS-1640 base) plus the probe |
+| Recorded | 2026-10-27, on the `DMS-1642` story branch before the endpoint changes (DMS-1640, [#1408](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/1408), as the base) plus the probe |
 | Probe | `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/Measurement/ApplicationUpdateFanoutMeasurementTests.cs` |
 | Status | Evidence for the synchronous-loop decision, then for the finished endpoint (see [Finished endpoint](#finished-endpoint-task-4a)). |
 
@@ -186,9 +186,9 @@ client also includes connection and JIT warm-up. Neither adds more than about 60
 
 ## Finished endpoint (Task 4a)
 
-Recorded 2026-10-27 on the same machine, at `7121db50` plus the probe change, after the endpoint
-work landed (`a71892b3` atomic save and marking, `3ec358fb` sequential synchronization, `4b6f3990`
-marker completion on client PUT).
+Recorded 2026-10-27 on the same machine, with the probe change, after the endpoint work of
+[#1411](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/1411) landed: the
+atomic save and marking, sequential synchronization, and marker completion on client PUT.
 
 The probe now has two fixtures in the same opt-in category, sharing the setup and verification above:
 

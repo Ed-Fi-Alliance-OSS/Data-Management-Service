@@ -148,6 +148,8 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
     private int _vendorStateReads;
     private List<ProviderUpdate> _providerUpdates = [];
     private List<NamespaceUpdate> _namespaceUpdates = [];
+    private Dictionary<int, string> _applicationNames = [];
+    private List<string> _providerCreateApplicationNames = [];
     private List<Task<HttpResponseMessage>> _outstandingRequests = [];
 
     [TearDown]
@@ -229,6 +231,8 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         _vendorStateReads = 0;
         _providerUpdates = [];
         _namespaceUpdates = [];
+        _applicationNames = [];
+        _providerCreateApplicationNames = [];
         _outstandingRequests = [];
 
         A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
@@ -254,22 +258,32 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                 );
             });
 
+        // Reads the name the last save committed, so a workflow that read the Application before a
+        // concurrent save is told apart from one that read it after.
         A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
             .ReturnsLazily(call =>
-                Task.FromResult<ApplicationGetResult>(
-                    new ApplicationGetResult.Success(
-                        new ApplicationResponse
-                        {
-                            Id = call.GetArgument<int>(0),
-                            ApplicationName = "Test Application",
-                            ClaimSetName = "TestClaimSet",
-                            VendorId = 1,
-                            EducationOrganizationIds = [1],
-                            DataStoreIds = [1],
-                        }
-                    )
-                )
-            );
+            {
+                int applicationId = call.GetArgument<int>(0);
+                lock (_stateLock)
+                {
+                    return Task.FromResult<ApplicationGetResult>(
+                        new ApplicationGetResult.Success(
+                            new ApplicationResponse
+                            {
+                                Id = applicationId,
+                                ApplicationName = _applicationNames.GetValueOrDefault(
+                                    applicationId,
+                                    "Test Application"
+                                ),
+                                ClaimSetName = "TestClaimSet",
+                                VendorId = 1,
+                                EducationOrganizationIds = [1],
+                                DataStoreIds = [1],
+                            }
+                        )
+                    );
+                }
+            });
 
         // Every client inherits the education organization [1] that the faked Applications hold
         A.CallTo(() => _apiClientRepository.GetApiClientEducationOrganizationState(A<int>.Ignored))
@@ -303,6 +317,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                 ApplicationUpdateCommand command = call.GetArgument<ApplicationUpdateCommand>(0)!;
                 lock (_stateLock)
                 {
+                    _applicationNames[command.Id] = command.ApplicationName;
                     ApplicationSyncPendingClient[] pendingClients =
                     [
                         .. _clients
@@ -412,6 +427,56 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
             .ReturnsLazily(call =>
                 ApplyApiClientRepositoryUpdateAsync(call.GetArgument<ApiClientUpdateCommand>(0)!)
             );
+
+        A.CallTo(() =>
+                _identityProviderRepository.CreateClientAsync(
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<string>.Ignored,
+                    A<int[]?>.Ignored,
+                    A<bool>.Ignored
+                )
+            )
+            .ReturnsLazily(call =>
+            {
+                lock (_stateLock)
+                {
+                    _providerCreateApplicationNames.Add(call.GetArgument<string>(3)!);
+                }
+
+                return Task.FromResult<ClientCreateResult>(new ClientCreateResult.Success(Guid.NewGuid()));
+            });
+
+        // A created client joins the shared state, so an Application save that runs after the
+        // insert sees it as one of the Application's clients.
+        A.CallTo(() =>
+                _apiClientRepository.InsertApiClient(
+                    A<ApiClientInsertCommand>.Ignored,
+                    A<ApiClientCommand>.Ignored
+                )
+            )
+            .ReturnsLazily(call =>
+            {
+                ApiClientInsertCommand command = call.GetArgument<ApiClientInsertCommand>(0)!;
+                ApiClientCommand clientCommand = call.GetArgument<ApiClientCommand>(1)!;
+                lock (_stateLock)
+                {
+                    int apiClientId = _clients.Keys.DefaultIfEmpty(0).Max() + 1;
+                    _clients[apiClientId] = new ClientState
+                    {
+                        ApplicationId = command.ApplicationId,
+                        ClientId = clientCommand.ClientId,
+                        ClientUuid = clientCommand.ClientUuid,
+                    };
+                    return Task.FromResult<ApiClientInsertResult>(
+                        new ApiClientInsertResult.Success(apiClientId)
+                    );
+                }
+            });
 
         A.CallTo(() =>
                 _identityProviderRepository.UpdateClientAsync(
@@ -685,6 +750,21 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
 
     private protected int ApiClientReads => Volatile.Read(ref _apiClientReads);
 
+    private protected int ApplicationReads =>
+        Fake.GetCalls(_applicationRepository)
+            .Count(call => call.Method.Name == nameof(IApplicationRepository.GetApplication));
+
+    private protected string[] ProviderCreateApplicationNamesSnapshot()
+    {
+        lock (_stateLock)
+        {
+            return [.. _providerCreateApplicationNames];
+        }
+    }
+
+    private protected Task WaitForSecondAcquisitionAsync() =>
+        _acquisitionGate!.SecondAcquisitionEntered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
     private protected int VendorStateReads => Volatile.Read(ref _vendorStateReads);
 
     private protected NamespaceUpdate[] NamespaceUpdatesSnapshot()
@@ -831,6 +911,99 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
         [Test]
         public void It_completes_the_api_client_update() =>
             _apiClientStatus.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    /// <summary>
+    /// An API client create takes the Application's aggregate lock before it reads the
+    /// Application, so a create that starts while an Application update is syncing its clients
+    /// waits for the update to finish and provisions its provider client from the saved
+    /// Application. Without the lock it would read the Application before the save committed,
+    /// keep the old claims, and never be marked pending.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_create_during_an_application_update_provider_call
+        : WorkflowConcurrencyTestBase
+    {
+        private HttpStatusCode _applicationStatus;
+        private HttpStatusCode _createStatus;
+        private bool _createCompletedWhileApplicationPaused;
+        private int _applicationReadsWhileApplicationPaused;
+        private string[] _createdForApplicationNames = [];
+
+        [SetUp]
+        public async Task Act()
+        {
+            SetUpWorkflowFakes((5, 10));
+            // The Application update's provider call for its pending client is the first provider
+            // mutation of the run; the workflow pauses there while it still holds the aggregate lock.
+            _providerPreservesUuid = true;
+            _pausedProviderCall = 1;
+            using var client = SetUpWorkflowClient(observeAcquisitions: true);
+
+            Task<HttpResponseMessage> updatingApplication = TrackRequest(
+                client.PutAsync(
+                    "/v3/applications/10",
+                    JsonBody(
+                        """
+                        {
+                          "id": 10,
+                          "applicationName": "Renamed Application",
+                          "claimSetName": "TestClaimSet",
+                          "vendorId": 1,
+                          "educationOrganizationIds": [1]
+                        }
+                        """
+                    )
+                )
+            );
+            await _providerCallStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+
+            Task<HttpResponseMessage> creatingApiClient = TrackRequest(
+                client.PostAsync(
+                    "/v3/apiClients",
+                    JsonBody(
+                        """
+                        {
+                          "applicationId": 10,
+                          "name": "New Client",
+                          "isApproved": true,
+                          "dataStoreIds": [1]
+                        }
+                        """
+                    )
+                )
+            );
+
+            // The create's acquisition is the run's second; once it is entered the create is
+            // waiting on the aggregate lock the paused Application update holds.
+            await WaitForSecondAcquisitionAsync();
+            await Task.Delay(300);
+            _createCompletedWhileApplicationPaused = creatingApiClient.IsCompleted;
+            _applicationReadsWhileApplicationPaused = ApplicationReads;
+
+            _providerCallReleased.SetResult();
+            _applicationStatus = (await updatingApplication).StatusCode;
+            _createStatus = (await creatingApiClient).StatusCode;
+            _createdForApplicationNames = ProviderCreateApplicationNamesSnapshot();
+        }
+
+        [Test]
+        public void It_holds_the_create_before_it_reads_the_application()
+        {
+            _createCompletedWhileApplicationPaused.Should().BeFalse();
+            _applicationReadsWhileApplicationPaused.Should().Be(0);
+        }
+
+        [Test]
+        public void It_provisions_the_client_from_the_saved_application() =>
+            _createdForApplicationNames.Should().Equal("Renamed Application");
+
+        [Test]
+        public void It_completes_the_application_update() =>
+            _applicationStatus.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_creates_the_api_client() => _createStatus.Should().Be(HttpStatusCode.Created);
     }
 
     [TestFixture]

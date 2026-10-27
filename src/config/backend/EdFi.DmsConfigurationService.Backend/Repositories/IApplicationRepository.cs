@@ -23,10 +23,6 @@ public interface IApplicationRepository
     );
     Task<ApplicationQueryResult> QueryApplication(ApplicationQuery query);
     Task<ApplicationGetResult> GetApplication(int id);
-    Task<ApplicationUpdateResult> UpdateApplication(
-        ApplicationUpdateCommand command,
-        ApiClientCommand clientCommand
-    );
 
     /// <summary>
     /// Saves an Application change and marks every API client it affects as awaiting an identity
@@ -55,66 +51,6 @@ public interface IApplicationRepository
 
     Task<ApplicationDeleteResult> DeleteApplication(int id);
     Task<ApplicationApiClientsResult> GetApplicationApiClients(int id);
-
-    /// <summary>
-    /// Reads the complete update-relevant state of an Application and one of its clients inside
-    /// a row-locking transaction. Locking the Application row waits out any in-flight update
-    /// transaction, so the returned snapshot reflects that transaction's final outcome; it also
-    /// carries the selected client's exact data store set, which aggregate reads cannot supply.
-    /// </summary>
-    Task<ApplicationUpdateStateResult> GetApplicationUpdateState(int applicationId, string clientId);
-
-    /// <summary>
-    /// Atomically sets the stored identity-provider client UUID, guarded by its expected current
-    /// value, inside one row-locking transaction. When the target row is missing, the result
-    /// distinguishes whether any row still references the new UUID so the caller can decide
-    /// whether deleting the recreated provider client is safe.
-    /// </summary>
-    Task<ApiClientUuidSyncResult> SyncApplicationApiClientUuid(
-        int applicationId,
-        string clientId,
-        Guid expectedClientUuid,
-        Guid newClientUuid
-    );
-}
-
-/// <summary>
-/// The complete state an Application update touches: the Application scalars, its mapping sets,
-/// and the selected client's identity and approval. The selected client's exact data store set
-/// is read so the update can re-send it unchanged to the identity provider; the update never
-/// changes it. The selected client's inheritance flag and own education organization rows decide
-/// its effective list: an inheriting client's rows can lag the Application's list, since an
-/// Application save never copies added education organizations to them.
-/// </summary>
-public record ApplicationUpdateState(
-    string ApplicationName,
-    int VendorId,
-    string ClaimSetName,
-    // Education organization ids stay 64-bit: the Management API v3 draft declares them int64,
-    // deliberately widening relative to Admin API's int. Only CMS resource ids narrow.
-    long[] EducationOrganizationIds,
-    int[] ProfileIds,
-    string ClientId,
-    Guid ClientUuid,
-    bool IsApproved,
-    int[] ClientDataStoreIds,
-    bool ClientInheritsApplicationEducationOrganizations,
-    long[] ClientStoredEducationOrganizationIds
-);
-
-public record ApplicationUpdateStateResult
-{
-    public record Success(ApplicationUpdateState State) : ApplicationUpdateStateResult();
-
-    /// <summary>
-    /// The application or the selected client no longer exists.
-    /// </summary>
-    public record FailureNotExists() : ApplicationUpdateStateResult();
-
-    /// <summary>
-    /// Unexpected exception thrown and caught
-    /// </summary>
-    public record FailureUnknown(string FailureMessage) : ApplicationUpdateStateResult();
 }
 
 public record ApplicationInsertResult
@@ -193,45 +129,6 @@ public record ApplicationGetResult
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ApplicationGetResult();
-}
-
-public record ApplicationUpdateResult
-{
-    /// <summary>
-    /// The application was updated successfully
-    /// </summary>
-    public record Success() : ApplicationUpdateResult();
-
-    /// <summary>
-    /// Application id not found
-    /// </summary>
-    public record FailureNotExists() : ApplicationUpdateResult();
-
-    /// <summary>
-    /// Referenced vendor not found exception thrown and caught
-    /// </summary>
-    public record FailureVendorNotFound() : ApplicationUpdateResult();
-
-    /// <summary>
-    /// Referenced profile not found exception thrown and caught
-    /// </summary>
-    public record FailureProfileNotFound() : ApplicationUpdateResult();
-
-    /// <summary>
-    /// Application name already exists for the vendor
-    /// </summary>
-    public record FailureDuplicateApplication(string ApplicationName) : ApplicationUpdateResult();
-
-    /// <summary>
-    /// The identity-provider client UUID the update would store is already referenced by another API
-    /// client; nothing was written
-    /// </summary>
-    public record FailureDuplicateClientUuid() : ApplicationUpdateResult();
-
-    /// <summary>
-    /// Unexpected exception thrown and caught
-    /// </summary>
-    public record FailureUnknown(string FailureMessage) : ApplicationUpdateResult();
 }
 
 /// <summary>

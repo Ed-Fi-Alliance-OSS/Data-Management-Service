@@ -242,8 +242,13 @@ public class Given_a_database_deployed_through_0037_with_api_clients : ApiClient
     }
 
     [Test]
-    public void It_leaves_every_client_without_a_pending_sync() =>
-        _statesAfterUpgrade.Should().OnlyContain(state => !state.IdentityProviderSyncPendingSince.HasValue);
+    public void It_marks_every_existing_client_sync_pending()
+    {
+        // The upgrade can't read the identity providers, and before 8.1 an Application update
+        // refreshed only its first client, so every client waits for the Application's next PUT.
+        _statesAfterUpgrade.Should().HaveCount(5);
+        _statesAfterUpgrade.Should().OnlyContain(state => state.IdentityProviderSyncPendingSince.HasValue);
+    }
 
     [Test]
     public void It_copies_each_client_rows_from_its_Application() =>

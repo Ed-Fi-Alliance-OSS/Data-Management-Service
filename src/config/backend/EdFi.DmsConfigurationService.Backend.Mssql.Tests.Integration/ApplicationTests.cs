@@ -193,11 +193,8 @@ public class ApplicationTests : DatabaseTest
                 EducationOrganizationIds = [],
             };
 
-            var applicationUpdateResult = await _applicationRepository.UpdateApplication(
-                applicationUpdate,
-                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
-            );
-            applicationUpdateResult.Should().BeOfType<ApplicationUpdateResult.FailureVendorNotFound>();
+            var applicationUpdateResult = await _applicationRepository.SaveApplication(applicationUpdate);
+            applicationUpdateResult.Should().BeOfType<ApplicationSaveResult.FailureVendorNotFound>();
         }
     }
 
@@ -246,7 +243,7 @@ public class ApplicationTests : DatabaseTest
             command.ApplicationName = "Update Application Name";
             command.EducationOrganizationIds = [1, 2];
 
-            var vendorUpdateResult = await _applicationRepository.UpdateApplication(
+            var vendorUpdateResult = await _applicationRepository.SaveApplication(
                 new ApplicationUpdateCommand()
                 {
                     Id = _id,
@@ -254,10 +251,9 @@ public class ApplicationTests : DatabaseTest
                     ClaimSetName = command.ClaimSetName,
                     EducationOrganizationIds = command.EducationOrganizationIds,
                     VendorId = command.VendorId,
-                },
-                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+                }
             );
-            vendorUpdateResult.Should().BeOfType<ApplicationUpdateResult.Success>();
+            vendorUpdateResult.Should().BeOfType<ApplicationSaveResult.Success>();
         }
 
         [Test]
@@ -522,13 +518,10 @@ public class ApplicationTests : DatabaseTest
                 EducationOrganizationIds = [9, 10],
             };
 
-            var updateResult = await _applicationRepository.UpdateApplication(
-                updateCommand,
-                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
-            );
+            var updateResult = await _applicationRepository.SaveApplication(updateCommand);
 
-            updateResult.Should().BeOfType<ApplicationUpdateResult.FailureDuplicateApplication>();
-            var failureResult = (ApplicationUpdateResult.FailureDuplicateApplication)updateResult;
+            updateResult.Should().BeOfType<ApplicationSaveResult.FailureDuplicateApplication>();
+            var failureResult = (ApplicationSaveResult.FailureDuplicateApplication)updateResult;
             failureResult.ApplicationName.Should().Be("Duplicate Test Application");
         }
     }
@@ -1416,8 +1409,8 @@ public class ApplicationTests : DatabaseTest
             return ((ApplicationGetResult.Success)result).ApplicationResponse.ProfileIds;
         }
 
-        private Task<ApplicationUpdateResult> UpdateTenantBApplicationProfiles(params int[] profileIds) =>
-            _tenantBRepository.UpdateApplication(
+        private Task<ApplicationSaveResult> UpdateTenantBApplicationProfiles(params int[] profileIds) =>
+            _tenantBRepository.SaveApplication(
                 new ApplicationUpdateCommand
                 {
                     Id = _tenantBApplicationId,
@@ -1426,8 +1419,7 @@ public class ApplicationTests : DatabaseTest
                     ClaimSetName = "Test Claim set",
                     EducationOrganizationIds = [],
                     ProfileIds = profileIds,
-                },
-                new ApiClientCommand { ClientId = _tenantBClientId, ClientUuid = Guid.NewGuid() }
+                }
             );
 
         [Test]
@@ -1462,7 +1454,7 @@ public class ApplicationTests : DatabaseTest
         [Test]
         public async Task It_should_not_update_another_tenants_application()
         {
-            var result = await _tenantBRepository.UpdateApplication(
+            var result = await _tenantBRepository.SaveApplication(
                 new ApplicationUpdateCommand
                 {
                     Id = _tenantAApplicationId,
@@ -1470,10 +1462,9 @@ public class ApplicationTests : DatabaseTest
                     VendorId = _tenantBVendorId,
                     ClaimSetName = "Test Claim set",
                     EducationOrganizationIds = [],
-                },
-                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+                }
             );
-            result.Should().BeOfType<ApplicationUpdateResult.FailureNotExists>();
+            result.Should().BeOfType<ApplicationSaveResult.FailureNotExists>();
 
             var unchanged = await _tenantARepository.GetApplication(_tenantAApplicationId);
             unchanged.Should().BeOfType<ApplicationGetResult.Success>();
@@ -1485,7 +1476,7 @@ public class ApplicationTests : DatabaseTest
         [Test]
         public async Task It_should_not_move_an_application_to_another_tenants_vendor()
         {
-            var result = await _tenantBRepository.UpdateApplication(
+            var result = await _tenantBRepository.SaveApplication(
                 new ApplicationUpdateCommand
                 {
                     Id = _tenantBApplicationId,
@@ -1493,10 +1484,9 @@ public class ApplicationTests : DatabaseTest
                     VendorId = _tenantAVendorId,
                     ClaimSetName = "Test Claim set",
                     EducationOrganizationIds = [],
-                },
-                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+                }
             );
-            result.Should().BeOfType<ApplicationUpdateResult.FailureVendorNotFound>();
+            result.Should().BeOfType<ApplicationSaveResult.FailureVendorNotFound>();
         }
 
         [Test]
@@ -1625,7 +1615,7 @@ public class ApplicationTests : DatabaseTest
         public async Task It_should_update_an_application_with_its_own_tenants_profile()
         {
             var result = await UpdateTenantBApplicationProfiles(_tenantBProfileId);
-            result.Should().BeOfType<ApplicationUpdateResult.Success>();
+            result.Should().BeOfType<ApplicationSaveResult.Success>();
 
             (await GetProfileIds(_tenantBRepository, _tenantBApplicationId))
                 .Should()
@@ -1637,10 +1627,10 @@ public class ApplicationTests : DatabaseTest
         {
             (await UpdateTenantBApplicationProfiles(_tenantBProfileId))
                 .Should()
-                .BeOfType<ApplicationUpdateResult.Success>();
+                .BeOfType<ApplicationSaveResult.Success>();
 
             var result = await UpdateTenantBApplicationProfiles(_tenantAProfileId);
-            result.Should().BeOfType<ApplicationUpdateResult.FailureProfileNotFound>();
+            result.Should().BeOfType<ApplicationSaveResult.FailureProfileNotFound>();
 
             (await GetProfileIds(_tenantBRepository, _tenantBApplicationId))
                 .Should()
@@ -1679,7 +1669,7 @@ public class ApplicationTests : DatabaseTest
             var result = await UpdateTenantBApplicationProfiles([
                 .. Enumerable.Repeat(_tenantBProfileId, 3000),
             ]);
-            result.Should().BeOfType<ApplicationUpdateResult.Success>();
+            result.Should().BeOfType<ApplicationSaveResult.Success>();
 
             (await GetProfileIds(_tenantBRepository, _tenantBApplicationId))
                 .Should()
@@ -1716,7 +1706,7 @@ public class ApplicationTests : DatabaseTest
             int[] profileIds = await InsertProfiles(_tenantBProvider, 2101);
 
             var result = await UpdateTenantBApplicationProfiles(profileIds);
-            result.Should().BeOfType<ApplicationUpdateResult.Success>();
+            result.Should().BeOfType<ApplicationSaveResult.Success>();
 
             (await GetProfileIds(_tenantBRepository, _tenantBApplicationId))
                 .Should()
@@ -1879,7 +1869,9 @@ public class ApplicationTests : DatabaseTest
         {
             await AssertEveryReadPathPreservesTheEducationOrganizationId("after the insert");
 
-            var updateResult = await _applicationRepository.UpdateApplication(
+            // The save leaves the client's data store links intact, so QueryApplicationByDataStore
+            // still finding this application afterwards proves it.
+            var saveResult = await _applicationRepository.SaveApplication(
                 new ApplicationUpdateCommand
                 {
                     Id = _applicationId,
@@ -1887,17 +1879,17 @@ public class ApplicationTests : DatabaseTest
                     VendorId = _vendorId,
                     ClaimSetName = "Test Claim set",
                     EducationOrganizationIds = [LargeEducationOrganizationId],
-                },
-                // Reuse the ClientId the insert created. The update leaves the client's data store
-                // links intact, so QueryApplicationByDataStore still finding this application
-                // afterwards proves it.
-                new ApiClientCommand { ClientId = _clientId, ClientUuid = Guid.NewGuid() }
+                }
             );
-            updateResult.Should().BeOfType<ApplicationUpdateResult.Success>();
+            saveResult.Should().BeOfType<ApplicationSaveResult.Success>();
+            AssertPreserved(
+                [.. ((ApplicationSaveResult.Success)saveResult).State.EducationOrganizationIds],
+                "SaveApplication",
+                "in the save result"
+            );
 
-            // ApplicationUpdateResult.Success carries no payload, so re-reading is the only thing that
-            // can prove the rewritten value survived.
-            await AssertEveryReadPathPreservesTheEducationOrganizationId("after the update");
+            // Re-reading proves the rewritten value survived.
+            await AssertEveryReadPathPreservesTheEducationOrganizationId("after the save");
         }
 
         /// <summary>
@@ -1949,19 +1941,14 @@ public class ApplicationTests : DatabaseTest
                 when
             );
 
-            // The reconciliation read behind PUT /v3/applications/{id}. It projects the ids through a
-            // standalone QueryAsync<long> rather than a multi-map, and ApplicationModule both compares
-            // them against the command and rebuilds the identity provider's educationOrganizationIds
-            // claim from them on the rollback path, so a narrowing here would corrupt an authorization
-            // scope instead of failing visibly.
-            var updateStateResult = await _applicationRepository.GetApplicationUpdateState(
-                _applicationId,
-                _clientId
-            );
-            updateStateResult.Should().BeOfType<ApplicationUpdateStateResult.Success>();
+            // The committed-state read behind PUT /v3/applications/{id}. Its ids become the identity
+            // provider's educationOrganizationIds claim for every inheriting client, so a narrowing
+            // here would corrupt an authorization scope instead of failing visibly.
+            var syncStateResult = await _applicationRepository.GetApplicationSyncState(_applicationId);
+            syncStateResult.Should().BeOfType<ApplicationSyncStateResult.Success>();
             AssertPreserved(
-                [.. ((ApplicationUpdateStateResult.Success)updateStateResult).State.EducationOrganizationIds],
-                "GetApplicationUpdateState",
+                [.. ((ApplicationSyncStateResult.Success)syncStateResult).State.EducationOrganizationIds],
+                "GetApplicationSyncState",
                 when
             );
         }
@@ -1998,17 +1985,12 @@ public class ApplicationTests : DatabaseTest
         private int _identifierVendorId;
         private int _secondApplicationId;
         private int _duplicateAttemptDataStoreId;
-        private int _updateAttemptProfileId;
         private int _tenantTwoVendorId;
         private ApplicationInsertResult _repeatKeyInsert = null!;
         private ApplicationInsertResult _repeatUuidInsert = null!;
         private ApplicationInsertResult _repeatBothInsert = null!;
         private ApplicationInsertResult _repeatKeyOtherTenantInsert = null!;
         private ApplicationInsertResult _losingConcurrentInsert = null!;
-        private ApplicationUpdateResult _updateOntoTakenUuid = null!;
-        private ApplicationResponse _secondApplicationBeforeRejectedUpdate = null!;
-        private ApplicationResponse _secondApplicationAfterRejectedUpdate = null!;
-        private Guid _secondClientUuidAfterRejectedUpdate;
 
         [SetUp]
         public async Task Setup()
@@ -2020,13 +2002,6 @@ public class ApplicationTests : DatabaseTest
                 OUTPUT INSERTED.Id VALUES ('Production', @Name);
                 """,
                 new { Name = $"DMS1529 Data Store {Guid.NewGuid()}" }
-            );
-            _updateAttemptProfileId = await Connection!.ExecuteScalarAsync<int>(
-                """
-                INSERT INTO dmscs.Profile (ProfileName, Definition)
-                OUTPUT INSERTED.Id VALUES (@ProfileName, '<Profile/>');
-                """,
-                new { ProfileName = $"DMS1529 Profile {Guid.NewGuid()}" }
             );
 
             (await InsertApplication("DMS1529 Taken Application", _takenClientId, _takenClientUuid, []))
@@ -2060,33 +2035,6 @@ public class ApplicationTests : DatabaseTest
             );
             _repeatKeyOtherTenantInsert = await InsertApplicationRepeatingAnotherTenantsKey();
             _losingConcurrentInsert = await RunLosingConcurrentInsert();
-
-            // Every scalar and association of the application changes alongside the taken UUID, so
-            // a partially persisted update would show in the full before/after comparison.
-            _secondApplicationBeforeRejectedUpdate = await ReadApplication(_secondApplicationId);
-            _updateOntoTakenUuid = await _applicationRepository.UpdateApplication(
-                new ApplicationUpdateCommand
-                {
-                    Id = _secondApplicationId,
-                    ApplicationName = "DMS1529 Renamed Second Application",
-                    VendorId = _identifierVendorId,
-                    ClaimSetName = "RenamedClaimSet",
-                    EducationOrganizationIds = [9, 10, 11],
-                    ProfileIds = [_updateAttemptProfileId],
-                },
-                new ApiClientCommand { ClientId = _secondClientId, ClientUuid = _takenClientUuid }
-            );
-            _secondApplicationAfterRejectedUpdate = await ReadApplication(_secondApplicationId);
-            _secondClientUuidAfterRejectedUpdate = await Connection!.ExecuteScalarAsync<Guid>(
-                """SELECT ClientUuid FROM dmscs.ApiClient WHERE ClientId = @ClientId;""",
-                new { ClientId = _secondClientId }
-            );
-        }
-
-        private async Task<ApplicationResponse> ReadApplication(int id)
-        {
-            var result = await _applicationRepository.GetApplication(id);
-            return ((ApplicationGetResult.Success)result).ApplicationResponse;
         }
 
         private static async Task<int> InsertVendor(TenantContextProvider tenantContextProvider)
@@ -2313,21 +2261,6 @@ public class ApplicationTests : DatabaseTest
             )
                 .Should()
                 .Be(0);
-        }
-
-        [Test]
-        public void It_rejects_an_update_that_stores_a_uuid_another_client_holds() =>
-            _updateOntoTakenUuid.Should().BeOfType<ApplicationUpdateResult.FailureDuplicateClientUuid>();
-
-        [Test]
-        public void It_leaves_the_whole_application_unchanged_after_the_rejected_update()
-        {
-            _secondApplicationBeforeRejectedUpdate.ApplicationName.Should().Be("DMS1529 Second Application");
-            _secondApplicationBeforeRejectedUpdate.ProfileIds.Should().BeEmpty();
-            _secondApplicationAfterRejectedUpdate
-                .Should()
-                .BeEquivalentTo(_secondApplicationBeforeRejectedUpdate);
-            _secondClientUuidAfterRejectedUpdate.Should().Be(_secondClientUuid);
         }
     }
 

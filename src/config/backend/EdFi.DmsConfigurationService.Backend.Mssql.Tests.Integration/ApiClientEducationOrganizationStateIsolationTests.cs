@@ -6,6 +6,7 @@
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 
@@ -27,7 +28,7 @@ public class Given_an_Application_save_while_a_state_read_is_paused
     private static readonly TimeSpan BlockingWaitCeiling = TimeSpan.FromSeconds(30);
 
     private ApiClientEducationOrganizationStateResult _pausedRead = null!;
-    private ApplicationUpdateResult _saveResult = null!;
+    private ApplicationSaveResult _saveResult = null!;
     private ApiClientEducationOrganizationState _afterBoth = null!;
 
     [SetUp]
@@ -56,7 +57,7 @@ public class Given_an_Application_save_while_a_state_read_is_paused
             ApiClientRepository.GetApiClientEducationOrganizationState(InheritingClientId);
         short readSession = await SessionBlockedByAsync(blocker, transaction, blockerSession);
 
-        Task<ApplicationUpdateResult> save = UpdateScopedApplicationAsync([1002, 1003]);
+        Task<ApplicationSaveResult> save = SaveRenamedScopedApplicationAsync([1002, 1003]);
         await SessionBlockedByAsync(blocker, transaction, readSession);
 
         await transaction.RollbackAsync();
@@ -102,11 +103,25 @@ public class Given_an_Application_save_while_a_state_read_is_paused
 
     [Test]
     public void It_completes_the_Application_save_after_the_read() =>
-        _saveResult.Should().BeOfType<ApplicationUpdateResult.Success>();
+        _saveResult.Should().BeOfType<ApplicationSaveResult.Success>();
 
     [Test]
     public void It_reads_the_whole_state_after_the_save_afterwards() =>
-        ShouldMatch(_afterBoth, State(ScopedApplicationId, true, [1002, 1003], [1002, 1003]));
+        ShouldMatch(
+            _afterBoth,
+            State(
+                ScopedApplicationId,
+                true,
+                [1002, 1003],
+                [1002, 1003],
+                // The removal marks the inheriting client at the time the save returned
+                _saveResult
+                    .Should()
+                    .BeOfType<ApplicationSaveResult.Success>()
+                    .Subject.State.PendingClients.Single(client => client.Id == InheritingClientId)
+                    .PendingSince
+            )
+        );
 }
 
 /// <summary>
@@ -244,19 +259,23 @@ public class Given_a_client_delete_while_a_state_read_is_paused : ClientWriterWh
 [TestFixture]
 public class Given_a_scope_write_while_a_state_read_is_paused : ClientWriterWhileAStateReadIsPausedFixture
 {
-    private ApiClientEducationOrganizationScopeResult _scopeResult = null!;
+    private ApiClientUpdateResult _scopeResult = null!;
 
     protected override async Task StartAndAwaitWriterAsync(Func<Task> whileWriterIsBlocked)
     {
-        Task<ApiClientEducationOrganizationScopeResult> write =
-            ApiClientRepository.SetApiClientEducationOrganizationScope(InheritingClientId, [1002]);
+        Task<ApiClientUpdateResult> write = UpdateApiClientAsync(
+            InheritingClientId,
+            ScopedApplicationId,
+            "Narrowed client",
+            new ApiClientEducationOrganizationScope.Narrow([1002])
+        );
         await whileWriterIsBlocked();
         _scopeResult = await write;
     }
 
     [Test]
     public void It_writes_the_scope_after_the_read() =>
-        _scopeResult.Should().BeOfType<ApiClientEducationOrganizationScopeResult.Success>();
+        _scopeResult.Should().BeOfType<ApiClientUpdateResult.Success>();
 }
 
 /// <summary>

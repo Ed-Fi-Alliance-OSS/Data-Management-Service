@@ -23,7 +23,10 @@
 -- after 0032), so it round-trips whatever the session time zone.
 --
 -- Upgrade: every existing client inherits (the column default) and its rows are copied from its
--- Application's current list. Nothing reads the identity providers.
+-- Application's current list. Nothing reads the identity providers, so the script can't tell
+-- whether a client's provider claims match that list: before 8.1 an Application update refreshed
+-- only its first client. Every existing client is therefore marked sync-pending when the column is
+-- added, and the Application's next PUT, even an unchanged one, sends every client its claims.
 --
 -- Everything runs in one DO block, which executes as a single statement and therefore as one
 -- transaction. The constraints and the new columns take their table locks before the backfill
@@ -31,6 +34,8 @@
 -- can change between the backfill and the commit. The existence guards and NOT EXISTS make a retry
 -- converge.
 DO $$
+DECLARE
+    sync_pending_column_added BOOLEAN;
 BEGIN
     CREATE TABLE IF NOT EXISTS "dmscs"."ApiClientEducationOrganization" (
         "ApiClientId" INT NOT NULL,
@@ -81,9 +86,23 @@ BEGIN
     CREATE INDEX IF NOT EXISTS "IX_ApiClientEducationOrganization_EducationOrganizationId"
         ON "dmscs"."ApiClientEducationOrganization" ("EducationOrganizationId", "ApplicationId");
 
+    sync_pending_column_added := NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'dmscs'
+          AND table_name = 'ApiClient'
+          AND column_name = 'IdentityProviderSyncPendingSince'
+    );
+
     ALTER TABLE "dmscs"."ApiClient"
         ADD COLUMN IF NOT EXISTS "InheritsApplicationEducationOrganizations" BOOLEAN NOT NULL DEFAULT true,
         ADD COLUMN IF NOT EXISTS "IdentityProviderSyncPendingSince" TIMESTAMPTZ NULL;
+
+    -- Only when this run added the column, so a rerun never re-marks clients the application has
+    -- since synchronized.
+    IF sync_pending_column_added THEN
+        UPDATE "dmscs"."ApiClient" SET "IdentityProviderSyncPendingSince" = NOW();
+    END IF;
 
     INSERT INTO "dmscs"."ApiClientEducationOrganization" ("ApiClientId", "ApplicationId", "EducationOrganizationId")
     SELECT client."Id", client."ApplicationId", application_edorg."EducationOrganizationId"

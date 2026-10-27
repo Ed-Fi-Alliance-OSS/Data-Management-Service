@@ -23,17 +23,24 @@
 -- an Application change applied.
 --
 -- Upgrade: every existing client inherits (the column default fills existing rows) and its rows
--- are copied from its Application's current list. Nothing reads the identity providers.
+-- are copied from its Application's current list. Nothing reads the identity providers, so the
+-- script can't tell whether a client's provider claims match that list: before 8.1 an Application
+-- update refreshed only its first client. Every existing client is therefore marked sync-pending
+-- when the column is added, and the Application's next PUT, even an unchanged one, sends every
+-- client its claims.
 --
 -- Everything runs in one explicit transaction. The schema changes take their table locks before
 -- the backfill reads and hold them until COMMIT, so no client or Application education
 -- organization can change between the backfill and the commit. XACT_ABORT dooms the transaction on
 -- any statement error and the CATCH block rolls it back and rethrows. The existence guards and
--- NOT EXISTS make a retry converge. The whole script is a single batch with no GO; the backfill
--- doesn't reference the new ApiClient columns, which a single batch couldn't compile.
+-- NOT EXISTS make a retry converge. The whole script is a single batch with no GO, which can't
+-- compile a statement naming a column the batch adds, so the sync-pending mark runs through
+-- sp_executesql.
 SET XACT_ABORT ON;
 BEGIN TRY
     BEGIN TRANSACTION;
+
+    DECLARE @SyncPendingColumnAdded BIT = 0;
 
     IF NOT EXISTS (
         SELECT 1
@@ -73,7 +80,15 @@ BEGIN TRY
             CONSTRAINT DF_ApiClient_InheritsApplicationEducationOrganizations DEFAULT 1;
 
     IF COL_LENGTH('dmscs.ApiClient', 'IdentityProviderSyncPendingSince') IS NULL
+    BEGIN
         ALTER TABLE dmscs.ApiClient ADD IdentityProviderSyncPendingSince DATETIME2 NULL;
+        SET @SyncPendingColumnAdded = 1;
+    END;
+
+    -- Only when this run added the column, so a rerun never re-marks clients the application has
+    -- since synchronized.
+    IF @SyncPendingColumnAdded = 1
+        EXEC sp_executesql N'UPDATE dmscs.ApiClient SET IdentityProviderSyncPendingSince = SYSUTCDATETIME();';
 
     INSERT INTO dmscs.ApiClientEducationOrganization (ApiClientId, ApplicationId, EducationOrganizationId)
     SELECT client.Id, client.ApplicationId, applicationEdOrg.EducationOrganizationId

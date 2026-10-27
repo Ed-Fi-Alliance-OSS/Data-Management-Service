@@ -413,6 +413,24 @@ clients that are not pending, and a credential reset neither refreshes claims
 nor completes a pending update. The Application update never changes client
 keys, secrets, names, approval, data stores or scope choices.
 
+#### Upgrading from 8.0
+
+Before 8.1, an Application update refreshed only the Application's first client,
+so another client's identity provider claims can still hold education
+organizations, a name or a claim set the Application no longer has. The upgrade
+cannot read the identity provider, so it makes every existing client inherit its
+Application's current list and marks every existing client pending. Until a
+client is updated, `GET /v3/apiClients` reports the Application's list while the
+client's tokens can still carry its earlier claims.
+
+To bring every client in line, send each Application's current definition with
+`PUT /v3/applications/{id}`, unchanged if nothing needs to change. That request
+updates every client of the Application, as described above. A
+`PUT /v3/apiClients/{id}` updates a single client. A client whose identity
+provider client no longer exists cannot be updated and stays pending, and every
+update of its Application returns `502` naming it; delete that client with
+`DELETE /v3/apiClients/{id}`.
+
 #### SEA workflow: one Application, a client per LEA
 
 1. **Create the Application without credentials.** Use the vendor product's
