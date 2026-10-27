@@ -30,7 +30,8 @@ internal static class ResolveCommand
         command.Options.Add(
             new Option<string>("--output")
             {
-                Description = "Path for the resolved authorization metadata JSON array.",
+                Description =
+                    "Path for the resolved authorization metadata JSON array; parent directory must exist.",
                 Required = true,
             }
         );

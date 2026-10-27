@@ -19,7 +19,12 @@ internal static class CommandHost
         Func<HttpClient> createHttpClient
     )
     {
-        var root = new RootCommand("Ed-Fi API Security Metadata Tools");
+        var root = new RootCommand(
+            "Ed-Fi API Security Metadata Tools. Prepare with merge, inspect with resolve, deploy through CMS, "
+                + "then compare with verify. Use the corresponding CMS release/build and Data Standard; "
+                + "--version identifies this tool build. File outputs require an existing parent directory; "
+                + "--force permits atomic replacement only after successful processing and validation."
+        );
         var convert = new Command(
             "convert-ods-xml",
             "Convert an ODS security metadata XML export to a Configuration Service claims document."

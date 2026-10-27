@@ -15,7 +15,8 @@ internal static class VerifyCommand
     {
         var command = new Command(
             "verify",
-            "Compare a complete claims document with CMS authorization metadata returned by this request. "
+            "Compare all claim sets in a complete claims document with current CMS authorization metadata. "
+                + "Read-only: no deployment, upload, or reload. Use the corresponding CMS release/build. "
                 + "Does not establish cache freshness or live Ed-Fi API enforcement. "
                 + "Exit codes: 0 = match, 2 = mismatch, 1 = invalid input or execution failure. "
                 + "Match and mismatch reports use stdout; failures use stderr."
@@ -42,7 +43,10 @@ internal static class VerifyCommand
             }
         );
         command.Options.Add(
-            new Option<string>("--tenant") { Description = "Optional tenant name sent in the Tenant header." }
+            new Option<string>("--tenant")
+            {
+                Description = "Optional tenant name sent in the Tenant routing header.",
+            }
         );
         command.SetAction(
             (result, cancellationToken) =>

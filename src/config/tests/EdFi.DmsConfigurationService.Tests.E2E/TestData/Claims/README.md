@@ -26,6 +26,12 @@ This directory contains reference data for E2E claims management tests.
   XML into `TestData/Claims/OdsSecurityMetadata/representative.xml` in its build output
   and stages the built CLI under `SecurityMetadataTools/`.
 
+The base policies and JSON schema are embedded once in
+`EdFi.DmsConfigurationService.Claims`, shared by CMS and the offline tool.
+The [isolated policy scenarios](SecurityMetadataTools/README.md) reuse reviewed
+Hybrid fragments for merge/resolve parity, unchanged Filesystem/upload deployment,
+and an independent editable baseline for installed-tool drift verification.
+
 ## Usage
 
 The test suite uses this data to verify:

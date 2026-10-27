@@ -52,6 +52,24 @@ project, allocates a patch, or queries the feed to choose a version.
 | `8.1.0-alpha.0.42` | `1` | `8.1.1-alpha.0.42` | `8.1.1` |
 | `8.1.9-beta.2` | `2` | `8.1.2-beta.2` | `8.1.2` |
 
+## Shared policy resources and runtime dependencies
+
+CMS and the CLI reference `EdFi.DmsConfigurationService.Claims`. That non-published
+shared project owns the validator/schema, bundled 5.2 and 6.1 bases, fragment
+composition, and permission resolution. Its authoritative resources are
+`src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/JsonSchemaForClaims.json`
+and `Claims/Standards/ds52/Claims.json` / `Claims/Standards/ds61/Claims.json`
+under that same project. The tool package includes the shared assembly, DataModel,
+and their managed dependencies; it has no Backend, frontend, database, or web-host
+runtime dependency. It does not bundle the Secrets contract through Backend.
+There is no independent Claims package publication or version allocation.
+
+The existing Secrets release gates below remain independent workflow prerequisites;
+this resource extraction does not change their ownership, version checks, or the
+tool's release policy. Use the tool from the corresponding CMS release/build and
+select the same Data Standard; the tool patch is allocated separately as described
+above. Record `--version` when retaining preparation/verification evidence.
+
 ## Stable publication sequence
 
 A new major/minor line starts with a deliberately committed patch `0`. Every
@@ -93,9 +111,9 @@ first be published through its own normal release process.
    build, package verification, and publication. A moving default branch must not
    replace the selected release source.
 2. Run the applicable unit, versioning, package installation/conversion, and
-   upload checks. The tool dependency on the CMS validator bundles the
-   independently versioned Secrets contract: preserve its declared assembly
-   version. The normal lane must pass its contract check/publication gates; an
+   upload checks, including installed merge/resolve and stored-policy verification.
+   Preserve the independently versioned Secrets contract in its owning projects.
+   The normal lane must pass its existing contract check/publication gates; an
    independent tool release must verify a matching already-published Secrets
    contract under the existing contract comparison rules. Resolve a missing,
    incompatible, or unreadable dependency before publishing the tool.
@@ -138,7 +156,7 @@ The implemented entry points share this version and recovery policy:
 | Entry point | Implemented behavior |
 | --- | --- |
 | [build-config.ps1](../../../../build-config.ps1) | `Build -Configuration Release -DmsCSVersion <app-version> -LockedMode` builds the solution, then builds the tool at its calculated version. `Package -PackageTarget SecurityMetadataTools` restores, rebuilds, and packs only the tool; `-LockedMode` enforces its lock graph. The default `ConfigurationService` package target retains the app nuspec/publish path. Implicit `Push` selects the exact artifact for its target; normal release publication uses the gates below. |
-| [on-config-pullrequest.yml](../../../../.github/workflows/on-config-pullrequest.yml) | Config-relevant PRs, including helper-only changes, run the required `verify-security-metadata-tools` job: version/package Pester tests and a locked pack/install/convert smoke using the checkout's MinVer app version. `Config CI Gate` includes this job. The existing unit and CMS E2E jobs run the CLI tests and unchanged-file upload scenario. No package is published or promoted. |
+| [on-config-pullrequest.yml](../../../../.github/workflows/on-config-pullrequest.yml) | Config-relevant PRs, including helper-only changes, run the required `verify-security-metadata-tools` job: version/package Pester tests and a locked pack/install/convert/merge/resolve smoke using the checkout's MinVer app version. `Config CI Gate` includes this job. The existing unit and CMS E2E jobs run the CLI tests, unchanged-file upload, and bounded policy scenarios. PostgreSQL runs Hybrid 5.2/6.1, Filesystem/Upload 5.2, and installed-tool Drift 5.2; SQL Server runs Hybrid/Drift 5.2. No package is published or promoted. |
 | [on-config-merge-or-tag.yml](../../../../.github/workflows/on-config-merge-or-tag.yml) | The `cs-pre` release entry point pins `target_commitish` to the triggering `github.sha`, retaining the version source and committed tool patch when `main` advances. |
 | [on-prerelease.yml](../../../../.github/workflows/on-prerelease.yml) and [on-release.yml](../../../../.github/workflows/on-release.yml) | The `cs-` lane packs and verifies the installed tool after `check-secrets-contract`; publication waits for `publish-package-secrets`. Distinct package, SBOM, provenance and release assets use the calculated tool version and package hash. `Publish-SecurityMetadataToolsPackage` verifies artifact bytes/identity, checks the Local feed view, and refuses duplicate versions before pushing without skip-duplicate. Contract-only dispatch remains unchanged. Final release promotion checks out the release ref with full history, calculates the stable tool version from that source, and passes it explicitly to the existing promotion helper. |
 | [Pkg EdFi.Api.SecurityMetadataTools.yml](../../../../.github/workflows/Pkg%20EdFi.Api.SecurityMetadataTools.yml) | Dispatch-only stable build, installed-package verification, SBOM and SLSA provenance on every run. `publish_package=true` enables `publish` after both attestations, with the published Secrets prerequisite and exact-version refusal. The separate `promote` job depends on successful publication and consumes `build`’s retained version. After a successful push and failed promotion, rerun only `promote` in the same run. |
@@ -152,9 +170,11 @@ is illustrative; release callers supply the selected ref's MinVer result):
 ```
 
 The reusable smoke action always restores in locked mode, freshly packs the exact
-tool version, inspects metadata, README, command settings and shared claims schema,
-and installs from a temporary local-only feed into a fresh tool directory and NuGet cache. It compares installed conversion output with
-the reviewed expected document and reports the package path and SHA-256. It leaves
+tool version, inspects metadata, README, command settings, managed runtime assets,
+and the shared claims schema plus both bundled bases, and installs from a temporary local-only feed into a fresh tool directory and NuGet cache. It compares installed conversion output with
+the reviewed expected document, merges both bases (including default and unsupported
+version checks), resolves reviewed policy deterministically outside the checkout,
+and reports the package path and SHA-256. It leaves
 the nupkg in the repository root and removes disposable installation files. It
 does not push or promote anything.
 

@@ -75,14 +75,22 @@ The mechanics live in `eng/docker-compose/env-utility.psm1`
 
 ## Security metadata selection (Configuration Service)
 
-The Configuration Service embeds each version's base `Claims.json` as an assembly
-resource under `Claims/Standards/ds<NN>/`. The csproj globs
+The shared `EdFi.DmsConfigurationService.Claims` project embeds each version's base
+`Claims.json` as an assembly resource under `Claims/Standards/ds<NN>/`. Its csproj globs
 `Claims/Standards/**/Claims.json`, so **adding a version's claims is dropping a folder**
-— no csproj edit. At startup `ClaimsProvider` resolves the embedded resource from
+— no csproj edit. CMS `ClaimsProvider` delegates to the shared `BundledClaimsProvider`,
+which also serves offline `merge`. It selects the embedded resource from
 `ClaimsOptions:DataStandardVersion` (default `5.2`), and fails fast with a clear message
 if the requested version's resource is absent. This covers the **Embedded** and
 **Hybrid** claims-loading modes (both load the embedded base); see
 [Claims Loading Deployment Guide](./CLAIMS-LOADING-GUIDE.md) for the full mode matrix.
+
+The shared claims schema is
+`src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/JsonSchemaForClaims.json`.
+Use a corresponding CMS/tool release and the same Data Standard for
+[offline preparation and verification](./CLAIMS-LOADING-GUIDE.md#offline-preparation-and-verification-81):
+`merge --data-standard-version 6.1` selects 6.1; omission selects 5.2; unsupported
+versions exit `1` before output replacement.
 
 The version key flows from configuration: `appsettings.json`
 (`ClaimsOptions:DataStandardVersion`) and the compose files
@@ -231,7 +239,8 @@ Adding a version is the same set of small edits regardless of which version:
    the installed **Ed-Fi API Security Metadata Tools** command:
    `security-metadata-tools convert-ods-xml --input export.xml --output Claims.json`.
    Review the complete document, containing `claimSets` and `claimsHierarchy`, for
-   the target standard and add it at `Claims/Standards/ds<NN>/Claims.json`. No csproj
+   the target standard and add it at
+   `src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds<NN>/Claims.json`. No csproj
    change is needed — the embedded-resource glob picks it up. See
    [conversion and loading](#converting-ods-security-metadata) below for installation,
    verified export scope, and the unchanged-file upload contract.
@@ -263,11 +272,13 @@ ones.
 ### Converting ODS security metadata
 
 [Ed-Fi API Security Metadata Tools](../src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/README.md)
-requires .NET 10. Once the intended stable release is published, install its release
-line from the Ed-Fi feed (replace `<major>.<minor>` with that line):
+requires .NET 10. Once the intended release is published, install the exact tool
+version corresponding to your CMS release/build from the Ed-Fi feed (replace
+`<tool-version>` with that package version):
 
 ```sh
-dotnet tool install --global EdFi.Api.SecurityMetadataTools --version '<major>.<minor>.*' --add-source https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json
+dotnet tool install --global EdFi.Api.SecurityMetadataTools --version '<tool-version>' --add-source https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json
+security-metadata-tools --version
 security-metadata-tools convert-ods-xml --input export.xml --output Claims.json
 ```
 

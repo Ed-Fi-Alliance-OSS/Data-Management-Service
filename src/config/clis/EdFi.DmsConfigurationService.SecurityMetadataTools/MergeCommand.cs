@@ -33,7 +33,8 @@ internal static class MergeCommand
             "merge",
             "Merge recursive *-claims.json fragments with a bundled base into a complete claims document, offline. "
                 + "Incomplete composition or invalid policy is rejected. Exit codes: 0 = success, 1 = invalid input or execution failure. "
-                + "Failures use stderr and preserve the destination."
+                + "JSON is written only to the output file; failures use stderr and preserve the destination. "
+                + "Use the corresponding CMS release/build and ClaimsOptions:DataStandardVersion."
         );
         command.Options.Add(
             new Option<string>("--fragments")
@@ -45,14 +46,15 @@ internal static class MergeCommand
         command.Options.Add(
             new Option<string>("--output")
             {
-                Description = "Path for the complete JSON claims document.",
+                Description = "Path for the complete JSON claims document; parent directory must exist.",
                 Required = true,
             }
         );
         command.Options.Add(
             new Option<string>("--data-standard-version")
             {
-                Description = "Bundled Data Standard version: 5.2 (default) or 6.1.",
+                Description =
+                    "Bundled Data Standard version: 5.2 (default) or 6.1; unsupported versions fail.",
             }
         );
         command.Options.Add(
