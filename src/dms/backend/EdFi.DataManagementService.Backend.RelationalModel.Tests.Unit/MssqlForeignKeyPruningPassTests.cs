@@ -2305,6 +2305,101 @@ public class Given_Mssql_Pruning_Of_Disjoint_Roles_Through_A_Directly_Mutable_De
 }
 
 /// <summary>
+/// Settled Decision 8 through a mutable descendant first reached around the intermediate: the
+/// upstream origin reaches Descendant through S1 (two hops) before its retained route through the
+/// directly mutable Middle and U1 (three hops), and Collector references Middle and Descendant
+/// through disjoint columns. Collector and Descendant both sit at depth 2 and Collector sorts first,
+/// so the upstream walk decides Collector while Descendant's first arrival still bypasses Middle.
+/// Middle still reaches Collector through the retained Descendant edge, so the walk must exempt the
+/// Middle cut exactly as Middle's own walk does, whichever origin sorts first. The receiver must
+/// sort before Descendant: named Receiver, the Descendant convergence resolves first and this shape
+/// no longer arises.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_Of_Disjoint_Roles_Through_A_Descendant_Reached_Around_The_Intermediate
+{
+    private static DerivedRelationalModelSet Build(string upstreamName) =>
+        PruningTopologyTestHelpers.BuildMssqlModelSet(
+            PruningTestSchemaBuilder.BuildProjectSchema(
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    upstreamName,
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["upstreamKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Middle",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["middleKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec(upstreamName, PartOfIdentity: true),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "U1",
+                    IdentityScalars: ["u1Key"],
+                    References: [new PruningTestSchemaBuilder.ReferenceSpec("Middle", PartOfIdentity: true)]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "S1",
+                    IdentityScalars: ["s1Key"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec(upstreamName, PartOfIdentity: true),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Descendant",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["descendantKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("S1"),
+                        new PruningTestSchemaBuilder.ReferenceSpec("U1"),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Collector",
+                    IdentityScalars: ["collectorKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Middle"),
+                        new PruningTestSchemaBuilder.ReferenceSpec("Descendant"),
+                    ]
+                )
+            )
+        );
+
+    /// <summary>
+    /// It should cut the Middle role and Descendant's S1 edge, keeping the Descendant and U1 edges
+    /// cascading, both when the upstream origin sorts first (Alpha) and when it sorts last (Zulu).
+    /// </summary>
+    [TestCase("Alpha")]
+    [TestCase("Zulu")]
+    public void It_should_cut_the_middle_role_regardless_of_origin_order(string upstreamName)
+    {
+        var result = Build(upstreamName);
+
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Collector", "Middle_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Collector", "Descendant_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Descendant", "S1_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Descendant", "U1_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+    }
+}
+
+/// <summary>
 /// The Decision 8 exemption covers only non-unified roles: from an immutable origin, Receiver
 /// references the directly mutable Middle under two optional roles that share a unified origin-key
 /// column. Neither optional role can carry the shared column, so Middle's own walk fails with the

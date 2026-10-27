@@ -313,11 +313,10 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     /// rename only when it is a required binding that updates the same canonical local column and
     /// its own trace passes through the same pairing. Checking only the nearest pairing is
     /// sufficient: each vertex has one predecessor edge, so two traces that meet stay identical
-    /// upstream. A column the survivor does not update is exempt when the survivor's own chain also
-    /// runs through the intermediate: the survivor (another role of that resource, or a reference
-    /// to a resource below it) then reaches the receiver from that resource by a disjoint route,
-    /// which Settled Decision 8 leaves to fail closed at runtime, exactly as the intermediate's own walk
-    /// decides. When the trace stops short of the walked origin without reaching such a resource,
+    /// upstream. A column the survivor does not update is exempt when the intermediate still reaches
+    /// the receiver avoiding this choice's cuts: it then reaches it through the survivor (another
+    /// role of that resource, or a resource below it, by any retained route), which Settled
+    /// Decision 8 leaves to fail closed at runtime, exactly as the intermediate's own walk decides. When the trace stops short of the walked origin without reaching such a resource,
     /// the pairing where it stops is checked for an independent mutable feed (see
     /// <see cref="FindIndependentMutableFeed"/>): a mutable resource whose only cascade route to the
     /// receiver is the cut needs a carrier through that pairing, because once the edge is cut no
@@ -388,13 +387,14 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
             if (!carried)
             {
-                // Settled Decision 8: when the survivor does not update this column and runs
-                // through the same intermediate, it reaches the receiver from that resource by a
-                // disjoint route: another role of it, or a reference to a resource below it.
+                // Settled Decision 8: when the survivor does not update this column and the
+                // intermediate still reaches the receiver avoiding this choice's cuts, it does so
+                // through the survivor: another role of it, or a resource below it by any retained
+                // route, whether or not the walked origin reached the survivor through it first.
                 // The convergence is then the intermediate's own, and its own walk passes the
                 // column as a plain NO ACTION reference that fails closed at runtime. Skipping
                 // it here makes the outcome independent of which origin's walk reaches it first.
-                if (survivorIndex < 0 && PassesThrough(survivor, intermediate.Table, predecessorEdgeByVertex))
+                if (survivorIndex < 0 && ReachesAvoidingCuts(intermediate.Table, convergence, survivor))
                 {
                     continue;
                 }
@@ -503,32 +503,6 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
         }
 
         return false;
-    }
-
-    /// <summary>
-    /// Whether the edge's first-arrival chain, followed by table from its target back toward the
-    /// walked origin, passes through the given table. Follows only the traced chain; it never
-    /// searches alternate routes.
-    /// </summary>
-    private static bool PassesThrough(
-        PruningCandidate edge,
-        string table,
-        IReadOnlyDictionary<string, PruningCandidate> predecessorEdgeByVertex
-    )
-    {
-        var current = FormatTable(edge.TargetTable);
-
-        while (current != table)
-        {
-            if (!predecessorEdgeByVertex.TryGetValue(current, out var predecessor))
-            {
-                return false;
-            }
-
-            current = FormatTable(predecessor.TargetTable);
-        }
-
-        return true;
     }
 
     /// <summary>
