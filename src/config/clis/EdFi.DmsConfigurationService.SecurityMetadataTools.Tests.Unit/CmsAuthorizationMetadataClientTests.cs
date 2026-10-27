@@ -352,6 +352,68 @@ public class Given_CmsAuthorizationMetadataClient_http_failures
 }
 
 [TestFixture]
+public class Given_CmsAuthorizationMetadataClient_cancellation_during_response_body
+{
+    private CmsAuthorizationMetadataResult _result = null!;
+
+    [SetUp]
+    public async Task Setup()
+    {
+        using CmsAuthorizationMetadataClientFixture fixture = new();
+        fixture.Handler.Respond = () =>
+            new(HttpStatusCode.OK)
+            {
+                Content = new CancelingContent(fixture.HttpClient.CancelPendingRequests),
+            };
+
+        _result = await fixture.Client.GetAsync("https://cms.example", fixture.VariableName);
+    }
+
+    [Test]
+    public void It_keeps_the_body_read_inside_the_HttpClient_cancellation_scope() =>
+        CmsAuthorizationMetadataClientFixture
+            .Failure(_result)
+            .Kind.Should()
+            .Be(CmsAuthorizationMetadataFailureKind.TransportFailure);
+
+    [Test]
+    public void It_reports_a_safe_execution_failure() =>
+        CmsAuthorizationMetadataClientFixture
+            .RenderFailure(_result)
+            .Should()
+            .Be(
+                $"Verification failed: CMS authorization metadata request could not be completed.{Environment.NewLine}"
+            );
+
+    private sealed class CancelingContent(Action cancelPendingRequests) : HttpContent
+    {
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+            SerializeToStreamAsync(stream, context, CancellationToken.None);
+
+        protected override async Task SerializeToStreamAsync(
+            Stream stream,
+            TransportContext? context,
+            CancellationToken cancellationToken
+        )
+        {
+            // Exercise HttpClient's timeout cancellation scope without depending on a timer.
+            cancelPendingRequests();
+            cancellationToken.ThrowIfCancellationRequested();
+            await stream.WriteAsync(
+                Encoding.UTF8.GetBytes(AuthorizationMetadataValidatorFixtures.ValidJson),
+                cancellationToken
+            );
+        }
+
+        protected override bool TryComputeLength(out long length)
+        {
+            length = 0;
+            return false;
+        }
+    }
+}
+
+[TestFixture]
 internal class Given_CmsAuthorizationMetadataClient_invalid_metadata
 {
     [TestCase("claimSetName")]

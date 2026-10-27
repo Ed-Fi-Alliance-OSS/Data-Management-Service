@@ -100,9 +100,10 @@ internal sealed class CmsAuthorizationMetadataClient(HttpClient httpClient)
 
         try
         {
+            // Buffer the complete response within HttpClient's timeout and cancellation scope.
             using var response = await httpClient.SendAsync(
                 request,
-                HttpCompletionOption.ResponseHeadersRead,
+                HttpCompletionOption.ResponseContentRead,
                 cancellationToken
             );
             // CMS returns 200 for the complete array. Never compare a partial (206) response.
