@@ -456,6 +456,7 @@ When TLS terminates at a proxy and forwarded headers are not enabled, the applic
 `Cache-Control: no-store` is sent on:
 
 - Non-2xx responses, except 304, in both services.
+- Every DMS data API response, whatever its status: the resource and descriptor endpoints with their `deletes` and `keyChanges` routes, and Change Queries `availableChangeVersions`.
 - The token endpoints, together with `Pragma: no-cache`: DMS `/oauth/token` and every Configuration Service `/connect/*` endpoint.
 - Authenticated Configuration Service endpoints.
 - The Configuration Service discovery document, `/.well-known/openid-configuration`.
@@ -463,8 +464,8 @@ When TLS terminates at a proxy and forwarded headers are not enabled, the applic
 - DMS claimset management endpoints (`view-claimsets` and `reload-claimsets`).
 - DMS identity operations, as described in [IDENTITY-MANAGEMENT.md](IDENTITY-MANAGEMENT.md).
 
-DMS data API success responses carry no `Cache-Control`, so a browser or other HTTP cache may store them and revalidate them with `If-None-Match`.
-A shared cache still does not reuse a response to a request that carried `Authorization` unless the response explicitly allows it (RFC 9111 section 3.5).
+DMS data API responses still carry their `ETag`, so a client that keeps it can revalidate with `If-None-Match` and receive `304 Not Modified`, but no browser or other HTTP cache stores the records.
+Public documents, such as the DMS discovery and metadata endpoints and `/health` in both services, carry no `Cache-Control`.
 
 The application cannot see headers a proxy adds.
 A proxy that appends headers, as nginx `add_header` does, sends its fields after the application's instead of replacing them.

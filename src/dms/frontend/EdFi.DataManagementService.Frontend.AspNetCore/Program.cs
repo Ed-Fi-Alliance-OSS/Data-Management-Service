@@ -260,6 +260,7 @@ if (invalidConfigurationException is null)
 
         app.UseMiddleware<IdentityResponseCachePolicyMiddleware>();
         app.UseMiddleware<TokenResponseCachePolicyMiddleware>();
+        app.UseMiddleware<DataResponseCachePolicyMiddleware>();
 
         if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {

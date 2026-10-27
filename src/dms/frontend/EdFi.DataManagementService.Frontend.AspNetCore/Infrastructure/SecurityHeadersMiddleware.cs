@@ -77,8 +77,9 @@ public class SecurityHeadersMiddleware(RequestDelegate next, IHostEnvironment en
     /// statuses DMS emits (404, 405, 501 among them) are heuristically cacheable under RFC 9110
     /// section 15.1, with no explicit freshness header required. The catch-all 404 in Program.cs
     /// is the sharpest case: unauthenticated, reachable on any unmatched route, and echoing the
-    /// caller's correlation ID. Success responses are deliberately left alone - a 200 carries an
-    /// etag and is what the conditional-GET support in GetByIdHandler exists to revalidate.
+    /// caller's correlation ID. Success responses are deliberately left alone, so public documents
+    /// such as discovery and metadata stay cacheable; the data API marks its own responses no-store
+    /// (DataResponseCachePolicyMiddleware).
     ///
     /// *** 304 must stay excluded - do not simplify this to "not 2xx" or ">= 300". ***
     /// A 304 tells a cache its stored copy is still good, so answering with no-store makes the
@@ -86,7 +87,10 @@ public class SecurityHeadersMiddleware(RequestDelegate next, IHostEnvironment en
     /// RFC 9110 section 15.4.5 directs a cache to update its stored response from the 304 (the
     /// mechanism is RFC 9111 section 4.3.4), so the no-store would be written onto the stored 200
     /// as well. 304 is the only 3xx DMS emits today (GetByIdHandler.TryCreateNotModified); the
-    /// rest of the 3xx range is left in scope rather than excluded on speculation.
+    /// data API marks that one no-store on purpose, because no cache is meant to hold data
+    /// responses at all. The exclusion keeps this generic rule safe for any public endpoint that
+    /// revalidates later. The rest of the 3xx range is left in scope rather than excluded on
+    /// speculation.
     /// </remarks>
     private static bool ShouldPreventSharedCaching(int statusCode) =>
         statusCode is not (>= 200 and <= 299) && statusCode != StatusCodes.Status304NotModified;

@@ -201,11 +201,11 @@ Feature: OWASP critical attack path protections
                       "X-Content-Type-Options": "nosniff",
                       "Referrer-Policy": "no-referrer",
                       "X-Frame-Options": "DENY",
-                      "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'"
+                      "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+                      "Cache-Control": "no-store"
                   }
                   """
               And the response header "Strict-Transport-Security" is not present
-              And the response header "Cache-Control" is not present
 
         # Note: WhenAnRequestIsMadeToWithHeaders includes the bearer token from the test context.
         # Real browser CORS preflights are unauthenticated; the assertion (no allow-origin for
