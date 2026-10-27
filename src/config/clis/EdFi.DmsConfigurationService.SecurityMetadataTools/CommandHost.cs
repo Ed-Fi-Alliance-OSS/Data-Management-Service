@@ -96,7 +96,7 @@ internal static class CommandHost
         var result = CreateCommand(output, error, createHttpClient).Parse(args);
         // Keep command results separate from argument-error help.
         bool argumentFailure =
-            result.CommandResult.Command.Name is "verify" or "resolve" && result.Errors.Count > 0;
+            result.CommandResult.Command.Name is "verify" or "resolve" or "merge" && result.Errors.Count > 0;
         return result.InvokeAsync(
             new InvocationConfiguration { Output = argumentFailure ? error : output, Error = error }
         );

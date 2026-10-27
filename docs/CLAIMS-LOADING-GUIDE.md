@@ -454,7 +454,7 @@ only to permit replacement of an existing output. Validation and serialization
 complete before same-directory staging and atomic publication; failures preserve
 existing bytes and create no partial destination. JSON goes only to the output
 file; failures use safely rendered stderr. Help/version use stdout; parser usage
-help for merge/conversion argument errors may also use stdout.
+help for conversion argument errors may also use stdout.
 
 ### Deploy the complete document separately
 

@@ -509,8 +509,9 @@ public class Given_MergeCommand_failed_filesystem_boundary(ClaimsCompositionDiag
 }
 
 [TestFixture("--help", 0, "--data-standard-version")]
-[TestFixture("--fragments", 1, "--output")]
-[TestFixture("--output", 1, "--fragments")]
+[TestFixture("--fragments", 1, "Option '--output' is required.")]
+[TestFixture("--output", 1, "Option '--fragments' is required.")]
+[TestFixture("--unknown", 1, "Unrecognized command or argument '--unknown'.")]
 public class Given_MergeCommand_arguments(string option, int expectedExit, string expectedText)
 {
     private int _exitCode;
@@ -523,7 +524,12 @@ public class Given_MergeCommand_arguments(string option, int expectedExit, strin
         using var output = new StringWriter();
         using var error = new StringWriter();
         _exitCode = await CommandHost.InvokeAsync(
-            option == "--help" ? ["merge", option] : ["merge", option, "some-path"],
+            option switch
+            {
+                "--help" => ["merge", option],
+                "--unknown" => ["merge", "--fragments", "some-path", "--output", "some-file", option],
+                _ => ["merge", option, "some-path"],
+            },
             output,
             error
         );
@@ -532,7 +538,7 @@ public class Given_MergeCommand_arguments(string option, int expectedExit, strin
     }
 
     [Test]
-    public void It_exposes_help_or_rejects_missing_required_options()
+    public void It_exposes_help_or_rejects_invalid_arguments_on_the_expected_streams()
     {
         _exitCode.Should().Be(expectedExit);
         if (expectedExit == 0)
@@ -549,7 +555,15 @@ public class Given_MergeCommand_arguments(string option, int expectedExit, strin
         }
         else
         {
-            _error.Should().Contain(expectedText);
+            _output.Should().BeEmpty();
+            _error
+                .Should()
+                .Contain(expectedText)
+                .And.Contain("Usage:")
+                .And.Contain("--fragments")
+                .And.Contain("--output")
+                .And.Contain("--data-standard-version")
+                .And.Contain("--force");
         }
     }
 }

@@ -35,7 +35,7 @@ a temporary file in the destination directory is atomically moved into place.
 Failures preserve existing destination bytes and create no partial destination.
 `--force` permits replacement; it does not bypass validation. Diagnostics use
 stderr with control characters normalized for safe display. Argument errors can
-also print parser usage help (merge and conversion print that help to stdout).
+also print parser usage help (conversion prints that help to stdout).
 Help and version output use stdout.
 
 | Exit code | Meaning | Output |
