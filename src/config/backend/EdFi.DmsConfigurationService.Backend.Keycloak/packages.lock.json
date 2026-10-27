@@ -139,6 +139,7 @@
       "edfi.dmsconfigurationservice.claims": {
         "type": "Project",
         "dependencies": {
+          "EdFi.DmsConfigurationService.DataModel": "[1.0.0, )",
           "JsonSchema.Net": "[7.2.2, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )"
         }

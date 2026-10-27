@@ -1,0 +1,44 @@
+{
+  "name": "Policy",
+  "resourceClaims": [
+    {
+      "name": "edfi/students",
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "First"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "edfi/categories",
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "name": "Category"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "edfi/student",
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionName": "Delete",
+          "authorizationStrategies": [
+            {
+              "name": "Student"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

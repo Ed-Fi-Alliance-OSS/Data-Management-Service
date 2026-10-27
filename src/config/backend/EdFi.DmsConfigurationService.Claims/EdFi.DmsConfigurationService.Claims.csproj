@@ -13,6 +13,9 @@
         <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     </ItemGroup>
     <ItemGroup>
+        <ProjectReference Include="../../datamodel/EdFi.DmsConfigurationService.DataModel/EdFi.DmsConfigurationService.DataModel.csproj" />
+    </ItemGroup>
+    <ItemGroup>
         <EmbeddedResource Include="Claims/JsonSchemaForClaims.json" />
     </ItemGroup>
     <ItemGroup>
