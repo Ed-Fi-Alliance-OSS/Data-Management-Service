@@ -1,117 +1,117 @@
 # DMS-1490 token endpoint timing evidence
 
-`POST /connect/token` now answers an unknown client the way it answers a known client with a wrong
-secret: the same `invalid_client` error, after verifying the supplied secret against a placeholder
-hash from the registered `IClientSecretHasher`. The host generates that placeholder once at startup,
-before it serves any request, and refuses to start when the hasher cannot produce it. This folder
-holds the timing evidence for the question an observer could ask: can an absent client id still be
-told apart from an existing one by response time?
+`POST /connect/token` answers an unknown client the way it answers a known client with a wrong secret
+or an unapproved client: the same `invalid_client` 401. Before rejecting an unknown client it
+verifies the presented secret against a placeholder hash. The registered `IClientSecretHasher` makes
+that placeholder once, at startup. This page records the timing evidence for the question an
+observer could ask: can an absent client id still be told apart from an existing one by response
+time?
 
-Nothing here runs in ordinary CI. The collectors are `[Explicit]` NUnit fixtures:
-- `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/OpenIddictTokenManagerTimingEvidenceTests.cs` (in-process);
-- `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/Timing/TokenEndpointTimingEvidenceTests.cs` (HTTP).
+The raw samples, run logs, analysis outputs and analysis scripts are not kept in the repository; see
+[Where the data is](#where-the-data-is).
 
-The analysis is `analyze_timing.py`, which uses numpy only and is at method version `1`.
+## Result on the current code (step 3)
 
-## Result: SQL Server, current code (`step2-mssql/`)
+| | SQL Server (LocalDB) | PostgreSQL |
+| --- | --- | --- |
+| absent − wrong_secret (estimate) | **−19.05 µs** | **+0.70 µs** |
+| 95% CI, L = 13 | [−44.55, +4.70] | [−23.90, +22.35] |
+| 95% CI, 2L = 26 | [−43.75, +4.35] | [−23.80, +21.70] |
+| Half differences | −9.95, −24.35 | +5.90, −6.35 |
+| Diagnostics (D1 / D2) | 1.007 / 0.015, no flag | 1.012 / 0.014, no flag |
+| Median response, wrong_secret | 13.62 ms | 14.10 ms |
+| Decision under the pre-registered rule | EQUIVALENT | EQUIVALENT |
+| Descriptive: unapproved − wrong_secret | +3.20 µs [−21.50, +25.60] | +0.10 µs [−24.00, +20.10] |
 
 | | |
 | --- | --- |
-| Code measured | commit `d86bb6e95cc61c4014fd456a3ff97f4d40da5e1d`, Release build, Configuration Service as a host process |
-| Database | SQL Server LocalDB 17.0.4025.3, freshly created database, 210,000 PBKDF2 iterations |
+| Code measured | commit `38be2e413a068eb71f6f6f93aa46350495e2d8dd`, Release build, Configuration Service as a host process |
+| Databases | SQL Server LocalDB 17.0.4025.3, a fresh instance and database; PostgreSQL 18.6 (`postgres:18.6-alpine`), a fresh container and database |
+| Hashing | 210,000 PBKDF2 iterations |
 | Collector | `Given_token_endpoint_requests_measured_for_timing_evidence`: one keep-alive HTTP client, no concurrency |
-| Sample plan, fixed before collection | 1,200 warm-up rounds, then 2,000 measured rounds. Each round sends one request per arm (`absent`, `wrong_secret`, `unapproved_correct_secret`) in an order shuffled by seed 502 |
+| Sample plan, fixed before collection | 1,200 warm-up rounds, then 2,000 measured rounds per database. Each round sends one request per arm (`absent`, `wrong_secret`, `unapproved_correct_secret`) in an order shuffled by seed 503 (SQL Server) or 504 (PostgreSQL) |
 | Estimand | median(absent) − median(wrong_secret) |
-| **Estimate** | **−42.1 µs**, 95% moving-block bootstrap CI **[−58.0, −22.0]** (L = 13; [−58.4, −21.9] at 2L = 26) |
-| Decision | **EQUIVALENT** under the pre-registered rule |
-| Descriptive | unapproved − wrong_secret: −0.95 µs, CI [−20.8, +16.5] |
+| Runs | 2026-10-27, SQL Server then PostgreSQL, one run each, each the first attempt; power line online throughout |
 
-This run repeats the step 1 procedure below unchanged, apart from the seed and run label, because
-`d86bb6e95` changed the absent-client code path that step 1 measured. It was run once; it is the
-only run on this code.
-
-**The pre-registered rule.** The rule is in `step2-mssql/pre-registration-mssql.txt`, written before collection (the same rule as step 1). The result is EQUIVALENT only if all of these hold:
-- the CI at L lies inside ±250 µs;
-- the CI at 2L lies inside ±250 µs;
+**The pre-registered rule** (unchanged since step 1) gives EQUIVALENT only if all of these hold:
+- the 95% CI at L lies inside ±250 µs;
+- the 95% CI at 2L lies inside ±250 µs;
 - `diagnostics.py` raises no warning flag;
-- the absent − wrong_secret point difference in each half of the run lies inside ±250 µs.
+- the absent − wrong_secret difference in each half of the run lies inside ±250 µs.
 
 The result is NOT EQUIVALENT if the CI is disjoint from ±250 µs, and INCONCLUSIVE otherwise.
 
-**How the conditions came out:**
-- **Diagnostics:** no flag raised. D1 (level drift) was 1.005 against a limit of 1.10; D2 (autocorrelation at lag 26) was 0.127 against 0.20.
-- **Half differences:** −27.20 µs and −61.50 µs.
-- **Power:** the power line was online at all three readings in the run log.
-
 **What it shows and what it does not:**
-- **What it shows:** the absent − wrong-secret difference lies inside the pre-registered ±250 µs margin. Unlike step 1, this interval excludes zero: on this setup, an absent client was answered about 42 µs faster than a wrong secret (about 0.3% of the 13.3 ms median response), and 2,000 paired rounds were enough to detect that. So the result is equivalence within the margin, not the absence of any detectable difference. The cause of the residual was not investigated.
-- **The interval:** it is conditional statistical evidence. It is not a hard maximum, and it is not a bound on individual request times.
-- **Startup:** every measured request follows 1,200 warm-up rounds, so the run says nothing about the first requests after startup. That the placeholder exists before the first request, and that no request generates a hash, is shown by deterministic tests (`TokenRevocationStartupTests`, `OpenIddictTokenManagerTests`, `OpenIddictServiceCollectionExtensionsTests`), not by timing.
-- **One run on one host:** LocalDB on Windows ARM64, with the service as a host process. PostgreSQL was not measured on this code.
-- **The margin:** ±250 µs is the experiment's fixed margin, not an accepted security tolerance.
-- **Packaging:** the files were copied byte-for-byte after the run; the commit that adds them changes no application or collector source. The private setup script, service output and runner output were not kept here.
-
-Reproduce the analysis from this folder:
-
-```
-python -B analyze_timing.py analyze --csv step2-mssql/step2-endpoint-mssql-20261026T171034Z.csv --delta 250
-python -B analyze_timing.py analyze --csv step2-mssql/step2-endpoint-mssql-20261026T171034Z.csv --delta 250 --arm-a unapproved_correct_secret
-python -B diagnostics.py diagnose --csv step2-mssql/step2-endpoint-mssql-20261026T171034Z.csv --delta 250
-```
-
-## Earlier run: SQL Server, `a5c4b7570` (`step1-mssql/`)
-
-The same procedure on the code before the placeholder moved to startup, where each manager generated
-its placeholder on its first unknown-client request. Step 1 discarded that first-use cost in its
-warm-up, so it never measured it.
-
-| | |
-| --- | --- |
-| Code measured | commit `a5c4b7570c9ff93346f4c3171605e4017c89f5a6` |
-| Sample plan | as above, seed 501 |
-| Estimate | −17.6 µs, CI [−55.9, +10.8] (L = 13; [−55.0, +10.05] at 2L = 26) |
-| Decision | EQUIVALENT under the same pre-registered rule |
-| Conditions | no flag (D1 1.028, D2 0.040); half differences −49.25 µs and +7.40 µs; power online |
-| Descriptive | unapproved − wrong_secret: +20.3 µs, CI [−18.9, +54.3] |
-
-```
-python -B analyze_timing.py analyze --csv step1-mssql/step1-endpoint-mssql-20261025T070738Z.csv --delta 250
-python -B analyze_timing.py analyze --csv step1-mssql/step1-endpoint-mssql-20261025T070738Z.csv --delta 250 --arm-a unapproved_correct_secret
-python -B diagnostics.py diagnose --csv step1-mssql/step1-endpoint-mssql-20261025T070738Z.csv --delta 250
-```
+- **The margin:** ±250 µs is this experiment's margin, not an accepted security tolerance. EQUIVALENT
+  means "inside that margin", nothing more. No decision recorded on DMS-1490 says whether that
+  satisfies its "statistically indistinguishable" criterion.
+- **Detection:** neither interval excludes zero, so 2,000 paired rounds detected no difference on
+  either database. That is not evidence that there is none. On this setup the runs cannot rule out
+  that an absent client is answered up to about 45 µs faster than a wrong secret on SQL Server, or
+  between about 24 µs faster and 22 µs slower on PostgreSQL.
+- **The previous run:** the step 2 SQL Server run (commit `d86bb6e95`) detected −42.1 µs, CI
+  [−58.0, −22.0]. Since then the credential statement returns one row for any client id. Before,
+  an unknown id returned no row and skipped the API client lookup. Step 3 ran on a different LocalDB
+  instance on a different day, so the two runs are not a controlled comparison: the step 2 difference
+  was not reproduced on the current code, and the two intervals overlap.
+- **The interval:** it is conditional statistical evidence, not a hard maximum and not a bound on
+  individual request times.
+- **Startup:** every measured request follows 1,200 warm-up rounds, so the runs say nothing about the
+  first requests after startup. Deterministic tests show that the placeholder exists before the first
+  request and that no request generates a hash.
+- **One host:** Windows ARM64, LocalDB rather than a SQL Server service, a single PostgreSQL container
+  and loopback HTTP.
+- **Hasher:** the result holds for the default hasher, whose stored hashes and placeholder share one
+  format and work factor. See the `IClientSecretHasher` contract README for a replacement that does not.
 
 ## Method
 
-- **Collection:** randomised paired rounds. Warm-up rounds are discarded but kept in their own file.
-- **Interval:** a 95% percentile moving-block bootstrap over consecutive rounds, so that a round's arms travel together. The block length is L = ceil(N^(1/3)), with 5,000 resamples and analysis seed 1. A sensitivity interval at 2L is reported beside it.
-- **Decision:**
-  - EQUIVALENT if the CI lies inside [−δ, +δ];
-  - NOT EQUIVALENT if the CI is disjoint from it;
-  - otherwise INCONCLUSIVE, which is not a pass.
-  - δ = 250 µs at the endpoint.
-- **`diagnostics.py`:** reports warning flags and mandatory diagnostics (decile, quarter and half medians and differences, autocorrelation). A flag-free result is not, by itself, a validity finding.
-- **Malformed input:** a missing required column, a row cut short, an unparsable or invalid value, and the other refusals listed in `analyze_timing.py` exit with code 2 and no verdict.
+- **Collection:** randomised paired rounds. Warm-up rounds are discarded, but kept in their own file.
+- **Interval:** a 95% percentile moving-block bootstrap over consecutive rounds, so that a round's arms
+  travel together. Block length L = ceil(N^(1/3)), 5,000 resamples, analysis seed 1, with a
+  sensitivity interval at 2L. The analysis is `analyze_timing.py`, method version `1` (numpy only).
+- **Diagnostics:** `diagnostics.py` reports warning flags (D1 level drift, D2 autocorrelation at 2L)
+  and the decile, quarter and half medians and differences. A flag-free result is not, by itself, a
+  validity finding.
+- **Malformed input:** a missing column, a row cut short or an invalid value exits with code 2 and no
+  verdict.
 
-## Earlier measurements
+The collectors are `[Explicit]` NUnit fixtures and never run in ordinary CI:
+- `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/Timing/TokenEndpointTimingEvidenceTests.cs` (HTTP);
+- `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/OpenIddictTokenManagerTimingEvidenceTests.cs` (in-process).
 
-The earlier campaigns are not part of this folder. Their raw files and narrative stay in the branch history up to `a5c4b7570`:
-- the first finals on code before the narrow credential lookup, where SQL Server was NOT EQUIVALENT at −377 µs;
-- the A5 pilots and finals, which were a validation attempt that failed on a SQL Server regime shift.
+## Where the data is
 
-The SQL Server result on pre-lookup code does not bear on the current code.
+Everything behind this page is in one archive, `DMS-1490-timing-evidence.zip`, which is proposed for
+attachment to DMS-1490:
 
-The two `a5-final/` sample files are kept only as fixed inputs to `diagnostics.py selftest`.
+| | |
+| --- | --- |
+| SHA-256 | `77a19b56525f1fa8fd89176117084315e1a4c8f5b9171ed192ba801c450d1229` |
+| Size | 540,313 bytes |
 
-## Files
+It holds:
+- `step3/`: the runs above, one folder per database. Each folder has the measured and warm-up
+  samples, the run header, the run log, `analysis/` (outputs and `commands.log`) and
+  `SHA256SUMS-raw.txt`, taken right after collection. The folder also has the pre-registration and
+  its hash, and the two setup scripts.
+- `step2-mssql/` and `step1-mssql/`: the earlier SQL Server runs on `d86bb6e95` and `a5c4b7570`,
+  with `README-step1-step2.md` and `SHA256SUMS-step1-step2.txt` as they were committed.
+- `a5-final/`: the two fixtures for `diagnostics.py selftest`.
+- `analyze_timing.py` and `diagnostics.py`.
+- `BUNDLE-SHA256SUMS.txt`: the SHA-256 and size of every file in the archive.
 
-- `analyze_timing.py`: the analysis (`selftest`, `analyze`, `plan`, `fit`, `simulate`, `observer`).
-- `diagnostics.py`: the warning diagnostics (`selftest`, `diagnose`).
-- `step2-mssql/`: the run on the current code. It holds the measured samples, warm-up samples, run header, pre-registration and run log, with `analysis/` (the outputs and `commands.log`) and `SHA256SUMS-raw.txt`, which holds the hashes taken right after collection.
-- `step1-mssql/`: the earlier run, laid out the same way.
-- `a5-final/`: the two `diagnostics.py selftest` fixtures, unchanged.
-- `SHA256SUMS.txt`: the SHA-256 and size of every file above. Files are stored without line-ending normalisation (`.gitattributes`).
+`SHA256SUMS.txt` beside this README repeats those checksums, so a copy of the archive can be checked
+against the repository. The files removed from this folder also remain in the branch history at
+`38be2e413`.
+
+To reproduce the analysis, run these from the archive's `step3/<database>/` folder:
 
 ```
-python -B analyze_timing.py selftest
-python -B diagnostics.py selftest
+python -I -B ../../analyze_timing.py analyze --csv <samples>.csv --delta 250
+python -I -B ../../analyze_timing.py analyze --csv <samples>.csv --delta 250 --arm-a unapproved_correct_secret
+python -I -B ../../diagnostics.py diagnose --csv <samples>.csv --delta 250
 ```
+
+Earlier campaigns, on code before the narrow credential lookup, are in the branch history up to
+`a5c4b7570` and do not bear on the current code.

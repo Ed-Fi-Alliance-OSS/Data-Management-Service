@@ -1,6 +1,0 @@
-python -I -B /c/dev/simpat/Data-Management-Service-DMS-1490/reference/design/configuration-service/DMS-1490-timing-evidence/analyze_timing.py analyze --csv step2-endpoint-mssql-20261026T171034Z.csv --delta 250
-exit=0
-python -I -B /c/dev/simpat/Data-Management-Service-DMS-1490/reference/design/configuration-service/DMS-1490-timing-evidence/analyze_timing.py analyze --csv step2-endpoint-mssql-20261026T171034Z.csv --delta 250 --arm-a unapproved_correct_secret
-exit=0
-python -I -B /c/dev/simpat/Data-Management-Service-DMS-1490/reference/design/configuration-service/DMS-1490-timing-evidence/diagnostics.py diagnose --csv step2-endpoint-mssql-20261026T171034Z.csv --delta 250
-exit=0
