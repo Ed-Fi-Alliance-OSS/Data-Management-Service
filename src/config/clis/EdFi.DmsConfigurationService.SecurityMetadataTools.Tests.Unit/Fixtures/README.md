@@ -6,7 +6,7 @@ the representative acceptance oracle tracked in `OdsSecurityMetadata/README.md`.
 
 The element mapping was checked against the [pinned ODS SQL Server export script](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS-Implementation/blob/5bca6615e1ce06b84a87e8512cfbe69a1249dd9a/SecurityMetadata/Export/MsSql/Security-Metadata-to-XML.sql)
 and the existing CMS contract at
-`src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/JsonSchemaForClaims.json`.
+`src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/JsonSchemaForClaims.json`.
 
 | Export structure | CMS document mapping |
 | --- | --- |

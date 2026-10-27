@@ -45,8 +45,8 @@ public class ClaimsValidator(ILogger<ClaimsValidator> _logger) : IClaimsValidato
     {
         logger.LogDebug("Loading JSON Schema for Claims validation from embedded resource");
 
-        Assembly assembly = Assembly.GetExecutingAssembly();
-        string resourceName = "EdFi.DmsConfigurationService.Backend.Claims.JsonSchemaForClaims.json";
+        Assembly assembly = typeof(ClaimsValidator).Assembly;
+        string resourceName = "EdFi.DmsConfigurationService.Claims.Claims.JsonSchemaForClaims.json";
 
         using Stream stream =
             assembly.GetManifestResourceStream(resourceName)
@@ -93,7 +93,7 @@ public class ClaimsValidator(ILogger<ClaimsValidator> _logger) : IClaimsValidato
                 propertyPathAndName = $"${detail.InstanceLocation.ToString().Replace("/", ".")}";
             }
 
-            if (detail.Errors == null || !detail.Errors.Any())
+            if (detail.Errors is null || !detail.Errors.Any())
             {
                 continue;
             }

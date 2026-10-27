@@ -725,8 +725,8 @@
         "type": "Project",
         "dependencies": {
           "EdFi.Api.Secrets": "[1.0.0, )",
+          "EdFi.DmsConfigurationService.Claims": "[1.0.0, )",
           "EdFi.DmsConfigurationService.DataModel": "[1.0.0, )",
-          "JsonSchema.Net": "[7.2.2, )",
           "Microsoft.AspNetCore.Http.Abstractions": "[2.2.0, )",
           "Microsoft.Extensions.Hosting.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Logging": "[10.0.1, )",
@@ -799,6 +799,13 @@
           "System.Linq.Async": "[6.0.3, )",
           "dbup-core": "[5.0.87, )",
           "dbup-postgresql": "[5.0.40, )"
+        }
+      },
+      "edfi.dmsconfigurationservice.claims": {
+        "type": "Project",
+        "dependencies": {
+          "JsonSchema.Net": "[7.2.2, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )"
         }
       },
       "edfi.dmsconfigurationservice.datamodel": {

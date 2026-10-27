@@ -8,7 +8,7 @@
     Pack, inspect, install and run Security Metadata Tools from a fresh local-only feed.
 .DESCRIPTION
     Reusable local/CI smoke action. Uses the shared version calculation and locked restore,
-    checks the bundled CMS validator/schema and independently versioned Secrets assembly,
+    checks the shared claims validator/schema,
     then compares installed conversion output with the reviewed representative fixture.
     Leaves the exact nupkg in the repository root; disposable feed/cache/tool files are removed.
 #>
@@ -70,43 +70,29 @@ try {
         throw "Unexpected .NET 10 tool command settings."
     }
     foreach ($file in @("security-metadata-tools.runtimeconfig.json", "security-metadata-tools.deps.json",
-        "System.CommandLine.dll", "JsonSchema.Net.dll", "EdFi.DmsConfigurationService.Backend.dll")) {
+        "System.CommandLine.dll", "JsonSchema.Net.dll", "EdFi.DmsConfigurationService.Claims.dll")) {
         if (-not (Test-Path -LiteralPath (Join-Path $runtime $file))) {
             throw "Tool runtime asset is missing: $file"
         }
     }
     # Read metadata without loading the .NET 10 assembly into PowerShell's runtime or
     # retaining a file lock that would prevent scratch cleanup on Windows.
-    $backendStream = [IO.File]::OpenRead((Join-Path $runtime "EdFi.DmsConfigurationService.Backend.dll"))
-    $peReader = [Reflection.PortableExecutable.PEReader]::new($backendStream)
+    $claimsStream = [IO.File]::OpenRead((Join-Path $runtime "EdFi.DmsConfigurationService.Claims.dll"))
+    $peReader = [Reflection.PortableExecutable.PEReader]::new($claimsStream)
     try {
         $reader = [Reflection.Metadata.PEReaderExtensions]::GetMetadataReader($peReader)
         $embeddedResources = @($reader.ManifestResources | ForEach-Object {
             $resource = $reader.GetManifestResource($_)
             if ($resource.Implementation.IsNil) { $reader.GetString($resource.Name) }
         })
-        if ($embeddedResources -cnotcontains "EdFi.DmsConfigurationService.Backend.Claims.JsonSchemaForClaims.json") {
-            throw "Packaged backend lacks the real CMS claims schema."
+        if ($embeddedResources -cnotcontains "EdFi.DmsConfigurationService.Claims.Claims.JsonSchemaForClaims.json") {
+            throw "Packaged shared claims library lacks the real CMS claims schema."
         }
     }
     finally {
         $peReader.Dispose()
-        $backendStream.Dispose()
+        $claimsStream.Dispose()
     }
-    $secretsPath = Join-Path $runtime "EdFi.DmsConfigurationService.Secrets.dll"
-    [xml] $secretsProject = Get-Content -LiteralPath (Join-Path $repoRoot "src/config/contracts/EdFi.DmsConfigurationService.Secrets/EdFi.DmsConfigurationService.Secrets.csproj") -Raw
-    $declared = $secretsProject.Project.PropertyGroup
-    $assemblyVersion = [Reflection.AssemblyName]::GetAssemblyName($secretsPath).Version.ToString()
-    $fileInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($secretsPath)
-    # SDK appends source revision metadata; compare the declared informational version before it.
-    $declaredAssembly = [version] $declared.AssemblyVersion
-    $expectedAssembly = [version]::new($declaredAssembly.Major, $declaredAssembly.Minor, $declaredAssembly.Build, [Math]::Max(0, $declaredAssembly.Revision))
-    if ($assemblyVersion -ne $expectedAssembly.ToString() -or
-        $fileInfo.FileVersion -ne $declared.FileVersion -or
-        ($fileInfo.ProductVersion -split '\+', 2)[0] -cne $declared.InformationalVersion) {
-        throw "Bundled Secrets contract was restamped: assembly $assemblyVersion, file $($fileInfo.FileVersion), informational $($fileInfo.ProductVersion)."
-    }
-
     $env:NUGET_PACKAGES = Join-Path $scratch "nuget-packages"
     $toolPath = Join-Path $scratch "tool"
     $nugetConfig = Join-Path $scratch "NuGet.Config"
@@ -133,7 +119,7 @@ try {
         throw "Installed conversion differs from the reviewed expected document."
     }
 
-    Write-Output "Verified $packageId $toolVersion; installed version $reportedVersion; Secrets $($fileInfo.ProductVersion); representative conversion matches."
+    Write-Output "Verified $packageId $toolVersion; installed version $reportedVersion; representative conversion matches."
     Write-Output "Package: $packageFile"
     Write-Output "SHA256: $((Get-FileHash -LiteralPath $packageFile -Algorithm SHA256).Hash)"
 }

@@ -39,49 +39,16 @@
           "Json.More.Net": "2.0.1.2"
         }
       },
-      "Microsoft.AspNetCore.Http.Features": {
-        "type": "Transitive",
-        "resolved": "2.2.0",
-        "contentHash": "ziFz5zH8f33En4dX81LW84I6XrYXKf9jg6aM39cM+LffN9KJahViKZ61dGMSO2gd3e+qe5yBRwsesvyqlZaSMg==",
-        "dependencies": {
-          "Microsoft.Extensions.Primitives": "2.2.0"
-        }
-      },
-      "Microsoft.Extensions.Diagnostics.Abstractions": {
-        "type": "Transitive",
-        "resolved": "10.0.1",
-        "contentHash": "QMoMrkNpnQym5mpfdxfxpRDuqLpsOuztguFvzH9p+Ex+do+uLFoi7UkAsBO4e9/tNR3eMFraFf2fOAi2cp3jjA==",
-        "dependencies": {
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.1",
-          "Microsoft.Extensions.Options": "10.0.1"
-        }
-      },
-      "Microsoft.Extensions.FileProviders.Abstractions": {
-        "type": "Transitive",
-        "resolved": "10.0.1",
-        "contentHash": "+b3DligYSZuoWltU5YdbMpIEUHNZPgPrzWfNiIuDkMdqOl93UxYB5KzS3lgpRfTXJhTNpo/CZ8w/sTkDTPDdxQ==",
-        "dependencies": {
-          "Microsoft.Extensions.Primitives": "10.0.1"
-        }
-      },
       "Microsoft.Extensions.Primitives": {
         "type": "Transitive",
         "resolved": "10.0.1",
         "contentHash": "DO8XrJkp5x4PddDuc/CH37yDBCs9BYN6ijlKyR3vMb55BP1Vwh90vOX8bNfnKxr5B2qEI3D8bvbY1fFbDveDHQ=="
       },
-      "EdFi.Api.Secrets": {
-        "type": "Project"
-      },
-      "edfi.dmsconfigurationservice.backend": {
+      "edfi.dmsconfigurationservice.claims": {
         "type": "Project",
         "dependencies": {
-          "EdFi.Api.Secrets": "[1.0.0, )",
-          "EdFi.DmsConfigurationService.DataModel": "[1.0.0, )",
           "JsonSchema.Net": "[7.2.2, )",
-          "Microsoft.AspNetCore.Http.Abstractions": "[2.2.0, )",
-          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.1, )",
-          "Microsoft.Extensions.Logging": "[10.0.1, )",
-          "Microsoft.Extensions.Options": "[10.0.1, )"
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )"
         }
       },
       "edfi.dmsconfigurationservice.datamodel": {
@@ -106,62 +73,11 @@
           "JsonPointer.Net": "5.0.0"
         }
       },
-      "Microsoft.AspNetCore.Http.Abstractions": {
-        "type": "CentralTransitive",
-        "requested": "[2.2.0, )",
-        "resolved": "2.2.0",
-        "contentHash": "Nxs7Z1q3f1STfLYKJSVXCs1iBl+Ya6E8o4Oy1bCxJ/rNI44E/0f6tbsrVqAWfB7jlnJfyaAtIalBVxPKUPQb4Q==",
-        "dependencies": {
-          "Microsoft.AspNetCore.Http.Features": "2.2.0"
-        }
-      },
-      "Microsoft.Extensions.Configuration.Abstractions": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.1, )",
-        "resolved": "10.0.1",
-        "contentHash": "kPlU11hql+L9RjrN2N9/0GcRcRcZrNFlLLjadasFWeBORT6pL6OE+RYRk90GGCyVGSxTK+e1/f3dsMj5zpFFiQ==",
-        "dependencies": {
-          "Microsoft.Extensions.Primitives": "10.0.1"
-        }
-      },
-      "Microsoft.Extensions.DependencyInjection": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.1, )",
-        "resolved": "10.0.1",
-        "contentHash": "zerXV0GAR9LCSXoSIApbWn+Dq1/T+6vbXMHGduq1LoVQRHT0BXsGQEau0jeLUBUcsoF/NaUT8ADPu8b+eNcIyg==",
-        "dependencies": {
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.1"
-        }
-      },
       "Microsoft.Extensions.DependencyInjection.Abstractions": {
         "type": "CentralTransitive",
         "requested": "[10.0.1, )",
         "resolved": "10.0.1",
         "contentHash": "oIy8fQxxbUsSrrOvgBqlVgOeCtDmrcynnTG+FQufcUWBrwyPfwlUkCDB2vaiBeYPyT+20u9/HeuHeBf+H4F/8g=="
-      },
-      "Microsoft.Extensions.Hosting.Abstractions": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.1, )",
-        "resolved": "10.0.1",
-        "contentHash": "qmoQkVZcbm4/gFpted3W3Y+1kTATZTcUhV3mRkbtpfBXlxWCHwh/2oMffVcCruaGOfJuEnyAsGyaSUouSdECOw==",
-        "dependencies": {
-          "Microsoft.Extensions.Configuration.Abstractions": "10.0.1",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "10.0.1",
-          "Microsoft.Extensions.Diagnostics.Abstractions": "10.0.1",
-          "Microsoft.Extensions.FileProviders.Abstractions": "10.0.1",
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.1"
-        }
-      },
-      "Microsoft.Extensions.Logging": {
-        "type": "CentralTransitive",
-        "requested": "[10.0.1, )",
-        "resolved": "10.0.1",
-        "contentHash": "9ItMpMLFZFJFqCuHLLbR3LiA4ahA8dMtYuXpXl2YamSDWZhYS9BruPprkftY0tYi2bQ0slNrixdFm+4kpz1g5w==",
-        "dependencies": {
-          "Microsoft.Extensions.DependencyInjection": "10.0.1",
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.1",
-          "Microsoft.Extensions.Options": "10.0.1"
-        }
       },
       "Microsoft.Extensions.Logging.Abstractions": {
         "type": "CentralTransitive",

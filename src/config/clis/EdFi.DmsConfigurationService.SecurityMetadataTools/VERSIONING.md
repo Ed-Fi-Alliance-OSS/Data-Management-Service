@@ -152,9 +152,8 @@ is illustrative; release callers supply the selected ref's MinVer result):
 ```
 
 The reusable smoke action always restores in locked mode, freshly packs the exact
-tool version, inspects metadata, README, command settings, bundled CMS schema and
-Secrets contract versions, and installs from a temporary local-only feed into a
-fresh tool directory and NuGet cache. It compares installed conversion output with
+tool version, inspects metadata, README, command settings and shared claims schema,
+and installs from a temporary local-only feed into a fresh tool directory and NuGet cache. It compares installed conversion output with
 the reviewed expected document and reports the package path and SHA-256. It leaves
 the nupkg in the repository root and removes disposable installation files. It
 does not push or promote anything.

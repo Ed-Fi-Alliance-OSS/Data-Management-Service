@@ -23,7 +23,8 @@
         <PackageReference Include="System.CommandLine" />
     </ItemGroup>
     <ItemGroup>
-        <ProjectReference Include="../../backend/EdFi.DmsConfigurationService.Backend/EdFi.DmsConfigurationService.Backend.csproj" />
+        <ProjectReference Include="../../backend/EdFi.DmsConfigurationService.Claims/EdFi.DmsConfigurationService.Claims.csproj" />
+        <ProjectReference Include="../../datamodel/EdFi.DmsConfigurationService.DataModel/EdFi.DmsConfigurationService.DataModel.csproj" />
     </ItemGroup>
     <ItemGroup>
         <InternalsVisibleTo Include="EdFi.DmsConfigurationService.SecurityMetadataTools.Tests.Unit" />
