@@ -54,7 +54,7 @@ param(
     [string]
     $E2ETestFilter = "",
 
-    [ValidateSet("Hybrid")]
+    [ValidateSet("Hybrid", "Filesystem")]
     [string]
     $SecurityMetadataToolsScenario = "",
 
@@ -134,11 +134,18 @@ if ($SecurityMetadataToolsScenario) {
         }
     }
     $ClaimsFixtureDirectory = Join-Path $repoRoot "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Hybrid/fragments"
-    $ClaimsSource = 'Hybrid'
+    if ($SecurityMetadataToolsScenario -eq 'Filesystem' -and $DataStandardVersion -ne '5.2') {
+        throw 'The Filesystem policy scenario requires DataStandardVersion 5.2.'
+    }
+    $ClaimsSource = $SecurityMetadataToolsScenario
     $EnableUnrestrictedClaimsLoading = $false
-    $testName = "It_matches_reviewed_Hybrid_permissions_for_DS_$($DataStandardVersion.Replace('.', '_'))"
+    $testName = if ($SecurityMetadataToolsScenario -eq 'Filesystem') {
+        'It_loads_unmodified_merge_output_through_Filesystem_startup'
+    } else {
+        "It_matches_reviewed_Hybrid_permissions_for_DS_$($DataStandardVersion.Replace('.', '_'))"
+    }
     $expectedTestNames = @($testName)
-    $E2ETestFilter = "(TestCategory=SecurityMetadataToolsService)&(TestCategory=SecurityMetadataToolsHybrid)&(Name=$testName)"
+    $E2ETestFilter = "(TestCategory=SecurityMetadataToolsService)&(TestCategory=SecurityMetadataTools$SecurityMetadataToolsScenario)&(Name=$testName)"
 }
 
 Import-Module (Join-Path $PSScriptRoot "IsolatedConfigE2E.psm1") -Force
@@ -213,7 +220,11 @@ $exitCode = 1
 try {
     Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
     if ($preparedFixtureDirectory) {
-        $null = Copy-IsolatedClaimsFixture -Source $ClaimsFixtureDirectory -Destination $preparedFixtureDirectory
+        if ($SecurityMetadataToolsScenario -eq 'Filesystem') {
+            $null = New-Item -ItemType Directory -Path $preparedFixtureDirectory
+        } else {
+            $null = Copy-IsolatedClaimsFixture -Source $ClaimsFixtureDirectory -Destination $preparedFixtureDirectory
+        }
     }
     # Compose gives the process environment precedence over --env-file, so every isolation value is also
     # set in this process: a value inherited from the caller's shell cannot override any of them.
@@ -388,6 +399,20 @@ try {
     }
     $workingTrx = Join-Path $repoRoot "TestResults/EdFi.DmsConfigurationService.Tests.E2E.trx"
     Invoke-IsolatedCmsTestRun -WorkingTrx $workingTrx -ArtifactDirectory $artifactDirectory -ExpectedTestNames $expectedTestNames -Execute {
+        if ($SecurityMetadataToolsScenario -eq 'Filesystem') {
+            # Generate once before startup; the mount contains only the unchanged complete document.
+            $sourceHashes = @(Get-ChildItem -LiteralPath $ClaimsFixtureDirectory -File -Recurse | Sort-Object FullName | Get-FileHash -Algorithm SHA256)
+            $merged = Join-Path $artifactDirectory 'merged.json'
+            $toolPath = Join-Path $assembly.DirectoryName 'SecurityMetadataTools/security-metadata-tools.dll'
+            & dotnet $toolPath merge --fragments $ClaimsFixtureDirectory --data-standard-version $DataStandardVersion --output $merged 1> (Join-Path $artifactDirectory 'merge-stdout.txt') 2> (Join-Path $artifactDirectory 'merge-stderr.txt')
+            if ($LASTEXITCODE -ne 0) {
+                throw "Preparing Filesystem claims with merge failed (exit $LASTEXITCODE)."
+            }
+            $mergedHash = (Get-FileHash -LiteralPath $merged -Algorithm SHA256).Hash
+            Set-Content -LiteralPath (Join-Path $artifactDirectory 'merged-sha256-before.txt') -Value $mergedHash
+            Copy-Item -LiteralPath $merged -Destination (Join-Path $preparedFixtureDirectory 'Claims.json')
+            $sourceHashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactDirectory 'source-sha256-before.json')
+        }
         Push-Location $repoRoot
         try {
             $arguments = @{
@@ -413,7 +438,21 @@ try {
                 throw "Isolated CMS execution failed (exit $exitCode); inspect retained results. Startup/database failures are environment failures, not policy mismatches."
             }
         }
-        finally { Pop-Location }
+        finally {
+            Pop-Location
+            if ($SecurityMetadataToolsScenario -eq 'Filesystem') {
+                $afterHashes = @(Get-ChildItem -LiteralPath $ClaimsFixtureDirectory -File -Recurse | Sort-Object FullName | Get-FileHash -Algorithm SHA256)
+                $afterHashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactDirectory 'source-sha256-after.json')
+                if (($sourceHashes | ConvertTo-Json -Compress) -cne ($afterHashes | ConvertTo-Json -Compress)) {
+                    throw 'Filesystem scenario changed the source fragments.'
+                }
+                foreach ($path in @($merged, (Join-Path $preparedFixtureDirectory 'Claims.json'))) {
+                    if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -cne $mergedHash) {
+                        throw 'Filesystem scenario changed the merged document.'
+                    }
+                }
+            }
+        }
     } -Teardown {
         if ($KeepStack) {
             Write-Output "Isolated stack left running (project $($isolation.CONFIGURATION_SERVICE_COMPOSE_PROJECT))."

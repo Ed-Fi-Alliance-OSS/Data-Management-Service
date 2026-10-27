@@ -14,7 +14,7 @@ using Microsoft.Playwright;
 namespace EdFi.DmsConfigurationService.Tests.E2E.SecurityMetadataTools;
 
 /// <summary>
-/// Shared setup and Hybrid parity checks for the isolated policy scenario selectors.
+/// Shared setup and startup parity checks for the isolated policy scenario selectors.
 /// These tests own a fresh isolated deployment; they never use Reqnroll cleanup or snapshots.
 /// </summary>
 [TestFixture]
@@ -64,25 +64,63 @@ public partial class Given_SecurityMetadataToolsService
     [Category("SecurityMetadataToolsHybrid")]
     public async Task It_matches_reviewed_Hybrid_permissions(string version)
     {
-        await AssertHybridContainerAsync(version);
-        string referenceDirectory = Path.Combine(
-            AppContext.BaseDirectory,
-            "TestData",
-            "Claims",
-            "SecurityMetadataTools",
-            "Hybrid"
-        );
+        await AssertContainerAsync("Hybrid", version);
+        string referenceDirectory = HybridReferenceDirectory;
         var sourceHashes = HashFiles(Path.Combine(referenceDirectory, "fragments"));
         HashFiles(FixtureDirectory).Should().BeEquivalentTo(sourceHashes);
 
         // The same startup mount is supplied to the standalone CLI; generated files stay outside it.
         string merged = Path.Combine(EvidenceDirectory, "merged.json");
-        string resolved = Path.Combine(EvidenceDirectory, "offline-metadata.json");
         await RunToolAsync(
             "merge",
             "",
             ["merge", "--fragments", FixtureDirectory, "--data-standard-version", version, "--output", merged]
         );
+        await AssertMergedPermissionsAsync(merged, version);
+        HashFiles(FixtureDirectory).Should().BeEquivalentTo(sourceHashes);
+        HashFiles(Path.Combine(referenceDirectory, "fragments")).Should().BeEquivalentTo(sourceHashes);
+        await File.WriteAllTextAsync(
+            Path.Combine(EvidenceDirectory, "fixture-sha256.json"),
+            JsonSerializer.Serialize(sourceHashes)
+        );
+    }
+
+    [Test]
+    [Category("SecurityMetadataToolsFilesystem")]
+    public async Task It_loads_unmodified_merge_output_through_Filesystem_startup()
+    {
+        await AssertContainerAsync("Filesystem", "5.2");
+        Directory
+            .GetFileSystemEntries(FixtureDirectory)
+            .Should()
+            .Equal(Path.Combine(FixtureDirectory, "Claims.json"));
+        string merged = Path.Combine(FixtureDirectory, "Claims.json");
+        byte[] startupBytes = await File.ReadAllBytesAsync(Path.Combine(EvidenceDirectory, "merged.json"));
+        (await File.ReadAllBytesAsync(merged)).Should().Equal(startupBytes);
+        string beforeHash = (
+            await File.ReadAllTextAsync(Path.Combine(EvidenceDirectory, "merged-sha256-before.txt"))
+        ).Trim();
+        Convert.ToHexString(SHA256.HashData(startupBytes)).Should().Be(beforeHash);
+
+        await AssertMergedPermissionsAsync(merged, "5.2");
+
+        (await File.ReadAllBytesAsync(merged)).Should().Equal(startupBytes);
+        var afterHashes = HashFiles(FixtureDirectory);
+        afterHashes.Should().BeEquivalentTo(new Dictionary<string, string> { ["Claims.json"] = beforeHash });
+        await File.WriteAllTextAsync(
+            Path.Combine(EvidenceDirectory, "fixture-sha256-after.json"),
+            JsonSerializer.Serialize(afterHashes)
+        );
+    }
+
+    private static string HybridReferenceDirectory =>
+        Path.Combine(AppContext.BaseDirectory, "TestData", "Claims", "SecurityMetadataTools", "Hybrid");
+
+    private async Task AssertMergedPermissionsAsync(string merged, string version)
+    {
+        byte[] mergedBytes = await File.ReadAllBytesAsync(merged);
+        string referenceDirectory = HybridReferenceDirectory;
+        string resolved = Path.Combine(EvidenceDirectory, "offline-metadata.json");
         await RunToolAsync("resolve", "", ["resolve", "--input", merged, "--output", resolved]);
         string offline = await File.ReadAllTextAsync(resolved);
         AssertReviewedPermissions(offline, referenceDirectory, version);
@@ -112,7 +150,6 @@ public partial class Given_SecurityMetadataToolsService
         var management = await _context.GetAsync("/management/current-claims", new() { Headers = headers });
         management.Status.Should().Be(404);
 
-        byte[] mergedBytes = await File.ReadAllBytesAsync(merged);
         await RunToolAsync(
             "verify",
             token,
@@ -127,15 +164,9 @@ public partial class Given_SecurityMetadataToolsService
             ]
         );
         (await File.ReadAllBytesAsync(merged)).Should().Equal(mergedBytes);
-        HashFiles(FixtureDirectory).Should().BeEquivalentTo(sourceHashes);
-        HashFiles(Path.Combine(referenceDirectory, "fragments")).Should().BeEquivalentTo(sourceHashes);
-        await File.WriteAllTextAsync(
-            Path.Combine(EvidenceDirectory, "fixture-sha256.json"),
-            JsonSerializer.Serialize(sourceHashes)
-        );
     }
 
-    private async Task AssertHybridContainerAsync(string version)
+    private async Task AssertContainerAsync(string source, string version)
     {
         // Assert and retain only these nonsecret configuration values.
         string[] keys =
@@ -170,7 +201,7 @@ public partial class Given_SecurityMetadataToolsService
             .BeEquivalentTo(
                 new Dictionary<string, string>
                 {
-                    [keys[0]] = "Hybrid",
+                    [keys[0]] = source,
                     [keys[1]] = version,
                     [keys[2]] = "/app/additional-claims",
                     [keys[3]] = "false",

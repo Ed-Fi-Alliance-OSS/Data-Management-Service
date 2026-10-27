@@ -6,6 +6,17 @@ through `SECURITY_METADATA_TOOLS_FIXTURE_DIRECTORY`; default E2E claims are not 
 The [Hybrid scenario](Hybrid/README.md) covers both bundled Data Standards with reviewed
 permissions and full API/offline comparison. Only its `fragments/` subdirectory is mounted.
 
+The Filesystem 5.2 scenario runs the staged CLI against those same Hybrid fragments before
+startup, then copies the unmodified merge output to `Claims.json` in an otherwise empty
+mount. It starts fresh CMS with `ClaimsSource=Filesystem` and unrestricted loading disabled,
+reuses the Hybrid permission/catalog oracles, and verifies the mounted document against
+current API metadata. SHA-256 evidence records the input before startup and after verification;
+source fragments and retained merge output are also checked for changes. Run it with:
+
+```powershell
+pwsh ./eng/docker-compose/tests/cms-isolation/Invoke-IsolatedConfigE2E.ps1 -Configuration Release -EnvironmentFile ./.env.config.e2e -SecurityMetadataToolsScenario Filesystem -DataStandardVersion 5.2
+```
+
 Service cases belong to `Given_SecurityMetadataToolsService`, carry both
 `SecurityMetadataToolsService` and their scenario category, and require
 `SECURITY_METADATA_TOOLS_SERVICE_RUNNER=true`. The launcher must select and validate the exact

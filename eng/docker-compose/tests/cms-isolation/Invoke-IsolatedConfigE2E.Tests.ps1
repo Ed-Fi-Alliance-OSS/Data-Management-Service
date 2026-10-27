@@ -238,6 +238,17 @@ Describe 'Isolated launcher environment and cleanup' {
                 $path = $logger.Substring('trx;LogFileName='.Length)
                 Set-Content $path "<TestRun><Results><UnitTestResult testName='It_sends_requests_to_the_selected_configuration_service' outcome='Passed'/><UnitTestResult testName='It_cleans_the_selected_database' outcome='Passed'/></Results></TestRun>"
             }
+            if ($args -contains 'merge') {
+                $global:CmsLaunchermergeArguments = @($args)
+                $global:CmsLauncherprepared = $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE
+                @(Get-ChildItem -LiteralPath $global:CmsLauncherprepared -Force).Count | Should -Be 0
+                if ($global:CmsLaunchermergeFailure) {
+                    $global:LASTEXITCODE = 1
+                    return
+                }
+                $outputPath = $args[[array]::IndexOf($args, '--output') + 1]
+                [IO.File]::WriteAllBytes($outputPath, [byte[]]@(239,187,191,123,13,10,125))
+            }
             $global:LASTEXITCODE = 0
         }
         function docker { $global:LASTEXITCODE = 0 }
@@ -248,7 +259,13 @@ Describe 'Isolated launcher environment and cleanup' {
             }
             $global:CmsLaunchercapturedArguments = @($args)
             $global:CmsLauncherprepared = $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE
-            [IO.File]::ReadAllBytes((Join-Path $global:CmsLauncherprepared 'input-claims.json')) | Should -Be ([byte[]]@(123,125,10))
+            if ($global:CmsLaunchermergeArguments) {
+                @(Get-ChildItem -LiteralPath $global:CmsLauncherprepared -Force).Name | Should -Be @('Claims.json')
+                [IO.File]::ReadAllBytes((Join-Path $global:CmsLauncherprepared 'Claims.json')) | Should -Be ([byte[]]@(239,187,191,123,13,10,125))
+                if ($global:CmsLaunchermutateInput) { Add-Content (Join-Path $global:CmsLauncherprepared 'Claims.json') 'changed' }
+            } else {
+                [IO.File]::ReadAllBytes((Join-Path $global:CmsLauncherprepared 'input-claims.json')) | Should -Be ([byte[]]@(123,125,10))
+            }
             $env:NODE_OPTIONS | Should -BeNullOrEmpty
             $trxPath = Join-Path $global:CmsLaunchercheckout 'TestResults/EdFi.DmsConfigurationService.Tests.E2E.trx'
             $null = New-Item -ItemType Directory (Split-Path $trxPath) -Force
@@ -307,6 +324,9 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $global:CmsTeardownCalls = 0
         $global:CmsLauncherinjectFailure = $false
         $global:CmsLauncherwrongTest = $false
+        $global:CmsLaunchermergeArguments = @()
+        $global:CmsLaunchermergeFailure = $false
+        $global:CmsLaunchermutateInput = $false
         $global:CmsLauncherlauncher = Join-Path $launcherDirectory 'Invoke-IsolatedConfigE2E.ps1'
     }
 
@@ -359,6 +379,55 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $after = @{}
         Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }
         ($after | ConvertTo-Json -Compress) | Should -Be ($global:CmsLauncherbeforeEnvironment | ConvertTo-Json -Compress)
+    }
+
+    It 'merges before Filesystem startup, mounts exact bytes only, and restores the environment' {
+        $fixture = Join-Path $global:CmsLaunchercheckout 'src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Hybrid/fragments'
+        $null = New-Item -ItemType Directory $fixture -Force
+        [IO.File]::WriteAllBytes((Join-Path $fixture 'input-claims.json'), [byte[]]@(123,125,10))
+        & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Filesystem -DataStandardVersion '5.2' -SkipDockerBuild
+        $global:CmsLaunchermergeArguments | Should -Contain $fixture
+        $global:CmsLaunchermergeArguments | Should -Contain '5.2'
+        $global:CmsLaunchercapturedArguments | Should -Contain '(TestCategory=SecurityMetadataToolsService)&(TestCategory=SecurityMetadataToolsFilesystem)&(Name=It_loads_unmodified_merge_output_through_Filesystem_startup)'
+        $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be 'Filesystem'
+        $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_DATA_STANDARD_VERSION | Should -Be '5.2'
+        $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING | Should -Be 'false'
+        $results = @(Get-ChildItem (Join-Path $global:CmsLaunchercheckout 'TestResults/cms-isolation/postgresql/Filesystem/5.2') -Recurse -Filter results.trx)
+        $results.Count | Should -Be 1
+        $evidence = $results[0].DirectoryName
+        [IO.File]::ReadAllBytes((Join-Path $evidence 'merged.json')) | Should -Be ([byte[]]@(239,187,191,123,13,10,125))
+        (Get-Content (Join-Path $evidence 'source-sha256-before.json') -Raw) | Should -Be (Get-Content (Join-Path $evidence 'source-sha256-after.json') -Raw)
+        $global:CmsTeardownCalls | Should -Be 2
+        Test-Path $global:CmsLauncherprepared | Should -BeFalse
+        $after = @{}
+        Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }
+        ($after | ConvertTo-Json -Compress) | Should -Be ($global:CmsLauncherbeforeEnvironment | ConvertTo-Json -Compress)
+    }
+
+    It 'rejects a failed merge before startup and removes the empty mount' {
+        $fixture = Join-Path $global:CmsLaunchercheckout 'src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Hybrid/fragments'
+        $null = New-Item -ItemType Directory $fixture -Force
+        Set-Content (Join-Path $fixture 'input-claims.json') '{}'
+        $global:CmsLaunchermergeFailure = $true
+        { & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Filesystem } | Should -Throw '*merge failed*'
+        Get-Variable CmsLaunchercapturedArguments -Scope Global -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+        $global:CmsTeardownCalls | Should -Be 2
+        Test-Path $global:CmsLauncherprepared | Should -BeFalse
+    }
+
+    It 'detects changed Filesystem input and still removes the stack and mount' {
+        $fixture = Join-Path $global:CmsLaunchercheckout 'src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Hybrid/fragments'
+        $null = New-Item -ItemType Directory $fixture -Force
+        Set-Content (Join-Path $fixture 'input-claims.json') '{}'
+        $global:CmsLaunchermutateInput = $true
+        { & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Filesystem } | Should -Throw '*changed the merged document*'
+        $global:CmsTeardownCalls | Should -Be 2
+        Test-Path $global:CmsLauncherprepared | Should -BeFalse
+    }
+
+    It 'rejects Filesystem 6.1 before starting any stack' {
+        { & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Filesystem -DataStandardVersion '6.1' } | Should -Throw '*requires DataStandardVersion 5.2*'
+        $global:CmsTeardownCalls | Should -Be 0
     }
 
     It 'rejects the wrong executed Hybrid case and cleans up' {
