@@ -25,8 +25,9 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 /// <c>Cache-Control: no-store</c> - the success shapes (200, 202) that
 /// <see cref="Infrastructure.SecurityHeadersMiddleware"/> deliberately leaves alone, the failure
 /// shapes it already covered (400, 401, 403, 404, 415, 500, 502), and the real global rate
-/// limiter's 429. Non-identity surfaces (the identity swagger document, Discovery, a resource
-/// route, and the toggle-off fallback) carry no <c>no-store</c> beyond today's behavior.
+/// limiter's 429. Non-identity surfaces (the identity swagger document, Discovery, and the
+/// toggle-off fallback) carry no <c>no-store</c> beyond today's behavior. Resource routes carry
+/// their own <c>no-store</c> (see <see cref="DataNoStoreTests"/>).
 /// </summary>
 [TestFixture]
 [NonParallelizable]
@@ -113,12 +114,7 @@ public class IdentityNoStoreTests
             var response = await client.SendAsync(request);
 
             ((int)response.StatusCode).Should().Be(statusCode);
-            response
-                .Headers.GetValues("Cache-Control")
-                .Should()
-                .ContainSingle()
-                .Which.Should()
-                .Be("no-store");
+            response.Headers.NonValidated["Cache-Control"].Should().Equal("no-store");
         }
     }
 
@@ -195,12 +191,7 @@ public class IdentityNoStoreTests
         [Test]
         public void It_is_not_cacheable()
         {
-            _response
-                .Headers.GetValues("Cache-Control")
-                .Should()
-                .ContainSingle()
-                .Which.Should()
-                .Be("no-store");
+            _response.Headers.NonValidated["Cache-Control"].Should().Equal("no-store");
         }
 
         [Test]
@@ -330,52 +321,6 @@ public class IdentityNoStoreTests
     }
 
     [TestFixture]
-    public class Given_A_Resource_Route
-    {
-        private WebApplicationFactory<Program> _factory = null!;
-        private HttpClient _client = null!;
-        private HttpResponseMessage _response = null!;
-
-        [OneTimeSetUp]
-        public async Task Setup()
-        {
-            var apiService = A.Fake<IApiService>();
-            var okResponse = A.Fake<IFrontendResponse>();
-            A.CallTo(() => okResponse.StatusCode).Returns(200);
-            A.CallTo(() => okResponse.Body).Returns(new JsonObject { ["id"] = "abc" });
-            A.CallTo(() => okResponse.Headers).Returns(new Dictionary<string, string>());
-            A.CallTo(() => okResponse.ContentType).Returns("application/json");
-            A.CallTo(() => apiService.Get(A<FrontendRequest>._, A<CancellationToken>._))
-                .Returns(Task.FromResult(okResponse));
-
-            _factory = CreateFactory(apiService);
-            _client = _factory.CreateClient();
-
-            _response = await _client.GetAsync("/data/ed-fi/schools/abc");
-        }
-
-        [OneTimeTearDown]
-        public async Task TearDown()
-        {
-            _response.Dispose();
-            _client.Dispose();
-            await _factory.DisposeAsync();
-        }
-
-        [Test]
-        public void It_returns_200()
-        {
-            _response.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-
-        [Test]
-        public void It_carries_no_added_no_store()
-        {
-            _response.Headers.Contains("Cache-Control").Should().BeFalse();
-        }
-    }
-
-    [TestFixture]
     public class Given_The_Toggle_Off_Fallback
     {
         private WebApplicationFactory<Program> _factory = null!;
@@ -413,12 +358,7 @@ public class IdentityNoStoreTests
         [Test]
         public void It_carries_the_same_single_no_store_as_today()
         {
-            _response
-                .Headers.GetValues("Cache-Control")
-                .Should()
-                .ContainSingle()
-                .Which.Should()
-                .Be("no-store");
+            _response.Headers.NonValidated["Cache-Control"].Should().Equal("no-store");
         }
     }
 }

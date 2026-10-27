@@ -29,6 +29,12 @@ Feature: OWASP critical attack path protections
             Given token signature manipulated
              When a security GET request is made to "/v3/vendors" with header "X-Forwarded-Proto" value "https"
              Then it should respond with 401
+              And the response headers include
+                  """
+                  {
+                    "Cache-Control": "no-store"
+                  }
+                  """
 
         Scenario: 06 Origin spoofing does not make an invalid token acceptable
             Given token signature manipulated
@@ -88,9 +94,13 @@ Feature: OWASP critical attack path protections
                   """
                   {
                     "X-Content-Type-Options": "nosniff",
-                    "Referrer-Policy": "no-referrer"
+                    "Referrer-Policy": "no-referrer",
+                    "X-Frame-Options": "DENY",
+                    "Content-Security-Policy": "default-src 'none'; frame-ancestors 'none'",
+                    "Cache-Control": "no-store"
                   }
                   """
+              And the response header "Strict-Transport-Security" is not present
 
         # Note: WhenAnRequestIsMadeToWithHeaders includes the bearer token from the test context.
         # Real browser CORS preflights are unauthenticated; the assertion (no allow-origin for
