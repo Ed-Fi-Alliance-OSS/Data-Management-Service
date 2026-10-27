@@ -82,8 +82,9 @@ The collectors are `[Explicit]` NUnit fixtures and never run in ordinary CI:
 
 ## Where the data is
 
-Everything behind this page is in one archive, `DMS-1490-timing-evidence.zip`, which is proposed for
-attachment to DMS-1490:
+Everything behind this page is in one archive,
+[`DMS-1490-timing-evidence.zip`](https://edfi.atlassian.net/secure/attachment/41311/DMS-1490-timing-evidence.zip),
+attached to [DMS-1490](https://edfi.atlassian.net/browse/DMS-1490):
 
 | | |
 | --- | --- |
