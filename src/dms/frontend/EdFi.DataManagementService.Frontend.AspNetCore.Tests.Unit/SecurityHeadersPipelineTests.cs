@@ -28,12 +28,24 @@ public class Given_SecurityHeaders_In_The_Dms_Pipeline
 {
     private const string UseForwardedHeadersEnv = "AppSettings__ReverseProxy__UseForwardedHeaders";
     private const string KnownProxiesEnv = "AppSettings__ReverseProxy__KnownProxies";
+    private const string KnownNetworksEnv = "AppSettings__ReverseProxy__KnownNetworks";
+
+    private EnvironmentVariableScope _reverseProxyEnvironment = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _reverseProxyEnvironment = new EnvironmentVariableScope(
+            UseForwardedHeadersEnv,
+            KnownProxiesEnv,
+            KnownNetworksEnv
+        );
+    }
 
     [TearDown]
     public void TearDown()
     {
-        Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, null);
-        Environment.SetEnvironmentVariable(KnownProxiesEnv, null);
+        _reverseProxyEnvironment.Dispose();
     }
 
     private static WebApplicationFactory<Program> CreateFactory(string environment)

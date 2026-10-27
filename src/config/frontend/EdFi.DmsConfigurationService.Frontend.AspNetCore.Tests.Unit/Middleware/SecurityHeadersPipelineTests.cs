@@ -26,12 +26,24 @@ public class Given_The_Cms_Pipeline
 {
     private const string UseForwardedHeadersEnv = "AppSettings__ReverseProxy__UseForwardedHeaders";
     private const string KnownProxiesEnv = "AppSettings__ReverseProxy__KnownProxies";
+    private const string KnownNetworksEnv = "AppSettings__ReverseProxy__KnownNetworks";
+
+    private EnvironmentVariableScope _reverseProxyEnvironment = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _reverseProxyEnvironment = new EnvironmentVariableScope(
+            UseForwardedHeadersEnv,
+            KnownProxiesEnv,
+            KnownNetworksEnv
+        );
+    }
 
     [TearDown]
     public void TearDown()
     {
-        Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, null);
-        Environment.SetEnvironmentVariable(KnownProxiesEnv, null);
+        _reverseProxyEnvironment.Dispose();
     }
 
     private const string Hsts = "Strict-Transport-Security";
