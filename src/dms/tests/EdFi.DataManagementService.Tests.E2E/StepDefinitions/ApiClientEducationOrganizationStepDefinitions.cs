@@ -27,7 +27,7 @@ public partial class StepDefinitions
     private readonly Dictionary<string, ClientCredentials> _scopedClients = [];
 
     private int ScopedApplicationId =>
-        _scenarioContext.TryGetValue(ScopedApplicationKey, out object? id) && id is int scopedId
+        _scenarioContext.GetValueOrDefault(ScopedApplicationKey) is int scopedId
             ? scopedId
             : AuthorizationDataProvider.CurrentApplicationId;
 

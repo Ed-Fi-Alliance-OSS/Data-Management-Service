@@ -280,7 +280,7 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                 lock (_stateLock)
                 {
                     return Task.FromResult<ApiClientEducationOrganizationStateResult>(
-                        _clients.TryGetValue(apiClientId, out ClientState? client)
+                        _clients.GetValueOrDefault(apiClientId) is { } client
                             ? new ApiClientEducationOrganizationStateResult.Success(
                                 new ApiClientEducationOrganizationState(
                                     client.ApplicationId,

@@ -109,7 +109,9 @@ $isolation = [ordered]@{
 
 $derivedDirectory = Join-Path $composeDirectory ".derived"
 $null = New-Item -ItemType Directory -Path $derivedDirectory -Force
-$derivedEnvironmentFile = Join-Path $derivedDirectory "$([System.IO.Path]::GetFileName($sourceEnvironmentFile)).isolated"
+# Named for the isolation as well as the source, so a run under another -IsolationName never overwrites the
+# file a kept stack's cleanup needs.
+$derivedEnvironmentFile = Join-Path $derivedDirectory "$([System.IO.Path]::GetFileName($sourceEnvironmentFile)).$IsolationName.isolated"
 
 # Keys are replaced line by line, so every other line, multi-line values included, passes through.
 $lines = [System.Collections.Generic.List[string]]::new([string[]](Get-Content -LiteralPath $sourceEnvironmentFile))

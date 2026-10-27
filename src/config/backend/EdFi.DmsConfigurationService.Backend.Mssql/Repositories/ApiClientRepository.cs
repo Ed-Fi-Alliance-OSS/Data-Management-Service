@@ -405,24 +405,24 @@ public class ApiClientRepository(
                 splitOn: "EducationOrganizationIds,DataStoreId"
             );
 
-            ApiClientResponse? returnApiClient = apiClients
-                .GroupBy(ac => ac.Id)
-                .Select(g =>
-                {
-                    var grouped = g.First();
-                    grouped.DataStoreIds = g.SelectMany(ac => ac.DataStoreIds).Distinct().ToList();
-                    return grouped;
-                })
-                .SingleOrDefault();
-
-            if (returnApiClient is not null)
+            if (
+                apiClients
+                    .GroupBy(ac => ac.Id)
+                    .Select(g =>
+                    {
+                        var grouped = g.First();
+                        grouped.DataStoreIds = g.SelectMany(ac => ac.DataStoreIds).Distinct().ToList();
+                        return grouped;
+                    })
+                    .SingleOrDefault()
+                is not { } returnApiClient
+            )
             {
-                await HydrateOwnershipAsync(connection, [returnApiClient]);
+                return new ApiClientGetResult.FailureNotFound();
             }
 
-            return returnApiClient is not null
-                ? new ApiClientGetResult.Success(returnApiClient)
-                : new ApiClientGetResult.FailureNotFound();
+            await HydrateOwnershipAsync(connection, [returnApiClient]);
+            return new ApiClientGetResult.Success(returnApiClient);
         }
         catch (Exception ex)
         {
@@ -463,24 +463,24 @@ public class ApiClientRepository(
                 splitOn: "EducationOrganizationIds,DataStoreId"
             );
 
-            ApiClientResponse? returnApiClient = apiClients
-                .GroupBy(ac => ac.Id)
-                .Select(g =>
-                {
-                    var grouped = g.First();
-                    grouped.DataStoreIds = g.SelectMany(ac => ac.DataStoreIds).Distinct().ToList();
-                    return grouped;
-                })
-                .SingleOrDefault();
-
-            if (returnApiClient is not null)
+            if (
+                apiClients
+                    .GroupBy(ac => ac.Id)
+                    .Select(g =>
+                    {
+                        var grouped = g.First();
+                        grouped.DataStoreIds = g.SelectMany(ac => ac.DataStoreIds).Distinct().ToList();
+                        return grouped;
+                    })
+                    .SingleOrDefault()
+                is not { } returnApiClient
+            )
             {
-                await HydrateOwnershipAsync(connection, [returnApiClient]);
+                return new ApiClientGetResult.FailureNotFound();
             }
 
-            return returnApiClient is not null
-                ? new ApiClientGetResult.Success(returnApiClient)
-                : new ApiClientGetResult.FailureNotFound();
+            await HydrateOwnershipAsync(connection, [returnApiClient]);
+            return new ApiClientGetResult.Success(returnApiClient);
         }
         catch (Exception ex)
         {
