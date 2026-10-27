@@ -24,6 +24,32 @@ internal static class AuthorizationMetadataValidatorFixtures
 
     internal static JsonArray Valid() => JsonNode.Parse(ValidJson)!.AsArray();
 
+    internal static JsonArray DuplicateClaim(bool conflicting = false)
+    {
+        var input = Valid();
+        var secondAuthorization = input[0]!["authorizations"]![0]!.DeepClone();
+        secondAuthorization["id"] = 8;
+        if (conflicting)
+        {
+            secondAuthorization["actions"] = new JsonArray();
+        }
+        input[0]!["authorizations"]!.AsArray().Add(secondAuthorization);
+        input[0]!["claims"]!
+            .AsArray()
+            .Add(new JsonObject { ["name"] = "urn:student", ["authorizationId"] = 8 });
+        return input;
+    }
+
+    internal static JsonArray CrossSetReference()
+    {
+        var input = Valid();
+        var secondSet = input[0]!.DeepClone();
+        secondSet["claimSetName"] = "Other";
+        secondSet["authorizations"] = new JsonArray();
+        input.Add(secondSet);
+        return input;
+    }
+
     internal static AuthorizationMetadataValidationResult.Failure Failure(string json) =>
         AuthorizationMetadataValidator
             .Validate(json)
@@ -350,16 +376,7 @@ public class Given_AuthorizationMetadataValidator_ambiguous_permissions
         bool conflicting
     )
     {
-        var secondAuthorization = _input[0]!["authorizations"]![0]!.DeepClone();
-        secondAuthorization["id"] = 8;
-        if (conflicting)
-        {
-            secondAuthorization["actions"] = new JsonArray();
-        }
-        _input[0]!["authorizations"]!.AsArray().Add(secondAuthorization);
-        _input[0]!["claims"]!
-            .AsArray()
-            .Add(new JsonObject { ["name"] = "urn:student", ["authorizationId"] = 8 });
+        _input = AuthorizationMetadataValidatorFixtures.DuplicateClaim(conflicting);
         AssertDuplicate(
             AuthorizationMetadataFailureKind.DuplicateClaimName,
             "urn:student",
@@ -372,10 +389,7 @@ public class Given_AuthorizationMetadataValidator_ambiguous_permissions
     [Test]
     public void It_rejects_a_reference_that_only_exists_in_a_different_set()
     {
-        var secondSet = _input[0]!.DeepClone();
-        secondSet["claimSetName"] = "Other";
-        secondSet["authorizations"] = new JsonArray();
-        _input.Add(secondSet);
+        _input = AuthorizationMetadataValidatorFixtures.CrossSetReference();
         var failure = AuthorizationMetadataValidatorFixtures
             .Failure(_input.ToJsonString())
             .Failures.Should()

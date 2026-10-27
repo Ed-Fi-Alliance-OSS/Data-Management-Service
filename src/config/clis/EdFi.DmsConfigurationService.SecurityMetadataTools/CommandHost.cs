@@ -10,7 +10,14 @@ namespace EdFi.DmsConfigurationService.SecurityMetadataTools;
 
 internal static class CommandHost
 {
-    internal static RootCommand CreateCommand(TextWriter error)
+    internal static RootCommand CreateCommand(TextWriter error) =>
+        CreateCommand(TextWriter.Null, error, CreateHttpClient);
+
+    internal static RootCommand CreateCommand(
+        TextWriter output,
+        TextWriter error,
+        Func<HttpClient> createHttpClient
+    )
     {
         var root = new RootCommand("Ed-Fi API Security Metadata Tools");
         var convert = new Command(
@@ -46,6 +53,7 @@ internal static class CommandHost
             )
         );
         root.Subcommands.Add(convert);
+        root.Subcommands.Add(VerifyCommand.Create(output, error, createHttpClient));
         return root;
     }
 
@@ -69,7 +77,22 @@ internal static class CommandHost
         );
 
     internal static Task<int> InvokeAsync(string[] args, TextWriter output, TextWriter error) =>
-        CreateCommand(error)
-            .Parse(args)
-            .InvokeAsync(new InvocationConfiguration { Output = output, Error = error });
+        InvokeAsync(args, output, error, CreateHttpClient);
+
+    internal static Task<int> InvokeAsync(
+        string[] args,
+        TextWriter output,
+        TextWriter error,
+        Func<HttpClient> createHttpClient
+    )
+    {
+        var result = CreateCommand(output, error, createHttpClient).Parse(args);
+        // Keep verify stdout reserved for completed comparisons, including on argument errors.
+        bool verifyArgumentFailure = result.CommandResult.Command.Name == "verify" && result.Errors.Count > 0;
+        return result.InvokeAsync(
+            new InvocationConfiguration { Output = verifyArgumentFailure ? error : output, Error = error }
+        );
+    }
+
+    private static HttpClient CreateHttpClient() => new(new HttpClientHandler { AllowAutoRedirect = false });
 }
