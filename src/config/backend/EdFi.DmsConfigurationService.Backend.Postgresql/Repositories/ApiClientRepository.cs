@@ -518,7 +518,6 @@ public class ApiClientRepository(
             }
 
             bool isMove = existing.Value.ApplicationId != command.ApplicationId;
-            ApiClientEducationOrganizationScope? scope = command.EducationOrganizationScope;
 
             if (isMove)
             {
@@ -536,17 +535,23 @@ public class ApiClientRepository(
                     await transaction.RollbackAsync();
                     return new ApiClientUpdateResult.FailureApplicationNotFound();
                 }
-
-                // With no requested scope a moved client keeps its own: an inheriting client takes the
-                // destination list, and a narrowed client keeps its list, which must fit the destination
-                scope ??= existing.Value.InheritsApplicationEducationOrganizations
-                    ? new ApiClientEducationOrganizationScope.Inherit()
-                    : new ApiClientEducationOrganizationScope.Narrow(
-                        await StoredEducationOrganizationIdsAsync(connection, transaction, command.Id)
-                    );
             }
 
-            if (scope is ApiClientEducationOrganizationScope.Narrow narrow)
+            // With no requested scope the client keeps its own. Its rows are rewritten only for a requested
+            // scope or a move: a moved inheriting client takes the destination list, and a moved narrowed
+            // client keeps its list, which must fit the destination
+            bool rewritesScope = command.EducationOrganizationScope is not null || isMove;
+            ApiClientEducationOrganizationScope scope =
+                command.EducationOrganizationScope
+                ?? (
+                    existing.Value.InheritsApplicationEducationOrganizations
+                        ? new ApiClientEducationOrganizationScope.Inherit()
+                        : new ApiClientEducationOrganizationScope.Narrow(
+                            await StoredEducationOrganizationIdsAsync(connection, transaction, command.Id)
+                        )
+                );
+
+            if (rewritesScope && scope is ApiClientEducationOrganizationScope.Narrow narrow)
             {
                 long[] missingIds = DistinctEducationOrganizationIds(narrow)
                     .Except(
@@ -572,7 +577,7 @@ public class ApiClientRepository(
                 }
             }
 
-            if (scope is not null)
+            if (rewritesScope)
             {
                 // The rows reference the client's current Application with NO ACTION, so they go
                 // before the ApplicationId changes and are reinserted for the scope below
@@ -598,9 +603,9 @@ public class ApiClientRepository(
                     command.Name,
                     command.IsApproved,
                     ClientUuid = command.ClientUuid,
-                    Inherits = scope is null
-                        ? (bool?)null
-                        : scope is ApiClientEducationOrganizationScope.Inherit,
+                    Inherits = rewritesScope
+                        ? scope is ApiClientEducationOrganizationScope.Inherit
+                        : (bool?)null,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
                     ModifiedBy = auditContext.GetCurrentUser(),
                     TenantId,
@@ -615,7 +620,7 @@ public class ApiClientRepository(
                 return new ApiClientUpdateResult.FailureApplicationNotFound();
             }
 
-            if (scope is ApiClientEducationOrganizationScope.Narrow narrowed)
+            if (rewritesScope && scope is ApiClientEducationOrganizationScope.Narrow narrowed)
             {
                 await InsertStoredEducationOrganizationsAsync(
                     connection,
@@ -625,7 +630,7 @@ public class ApiClientRepository(
                     DistinctEducationOrganizationIds(narrowed)
                 );
             }
-            else if (scope is not null)
+            else if (rewritesScope)
             {
                 await InsertApplicationEducationOrganizationsAsync(
                     connection,

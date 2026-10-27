@@ -155,10 +155,9 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
 
     private async Task RunDuringProviderCallAsync()
     {
-        Func<Task>? action = DuringNextProviderCall;
-        DuringNextProviderCall = null;
-        if (action is not null)
+        if (DuringNextProviderCall is { } action)
         {
+            DuringNextProviderCall = null;
             await action();
         }
     }

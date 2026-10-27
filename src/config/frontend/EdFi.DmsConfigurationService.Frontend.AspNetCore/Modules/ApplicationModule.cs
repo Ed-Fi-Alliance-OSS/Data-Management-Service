@@ -810,7 +810,7 @@ public class ApplicationModule : IEndpointModule
         {
             case ApplicationApiClientsResult.Success success:
                 var client = success.Clients.FirstOrDefault();
-                if (client != null)
+                if (client is not null)
                 {
                     // Validate the request's references (vendor, profiles)
                     // before mutating the identity provider so a rejected reference cannot
