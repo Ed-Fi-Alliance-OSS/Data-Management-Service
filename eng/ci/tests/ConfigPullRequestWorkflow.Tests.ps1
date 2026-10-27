@@ -190,6 +190,78 @@ bash "$CLASSIFIER"
         $feature | Should -Match '@SecurityMetadataTools\s+Scenario: 07 '
     }
 
+    It 'runs only the bounded policy scenarios sequentially in <Job>' -ForEach @(
+        @{ Job = 'run-e2e-tests'; Backend = 'postgresql'; Environment = './.env.config.e2e'; Expected = @('Hybrid/5.2', 'Hybrid/6.1', 'Filesystem/5.2', 'Upload/5.2', 'Drift/5.2') }
+        @{ Job = 'run-e2e-tests-mssql'; Backend = 'mssql'; Environment = './.env.config.mssql.e2e'; Expected = @('Hybrid/5.2', 'Drift/5.2') }
+    ) {
+        $job = Get-JobBlock $Job
+        $steps = @([regex]::Matches($job, '(?ms)^      - name: .*?(?=^      - name:|\z)') | ForEach-Object Value)
+        $scenarios = @($steps | Where-Object { $_ -match 'run: >-\s+\./eng/docker-compose/tests/cms-isolation/Invoke-IsolatedConfigE2E.ps1' })
+        $actual = @($scenarios | ForEach-Object {
+            $_ | Should -Match "if: matrix.identityprovider == 'self-contained'"
+            $_ | Should -Match '-SkipDockerBuild'
+            $_ | Should -Match ('-EnvironmentFile ' + [regex]::Escape($Environment))
+            $_ | Should -Not -Match 'continue-on-error|Start-Job|ForEach-Object.*-Parallel'
+            $_ | Should -Match '-SecurityMetadataToolsScenario (\w+) -DataStandardVersion ([\d.]+)'
+            $match = [regex]::Match($_, '-SecurityMetadataToolsScenario (\w+) -DataStandardVersion ([\d.]+)')
+            "$($match.Groups[1].Value)/$($match.Groups[2].Value)"
+        })
+        $actual | Should -Be $Expected
+        $tags = @($steps | Where-Object { $_ -match 'run: docker tag ed-fi-api-config-local:latest ed-fi-api-config-cms-e2e-isolated:latest' })
+        $tags.Count | Should -Be 1
+        $tags[0] | Should -Match "if: matrix.identityprovider == 'self-contained'"
+        $job.IndexOf('./build-config.ps1 E2ETest') | Should -BeLessThan $job.IndexOf($tags[0])
+        $job.IndexOf($tags[0]) | Should -BeLessThan $job.IndexOf($scenarios[0])
+        $upload = @($steps | Where-Object { $_ -match '- name: Upload Test Results' })
+        $upload.Count | Should -Be 1
+        $upload[0] | Should -Match 'if: always\(\)'
+        $upload[0] | Should -Match ('name: E2E Test Results - ' + $Backend + ' - \$\{\{ matrix.identityprovider \}\}')
+        $upload[0] | Should -Match ('TestResults/cms-isolation/' + $Backend + '/\*\*')
+        $upload[0] | Should -Match '\*\*/\*\.trx'
+        $upload[0] | Should -Not -Match 'overwrite: true'
+    }
+
+    It 'uses the PostgreSQL job release version source only for installed Drift' {
+        $job = Get-JobBlock 'run-e2e-tests'
+        $job | Should -Match 'uses: actions/checkout@[^\r\n]+\s+with:\s+(?:#[^\r\n]+\s+)?fetch-depth: 0'
+        $job | Should -Match 'id: versions\s+run: \|\s+Import-Module ./package-helpers.psm1\s+Get-VersionNumber -projectPrefix "cs"'
+        $job | Should -Match '-SecurityMetadataToolsScenario Drift -DataStandardVersion 5.2\s+-UseInstalledTool -AppVersion ''\$\{\{ steps.versions.outputs.dms-v \}\}'''
+        [regex]::Matches($job, '-UseInstalledTool').Count | Should -Be 1
+        (Get-JobBlock 'run-e2e-tests-mssql') | Should -Not -Match '-UseInstalledTool|-AppVersion'
+        (Get-JobBlock 'run-e2e-tests-mssql') | Should -Match '-E2ETestFilter "TestCategory=MssqlRepresentative"'
+        (Get-JobBlock 'run-e2e-tests-mssql-multitenant') | Should -Not -Match 'Invoke-IsolatedConfigE2E'
+    }
+
+    It 'requires launcher Pester tests to execute and pass (<Outcome>)' -ForEach @(
+        @{ Outcome = 'passed'; Reject = $false }
+        @{ Outcome = 'missing'; Reject = $true }
+        @{ Outcome = 'zero'; Reject = $true }
+        @{ Outcome = 'failed'; Reject = $true }
+        @{ Outcome = 'skipped'; Reject = $true }
+        @{ Outcome = 'container failure'; Reject = $true }
+        @{ Outcome = 'block failure'; Reject = $true }
+    ) {
+        $job = Get-JobBlock 'run-parity-pester-tests'
+        $step = [regex]::Match($job, '(?ms)^      - name: Run Isolated Config E2E Launcher Tests\r?\n.*?(?=^      - name:|\z)').Value
+        $step | Should -Not -BeNullOrEmpty
+        $body = [regex]::Match($step, '(?ms)^        run: \|\r?\n(?<body>.*)').Groups['body'].Value -replace '(?m)^          ', ''
+        $script:launcherPesterResult = if ($Outcome -eq 'missing') { $null } else {
+            [pscustomobject]@{
+                TotalCount = $(if ($Outcome -eq 'zero') { 0 } else { 1 })
+                FailedContainersCount = [int]($Outcome -eq 'container failure')
+                FailedBlocksCount = [int]($Outcome -eq 'block failure')
+                Tests = @([pscustomobject]@{ Result = $(switch ($Outcome) { 'skipped' { 'Skipped' }; 'failed' { 'Failed' }; default { 'Passed' } }) })
+            }
+        }
+        Mock Invoke-Pester { $script:launcherPesterResult }
+        $invoke = { & ([scriptblock]::Create($body)) }
+        if ($Reject) { $invoke | Should -Throw '*did not all execute and pass*' }
+        else { $invoke | Should -Not -Throw }
+        Should -Invoke Invoke-Pester -Times 1 -Exactly -ParameterFilter {
+            $Path -eq 'eng/docker-compose/tests/cms-isolation/Invoke-IsolatedConfigE2E.Tests.ps1' -and $PassThru
+        }
+    }
+
     It 'fails the actual aggregate gate when package validation is <Result>' -ForEach @(
         @{ Result = 'failure' }
         @{ Result = 'cancelled' }
