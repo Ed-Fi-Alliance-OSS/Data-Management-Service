@@ -71,6 +71,17 @@ owns the opt-in boundary.
 Convenience PowerShell scripts have been included in the directory, which start
 the appropriate services.
 
+The local and published DMS launchers add `dms-cms-proxy.yml` when their Compose set includes
+both DMS and CMS, including the infrastructure and DMS-only phases. This overlay creates an internal
+`cms-proxy` network and explicitly enables forwarding with exact DMS peer trust, keeping public token
+callers separate from system-token refresh. Include it after both service files when composing a
+paired stack manually. The CMS-only launcher omits it, preserving
+`CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS=false` and existing standalone proxy settings.
+If `172.30.148.0/29` overlaps
+another network, change `DMS_CMS_PROXY_SUBNET`, `DMS_CMS_PROXY_IP` and `CMS_PROXY_IP` together before
+starting. Parallel paired stacks need different subnets. See
+[ConnectRateLimit](../../docs/CONFIGURATION.md#connectratelimit) for defaults and custom topologies.
+
 * `start-all-services.ps1` launches `postgresql.yml`, without starting the DMS.
   Useful for running DMS in a local debugger.
 * `start-local-dms.ps1` launches the DMS local build along with all necessary
@@ -336,8 +347,14 @@ A few things are specific to the MSSQL path:
 
 For a self-contained smoke run, set `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1`
 in your `.env` before starting or recreating the stack: the Smoke Test Utility requests
-a new token for each resource GET and otherwise exceeds the default limit of 15.
-Restore the configured limit and recreate the stack after the smoke run.
+a new token for each resource GET and otherwise exceeds the default limit of 15. A self-contained
+DMS also proxies each token request to the Configuration Service's `/connect/token`, so also raise
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_SOURCE_PERMIT_LIMIT` and
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_CLIENT_PERMIT_LIMIT` for the run, or set
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED=false`. The rate-limit raise is only needed for stacks
+not started from `.env.smoke*` (for example custom or `.env.example`-based stacks), since the tracked
+smoke profiles already raise them.
+Restore the configured values and recreate the stack after the smoke run.
 
 After the stack is up, run the smoke tests the same way as for PostgreSQL. The script imports its
 modules relative to the current directory, so run it from `eng/smoke_test`. For `$key` and `$secret`, see
@@ -392,7 +409,7 @@ Run the non-destructive API smoke tests:
 * **IDE-hosted DMS** (`-InfraOnly`, with or without `-DmsBaseUrl`): whether the summary adds a tenant segment follows `DMS_MULTI_TENANCY` from the env file, but the IDE-hosted DMS reads its own `AppSettings:MultiTenancy` (default `false`). The summary states the value it assumes; set the IDE configuration to match.
 * **Tenant routes:** the summary lists the tenant-qualified DMS base and token URLs instead of a command. DMS serves tenant routes only with `DMS_MULTI_TENANCY=true`; a `DMS_CONFIGURATION_SERVICE_TENANT` used only by the Configuration Service does not qualify the URLs. Smoke runs against qualified routes have not been validated with the Smoke Test Utility.
 * **Data stores with route contexts** (school-year data stores from `-SchoolYearRange`, or a `-NoDataStore` direct start that selects a data store qualified by `schoolYear`, `districtId` or several contexts): the summary lists each data store's contexts as `key=value`, with no command or URL. Whether and in what order those values appear in the route depends on the target DMS's `ROUTE_QUALIFIER_SEGMENTS` (`AppSettings:RouteQualifierSegments`), which the Configuration Service records do not establish.
-* **Self-contained identity:** the summary also reminds you that `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` must be set **before the stack starts** (see above and `eng/smoke_test/SMOKETEST.md`).
+* **Self-contained identity:** the summary also reminds you that `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` and a raised (or disabled) `/connect/*` rate limit must be set **before the stack starts** (see above and `eng/smoke_test/SMOKETEST.md`).
 
 > [!IMPORTANT]
 > Pass `-AddSmokeTestCredentials` only once per Configuration Service. The application name is unique

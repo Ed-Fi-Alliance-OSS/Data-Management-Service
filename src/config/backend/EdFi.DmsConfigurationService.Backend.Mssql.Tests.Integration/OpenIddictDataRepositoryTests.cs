@@ -161,6 +161,37 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     protected static Task<TokenResult> RequestGrantAsync(OpenIddictTokenManager manager, string clientId) =>
         manager.GetAccessTokenAsync([new("client_id", clientId), new("client_secret", "plain-secret")]);
 
+    [TestFixture]
+    public class Given_width_aliases_in_a_width_insensitive_database : OpenIddictDataRepositoryTests
+    {
+        private Guid _applicationId;
+        private ApplicationInfo _byAlias = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            using var connection = await repository.CreateConnectionAsync();
+            bool widthInsensitive = await connection.ExecuteScalarAsync<bool>(
+                "SELECT CAST(CASE WHEN N'ClientA' = N'\uFF23lientA' THEN 1 ELSE 0 END AS bit)"
+            );
+            if (!widthInsensitive)
+            {
+                Assert.Ignore("The database collation distinguishes full-width client IDs.");
+            }
+
+            string clientId = $"Client-{Guid.NewGuid():N}";
+            _applicationId = await RegisterApplicationAsync(repository, clientId);
+            _byAlias =
+                await repository.GetApplicationByClientIdAsync("\uFF23" + clientId[1..])
+                ?? throw new InvalidOperationException("The width alias did not resolve the seeded client.");
+        }
+
+        [Test]
+        public void It_resolves_the_same_application_before_secret_verification() =>
+            _byAlias.Id.Should().Be(_applicationId);
+    }
+
     [TestFixture(true)]
     [TestFixture(false)]
     public class Given_Application_Lookups_With_And_Without_Api_Client_Rows(bool isApproved)

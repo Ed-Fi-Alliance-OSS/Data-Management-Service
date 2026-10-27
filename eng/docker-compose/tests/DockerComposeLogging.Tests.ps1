@@ -113,6 +113,7 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
         # which keeps the cap.
         $excludedOverrideFiles = @(
             "eng/docker-compose/bootstrap-dms.yml",
+            "eng/docker-compose/dms-cms-proxy.yml",
             "eng/docker-compose/local-config-diagnostics.yml",
             "eng/docker-compose/local-control-e3-certificates.yml",
             "eng/docker-compose/local-control-e4-threads.yml",

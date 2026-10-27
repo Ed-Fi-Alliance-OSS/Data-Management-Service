@@ -433,6 +433,10 @@ REVERSE_PROXY_KNOWN_NETWORKS=10.20.30.0/24
 For the Configuration Service, use the `CONFIGURATION_SERVICE_`-prefixed variables
 (`CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS`, `CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_PROXIES`,
 `CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_NETWORKS`).
+Standalone CMS keeps the default `false` and honors these variables as before. The DMS launchers
+add `dms-cms-proxy.yml` when their Compose set includes both DMS and CMS. That overlay enables
+forwarding and adds an exactly trusted DMS peer independently of the standalone flag. See
+[ConnectRateLimit](#connectratelimit) for the paired topology.
 
 ### Security response headers
 
@@ -789,6 +793,136 @@ These settings configure the allowed client-secret length range used by Configur
 > update an already-registered client. To apply a new value, recreate the identity state first —
 > run `teardown-local-dms.ps1` and set up again, or drop the Keycloak realm / `dmscs` OpenIddict
 > tables — then start with the new secret.
+
+## ConnectRateLimit
+
+The Configuration Service rate limits its four OAuth endpoints, `POST /connect/token`,
+`/connect/revoke`, `/connect/register` and `/connect/introspect` (route-context suffixes included),
+to slow client-secret guessing and client enumeration. No other endpoint is limited. Two independent
+budgets apply, and a request must fit both:
+
+- **Per source address**, across all four routes. The address is the connection's remote address after
+  [forwarded headers](#reverse-proxy-and-forwarded-headers) from trusted proxies are applied. A native
+  IPv6 address counts against its /64. Requests whose address is unknown share one budget.
+- **Per source address and `client_id` pair**, for `/connect/token`, `/connect/revoke` and authenticated
+  `/connect/introspect` requests (self-contained mode), spent just before the client secret is verified.
+  A request rejected earlier (malformed form, unsupported grant type, missing token) does not spend it.
+  For counting, case, accents, character width, kana type and
+  trailing padding are ignored. This conservatively merges common SQL Server lookup aliases on every
+  provider, so distinct PostgreSQL or Keycloak clients with these spellings also share a budget. Authentication receives the
+  original client ID. This comparison does not reproduce every locale-specific SQL Server collation;
+  deployments using other linguistic equivalences must assess those against their client IDs.
+  The budget is spent whether or not the client exists, so a `429` reveals nothing about which clients
+  exist.
+
+Token, revocation and authenticated introspection credentials accept a `client_id` of at most
+1024 UTF-16 code units, including padding, with either Basic or form authentication. Longer IDs
+receive an Ed-Fi validation `400` on `/connect/token`. Revocation and authenticated introspection
+return OAuth `invalid_client`: `401` with a Basic challenge for Basic authentication, `400` otherwise.
+These checks precede client-budget processing or authentication. This bounds client-key processing and
+prevents oversized aliases from obtaining a separate budget. The validation limit also applies when
+rate limiting is disabled.
+
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `Enabled` | `true` | `false` turns all `/connect/*` limiting off. |
+| `SourcePermitLimit` | `120` | Requests per source address in each window. Must be > 0 when enabled. |
+| `ClientPermitLimit` | `30` | Token, revocation and authenticated introspection requests per source address and `client_id` pair in each window. Must be > 0 when enabled. |
+| `WindowSeconds` | `60` | Fixed-window length in seconds. Must be > 0 when enabled. |
+| `RequiredProxyAddress` | empty | When set and limiting is enabled, requires forwarded-header processing and this exact IP in `AppSettings:ReverseProxy:KnownProxies`. Compose sets this to its reserved DMS peer. Leave empty for direct deployments. |
+
+The Docker Compose stacks set these from `CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED`,
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_SOURCE_PERMIT_LIMIT`,
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_CLIENT_PERMIT_LIMIT` and
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_WINDOW_SECONDS`. An invalid value is reported at startup and
+the service answers every request with `500` until it is corrected.
+
+Sizing notes:
+
+- Limits are enforced **per Configuration Service process**. With several replicas behind a load
+  balancer, a caller can reach up to replicas × limit requests per window.
+- Callers behind one NAT still share **one source budget**. A higher `SourcePermitLimit` increases
+  capacity but does not isolate those callers.
+- The Ed-Fi API's `/oauth/token` proxy sends one `X-Forwarded-For` value derived from its trusted
+  connection address, replacing any caller-supplied value. If the connection has no remote address,
+  it sends `0.0.0.0` so those callers share a public budget separate from private system-token refresh.
+  **Before using this proxy with enabled
+  Configuration Service rate limiting**, enable `AppSettings:ReverseProxy:UseForwardedHeaders` on
+  the Configuration Service and set `KnownProxies` to the actual Ed-Fi API proxy addresses (or a network
+  containing only trusted proxies). If the Ed-Fi API itself sits behind an ingress, configure its own
+  [reverse proxy settings](#reverse-proxy-and-forwarded-headers) to trust only that ingress too.
+  System-token refresh sends no forwarded source, so it uses the Ed-Fi API's transport-address budget.
+  Do not allow external peers to originate connections from a trusted proxy's address.
+  Without this configuration, all proxied token requests and system refresh still share one budget:
+  an unauthenticated caller can exhaust the default with 120 requests per minute and block other
+  vendors. Raising that limit alone does not resolve the availability risk. The shipped Compose
+  stacks configure the dedicated link described below. Other deployments must configure their own
+  trusted proxy addresses and should set `RequiredProxyAddress` to detect missing trust at startup.
+  Self-contained CMS logs a startup warning when limiting is enabled, `RequiredProxyAddress` is empty,
+  and forwarding is disabled or no explicit trusted proxy or network is configured. This warning
+  cannot verify that a configured proxy address matches the actual DMS peer.
+- Partitions are held in memory per process. The source budget limits new client keys from each source
+  per window; it does not impose a global memory cap across sources. Idle enabled partitions are
+  removed by the framework. Disabled limiting uses one shared partition per budget.
+- Anyone who knows a client ID can consume its allowance at their source address without knowing the
+  secret. Callers sharing that source (including a NAT or an IPv6 /64) share the client allowance too.
+  Different sources have independent client allowances; public attempts against the Ed-Fi API's
+  Configuration Service client do not consume its private refresh allowance when trusted forwarding
+  is configured as above. No client ID is exempt. Distributed attempts from different sources are
+  limited independently; there is no cross-source client lockout.
+- The defaults come from expected traffic shape, not measured load. Real clients are already capped at
+  15 active tokens (`IdentitySettings:BearerTokenPerClientLimit`) and should reuse them.
+
+The local and published paired stacks use `dms-cms-proxy.yml` to give DMS a dedicated, exactly trusted
+CMS connection. Include it after both service files for manual paired Compose invocations; retain it
+across infrastructure, DMS-only and teardown phases. Defaults:
+
+```dotenv
+DMS_CMS_PROXY_SUBNET=172.30.148.0/29
+DMS_CMS_PROXY_IP=172.30.148.2
+CMS_PROXY_IP=172.30.148.3
+```
+
+Change all three values together if the subnet overlaps an existing network or another running stack.
+Both addresses must be distinct, usable IPv4 addresses in the subnet. Recreate both services and the
+`cms-proxy` network after changing them.
+Additional trusted ingress proxies can be listed in `CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_PROXIES`;
+the reserved DMS peer is always added independently. Keep untrusted workloads off this link.
+
+Standalone CMS omits the overlay and requires no forwarding for direct requests. Keep
+`CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS=false` unless it uses a trusted proxy. The paired
+overlay enables forwarding independently of that flag. A conflicting override fails configuration
+validation when `RequiredProxyAddress` remains set and limiting is enabled. This checks configured
+trust, not reachability. Update routing and the required peer together when changing topology.
+
+An IDE-hosted DMS connecting through a published CMS port bypasses this container link. In that
+workflow, add the actual host/gateway address CMS sees to its exact trusted proxies; the reserved
+container address alone does not attribute those requests. Do not trust the entire bridge network.
+
+### Rejection response
+
+A refused request receives `429 Too Many Requests` with a `Retry-After` header: the limiter's
+recommended delay rounded up to whole seconds, omitted if the limiter supplies none. All four
+`/connect/*` routes, including `/connect/revoke`, answer with an Ed-Fi problem-details body served as
+`application/problem+json`. Its `correlationId` is the request's trace identifier:
+
+```json
+{
+  "detail": "The number of allowed requests has been exceeded. Retry the request later.",
+  "type": "urn:ed-fi:management-api:too-many-requests",
+  "title": "Too Many Requests",
+  "status": 429,
+  "correlationId": "0HNCTN1IRQMDG:00000001",
+  "validationErrors": {},
+  "errors": []
+}
+```
+
+`/connect/revoke` keeps its OAuth error format for other statuses (see
+[CS-AUTH](../reference/design/configuration-service/CS-AUTH.md#token-revocation)).
+
+This `429` is distinct from the active-token limit's `429`
+(`urn:ed-fi:management-api:security:authentication:too-many-tokens`), which is unchanged.
 
 ## Plugins
 
@@ -1289,9 +1423,15 @@ operator values override the default; a value below 1 disables enforcement for e
 For self-contained deployments running the Ed-Fi Smoke Test Utility, temporarily set
 `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` in the stack's `.env` before
 starting or recreating it: the utility requests a new token for each resource GET and
-exceeds the default limit of 15. Restore the configured limit and recreate the stack
-after the smoke run. The tracked `.env.smoke` and `.env.smoke.ds61` profiles show 15;
-the smoke workflow supplies the `-1` override through the stack-start step's environment.
+exceeds the default limit of 15. A self-contained DMS proxies each of those token requests to
+the Configuration Service's `/connect/token`, so also raise
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_SOURCE_PERMIT_LIMIT` and
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_CLIENT_PERMIT_LIMIT` for the run, or set
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED=false` (see [ConnectRateLimit](#connectratelimit)).
+Restore the configured values and recreate the stack after the smoke run. The tracked
+`.env.smoke` and `.env.smoke.ds61` profiles show the token override of 15 and `/connect/*` rate limits raised to 1000000; the smoke
+workflow supplies the `-1` override and disables the `/connect/*` rate limit through the
+stack-start step's environment.
 
 Waiting for a token to expire is not the only remedy. A caller that still holds a token it no
 longer needs can revoke it at `POST /connect/revoke`, the `revocation_endpoint` advertised in the

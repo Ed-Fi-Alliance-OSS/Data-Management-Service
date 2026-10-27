@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
 using System.Text.Json;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.OAuth;
@@ -159,7 +160,20 @@ public class TokenEndpointModule : IEndpointModule
             traceId.Value
         );
 
-        var client = new HttpClientWrapper(httpClientFactory.CreateClient());
+        using HttpClient upstreamClient = httpClientFactory.CreateClient();
+        // RemoteIpAddress has already passed through trusted forwarded-header processing. Replace,
+        // never append or relay, caller-supplied forwarding values so CMS can isolate source budgets.
+        // CMS must explicitly trust this DMS proxy via its ReverseProxy settings. System-token refresh
+        // uses a separate client and sends no forwarded source, retaining the DMS transport budget.
+        // Unknown public sources share a fixed address instead of spending the private refresh budget.
+        // Clear factory-configured defaults too.
+        upstreamClient.DefaultRequestHeaders.Remove("X-Forwarded-For");
+        IPAddress source = httpContext.Connection.RemoteIpAddress ?? IPAddress.Any;
+        upstreamClient.DefaultRequestHeaders.Add(
+            "X-Forwarded-For",
+            (source.IsIPv4MappedToIPv6 ? source.MapToIPv4() : source).ToString()
+        );
+        var client = new HttpClientWrapper(upstreamClient);
 
         // null when the request carried no Authorization header at all, which the manager must
         // tell apart from a header that is present but empty.

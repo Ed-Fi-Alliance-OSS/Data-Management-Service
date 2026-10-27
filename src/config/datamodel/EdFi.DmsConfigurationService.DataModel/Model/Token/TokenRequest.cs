@@ -9,6 +9,9 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.Token;
 
 public class TokenRequest
 {
+    /// <summary>Bounds credential processing before authentication, including rate-limit key generation.</summary>
+    public const int MaxClientIdLength = 1024;
+
     public string client_id { get; set; } = "";
 
     public string client_secret { get; set; } = "";
@@ -21,7 +24,7 @@ public class TokenRequest
     {
         public Validator()
         {
-            RuleFor(m => m.client_id).NotEmpty();
+            RuleFor(m => m.client_id).NotEmpty().MaximumLength(MaxClientIdLength);
             RuleFor(m => m.client_secret).NotEmpty();
             RuleFor(m => m.grant_type).NotEmpty();
         }

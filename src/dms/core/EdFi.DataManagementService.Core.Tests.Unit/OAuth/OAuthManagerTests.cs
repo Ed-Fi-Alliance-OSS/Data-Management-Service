@@ -2968,6 +2968,31 @@ public class OAuthManagerTests
             record.Level == LogLevel.Warning && record.Properties.ContainsKey("OtherFieldNames")
         );
 
+    [TestFixture]
+    public class Given_A_Configuration_Service_Rate_Limit_Response
+    {
+        private RecordingLogger<OAuthManager> _logger = null!;
+        private JsonNode _body = null!;
+        private HttpStatusCode _status;
+
+        [SetUp]
+        public async Task Setup() =>
+            (_status, _, _body, _logger) = await UpstreamRejectsWith(
+                CmsFailureResponse.ForTooManyRequests("upstream-correlation-id").ToJsonString()
+            );
+
+        [Test]
+        public void It_preserves_the_generic_rate_limit_contract()
+        {
+            _status.Should().Be(HttpStatusCode.TooManyRequests);
+            ShouldBeTheGenericRateLimitContract(_body);
+        }
+
+        [Test]
+        public void It_does_not_warn_about_an_expected_throttle() =>
+            _logger.Records.Should().NotContain(record => record.Level == LogLevel.Warning);
+    }
+
     /// <summary>
     /// The fallback branch's warning carries a summary, and the summary is held to the same
     /// treatment as the 401 fallback's: values of non-standard members never reach it, member

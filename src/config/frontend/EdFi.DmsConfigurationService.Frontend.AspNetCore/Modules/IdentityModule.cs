@@ -36,11 +36,11 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
         endpoints
             .MapPost("connect/register/{**contextPath}", RegisterClient)
             .DisableAntiforgery()
-            .WithMetadata(OAuthEndpointMetadata.Instance);
+            .WithMetadata(OAuthEndpointMetadata.Instance, ConnectRateLimitMetadata.Instance);
         endpoints
             .MapPost("connect/token/{**contextPath}", GetClientAccessToken)
             .DisableAntiforgery()
-            .WithMetadata(OAuthEndpointMetadata.Instance);
+            .WithMetadata(OAuthEndpointMetadata.Instance, ConnectRateLimitMetadata.Instance);
         // No RequireAuthorization() here: RFC 7009 §2.1 requires the caller to authenticate with
         // client credentials (RFC 6749 §2.3), the same as at /connect/token, not with a bearer
         // access token. The ITokenRevocationManager authenticates the caller inside
@@ -59,7 +59,8 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
                 ExceptionTypeOnlyLoggingMetadata.Instance,
                 BearerAuthenticationExemptMetadata.Instance,
                 ClientCredentialAuthenticationMetadata.Instance,
-                OAuthEndpointMetadata.Instance
+                OAuthEndpointMetadata.Instance,
+                ConnectRateLimitMetadata.Instance
             );
         // The same contract as /connect/revoke. RFC 7662 §2.1 requires some form of authorization
         // to call the endpoint; in self-contained mode CMS uses client credentials (RFC 6749 §2.3),
@@ -77,7 +78,8 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
                 OAuthErrorContractMetadata.Introspection,
                 ExceptionTypeOnlyLoggingMetadata.Instance,
                 BearerAuthenticationExemptMetadata.Instance,
-                OAuthEndpointMetadata.Instance
+                OAuthEndpointMetadata.Instance,
+                ConnectRateLimitMetadata.Instance
             );
         if (
             string.Equals(
@@ -260,6 +262,7 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
     private static async Task<IResult> GetClientAccessToken(
         TokenRequest.Validator validator,
         [FromServices] ITokenManager tokenManager,
+        [FromServices] ConnectRateLimiter rateLimiter,
         [FromServices] ILogger<IdentityModule> logger,
         HttpContext httpContext
     )
@@ -322,6 +325,17 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
                 "The specified grant type is not supported.",
                 httpContext.TraceIdentifier
             );
+        }
+
+        // DMS-1482 client gate: after the request is known to be well formed and before the manager
+        // verifies the secret. The budget is spent whether or not the client exists, so a 429 says
+        // nothing about existence; a malformed request keeps its answer and spends nothing.
+        if (
+            ConnectRateLimitRejection.RejectClient(rateLimiter, httpContext, model.client_id, logger) is
+            { } rateLimitRejection
+        )
+        {
+            return rateLimitRejection;
         }
 
         // RFC 6749 section 3.2: a parameter sent without a value is treated as omitted
@@ -393,6 +407,7 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
     private static async Task<IResult> IntrospectToken(
         [FromServices] ILogger<IdentityModule> logger,
         [FromServices] ITokenIntrospectionManager? introspectionManager,
+        [FromServices] ConnectRateLimiter rateLimiter,
         HttpContext httpContext
     )
     {
@@ -425,6 +440,14 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
             TokenTypeHint tokenTypeHint,
             bool basicAttempted
         ) = (ClientAuthenticatedForm.Accepted)form;
+
+        if (
+            ConnectRateLimitRejection.RejectClient(rateLimiter, httpContext, clientId, logger) is
+            { } rateLimitRejection
+        )
+        {
+            return rateLimitRejection;
+        }
 
         TokenIntrospectionResult result = await introspectionManager.IntrospectTokenAsync(
             new TokenIntrospectionRequest(clientId, clientSecret, token, tokenTypeHint),
@@ -504,6 +527,7 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
     private static async Task<IResult> RevokeToken(
         [FromServices] ILogger<IdentityModule> logger,
         [FromServices] ITokenRevocationManager revocationManager,
+        [FromServices] ConnectRateLimiter rateLimiter,
         HttpContext httpContext
     )
     {
@@ -525,6 +549,16 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
             bool basicAttempted
         ) = (ClientAuthenticatedForm.Accepted)form;
 
+        // DMS-1482 client gate: after the D-03 shape checks and credential parsing, before the manager
+        // authenticates the caller. Spent whether or not the client exists; rate-limit rejections use
+        // Ed-Fi problem details, while this route's other errors retain their OAuth contract.
+        if (
+            ConnectRateLimitRejection.RejectClient(rateLimiter, httpContext, clientId, logger) is
+            { } rateLimitRejection
+        )
+        {
+            return rateLimitRejection;
+        }
         TokenRevocationRequest request = new(clientId, clientSecret, token, tokenTypeHint);
 
         // The manager owns authenticate → ownership → mutate and classifies every dependency
@@ -693,6 +727,15 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
                     InvalidClient(httpContext, basicAttempted, ClientAuthenticationRequiredDescription)
                 );
             }
+        }
+
+        // Bound client-key processing before admission or any credential lookup. Oversized IDs
+        // cannot authenticate; keep the same error and Basic challenge as other invalid credentials.
+        if (clientId.Length > TokenRequest.MaxClientIdLength)
+        {
+            return new ClientAuthenticatedForm.Rejected(
+                InvalidClient(httpContext, basicAttempted, InvalidClientCredentialsDescription)
+            );
         }
 
         return new ClientAuthenticatedForm.Accepted(

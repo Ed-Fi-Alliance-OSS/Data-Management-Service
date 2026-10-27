@@ -506,6 +506,44 @@ public class FailureResponseTests
     }
 
     [TestFixture]
+    public class Given_a_too_many_requests_failure
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForTooManyRequests(CorrelationId);
+
+        [Test]
+        public void It_uses_the_too_many_requests_type() =>
+            _result["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:too-many-requests");
+
+        [Test]
+        public void It_has_the_too_many_requests_title() =>
+            _result["title"]!.GetValue<string>().Should().Be("Too Many Requests");
+
+        [Test]
+        public void It_has_status_429() => _result["status"]!.GetValue<int>().Should().Be(429);
+
+        [Test]
+        public void It_has_the_retry_detail() =>
+            _result["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The number of allowed requests has been exceeded. Retry the request later.");
+
+        [Test]
+        public void It_carries_the_correlation_id() =>
+            _result["correlationId"]!.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_extension_members()
+        {
+            _result["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _result["errors"]!.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
     public class Given_each_failure_factory
     {
         // One case per public factory, pinning its exact type, status and title. Members are read
@@ -534,6 +572,13 @@ public class FailureResponseTests
                 "urn:ed-fi:management-api:security:authentication:too-many-tokens",
                 429,
                 "Too Many Tokens"
+            ),
+            new(
+                nameof(FailureResponse.ForTooManyRequests),
+                () => FailureResponse.ForTooManyRequests(CorrelationId),
+                "urn:ed-fi:management-api:too-many-requests",
+                429,
+                "Too Many Requests"
             ),
             new(
                 nameof(FailureResponse.ForForbidden),

@@ -12,6 +12,9 @@ namespace EdFi.DmsConfigurationService.DataModel.Infrastructure;
 
 public static class FailureResponse
 {
+    private const string TooManyRequestsDetail =
+        "The number of allowed requests has been exceeded. Retry the request later.";
+
     private static readonly JsonSerializerOptions _serializerOptions = new()
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
@@ -20,6 +23,7 @@ public static class FailureResponse
     private static readonly string _typePrefix = "urn:ed-fi:management-api";
     private static readonly string _unauthorizedType = $"{_typePrefix}:security:authentication";
     private static readonly string _tooManyTokensType = $"{_unauthorizedType}:too-many-tokens";
+    private static readonly string _tooManyRequestsType = $"{_typePrefix}:too-many-requests";
     private static readonly string _forbiddenType = $"{_typePrefix}:security:authorization";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
     private static readonly string _notFoundTypePrefix = $"{_typePrefix}:not-found";
@@ -94,6 +98,22 @@ public static class FailureResponse
             [
                 $"Too many access tokens have been requested (limit is {limit}). Access tokens should be reused until they expire.",
             ]
+        );
+
+    /// <summary>
+    /// 429 response for a request refused by the <c>/connect/*</c> rate limiter (DMS-1482). The type
+    /// mirrors DMS's established <c>urn:ed-fi:api:too-many-requests</c>, and the detail is the text DMS
+    /// uses for its own rate-limit rejection. Distinct from <see cref="ForTooManyTokens"/>, which is the
+    /// active-token cap and whose text DMS parses.
+    /// </summary>
+    public static JsonNode ForTooManyRequests(string correlationId) =>
+        CreateBaseJsonObject(
+            detail: TooManyRequestsDetail,
+            type: _tooManyRequestsType,
+            title: "Too Many Requests",
+            status: 429,
+            correlationId: correlationId,
+            errors: []
         );
 
     public static JsonNode ForForbidden(

@@ -95,6 +95,13 @@ Describe "Select-SmokeTestLegs" {
         Assert-LegSet -Actual $legs -ExpectedIndices @(0, 1, 2, 3)
     }
 
+    It "triggers smoke validation for a change to the paired proxy overlay" {
+        $patterns = @(& $script:selector -ListPathPatterns)
+        $patterns | Should -Contain "eng/docker-compose/dms-cms-proxy.yml"
+        $legs = Invoke-Selector -EventName "pull_request" -ChangedFiles @("eng/docker-compose/dms-cms-proxy.yml")
+        Assert-LegSet -Actual $legs -ExpectedIndices @(0, 1, 2, 3)
+    }
+
     It "selects all four legs for an unmapped path" {
         $legs = Invoke-Selector -EventName "pull_request" -ChangedFiles @("README.md")
         Assert-LegSet -Actual $legs -ExpectedIndices @(0, 1, 2, 3)

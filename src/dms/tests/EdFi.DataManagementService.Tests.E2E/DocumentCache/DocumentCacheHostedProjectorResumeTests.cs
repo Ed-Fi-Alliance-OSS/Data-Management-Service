@@ -221,6 +221,9 @@ public sealed partial class DocumentCacheHostedHappyPathTests
 
         arguments.Add("-f");
         arguments.Add("local-config.yml");
+        // Preserve the launcher's trusted CMS connection when recreating only DMS.
+        arguments.Add("-f");
+        arguments.Add("dms-cms-proxy.yml");
 
         arguments.AddRange([
             "--env-file",

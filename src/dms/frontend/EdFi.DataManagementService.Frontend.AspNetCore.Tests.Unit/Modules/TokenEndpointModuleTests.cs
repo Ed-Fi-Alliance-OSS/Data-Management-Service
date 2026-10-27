@@ -1017,7 +1017,7 @@ public class TokenEndpointModuleTests
     /// What the real <see cref="OAuthManager"/> sent upstream, read inside the handler before the
     /// request could be disposed.
     /// </summary>
-    private sealed record UpstreamCall(string? Authorization, string Body);
+    private sealed record UpstreamCall(string? Authorization, string Body, string[] ForwardedFor);
 
     /// <summary>
     /// Records every upstream token request and answers each with an empty 200.
@@ -1036,13 +1036,78 @@ public class TokenEndpointModuleTests
                     request.Headers.Authorization?.ToString(),
                     request.Content is null
                         ? string.Empty
-                        : await request.Content.ReadAsStringAsync(cancellationToken)
+                        : await request.Content.ReadAsStringAsync(cancellationToken),
+                    request.Headers.TryGetValues("X-Forwarded-For", out var sources) ? sources.ToArray() : []
                 )
             );
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent("{}", Encoding.UTF8, "application/json"),
             };
+        }
+    }
+
+    [TestFixture("198.51.100.1", "198.51.100.1")]
+    [TestFixture("198.51.100.2", "198.51.100.2")]
+    [TestFixture("::ffff:198.51.100.1", "198.51.100.1")]
+    [TestFixture("2001:db8::1", "2001:db8::1")]
+    [TestFixture(null, "0.0.0.0")]
+    public class Given_a_token_proxy_source(string? remoteIp, string expectedSource)
+        : TokenEndpointModuleTests
+    {
+        private List<UpstreamCall> _calls = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            using RecordingUpstreamHandler handler = new();
+            IHttpClientFactory clientFactory = A.Fake<IHttpClientFactory>();
+            A.CallTo(() => clientFactory.CreateClient(A<string>._))
+                .ReturnsLazily(() =>
+                {
+                    HttpClient client = new(handler, disposeHandler: false);
+                    client.DefaultRequestHeaders.Add("X-Forwarded-For", "203.0.113.200");
+                    return client;
+                });
+            foreach (string forgedSource in new[] { "203.0.113.1", "203.0.113.2, 203.0.113.3" })
+            {
+                DefaultHttpContext context = new();
+                context.Connection.RemoteIpAddress = remoteIp is null ? null : IPAddress.Parse(remoteIp);
+                context.Request.Method = "POST";
+                context.Request.ContentType = "application/x-www-form-urlencoded";
+                context.Request.Headers["X-Forwarded-For"] = forgedSource;
+                context.Request.Body = new MemoryStream(
+                    Encoding.UTF8.GetBytes(
+                        "client_id=my-client&client_secret=my-secret&grant_type=client_credentials"
+                    )
+                );
+                context.Response.Body = new MemoryStream();
+                await AspNetCore.Modules.TokenEndpointModule.HandleFormData(
+                    context,
+                    Options.Create(
+                        new AppSettings
+                        {
+                            AuthenticationService = "http://cms/connect/token",
+                            Datastore = "postgresql",
+                            CorrelationIdHeader = "",
+                        }
+                    ),
+                    new OAuthManager(NullLogger<OAuthManager>.Instance),
+                    NullLogger<AspNetCore.Modules.TokenEndpointModule>.Instance,
+                    clientFactory
+                );
+            }
+            _calls = handler.Calls;
+        }
+
+        [Test]
+        public void It_replaces_forwarding_values_with_only_the_trusted_connection_source()
+        {
+            _calls.Should().HaveCount(2);
+            foreach (UpstreamCall call in _calls)
+            {
+                call.ForwardedFor.Should().Equal(expectedSource);
+            }
         }
     }
 

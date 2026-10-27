@@ -274,4 +274,38 @@ public class FailureResultsTests
                 );
         }
     }
+
+    [TestFixture]
+    public class Given_a_too_many_requests_failure_result
+    {
+        private ExecutedResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _result = await ExecuteAsync(FailureResults.TooManyRequests("corr-requests"));
+        }
+
+        [Test]
+        public void It_returns_429() => _result.StatusCode.Should().Be(429);
+
+        [Test]
+        public void It_uses_the_problem_details_content_type() =>
+            _result.ContentType.Should().Be("application/problem+json");
+
+        [Test]
+        public void It_has_the_too_many_requests_type() =>
+            _result.Body["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:management-api:too-many-requests");
+
+        [Test]
+        public void It_has_a_body_status_matching_the_http_status() =>
+            _result.Body["status"]!.GetValue<int>().Should().Be(429);
+
+        [Test]
+        public void It_includes_the_correlation_id() =>
+            _result.Body["correlationId"]!.GetValue<string>().Should().Be("corr-requests");
+    }
 }

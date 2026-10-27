@@ -4175,7 +4175,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
         # env-file leaf name, so derived files (named <leaf>.<token>) cannot collide between tests or
         # overwrite a developer's existing .derived/.env.mssql.
         function script:Invoke-StartScript {
-            param([scriptblock]$ScriptBlock)
+            param([scriptblock]$ScriptBlock, [bool]$PairedProxyNetwork = $false, [int]$ProxyInventoryExitCode = 0)
 
             # -Force is required on every .derived enumeration in this Describe, not optional
             # tidiness: derived files are all dot-prefixed, and Linux PowerShell treats a leading dot
@@ -4222,6 +4222,11 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
                 Set-Item -Path Function:\global:docker -Value {
                     $flattened = @($args | ForEach-Object { $_ })
                     $recorded.Add(($flattened -join " "))
+                    if ($flattened.Count -gt 1 -and $flattened[0] -eq "network" -and $flattened[1] -eq "ls" -and $flattened -contains 'label=com.docker.compose.network=cms-proxy') {
+                        $global:LASTEXITCODE = $ProxyInventoryExitCode
+                        if ($PairedProxyNetwork) { Write-Output 'paired-proxy-network-id' }
+                        return
+                    }
                     if ($flattened.Count -gt 0 -and $flattened[0] -eq "compose") {
                         $global:LASTEXITCODE = 1
                     }
@@ -4424,6 +4429,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             $values["DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"] | Should -Be "false"
 
             $run.ComposeCommand | Should -Not -BeNullOrEmpty
+            $run.ComposeCommand | Should -BeLike "*dms-cms-proxy.yml*" -Because "combined infrastructure and later DMS-only startup must use the same proxy topology"
         }
 
         It "shared mode (switch omitted): does not migrate CONFIGURATION_SERVICE_DATABASE_NAME away from its .env.mssql alias" {
@@ -4861,6 +4867,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
 
             $run.ComposeCommand | Should -Not -BeNullOrEmpty
             $run.ComposeCommand | Should -Not -BeLike "*published-config.yml*"
+            $run.ComposeCommand | Should -Not -BeLike "*dms-cms-proxy.yml*" -Because "the proxy overlay must not create a CMS service when CMS was omitted"
         }
 
         It "includes published-config.yml for -SeparateConfigDatabase under Keycloak, which would otherwise omit it" {
@@ -4872,7 +4879,54 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             }
 
             $run.ComposeCommand | Should -BeLike "*published-config.yml*" -Because "CMS must actually run to create the dedicated database"
+            $run.ComposeCommand | Should -BeLike "*dms-cms-proxy.yml*"
             $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "CMS participates in this shape, so the topology sequence must run"
+        }
+
+        It "preserves the existing published DMS-only topology when paired=<Paired> without a bootstrap manifest" -TestCases @(
+            @{ Paired = $true }, @{ Paired = $false }
+        ) {
+            param($Paired)
+            if (-not (Assert-NoStagedBootstrapWorkspace)) { return }
+            $envFile = New-WiringEnvFile
+            $run = Invoke-StartScript -PairedProxyNetwork:$Paired -ScriptBlock {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider keycloak -EnvironmentFile $envFile -DmsOnly *>$null
+            }
+
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty
+            if ($Paired) {
+                $run.ComposeCommand | Should -BeLike "*published-config.yml*"
+                $run.ComposeCommand | Should -BeLike "*dms-cms-proxy.yml*"
+            }
+            else {
+                $run.ComposeCommand | Should -Not -BeLike "*published-config.yml*"
+                $run.ComposeCommand | Should -Not -BeLike "*dms-cms-proxy.yml*"
+            }
+            $run.TopologyFile | Should -BeNullOrEmpty -Because "DMS-only continuation does not start CMS"
+        }
+
+        It "refuses to guess the published DMS-only topology when network inventory fails" {
+            if (-not (Assert-NoStagedBootstrapWorkspace)) { return }
+            $envFile = New-WiringEnvFile
+            $run = Invoke-StartScript -ProxyInventoryExitCode 1 -ScriptBlock {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider keycloak -EnvironmentFile $envFile -DmsOnly *>$null
+            }
+
+            $run.ErrorMessage | Should -BeLike "*Unable to determine the existing DMS/CMS proxy topology*"
+            $run.ComposeCommand | Should -BeNullOrEmpty
+        }
+
+        It "retains the paired proxy network in published teardown without a bootstrap manifest" {
+            if (-not (Assert-NoStagedBootstrapWorkspace)) { return }
+            $envFile = New-WiringEnvFile
+            $run = Invoke-StartScript {
+                & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider keycloak -EnvironmentFile $envFile -d *>$null
+            }
+
+            $run.ComposeCommand | Should -Not -BeNullOrEmpty
+            $run.ComposeCommand | Should -BeLike "*published-config.yml*"
+            $run.ComposeCommand | Should -BeLike "*dms-cms-proxy.yml*"
+            $run.TopologyFile | Should -BeNullOrEmpty -Because "teardown does not start CMS"
         }
 
         It "includes published-config.yml for -EnableConfig and for self-contained identity" {
@@ -4880,11 +4934,13 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider keycloak -EnableConfig -EnvironmentFile (New-WiringEnvFile) *>$null
             }
             $enableConfigRun.ComposeCommand | Should -BeLike "*published-config.yml*"
+            $enableConfigRun.ComposeCommand | Should -BeLike "*dms-cms-proxy.yml*"
 
             $selfContainedRun = Invoke-StartScript {
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider self-contained -EnvironmentFile (New-WiringEnvFile) *>$null
             }
             $selfContainedRun.ComposeCommand | Should -BeLike "*published-config.yml*"
+            $selfContainedRun.ComposeCommand | Should -BeLike "*dms-cms-proxy.yml*"
         }
 
         It "does not run this story's topology validator for a bare Keycloak start that omits CMS" {

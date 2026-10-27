@@ -4683,7 +4683,7 @@ Export-ModuleMember -Function *
             $definitionMatch.Success | Should -BeTrue
 
             $condition = $definitionMatch.Groups["condition"].Value
-            $condition | Should -Be '$EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode -or $SeparateConfigDatabase'
+            $condition | Should -Be '$EnableConfig -or $InfraOnly -or $IdentityProvider -eq "self-contained" -or $bootstrapMode -or $SeparateConfigDatabase -or $d'
             $condition | Should -Not -Match "keycloak" -Because "non-bootstrap keycloak published starts remain opt-in through -EnableConfig"
         }
     }

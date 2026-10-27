@@ -369,7 +369,7 @@ Describe "Get-SmokeTestCredentialSummary" {
     It "adds the token-limit prerequisite for self-contained identity" {
         $lines = @(Get-SmokeTestCredentialSummary -Credential @{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH$SECRET-1292'; ApplicationName = 'Smoke Test Application' } -DmsBaseUrl 'http://localhost:8080' -SelfContainedIdentity)
 
-        $lines[-1] | Should -BeExactly "Self-contained identity: set CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1 before starting the stack (see eng/smoke_test/SMOKETEST.md); the default limit stops the smoke run."
+        $lines[-1] | Should -BeExactly "Self-contained identity: set CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1 and raise CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_SOURCE_PERMIT_LIMIT and CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_CLIENT_PERMIT_LIMIT (or set CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED=false) before starting the stack (see eng/smoke_test/SMOKETEST.md); the default limits stop the smoke run."
         $lines.Count | Should -Be 9
     }
 
