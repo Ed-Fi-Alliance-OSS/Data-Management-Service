@@ -64,12 +64,7 @@ public partial class ApplicationModuleTests
             .Returns(new ApplicationSaveResult.Success(EmptySyncState));
         A.CallTo(() => _applicationRepository.GetApplicationSyncState(A<int>.Ignored))
             .Returns(new ApplicationSyncStateResult.Success(EmptySyncState));
-        A.CallTo(() =>
-                _apiClientRepository.SetApiClientIdentityProviderSyncPending(
-                    A<int>.Ignored,
-                    A<DateTime?>.Ignored
-                )
-            )
+        A.CallTo(() => _apiClientRepository.ClearApiClientIdentityProviderSyncPending(A<int>.Ignored))
             .Returns(new ApiClientSyncPendingResult.Success());
 
         A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))

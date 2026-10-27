@@ -66,11 +66,6 @@ public abstract class ApplicationSaveRepositoryTests : ApiClientEducationOrganiz
             )
         ).ToDictionary(row => row.Id, row => DateTime.SpecifyKind(row.PendingSince, DateTimeKind.Utc));
 
-    protected async Task MarkPendingAsync(int apiClientId) =>
-        (await ApiClientRepository.SetApiClientIdentityProviderSyncPending(apiClientId, PendingSince))
-            .Should()
-            .BeOfType<ApiClientSyncPendingResult.Success>();
-
     protected static ApplicationSyncState ShouldSucceed(ApplicationSaveResult result) =>
         result.Should().BeOfType<ApplicationSaveResult.Success>().Subject.State;
 

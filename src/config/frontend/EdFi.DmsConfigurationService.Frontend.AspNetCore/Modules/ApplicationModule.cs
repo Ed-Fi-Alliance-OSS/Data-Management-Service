@@ -1168,7 +1168,7 @@ public class ApplicationModule : IEndpointModule
         ApiClientSyncPendingResult result;
         try
         {
-            result = await apiClientRepository.SetApiClientIdentityProviderSyncPending(apiClientId, null);
+            result = await apiClientRepository.ClearApiClientIdentityProviderSyncPending(apiClientId);
         }
         catch (Exception ex)
         {

@@ -123,7 +123,6 @@ public partial class ApplicationModuleTests
         protected Dictionary<int, Func<ApiClientSyncPendingResult>> ClearOutcomes { get; } = [];
         private protected RecordingLogger<ApplicationModule> ModuleLogger { get; private set; } = new();
         protected List<ApplicationUpdateCommand> SavedCommands { get; } = [];
-        protected List<DateTime?> ClearedTo { get; } = [];
         protected HttpResponseMessage Response { get; private set; } = null!;
         protected List<bool> LockReleasedAtProviderCall { get; } = [];
         private RecordingLockManager _recordingLockManager = null!;
@@ -159,7 +158,6 @@ public partial class ApplicationModuleTests
             ClearOutcomes.Clear();
             ClearsTakingEffectDespiteFailure.Clear();
             SavedCommands.Clear();
-            ClearedTo.Clear();
             LockReleasedAtProviderCall.Clear();
             ModuleLogger = new();
             SaveResult = new ApplicationSaveResult.Success(SavedState(First, Second, Third));
@@ -243,16 +241,10 @@ public partial class ApplicationModuleTests
                     );
                 });
 
-            A.CallTo(() =>
-                    _apiClientRepository.SetApiClientIdentityProviderSyncPending(
-                        A<int>.Ignored,
-                        A<DateTime?>.Ignored
-                    )
-                )
+            A.CallTo(() => _apiClientRepository.ClearApiClientIdentityProviderSyncPending(A<int>.Ignored))
                 .ReturnsLazily(call =>
                 {
                     int apiClientId = call.GetArgument<int>(0);
-                    ClearedTo.Add(call.GetArgument<DateTime?>(1));
                     CallOrder.Add($"clear:{apiClientId}");
                     Clears.Add(apiClientId);
                     if (ClearOutcomes.TryGetValue(apiClientId, out var outcome))
@@ -375,10 +367,6 @@ public partial class ApplicationModuleTests
         [Test]
         public void It_saves_the_request_once() =>
             SavedCommands.Should().ContainSingle().Which.ApplicationName.Should().Be("Renamed Application");
-
-        [Test]
-        public void It_clears_each_marker_to_null() =>
-            ClearedTo.Should().HaveCount(3).And.AllSatisfy(value => value.Should().BeNull());
 
         [Test]
         public void It_holds_the_lock_through_every_provider_update_and_then_releases_it()

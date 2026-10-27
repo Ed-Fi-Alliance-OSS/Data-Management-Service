@@ -69,12 +69,7 @@ public partial class ApiClientModuleTests
         protected Task ActUnchangedUpdateAsync() => ActUpdateAsync(name: "Test");
 
         protected void AssertNoMarkerWrite() =>
-            A.CallTo(() =>
-                    _apiClientRepository.SetApiClientIdentityProviderSyncPending(
-                        A<int>.Ignored,
-                        A<DateTime?>.Ignored
-                    )
-                )
+            A.CallTo(() => _apiClientRepository.ClearApiClientIdentityProviderSyncPending(A<int>.Ignored))
                 .MustNotHaveHappened();
     }
 

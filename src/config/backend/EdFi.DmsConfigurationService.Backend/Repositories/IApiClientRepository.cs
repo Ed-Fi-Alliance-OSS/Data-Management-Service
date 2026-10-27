@@ -61,10 +61,10 @@ public interface IApiClientRepository
     Task<ApiClientEducationOrganizationStateResult> GetApiClientEducationOrganizationState(int id);
 
     /// <summary>
-    /// Sets or, with null, clears the UTC time since which an ApiClient awaits an identity-provider
-    /// update for an Application change.
+    /// Clears the time since which an ApiClient awaits an identity-provider update for an
+    /// Application change, once the provider has confirmed that update.
     /// </summary>
-    Task<ApiClientSyncPendingResult> SetApiClientIdentityProviderSyncPending(int id, DateTime? pendingSince);
+    Task<ApiClientSyncPendingResult> ClearApiClientIdentityProviderSyncPending(int id);
 }
 
 /// <summary>

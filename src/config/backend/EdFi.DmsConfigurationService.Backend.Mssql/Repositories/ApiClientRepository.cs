@@ -916,16 +916,8 @@ public class ApiClientRepository(
         );
     }
 
-    public async Task<ApiClientSyncPendingResult> SetApiClientIdentityProviderSyncPending(
-        int id,
-        DateTime? pendingSince
-    )
+    public async Task<ApiClientSyncPendingResult> ClearApiClientIdentityProviderSyncPending(int id)
     {
-        if (pendingSince is { Kind: not DateTimeKind.Utc })
-        {
-            throw new ArgumentException("The sync-pending time must be UTC.", nameof(pendingSince));
-        }
-
         try
         {
             await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -933,15 +925,10 @@ public class ApiClientRepository(
 
             string sql = $"""
                 UPDATE dmscs.ApiClient
-                SET IdentityProviderSyncPendingSince = @PendingSince
+                SET IdentityProviderSyncPendingSince = NULL
                 WHERE Id = @Id AND {TenantScopedApplicationCondition()};
                 """;
-            // Without an explicit DateTime2 type, SqlClient binds a DateTime as legacy datetime and
-            // rounds its fractional seconds before the DATETIME2 column stores them
-            DynamicParameters parameters = new(new { Id = id, TenantId });
-            parameters.Add("PendingSince", pendingSince, DbType.DateTime2);
-
-            int updatedRows = await connection.ExecuteAsync(sql, parameters);
+            int updatedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
 
             return updatedRows == 0
                 ? new ApiClientSyncPendingResult.FailureNotFound()
@@ -949,7 +936,7 @@ public class ApiClientRepository(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Set ApiClient sync-pending failure");
+            logger.LogError(ex, "Clear ApiClient sync-pending failure");
             return new ApiClientSyncPendingResult.FailureUnknown(ex.Message);
         }
     }

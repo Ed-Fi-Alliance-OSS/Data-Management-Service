@@ -301,8 +301,8 @@ public class Given_sync_pending_times_an_hour_apart_with_fractional_seconds
     public async Task Setup()
     {
         await SeedAsync(new TenantContextProvider());
-        await ApiClientRepository.SetApiClientIdentityProviderSyncPending(NarrowedClientId, First);
-        await ApiClientRepository.SetApiClientIdentityProviderSyncPending(SecondNarrowedClientId, Second);
+        await MarkPendingAsync(NarrowedClientId, First);
+        await MarkPendingAsync(SecondNarrowedClientId, Second);
         _firstState = await StateAsync(NarrowedClientId);
         _secondState = await StateAsync(SecondNarrowedClientId);
     }

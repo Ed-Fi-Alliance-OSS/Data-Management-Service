@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -353,6 +354,23 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
             );
 
     protected static readonly DateTime PendingSince = new(2030, 4, 5, 6, 7, 8, DateTimeKind.Utc);
+
+    /// <summary>Marks a client sync-pending, as an Application save would, at the given time.</summary>
+    protected async Task MarkPendingAsync(int apiClientId, DateTime? pendingSince = null)
+    {
+        // Without an explicit DateTime2 type, SqlClient binds a DateTime as legacy datetime and
+        // rounds its fractional seconds before the DATETIME2 column stores them
+        DynamicParameters parameters = new(new { Id = apiClientId });
+        parameters.Add("PendingSince", pendingSince ?? PendingSince, DbType.DateTime2);
+        (
+            await Connection!.ExecuteAsync(
+                "UPDATE dmscs.ApiClient SET IdentityProviderSyncPendingSince = @PendingSince WHERE Id = @Id;",
+                parameters
+            )
+        )
+            .Should()
+            .Be(1);
+    }
 
     /// <summary>Audit values for tests, running a callback on one numbered user lookup.</summary>
     protected sealed class CallbackAuditContext(int userLookupCallingBack, Action callback) : IAuditContext
@@ -923,7 +941,6 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
     [TestFixture]
     public class Given_a_client_sync_pending_time : ApiClientEducationOrganizationRepositoryTests
     {
-        private ApiClientSyncPendingResult _setResult = null!;
         private ApiClientSyncPendingResult _clearResult = null!;
         private ApiClientEducationOrganizationState _afterSet = null!;
         private ApiClientEducationOrganizationState _afterUnrelatedChanges = null!;
@@ -934,10 +951,7 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
         {
             await SeedAsync(new TenantContextProvider());
 
-            _setResult = await ApiClientRepository.SetApiClientIdentityProviderSyncPending(
-                SecondNarrowedClientId,
-                PendingSince
-            );
+            await MarkPendingAsync(SecondNarrowedClientId);
             _afterSet = await StateAsync(SecondNarrowedClientId);
 
             (await UpdateApiClientAsync(SecondNarrowedClientId, ScopedApplicationId, "Renamed client"))
@@ -956,15 +970,11 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
             await SaveRenamedScopedApplicationSucceedsAsync([1001, 1003]);
             _afterUnrelatedChanges = await StateAsync(SecondNarrowedClientId);
 
-            _clearResult = await ApiClientRepository.SetApiClientIdentityProviderSyncPending(
-                SecondNarrowedClientId,
-                null
+            _clearResult = await ApiClientRepository.ClearApiClientIdentityProviderSyncPending(
+                SecondNarrowedClientId
             );
             _afterClear = await StateAsync(SecondNarrowedClientId);
         }
-
-        [Test]
-        public void It_sets_the_time() => _setResult.Should().BeOfType<ApiClientSyncPendingResult.Success>();
 
         [Test]
         public void It_reads_the_time_back_as_UTC()
@@ -987,15 +997,6 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
         [Test]
         public void It_reads_no_time_after_clearing() =>
             _afterClear.IdentityProviderSyncPendingSince.Should().BeNull();
-
-        [Test]
-        public void It_rejects_a_time_that_is_not_UTC() =>
-            Assert.ThrowsAsync<ArgumentException>(() =>
-                ApiClientRepository.SetApiClientIdentityProviderSyncPending(
-                    SecondNarrowedClientId,
-                    DateTime.SpecifyKind(PendingSince, DateTimeKind.Unspecified)
-                )
-            );
     }
 
     [TestFixture]
@@ -1009,7 +1010,7 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
         public async Task Setup()
         {
             await SeedAsync(new TenantContextProvider());
-            await ApiClientRepository.SetApiClientIdentityProviderSyncPending(NarrowedClientId, PendingSince);
+            await MarkPendingAsync(NarrowedClientId);
             _rowsBeforeUpdate = await ClientRowsAsync();
             _result = await UpdateApiClientAsync(NarrowedClientId, ScopedApplicationId, "Renamed client");
         }
@@ -1052,11 +1053,8 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
                 Guid.NewGuid().ToString(),
                 Guid.NewGuid()
             );
-            await ApiClientRepository.SetApiClientIdentityProviderSyncPending(
-                SecondNarrowedClientId,
-                PendingSince
-            );
-            await ApiClientRepository.SetApiClientIdentityProviderSyncPending(NarrowedClientId, PendingSince);
+            await MarkPendingAsync(SecondNarrowedClientId);
+            await MarkPendingAsync(NarrowedClientId);
             _unfittingClientBefore = await ClientApplicationAndNameAsync(NarrowedClientId);
 
             _inheritingMove = await UpdateApiClientAsync(
@@ -1208,8 +1206,8 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
                 .BeOfType<ApiClientUpdateResult.FailureNotFound>();
 
         [Test]
-        public async Task It_reports_a_pending_time_write_not_found() =>
-            (await ApiClientRepository.SetApiClientIdentityProviderSyncPending(MissingClientId, PendingSince))
+        public async Task It_reports_a_pending_time_clear_not_found() =>
+            (await ApiClientRepository.ClearApiClientIdentityProviderSyncPending(MissingClientId))
                 .Should()
                 .BeOfType<ApiClientSyncPendingResult.FailureNotFound>();
     }
@@ -1287,9 +1285,8 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
                     EducationOrganizationScope = new ApiClientEducationOrganizationScope.Narrow([1001]),
                 }
             );
-            _pendingResult = await _otherTenantRepository.SetApiClientIdentityProviderSyncPending(
-                SecondNarrowedClientId,
-                PendingSince
+            _pendingResult = await _otherTenantRepository.ClearApiClientIdentityProviderSyncPending(
+                SecondNarrowedClientId
             );
             _moveResult = await _otherTenantRepository.UpdateApiClient(
                 new ApiClientUpdateCommand
@@ -1311,7 +1308,7 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
             _scopeResult.Should().BeOfType<ApiClientUpdateResult.FailureNotFound>();
 
         [Test]
-        public void It_reports_the_pending_time_write_not_found() =>
+        public void It_reports_the_pending_time_clear_not_found() =>
             _pendingResult.Should().BeOfType<ApiClientSyncPendingResult.FailureNotFound>();
 
         [Test]
@@ -1488,11 +1485,8 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
         public async Task Setup()
         {
             await SeedAsync(new TenantContextProvider());
-            await ApiClientRepository.SetApiClientIdentityProviderSyncPending(
-                InheritingClientId,
-                PendingSince
-            );
-            await ApiClientRepository.SetApiClientIdentityProviderSyncPending(NarrowedClientId, PendingSince);
+            await MarkPendingAsync(InheritingClientId);
+            await MarkPendingAsync(NarrowedClientId);
             _narrowResult = await UpdateApiClientAsync(
                 InheritingClientId,
                 ScopedApplicationId,

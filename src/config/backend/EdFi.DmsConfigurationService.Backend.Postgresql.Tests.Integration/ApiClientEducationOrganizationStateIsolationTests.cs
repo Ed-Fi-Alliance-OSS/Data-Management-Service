@@ -100,11 +100,23 @@ public class Given_sync_pending_times_written_in_a_session_outside_UTC
             new TenantContextProvider()
         );
 
-        await newYorkRepository.SetApiClientIdentityProviderSyncPending(NarrowedClientId, BeforeFallBack);
-        await newYorkRepository.SetApiClientIdentityProviderSyncPending(
-            SecondNarrowedClientId,
-            AfterFallBack
-        );
+        await using (NpgsqlConnection newYorkWriter = new(newYorkSession.ConnectionString))
+        {
+            await newYorkWriter.OpenAsync();
+            await newYorkWriter.ExecuteAsync(
+                """
+                UPDATE "dmscs"."ApiClient" SET "IdentityProviderSyncPendingSince" = @BeforeFallBack WHERE "Id" = @NarrowedClientId;
+                UPDATE "dmscs"."ApiClient" SET "IdentityProviderSyncPendingSince" = @AfterFallBack WHERE "Id" = @SecondNarrowedClientId;
+                """,
+                new
+                {
+                    BeforeFallBack,
+                    AfterFallBack,
+                    NarrowedClientId,
+                    SecondNarrowedClientId,
+                }
+            );
+        }
 
         _beforeFallBackState = (
             (ApiClientEducationOrganizationStateResult.Success)
