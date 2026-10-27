@@ -42,11 +42,12 @@ public abstract class ApplicationUpdateSyncApiTests : DatabaseTestBase
         bool IsApproved
     );
 
-    protected sealed record Client(int Id, string ClientUuid);
+    protected sealed record Client(int Id, string ClientUuid, string Name);
 
     private WebApplicationFactory<Program> _factory = null!;
 
     protected List<ProviderUpdate> ProviderUpdates { get; } = [];
+    protected List<string> ProviderResets { get; } = [];
 
     /// <summary>The provider fails the update of these client UUIDs.</summary>
     protected Dictionary<string, Func<ClientUpdateResult>> FailingClients { get; } = [];
@@ -64,6 +65,7 @@ public abstract class ApplicationUpdateSyncApiTests : DatabaseTestBase
     public async Task StartHost()
     {
         ProviderUpdates.Clear();
+        ProviderResets.Clear();
         FailingClients.Clear();
 
         IIdentityProviderRepository identityProvider = A.Fake<IIdentityProviderRepository>();
@@ -83,6 +85,12 @@ public abstract class ApplicationUpdateSyncApiTests : DatabaseTestBase
             .ReturnsLazily(() =>
                 Task.FromResult<ClientCreateResult>(new ClientCreateResult.Success(Guid.NewGuid()))
             );
+        A.CallTo(() => identityProvider.ResetCredentialsAsync(A<string>.Ignored))
+            .ReturnsLazily(call =>
+            {
+                ProviderResets.Add(call.GetArgument<string>(0)!);
+                return Task.FromResult<ClientResetResult>(new ClientResetResult.Success("rotated-secret"));
+            });
         A.CallTo(() =>
                 identityProvider.UpdateClientAsync(
                     A<string>.Ignored,
@@ -226,20 +234,26 @@ public abstract class ApplicationUpdateSyncApiTests : DatabaseTestBase
             """
         );
 
-    private async Task<Client> CreateClientAsync(bool isApproved, string scopeJson, int[] dataStoreIds)
+    protected async Task<Client> CreateClientAsync(
+        bool isApproved,
+        string scopeJson,
+        int[] dataStoreIds,
+        int? applicationId = null
+    )
     {
+        string name = $"Client {Guid.NewGuid():N}";
         int id = await CreateAsync(
             "/v3/apiClients/",
             $$"""
             {
-              "applicationId": {{ApplicationId}},
-              "name": "Client {{Guid.NewGuid():N}}",
+              "applicationId": {{applicationId ?? ApplicationId}},
+              "name": "{{name}}",
               "isApproved": {{(isApproved ? "true" : "false")}},
               "dataStoreIds": [{{string.Join(", ", dataStoreIds)}}]{{scopeJson}}
             }
             """
         );
-        return new(id, await ClientUuidAsync(id));
+        return new(id, await ClientUuidAsync(id), name);
     }
 
     protected static string List(params long[] ids) =>
@@ -295,6 +309,52 @@ public abstract class ApplicationUpdateSyncApiTests : DatabaseTestBase
                 """
             ),
         ];
+    }
+
+    /// <summary>Every client awaiting an identity provider update, with its marker time.</summary>
+    protected async Task<Dictionary<int, DateTime>> PendingMarkersAsync()
+    {
+        await using var connection = await DataSource!.OpenConnectionAsync();
+        return (
+            await connection.QueryAsync<(int Id, DateTime PendingSince)>(
+                """
+                SELECT "Id", "IdentityProviderSyncPendingSince" FROM "dmscs"."ApiClient"
+                WHERE "IdentityProviderSyncPendingSince" IS NOT NULL;
+                """
+            )
+        ).ToDictionary(row => row.Id, row => row.PendingSince);
+    }
+
+    /// <summary>PUTs a client, by default exactly as it was created.</summary>
+    protected Task<(HttpStatusCode Status, JsonNode Body)> PutClientAsync(
+        Client client,
+        bool isApproved,
+        int[] dataStoreIds,
+        string scopeJson = "",
+        int? applicationId = null
+    ) =>
+        SendAsync(
+            HttpMethod.Put,
+            $"/v3/apiClients/{client.Id}",
+            $$"""
+            {
+              "id": {{client.Id}},
+              "applicationId": {{applicationId ?? ApplicationId}},
+              "name": "{{client.Name}}",
+              "isApproved": {{(isApproved ? "true" : "false")}},
+              "dataStoreIds": [{{string.Join(", ", dataStoreIds)}}]{{scopeJson}}
+            }
+            """
+        );
+
+    protected async Task<string> ClientEducationOrganizationIdsAsync(Client client)
+    {
+        var (status, apiClient) = await SendAsync(HttpMethod.Get, $"/v3/apiClients/{client.Id}");
+        status.Should().Be(HttpStatusCode.OK);
+        return string.Join(
+            ",",
+            apiClient["educationOrganizationIds"]!.AsArray().Select(id => id!.GetValue<long>()).Order()
+        );
     }
 
     protected async Task<string> ApplicationEducationOrganizationIdsAsync()
@@ -552,6 +612,223 @@ public abstract class ApplicationUpdateSyncApiTests : DatabaseTestBase
             )
                 .Should()
                 .Be((Array.Empty<int>(), ApplicationName, "255901,255902,255903"));
+    }
+
+    /// <summary>
+    /// After a rename leaves the unapproved and narrowed clients pending, an unchanged PUT of the
+    /// unapproved client completes its synchronization and only its own.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_partial_application_sync_followed_by_an_unchanged_client_put
+        : ApplicationUpdateSyncApiTests
+    {
+        private Dictionary<int, DateTime> _pendingBefore = [];
+        private (HttpStatusCode Status, JsonNode Body) _response;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            FailAtProvider(Unapproved);
+            FailAtProvider(Narrowed);
+            ShouldBePartialSync(
+                await PutApplicationAsync([A1, A2, A3], "Renamed Sync Application"),
+                Unapproved.Id,
+                Narrowed.Id
+            );
+            _pendingBefore = await PendingMarkersAsync();
+            FailingClients.Clear();
+            ProviderUpdates.Clear();
+
+            _response = await PutClientAsync(Unapproved, false, []);
+        }
+
+        [Test]
+        public void It_completes_the_client_update() =>
+            _response.Status.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_sends_the_client_its_current_scope_and_settings() =>
+            ProviderUpdates
+                .Select(update => (update.ClientUuid, update.EducationOrganizationIds, update.IsApproved))
+                .Should()
+                .Equal((Unapproved.ClientUuid, "255902", false));
+
+        [Test]
+        public async Task It_clears_only_that_client_and_keeps_the_other_marker_time() =>
+            (await PendingMarkersAsync())
+                .Should()
+                .BeEquivalentTo(
+                    new Dictionary<int, DateTime> { [Narrowed.Id] = _pendingBefore[Narrowed.Id] }
+                );
+    }
+
+    /// <summary>
+    /// A pending client's PUT that the provider rejects, and two PUTs rejected before the provider
+    /// is called, all leave its marker with its original time.
+    /// </summary>
+    [TestFixture]
+    public class Given_rejected_puts_of_a_pending_client : ApplicationUpdateSyncApiTests
+    {
+        private DateTime _pendingSince;
+        private HttpStatusCode _providerRejected;
+        private HttpStatusCode _missingDataStore;
+        private HttpStatusCode _scopeOffTheApplication;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            FailAtProvider(Unapproved);
+            ShouldBePartialSync(
+                await PutApplicationAsync([A1, A2, A3], "Renamed Sync Application"),
+                Unapproved.Id
+            );
+            _pendingSince = (await PendingMarkersAsync())[Unapproved.Id];
+
+            (_providerRejected, _) = await PutClientAsync(Unapproved, false, []);
+            FailingClients.Clear();
+            (_missingDataStore, _) = await PutClientAsync(Unapproved, false, [int.MaxValue]);
+            (_scopeOffTheApplication, _) = await PutClientAsync(Unapproved, false, [], List(A4));
+        }
+
+        [Test]
+        public void It_rejects_each_put()
+        {
+            _providerRejected.Should().Be(HttpStatusCode.BadGateway);
+            _missingDataStore.Should().Be(HttpStatusCode.Conflict);
+            _scopeOffTheApplication.Should().Be(HttpStatusCode.BadRequest);
+        }
+
+        [Test]
+        public async Task It_keeps_the_marker_with_its_original_time() =>
+            (await PendingMarkersAsync())
+                .Should()
+                .BeEquivalentTo(new Dictionary<int, DateTime> { [Unapproved.Id] = _pendingSince });
+    }
+
+    /// <summary>
+    /// A pending client moved to an Application that holds its education organization completes its
+    /// synchronization; a move to one that lacks it is rejected and keeps the marker.
+    /// </summary>
+    [TestFixture]
+    public class Given_moves_of_a_pending_client : ApplicationUpdateSyncApiTests
+    {
+        private Dictionary<int, DateTime> _pendingBefore = [];
+        private HttpStatusCode _rejectedMove;
+        private Dictionary<int, DateTime> _pendingAfterRejectedMove = [];
+        private HttpStatusCode _move;
+        private int _destination;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            FailAtProvider(Unapproved);
+            FailAtProvider(Narrowed);
+            ShouldBePartialSync(
+                await PutApplicationAsync([A1, A2, A3], "Renamed Sync Application"),
+                Unapproved.Id,
+                Narrowed.Id
+            );
+            _pendingBefore = await PendingMarkersAsync();
+            FailingClients.Clear();
+
+            int lacking = await CreateApplicationAsync($"Lacking {Guid.NewGuid():N}", [A1]);
+            (_rejectedMove, _) = await PutClientAsync(Unapproved, false, [], applicationId: lacking);
+            _pendingAfterRejectedMove = await PendingMarkersAsync();
+
+            _destination = await CreateApplicationAsync($"Destination {Guid.NewGuid():N}", [A1, A2]);
+            (_move, _) = await PutClientAsync(Unapproved, false, [], applicationId: _destination);
+        }
+
+        [Test]
+        public void It_rejects_the_move_to_an_Application_without_the_clients_list() =>
+            _rejectedMove.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_keeps_both_markers_after_the_rejected_move() =>
+            _pendingAfterRejectedMove.Should().BeEquivalentTo(_pendingBefore);
+
+        [Test]
+        public void It_completes_the_move() => _move.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public async Task It_clears_the_moved_client_and_keeps_the_other_marker_time() =>
+            (await PendingMarkersAsync())
+                .Should()
+                .BeEquivalentTo(
+                    new Dictionary<int, DateTime> { [Narrowed.Id] = _pendingBefore[Narrowed.Id] }
+                );
+    }
+
+    /// <summary>
+    /// Credential resets of pending clients, through the client and through a single-client
+    /// Application, rotate only the secret.
+    /// </summary>
+    [TestFixture]
+    public class Given_credential_resets_of_pending_clients : ApplicationUpdateSyncApiTests
+    {
+        private Client _soleClient = null!;
+        private Dictionary<int, DateTime> _pendingBefore = [];
+        private (HttpStatusCode Status, JsonNode Body) _clientReset;
+        private (HttpStatusCode Status, JsonNode Body) _applicationReset;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            int single = await CreateApplicationAsync($"Single {Guid.NewGuid():N}", [A1, A2]);
+            _soleClient = await CreateClientAsync(true, List(A2), [FirstDataStore], single);
+
+            FailAtProvider(Unapproved);
+            ShouldBePartialSync(
+                await PutApplicationAsync([A1, A2, A3], "Renamed Sync Application"),
+                Unapproved.Id
+            );
+            FailAtProvider(_soleClient);
+            ShouldBePartialSync(
+                await PutApplicationAsync(
+                    [A1, A2],
+                    $"Renamed Single {Guid.NewGuid():N}",
+                    applicationId: single
+                ),
+                _soleClient.Id
+            );
+            _pendingBefore = await PendingMarkersAsync();
+            ProviderUpdates.Clear();
+
+            _clientReset = await SendAsync(
+                HttpMethod.Put,
+                $"/v3/apiClients/{Unapproved.Id}/reset-credential"
+            );
+            _applicationReset = await SendAsync(
+                HttpMethod.Put,
+                $"/v3/applications/{single}/reset-credential"
+            );
+        }
+
+        [Test]
+        public void It_returns_each_reset_with_the_new_secret()
+        {
+            _clientReset.Status.Should().Be(HttpStatusCode.OK);
+            _clientReset.Body["secret"]!.GetValue<string>().Should().Be("rotated-secret");
+            _applicationReset.Status.Should().Be(HttpStatusCode.OK);
+            _applicationReset.Body["secret"]!.GetValue<string>().Should().Be("rotated-secret");
+        }
+
+        [Test]
+        public void It_rotates_only_the_secrets() =>
+            (ProviderResets.ToArray(), ProviderUpdates.Count)
+                .Should()
+                .BeEquivalentTo((new[] { Unapproved.ClientUuid, _soleClient.ClientUuid }, 0));
+
+        [Test]
+        public async Task It_keeps_both_markers_with_their_times() =>
+            (await PendingMarkersAsync()).Should().BeEquivalentTo(_pendingBefore);
+
+        [Test]
+        public async Task It_keeps_each_clients_scope()
+        {
+            (await ClientEducationOrganizationIdsAsync(Unapproved)).Should().Be("255902");
+            (await ClientEducationOrganizationIdsAsync(_soleClient)).Should().Be("255902");
+        }
     }
 
     [TestFixture]

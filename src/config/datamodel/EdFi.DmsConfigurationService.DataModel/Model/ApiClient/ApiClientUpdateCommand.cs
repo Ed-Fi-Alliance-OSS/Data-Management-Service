@@ -90,6 +90,14 @@ public class ApiClientUpdateCommand
     [JsonIgnore]
     public ApiClientEducationOrganizationScope? EducationOrganizationScope { get; set; }
 
+    /// <summary>
+    /// Set server-side only after the identity provider confirmed this update, so the save also
+    /// clears the client's pending identity provider synchronization. False keeps any pending
+    /// marker. Not part of the HTTP request body.
+    /// </summary>
+    [JsonIgnore]
+    public bool CompletesIdentityProviderSync { get; set; }
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? AdditionalProperties { get; set; }
 

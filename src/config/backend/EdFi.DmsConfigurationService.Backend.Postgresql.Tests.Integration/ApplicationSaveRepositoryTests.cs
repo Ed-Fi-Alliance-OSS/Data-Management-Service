@@ -7,6 +7,7 @@ using Dapper;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Profile;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
@@ -714,6 +715,147 @@ public abstract class ApplicationSaveRepositoryTests : ApiClientEducationOrganiz
             (await ScopedApplicationNameAsync()).Should().Be(ScopedApplicationName);
             (await ClientRowsAsync()).Should().Equal(ClientRowsBefore);
         }
+    }
+
+    /// <summary>
+    /// Direct client updates of two pending clients: only the one whose command completes the
+    /// identity provider synchronization loses its marker.
+    /// </summary>
+    [TestFixture]
+    public class Given_client_updates_of_pending_clients : ApplicationSaveRepositoryTests
+    {
+        private ApiClientUpdateResult _keeping = null!;
+        private ApiClientUpdateResult _completing = null!;
+        private ApiClientResolutionState _completedState = null!;
+        private ApiClientResolutionState _keptState = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+            await MarkPendingAsync(NarrowedClientId);
+            await MarkPendingAsync(SecondNarrowedClientId);
+
+            _keeping = await ApiClientRepository.UpdateApiClient(
+                new ApiClientUpdateCommand
+                {
+                    Id = NarrowedClientId,
+                    ApplicationId = ScopedApplicationId,
+                    Name = "Kept Client",
+                    IsApproved = true,
+                }
+            );
+            _completing = await ApiClientRepository.UpdateApiClient(
+                new ApiClientUpdateCommand
+                {
+                    Id = SecondNarrowedClientId,
+                    ApplicationId = ScopedApplicationId,
+                    Name = "Completed Client",
+                    IsApproved = true,
+                    CompletesIdentityProviderSync = true,
+                }
+            );
+            _keptState = (await ApiClientRepository.GetApiClientResolutionState(NarrowedClientId))
+                .Should()
+                .BeOfType<ApiClientResolutionResult.Success>()
+                .Subject.State;
+            _completedState = (await ApiClientRepository.GetApiClientResolutionState(SecondNarrowedClientId))
+                .Should()
+                .BeOfType<ApiClientResolutionResult.Success>()
+                .Subject.State;
+        }
+
+        [Test]
+        public void It_saves_both_updates()
+        {
+            _keeping.Should().BeOfType<ApiClientUpdateResult.Success>();
+            _completing.Should().BeOfType<ApiClientUpdateResult.Success>();
+        }
+
+        [Test]
+        public async Task It_clears_only_the_completed_client() =>
+            (await PendingClientsAsync())
+                .Should()
+                .BeEquivalentTo(new Dictionary<int, DateTime> { [NarrowedClientId] = PendingSince });
+
+        [Test]
+        public void It_reads_the_pending_state_back_for_outcome_resolution()
+        {
+            _keptState.IdentityProviderSyncPendingSince.Should().Be(PendingSince);
+            _completedState.IdentityProviderSyncPendingSince.Should().BeNull();
+            _completedState.Name.Should().Be("Completed Client");
+        }
+    }
+
+    /// <summary>
+    /// A completing update of a pending client that the database rejects after the client row was
+    /// already updated, its marker cleared and its scope rewritten: the missing data store fails the
+    /// transaction, and every change rolls back together, the marker included.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_completing_client_update_rolled_back_by_the_database : ApplicationSaveRepositoryTests
+    {
+        private ApiClientResolutionState _before = null!;
+        private ClientRow[] _rowsBefore = [];
+        private ApiClientUpdateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+            await MarkPendingAsync(NarrowedClientId);
+            await MarkPendingAsync(SecondNarrowedClientId);
+            _before = await ResolutionStateAsync(NarrowedClientId);
+            _rowsBefore = await ClientRowsOfAsync(NarrowedClientId);
+
+            _result = await ApiClientRepository.UpdateApiClient(
+                new ApiClientUpdateCommand
+                {
+                    Id = NarrowedClientId,
+                    ApplicationId = ScopedApplicationId,
+                    Name = "Changed Client",
+                    IsApproved = false,
+                    DataStoreIds = [MissingDataStoreId],
+                    ClientUuid = Guid.NewGuid(),
+                    EducationOrganizationScope = new ApiClientEducationOrganizationScope.Narrow([1002, 1003]),
+                    CompletesIdentityProviderSync = true,
+                }
+            );
+        }
+
+        private async Task<ApiClientResolutionState> ResolutionStateAsync(int apiClientId) =>
+            (await ApiClientRepository.GetApiClientResolutionState(apiClientId))
+                .Should()
+                .BeOfType<ApiClientResolutionResult.Success>()
+                .Subject.State;
+
+        [Test]
+        public void It_reports_the_missing_data_store() =>
+            _result.Should().BeOfType<ApiClientUpdateResult.FailureDataStoreNotFound>();
+
+        [Test]
+        public async Task It_leaves_the_client_exactly_as_it_was_marker_included()
+        {
+            ApiClientResolutionState after = await ResolutionStateAsync(NarrowedClientId);
+            after.Should().BeEquivalentTo(_before, options => options.WithStrictOrdering());
+            after.IdentityProviderSyncPendingSince.Should().Be(PendingSince);
+        }
+
+        [Test]
+        public async Task It_keeps_the_client_rows_with_their_audit_values() =>
+            (await ClientRowsOfAsync(NarrowedClientId)).Should().Equal(_rowsBefore);
+
+        [Test]
+        public async Task It_keeps_every_marker_with_its_time() =>
+            (await PendingClientsAsync())
+                .Should()
+                .BeEquivalentTo(
+                    new Dictionary<int, DateTime>
+                    {
+                        [NarrowedClientId] = PendingSince,
+                        [SecondNarrowedClientId] = PendingSince,
+                    }
+                );
     }
 
     [TestFixture]

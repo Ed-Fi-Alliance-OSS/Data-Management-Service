@@ -1035,8 +1035,11 @@ public class ApiClientModule : IEndpointModule
                     return FailureResults.Unknown(httpContext.TraceIdentifier);
                 case ClientUpdateResult.Success updateSuccess:
                     // Persist the client UUID the provider reports: unchanged when it updated the
-                    // client in place, or a replacement when it recreated the client.
+                    // client in place, or a replacement when it recreated the client. The provider
+                    // now holds this client's current settings, so the save also completes any
+                    // pending identity provider synchronization of the client (DMS-1642).
                     command.ClientUuid = updateSuccess.ClientUuid;
+                    command.CompletesIdentityProviderSync = true;
 
                     ApiClientUpdateResult repositoryResult;
                     try
@@ -1280,7 +1283,10 @@ public class ApiClientModule : IEndpointModule
                         && SetEquals(
                             resolved.StoredEducationOrganizationIds,
                             scope.StoredEducationOrganizationIds
-                        );
+                        )
+                        // The committed update cleared the pending marker; a still-pending client
+                        // whose other fields already matched (an unchanged request) did not commit.
+                        && resolved.IdentityProviderSyncPendingSince is null;
 
                     bool MatchesOriginal(ApiClientResolutionState resolved) =>
                         resolved.Name == existingApiClient.Name
@@ -1294,7 +1300,9 @@ public class ApiClientModule : IEndpointModule
                         && SetEquals(
                             resolved.StoredEducationOrganizationIds,
                             originalScope.StoredEducationOrganizationIds
-                        );
+                        )
+                        && resolved.IdentityProviderSyncPendingSince
+                            == originalScope.IdentityProviderSyncPendingSince;
 
                     // An unknown or thrown repository outcome is resolved with the authoritative
                     // row-locking read, which waits out any in-flight commit before classifying
