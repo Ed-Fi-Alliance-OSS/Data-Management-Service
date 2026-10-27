@@ -21,6 +21,9 @@ public class KeycloakTokenManager(
     /// <c>unauthorized_client</c>, both as a 401. Both are failed client authentications, which
     /// RFC 6749 section 5.2 reports as <c>invalid_client</c>, so both get this one answer and the
     /// response does not reveal whether the client id exists.
+    /// A 401 <c>unauthorized_client</c> for a grant the client cannot use, such as a client without
+    /// a service account or a public client, is deliberately folded into the same answer so that it
+    /// cannot be used to enumerate client ids.
     /// </summary>
     private static readonly TokenResult.FailureAuthentication _clientAuthenticationFailure = new(
         "invalid_client",

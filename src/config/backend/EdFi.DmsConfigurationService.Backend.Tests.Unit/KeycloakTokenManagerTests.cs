@@ -228,17 +228,28 @@ public class KeycloakTokenManagerTests
             ProviderError().GetType().Should().Be(typeof(IdentityProviderError.Unauthorized));
     }
 
-    [TestFixture]
-    public class Given_keycloak_answers_400_unauthorized_client : TokenManagerFixture
+    [TestFixture("Client not enabled to retrieve service account")]
+    [TestFixture("Public client not allowed to retrieve service account")]
+    public class Given_keycloak_answers_401_unauthorized_client_for_a_grant_the_client_cannot_use(
+        string description
+    ) : TokenManagerFixture
     {
-        private const string Body =
-            """{"error":"unauthorized_client","error_description":"Client not enabled to retrieve service account"}""";
-
-        protected override HttpResponseMessage Answer() => Json(HttpStatusCode.BadRequest, Body);
+        protected override HttpResponseMessage Answer() =>
+            Json(
+                HttpStatusCode.Unauthorized,
+                $$"""{"error":"unauthorized_client","error_description":"{{description}}"}"""
+            );
 
         [Test]
-        public void It_returns_the_base_type_with_the_raw_body() =>
-            ProviderError().Should().Be(new IdentityProviderError(Body));
+        public void It_answers_invalid_client_with_the_shared_message() =>
+            _result
+                .Should()
+                .Be(
+                    new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    )
+                );
     }
 
     [TestFixture]

@@ -7,9 +7,9 @@ that placeholder once, at startup. This page records the timing evidence for the
 observer could ask: can an absent client id still be told apart from an existing one by response
 time?
 
-The analysis scripts, `analyze_timing.py` and `diagnostics.py`, are kept beside this README so the
-collectors' output can be analysed from the repository. The raw samples, run logs and analysis
-outputs are not kept in the repository; see [Where the data is](#where-the-data-is).
+The raw samples, run logs, analysis outputs and the analysis scripts, `analyze_timing.py` and
+`diagnostics.py`, are not kept in the repository. They are in one archive, where the scripts travel
+with the fixtures their self-tests read; see [Where the data is](#where-the-data-is).
 
 ## Result on the current code (step 3)
 
@@ -26,7 +26,7 @@ outputs are not kept in the repository; see [Where the data is](#where-the-data-
 
 | | |
 | --- | --- |
-| Code measured | commit `38be2e413a068eb71f6f6f93aa46350495e2d8dd`, Release build, Configuration Service as a host process |
+| Code measured | commit `38be2e413a068eb71f6f6f93aa46350495e2d8dd` from [PR #1399](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/1399) (`git fetch origin refs/pull/1399/head` retrieves it), Release build, Configuration Service as a host process |
 | Databases | SQL Server LocalDB 17.0.4025.3, a fresh instance and database; PostgreSQL 18.6 (`postgres:18.6-alpine`), a fresh container and database |
 | Hashing | 210,000 PBKDF2 iterations |
 | Collector | `Given_token_endpoint_requests_measured_for_timing_evidence`: one keep-alive HTTP client, no concurrency |
@@ -106,25 +106,23 @@ It holds:
 - `step2-mssql/` and `step1-mssql/`: the earlier SQL Server runs on `d86bb6e95` and `a5c4b7570`,
   with `README-step1-step2.md` and `SHA256SUMS-step1-step2.txt` as they were committed.
 - `a5-final/`: the two fixtures for `diagnostics.py selftest`.
-- `analyze_timing.py` and `diagnostics.py`, the same files as those beside this README.
+- `analyze_timing.py` and `diagnostics.py`.
 - `BUNDLE-SHA256SUMS.txt`: the SHA-256 and size of every file in the archive.
 
 `SHA256SUMS.txt` beside this README repeats those checksums, so a copy of the archive can be checked
-against the repository. The files removed from this folder also remain in the branch history at
-`38be2e413`.
+against the repository.
 
-To analyse a collector's output, or to reproduce the analysis above from the archive's
-`step3/<database>/` samples, run these with Python 3 and numpy, where `<this folder>` is the folder
-of this README:
+To run the analysis, check the archive's SHA-256 against the value above, extract it, and run these
+with Python 3 and numpy from the extracted `DMS-1490-timing-evidence/` folder. The self-tests need
+no other input: `diagnostics.py selftest` reads the `a5-final/` fixtures beside it in the archive.
 
 ```
-python -I -B <this folder>/analyze_timing.py analyze --csv <samples>.csv --delta 250
-python -I -B <this folder>/analyze_timing.py analyze --csv <samples>.csv --delta 250 --arm-a unapproved_correct_secret
-python -I -B <this folder>/diagnostics.py diagnose --csv <samples>.csv --delta 250
+python -I -B analyze_timing.py selftest
+python -I -B diagnostics.py selftest
+python -I -B analyze_timing.py analyze --csv <samples>.csv --delta 250
+python -I -B analyze_timing.py analyze --csv <samples>.csv --delta 250 --arm-a unapproved_correct_secret
+python -I -B diagnostics.py diagnose --csv <samples>.csv --delta 250
 ```
 
-`analyze_timing.py selftest` runs from the repository. `diagnostics.py selftest` reads the
-`a5-final/` fixtures beside the script, so run it from the archive's copy.
-
-Earlier campaigns, on code before the narrow credential lookup, are in the branch history up to
-`a5c4b7570` and do not bear on the current code.
+`<samples>.csv` is a collector's measured-samples file, for example
+`step3/postgresql/step3-endpoint-postgresql-20261027T172944Z.csv` for the result above.
