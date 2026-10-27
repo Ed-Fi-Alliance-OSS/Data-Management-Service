@@ -153,11 +153,8 @@ error format. No response echoes a credential value.
 | 6 | No `Authorization` header, and a body `client_id` or `client_secret` longer than 2048 characters | `400` | `Bad Request` | `client_id and client_secret must each be at most 2048 characters` |
 | 7 | A `grant_type` other than `client_credentials`, including a JSON `null` | `400` | `Bad Request` | `Unsupported grant type` |
 
-"Basic header" here means an `Authorization` header whose scheme is `Basic`: after any leading
-whitespace, the whole run of characters up to the first whitespace character equals `Basic`, in
-any letter case. As accepted, this decision kept DMS's older test, under which a header that
-contained `basic` anywhere counted as Basic; DMS-1495 replaced it. See
-[Amendment: exact Basic scheme (DMS-1495)](#amendment-exact-basic-scheme-dms-1495).
+For the current definition of "Basic header", see the
+[DMS-1495 amendment](#amendment-exact-basic-scheme-dms-1495).
 
 Rule 2 matches the ODS/API, which takes a present `Authorization` header's value even when it is
 empty, fails to split it into a scheme and a parameter, and answers `400 invalid_request` before it
@@ -255,23 +252,17 @@ wrong secret in the body gets the same `401` as a wrong secret in a Basic header
   `The Authorization header must not be empty` instead of `Malformed Authorization header`.
 - A JSON body with `"grant_type": null` used to get a `500`. It now gets
   `400 Unsupported grant type`.
-- A header that contains `basic` but isn't a valid `Authorization` value, such as
-  `Basicxyz:secret` or two `Authorization` headers joined as `Basic X,Basic Y`, used to get a
-  `500`, and the error log quoted the whole header. It now gets
-  `400 Malformed Authorization header`, and the header isn't logged. Since DMS-1495, this applies
-  only to a header whose scheme is genuinely Basic, such as `Basic X,Basic Y`; `Basicxyz:secret`
-  has a different scheme and gets rule 3's `401 invalid_client`.
+- A genuine Basic header that isn't a valid `Authorization` value, such as `Basic X,Basic Y`,
+  used to get a `500`, and the error log quoted the whole header. It now gets
+  `400 Malformed Authorization header`, and the header isn't logged. For non-Basic values, see
+  the [DMS-1495 amendment](#amendment-exact-basic-scheme-dms-1495).
 - `scope` handling hasn't changed.
 - Callers that use a Basic header see no change in what reaches the upstream.
 
 ## Known limitations
 
-As accepted, DMS still recognized a Basic header by the substring `basic`, not by its scheme
-token, so a header with another scheme that happened to contain `basic`, such as
-`Digest username="basic-user"` or a `Bearer` token whose encoded payload contains those letters,
-was forwarded upstream or rejected as mixed rather than getting rule 3's `401 invalid_client`.
-DMS-1495 removed this limitation; see
-[Amendment: exact Basic scheme (DMS-1495)](#amendment-exact-basic-scheme-dms-1495).
+The former scheme-recognition limitation is superseded by the
+[DMS-1495 amendment](#amendment-exact-basic-scheme-dms-1495).
 
 DMS doesn't copy the ODS/API's two-part check on the `Authorization` header. The ODS/API splits a
 non-empty header on spaces and answers `400 invalid_request` unless there are exactly two parts,
@@ -329,10 +320,8 @@ normalization to Basic at the proxy, is unchanged.
   and the length cap at 2048 and 2049 characters for each field. A fixture for each adjacent pair
   of rules 3 to 7 makes a reordering of those checks fail. It also covers the
   upstream header and form body, the special-character round trip, and the absence of secrets
-  from the log. Since DMS-1495, it also covers headers whose scheme only contains or starts with
-  `basic`, with full, partial, over-cap or no body credentials and with an unsupported grant type,
-  and Basic schemes in mixed case, after leading whitespace, or followed by a tab or another
-  whitespace character.
+  from the log. It also covers the scheme boundaries and precedence in the
+  [DMS-1495 amendment](#amendment-exact-basic-scheme-dms-1495).
 - `TokenRequestCredentialsTests` (Core) covers the empty-means-omitted normalization and which
   values count as a second mechanism.
 - `TokenEndpointModuleTests` (frontend) covers form and JSON extraction, empty form and JSON fields
