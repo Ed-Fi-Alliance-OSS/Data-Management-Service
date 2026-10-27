@@ -17,7 +17,7 @@
         <PackageReadmeFile>README.md</PackageReadmeFile>
         <PackageProjectUrl>https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service</PackageProjectUrl>
         <Title>Ed-Fi API Security Metadata Tools</Title>
-        <Description>Convert ODS security metadata XML exports to Ed-Fi API Configuration Service claims documents.</Description>
+        <Description>Convert ODS security metadata XML exports, merge claims fragments, resolve effective permissions, and verify security metadata against the Ed-Fi DMS Configuration Service.</Description>
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="System.CommandLine" />

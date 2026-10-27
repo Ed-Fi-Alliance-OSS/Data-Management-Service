@@ -254,9 +254,9 @@ jobs:
           }
 
       # Locked pack, inspect the bundled CMS validator/schema, install the exact local
-      # package in a fresh tool directory/cache, then compare the complete conversion.
+      # package in a fresh tool directory/cache, then verify conversion, merge, and resolve.
       # This script never pushes or promotes a package and requires no feed credentials.
-      - name: Pack Install and Convert Representative Security Metadata
+      - name: Pack Install and Verify Offline Security Metadata Commands
         run: ./eng/verification/Test-SecurityMetadataToolsPackage.ps1 -AppVersion '${{ steps.versions.outputs.dms-v }}' -Configuration ${{ env.CONFIGURATION }}
 
   run-unit-tests:

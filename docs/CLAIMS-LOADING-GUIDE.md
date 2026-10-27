@@ -619,7 +619,7 @@ No additional configuration needed.
 4. Set required environment variables
 
 #### For Filesystem Mode:
-1. Prepare a complete `Claims.json` (for example, with `merge` below)
+1. Prepare a complete `Claims.json` (for example, with `merge` above), optionally accompanied by `*-claims.json` fragments
 2. Validate JSON syntax of each file
 3. Place files in designated directory
 4. Set required environment variables

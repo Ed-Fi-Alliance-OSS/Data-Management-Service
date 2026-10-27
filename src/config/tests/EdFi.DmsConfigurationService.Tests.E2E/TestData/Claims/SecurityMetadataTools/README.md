@@ -6,6 +6,14 @@ through `SECURITY_METADATA_TOOLS_FIXTURE_DIRECTORY`; default E2E claims are not 
 The [Hybrid scenario](Hybrid/README.md) covers both bundled Data Standards with reviewed
 permissions and full API/offline comparison. Only its `fragments/` subdirectory is mounted.
 
+CI deliberately uses a bounded coverage matrix: PostgreSQL runs Hybrid 5.2/6.1,
+Filesystem 5.2, Upload 5.2, and installed-tool Drift 5.2; SQL Server runs Hybrid 5.2
+and Drift 5.2. This covers Hybrid parity and stored-policy drift on both backends
+while assigning complete merged-document loading through Filesystem and Upload to
+PostgreSQL. SQL Server Drift covers Filesystem startup with its separate editable
+fixture; loading merge output through Filesystem or Upload on SQL Server is deliberately
+omitted to limit repeated Docker scenarios.
+
 The Filesystem 5.2 scenario runs the staged CLI against those same Hybrid fragments before
 startup, then copies the unmodified merge output to `Claims.json` in an otherwise empty
 mount. It starts fresh CMS with `ClaimsSource=Filesystem` and unrestricted loading disabled,
