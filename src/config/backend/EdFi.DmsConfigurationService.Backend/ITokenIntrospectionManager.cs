@@ -35,7 +35,8 @@ public sealed record TokenIntrospectionRequest(
 );
 
 /// <summary>
-/// The claims of an active token that the caller owns. <paramref name="Exp"/> and
+/// The claims of an active token that the caller owns. <paramref name="Scope"/> is space-delimited
+/// and empty when the token has no scope. <paramref name="Exp"/> and
 /// <paramref name="Iat"/> are Unix seconds so the endpoint can emit JSON integers.
 /// <paramref name="Aud"/> holds every audience in the provider's order and is empty when the token
 /// has none; the endpoint emits a single audience as a string and several as an array (RFC 7662

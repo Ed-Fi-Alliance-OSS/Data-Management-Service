@@ -20,7 +20,7 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 /// request goes through a real <see cref="HttpClient"/> over a recording handler, so the request shape,
 /// the client's timeout and the response handling are the production ones. Keycloak's answers are the
 /// ones recorded on 26.1.4 and 26.7.5 by <c>KeycloakIntrospectionCharacterizationTests</c> (rows I-00 to
-/// I-21), and the logging rules are the revocation manager's (DMS-1327 D-15).
+/// I-27), and the logging rules are the revocation manager's (DMS-1327 D-15).
 /// </summary>
 public class KeycloakTokenIntrospectionManagerTests
 {
@@ -135,8 +135,9 @@ public class KeycloakTokenIntrospectionManagerTests
     protected static IntrospectedToken OwnedToken(
         IReadOnlyList<string>? aud = null,
         string? sub = Subject,
-        string? iss = Issuer
-    ) => new(CallerClientId, "profile email", Exp, Iat, sub, aud ?? ["account"], iss);
+        string? iss = Issuer,
+        string scope = "profile email"
+    ) => new(CallerClientId, scope, Exp, Iat, sub, aud ?? ["account"], iss);
 
     protected static TokenIntrospectionResult.Active Active(IntrospectedToken token) => new(token);
 
@@ -542,11 +543,18 @@ public class KeycloakTokenIntrospectionManagerTests
         yield return Case("200 azp not a string", 200, Answer(body => body["azp"] = 7), unrecognized);
         yield return Case("200 azp null", 200, Answer(body => body["azp"] = null), unrecognized);
         yield return Case(
+            "200 client_id absent, azp the caller",
+            200,
+            Answer(body => body.Remove("client_id")),
+            Active(OwnedToken())
+        );
+        yield return Case(
             "200 client_id not a string",
             200,
             Answer(body => body["client_id"] = new JsonArray(CallerClientId)),
             unrecognized
         );
+        yield return Case("200 client_id null", 200, Answer(body => body["client_id"] = null), unrecognized);
 
         // Only access tokens are disclosed; ownership is decided before the token type.
         yield return Case("200 typ ID", 200, Answer(body => body["typ"] = "ID"), inactive);
@@ -599,7 +607,14 @@ public class KeycloakTokenIntrospectionManagerTests
         );
         yield return Case("200 iat missing", 200, Answer(body => body.Remove("iat")), unrecognized);
         yield return Case("200 iat null", 200, Answer(body => body["iat"] = null), unrecognized);
-        yield return Case("200 scope missing", 200, Answer(body => body.Remove("scope")), unrecognized);
+        // Keycloak leaves scope out when the token has none (I-27); null is not absent.
+        yield return Case(
+            "I-27 200 owner, scope absent",
+            200,
+            Answer(body => body.Remove("scope")),
+            Active(OwnedToken(scope: ""))
+        );
+        yield return Case("200 scope null", 200, Answer(body => body["scope"] = null), unrecognized);
         yield return Case(
             "200 scope not a string",
             200,
@@ -613,6 +628,7 @@ public class KeycloakTokenIntrospectionManagerTests
             Active(OwnedToken(sub: null))
         );
         yield return Case("200 sub not a string", 200, Answer(body => body["sub"] = 5), unrecognized);
+        yield return Case("200 sub null", 200, Answer(body => body["sub"] = null), unrecognized);
         yield return Case(
             "200 iss absent",
             200,
@@ -625,6 +641,7 @@ public class KeycloakTokenIntrospectionManagerTests
             Answer(body => body["iss"] = new JsonObject()),
             unrecognized
         );
+        yield return Case("200 iss null", 200, Answer(body => body["iss"] = null), unrecognized);
         yield return Case(
             "200 aud absent",
             200,

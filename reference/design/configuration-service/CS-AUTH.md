@@ -522,6 +522,7 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
   Failed credentials answer `invalid_client`: `401` with a `WWW-Authenticate: Basic` challenge when HTTP Basic was attempted, `400` otherwise.
 - **Only the token's own client receives metadata.**
   For the owner's valid token the answer is `200` with `active` true, `client_id`, `scope`, `exp`, `iat`, `sub`, `aud`, `iss` and `token_type` `Bearer`.
+  `scope` is space-delimited, and empty for a token without scopes.
   `exp` and `iat` are JSON integers.
   `aud` is a string for one audience and an array for several, as RFC 7662 §2.2 allows.
 - **Every other outcome is exactly `{"active": false}`.**
@@ -541,6 +542,7 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
   `token_type_hint` is not forwarded: the token is always looked up as an access token, and Keycloak's other token types (refresh, ID) are never described.
   Keycloak does not check ownership: any confidential client it authenticates may introspect any token in the realm.
   The Configuration Service therefore describes a token only when Keycloak reports it active and its `azp` equals the caller's client id, ordinally, and copies only the members listed above, never Keycloak's other claims.
+  Keycloak leaves `scope` out of its answer for a token without scopes, as RFC 7662 §2.2 allows; the owner then receives an empty `scope`.
   Credentials Keycloak rejects, and a public client (which Keycloak refuses at introspection), answer `invalid_client` by the same rules as `self-contained` mode.
   A `client_id` longer than 255 characters (Keycloak's maximum) is answered `invalid_client` without calling Keycloak.
   A `client_secret` or `token` longer than Keycloak's form attribute limit (128 KiB by default) is answered `400 invalid_request` ("The identity provider rejected the introspection request.") and logged at Information, as at `/connect/revoke`.
@@ -556,7 +558,10 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
   The client's access tokens carry `aud` `["<client id>", "account"]`, and its owner receives its own token's metadata on Keycloak 26.1.x and on 26.6.2 or later.
   DMS and the Configuration Service validate `aud` against their configured audience (`account` by default), which the array still contains.
   A client created by an earlier version gains the mapper the next time the Configuration Service rewrites it in Keycloak, even with unchanged values: `PUT /v3/apiClients/{id}` rewrites that API client, `PUT /v3/applications/{id}` the application's first API client, and `PUT /v3/vendors/{id}` every API client of the vendor's applications.
-  On Keycloak 26.6.2 or later, an earlier client that is never updated that way is answered `{"active": false}` for its own live token until an operator adds the same mapper in Keycloak: in the client's `<client id>-dedicated` scope, an *Audience* mapper with *Included Client Audience* set to the client itself and *Add to access token* and *Add to token introspection* on.
+  The exception is a client that already has a mapper named `Client's own audience` that does not name the client, for example one edited in Keycloak.
+  The update leaves that mapper as it is, so as not to remove an audience something else may rely on, still succeeds, and logs the Warning in [Log signals](#log-signals).
+  On Keycloak 26.6.2 or later, an earlier client that is never updated that way, or that kept such a mapper, is answered `{"active": false}` for its own live token until an operator adds the same mapper in Keycloak: in the client's `<client id>-dedicated` scope, an *Audience* mapper with *Included Client Audience* set to the client itself and *Add to access token* and *Add to token introspection* on.
+  When `Client's own audience` is taken, the operator gives the new mapper another name; any audience mapper that names the client satisfies later updates, which then add no other.
   Only tokens issued after the mapper is added carry the audience.
   Keycloak also has opt-outs, the server option `allow-token-introspection-without-audience-check` and the client setting *Allow token introspection without audience check*, but both are deprecated and not recommended.
   The compose files pin Keycloak 26.1.4; the Azure VM reference deployment runs 26.7.
@@ -1022,6 +1027,7 @@ Clients holding tokens signed with the old certificate must obtain new ones.
 | Introspection client id longer than any Keycloak client id (`keycloak`, answers `invalid_client`) | Information | `Introspection refused: the client id is longer than any Keycloak client id` |
 | Revocation client id longer than any Keycloak client id (`keycloak`, answers `invalid_client`) | Information | `Revocation refused: the client id is longer than any Keycloak client id` |
 | Keycloak reported another client's token (`keycloak`, answers `{"active": false}`) | Debug | `Introspection answered inactive: the supplied token was not issued to the calling client {ClientId}` |
+| A client update kept a `Client's own audience` mapper that does not name the client (`keycloak`, the update succeeds without the client's own audience) | Warning | `Client {ClientId} already has a protocol mapper named {MapperName} that does not name the client as an audience; it is left unchanged, …` |
 | Introspection Basic credentials malformed | Information | `Introspection Basic credentials were malformed at the {Stage} stage` |
 
 A snapshot publication labelled `Request` is a normal background reload started by a

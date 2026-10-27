@@ -78,7 +78,8 @@ public readonly record struct KeycloakServerVersion(int Major, int Minor, int Pa
 /// Configuration Service creates (its only default scope, the claim-set scope, carries an
 /// <c>oidc-audience-resolve-mapper</c>, and its own audience mapper puts the client itself into
 /// <c>aud</c>); CMS-legacy mirrors one created before the Configuration Service added that mapper and
-/// shares CMS's claim-set scope, as two clients of one claim set do;
+/// shares CMS's claim-set scope, as two clients of one claim set do; S names no default client scope,
+/// so its tokens carry an empty <c>scope</c>, and carries the same own audience mapper as CMS;
 /// R also issues refresh tokens for <c>client_credentials</c>; E's access tokens live 10 seconds; P is
 /// public and holds a per-run user; BO is bearer-only with a secret; D is disabled after creation. The
 /// audience scopes set <c>include.in.token.scope=false</c> so they change <c>aud</c> only. Every name
@@ -142,6 +143,8 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
 
     public CharacterizationClient LegacyCms => ClientLabelled("CMS-legacy");
 
+    public CharacterizationClient Scopeless => ClientLabelled("S");
+
     public CharacterizationClient R => ClientLabelled("R");
 
     public CharacterizationClient E => ClientLabelled("E");
@@ -167,6 +170,8 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
     public IReadOnlyList<string> CmsDefaultClientScopes { get; private set; } = [];
 
     public IReadOnlyList<string> LegacyCmsDefaultClientScopes { get; private set; } = [];
+
+    public IReadOnlyList<string> ScopelessDefaultClientScopes { get; private set; } = [];
 
     /// <summary>The evidence label of a per-run name or of the realm's issuer URL, or null.</summary>
     public string? Alias(string value) => _aliases.GetValueOrDefault(value);
@@ -361,6 +366,7 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
             "cms-legacy",
             ownAudience: false
         );
+        ScopelessDefaultClientScopes = await CreateScopelessAsync(adminToken);
         await CreateConfidentialAsync(
             adminToken,
             "R",
@@ -527,22 +533,7 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
         );
         if (ownAudience)
         {
-            protocolMappers.Add(
-                new JsonObject
-                {
-                    ["name"] = "Client's own audience",
-                    ["protocol"] = "openid-connect",
-                    ["protocolMapper"] = "oidc-audience-mapper",
-                    ["config"] = new JsonObject
-                    {
-                        ["included.client.audience"] = clientId,
-                        ["id.token.claim"] = "false",
-                        ["access.token.claim"] = "true",
-                        ["introspection.token.claim"] = "true",
-                        ["lightweight.claim"] = "false",
-                    },
-                }
-            );
+            protocolMappers.Add(OwnAudienceMapper(clientId));
         }
 
         protocolMappers.Add(HardcodedClaimMapper("Data Store IDs", "dataStoreIds", "1"));
@@ -563,6 +554,51 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
         Track(label, new CharacterizationClient(uuid, clientId, secret));
         return await Api.GetDefaultClientScopeNamesAsync(adminToken, uuid);
     }
+
+    // A client whose tokens carry an empty scope: naming no default client scope leaves only the
+    // service-account scope Keycloak adds, which puts nothing into scope. Its own audience mapper lets it
+    // introspect its own tokens from 26.6.2. Returns the client's default client scopes as Keycloak
+    // stored them.
+    private async Task<IReadOnlyList<string>> CreateScopelessAsync(string adminToken)
+    {
+        string clientId = $"cs-char-introspect-scopeless-{RunId}";
+        string secret = $"Secret-{Guid.NewGuid():N}!Aa1";
+        string uuid = await Api.CreateClientAsync(
+            adminToken,
+            new JsonObject
+            {
+                ["clientId"] = clientId,
+                ["name"] = $"Introspection characterization S {RunId}",
+                ["secret"] = secret,
+                ["protocol"] = "openid-connect",
+                ["publicClient"] = false,
+                ["serviceAccountsEnabled"] = true,
+                ["standardFlowEnabled"] = false,
+                ["directAccessGrantsEnabled"] = false,
+                ["defaultClientScopes"] = new JsonArray(),
+                ["protocolMappers"] = new JsonArray(OwnAudienceMapper(clientId)),
+            }
+        );
+        Track("S", new CharacterizationClient(uuid, clientId, secret));
+        return await Api.GetDefaultClientScopeNamesAsync(adminToken, uuid);
+    }
+
+    // Mirrors KeycloakClientRepository.SelfAudienceProtocolMapper.
+    private static JsonObject OwnAudienceMapper(string clientId) =>
+        new()
+        {
+            ["name"] = "Client's own audience",
+            ["protocol"] = "openid-connect",
+            ["protocolMapper"] = "oidc-audience-mapper",
+            ["config"] = new JsonObject
+            {
+                ["included.client.audience"] = clientId,
+                ["id.token.claim"] = "false",
+                ["access.token.claim"] = "true",
+                ["introspection.token.claim"] = "true",
+                ["lightweight.claim"] = "false",
+            },
+        };
 
     private static JsonObject HardcodedClaimMapper(string name, string claimName, string value) =>
         new()
@@ -885,6 +921,38 @@ public static class ExpectedIntrospection
     /// <summary>CMS-legacy's access token: the claim-set scope's audience-resolve mapper yields only <c>account</c>.</summary>
     public static IntrospectionPrediction LegacyCmsAccessToken() =>
         CmsShapedAccessToken(Realm.LegacyCms, MemberShape.OfString("account"));
+
+    /// <summary>
+    /// S's access token, answered active without a <c>scope</c> member: Keycloak leaves it out when the
+    /// token's scope is empty. S's own audience mapper makes S the only audience.
+    /// </summary>
+    public static IntrospectionPrediction ScopelessAccessToken() =>
+        IntrospectionPrediction.ActiveAnswer(
+            [
+                "active",
+                "aud",
+                "azp",
+                "client_id",
+                "exp",
+                "iat",
+                "iss",
+                "jti",
+                "sub",
+                "token_type",
+                "typ",
+                "username",
+            ],
+            IntrospectionPrediction.TokenMembers(
+                Realm.Scopeless.ClientId,
+                Realm.Scopeless.ClientId,
+                MemberShape.OfString(Realm.Scopeless.ClientId),
+                MemberShape.Absent,
+                "Bearer",
+                "Bearer",
+                Realm.Api.RealmUrl,
+                MemberShape.StringKind
+            )
+        );
 
     /// <summary>
     /// R's refresh token answered active, identical on both versions: the answer carries
@@ -1385,6 +1453,8 @@ public class Given_the_introspection_characterization_realm
     private MemberShape _audC = MemberShape.Absent;
     private MemberShape _audCms = MemberShape.Absent;
     private MemberShape _audLegacyCms = MemberShape.Absent;
+    private MemberShape _audS = MemberShape.Absent;
+    private MemberShape _scopeS = MemberShape.Absent;
     private MemberShape _audR = MemberShape.Absent;
     private MemberShape _audE = MemberShape.Absent;
     private MemberShape _audP = MemberShape.Absent;
@@ -1403,6 +1473,11 @@ public class Given_the_introspection_characterization_realm
         _audC = await AudienceOfServiceAccountTokenAsync(Realm.C);
         _audCms = await AudienceOfServiceAccountTokenAsync(Realm.Cms);
         _audLegacyCms = await AudienceOfServiceAccountTokenAsync(Realm.LegacyCms);
+        JsonObject scopelessToken = JwtPayload.Read(
+            (await Realm.ServiceAccountGrantAsync(Realm.Scopeless)).AccessToken
+        );
+        _audS = MemberShape.Of(scopelessToken, "aud");
+        _scopeS = MemberShape.Of(scopelessToken, "scope");
         _audE = await AudienceOfServiceAccountTokenAsync(Realm.E);
         TokenGrant refresh = await Realm.ServiceAccountGrantAsync(Realm.R);
         _audR = MemberShape.Of(JwtPayload.Read(refresh.AccessToken), "aud");
@@ -1413,9 +1488,11 @@ public class Given_the_introspection_characterization_realm
             "I-00",
             "Preconditions: server, client setup and the `aud` each client's access tokens carry (unverified JWT payload)",
             $"server {Realm.ServerVersion}; audience check predicted {(Realm.AudienceChecked ? "yes" : "no")}; sslRequired={Realm.SslRequired ?? "(absent)"}; "
-                + $"aud of A {Render(_audA)}, A2 {Render(_audA2)}, C {Render(_audC)}, CMS {Render(_audCms)}, CMS-legacy {Render(_audLegacyCms)}, R {Render(_audR)}, E {Render(_audE)}, P's user {Render(_audP)}; "
+                + $"aud of A {Render(_audA)}, A2 {Render(_audA2)}, C {Render(_audC)}, CMS {Render(_audCms)}, CMS-legacy {Render(_audLegacyCms)}, S {Render(_audS)}, R {Render(_audR)}, E {Render(_audE)}, P's user {Render(_audP)}; "
+                + $"scope of S's tokens {Render(_scopeS)}; "
                 + $"CMS default client scopes [{RenderScopes(Realm.CmsDefaultClientScopes)}]; "
                 + $"CMS-legacy default client scopes [{RenderScopes(Realm.LegacyCmsDefaultClientScopes)}]; "
+                + $"S default client scopes [{RenderScopes(Realm.ScopelessDefaultClientScopes)}]; "
                 + $"BO {(Realm.BearerOnlyCreationFailure is null ? $"created, stored bearerOnly={IntrospectionRendering.Stored(Realm.BearerOnlyStored)}" : $"refused: {Realm.BearerOnlyCreationFailure}")}; "
                 + $"D enabled after the update: {IntrospectionRendering.Stored(Realm.DisabledClientEnabledAfterUpdate)}; "
                 + $"refresh token issued to R for client_credentials: {(_refreshTokenIssuedToR ? "yes" : "no")}"
@@ -1469,6 +1546,18 @@ public class Given_the_introspection_characterization_realm
     [Test]
     public void It_gives_CMS_legacy_exactly_the_same_default_scopes_as_CMS() =>
         Realm.LegacyCmsDefaultClientScopes.Should().Equal(Realm.CmsScopeName, "service_account");
+
+    [Test]
+    public void It_gives_S_only_the_service_account_scope_as_a_default_scope() =>
+        Realm.ScopelessDefaultClientScopes.Should().Equal("service_account");
+
+    [Test]
+    public void It_issues_S_tokens_whose_scope_is_empty() =>
+        _scopeS.Matches(MemberShape.OfString("")).Should().BeTrue(Render(_scopeS));
+
+    [Test]
+    public void It_issues_S_tokens_whose_aud_is_exactly_S() =>
+        _audS.Matches(MemberShape.OfString(Realm.Scopeless.ClientId)).Should().BeTrue(Render(_audS));
 
     [Test]
     public void It_stores_BO_as_bearer_only() => Realm.BearerOnlyStored.Should().BeTrue();
@@ -2221,4 +2310,30 @@ public class Given_a_wrong_secret_with_a_token_over_the_form_attribute_limit()
     protected override ClientCredentials Credentials => new(Realm.A2.ClientId, Realm.UnheldSecret());
 
     protected override string CredentialNote => "client_secret_post with a secret no client holds";
+}
+
+[TestFixture]
+public class Given_a_client_whose_tokens_carry_no_scope_introspecting_its_own_token
+    : IntrospectionCharacterizationRow
+{
+    protected override string RowId => "I-27";
+
+    protected override string Scenario =>
+        "S, whose tokens carry an empty `scope` and whose own audience mapper puts it in `aud`, introspects its own access token";
+
+    protected override IntrospectionPrediction Prediction => ExpectedIntrospection.ScopelessAccessToken();
+
+    protected override async Task<IntrospectionObservation> ObserveAsync()
+    {
+        TokenGrant grant = await Realm.ServiceAccountGrantAsync(Realm.Scopeless);
+        IntrospectionOutcome outcome = await IntrospectWithFormCredentialsAsync(
+            Realm.Scopeless.Credentials,
+            grant.AccessToken
+        );
+        return new IntrospectionObservation(
+            outcome,
+            ActiveBefore: null,
+            $"{TokenAudience(grant.AccessToken)}; token scope {IntrospectionRendering.Shape(MemberShape.Of(JwtPayload.Read(grant.AccessToken), "scope"), Realm.Alias)}; RFC 7662 §2.2 makes `scope` optional"
+        );
+    }
 }

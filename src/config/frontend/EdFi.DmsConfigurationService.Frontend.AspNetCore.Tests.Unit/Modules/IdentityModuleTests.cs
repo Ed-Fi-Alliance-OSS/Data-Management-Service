@@ -5851,7 +5851,7 @@ public class IntrospectionRequestContractTests
     /// <summary>
     /// A Keycloak-mode host running the shipped <see cref="KeycloakTokenIntrospectionManager"/>; only the
     /// transport of its named client is replaced, by a <see cref="ScriptedKeycloak"/> answering as Keycloak
-    /// did in the characterization (rows I-01 to I-21). The shared client-authentication seam, the
+    /// did in the characterization (rows I-01 to I-27). The shared client-authentication seam, the
     /// delegation, the ownership filter and the endpoint's status and challenge rules are the production
     /// ones.
     /// </summary>
@@ -6049,6 +6049,41 @@ public class IntrospectionRequestContractTests
         [Test]
         public void It_sends_keycloak_no_authorization_header() =>
             Keycloak.Requests.Single().Authorization.Should().BeNull();
+    }
+
+    /// <summary>
+    /// RFC 7662 §2.2 makes <c>scope</c> optional, and Keycloak omits it for a token without scopes (I-27).
+    /// The owner still receives its token's metadata, with the empty scope the self-contained provider
+    /// reports for such a token.
+    /// </summary>
+    [TestFixture]
+    public class Given_keycloak_mode_and_the_owners_own_token_without_a_scope : KeycloakIntrospectionFixture
+    {
+        protected override (int Status, string Body)[] KeycloakAnswers =>
+            [(200, KeycloakActiveAnswerWithoutScope(ClientId))];
+
+        protected override HttpContent Body => Form(("token", Token));
+
+        protected override IEnumerable<string> AuthorizationValues => [_validBasic];
+
+        [Test]
+        public void It_answers_200() => Response.StatusCode.Should().Be(HttpStatusCode.OK, Content);
+
+        [Test]
+        public void It_answers_the_rfc_7662_members_with_an_empty_scope() =>
+            Content
+                .Should()
+                .Be(
+                    """{"active":true,"client_id":"introspect-client","scope":"","exp":1792607774,"iat":1792605974,"sub":"9f0c5a1e-subject","aud":"account","iss":"http://keycloak.test/realms/edfi","token_type":"Bearer"}"""
+                );
+
+        /// <summary><see cref="KeycloakActiveAnswer"/> without <c>scope</c>.</summary>
+        private static string KeycloakActiveAnswerWithoutScope(string azp)
+        {
+            JsonObject answer = JsonNode.Parse(KeycloakActiveAnswer(azp))!.AsObject();
+            answer.Remove("scope");
+            return answer.ToJsonString();
+        }
     }
 
     /// <summary>

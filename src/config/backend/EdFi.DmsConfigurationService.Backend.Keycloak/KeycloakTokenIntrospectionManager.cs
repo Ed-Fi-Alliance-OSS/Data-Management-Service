@@ -18,9 +18,8 @@ namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 /// about any token), so CMS decides ownership from the answer: only an active access token whose
 /// <c>azp</c>, and <c>client_id</c> when present, equal the caller's id ordinally is reported, and only
 /// its RFC 7662 members. Keycloak's answer is mapped only through the responses characterized on
-/// 26.1.4 and 26.7.5 (<c>KeycloakIntrospectionCharacterizationTests</c>, rows I-00 to I-21, and the
-/// 413 for a form value over Keycloak's form attribute limit); anything else, a timeout or an
-/// unreachable host included, is
+/// 26.1.4 and 26.7.5 (<c>KeycloakIntrospectionCharacterizationTests</c>, rows I-00 to I-27); anything
+/// else, a timeout or an unreachable host included, is
 /// <see cref="TokenIntrospectionResult.TemporarilyUnavailable"/>: one call both authenticates and
 /// decides, so without a usable answer an authenticated caller cannot be told apart from an
 /// unauthenticated one. Nothing from the caller, a provider body or a dependency exception reaches a log
@@ -193,10 +192,11 @@ public sealed class KeycloakTokenIntrospectionManager(
     }
 
     /// <summary>
-    /// A 200 answer (I-01 to I-05, I-13 to I-17, I-19). <c>active:false</c> is every unknown, invalid,
-    /// expired or revoked token. An active answer is a token outcome only for the caller's own access
-    /// token; ownership is decided before the token type, so another client's token is inactive whatever
-    /// its type. Members are required to have exactly the kinds Keycloak was observed to send.
+    /// A 200 answer (I-01 to I-05, I-13 to I-17, I-19, I-22 to I-24, I-27). <c>active:false</c> is
+    /// every unknown, invalid, expired or revoked token. An active answer is a token outcome only for
+    /// the caller's own access token; ownership is decided before the token type, so another client's
+    /// token is inactive whatever its type. Members are required to have exactly the kinds Keycloak was
+    /// observed to send.
     /// </summary>
     private TokenIntrospectionResult MapAnswer(Dictionary<string, JsonElement>? members, string clientId)
     {
@@ -230,12 +230,12 @@ public sealed class KeycloakTokenIntrospectionManager(
             return new TokenIntrospectionResult.Inactive();
         }
 
-        if (RequiredString(members, "azp") is not { } azp)
+        if (StringMember(members, "azp") is not { } azp)
         {
             return AnswerNotUsable(UnrecognizedResponseReason, clientId, "azp is missing or not a string");
         }
 
-        if (!TryOptionalString(members, "client_id", out string? tokenClientId))
+        if (!IsAbsentOrString(members, "client_id"))
         {
             return AnswerNotUsable(UnrecognizedResponseReason, clientId, "client_id is not a string");
         }
@@ -244,7 +244,8 @@ public sealed class KeycloakTokenIntrospectionManager(
         if (
             !string.Equals(azp, clientId, StringComparison.Ordinal)
             || (
-                tokenClientId is not null && !string.Equals(tokenClientId, clientId, StringComparison.Ordinal)
+                StringMember(members, "client_id") is { } tokenClientId
+                && !string.Equals(tokenClientId, clientId, StringComparison.Ordinal)
             )
         )
         {
@@ -256,7 +257,7 @@ public sealed class KeycloakTokenIntrospectionManager(
             return new TokenIntrospectionResult.Inactive();
         }
 
-        if (RequiredString(members, "typ") is not { } tokenType)
+        if (StringMember(members, "typ") is not { } tokenType)
         {
             return AnswerNotUsable(UnrecognizedResponseReason, clientId, "typ is missing or not a string");
         }
@@ -280,17 +281,18 @@ public sealed class KeycloakTokenIntrospectionManager(
             return AnswerNotUsable(UnrecognizedResponseReason, clientId, "iat is missing or not an integer");
         }
 
-        if (RequiredString(members, "scope") is not { } scope)
+        // Keycloak leaves scope out when the token has none (I-27), as RFC 7662 §2.2 allows.
+        if (!IsAbsentOrString(members, "scope"))
         {
-            return AnswerNotUsable(UnrecognizedResponseReason, clientId, "scope is missing or not a string");
+            return AnswerNotUsable(UnrecognizedResponseReason, clientId, "scope is not a string");
         }
 
-        if (!TryOptionalString(members, "sub", out string? sub))
+        if (!IsAbsentOrString(members, "sub"))
         {
             return AnswerNotUsable(UnrecognizedResponseReason, clientId, "sub is not a string");
         }
 
-        if (!TryOptionalString(members, "iss", out string? iss))
+        if (!IsAbsentOrString(members, "iss"))
         {
             return AnswerNotUsable(UnrecognizedResponseReason, clientId, "iss is not a string");
         }
@@ -308,8 +310,17 @@ public sealed class KeycloakTokenIntrospectionManager(
             "Keycloak answered the introspection request for client {ClientId}: the caller's own access token is active",
             LoggingUtility.SanitizeForLog(clientId)
         );
+        // No scope is an empty one, as the self-contained provider reports a token without scopes.
         return new TokenIntrospectionResult.Active(
-            new IntrospectedToken(azp, scope, exp, iat, sub, aud, iss)
+            new IntrospectedToken(
+                azp,
+                StringMember(members, "scope") ?? string.Empty,
+                exp,
+                iat,
+                StringMember(members, "sub"),
+                aud,
+                StringMember(members, "iss")
+            )
         );
     }
 
@@ -341,7 +352,7 @@ public sealed class KeycloakTokenIntrospectionManager(
         }
 
         string category = KeycloakProviderAnswer.ProviderErrorCategory(
-            members is null ? null : RequiredString(members, "error")
+            members is null ? null : StringMember(members, "error")
         );
 
         if (statusCode is not (401 or 403))
@@ -356,7 +367,7 @@ public sealed class KeycloakTokenIntrospectionManager(
             return ProviderAnswerNotUsable(UnparseableReason, clientId, statusCode, category);
         }
 
-        switch (statusCode, RequiredString(members, "error"), RequiredString(members, "error_description"))
+        switch (statusCode, StringMember(members, "error"), StringMember(members, "error_description"))
         {
             case (401, "invalid_client" or "unauthorized_client" or "invalid_request", _):
             case (403, "invalid_request", PublicClientRefusalDescription):
@@ -476,27 +487,14 @@ public sealed class KeycloakTokenIntrospectionManager(
     }
 
     /// <summary>The member as a string; null when it is absent or not a string.</summary>
-    private static string? RequiredString(Dictionary<string, JsonElement> members, string name) =>
+    private static string? StringMember(Dictionary<string, JsonElement> members, string name) =>
         members.TryGetValue(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
             ? value.GetString()
             : null;
 
-    /// <summary>True with null when the member is absent, true with its value when it is a string, false otherwise.</summary>
-    private static bool TryOptionalString(
-        Dictionary<string, JsonElement> members,
-        string name,
-        out string? text
-    )
-    {
-        text = null;
-        if (!members.TryGetValue(name, out JsonElement value))
-        {
-            return true;
-        }
-
-        text = value.ValueKind == JsonValueKind.String ? value.GetString() : null;
-        return text is not null;
-    }
+    /// <summary>False when the member is present but not a string, <c>null</c> included: null is not absent.</summary>
+    private static bool IsAbsentOrString(Dictionary<string, JsonElement> members, string name) =>
+        !members.TryGetValue(name, out JsonElement value) || value.ValueKind == JsonValueKind.String;
 
     /// <summary>A JSON integer that fits Int64; a fraction, an exponent or a string is not one.</summary>
     private static bool TryInteger(Dictionary<string, JsonElement> members, string name, out long number)
