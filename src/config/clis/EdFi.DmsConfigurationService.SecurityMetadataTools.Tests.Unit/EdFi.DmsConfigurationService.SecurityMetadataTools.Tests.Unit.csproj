@@ -24,6 +24,11 @@
     <ItemGroup>
         <Using Include="NUnit.Framework" />
         <None
+            Include="../../backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/AuthorizationMetadata/*.json"
+            Link="Fixtures/AuthorizationMetadata/%(Filename)%(Extension)"
+            CopyToOutputDirectory="PreserveNewest"
+        />
+        <None
             Include="../../backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/ClaimsComposition/**/*.json"
             Link="Fixtures/ClaimsComposition/%(RecursiveDir)%(Filename)%(Extension)"
             CopyToOutputDirectory="PreserveNewest"

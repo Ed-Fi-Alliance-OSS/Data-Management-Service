@@ -54,6 +54,7 @@ internal static class CommandHost
         );
         root.Subcommands.Add(convert);
         root.Subcommands.Add(MergeCommand.Create(error));
+        root.Subcommands.Add(ResolveCommand.Create(error));
         root.Subcommands.Add(VerifyCommand.Create(output, error, createHttpClient));
         return root;
     }
@@ -88,10 +89,11 @@ internal static class CommandHost
     )
     {
         var result = CreateCommand(output, error, createHttpClient).Parse(args);
-        // Keep verify stdout reserved for completed comparisons, including on argument errors.
-        bool verifyArgumentFailure = result.CommandResult.Command.Name == "verify" && result.Errors.Count > 0;
+        // Keep command results separate from argument-error help.
+        bool argumentFailure =
+            result.CommandResult.Command.Name is "verify" or "resolve" && result.Errors.Count > 0;
         return result.InvokeAsync(
-            new InvocationConfiguration { Output = verifyArgumentFailure ? error : output, Error = error }
+            new InvocationConfiguration { Output = argumentFailure ? error : output, Error = error }
         );
     }
 
