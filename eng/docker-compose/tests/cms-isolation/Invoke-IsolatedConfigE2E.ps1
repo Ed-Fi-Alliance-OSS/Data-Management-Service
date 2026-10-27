@@ -428,7 +428,8 @@ try {
     Set-HarnessVariable -Name SECURITY_METADATA_TOOLS_INSTALLED_EXECUTABLE -Value ""
     Set-HarnessVariable -Name SECURITY_METADATA_TOOLS_EXPECTED_VERSION -Value ""
     $workingTrx = Join-Path $repoRoot "TestResults/EdFi.DmsConfigurationService.Tests.E2E.trx"
-    Invoke-IsolatedCmsTestRun -WorkingTrx $workingTrx -ArtifactDirectory $artifactDirectory -ExpectedTestNames $expectedTestNames -Execute {
+    $databaseContainer = if ($datastore -eq 'mssql') { $isolation.CONFIGURATION_SERVICE_MSSQL_CONTAINER } else { $isolation.CONFIGURATION_SERVICE_POSTGRES_CONTAINER }
+    Invoke-IsolatedCmsTestRun -WorkingTrx $workingTrx -ArtifactDirectory $artifactDirectory -ExpectedTestNames $expectedTestNames -ContainerNames @($isolation.CONFIGURATION_SERVICE_CONTAINER, $databaseContainer) -Execute {
         if ($UseInstalledTool) {
             # Reuse the standalone package contract before installing the same local artifact for CMS.
             & pwsh -NoProfile -File (Join-Path $repoRoot 'eng/verification/Test-SecurityMetadataToolsPackage.ps1') -AppVersion $AppVersion -Configuration $Configuration

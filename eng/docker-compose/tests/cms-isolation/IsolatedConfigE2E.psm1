@@ -37,6 +37,7 @@ function Invoke-IsolatedCmsTestRun {
         [string] $WorkingTrx,
         [string] $ArtifactDirectory,
         [string[]] $ExpectedTestNames = @(),
+        [string[]] $ContainerNames = @(),
         [scriptblock] $Execute,
         [scriptblock] $Teardown
     )
@@ -89,6 +90,21 @@ function Invoke-IsolatedCmsTestRun {
             Set-Content -LiteralPath (Join-Path $ArtifactDirectory "run-status.txt") -Value $status
         }
         finally {
+            if (-not $passed) {
+                # Containers disappear during teardown. Retain both output streams, even when
+                # startup failed; a missing container or failed capture must not hide the run failure.
+                foreach ($container in $ContainerNames) {
+                    try {
+                        & docker logs --timestamps $container *> (Join-Path $ArtifactDirectory "$container.log")
+                        if ($LASTEXITCODE -ne 0) {
+                            Write-Warning "Could not capture logs for $container (exit $LASTEXITCODE)." -WarningAction Continue
+                        }
+                    }
+                    catch {
+                        Write-Warning "Could not capture logs for $container." -WarningAction Continue
+                    }
+                }
+            }
             if ($passed) {
                 & $Teardown
             }

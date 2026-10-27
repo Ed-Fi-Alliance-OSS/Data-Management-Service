@@ -147,6 +147,54 @@ Describe 'Isolated CMS result lifecycle' {
         $script:invokeArguments.Teardown = { throw 'teardown failure after success' }
         { Invoke-IsolatedCmsTestRun @script:invokeArguments } | Should -Throw '*teardown failure after success*'
     }
+
+    It 'captures both containers before teardown when execution fails without a TRX' {
+        $script:invokeArguments.ContainerNames = @('isolated-config', 'isolated-db')
+        $script:invokeArguments.Execute = { throw 'primary test failure' }
+        Mock docker -ModuleName IsolatedConfigE2E {
+            "retained log from $($args[2])"
+            Write-Error 'container stderr' -ErrorAction Continue
+            $global:LASTEXITCODE = 0
+        }
+        $script:invokeArguments.Teardown = {
+            foreach ($container in @('isolated-config', 'isolated-db')) {
+                $log = Get-Content (Join-Path $script:artifacts "$container.log") -Raw
+                $log | Should -Match "retained log from $container"
+                $log | Should -Match 'container stderr'
+            }
+            $script:events.Add('teardown')
+        }
+        { Invoke-IsolatedCmsTestRun @script:invokeArguments } | Should -Throw '*primary test failure*'
+        $script:events | Should -Be @('teardown')
+        Should -Invoke docker -ModuleName IsolatedConfigE2E -Times 2 -Exactly
+    }
+
+    It 'preserves the failure and teardown when log capture <Failure>' -TestCases @(
+        @{ Failure = 'returns nonzero' }, @{ Failure = 'throws' }
+    ) {
+        param($Failure)
+        $script:logCaptureFailure = $Failure
+        $script:invokeArguments.ContainerNames = @('isolated-config', 'isolated-db')
+        $script:invokeArguments.Execute = { throw 'primary test failure' }
+        Mock docker -ModuleName IsolatedConfigE2E {
+            if ($script:logCaptureFailure -eq 'throws') { throw 'capture failure' }
+            $global:LASTEXITCODE = 1
+        }
+        {
+            Invoke-IsolatedCmsTestRun @script:invokeArguments -WarningVariable script:captureWarnings
+        } | Should -Throw '*primary test failure*'
+        @($script:captureWarnings).Count | Should -Be 2
+        $script:events | Should -Be @('teardown')
+        Should -Invoke docker -ModuleName IsolatedConfigE2E -Times 2 -Exactly
+    }
+
+    It 'does not capture container logs after a passing run' {
+        $script:invokeArguments.ContainerNames = @('isolated-config', 'isolated-db')
+        Mock docker -ModuleName IsolatedConfigE2E { throw 'unexpected log capture' }
+        Invoke-IsolatedCmsTestRun @script:invokeArguments
+        Should -Invoke docker -ModuleName IsolatedConfigE2E -Times 0 -Exactly
+        @(Get-ChildItem $script:artifacts -Filter '*.log').Count | Should -Be 0
+    }
 }
 
 Describe 'Claims fixture preparation' {
@@ -286,7 +334,13 @@ Describe 'Isolated launcher environment and cleanup' {
             }
             $global:LASTEXITCODE = 0
         }
-        function docker { $global:LASTEXITCODE = 0 }
+        function docker {
+            if ($args[0] -eq 'logs') {
+                if ($global:CmsTeardownCalls -ne 1) { throw 'Logs must be captured before final teardown.' }
+                "retained logs for $($args[2])"
+            }
+            $global:LASTEXITCODE = 0
+        }
         function pwsh {
             if ($args -match 'Test-SecurityMetadataToolsPackage.ps1$') {
                 $global:CmsLauncherpackageArguments = @($args)
@@ -332,6 +386,7 @@ Describe 'Isolated launcher environment and cleanup' {
         $null = New-Item -ItemType Directory $launcherDirectory -Force
         Copy-Item (Join-Path $PSScriptRoot 'Invoke-IsolatedConfigE2E.ps1') $launcherDirectory
         Copy-Item (Join-Path $PSScriptRoot 'IsolatedConfigE2E.psm1') $launcherDirectory
+        Add-Content (Join-Path $launcherDirectory 'IsolatedConfigE2E.psm1') ("`nfunction docker {`n" + ${function:docker}.ToString() + "`n}")
         $verification = Join-Path $global:CmsLaunchercheckout 'eng/verification'
         $null = New-Item -ItemType Directory $verification
         Copy-Item (Join-Path $PSScriptRoot '../../../verification/SecurityMetadataToolsPackage.psm1') $verification
@@ -674,6 +729,9 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $results = @(Get-ChildItem (Join-Path $global:CmsLaunchercheckout 'TestResults/cms-isolation') -Recurse -Filter results.trx)
         $results.Count | Should -Be 1
         (Get-Content $results[0].FullName -Raw) | Should -Match "outcome='Failed'"
+        foreach ($container in @('cms-e2e-isolated-config', 'cms-e2e-isolated-db')) {
+            (Get-Content (Join-Path $results[0].DirectoryName "$container.log") -Raw).Trim() | Should -Be "retained logs for $container"
+        }
         @(Get-ChildItem (Join-Path $global:CmsLaunchercheckout 'TestResults/cms-isolation') -Recurse -Filter comparison.txt).Count | Should -Be 1
         $after = @{}
         Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }

@@ -219,6 +219,9 @@ bash "$CLASSIFIER"
         $upload[0] | Should -Match ('TestResults/cms-isolation/' + $Backend + '/\*\*')
         $upload[0] | Should -Match '\*\*/\*\.trx'
         $upload[0] | Should -Not -Match 'overwrite: true'
+        $logs = @($steps | Where-Object { $_ -match '- name: Upload Logs' })
+        $logs.Count | Should -Be 1
+        $logs[0] | Should -Match ('TestResults/cms-isolation/' + $Backend + '/\*\*/\*\.log')
     }
 
     It 'uses the PostgreSQL job release version source only for installed Drift' {

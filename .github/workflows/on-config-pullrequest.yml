@@ -530,7 +530,7 @@ jobs:
         with:
           name: test-logs-postgresql-${{ matrix.identityprovider }}
           path: |
-            ./src/services/EdFi.DmsConfigurationService.Api.Tests.E2E/bin/Release/net10.0/logs
+            TestResults/cms-isolation/postgresql/**/*.log
           retention-days: 10
 
       - name: Upload Test Results
@@ -646,7 +646,7 @@ jobs:
         with:
           name: test-logs-mssql-${{ matrix.identityprovider }}
           path: |
-            ./src/services/EdFi.DmsConfigurationService.Api.Tests.E2E/bin/Release/net10.0/logs
+            TestResults/cms-isolation/mssql/**/*.log
           retention-days: 10
 
       - name: Upload Test Results
