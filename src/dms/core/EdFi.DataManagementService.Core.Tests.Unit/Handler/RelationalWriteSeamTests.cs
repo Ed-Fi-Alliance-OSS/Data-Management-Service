@@ -376,7 +376,7 @@ public class Given_Relational_Write_Seam
             .GetValue<string>()
             .Should()
             .Be("The identifying value(s) of the item are the same as another item that already exists.");
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:identity-conflict");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:data-conflict:non-unique-identity");
         body["title"]!.GetValue<string>().Should().Be("Identifying Values Are Not Unique");
         body["status"]!.GetValue<int>().Should().Be(409);
         body["correlationId"]!.GetValue<string>().Should().Be("relational-write-seam");
@@ -386,6 +386,63 @@ public class Given_Relational_Write_Seam
             .Should()
             .Contain("A natural key conflict occurred when attempting to create a new resource Student");
         body["errors"]![0]!.GetValue<string>().Should().Contain("(studentUniqueId = 1000)");
+        harness.WriteExecutor.Requests.Should().ContainSingle();
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_preserves_identity_conflict_problem_details_for_executor_owned_put_failures(
+        SqlDialect dialect
+    )
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-cccccccccccc"));
+        var harness = RelationalWriteSeamHarness.Create(
+            resourceInfo: _fixture.ResourceInfo,
+            writeResultFactory: _ => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureIdentityConflict(
+                    new ResourceName("Student"),
+                    [new KeyValuePair<string, string>("studentUniqueId", "1000")]
+                )
+            )
+        );
+
+        var requestInfo = await harness.ExecuteUpdateAsync(
+            JsonNode.Parse(
+                """
+                {
+                  "studentUniqueId": "1000"
+                }
+                """
+            )!,
+            _fixture.CreateSupportedMappingSet(dialect),
+            _fixture.CreateDocumentInfo(
+                includeRootSchoolReference: false,
+                includeNestedPeriodReferences: false,
+                includeProgramTypeDescriptor: false
+            ),
+            existingDocumentUuid
+        );
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(409);
+
+        var body = requestInfo.FrontendResponse.Body!.AsObject();
+        body["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("The identifying value(s) of the item are the same as another item that already exists.");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:data-conflict:non-unique-identity");
+        body["title"]!.GetValue<string>().Should().Be("Identifying Values Are Not Unique");
+        body["status"]!.GetValue<int>().Should().Be(409);
+        body["correlationId"]!.GetValue<string>().Should().Be("relational-write-seam");
+        body["validationErrors"]!.AsObject().Should().BeEmpty();
+        body["errors"]!.AsArray().Should().ContainSingle();
+        body["errors"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Be(
+                "A natural key conflict occurred when attempting to update a resource Student with a duplicate key. "
+                    + "The duplicate keys and values are (studentUniqueId = 1000)"
+            );
         harness.WriteExecutor.Requests.Should().ContainSingle();
     }
 

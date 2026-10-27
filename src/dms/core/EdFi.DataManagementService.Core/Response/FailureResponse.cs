@@ -184,7 +184,7 @@ public static class FailureResponse
     public static JsonNode ForIdentityConflict(string[]? errors, TraceId traceId) =>
         CreateBaseJsonObject(
             detail: "The identifying value(s) of the item are the same as another item that already exists.",
-            type: $"{_typePrefix}:identity-conflict",
+            type: $"{_dataConflictTypePrefix}:non-unique-identity",
             title: "Identifying Values Are Not Unique",
             status: 409,
             correlationId: traceId.Value,
