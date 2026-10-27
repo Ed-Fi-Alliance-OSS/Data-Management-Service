@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Backend;
 internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstraintResolver
 {
     // The dms.ReferentialIdentity primary key. CoreDdlEmitter owns the DDL literal and this project does not
-    // reference it, so the resolver unit tests pin the same value.
+    // reference it, so this must be kept in step with it by hand.
     private const string ReferentialIdentityPrimaryKeyName = "PK_ReferentialIdentity";
 
     public RelationalWriteConstraintResolution Resolve(RelationalWriteConstraintResolutionRequest request)

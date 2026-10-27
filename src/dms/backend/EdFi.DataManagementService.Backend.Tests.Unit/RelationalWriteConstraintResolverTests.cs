@@ -846,8 +846,8 @@ public class Given_Relational_Write_Constraint_Resolver
 /// <summary>
 /// A School written with an existing education organization id can report the duplicate from any of its
 /// AFTER triggers, because SQL Server leaves their relative order undefined: the abstract natural key, the
-/// referential identity primary key, or the auth hierarchy primary key. The literal names are pinned here so a
-/// rename on the DDL side fails this test instead of turning the conflict back into a 500.
+/// referential identity primary key, or the auth hierarchy primary key. The cases use the literal names the DDL
+/// emits, so a change to the resolver's names fails here; a rename on the DDL side is not detected by this test.
 /// </summary>
 [TestFixture("PK_ReferentialIdentity")]
 [TestFixture("PK_EducationOrganizationIdToEducationOrganizationId")]
