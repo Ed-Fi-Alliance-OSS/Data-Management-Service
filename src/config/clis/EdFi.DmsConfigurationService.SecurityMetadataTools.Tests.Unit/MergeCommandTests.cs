@@ -267,6 +267,66 @@ public class Given_MergeCommand_incomplete_composition(string scenario, string c
     }
 }
 
+[TestFixture("empty-object", "")]
+[TestFixture("named-omission", "Skipped\nPolicy")]
+[TestFixture("complete-document", "")]
+public class Given_MergeCommand_omitted_resource_claims(string scenario, string claimSetName)
+    : MergeCommandTests
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        string input = scenario switch
+        {
+            "complete-document" => await File.ReadAllTextAsync(Path.Combine(Fixtures, "base.json")),
+            "named-omission" => new JsonObject { ["name"] = claimSetName }.ToJsonString(),
+            _ => "{}",
+        };
+        await File.WriteAllTextAsync(Path.Combine(Fragments, "input-claims.json"), input);
+        await File.WriteAllTextAsync(Destination, Sentinel);
+        await RunFixture(Path.Combine(Fixtures, "base.json"));
+    }
+
+    [Test]
+    public void It_reports_sanitized_source_context_and_preserves_existing_bytes_with_force()
+    {
+        AssertNoOutput(true);
+        string safeName = scenario == "named-omission" ? "Skipped\\u000APolicy" : "";
+        Error
+            .Should()
+            .Be(
+                $"Merge failed: NoResourceClaims: source '{Path.Combine(Fragments, "input-claims.json")}', claim '', claim set '{safeName}', path '$.resourceClaims'.{Environment.NewLine}"
+            );
+    }
+
+    [Test]
+    public async Task It_creates_no_destination_or_staging_residue()
+    {
+        File.Delete(Destination);
+        await RunFixture(Path.Combine(Fixtures, "base.json"));
+        AssertNoOutput(false);
+    }
+}
+
+[TestFixture("resourceClaims")]
+[TestFixture("ReSoUrCeClAiMs")]
+public class Given_MergeCommand_explicitly_empty_resource_claims(string propertyName) : MergeCommandTests
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        await File.WriteAllTextAsync(
+            Path.Combine(Fragments, "empty-claims.json"),
+            new JsonObject { [propertyName] = new JsonArray() }.ToJsonString()
+        );
+        await RunFixture(Path.Combine(Fixtures, "base.json"));
+    }
+
+    [Test]
+    public void It_preserves_successful_base_only_composition() =>
+        AssertDocument(Path.Combine(Fixtures, "base.json"));
+}
+
 [TestFixture("")]
 [TestFixture("5.2")]
 [TestFixture("6.1")]

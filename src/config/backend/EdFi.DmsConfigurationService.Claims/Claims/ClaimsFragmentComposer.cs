@@ -968,7 +968,8 @@ public class ClaimsFragmentComposer
 
     private sealed record ClaimSetResourceClaims(string? Name = null)
     {
-        public List<ResourceClaim> ResourceClaims { get; init; } = [];
+        // Preserve omission for the NoResourceClaims guard; an explicitly empty collection is valid.
+        public List<ResourceClaim> ResourceClaims { get; init; } = null!;
     }
 
     #endregion

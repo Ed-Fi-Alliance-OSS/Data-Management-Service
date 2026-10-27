@@ -319,6 +319,101 @@ public class Given_ClaimsFragmentComposer_diagnostic_context(string scenario)
     }
 }
 
+[TestFixture("empty-object", "", false)]
+[TestFixture("named-omission", "Skipped\nPolicy", false)]
+[TestFixture("complete-document", "", false)]
+[TestFixture("null", "SkippedPolicy", false)]
+[TestFixture("empty", "SkippedPolicy", true)]
+[TestFixture("mixed-case", "SkippedPolicy", true)]
+public class Given_ClaimsFragmentComposer_resource_claims_presence(
+    string scenario,
+    string claimSetName,
+    bool complete
+) : ClaimsFragmentComposerDiagnosticsTests
+{
+    private ClaimsCompositionResult _result = null!;
+    private ClaimsLoadResult _cmsResult = null!;
+    private ClaimsDocument _providerResult = null!;
+    private ClaimsDocument _expected = null!;
+    private string _file = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        string fixtures = Path.Combine(
+            TestContext.CurrentContext.TestDirectory,
+            "Fixtures",
+            "ClaimsComposition"
+        );
+        string siblings = Path.Combine(fixtures, "first-wins", "fragments");
+        foreach (string source in Directory.GetFiles(siblings, "*", SearchOption.AllDirectories))
+        {
+            string target = Path.Combine(DirectoryPath, Path.GetRelativePath(siblings, source));
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            // Nonempty mixed-case collections must still apply their grants.
+            File.WriteAllText(target, File.ReadAllText(source).Replace("resourceClaims", "ReSoUrCeClAiMs"));
+        }
+        _file = Path.Combine(DirectoryPath, "000-input-claims.json");
+        JsonObject input = new();
+        if (claimSetName.Length > 0)
+        {
+            input["name"] = claimSetName;
+        }
+        if (scenario is "empty" or "mixed-case" or "null")
+        {
+            input[scenario == "mixed-case" ? "ReSoUrCeClAiMs" : "resourceClaims"] =
+                scenario == "null" ? null : new JsonArray();
+        }
+        File.WriteAllText(
+            _file,
+            scenario == "complete-document"
+                ? File.ReadAllText(Path.Combine(fixtures, "base.json"))
+                : input.ToJsonString()
+        );
+        JsonNode expected = JsonNode.Parse(
+            File.ReadAllText(Path.Combine(fixtures, "first-wins", "expected.json"))
+        )!;
+        _expected = new(expected["claimSets"]!, expected["claimsHierarchy"]!);
+        SharedComposer shared = new(NullLogger.Instance);
+        _result = shared.ComposeClaimsFromFragments(BaseDocument, DirectoryPath);
+        CmsComposer cms = new(shared);
+        _cmsResult = cms.ComposeClaimsFromFragments(BaseDocument, DirectoryPath);
+        _providerResult = Provider(cms).GetClaimsDocumentNodes();
+    }
+
+    [Test]
+    public void It_distinguishes_omitted_null_and_empty_collections_with_original_context()
+    {
+        _result.IsComplete.Should().Be(complete);
+        _result
+            .Diagnostics.Where(d => d.IsIncomplete)
+            .Should()
+            .Equal(
+                complete
+                    ? []
+                    : new[]
+                    {
+                        new ClaimsCompositionDiagnostic(
+                            ClaimsCompositionDiagnosticCode.NoResourceClaims,
+                            _file,
+                            ClaimSetName: claimSetName,
+                            JsonPath: "$.resourceClaims"
+                        ),
+                    }
+            );
+    }
+
+    [Test]
+    public void It_preserves_complete_policy_and_CMS_continuation_through_valid_siblings()
+    {
+        _result.LoadResult.Failures.Should().BeEmpty();
+        _cmsResult.Failures.Should().BeEmpty();
+        AssertDocument(_result.LoadResult.Nodes!, _expected);
+        AssertDocument(_cmsResult.Nodes!, _expected);
+        AssertDocument(_providerResult, _expected);
+    }
+}
+
 [TestFixture("crlf", false)]
 [TestFixture("tab", false)]
 [TestFixture("line-separator", false)]
