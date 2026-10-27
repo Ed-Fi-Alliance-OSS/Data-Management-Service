@@ -2448,6 +2448,93 @@ public class Given_Mssql_Pruning_With_An_Independent_Mutable_Feed_Bypassing_The_
 }
 
 /// <summary>
+/// A required carrier fed through the walked origin: Origin's identity references the source, Target's
+/// identity references Origin and Target also references the source with the source key unified, and
+/// Receiver references a required Origin and an optional Target sharing their identity columns. Origin's
+/// walk must recognize that Receiver's Origin reference carries the source's key change through Origin,
+/// so the schema derives identically whichever origin's walk runs first.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_A_Carrier_Fed_Through_The_Walked_Origin
+{
+    private static DerivedRelationalModelSet Build(string sourceName) =>
+        PruningTopologyTestHelpers.BuildMssqlModelSet(
+            PruningTestSchemaBuilder.BuildProjectSchema(
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    sourceName,
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["sourceKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Origin",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["originKey"],
+                    References: [new PruningTestSchemaBuilder.ReferenceSpec(sourceName, PartOfIdentity: true)]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Target",
+                    IdentityScalars: ["targetKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Origin", PartOfIdentity: true),
+                        new PruningTestSchemaBuilder.ReferenceSpec(sourceName),
+                    ],
+                    EqualityConstraints:
+                    [
+                        (
+                            "$.originReference.sourceKey",
+                            $"$.{char.ToLowerInvariant(sourceName[0]) + sourceName[1..]}Reference.sourceKey"
+                        ),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Receiver",
+                    IdentityScalars: ["receiverKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Origin"),
+                        new PruningTestSchemaBuilder.ReferenceSpec("Target", Required: false),
+                    ],
+                    EqualityConstraints:
+                    [
+                        ("$.originReference.originKey", "$.targetReference.originKey"),
+                        ("$.originReference.sourceKey", "$.targetReference.sourceKey"),
+                    ]
+                )
+            )
+        );
+
+    /// <summary>
+    /// It should cut Receiver's Target reference and Target's source reference and keep Receiver's
+    /// Origin reference and Target's Origin reference cascading, both when Origin's walk runs first
+    /// (Source) and when the source's walk runs first (Asource).
+    /// </summary>
+    [TestCase("Source")]
+    [TestCase("Asource")]
+    public void It_should_keep_the_carrier_fed_through_the_walked_origin(string sourceName)
+    {
+        var result = Build(sourceName);
+
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "Target_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "Origin_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Target", "Origin_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Target", $"{sourceName}_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+    }
+}
+
+/// <summary>
 /// Settled Decision 8 for a directly mutable intermediate: Upstream → Middle → Receiver, where
 /// Receiver references Middle under two non-unified roles and both Upstream and Middle allow
 /// identity updates. Middle's own walk passes the disjoint cut as a plain NO ACTION reference, so

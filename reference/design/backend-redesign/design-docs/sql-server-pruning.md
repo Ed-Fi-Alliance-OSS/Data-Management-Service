@@ -283,7 +283,9 @@ column, stopping at the walked origin and skipping immutable abstract identities
 reaches. A feed can join anywhere: at the pairing where the chain stops, or at a pairing the chain itself passes through
 when the column is unified across several references. One column can have several feeds. Each must be carried or
 exempt. The survivor carries a feed when it is a required binding that updates the same canonical local column and is
-fed by the same source column. Otherwise, a column the survivor does not update is exempt when that resource still
+fed by the same source column, by any retained route, including one through the walked origin: only the search from the
+cut stops there, because a rename that reaches the cut only through the walked origin changes that origin's own identity
+columns, which the safe-cut test already covers. Otherwise, a column the survivor does not update is exempt when that resource still
 reaches the receiver by another retained route: the convergence is its own and Settled Decision 8 applies. That route's
 reference into the receiver must not update the column, or must carry it as a required binding fed by the same source
 column. A route entering through an optional or differently fed reference to the column does not count: the resource's

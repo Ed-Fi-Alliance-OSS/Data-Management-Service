@@ -312,8 +312,9 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     /// intermediate on the walked origin's chain, or a feed that joins anywhere along it, possibly
     /// several per column. Each must be carried or exempt. The survivor carries a source when it is
     /// a required binding that updates the same canonical local column and is fed by the same source
-    /// column. A column the survivor does not update is exempt when the source still reaches the
-    /// receiver avoiding this choice's cuts through a reference that does not update the column
+    /// column, by any retained route, including one through the walked origin. A column the survivor
+    /// does not update is exempt when the source still reaches the receiver avoiding this choice's
+    /// cuts through a reference that does not update the column
     /// (the survivor, as another role of that resource or a resource below it, or a reference
     /// outside this convergence's choices) or that carries it (see
     /// <see cref="ReachesAvoidingCuts"/>). Settled Decision 8 then leaves the column to fail closed at
@@ -351,7 +352,7 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
             foreach (var source in sources)
             {
-                if (CarriesSource(survivor, survivorIndex, source, convergence, origin, mutableOrigins))
+                if (CarriesSource(survivor, survivorIndex, source, convergence, mutableOrigins))
                 {
                     continue;
                 }
@@ -364,7 +365,7 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
                 // origin's walk reaches it first.
                 if (
                     survivorIndex < 0
-                    && ReachesAvoidingCuts(source, column, convergence, survivor, origin, mutableOrigins)
+                    && ReachesAvoidingCuts(source, column, convergence, survivor, mutableOrigins)
                 )
                 {
                     continue;
@@ -381,18 +382,20 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
     /// <summary>
     /// Searches back from a column through every retained candidate edge that feeds it, and on
-    /// through each fed column, collecting every mutable origin pairing other than the walked
-    /// origin, which is neither visited nor expanded past. Immutable abstract origins are not
-    /// mutable origins and are never collected. The search continues past a collected pairing, so
-    /// the sources above a mutable intermediate are included too. Edges are visited in stable
-    /// candidate order, so the result order is deterministic. Follows existing FK column pairs only,
-    /// never a local DocumentId anchor; the search is discarded after one evaluation.
+    /// through each fed column, collecting every mutable origin pairing. The walked origin, when
+    /// given, is neither visited nor expanded past: the search from a cut passes it, while the
+    /// carrier lookup passes none so it also sees feeds that reach the carrier through the walked
+    /// origin. Immutable abstract origins are not mutable origins and are never collected. The
+    /// search continues past a collected pairing, so the sources above a mutable intermediate are
+    /// included too. Edges are visited in stable candidate order, so the result order is
+    /// deterministic. Follows existing FK column pairs only, never a local DocumentId anchor; the
+    /// search is discarded after one evaluation.
     /// </summary>
     private static List<(string Table, DbColumnName Column)> FindMutableSources(
         string table,
         DbColumnName column,
         IReadOnlyDictionary<string, List<PruningCandidate>> incomingEdgesByVertex,
-        string origin,
+        string? origin,
         IReadOnlySet<string> mutableOrigins
     )
     {
@@ -437,14 +440,14 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     /// <summary>
     /// Whether the reference carries the source's rename of a receiver column: the column is at the
     /// given position before the trailing DocumentId anchor, the reference is a required binding,
-    /// and the column it pairs with is fed by the same source column.
+    /// and the column it pairs with is fed by the same source column over retained edges, including
+    /// through the walked origin.
     /// </summary>
     private static bool CarriesSource(
         PruningCandidate carrier,
         int index,
         (string Table, DbColumnName Column) source,
         ConvergenceDiscovery convergence,
-        string origin,
         IReadOnlySet<string> mutableOrigins
     )
     {
@@ -455,7 +458,7 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
                     FormatTable(carrier.TargetTable),
                     carrier.TargetColumns[index],
                     convergence.IncomingEdgesByVertex,
-                    origin,
+                    origin: null,
                     mutableOrigins
                 )
                 .Contains(source);
@@ -473,7 +476,6 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
         DbColumnName column,
         ConvergenceDiscovery convergence,
         PruningCandidate survivor,
-        string origin,
         IReadOnlySet<string> mutableOrigins
     )
     {
@@ -502,7 +504,7 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
                     if (
                         entryIndex < 0
-                        || CarriesSource(edge, entryIndex, source, convergence, origin, mutableOrigins)
+                        || CarriesSource(edge, entryIndex, source, convergence, mutableOrigins)
                     )
                     {
                         return true;
