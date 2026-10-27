@@ -72,20 +72,9 @@ Feature: Token validation
              Then it should respond with 201
               And retrieve created key and secret
              When a token request is attempted with the captured application credentials
-             Then it should respond with 401
-              And the response body is
-                  """
-                    {
-                      "detail": "The request could not be processed. See 'errors' for details.",
-                      "type": "urn:ed-fi:management-api:security:authentication",
-                      "title": "Authentication Failed",
-                      "status": 401,
-                      "validationErrors": {},
-                      "errors": [
-                        "invalid_client. Invalid client or Invalid client credentials"
-                      ]
-                    }
-                  """
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
+              And the response header "WWW-Authenticate" is not present
 
         Scenario: 04 CMS-minted secret authenticates via raw HTTP Basic auth
              When a POST request is made to "/v3/vendors" with
@@ -189,19 +178,8 @@ Feature: Token validation
         Scenario: 07 A scope the client does not hold is rejected as a bad request
             Given client "DmsConfigurationService" credentials with "edfi_admin_api/readonly_access" scope
              Then it should respond with 400
-              And the response body is
-                  """
-                    {
-                      "detail": "The request could not be processed. See 'errors' for details.",
-                      "type": "urn:ed-fi:management-api:bad-request",
-                      "title": "Bad Request",
-                      "status": 400,
-                      "validationErrors": {},
-                      "errors": [
-                        "invalid_scope. Invalid scopes: edfi_admin_api/readonly_access"
-                      ]
-                    }
-                  """
+              And the response is the OAuth error "invalid_scope" with description "Invalid scopes: edfi_admin_api/readonly_access"
+              And the response header "WWW-Authenticate" is not present
 
         Scenario: 08 A token requested without a scope authorizes the system client
              When a token is requested without a scope using the system credentials

@@ -116,14 +116,13 @@ in CS v8.0.
 
 ### 2.6 Error Handling and Responses
 
-- **FR-ERROR-6**: Every non-success CS response — including framework-level
+- **FR-ERROR-6**: Every non-success CS response, including framework-level
   errors, authentication/authorization failures, tenant-resolution middleware
-  failures, dynamic claims-management endpoints, and `/connect/token`
-  errors — SHOULD return a JSON body conforming to the Ed-Fi Error
-  Response Knowledge Base contract: `detail`, `type`, `title`, `status`,
-  `correlationId`, `validationErrors`, and `errors`. `/connect/revoke`
-  returns the RFC 6749/7009 `{error, error_description}` shape as a deliberate
-  exception.
+  failures, and dynamic claims-management endpoints, SHOULD return a JSON body
+  conforming to the Ed-Fi Error Response Knowledge Base contract: `detail`,
+  `type`, `title`, `status`, `correlationId`, `validationErrors`, and `errors`.
+  `/connect/token`, `/connect/introspect` and `/connect/revoke` return the
+  RFC 6749 `{error, error_description}` shape as a deliberate exception.
 - **FR-ERROR-7**: CS SHOULD NOT return bare framework results (for example,
   `NotFound()` or `Forbid()`) or ad hoc `{ error, message }` shapes from any
   endpoint or middleware.

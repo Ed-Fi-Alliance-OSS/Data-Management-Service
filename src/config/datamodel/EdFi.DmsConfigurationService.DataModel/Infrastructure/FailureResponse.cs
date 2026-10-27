@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -22,7 +23,6 @@ public static class FailureResponse
 
     private static readonly string _typePrefix = "urn:ed-fi:management-api";
     private static readonly string _unauthorizedType = $"{_typePrefix}:security:authentication";
-    private static readonly string _tooManyTokensType = $"{_unauthorizedType}:too-many-tokens";
     private static readonly string _tooManyRequestsType = $"{_typePrefix}:too-many-requests";
     private static readonly string _forbiddenType = $"{_typePrefix}:security:authorization";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
@@ -75,35 +75,24 @@ public static class FailureResponse
         );
 
     /// <summary>
-    /// 429 response for a client that already holds the configured maximum number of active access
-    /// tokens. The limit is named in <c>errors</c> so the caller can see what it is up against.
+    /// The canonical token-limit sentence, formatted with the culture-invariant limit. This is the one
+    /// copy of the cross-service text: the CMS <c>/connect/token</c> endpoint returns it as the
+    /// <c>error_description</c> of its 429, and the DMS <c>/oauth/token</c> proxy's 429 parser
+    /// (<c>OAuthManager</c> in <c>src/dms</c>) reads the limit back out of it and rebuilds its own
+    /// message from the number. Rewording it means rewording that parser in the same change; DMS's
+    /// <c>OAuthManagerTests</c> feeds this method's output through the parser, so a reword here
+    /// fails the DMS unit suite.
     /// </summary>
-    /// <remarks>
-    /// The <c>errors</c> message text is a cross-service contract, not merely wording: the DMS
-    /// <c>/oauth/token</c> proxy's 429 parser (<c>OAuthManager</c> in <c>src/dms</c>) reads the limit
-    /// back out of it and rebuilds its own message from the number. Changing the text here without
-    /// changing that parser leaves DMS answering a generic rate-limit 429 instead of the token-limit
-    /// one. DMS's <c>OAuthManagerTests</c> feeds this method's output through that parser, so a
-    /// reword here fails the DMS unit suite. Reword this text and the DMS parser has to be reworded
-    /// in the same change.
-    /// </remarks>
-    public static JsonNode ForTooManyTokens(int limit, string correlationId) =>
-        CreateBaseJsonObject(
-            detail: "The caller has authenticated too many times in too short of a time period.",
-            type: _tooManyTokensType,
-            title: "Too Many Tokens",
-            status: 429,
-            correlationId: correlationId,
-            errors:
-            [
-                $"Too many access tokens have been requested (limit is {limit}). Access tokens should be reused until they expire.",
-            ]
+    public static string TooManyTokensMessage(int limit) =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"Too many access tokens have been requested (limit is {limit}). Access tokens should be reused until they expire."
         );
 
     /// <summary>
     /// 429 response for a request refused by the <c>/connect/*</c> rate limiter (DMS-1482). The type
     /// mirrors DMS's established <c>urn:ed-fi:api:too-many-requests</c>, and the detail is the text DMS
-    /// uses for its own rate-limit rejection. Distinct from <see cref="ForTooManyTokens"/>, which is the
+    /// uses for its own rate-limit rejection. Distinct from <see cref="TooManyTokensMessage"/>, which is the
     /// active-token cap and whose text DMS parses.
     /// </summary>
     public static JsonNode ForTooManyRequests(string correlationId) =>

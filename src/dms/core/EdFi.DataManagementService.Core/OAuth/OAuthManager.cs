@@ -156,11 +156,12 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     private const int MaxLoggedUpstreamContentLength = 2048;
 
     /// <summary>
-    /// The <c>type</c> a Configuration Service token-limit rejection carries. The Configuration
-    /// Service uses the Management API's <c>urn:ed-fi:management-api</c> prefix; an earlier
-    /// Configuration Service used <c>urn:ed-fi:api</c>. Both are matched exactly, so a DMS
-    /// deployed beside either version still recognizes the rejection. DMS returns an OAuth error
-    /// rather than forwarding either problem type.
+    /// The <c>type</c> a problem-details token-limit rejection from the Configuration Service
+    /// carries. The Configuration Service has answered in three shapes: the Management API's
+    /// <c>urn:ed-fi:management-api</c> problem-details type, an earlier <c>urn:ed-fi:api</c>
+    /// problem-details type, and an OAuth envelope (see <see cref="TokenLimitOAuthError"/>). Each
+    /// type is matched exactly, so a DMS deployed beside any version still recognizes the
+    /// rejection. DMS returns an OAuth error rather than forwarding any of them.
     /// </summary>
     private const string LegacyTooManyTokensType = "urn:ed-fi:api:security:authentication:too-many-tokens";
 
@@ -168,14 +169,25 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         "urn:ed-fi:management-api:security:authentication:too-many-tokens";
 
     /// <summary>
+    /// The <c>error</c> value of the OAuth-envelope token-limit answer, an RFC 6749 section 5.2
+    /// code the Configuration Service uses so the caller sees the same envelope as any other
+    /// token-endpoint error. It is only believed together with a canonical
+    /// <c>error_description</c>.
+    /// </summary>
+    private const string TokenLimitOAuthError = "temporarily_unavailable";
+
+    /// <summary>
     /// The canonical token-limit message, split either side of the limit it carries. Each half is
     /// used twice - as the shape an upstream body must match to be believed, and as a piece the
     /// returned message is rebuilt from - so the parse and the format cannot drift apart from one
-    /// another. Staying in step with the CMS formatter that writes the upstream body is a separate
-    /// obligation, held by a unit test that feeds this parser the body CMS's own
-    /// <c>FailureResponse.ForTooManyTokens</c> produces: a reworded CMS message fails that test
-    /// rather than silently degrading every token-limit rejection to the generic 429. Separately
-    /// deployed DMS and CMS versions can still disagree, which is what the fallback's warning is for.
+    /// another. The same sentence is carried by the problem-details <c>errors</c> entry and by the
+    /// OAuth envelope's <c>error_description</c>. Staying in step with the CMS formatter that
+    /// writes the upstream body is a separate obligation, held by unit tests that feed this parser
+    /// the sentence the CMS DataModel's <c>FailureResponse.TooManyTokensMessage</c> produces (the
+    /// older problem-details shapes are covered by hand-built bodies): a reworded CMS message
+    /// fails those tests rather than silently degrading every token-limit rejection to the generic
+    /// 429. Separately deployed DMS and CMS versions can still disagree, which is what the
+    /// fallback's warning is for.
     /// </summary>
     private const string TokenLimitMessagePrefix = "Too many access tokens have been requested (limit is ";
 
@@ -630,11 +642,12 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         }
 
         // The limit carried by a canonical token-limit body, or null when the body deviates from
-        // that shape in any way at all - unparseable, a type other than the two accepted ones, a
-        // mismatched status, an errors array that is missing or holds anything other than one
-        // string, a message that is not the canonical one, or a limit that is absent, non-numeric,
-        // zero, negative or too large for an int. Every one of those falls back to the generic 429
-        // rather than being partially believed.
+        // either accepted shape in any way at all. The OAuth envelope is an `error` of
+        // temporarily_unavailable and an `error_description` that is the canonical message. The
+        // problem-details shape is one of the two accepted types, a 429 status, and an errors
+        // array holding exactly one string that is the canonical message. In both the message
+        // must be canonical and its limit present, numeric, positive and small enough for an int.
+        // Every deviation falls back to the generic 429 rather than being partially believed.
         static int? TokenLimitFromUpstreamBody(string body)
         {
             if (JsonObjectOrNull(body) is not JsonObject obj)
@@ -642,6 +655,39 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 return null;
             }
 
+            if (obj["error"] is not null)
+            {
+                return TokenLimitFromOAuthEnvelope(obj);
+            }
+
+            return TokenLimitFromProblemDetails(obj);
+        }
+
+        static int? TokenLimitFromOAuthEnvelope(JsonObject obj)
+        {
+            if (
+                ScalarValueOrNull(obj["error"]) is not string error
+                || !string.Equals(error, TokenLimitOAuthError, StringComparison.Ordinal)
+            )
+            {
+                return null;
+            }
+
+            // TryGetValue<string> succeeds only for a JSON string, so an array or a nested object
+            // is rejected rather than stringified.
+            if (
+                obj["error_description"] is not JsonValue description
+                || !description.TryGetValue(out string? message)
+            )
+            {
+                return null;
+            }
+
+            return LimitFromCanonicalMessage(message);
+        }
+
+        static int? TokenLimitFromProblemDetails(JsonObject obj)
+        {
             if (ScalarValueOrNull(obj["type"]) is not string type)
             {
                 return null;
@@ -676,6 +722,12 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 return null;
             }
 
+            return LimitFromCanonicalMessage(message);
+        }
+
+        // The limit in a message that is exactly the canonical template, or null.
+        static int? LimitFromCanonicalMessage(string message)
+        {
             if (
                 !message.StartsWith(TokenLimitMessagePrefix, StringComparison.Ordinal)
                 || !message.EndsWith(TokenLimitMessageSuffix, StringComparison.Ordinal)

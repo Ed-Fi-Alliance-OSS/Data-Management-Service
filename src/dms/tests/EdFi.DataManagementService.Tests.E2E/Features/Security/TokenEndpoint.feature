@@ -196,6 +196,15 @@ Feature: Client credentials at the token endpoint
       Then the token error is 401 "invalid_client" with provider-supplied description
       And the token response body matches the one stored as "wrong Basic secret"
 
+    @DMS-1491
+    @e2e-ci-shard-1
+    Scenario: 40 The CMS error code and description reach the DMS client for an unknown client
+      When a token request is made with content type "application/x-www-form-urlencoded" and body
+        """
+        grant_type=client_credentials&client_id=unknown-client-DMS-1491&client_secret=wrong-secret
+        """
+      Then the token error is 401 "invalid_client" with description "Invalid client or Invalid client credentials"
+
   Rule: Missing and unsupported grant types have distinct OAuth errors
 
     @DMS-1606

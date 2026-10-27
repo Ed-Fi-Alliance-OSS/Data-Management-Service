@@ -1451,21 +1451,23 @@ tokens should revoke each one as it finishes with it rather than letting it sit 
 This only helps a caller that still has the token string — one that has lost track of its tokens,
 after a crash loop for instance, has to wait for them to expire.
 
-The Configuration Service's `/connect/token` rejects a grant beyond the limit with type
-`urn:ed-fi:management-api:security:authentication:too-many-tokens`; every Configuration Service
-problem type uses the Management API prefix.
+The Configuration Service's `/connect/token` rejects a grant beyond the limit with HTTP 429 in the
+OAuth error format of RFC 6749 section 5.2:
+`{"error":"temporarily_unavailable","error_description":"Too many access tokens have been requested (limit is N). Access tokens should be reused until they expire."}`.
+It no longer answers in problem details, as the rest of the Configuration Service's Management API
+does, because `/connect/token` is an OAuth endpoint.
 
 DMS `/oauth/token` returns HTTP 429 as `application/json` with
 `error: temporarily_unavailable` and the following `error_description` for limited clients:
 `Too many access tokens have been requested (limit is {n}). Access tokens should be reused until they expire.`
-DMS parses the Configuration Service response, under either the `urn:ed-fi:management-api:` type
-or the `urn:ed-fi:api:` type an earlier Configuration Service returns, and rebuilds its external
-response using the positive integer limit alone. Token errors carry no problem-details `type`
-or `title`; their normalized correlation ID is UTF-8 percent-encoded in `X-Correlation-ID`.
-Decode that header once to find the matching log entry. See the
+DMS parses the Configuration Service response, under the OAuth body above or under either problem
+type an earlier Configuration Service returns, `urn:ed-fi:management-api:` or `urn:ed-fi:api:`, and
+rebuilds its external response using the positive integer limit alone. Token errors carry no
+problem-details `type` or `title`; their normalized correlation ID is UTF-8 percent-encoded in
+`X-Correlation-ID`. Decode that header once to find the matching log entry. See the
 [token error contract](../reference/adr-oauth-token-errors-DMS-1606.md).
-Upgrade DMS before, or together with, the Configuration Service: an earlier
-DMS does not recognize the new type and answers a generic 429 of type
+Upgrade DMS before, or together with, the Configuration Service: an earlier DMS does not recognize
+the OAuth body and answers a generic 429 of type
 `urn:ed-fi:api:too-many-requests` without the limit message.
 
 > **Changing `ClientSecretHashingIterations` invalidates existing client secrets.** The iteration

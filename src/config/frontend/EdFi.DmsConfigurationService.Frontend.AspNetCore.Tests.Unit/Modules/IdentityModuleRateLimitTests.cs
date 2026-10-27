@@ -117,7 +117,7 @@ public class IdentityModuleRateLimitTests
         [Test]
         public void It_rejects_oversized_ids_before_counting_and_preserves_the_boundary()
         {
-            int invalidClientStatus = useBasic && path != "/connect/token" ? 401 : 400;
+            int invalidClientStatus = useBasic ? 401 : 400;
             _statuses
                 .Should()
                 .Equal(
@@ -140,30 +140,20 @@ public class IdentityModuleRateLimitTests
         }
 
         [Test]
-        public void It_uses_the_routes_existing_validation_contract()
+        public void It_answers_invalid_client()
         {
-            if (path != "/connect/token")
-            {
-                _body["error"]!.GetValue<string>().Should().Be("invalid_client");
-                _body["error_description"]!
-                    .GetValue<string>()
-                    .Should()
-                    .Be("Invalid client or Invalid client credentials");
-                return;
-            }
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:data");
-            _body["validationErrors"]!.AsObject().Should().ContainKey("client_id");
+            _body["error"]!.GetValue<string>().Should().Be("invalid_client");
+            _body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Invalid client or Invalid client credentials");
         }
 
         [Test]
-        public void It_challenges_only_basic_authentication_on_the_oauth_routes() =>
+        public void It_challenges_only_basic_authentication() =>
             _challenge
                 .Should()
-                .Be(
-                    useBasic && path != "/connect/token"
-                        ? "Basic realm=\"EdFi.DmsConfigurationService\""
-                        : string.Empty
-                );
+                .Be(useBasic ? "Basic realm=\"EdFi.DmsConfigurationService\"" : string.Empty);
     }
 
     [TestFixture]
