@@ -263,6 +263,9 @@ Describe 'Isolated launcher environment and cleanup' {
                 @(Get-ChildItem -LiteralPath $global:CmsLauncherprepared -Force).Name | Should -Be @('Claims.json')
                 [IO.File]::ReadAllBytes((Join-Path $global:CmsLauncherprepared 'Claims.json')) | Should -Be ([byte[]]@(239,187,191,123,13,10,125))
                 if ($global:CmsLaunchermutateInput) { Add-Content (Join-Path $global:CmsLauncherprepared 'Claims.json') 'changed' }
+            } elseif ($args -match 'SecurityMetadataToolsDrift') {
+                [IO.File]::ReadAllBytes((Join-Path $global:CmsLauncherprepared 'Claims.json')) | Should -Be ([byte[]]@(123,125,10))
+                if ($global:CmsLaunchermutateInput) { Add-Content (Join-Path $global:CmsLauncherprepared 'Claims.json') 'changed' }
             } elseif ($args -match 'SecurityMetadataToolsUpload') {
                 @(Get-ChildItem -LiteralPath $global:CmsLauncherprepared -Force).Count | Should -Be 0
             } else {
@@ -434,6 +437,55 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $after = @{}
         Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }
         ($after | ConvertTo-Json -Compress) | Should -Be ($global:CmsLauncherbeforeEnvironment | ConvertTo-Json -Compress)
+    }
+
+    It 'loads the independent Drift fixture with management disabled and cleans up after <Outcome>' -TestCases @(
+        @{ Outcome = 'success'; Fails = $false }, @{ Outcome = 'failure'; Fails = $true }
+    ) {
+        param($Outcome, $Fails)
+        $fixture = Join-Path $global:CmsLaunchercheckout 'src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Drift'
+        $null = New-Item -ItemType Directory $fixture -Force
+        [IO.File]::WriteAllBytes((Join-Path $fixture 'Claims.json'), [byte[]]@(123,125,10))
+        $global:CmsLauncherinjectFailure = $Fails
+        if ($Outcome -eq 'failure') {
+            { & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Drift -SkipDockerBuild } | Should -Throw '*execution failed*'
+        } else {
+            & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Drift -SkipDockerBuild
+        }
+        $global:CmsLaunchermergeArguments | Should -BeNullOrEmpty
+        $global:CmsLaunchercapturedArguments | Should -Contain '(TestCategory=SecurityMetadataToolsService)&(TestCategory=SecurityMetadataToolsDrift)&(Name=It_detects_a_precise_stored_policy_edit_from_an_editable_baseline)'
+        $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be 'Filesystem'
+        $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_DATA_STANDARD_VERSION | Should -Be '5.2'
+        $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING | Should -Be 'false'
+        $derived = Get-Content (Join-Path $global:CmsLaunchercheckout 'eng/docker-compose/.derived/test.env.isolated')
+        $derived | Should -Contain 'CONFIGURATION_SERVICE_CLAIMS_SOURCE=Filesystem'
+        $derived | Should -Contain 'CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=false'
+        $results = @(Get-ChildItem (Join-Path $global:CmsLaunchercheckout 'TestResults/cms-isolation/postgresql/Drift/5.2') -Recurse -Filter results.trx)
+        $results.Count | Should -Be 1
+        $evidence = $results[0].DirectoryName
+        (Get-Content $results[0].FullName -Raw) | Should -Match 'It_detects_a_precise_stored_policy_edit_from_an_editable_baseline'
+        (Get-Content (Join-Path $evidence 'source-sha256-before.json') -Raw) | Should -Be (Get-Content (Join-Path $evidence 'source-sha256-after.json') -Raw)
+        [IO.File]::ReadAllBytes((Join-Path $fixture 'Claims.json')) | Should -Be ([byte[]]@(123,125,10))
+        $global:CmsTeardownCalls | Should -Be 2
+        Test-Path $global:CmsLauncherprepared | Should -BeFalse
+        $after = @{}
+        Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }
+        ($after | ConvertTo-Json -Compress) | Should -Be ($global:CmsLauncherbeforeEnvironment | ConvertTo-Json -Compress)
+    }
+
+    It 'detects changed Drift input and still removes the stack and mount' {
+        $fixture = Join-Path $global:CmsLaunchercheckout 'src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Drift'
+        $null = New-Item -ItemType Directory $fixture -Force
+        [IO.File]::WriteAllBytes((Join-Path $fixture 'Claims.json'), [byte[]]@(123,125,10))
+        $global:CmsLaunchermutateInput = $true
+        { & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Drift } | Should -Throw '*changed the mounted fixture*'
+        $global:CmsTeardownCalls | Should -Be 2
+        Test-Path $global:CmsLauncherprepared | Should -BeFalse
+    }
+
+    It 'rejects Drift 6.1 before starting any stack' {
+        { & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Drift -DataStandardVersion '6.1' } | Should -Throw '*requires DataStandardVersion 5.2*'
+        $global:CmsTeardownCalls | Should -Be 0
     }
 
     It 'rejects Upload 6.1 before starting any stack' {

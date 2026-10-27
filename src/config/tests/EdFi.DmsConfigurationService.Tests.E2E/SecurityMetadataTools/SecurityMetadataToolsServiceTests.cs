@@ -377,7 +377,13 @@ public partial class Given_SecurityMetadataToolsService
         return result;
     }
 
-    private async Task RunToolAsync(string operation, string token, string[] arguments)
+    private async Task RunToolAsync(
+        string operation,
+        string token,
+        string[] arguments,
+        int expectedExitCode = 0,
+        string expectedOutput = ""
+    )
     {
         var result = await RunProcessAsync("dotnet", [ToolPath, .. arguments], token);
         bool leakedToken =
@@ -397,15 +403,19 @@ public partial class Given_SecurityMetadataToolsService
         await File.WriteAllTextAsync(Path.Combine(EvidenceDirectory, $"{operation}-stdout.txt"), output);
         await File.WriteAllTextAsync(Path.Combine(EvidenceDirectory, $"{operation}-stderr.txt"), error);
         leakedToken.Should().BeFalse("credentials must never reach tool diagnostics");
-        result.ExitCode.Should().Be(0, error);
+        await File.WriteAllTextAsync(
+            Path.Combine(EvidenceDirectory, $"{operation}-exit-code.txt"),
+            result.ExitCode.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        );
+        result.ExitCode.Should().Be(expectedExitCode, error);
         error.Should().BeEmpty();
         output
             .Should()
             .Be(
-                operation == "verify"
+                arguments[0] == "verify" && expectedExitCode == 0
                     ? "CMS authorization metadata matches the expected effective permissions."
                         + Environment.NewLine
-                    : ""
+                    : expectedOutput
             );
     }
 

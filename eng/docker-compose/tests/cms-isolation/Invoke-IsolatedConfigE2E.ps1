@@ -54,7 +54,7 @@ param(
     [string]
     $E2ETestFilter = "",
 
-    [ValidateSet("Hybrid", "Filesystem", "Upload")]
+    [ValidateSet("Hybrid", "Filesystem", "Upload", "Drift")]
     [string]
     $SecurityMetadataToolsScenario = "",
 
@@ -134,15 +134,24 @@ if ($SecurityMetadataToolsScenario) {
         }
     }
     $ClaimsFixtureDirectory = Join-Path $repoRoot "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Hybrid/fragments"
-    if ($SecurityMetadataToolsScenario -in @('Filesystem', 'Upload') -and $DataStandardVersion -ne '5.2') {
+    if ($SecurityMetadataToolsScenario -in @('Filesystem', 'Upload', 'Drift') -and $DataStandardVersion -ne '5.2') {
         throw "The $SecurityMetadataToolsScenario policy scenario requires DataStandardVersion 5.2."
     }
-    $ClaimsSource = if ($SecurityMetadataToolsScenario -eq 'Upload') { 'Hybrid' } else { $SecurityMetadataToolsScenario }
+    if ($SecurityMetadataToolsScenario -eq 'Drift') {
+        $ClaimsFixtureDirectory = Join-Path $repoRoot 'src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Drift'
+    }
+    $ClaimsSource = switch ($SecurityMetadataToolsScenario) {
+        'Upload' { 'Hybrid' }
+        'Drift' { 'Filesystem' }
+        default { $SecurityMetadataToolsScenario }
+    }
     $EnableUnrestrictedClaimsLoading = $SecurityMetadataToolsScenario -eq 'Upload'
     $testName = if ($SecurityMetadataToolsScenario -eq 'Filesystem') {
         'It_loads_unmodified_merge_output_through_Filesystem_startup'
     } elseif ($SecurityMetadataToolsScenario -eq 'Upload') {
         'It_uploads_unmodified_merge_output_and_verifies_stored_permissions'
+    } elseif ($SecurityMetadataToolsScenario -eq 'Drift') {
+        'It_detects_a_precise_stored_policy_edit_from_an_editable_baseline'
     } else {
         "It_matches_reviewed_Hybrid_permissions_for_DS_$($DataStandardVersion.Replace('.', '_'))"
     }
@@ -402,9 +411,12 @@ try {
     }
     $workingTrx = Join-Path $repoRoot "TestResults/EdFi.DmsConfigurationService.Tests.E2E.trx"
     Invoke-IsolatedCmsTestRun -WorkingTrx $workingTrx -ArtifactDirectory $artifactDirectory -ExpectedTestNames $expectedTestNames -Execute {
+        if ($SecurityMetadataToolsScenario -in @('Filesystem', 'Drift')) {
+            $sourceHashes = @(Get-ChildItem -LiteralPath $ClaimsFixtureDirectory -File -Recurse | Sort-Object FullName | Get-FileHash -Algorithm SHA256)
+            $sourceHashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactDirectory 'source-sha256-before.json')
+        }
         if ($SecurityMetadataToolsScenario -eq 'Filesystem') {
             # Generate once before startup; the mount contains only the unchanged complete document.
-            $sourceHashes = @(Get-ChildItem -LiteralPath $ClaimsFixtureDirectory -File -Recurse | Sort-Object FullName | Get-FileHash -Algorithm SHA256)
             $merged = Join-Path $artifactDirectory 'merged.json'
             $toolPath = Join-Path $assembly.DirectoryName 'SecurityMetadataTools/security-metadata-tools.dll'
             & dotnet $toolPath merge --fragments $ClaimsFixtureDirectory --data-standard-version $DataStandardVersion --output $merged 1> (Join-Path $artifactDirectory 'merge-stdout.txt') 2> (Join-Path $artifactDirectory 'merge-stderr.txt')
@@ -414,7 +426,6 @@ try {
             $mergedHash = (Get-FileHash -LiteralPath $merged -Algorithm SHA256).Hash
             Set-Content -LiteralPath (Join-Path $artifactDirectory 'merged-sha256-before.txt') -Value $mergedHash
             Copy-Item -LiteralPath $merged -Destination (Join-Path $preparedFixtureDirectory 'Claims.json')
-            $sourceHashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactDirectory 'source-sha256-before.json')
         }
         Push-Location $repoRoot
         try {
@@ -443,12 +454,23 @@ try {
         }
         finally {
             Pop-Location
-            if ($SecurityMetadataToolsScenario -eq 'Filesystem') {
+            if ($SecurityMetadataToolsScenario -in @('Filesystem', 'Drift')) {
                 $afterHashes = @(Get-ChildItem -LiteralPath $ClaimsFixtureDirectory -File -Recurse | Sort-Object FullName | Get-FileHash -Algorithm SHA256)
                 $afterHashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactDirectory 'source-sha256-after.json')
                 if (($sourceHashes | ConvertTo-Json -Compress) -cne ($afterHashes | ConvertTo-Json -Compress)) {
-                    throw 'Filesystem scenario changed the source fragments.'
+                    throw "$SecurityMetadataToolsScenario scenario changed the source fixtures."
                 }
+            }
+            if ($SecurityMetadataToolsScenario -eq 'Drift') {
+                foreach ($sourceHash in $sourceHashes) {
+                    $relativePath = [IO.Path]::GetRelativePath($ClaimsFixtureDirectory, $sourceHash.Path)
+                    $mountedPath = Join-Path $preparedFixtureDirectory $relativePath
+                    if ((Get-FileHash -LiteralPath $mountedPath -Algorithm SHA256).Hash -cne $sourceHash.Hash) {
+                        throw 'Drift scenario changed the mounted fixture.'
+                    }
+                }
+            }
+            if ($SecurityMetadataToolsScenario -eq 'Filesystem') {
                 foreach ($path in @($merged, (Join-Path $preparedFixtureDirectory 'Claims.json'))) {
                     if ((Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -cne $mergedHash) {
                         throw 'Filesystem scenario changed the merged document.'

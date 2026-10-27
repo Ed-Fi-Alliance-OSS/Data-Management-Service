@@ -30,6 +30,16 @@ Among the named scenarios, only Upload enables unrestricted management. Run it w
 pwsh ./eng/docker-compose/tests/cms-isolation/Invoke-IsolatedConfigE2E.ps1 -Configuration Release -EnvironmentFile ./.env.config.e2e -SecurityMetadataToolsScenario Upload -DataStandardVersion 5.2
 ```
 
+The [Drift 5.2 scenario](Drift/README.md) loads its independent complete editable policy
+through Filesystem startup with unrestricted loading disabled. It verifies an exact match,
+resolves IDs through secured APIs, then enables Create while preserving Read. The same input
+must report only the reviewed unexpected-Create difference (exit 2). Full stored metadata
+snapshots before/after and unchanged source/mount hashes are retained. Run it with:
+
+```powershell
+pwsh ./eng/docker-compose/tests/cms-isolation/Invoke-IsolatedConfigE2E.ps1 -Configuration Release -EnvironmentFile ./.env.config.e2e -SecurityMetadataToolsScenario Drift -DataStandardVersion 5.2
+```
+
 Service cases belong to `Given_SecurityMetadataToolsService`, carry both
 `SecurityMetadataToolsService` and their scenario category, and require
 `SECURITY_METADATA_TOOLS_SERVICE_RUNNER=true`. The launcher must select and validate the exact

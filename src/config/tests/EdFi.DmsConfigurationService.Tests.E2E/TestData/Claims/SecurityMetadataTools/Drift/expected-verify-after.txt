@@ -1,0 +1,2 @@
+CMS authorization metadata differs from the expected effective permissions.
+Unexpected action: claim set "DriftEditable", claim "http://ed-fi.org/identity/claims/ed-fi/student", action "Create"; expected <missing>; actual ["Create"].
