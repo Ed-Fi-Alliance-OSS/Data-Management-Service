@@ -163,8 +163,9 @@ try {
         if ($LASTEXITCODE -ne 0) { throw "Listing networks failed; refusing to run." }
     )
     $existingContainers = @(& docker ps --all --format '{{.Names}}')
+    if ($LASTEXITCODE -ne 0) { throw "Listing all containers failed; refusing to run." }
     $existingNetworks = @(& docker network ls --format '{{.Name}}')
-    if ($LASTEXITCODE -ne 0) { throw "Listing Docker resources failed; refusing to run." }
+    if ($LASTEXITCODE -ne 0) { throw "Listing all networks failed; refusing to run." }
     foreach ($container in @(
             $isolation.CONFIGURATION_SERVICE_POSTGRES_CONTAINER
             $isolation.CONFIGURATION_SERVICE_KEYCLOAK_CONTAINER
@@ -212,8 +213,16 @@ try {
         }
 
         # Every compose file declares this network external, so compose down leaves it and this is the
-        # only removal. Its failure is not fatal: the network holds no data, and the next run reuses it.
-        & docker network rm $isolation.CONFIGURATION_SERVICE_COMPOSE_NETWORK *> $null
+        # only removal. Its failure does not fail the run, since the network holds no data, but the next
+        # run refuses to start while it exists, so the failure is reported with the command that clears it.
+        $network = $isolation.CONFIGURATION_SERVICE_COMPOSE_NETWORK
+        $removeOutput = & docker network rm $network 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $leftNetworks = @(& docker network ls --filter "name=^$network$" --format '{{.Name}}')
+            if ($LASTEXITCODE -ne 0 -or $leftNetworks -ccontains $network) {
+                Write-Warning "Removing the isolated network $network failed ($($removeOutput -join ' ')). The next run with -IsolationName $IsolationName refuses to start until it is removed: docker network rm $network"
+            }
+        }
         $global:LASTEXITCODE = 0
     }
 
