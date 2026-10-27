@@ -25,7 +25,7 @@ public partial class StepDefinitions(
     /// <summary>The Configuration Service's own client, whose credentials "valid credentials" uses.</summary>
     public const string SystemClientId = "DmsConfigurationService";
 
-    private const string SystemClientSecret = "ValidClientSecret1234567890!Abcd";
+    internal const string SystemClientSecret = "ValidClientSecret1234567890!Abcd";
 
     private IAPIResponse _apiResponse = null!;
     internal IAPIResponse LastApiResponse => _apiResponse;

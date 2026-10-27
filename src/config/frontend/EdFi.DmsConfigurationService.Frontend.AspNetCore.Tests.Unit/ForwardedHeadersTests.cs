@@ -33,12 +33,22 @@ public class Given_A_Reverse_Proxy_Configuration
     private const string KnownProxiesEnv = "AppSettings__ReverseProxy__KnownProxies";
     private const string KnownNetworksEnv = "AppSettings__ReverseProxy__KnownNetworks";
 
+    private EnvironmentVariableScope _reverseProxyEnvironment = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _reverseProxyEnvironment = new EnvironmentVariableScope(
+            UseForwardedHeadersEnv,
+            KnownProxiesEnv,
+            KnownNetworksEnv
+        );
+    }
+
     [TearDown]
     public void TearDown()
     {
-        Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, null);
-        Environment.SetEnvironmentVariable(KnownProxiesEnv, null);
-        Environment.SetEnvironmentVariable(KnownNetworksEnv, null);
+        _reverseProxyEnvironment.Dispose();
     }
 
     private static WebApplicationFactory<Program> CreateFactory()

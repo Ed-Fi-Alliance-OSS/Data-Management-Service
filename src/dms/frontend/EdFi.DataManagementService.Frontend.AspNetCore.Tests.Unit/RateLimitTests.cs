@@ -144,8 +144,8 @@ public class Given_Requests_That_Exceed_The_Configured_Rate_Limit
         // The other half of the rule, through the same real pipeline: a 2xx keeps no Cache-Control
         // from this middleware. HealthCheckEndpointModule's own /health handler sets none either,
         // so a no-store appearing here could only have come from the security headers middleware
-        // over-reaching onto success responses - which is what would break etag revalidation on
-        // resource GETs.
+        // over-reaching onto success responses - which would stop public documents such as
+        // discovery and metadata from being cached.
         _permittedResponse.Headers.CacheControl.Should().BeNull();
     }
 

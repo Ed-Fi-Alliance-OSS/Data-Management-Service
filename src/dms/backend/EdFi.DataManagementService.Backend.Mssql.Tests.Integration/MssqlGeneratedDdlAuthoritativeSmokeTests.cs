@@ -1387,6 +1387,28 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
+    public async Task It_should_cascade_section_and_student_school_association_key_changes_to_their_association_referrers()
+    {
+        // DMS-1624: Section and StudentSchoolAssociation allow identity updates, so pruning keeps
+        // the edges from them and cuts the competing edge from the immutable
+        // EducationOrganization identity instead (matching ODS).
+        var updateActions = (await _database.GetForeignKeyMetadataAsync("edfi", "StudentSectionAssociation"))
+            .Concat(await _database.GetForeignKeyMetadataAsync("edfi", "StudentAssessmentRegistration"))
+            .ToDictionary(foreignKey => foreignKey.ConstraintName, foreignKey => foreignKey.UpdateAction);
+
+        updateActions["FK_StudentSectionAssociation_Section_RefKey"].Should().Be("CASCADE");
+        updateActions["FK_StudentSectionAssociation_DualCreditEducationOrganization_RefKey"]
+            .Should()
+            .Be("NO ACTION");
+        updateActions["FK_StudentAssessmentRegistration_StudentSchoolAssociation_RefKey"]
+            .Should()
+            .Be("CASCADE");
+        updateActions["FK_StudentAssessmentRegistration_AssessmentAdministration_RefKey"]
+            .Should()
+            .Be("NO ACTION");
+    }
+
+    [Test]
     public async Task It_should_not_install_any_retired_identity_propagation_trigger()
     {
         // DMS-1258 acceptance criterion: SQL Server integration coverage must prove the old

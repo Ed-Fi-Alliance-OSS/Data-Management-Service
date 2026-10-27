@@ -115,7 +115,17 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     protected static OpenIddictTokenManager CreateTokenManager(
         OpenIddictDataRepository dataRepository,
         IdentityOptions options
-    )
+    ) => CreateTokenManagerOver(dataRepository, options).Manager;
+
+    /// <summary>
+    /// A token manager over a fake that wraps <paramref name="dataRepository"/>, returned with that
+    /// fake so a test can observe the reads. The manager authenticates from the real credential
+    /// query.
+    /// </summary>
+    protected static (
+        OpenIddictTokenManager Manager,
+        IOpenIddictDataRepository ObservedRepository
+    ) CreateTokenManagerOver(OpenIddictDataRepository dataRepository, IdentityOptions options)
     {
         // All lookup and storage operations use the real dialect repository. Only the signing
         // key read is replaced so these grant tests do not depend on key rotation/encryption.
@@ -128,8 +138,12 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
         IClientSecretHasher secretHasher = A.Fake<IClientSecretHasher>();
         A.CallTo(() => secretHasher.VerifySecretAsync("plain-secret", "hashed-secret")).Returns(true);
+        A.CallTo(() => secretHasher.HashSecretAsync(A<string>._)).Returns("integration-placeholder");
+        // As the host does at startup; the faked hasher completes synchronously.
+        ClientSecretPlaceholderHash placeholderHash = new(secretHasher);
+        placeholderHash.InitializeAsync().GetAwaiter().GetResult();
         options.EncryptionKey = "integration-signing-key";
-        return new OpenIddictTokenManager(
+        OpenIddictTokenManager manager = new(
             Options.Create(options),
             NullLogger<OpenIddictTokenManager>.Instance,
             secretHasher,
@@ -138,8 +152,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             new DevelopmentCertificateStore(
                 Options.Create(options),
                 NullLogger<DevelopmentCertificateStore>.Instance
-            )
+            ),
+            placeholderHash
         );
+        return (manager, signingRepository);
     }
 
     protected static Task<TokenResult> RequestGrantAsync(OpenIddictTokenManager manager, string clientId) =>
@@ -2240,5 +2256,328 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             _seededScopeRowsBefore.Should().Be(1);
             (await ApplicationScopeRowCountAsync(_seededApplicationId)).Should().Be(_seededScopeRowsBefore);
         }
+    }
+
+    /// <summary>
+    /// Adds one API client for <paramref name="clientId"/>, linked to
+    /// <paramref name="dataStoreCount"/> data stores of its own. The schema allows at most one
+    /// API client per client id (<c>UX_ApiClient_ClientId</c>).
+    /// </summary>
+    protected static Task AddApiClientWithDataStoresAsync(
+        OpenIddictDataRepository repository,
+        string clientId,
+        bool isApproved,
+        int dataStoreCount
+    ) =>
+        repository.ExecuteInTransactionAsync(
+            async (connection, transaction) =>
+            {
+                int vendorId = await connection.ExecuteScalarAsync<int>(
+                    "INSERT INTO dmscs.Vendor (Company) OUTPUT INSERTED.Id VALUES (@Company)",
+                    new { Company = $"credential-{Guid.NewGuid():N}" },
+                    transaction
+                );
+                int applicationId = await connection.ExecuteScalarAsync<int>(
+                    """
+                    INSERT INTO dmscs.Application (ApplicationName, VendorId, ClaimSetName)
+                    OUTPUT INSERTED.Id VALUES ('Credential test', @VendorId, 'Test claim set')
+                    """,
+                    new { VendorId = vendorId },
+                    transaction
+                );
+                int apiClientId = await connection.ExecuteScalarAsync<int>(
+                    """
+                    INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid, Name, IsApproved)
+                    OUTPUT INSERTED.Id VALUES (@ApplicationId, @ClientId, @ClientUuid, 'Credential test', @IsApproved)
+                    """,
+                    new
+                    {
+                        ApplicationId = applicationId,
+                        ClientId = clientId,
+                        ClientUuid = Guid.NewGuid(),
+                        IsApproved = isApproved,
+                    },
+                    transaction
+                );
+                for (int index = 0; index < dataStoreCount; index++)
+                {
+                    int dataStoreId = await connection.ExecuteScalarAsync<int>(
+                        "INSERT INTO dmscs.DataStore (DataStoreType, Name) OUTPUT INSERTED.Id VALUES ('Test', @Name)",
+                        new { Name = $"credential-{Guid.NewGuid():N}" },
+                        transaction
+                    );
+                    await connection.ExecuteAsync(
+                        "INSERT INTO dmscs.ApiClientDataStore (ApiClientId, DataStoreId) VALUES (@ApiClientId, @DataStoreId)",
+                        new { ApiClientId = apiClientId, DataStoreId = dataStoreId },
+                        transaction
+                    );
+                }
+            }
+        );
+
+    // The credential query must report what the full lookup reports for every registration the
+    // schema allows: no API client (approved by default, not absent), an approved or unapproved
+    // one, and either of those linked to several data stores, which the full lookup reads with
+    // its own query but which must not change the approval.
+    [TestFixture("no-api-client", true)]
+    [TestFixture("approved", true)]
+    [TestFixture("unapproved", false)]
+    [TestFixture("approved-over-two-data-stores", true)]
+    [TestFixture("unapproved-over-two-data-stores", false)]
+    public class Given_A_Client_Credential_Lookup(string registration, bool expectedApproval)
+        : OpenIddictDataRepositoryTests
+    {
+        private Guid _applicationId;
+        private ClientCredential _credential = null!;
+        private ApplicationInfo _application = null!;
+        private ClientCredential? _throughWrapper;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(
+                repository,
+                clientId,
+                "edfi_admin_api/readonly_access"
+            );
+            if (registration != "no-api-client")
+            {
+                await AddApiClientWithDataStoresAsync(
+                    repository,
+                    clientId,
+                    isApproved: registration.StartsWith("approved", StringComparison.Ordinal),
+                    dataStoreCount: registration.EndsWith("two-data-stores", StringComparison.Ordinal) ? 2 : 0
+                );
+            }
+
+            _credential =
+                await repository.GetClientCredentialAsync(clientId)
+                ?? throw new InvalidOperationException("Seeded application credential was not found.");
+            _application =
+                await repository.GetApplicationByClientIdAsync(clientId)
+                ?? throw new InvalidOperationException("Seeded application was not found.");
+
+            OpenIddictTokenRepository tokenRepository = new(repository);
+            _throughWrapper = await tokenRepository.GetClientCredentialAsync(clientId);
+        }
+
+        [Test]
+        public void It_finds_the_registered_application() =>
+            _credential.ApplicationId.Should().Be(_applicationId);
+
+        [Test]
+        public void It_reports_the_approval_of_the_registration() =>
+            _credential.IsApproved.Should().Be(expectedApproval);
+
+        [Test]
+        public void It_reads_the_stored_secret() =>
+            _credential.StoredClientSecret.Should().Be("hashed-secret");
+
+        [Test]
+        public void It_agrees_with_the_full_lookup() =>
+            _credential
+                .Should()
+                .Be(
+                    new ClientCredential(
+                        _application.Id,
+                        _application.ClientId,
+                        _application.ClientSecret,
+                        _application.IsApproved
+                    )
+                );
+
+        [Test]
+        public void It_leaves_the_data_stores_to_the_full_lookup() =>
+            _application
+                .DataStoreIds.Should()
+                .HaveCount(registration.EndsWith("two-data-stores", StringComparison.Ordinal) ? 2 : 0);
+
+        [Test]
+        public void It_reads_the_same_credential_through_the_token_repository() =>
+            _throughWrapper.Should().Be(_credential);
+    }
+
+    [TestFixture]
+    public class Given_A_Client_Credential_Lookup_For_An_Unregistered_Client : OpenIddictDataRepositoryTests
+    {
+        private ClientCredential? _credential;
+        private ApplicationInfo? _application;
+        private ClientCredential? _throughWrapper;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            await RegisterApplicationAsync(repository, Guid.NewGuid().ToString());
+            string unregisteredClientId = Guid.NewGuid().ToString();
+
+            _credential = await repository.GetClientCredentialAsync(unregisteredClientId);
+            _application = await repository.GetApplicationByClientIdAsync(unregisteredClientId);
+            _throughWrapper = await new OpenIddictTokenRepository(repository).GetClientCredentialAsync(
+                unregisteredClientId
+            );
+        }
+
+        [Test]
+        public void It_reports_no_credential() => _credential.Should().BeNull();
+
+        [Test]
+        public void It_agrees_with_the_full_lookup() => _application.Should().BeNull();
+
+        [Test]
+        public void It_reports_no_credential_through_the_token_repository() =>
+            _throughWrapper.Should().BeNull();
+    }
+
+    [TestFixture]
+    public class Given_A_Client_Credential_Lookup_With_No_Stored_Secret : OpenIddictDataRepositoryTests
+    {
+        private bool _storedSecretIsNull;
+        private ClientCredential _credential = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            string clientId = Guid.NewGuid().ToString();
+            await RegisterApplicationAsync(repository, clientId);
+            await Connection!.ExecuteAsync(
+                "UPDATE dmscs.OpenIddictApplication SET ClientSecret = NULL WHERE ClientId = @ClientId",
+                new { ClientId = clientId }
+            );
+            _storedSecretIsNull = await Connection!.ExecuteScalarAsync<bool>(
+                "SELECT CAST(CASE WHEN ClientSecret IS NULL THEN 1 ELSE 0 END AS BIT) FROM dmscs.OpenIddictApplication WHERE ClientId = @ClientId",
+                new { ClientId = clientId }
+            );
+
+            _credential =
+                await repository.GetClientCredentialAsync(clientId)
+                ?? throw new InvalidOperationException("Seeded application credential was not found.");
+        }
+
+        [Test]
+        public void It_stores_a_database_null() => _storedSecretIsNull.Should().BeTrue();
+
+        [Test]
+        public void It_reads_the_secret_as_an_empty_string() =>
+            _credential.StoredClientSecret.Should().Be(string.Empty);
+    }
+
+    // Matching follows the database's collation, as the full lookup's does. The test reads the
+    // collation rather than assuming one: under a case-insensitive collation (the default) a
+    // different casing resolves, and the stored spelling is what comes back.
+    [TestFixture]
+    public class Given_A_Client_Credential_Lookup_With_Different_Casing : OpenIddictDataRepositoryTests
+    {
+        private string _registeredClientId = null!;
+        private bool _collationIgnoresCase;
+        private ClientCredential? _exact;
+        private ClientCredential? _differentCasing;
+        private ApplicationInfo? _fullLookupWithDifferentCasing;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            _registeredClientId = $"Credential-Casing-{Guid.NewGuid():N}";
+            await RegisterApplicationAsync(repository, _registeredClientId);
+            string lowered = _registeredClientId.ToLowerInvariant();
+            _collationIgnoresCase =
+                await Connection!.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(*) FROM dmscs.OpenIddictApplication WHERE ClientId = @Lowered",
+                    new { Lowered = lowered }
+                ) > 0;
+
+            _exact = await repository.GetClientCredentialAsync(_registeredClientId);
+            _differentCasing = await repository.GetClientCredentialAsync(lowered);
+            _fullLookupWithDifferentCasing = await repository.GetApplicationByClientIdAsync(lowered);
+        }
+
+        [Test]
+        public void It_returns_the_stored_spelling() =>
+            _exact!.StoredClientId.Should().Be(_registeredClientId);
+
+        [Test]
+        public void It_matches_a_different_casing_exactly_when_the_full_lookup_does() =>
+            (_differentCasing is null).Should().Be(_fullLookupWithDifferentCasing is null);
+
+        [Test]
+        public void It_returns_the_stored_spelling_for_a_different_casing_under_a_case_insensitive_collation()
+        {
+            Assume.That(_collationIgnoresCase, "The integration database's collation is case-sensitive.");
+            _differentCasing!.StoredClientId.Should().Be(_registeredClientId);
+        }
+    }
+
+    // Through the token manager, the credential query decides authentication: a successful grant
+    // reads the credential and then the full application once each; a failed one never reads the
+    // full application.
+    [TestFixture("approved")]
+    [TestFixture("unapproved")]
+    [TestFixture("wrong-secret")]
+    [TestFixture("absent")]
+    public class Given_Grants_Through_The_Credential_Path(string outcome) : OpenIddictDataRepositoryTests
+    {
+        private string _clientId = null!;
+        private IOpenIddictDataRepository _observedRepository = null!;
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            _clientId = Guid.NewGuid().ToString();
+            if (outcome != "absent")
+            {
+                await RegisterApplicationAsync(repository, _clientId);
+                await AddApiClientWithDataStoresAsync(
+                    repository,
+                    _clientId,
+                    isApproved: outcome != "unapproved",
+                    dataStoreCount: 1
+                );
+            }
+
+            (OpenIddictTokenManager manager, _observedRepository) = CreateTokenManagerOver(
+                repository,
+                new IdentityOptions()
+            );
+            _result = await manager.GetAccessTokenAsync([
+                new("client_id", _clientId),
+                new("client_secret", outcome == "wrong-secret" ? "wrong-secret" : "plain-secret"),
+            ]);
+        }
+
+        [Test]
+        public void It_answers_the_grant()
+        {
+            if (outcome == "approved")
+            {
+                _result.Should().BeOfType<TokenResult.Success>();
+            }
+            else
+            {
+                _result
+                    .Should()
+                    .BeEquivalentTo(
+                        new TokenResult.FailureAuthentication(
+                            "invalid_client",
+                            "Invalid client or Invalid client credentials"
+                        )
+                    );
+            }
+        }
+
+        [Test]
+        public void It_reads_the_credential_once() =>
+            A.CallTo(() => _observedRepository.GetClientCredentialAsync(_clientId))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_reads_the_full_application_only_after_a_successful_authentication() =>
+            A.CallTo(() => _observedRepository.GetApplicationByClientIdAsync(_clientId))
+                .MustHaveHappened(outcome == "approved" ? 1 : 0, Times.Exactly);
     }
 }

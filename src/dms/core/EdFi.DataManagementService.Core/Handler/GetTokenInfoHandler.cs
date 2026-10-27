@@ -217,7 +217,7 @@ internal partial class GetTokenInfoHandler(
         requestInfo.FrontendResponse = new FrontendResponse(
             StatusCode: 200,
             Body: JsonSerializer.SerializeToNode(response),
-            Headers: new() { ["Cache-Control"] = "no-cache" }
+            Headers: new() { ["Cache-Control"] = "no-store" }
         );
     }
 

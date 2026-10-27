@@ -399,8 +399,8 @@ Behavior:
   are trusted (the ASP.NET Core default). This is safe, but a proxy container running on
   another host is not trusted unless you configure its address explicitly.
 - `ReverseProxy:UseForwardedHeaders=true` with trusted sources: forwarded headers are honored only
-  when the connecting proxy matches `KnownProxies` or `KnownNetworks`; otherwise they are
-  ignored.
+  when the connecting proxy is a loopback address or matches `KnownProxies` or `KnownNetworks`;
+  otherwise they are ignored.
 
 Invalid IP or CIDR values cause the service to fail startup with a configuration error.
 
@@ -433,6 +433,52 @@ REVERSE_PROXY_KNOWN_NETWORKS=10.20.30.0/24
 For the Configuration Service, use the `CONFIGURATION_SERVICE_`-prefixed variables
 (`CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS`, `CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_PROXIES`,
 `CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_NETWORKS`).
+
+### Security response headers
+
+Both services send these headers on every response.
+The values are fixed and are not configurable.
+
+| Header | Value |
+| --- | --- |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `no-referrer` |
+| `X-Frame-Options` | `DENY` |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'` |
+
+`Strict-Transport-Security: max-age=31536000` is sent only when the request is HTTPS as the application sees it.
+That means TLS terminated by Kestrel, or `X-Forwarded-Proto: https` from a proxy the application trusts once `ReverseProxy:UseForwardedHeaders` is `true`: a loopback proxy, or one listed in `KnownProxies` or `KnownNetworks`.
+It is never sent for `localhost`, `127.0.0.1` or `[::1]`, or when the hosting environment is `Development` (`ASPNETCORE_ENVIRONMENT=Development`).
+A browser keeps the policy for a year and applies it to every port on the hostname, so on a developer machine it would force HTTPS onto unrelated local services.
+It carries no `includeSubDomains` or `preload`, because those are decisions for whoever owns the domain, so they belong at the edge.
+When TLS terminates at a proxy and forwarded headers are not enabled, the application does not send HSTS and the proxy should.
+
+`Cache-Control: no-store` is sent on:
+
+- Non-2xx responses, except 304, in both services.
+- Every DMS data API response, whatever its status: the resource and descriptor endpoints with their `deletes` and `keyChanges` routes, and Change Queries `availableChangeVersions`.
+- The token endpoints, together with `Pragma: no-cache`: DMS `/oauth/token` and every Configuration Service `/connect/*` endpoint.
+- Authenticated Configuration Service endpoints.
+- The Configuration Service discovery document, `/.well-known/openid-configuration`.
+- DMS `/oauth/token_info`.
+- DMS claimset management endpoints (`view-claimsets` and `reload-claimsets`).
+- The DMS DocumentCache status endpoint, `/health/document-cache`, when `DataManagement:DocumentCache:Status:RequiredRole` maps it.
+- DMS identity operations, as described in [IDENTITY-MANAGEMENT.md](IDENTITY-MANAGEMENT.md).
+
+DMS data API responses still carry their `ETag`, so a client that keeps it can revalidate with `If-None-Match` and receive `304 Not Modified`, but no browser or other HTTP cache stores the records.
+Public documents, such as the DMS discovery and metadata endpoints and `/health` in both services, carry no `Cache-Control`.
+
+The application cannot see headers a proxy adds.
+A proxy that appends headers, as nginx `add_header` does, sends its fields after the application's instead of replacing them.
+Duplicate `X-Frame-Options`, `Content-Security-Policy` and `Cache-Control` fields resolve to the stricter value.
+For `Strict-Transport-Security`, browsers use only the first field, so behind an appending proxy the application's value wins.
+To apply a different value at the edge, remove the application's header first.
+With nginx, use `proxy_hide_header`, as the review gateway does for HSTS:
+
+```nginx
+proxy_hide_header Strict-Transport-Security;
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+```
 
 ## DatabaseOptions
 

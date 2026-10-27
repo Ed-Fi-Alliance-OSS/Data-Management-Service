@@ -182,9 +182,18 @@ Feature: Connect endpoints
                   | grant_type    | client_credentials                             |
                   | scope         | edfi_admin_api/full_access                     |
              Then it should respond with 200
+              And the response headers include
+                  """
+                  {
+                    "Cache-Control": "no-store",
+                    "Pragma": "no-cache"
+                  }
+                  """
               And the token response body is valid
               And the token has an empty namespacePrefixes claim
 
+        # A wrong secret is answered exactly as an unknown client id (scenario 06), so the response
+        # does not reveal that the client exists.
         Scenario: 05 Verify token creation with invalid client_secret value
              When a Form URL Encoded POST request is made to "/connect/register" with
                   | Key          | Value                                          |
@@ -206,6 +215,13 @@ Feature: Connect endpoints
                   | grant_type    | client_credentials         |
                   | scope         | edfi_admin_api/full_access |
              Then it should respond with 401
+              And the response headers include
+                  """
+                  {
+                    "Cache-Control": "no-store",
+                    "Pragma": "no-cache"
+                  }
+                  """
               And the response body is
                   """
                   {
@@ -215,7 +231,7 @@ Feature: Connect endpoints
                     "status":401,
                     "validationErrors":{},
                      "errors": [
-                        "unauthorized_client. Invalid client or Invalid client credentials"
+                        "invalid_client. Invalid client or Invalid client credentials"
                         ]
                   }
                   """

@@ -7,6 +7,7 @@ using EdFi.Api.Plugins.Hosting;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Deploy;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
@@ -129,6 +130,10 @@ app.UseMiddleware<TenantResolutionMiddleware>();
 // make the behavior untestable under WebApplicationFactory.
 _ = app.Services.GetRequiredService<IOptions<DatabaseOptions>>().Value;
 
+// After the plugin audit, so the placeholder comes from the final hasher registration, a plugin's
+// included, and before the manager checks, because a self-contained manager is constructed from it.
+await InitializeClientSecretPlaceholder(app);
+
 // After the plugin audit, so a plugin registration the host refuses is reported as one first, and after
 // DatabaseOptions, because the self-contained manager's repository reads those options when it is
 // constructed: a rejected key must stop startup with the validator's text, not as a manager that could
@@ -150,6 +155,10 @@ app.UseRouting();
 // whose exception content is not under CMS control has that content withheld before the framework's
 // exception middleware can log it, endpoint parameter binding included (DMS-1327 D-15, D-17).
 app.UseMiddleware<ExceptionContentBoundaryMiddleware>();
+
+// Marks OAuth and authorization-required responses no-store. Placed right after routing, so the endpoint is
+// known and the authentication and authorization short-circuits further down are covered.
+app.UseMiddleware<ResponseCachePolicyMiddleware>();
 
 // Shape framework-generated bodiless error responses into the Ed-Fi contract. Placed after routing
 // but before CORS/authentication/authorization so it wraps the auth short-circuits and the endpoint
@@ -245,6 +254,47 @@ async Task AbortOnPluginRegistrationProblems(IReadOnlyList<string> problems, Exc
             + "or remove it from Plugins:Allowed, then restart: "
             + string.Join(" | ", problems),
         activationException
+    );
+}
+
+/// <summary>
+/// When the self-contained stores are registered, generates their placeholder client secret hash through
+/// the registered IClientSecretHasher, and stops startup when it cannot. An unknown client's secret is
+/// verified against that placeholder, so it must exist before any request is served, and no request
+/// pays for generating it. The registration decides, not the configured provider name, because the
+/// self-contained managers need the placeholder wherever they are registered. A hasher failure is
+/// reported by exception type names alone, as for the manager checks; an options validation failure
+/// propagates unchanged and carries the validator's text.
+/// </summary>
+async Task InitializeClientSecretPlaceholder(WebApplication app)
+{
+    // Only the type names leave the catch; a chain always names at least the caught exception.
+    string exceptionTypes = string.Empty;
+    try
+    {
+        if (app.Services.GetService<ClientSecretPlaceholderHash>() is { } placeholderHash)
+        {
+            await placeholderHash.InitializeAsync();
+        }
+    }
+    catch (Exception exception) when (exception is not OptionsValidationException)
+    {
+        exceptionTypes = ExceptionTypeNames.Chain(exception);
+    }
+
+    if (exceptionTypes.Length == 0)
+    {
+        return;
+    }
+
+    app.Logger.LogCritical(
+        "The placeholder client secret hash could not be generated with the registered client secret "
+            + "hasher ({ExceptionTypes}). Correct the hasher registration or its settings, then restart.",
+        exceptionTypes
+    );
+    throw new InvalidOperationException(
+        "The placeholder client secret hash could not be generated with the registered client secret "
+            + $"hasher ({exceptionTypes}). Correct the hasher registration or its settings, then restart."
     );
 }
 
