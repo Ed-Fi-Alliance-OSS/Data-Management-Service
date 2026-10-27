@@ -1,0 +1,30 @@
+[
+  {
+    "claimSetName": "NoActions",
+    "claims": [
+      {
+        "name": "DirectEmpty",
+        "authorizationId": 1
+      },
+      {
+        "name": "InheritedEmpty",
+        "authorizationId": 1
+      },
+      {
+        "name": "OmittedActions",
+        "authorizationId": 1
+      }
+    ],
+    "authorizations": [
+      {
+        "id": 1,
+        "actions": []
+      }
+    ]
+  },
+  {
+    "claimSetName": "Empty",
+    "claims": [],
+    "authorizations": []
+  }
+]

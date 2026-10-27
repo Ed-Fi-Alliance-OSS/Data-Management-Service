@@ -1,0 +1,110 @@
+[
+  {
+    "claimSetName": "Zoo",
+    "claims": [
+      {
+        "name": "Alpha",
+        "authorizationId": 2
+      },
+      {
+        "name": "Beta",
+        "authorizationId": 2
+      },
+      {
+        "name": "Zebra",
+        "authorizationId": 1
+      }
+    ],
+    "authorizations": [
+      {
+        "id": 1,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "Second"
+              },
+              {
+                "name": "First"
+              }
+            ]
+          },
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "LeafCreate"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "RootDelete"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "actions": [
+          {
+            "name": "Update",
+            "authorizationStrategies": []
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NearSecond"
+              },
+              {
+                "name": "NearFirst"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "RootDelete"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "claimSetName": "Empty",
+    "claims": [],
+    "authorizations": []
+  },
+  {
+    "claimSetName": "Alpha",
+    "claims": [
+      {
+        "name": "Zebra",
+        "authorizationId": 3
+      }
+    ],
+    "authorizations": [
+      {
+        "id": 3,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "RootRead"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
