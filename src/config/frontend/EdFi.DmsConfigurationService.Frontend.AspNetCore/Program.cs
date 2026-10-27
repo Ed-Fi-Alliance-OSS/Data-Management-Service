@@ -7,11 +7,13 @@ using EdFi.Api.Plugins.Hosting;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Deploy;
+using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 using Microsoft.Extensions.Options;
+using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -43,6 +45,33 @@ builder.Services.AddOpenApi(options =>
             )
             {
                 schema.ReadOnly = true;
+            }
+
+            // An API client request's scope fields are optional, but never null when sent: the
+            // validator rejects an explicit null, which the nullable flag type only exists to detect.
+            if (
+                context.JsonPropertyInfo is { } scopeProperty
+                && (
+                    scopeProperty.DeclaringType == typeof(ApiClientInsertCommand)
+                    || scopeProperty.DeclaringType == typeof(ApiClientUpdateCommand)
+                )
+            )
+            {
+                switch (scopeProperty.Name)
+                {
+                    case "inheritsApplicationEducationOrganizations":
+                        schema.Type = JsonSchemaType.Boolean;
+                        break;
+                    case "educationOrganizationIds":
+                        schema.MinItems = 1;
+                        break;
+                }
+            }
+
+            // Every API client response field is always written, null only where its type allows.
+            if (context.JsonPropertyInfo is null && context.JsonTypeInfo.Type == typeof(ApiClientResponse))
+            {
+                schema.Required = new HashSet<string>(schema.Properties?.Keys ?? []);
             }
 
             return Task.CompletedTask;

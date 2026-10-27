@@ -178,6 +178,8 @@ public static class SetupHooks
                 await DeleteData(@"""dmscs"".""DataStoreContext""");
                 await DeleteData(@"""dmscs"".""ApiClientOwnershipToken""");
                 await DeleteData(@"""dmscs"".""ApiClientDataStore""");
+                // A client's education organization rows reference it without cascading
+                await DeleteData(@"""dmscs"".""ApiClientEducationOrganization""");
                 await DeleteData(@"""dmscs"".""ApiClient""");
                 await DeleteData(@"""dmscs"".""OwnershipToken""");
                 await DeleteData(@"""dmscs"".""DataStore""");
@@ -217,6 +219,8 @@ public static class SetupHooks
                 await DeleteData("dmscs.DataStoreContext");
                 await DeleteData("dmscs.ApiClientOwnershipToken");
                 await DeleteData("dmscs.ApiClientDataStore");
+                // A client's education organization rows reference it without cascading
+                await DeleteData("dmscs.ApiClientEducationOrganization");
                 await DeleteData("dmscs.ApiClient");
                 await DeleteData("dmscs.OwnershipToken");
                 await DeleteData("dmscs.DataStore");

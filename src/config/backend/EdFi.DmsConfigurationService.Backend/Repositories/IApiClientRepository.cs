@@ -139,7 +139,8 @@ public record ApiClientSyncPendingResult
 }
 
 /// <summary>
-/// The complete state an ApiClient update mutates, including the exact data store set.
+/// The complete state an ApiClient update mutates, including the exact data store set and the
+/// education organization scope: the inheritance flag and the client's own rows.
 /// </summary>
 public record ApiClientResolutionState(
     int ApplicationId,
@@ -147,7 +148,9 @@ public record ApiClientResolutionState(
     bool IsApproved,
     string ClientId,
     Guid ClientUuid,
-    int[] DataStoreIds
+    int[] DataStoreIds,
+    bool InheritsApplicationEducationOrganizations,
+    long[] StoredEducationOrganizationIds
 );
 
 public record ApiClientResolutionResult
@@ -259,6 +262,13 @@ public record ApiClientInsertResult
     public record FailureDuplicateClientUuid() : ApiClientInsertResult();
 
     /// <summary>
+    /// The requested narrowed scope has education organizations that are not on the Application;
+    /// nothing was written
+    /// </summary>
+    public record FailureRequestedEducationOrganizationsNotOnApplication(long[] EducationOrganizationIds)
+        : ApiClientInsertResult();
+
+    /// <summary>
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ApiClientInsertResult();
@@ -333,10 +343,17 @@ public record ApiClientUpdateResult
     public record FailureDuplicateClientUuid() : ApiClientUpdateResult();
 
     /// <summary>
-    /// The update moves a narrowed client to an Application that lacks some of its education
-    /// organizations; nothing was written
+    /// The update requests no scope and moves a narrowed client to an Application that lacks some
+    /// of its education organizations; nothing was written
     /// </summary>
     public record FailureEducationOrganizationsNotOnApplication(long[] EducationOrganizationIds)
+        : ApiClientUpdateResult();
+
+    /// <summary>
+    /// The requested narrowed scope has education organizations that are not on the client's
+    /// Application, its new one on a move; nothing was written
+    /// </summary>
+    public record FailureRequestedEducationOrganizationsNotOnApplication(long[] EducationOrganizationIds)
         : ApiClientUpdateResult();
 
     /// <summary>

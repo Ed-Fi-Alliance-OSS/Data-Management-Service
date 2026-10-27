@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -72,6 +73,38 @@ public class ApiClientRepository(
         return count == dataStoreIds.Distinct().Count();
     }
 
+    /// <summary>
+    /// The effective education organization ids of the ApiClient aliased <c>ac</c>, comma-separated
+    /// in ascending order, as a column named EducationOrganizationIds; null when there are none. An
+    /// inheriting client reads its Application's current ids, which its own rows can lag behind; a
+    /// narrowed client reads its own rows. Computed in the statement that reads the client row, so
+    /// the list always belongs to that row's flag and Application.
+    /// </summary>
+    private const string EffectiveEducationOrganizationIdsColumn = """
+        CASE WHEN ac."InheritsApplicationEducationOrganizations"
+            THEN (
+                SELECT string_agg(aeo."EducationOrganizationId"::text, ',' ORDER BY aeo."EducationOrganizationId")
+                FROM "dmscs"."ApplicationEducationOrganization" aeo
+                WHERE aeo."ApplicationId" = ac."ApplicationId"
+            )
+            ELSE (
+                SELECT string_agg(ace."EducationOrganizationId"::text, ',' ORDER BY ace."EducationOrganizationId")
+                FROM "dmscs"."ApiClientEducationOrganization" ace
+                WHERE ace."ApiClientId" = ac."Id"
+            )
+        END AS "EducationOrganizationIds"
+        """;
+
+    private static List<long> ParseEducationOrganizationIds(string? educationOrganizationIds) =>
+        string.IsNullOrEmpty(educationOrganizationIds)
+            ? []
+            :
+            [
+                .. educationOrganizationIds
+                    .Split(',')
+                    .Select(id => long.Parse(id, CultureInfo.InvariantCulture)),
+            ];
+
     private const string DuplicateNameConstraint = "UX_ApiClient_ApplicationId_Name";
     private const string DuplicateClientIdConstraint = "UX_ApiClient_ClientId";
     private const string DuplicateClientUuidConstraint = "UX_ApiClient_ClientUuid";
@@ -86,9 +119,12 @@ public class ApiClientRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
+            ApiClientEducationOrganizationScope scope =
+                command.EducationOrganizationScope ?? new ApiClientEducationOrganizationScope.Inherit();
+
             string sql = $"""
-                INSERT INTO "dmscs"."ApiClient" ("ApplicationId", "ClientId", "ClientUuid", "Name", "IsApproved", "CreatedBy")
-                SELECT @ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved, @CreatedBy
+                INSERT INTO "dmscs"."ApiClient" ("ApplicationId", "ClientId", "ClientUuid", "Name", "IsApproved", "InheritsApplicationEducationOrganizations", "CreatedBy")
+                SELECT @ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved, @Inherits, @CreatedBy
                 WHERE {ApplicationInTenantExistsCondition}
                 RETURNING "Id";
                 """;
@@ -102,6 +138,7 @@ public class ApiClientRepository(
                     clientCommand.ClientUuid,
                     command.Name,
                     command.IsApproved,
+                    Inherits = scope is not ApiClientEducationOrganizationScope.Narrow,
                     CreatedBy = auditContext.GetCurrentUser(),
                     TenantId,
                 },
@@ -115,12 +152,47 @@ public class ApiClientRepository(
                 return new ApiClientInsertResult.FailureApplicationNotFound();
             }
 
-            await InsertApplicationEducationOrganizationsAsync(
-                connection,
-                transaction,
-                apiClientId.Value,
-                command.ApplicationId
-            );
+            if (scope is ApiClientEducationOrganizationScope.Narrow narrow)
+            {
+                long[] narrowedEducationOrganizationIds = DistinctEducationOrganizationIds(narrow);
+                long[] missingIds = narrowedEducationOrganizationIds
+                    .Except(
+                        await ApplicationEducationOrganizationIdsAsync(
+                            connection,
+                            transaction,
+                            command.ApplicationId
+                        )
+                    )
+                    .ToArray();
+
+                if (missingIds.Length > 0)
+                {
+                    logger.LogWarning(
+                        "Insert ApiClient failure: education organizations not on the Application"
+                    );
+                    await transaction.RollbackAsync();
+                    return new ApiClientInsertResult.FailureRequestedEducationOrganizationsNotOnApplication(
+                        missingIds
+                    );
+                }
+
+                await InsertStoredEducationOrganizationsAsync(
+                    connection,
+                    transaction,
+                    apiClientId.Value,
+                    command.ApplicationId,
+                    narrowedEducationOrganizationIds
+                );
+            }
+            else
+            {
+                await InsertApplicationEducationOrganizationsAsync(
+                    connection,
+                    transaction,
+                    apiClientId.Value,
+                    command.ApplicationId
+                );
+            }
 
             if (command.DataStoreIds.Length > 0)
             {
@@ -173,7 +245,15 @@ public class ApiClientRepository(
                 && ex.ConstraintName == DuplicateNameConstraint
             )
         {
-            logger.LogWarning(ex, "API client name must be unique within the application");
+            // With IncludeErrorDetail the exception carries the conflicting client-supplied name, so only
+            // the fixed text and the safe diagnostic fields are logged, never the exception itself.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "API client name must be unique within the application ({SqlState}, {ConstraintName})",
+                ex.SqlState,
+                ex.ConstraintName
+            );
+#pragma warning restore S6667
             await transaction.RollbackAsync();
             return new ApiClientInsertResult.FailureDuplicateName();
         }
@@ -256,16 +336,20 @@ public class ApiClientRepository(
             string outerOrderByClause = BuildOrderByClause(query, "ac");
             string sql = $"""
                 SELECT ac."Id", ac."ApplicationId", ac."ClientId", ac."ClientUuid", ac."Name", ac."IsApproved",
+                       ac."InheritsApplicationEducationOrganizations", {EffectiveEducationOrganizationIdsColumn},
                        acd."DataStoreId"
                 FROM (SELECT * FROM "dmscs"."ApiClient" {filterClause} {orderByClause} {query.BuildPagingClause()}) AS ac
                 LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
                 {outerOrderByClause};
                 """;
 
-            var apiClients = await connection.QueryAsync<ApiClientResponse, int?, ApiClientResponse>(
+            var apiClients = await connection.QueryAsync<ApiClientResponse, string?, int?, ApiClientResponse>(
                 sql,
-                (apiClient, dataStoreId) =>
+                (apiClient, educationOrganizationIds, dataStoreId) =>
                 {
+                    apiClient.EducationOrganizationIds = ParseEducationOrganizationIds(
+                        educationOrganizationIds
+                    );
                     if (dataStoreId is not null)
                     {
                         apiClient.DataStoreIds.Add(dataStoreId.Value);
@@ -279,7 +363,7 @@ public class ApiClientRepository(
                     query.ApplicationId,
                     TenantId,
                 },
-                splitOn: "DataStoreId"
+                splitOn: "EducationOrganizationIds,DataStoreId"
             );
 
             var returnApiClients = apiClients
@@ -310,16 +394,20 @@ public class ApiClientRepository(
         {
             string sql = $"""
                 SELECT ac."Id", ac."ApplicationId", ac."ClientId", ac."ClientUuid", ac."Name", ac."IsApproved",
+                       ac."InheritsApplicationEducationOrganizations", {EffectiveEducationOrganizationIdsColumn},
                        acd."DataStoreId"
                 FROM "dmscs"."ApiClient" ac
                 LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
                 WHERE ac."ClientId" = @ClientId AND {TenantScopedApplicationCondition("ac")};
                 """;
 
-            var apiClients = await connection.QueryAsync<ApiClientResponse, int?, ApiClientResponse>(
+            var apiClients = await connection.QueryAsync<ApiClientResponse, string?, int?, ApiClientResponse>(
                 sql,
-                (apiClient, dataStoreId) =>
+                (apiClient, educationOrganizationIds, dataStoreId) =>
                 {
+                    apiClient.EducationOrganizationIds = ParseEducationOrganizationIds(
+                        educationOrganizationIds
+                    );
                     if (dataStoreId is not null)
                     {
                         apiClient.DataStoreIds.Add(dataStoreId.Value);
@@ -327,27 +415,27 @@ public class ApiClientRepository(
                     return apiClient;
                 },
                 param: new { ClientId = clientId, TenantId },
-                splitOn: "DataStoreId"
+                splitOn: "EducationOrganizationIds,DataStoreId"
             );
 
-            ApiClientResponse? returnApiClient = apiClients
-                .GroupBy(ac => ac.Id)
-                .Select(g =>
-                {
-                    var grouped = g.First();
-                    grouped.DataStoreIds = g.SelectMany(ac => ac.DataStoreIds).Distinct().ToList();
-                    return grouped;
-                })
-                .SingleOrDefault();
-
-            if (returnApiClient is not null)
+            if (
+                apiClients
+                    .GroupBy(ac => ac.Id)
+                    .Select(g =>
+                    {
+                        var grouped = g.First();
+                        grouped.DataStoreIds = g.SelectMany(ac => ac.DataStoreIds).Distinct().ToList();
+                        return grouped;
+                    })
+                    .SingleOrDefault()
+                is not { } returnApiClient
+            )
             {
-                await HydrateOwnershipAsync(connection, [returnApiClient]);
+                return new ApiClientGetResult.FailureNotFound();
             }
 
-            return returnApiClient is not null
-                ? new ApiClientGetResult.Success(returnApiClient)
-                : new ApiClientGetResult.FailureNotFound();
+            await HydrateOwnershipAsync(connection, [returnApiClient]);
+            return new ApiClientGetResult.Success(returnApiClient);
         }
         catch (Exception ex)
         {
@@ -364,16 +452,20 @@ public class ApiClientRepository(
         {
             string sql = $"""
                 SELECT ac."Id", ac."ApplicationId", ac."ClientId", ac."ClientUuid", ac."Name", ac."IsApproved",
+                       ac."InheritsApplicationEducationOrganizations", {EffectiveEducationOrganizationIdsColumn},
                        acd."DataStoreId"
                 FROM "dmscs"."ApiClient" ac
                 LEFT OUTER JOIN "dmscs"."ApiClientDataStore" acd ON ac."Id" = acd."ApiClientId"
                 WHERE ac."Id" = @Id AND {TenantScopedApplicationCondition("ac")};
                 """;
 
-            var apiClients = await connection.QueryAsync<ApiClientResponse, int?, ApiClientResponse>(
+            var apiClients = await connection.QueryAsync<ApiClientResponse, string?, int?, ApiClientResponse>(
                 sql,
-                (apiClient, dataStoreId) =>
+                (apiClient, educationOrganizationIds, dataStoreId) =>
                 {
+                    apiClient.EducationOrganizationIds = ParseEducationOrganizationIds(
+                        educationOrganizationIds
+                    );
                     if (dataStoreId is not null)
                     {
                         apiClient.DataStoreIds.Add(dataStoreId.Value);
@@ -381,27 +473,27 @@ public class ApiClientRepository(
                     return apiClient;
                 },
                 param: new { Id = id, TenantId },
-                splitOn: "DataStoreId"
+                splitOn: "EducationOrganizationIds,DataStoreId"
             );
 
-            ApiClientResponse? returnApiClient = apiClients
-                .GroupBy(ac => ac.Id)
-                .Select(g =>
-                {
-                    var grouped = g.First();
-                    grouped.DataStoreIds = g.SelectMany(ac => ac.DataStoreIds).Distinct().ToList();
-                    return grouped;
-                })
-                .SingleOrDefault();
-
-            if (returnApiClient is not null)
+            if (
+                apiClients
+                    .GroupBy(ac => ac.Id)
+                    .Select(g =>
+                    {
+                        var grouped = g.First();
+                        grouped.DataStoreIds = g.SelectMany(ac => ac.DataStoreIds).Distinct().ToList();
+                        return grouped;
+                    })
+                    .SingleOrDefault()
+                is not { } returnApiClient
+            )
             {
-                await HydrateOwnershipAsync(connection, [returnApiClient]);
+                return new ApiClientGetResult.FailureNotFound();
             }
 
-            return returnApiClient is not null
-                ? new ApiClientGetResult.Success(returnApiClient)
-                : new ApiClientGetResult.FailureNotFound();
+            await HydrateOwnershipAsync(connection, [returnApiClient]);
+            return new ApiClientGetResult.Success(returnApiClient);
         }
         catch (Exception ex)
         {
@@ -434,7 +526,6 @@ public class ApiClientRepository(
             }
 
             bool isMove = existing.Value.ApplicationId != command.ApplicationId;
-            long[] narrowedEducationOrganizationIds = [];
 
             if (isMove)
             {
@@ -452,39 +543,52 @@ public class ApiClientRepository(
                     await transaction.RollbackAsync();
                     return new ApiClientUpdateResult.FailureApplicationNotFound();
                 }
+            }
 
-                if (!existing.Value.InheritsApplicationEducationOrganizations)
-                {
-                    // A narrowed client keeps its list, so every id must be on the destination
-                    narrowedEducationOrganizationIds = await StoredEducationOrganizationIdsAsync(
-                        connection,
-                        transaction,
-                        command.Id
-                    );
-                    long[] missingIds = narrowedEducationOrganizationIds
-                        .Except(
-                            await ApplicationEducationOrganizationIdsAsync(
-                                connection,
-                                transaction,
-                                command.ApplicationId
-                            )
+            // With no requested scope the client keeps its own. Its rows are rewritten only for a requested
+            // scope or a move: a moved inheriting client takes the destination list, and a moved narrowed
+            // client keeps its list, which must fit the destination
+            bool rewritesScope = command.EducationOrganizationScope is not null || isMove;
+            ApiClientEducationOrganizationScope scope =
+                command.EducationOrganizationScope
+                ?? (
+                    existing.Value.InheritsApplicationEducationOrganizations
+                        ? new ApiClientEducationOrganizationScope.Inherit()
+                        : new ApiClientEducationOrganizationScope.Narrow(
+                            await StoredEducationOrganizationIdsAsync(connection, transaction, command.Id)
                         )
-                        .ToArray();
+                );
 
-                    if (missingIds.Length > 0)
-                    {
-                        logger.LogWarning(
-                            "Update ApiClient failure: education organizations not on the destination Application"
-                        );
-                        await transaction.RollbackAsync();
-                        return new ApiClientUpdateResult.FailureEducationOrganizationsNotOnApplication(
+            if (rewritesScope && scope is ApiClientEducationOrganizationScope.Narrow narrow)
+            {
+                long[] missingIds = DistinctEducationOrganizationIds(narrow)
+                    .Except(
+                        await ApplicationEducationOrganizationIdsAsync(
+                            connection,
+                            transaction,
+                            command.ApplicationId
+                        )
+                    )
+                    .ToArray();
+
+                if (missingIds.Length > 0)
+                {
+                    logger.LogWarning(
+                        "Update ApiClient failure: education organizations not on the client's Application"
+                    );
+                    await transaction.RollbackAsync();
+                    return command.EducationOrganizationScope is null
+                        ? new ApiClientUpdateResult.FailureEducationOrganizationsNotOnApplication(missingIds)
+                        : new ApiClientUpdateResult.FailureRequestedEducationOrganizationsNotOnApplication(
                             missingIds
                         );
-                    }
                 }
+            }
 
+            if (rewritesScope)
+            {
                 // The rows reference the client's current Application with NO ACTION, so they go
-                // before the ApplicationId changes and are reinserted for the destination below
+                // before the ApplicationId changes and are reinserted for the scope below
                 await DeleteStoredEducationOrganizationsAsync(connection, transaction, command.Id);
             }
 
@@ -493,6 +597,7 @@ public class ApiClientRepository(
                 UPDATE "dmscs"."ApiClient"
                 SET "ApplicationId" = @ApplicationId, "Name" = @Name, "IsApproved" = @IsApproved,
                     "ClientUuid" = COALESCE(@ClientUuid, "ClientUuid"),
+                    "InheritsApplicationEducationOrganizations" = COALESCE(@Inherits, "InheritsApplicationEducationOrganizations"),
                     "LastModifiedAt" = @LastModifiedAt, "ModifiedBy" = @ModifiedBy
                 WHERE "Id" = @Id AND {ApplicationInTenantExistsCondition};
                 """;
@@ -506,6 +611,9 @@ public class ApiClientRepository(
                     command.Name,
                     command.IsApproved,
                     ClientUuid = command.ClientUuid,
+                    Inherits = rewritesScope
+                        ? scope is ApiClientEducationOrganizationScope.Inherit
+                        : (bool?)null,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
                     ModifiedBy = auditContext.GetCurrentUser(),
                     TenantId,
@@ -520,23 +628,23 @@ public class ApiClientRepository(
                 return new ApiClientUpdateResult.FailureApplicationNotFound();
             }
 
-            if (isMove && existing.Value.InheritsApplicationEducationOrganizations)
-            {
-                await InsertApplicationEducationOrganizationsAsync(
-                    connection,
-                    transaction,
-                    command.Id,
-                    command.ApplicationId
-                );
-            }
-            else if (isMove)
+            if (rewritesScope && scope is ApiClientEducationOrganizationScope.Narrow narrowed)
             {
                 await InsertStoredEducationOrganizationsAsync(
                     connection,
                     transaction,
                     command.Id,
                     command.ApplicationId,
-                    narrowedEducationOrganizationIds
+                    DistinctEducationOrganizationIds(narrowed)
+                );
+            }
+            else if (rewritesScope)
+            {
+                await InsertApplicationEducationOrganizationsAsync(
+                    connection,
+                    transaction,
+                    command.Id,
+                    command.ApplicationId
                 );
             }
 
@@ -599,7 +707,15 @@ public class ApiClientRepository(
                 && ex.ConstraintName == DuplicateNameConstraint
             )
         {
-            logger.LogWarning(ex, "API client name must be unique within the application");
+            // With IncludeErrorDetail the exception carries the conflicting client-supplied name, so only
+            // the fixed text and the safe diagnostic fields are logged, never the exception itself.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
+            logger.LogWarning(
+                "API client name must be unique within the application ({SqlState}, {ConstraintName})",
+                ex.SqlState,
+                ex.ConstraintName
+            );
+#pragma warning restore S6667
             await RollbackSafelyAsync(transaction);
             return new ApiClientUpdateResult.FailureDuplicateName();
         }
@@ -875,6 +991,12 @@ public class ApiClientRepository(
             )
         ).ToArray();
 
+    /// <summary>
+    /// The Application's education organization ids, each row locked until the transaction ends. A
+    /// concurrent Application update that removes one either waits for this transaction, then cascades
+    /// to the client rows it stored, or commits first and leaves the id out of the result, so a list
+    /// checked against these ids can always be stored.
+    /// </summary>
     private static async Task<long[]> ApplicationEducationOrganizationIdsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -885,7 +1007,8 @@ public class ApiClientRepository(
                 """
                 SELECT "EducationOrganizationId" FROM "dmscs"."ApplicationEducationOrganization"
                 WHERE "ApplicationId" = @ApplicationId
-                ORDER BY "EducationOrganizationId";
+                ORDER BY "EducationOrganizationId"
+                FOR KEY SHARE;
                 """,
                 new { ApplicationId = applicationId },
                 transaction
@@ -928,6 +1051,11 @@ public class ApiClientRepository(
         );
     }
 
+    /// <summary>The distinct ids of a narrowed scope.</summary>
+    private static long[] DistinctEducationOrganizationIds(
+        ApiClientEducationOrganizationScope.Narrow narrow
+    ) => [.. narrow.EducationOrganizationIds.Distinct()];
+
     /// <summary>Stores the Application's current list as an inheriting client's rows.</summary>
     private Task InsertApplicationEducationOrganizationsAsync(
         NpgsqlConnection connection,
@@ -961,7 +1089,8 @@ public class ApiClientRepository(
             // Locking the ApiClient row waits out any in-flight update transaction, so the
             // reads below observe that transaction's final outcome.
             string clientSql = $"""
-                SELECT ac."ApplicationId", ac."Name", ac."IsApproved", ac."ClientId", ac."ClientUuid"
+                SELECT ac."ApplicationId", ac."Name", ac."IsApproved", ac."ClientId", ac."ClientUuid",
+                    ac."InheritsApplicationEducationOrganizations"
                 FROM "dmscs"."ApiClient" ac
                 WHERE ac."Id" = @Id AND {TenantScopedApplicationCondition("ac")}
                 FOR UPDATE OF ac;
@@ -971,7 +1100,8 @@ public class ApiClientRepository(
                 string Name,
                 bool IsApproved,
                 string ClientId,
-                Guid ClientUuid
+                Guid ClientUuid,
+                bool InheritsApplicationEducationOrganizations
             )?>(clientSql, new { Id = id, TenantId }, transaction);
 
             if (client is null)
@@ -991,6 +1121,14 @@ public class ApiClientRepository(
                 ),
             ];
 
+            // The client's own rows are read under the same row lock, so the flag and the rows
+            // come from one committed state
+            long[] storedEducationOrganizationIds = await StoredEducationOrganizationIdsAsync(
+                connection,
+                transaction,
+                id
+            );
+
             await transaction.CommitAsync();
 
             return new ApiClientResolutionResult.Success(
@@ -1000,7 +1138,9 @@ public class ApiClientRepository(
                     client.Value.IsApproved,
                     client.Value.ClientId,
                     client.Value.ClientUuid,
-                    dataStoreIds
+                    dataStoreIds,
+                    client.Value.InheritsApplicationEducationOrganizations,
+                    storedEducationOrganizationIds
                 )
             );
         }

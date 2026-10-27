@@ -216,14 +216,18 @@ try {
         }
         if($IdentityProvider -eq "keycloak")
         {
+            # Every setup call targets the Keycloak this stack published, which a test-owned deployment
+            # moves with KEYCLOAK_PORT; unset, it is the script's own default.
+            $keycloakServer = "http://localhost:$(Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "KEYCLOAK_PORT" -DefaultValue "8045")"
+
             # Create client with default edfi_admin_api/full_access scope
-            ./setup-keycloak.ps1 @identityRoleParams -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength
+            ./setup-keycloak.ps1 -KeycloakServer $keycloakServer @identityRoleParams -NewClientSecret $identityClientSecrets.DmsConfigurationServiceClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength
 
             # Create client with edfi_admin_api/readonly_access scope
-            ./setup-keycloak.ps1 @identityRoleParams -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength
+            ./setup-keycloak.ps1 -KeycloakServer $keycloakServer @identityRoleParams -NewClientId "CMSReadOnlyAccess" -NewClientName "CMS ReadOnly Access" -ClientScopeName "edfi_admin_api/readonly_access" -NewClientSecret $identityClientSecrets.CmsReadOnlyAccessClientSecret -ClientSecretMinimumLength $identityClientSecrets.ClientSecretMinimumLength -ClientSecretMaximumLength $identityClientSecrets.ClientSecretMaximumLength
 
             # Create client with edfi_admin_api/authMetadata_readonly_access scope
-            ./setup-keycloak.ps1 @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
+            ./setup-keycloak.ps1 -KeycloakServer $keycloakServer @identityRoleParams -NewClientId "CMSAuthMetadataReadOnlyAccess" -NewClientName "CMS Auth Endpoints Only Access" -ClientScopeName "edfi_admin_api/authMetadata_readonly_access"
         }
         elseif ($IdentityProvider -eq "self-contained")
         {

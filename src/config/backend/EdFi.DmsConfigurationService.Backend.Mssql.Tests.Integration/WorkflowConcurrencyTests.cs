@@ -272,6 +272,29 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                 )
             );
 
+        // Every client inherits the education organization [1] that the faked Applications hold
+        A.CallTo(() => _apiClientRepository.GetApiClientEducationOrganizationState(A<int>.Ignored))
+            .ReturnsLazily(call =>
+            {
+                int apiClientId = call.GetArgument<int>(0);
+                lock (_stateLock)
+                {
+                    return Task.FromResult<ApiClientEducationOrganizationStateResult>(
+                        _clients.GetValueOrDefault(apiClientId) is { } client
+                            ? new ApiClientEducationOrganizationStateResult.Success(
+                                new ApiClientEducationOrganizationState(
+                                    client.ApplicationId,
+                                    true,
+                                    [1],
+                                    [1],
+                                    null
+                                )
+                            )
+                            : new ApiClientEducationOrganizationStateResult.FailureNotFound()
+                    );
+                }
+            });
+
         A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
             .ReturnsLazily(call =>
             {
@@ -317,6 +340,8 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                                     [],
                                     state.ClientId,
                                     state.ClientUuid,
+                                    true,
+                                    [1],
                                     true,
                                     [1]
                                 )

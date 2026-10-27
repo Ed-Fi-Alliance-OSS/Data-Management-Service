@@ -159,6 +159,7 @@ public partial class StepDefinitions(
     #endregion
 
     [When("a PUT request is made to {string} with")]
+    [Given("a PUT request is made to {string} with")]
     public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
     {
         url = await ReplaceIdsAsync(url);
@@ -423,6 +424,7 @@ public partial class StepDefinitions(
     }
 
     [When("a DELETE request is made to {string}")]
+    [Given("a DELETE request is made to {string}")]
     public async Task WhenADELETERequestIsMadeTo(string url)
     {
         url = await ReplaceIdsAsync(url);

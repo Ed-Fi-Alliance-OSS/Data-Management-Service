@@ -592,6 +592,17 @@ public class FailureResponseTests
                 "Dependent Item Exists"
             ),
             new(
+                nameof(FailureResponse.ForEducationOrganizationScopeConflict),
+                () =>
+                    FailureResponse.ForEducationOrganizationScopeConflict(
+                        "Education organization scope conflict",
+                        CorrelationId
+                    ),
+                "urn:ed-fi:management-api:conflict:education-organization-scope",
+                409,
+                "Education Organization Scope Conflict"
+            ),
+            new(
                 nameof(FailureResponse.ForUnresolvedReference),
                 () => FailureResponse.ForUnresolvedReference("Unresolved reference", CorrelationId),
                 "urn:ed-fi:management-api:conflict:unresolved-reference",
