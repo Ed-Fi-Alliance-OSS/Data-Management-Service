@@ -19,6 +19,17 @@ internal static class ConnectRateLimitRejection
     public const string SourceGate = "source";
     public const string ClientGate = "client";
 
+    public static IResult? RejectClient(
+        ConnectRateLimiter rateLimiter,
+        HttpContext context,
+        string clientId,
+        ILogger logger
+    )
+    {
+        using RateLimitLease lease = rateLimiter.AttemptClient(context, clientId);
+        return lease.IsAcquired ? null : Create(context, lease, ClientGate, logger);
+    }
+
     public static IResult Create(HttpContext context, RateLimitLease lease, string gate, ILogger logger)
     {
         // The gate and the route template are fixed, service-owned text. The client id, the address

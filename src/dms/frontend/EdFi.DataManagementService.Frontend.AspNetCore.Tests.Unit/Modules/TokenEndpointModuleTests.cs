@@ -1051,8 +1051,8 @@ public class TokenEndpointModuleTests
     [TestFixture("198.51.100.2", "198.51.100.2")]
     [TestFixture("::ffff:198.51.100.1", "198.51.100.1")]
     [TestFixture("2001:db8::1", "2001:db8::1")]
-    [TestFixture(null, null)]
-    public class Given_a_token_proxy_source(string? remoteIp, string? expectedSource)
+    [TestFixture(null, "0.0.0.0")]
+    public class Given_a_token_proxy_source(string? remoteIp, string expectedSource)
         : TokenEndpointModuleTests
     {
         private List<UpstreamCall> _calls = [];
@@ -1106,8 +1106,7 @@ public class TokenEndpointModuleTests
             _calls.Should().HaveCount(2);
             foreach (UpstreamCall call in _calls)
             {
-                string[] expected = expectedSource is null ? [] : [expectedSource];
-                call.ForwardedFor.Should().Equal(expected);
+                call.ForwardedFor.Should().Equal(expectedSource);
             }
         }
     }

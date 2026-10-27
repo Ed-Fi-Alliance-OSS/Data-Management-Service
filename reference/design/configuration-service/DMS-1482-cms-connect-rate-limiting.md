@@ -38,7 +38,7 @@ Original acceptance criteria (Jira, verified 2026-10-22):
 | D6 | Native IPv6 sources are keyed on their /64 prefix. | A subscriber normally owns a whole /64, so per-address keys would allow free address rotation. |
 | D7 | DMS forwards its processed source address; paired Compose stacks configure an exactly trusted DMS peer. | Isolates public callers from each other and from unforwarded system refresh. The dedicated link makes the transport address deterministic without trusting the shared bridge. The readiness validator detects later overrides that break this trust. Standalone CMS retains its existing forwarding defaults. |
 | D8 | Client counting conservatively merges common linguistic aliases across providers. | SQL Server can authenticate width, accent, case and padding aliases as the same client. Ordinal comparison would give those aliases fresh budgets. Distinct PostgreSQL or Keycloak clients can consequently share capacity; arbitrary SQL collations are not emulated. |
-| D9 | Token, revoke and authenticated introspect reject parsed client IDs longer than 1024 UTF-16 code units with their existing 400 validation formats, before client admission. | Bounds linguistic processing and allocations. The limit leaves room above the stored MSSQL identifier size, applies to Basic and form credentials even when limiting is disabled, and does not truncate credentials. An oversized fallback partition would split long aliases from short IDs and reopen a bypass. |
+| D9 | Parsed client IDs longer than 1024 UTF-16 code units are rejected before client admission. Token retains its Ed-Fi 400 validation format; revoke and authenticated introspect return OAuth `invalid_client` (401 with the Basic challenge for a Basic attempt, 400 otherwise), as CS-AUTH specifies for invalid credentials. | Bounds linguistic processing and allocations. The limit leaves room above the stored MSSQL identifier size, applies to Basic and form credentials even when limiting is disabled, and does not truncate credentials. An oversized fallback partition would split long aliases from short IDs and reopen a bypass. |
 
 Rejected approaches: a single middleware that extracts `client_id` itself would pre-read the form, bypassing revoke's `UrlEncodedFormValidatingStream` because `FormFeature` caches the result, and duplicate two deliberately different parsers. ASP.NET `AddRateLimiter`/`UseRateLimiter` endpoint policies can provide source admission, but cannot replace the client gate without extracting credentials before the handler. Keeping client admission after the existing parsers preserves validation order; the singleton owns and disposes both partitioned limiters.
 
@@ -94,7 +94,7 @@ Handler gate positions:
 - **`RevokeToken`:** after the D-03 shape checks and credential parsing (Basic or form), before the revocation manager call.
 - **`IntrospectToken`:** when an introspection manager is registered (self-contained mode), after the same shape checks and credential parsing as revoke, before the introspection manager call. The no-manager Keycloak path keeps source admission only.
 
-Existing malformed-request checks retain their order. Token validation and revoke's and authenticated introspect's post-parsing length checks reject oversized client IDs before linguistic processing (D9). Only requests that would reach secret verification use the client budget. The budget is spent whether or not the client exists, so a 429 is not an existence oracle.
+Existing malformed-request checks retain their order. Token validation and the shared revoke/introspect credential parser reject oversized client IDs before linguistic processing (D9). Only requests that would reach secret verification use the client budget. The budget is spent whether or not the client exists, so a 429 is not an existence oracle.
 
 Route coverage:
 
@@ -113,6 +113,7 @@ Route-context suffixes, path base and path case are handled by endpoint routing,
   - IPv4-mapped IPv6 converts to IPv4.
   - Native IPv6 is masked to its /64 (D6).
   - A null address goes to one shared `"unknown"` partition, never exempt.
+  - DMS's public token proxy forwards `0.0.0.0` when its connection address is null. CMS treats this as one shared public source, separate from DMS's unforwarded private refresh address. Trusted forwarding is still required.
 - **Client:** the source key above paired with the `client_id` produced by the route's existing parser.
   - All three client-authenticated handlers enforce the 1024-code-unit input limit before key generation (D9).
   - An invariant linguistic sort key ignores case, accents, width and kana type. This merges common MSSQL lookup aliases, including full-width ASCII letters. It is deliberately conservative across providers and does not emulate every locale-specific SQL collation.

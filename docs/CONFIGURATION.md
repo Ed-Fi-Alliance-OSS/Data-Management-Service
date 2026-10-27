@@ -817,8 +817,9 @@ budgets apply, and a request must fit both:
 
 Token, revocation and authenticated introspection credentials accept a `client_id` of at most
 1024 UTF-16 code units, including padding, with either Basic or form authentication. Longer IDs
-receive `400` in the route's validation
-format before client-budget processing or authentication. This bounds client-key processing and
+receive an Ed-Fi validation `400` on `/connect/token`. Revocation and authenticated introspection
+return OAuth `invalid_client`: `401` with a Basic challenge for Basic authentication, `400` otherwise.
+These checks precede client-budget processing or authentication. This bounds client-key processing and
 prevents oversized aliases from obtaining a separate budget. The validation limit also applies when
 rate limiting is disabled.
 
@@ -843,7 +844,9 @@ Sizing notes:
 - Callers behind one NAT still share **one source budget**. A higher `SourcePermitLimit` increases
   capacity but does not isolate those callers.
 - The Ed-Fi API's `/oauth/token` proxy sends one `X-Forwarded-For` value derived from its trusted
-  connection address, replacing any caller-supplied value. **Before using this proxy with enabled
+  connection address, replacing any caller-supplied value. If the connection has no remote address,
+  it sends `0.0.0.0` so those callers share a public budget separate from private system-token refresh.
+  **Before using this proxy with enabled
   Configuration Service rate limiting**, enable `AppSettings:ReverseProxy:UseForwardedHeaders` on
   the Configuration Service and set `KnownProxies` to the actual Ed-Fi API proxy addresses (or a network
   containing only trusted proxies). If the Ed-Fi API itself sits behind an ingress, configure its own

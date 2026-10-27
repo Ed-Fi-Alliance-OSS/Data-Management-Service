@@ -5,7 +5,6 @@
 
 using System.Text;
 using System.Text.Json;
-using System.Threading.RateLimiting;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -331,15 +330,12 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
         // DMS-1482 client gate: after the request is known to be well formed and before the manager
         // verifies the secret. The budget is spent whether or not the client exists, so a 429 says
         // nothing about existence; a malformed request keeps its answer and spends nothing.
-        using RateLimitLease clientLease = rateLimiter.AttemptClient(httpContext, model.client_id);
-        if (!clientLease.IsAcquired)
+        if (
+            ConnectRateLimitRejection.RejectClient(rateLimiter, httpContext, model.client_id, logger) is
+            { } rateLimitRejection
+        )
         {
-            return ConnectRateLimitRejection.Create(
-                httpContext,
-                clientLease,
-                ConnectRateLimitRejection.ClientGate,
-                logger
-            );
+            return rateLimitRejection;
         }
 
         // RFC 6749 section 3.2: a parameter sent without a value is treated as omitted
@@ -445,23 +441,12 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
             bool basicAttempted
         ) = (ClientAuthenticatedForm.Accepted)form;
 
-        // Bound client-key processing after the shared parser's shape checks, as on revoke.
-        if (clientId.Length > TokenRequest.MaxClientIdLength)
+        if (
+            ConnectRateLimitRejection.RejectClient(rateLimiter, httpContext, clientId, logger) is
+            { } rateLimitRejection
+        )
         {
-            return InvalidRequest(
-                $"The client_id must not exceed {TokenRequest.MaxClientIdLength} characters."
-            );
-        }
-
-        using RateLimitLease clientLease = rateLimiter.AttemptClient(httpContext, clientId);
-        if (!clientLease.IsAcquired)
-        {
-            return ConnectRateLimitRejection.Create(
-                httpContext,
-                clientLease,
-                ConnectRateLimitRejection.ClientGate,
-                logger
-            );
+            return rateLimitRejection;
         }
 
         TokenIntrospectionResult result = await introspectionManager.IntrospectTokenAsync(
@@ -564,26 +549,15 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
             bool basicAttempted
         ) = (ClientAuthenticatedForm.Accepted)form;
 
-        // Reject oversized aliases before generating a rate-limit partition key.
-        if (clientId.Length > TokenRequest.MaxClientIdLength)
-        {
-            return InvalidRequest(
-                $"The client_id must not exceed {TokenRequest.MaxClientIdLength} characters."
-            );
-        }
-
         // DMS-1482 client gate: after the D-03 shape checks and credential parsing, before the manager
         // authenticates the caller. Spent whether or not the client exists; rate-limit rejections use
         // Ed-Fi problem details, while this route's other errors retain their OAuth contract.
-        using RateLimitLease clientLease = rateLimiter.AttemptClient(httpContext, clientId);
-        if (!clientLease.IsAcquired)
+        if (
+            ConnectRateLimitRejection.RejectClient(rateLimiter, httpContext, clientId, logger) is
+            { } rateLimitRejection
+        )
         {
-            return ConnectRateLimitRejection.Create(
-                httpContext,
-                clientLease,
-                ConnectRateLimitRejection.ClientGate,
-                logger
-            );
+            return rateLimitRejection;
         }
         TokenRevocationRequest request = new(clientId, clientSecret, token, tokenTypeHint);
 
@@ -753,6 +727,15 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
                     InvalidClient(httpContext, basicAttempted, ClientAuthenticationRequiredDescription)
                 );
             }
+        }
+
+        // Bound client-key processing before admission or any credential lookup. Oversized IDs
+        // cannot authenticate; keep the same error and Basic challenge as other invalid credentials.
+        if (clientId.Length > TokenRequest.MaxClientIdLength)
+        {
+            return new ClientAuthenticatedForm.Rejected(
+                InvalidClient(httpContext, basicAttempted, InvalidClientCredentialsDescription)
+            );
         }
 
         return new ClientAuthenticatedForm.Accepted(

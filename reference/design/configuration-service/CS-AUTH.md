@@ -125,7 +125,10 @@ authentication failure is never hidden behind a token outcome:
    override the Basic header, so CMS never forwards a choice of identities.
 4. `token` must be present and non-empty.
 5. Client authentication: a malformed Basic value, or incomplete form credentials, fails
-   before any database or identity provider contact.
+   before any database or identity provider contact. Parsed `client_id` values longer than
+   1024 UTF-16 code units (including padding) also fail here with `invalid_client`: `401`
+   with the Basic challenge for an HTTP Basic attempt, `400` otherwise. This bound applies
+   even when rate limiting is disabled and precedes client-budget processing.
 
 **HTTP Basic decoding differs from `/connect/token`.** On `/connect/revoke` the Basic value
 is decoded per RFC 6749 §2.3.1, which has the client form-encode `client_id` and

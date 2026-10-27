@@ -43,6 +43,10 @@ public class IdentityModuleRateLimitTests
     [TestFixture("/connect/revoke", true, true)]
     [TestFixture("/connect/introspect", false, true)]
     [TestFixture("/connect/introspect", true, true)]
+    [TestFixture("/connect/token", false, false)]
+    [TestFixture("/connect/token", true, false)]
+    [TestFixture("/connect/revoke", false, false)]
+    [TestFixture("/connect/revoke", true, false)]
     [TestFixture("/connect/introspect", false, false)]
     [TestFixture("/connect/introspect", true, false)]
     public class Given_oversized_client_credentials(string path, bool useBasic, bool enabled)
@@ -52,6 +56,7 @@ public class IdentityModuleRateLimitTests
         private ITokenIntrospectionManager _introspectionManager = null!;
         private List<int> _statuses = [];
         private JsonObject _body = null!;
+        private string _challenge = string.Empty;
 
         private HttpRequestMessage Request(string clientId)
         {
@@ -93,6 +98,7 @@ public class IdentityModuleRateLimitTests
             using HttpClient client = factory.CreateClient();
             using HttpResponseMessage oversized = await client.SendAsync(Request(new string('x', 1025)));
             _body = JsonNode.Parse(await oversized.Content.ReadAsStringAsync())!.AsObject();
+            _challenge = oversized.Headers.WwwAuthenticate.ToString();
             _statuses = [(int)oversized.StatusCode];
             _statuses.AddRange(
                 await SendAll(
@@ -109,8 +115,20 @@ public class IdentityModuleRateLimitTests
         }
 
         [Test]
-        public void It_rejects_oversized_ids_before_counting_and_preserves_the_boundary() =>
-            _statuses.Should().Equal(400, 400, 200, 200, 400, enabled ? 429 : 200);
+        public void It_rejects_oversized_ids_before_counting_and_preserves_the_boundary()
+        {
+            int invalidClientStatus = useBasic && path != "/connect/token" ? 401 : 400;
+            _statuses
+                .Should()
+                .Equal(
+                    invalidClientStatus,
+                    invalidClientStatus,
+                    200,
+                    200,
+                    invalidClientStatus,
+                    enabled ? 429 : 200
+                );
+        }
 
         [Test]
         public void It_verifies_only_the_admitted_credentials()
@@ -126,16 +144,26 @@ public class IdentityModuleRateLimitTests
         {
             if (path != "/connect/token")
             {
-                _body["error"]!.GetValue<string>().Should().Be("invalid_request");
+                _body["error"]!.GetValue<string>().Should().Be("invalid_client");
                 _body["error_description"]!
                     .GetValue<string>()
                     .Should()
-                    .Be("The client_id must not exceed 1024 characters.");
+                    .Be("Invalid client or Invalid client credentials");
                 return;
             }
             _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:data");
             _body["validationErrors"]!.AsObject().Should().ContainKey("client_id");
         }
+
+        [Test]
+        public void It_challenges_only_basic_authentication_on_the_oauth_routes() =>
+            _challenge
+                .Should()
+                .Be(
+                    useBasic && path != "/connect/token"
+                        ? "Basic realm=\"EdFi.DmsConfigurationService\""
+                        : string.Empty
+                );
     }
 
     [TestFixture]

@@ -16,10 +16,16 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Middleware
 
 public class ConnectRateLimitRefreshTests
 {
-    [TestFixture(10, 2)]
-    [TestFixture(2, 10)]
+    [TestFixture(10, 2, "198.51.100.1")]
+    [TestFixture(2, 10, "198.51.100.1")]
+    [TestFixture(10, 2, "0.0.0.0")]
+    [TestFixture(2, 10, "0.0.0.0")]
     [NonParallelizable]
-    public class Given_public_attempts_against_the_internal_client(int sourceLimit, int clientLimit)
+    public class Given_public_attempts_against_the_internal_client(
+        int sourceLimit,
+        int clientLimit,
+        string forwardedSource
+    )
     {
         private const string InternalClientId = "CMSReadOnlyAccess";
         private const string ProxyAddress = "172.30.148.2";
@@ -103,7 +109,7 @@ public class ConnectRateLimitRefreshTests
             _publicStatusAfterRefresh = (int)stillRejected.StatusCode;
         }
 
-        private static HttpRequestMessage PublicAttempt()
+        private HttpRequestMessage PublicAttempt()
         {
             HttpRequestMessage request = Post(
                 "/connect/token",
@@ -114,7 +120,7 @@ public class ConnectRateLimitRefreshTests
                 ]),
                 ProxyAddress
             );
-            request.Headers.Add("X-Forwarded-For", "198.51.100.1");
+            request.Headers.Add("X-Forwarded-For", forwardedSource);
             return request;
         }
 
