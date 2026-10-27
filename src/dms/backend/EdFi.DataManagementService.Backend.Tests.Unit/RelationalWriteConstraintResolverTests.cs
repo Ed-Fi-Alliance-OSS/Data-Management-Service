@@ -842,3 +842,42 @@ public class Given_Relational_Write_Constraint_Resolver
         string ReferenceKeyConstraintName
     );
 }
+
+/// <summary>
+/// A School written with an existing education organization id can report the duplicate from any of its
+/// AFTER triggers, because SQL Server leaves their relative order undefined: the abstract natural key, the
+/// referential identity primary key, or the auth hierarchy primary key. The literal names are pinned here so a
+/// rename on the DDL side fails this test instead of turning the conflict back into a 500.
+/// </summary>
+[TestFixture("PK_ReferentialIdentity")]
+[TestFixture("PK_EducationOrganizationIdToEducationOrganizationId")]
+[Parallelizable]
+public class Given_An_Identity_Maintenance_Primary_Key_Violation(string constraintName)
+{
+    private RelationalWriteConstraintResolution _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (writePlan, mappingSet) = AbstractIdentitySchoolTestData.BuildSchoolWriteModel();
+
+        _result = new RelationalWriteConstraintResolver().Resolve(
+            new RelationalWriteConstraintResolutionRequest(
+                writePlan,
+                new ReferenceResolverRequest(
+                    mappingSet,
+                    AbstractIdentitySchoolTestData.SchoolResource,
+                    [],
+                    []
+                ),
+                new RelationalWriteExceptionClassification.UniqueConstraintViolation(constraintName)
+            )
+        );
+    }
+
+    [Test]
+    public void It_resolves_to_the_root_natural_key_identity_conflict()
+    {
+        _result.Should().Be(new RelationalWriteConstraintResolution.RootNaturalKeyUnique(constraintName));
+    }
+}

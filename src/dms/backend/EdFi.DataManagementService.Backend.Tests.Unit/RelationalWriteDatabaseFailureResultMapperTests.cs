@@ -395,6 +395,57 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             );
     }
 
+    [TestFixture("PK_ReferentialIdentity")]
+    [TestFixture("PK_EducationOrganizationIdToEducationOrganizationId")]
+    public class Given_A_School_Identity_Conflict_Reported_By_An_Identity_Maintenance_Primary_Key(
+        string constraintName
+    )
+    {
+        private RelationalWriteExecutorResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // On SQL Server the School AFTER triggers fire in an undefined order, so a duplicate education
+            // organization id can be reported by the referential identity or auth hierarchy primary key instead
+            // of UX_EducationOrganizationIdentity_NK. Drive the real resolver so the client still gets the
+            // identity conflict for the concrete School body.
+            var classifier = new RecordingRelationalWriteExceptionClassifier
+            {
+                ClassificationToReturn = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+                    constraintName
+                ),
+            };
+            var mapper = new RelationalWriteDatabaseFailureResultMapper(
+                classifier,
+                new RelationalWriteConstraintResolver()
+            );
+
+            mapper.TryBuild(
+                CreateSchoolAbstractIdentityRequest(RelationalWriteOperationKind.Post),
+                new StubDbException("unique violation"),
+                out var result
+            );
+            _result = result!;
+        }
+
+        [Test]
+        public void It_reports_an_identity_conflict_with_the_school_identity()
+        {
+            _result
+                .Should()
+                .BeEquivalentTo(
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.UpsertFailureIdentityConflict(
+                            new ResourceName("School"),
+                            [new KeyValuePair<string, string>("schoolId", "155901")]
+                        )
+                    ),
+                    options => options.RespectingRuntimeTypes()
+                );
+        }
+    }
+
     [TestFixture(RelationalWriteOperationKind.Post)]
     [TestFixture(RelationalWriteOperationKind.Put)]
     public class Given_Repeated_Identity_Leaf_Names_With_Different_Values(

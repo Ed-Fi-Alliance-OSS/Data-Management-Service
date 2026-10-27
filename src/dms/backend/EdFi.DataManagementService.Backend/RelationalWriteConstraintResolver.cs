@@ -10,6 +10,10 @@ namespace EdFi.DataManagementService.Backend;
 
 internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstraintResolver
 {
+    // The dms.ReferentialIdentity primary key. CoreDdlEmitter owns the DDL literal and this project does not
+    // reference it, so the resolver unit tests pin the same value.
+    private const string ReferentialIdentityPrimaryKeyName = "PK_ReferentialIdentity";
+
     public RelationalWriteConstraintResolution Resolve(RelationalWriteConstraintResolutionRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -54,8 +58,31 @@ internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstr
         // EducationOrganization subclass projects into (e.g. UX_EducationOrganizationIdentity_NK). Resolve
         // those natural-key constraints to the same identity-conflict result used for concrete roots; the
         // mapper reports the concrete request body's identity values.
+        if (IsIdentityMaintenancePrimaryKey(violation.ConstraintName))
+        {
+            return new RelationalWriteConstraintResolution.RootNaturalKeyUnique(violation.ConstraintName);
+        }
+
         return ResolveAbstractIdentityUniqueConstraint(request, violation);
     }
+
+    /// <summary>
+    /// The same duplicate identity can also surface from the other identity-maintenance triggers on the
+    /// written table, because SQL Server fires multiple AFTER triggers in an undefined order. A duplicate
+    /// <c>dms.ReferentialIdentity</c> key means another document already holds that resource or
+    /// superclass-alias identity, since the trigger removes the document's own rows before inserting. A
+    /// duplicate <c>auth.EducationOrganizationIdToEducationOrganizationId</c> key is only reachable when the
+    /// education organization id already exists, since the insert trigger adds the new id's self and ancestor
+    /// tuples and the update trigger merges. Both are therefore the same identity conflict as the abstract
+    /// natural key.
+    /// </summary>
+    private static bool IsIdentityMaintenancePrimaryKey(string constraintName) =>
+        string.Equals(constraintName, ReferentialIdentityPrimaryKeyName, StringComparison.Ordinal)
+        || string.Equals(
+            constraintName,
+            AuthObjectDefinitions.AuthEdOrgTable.PrimaryKeyName,
+            StringComparison.Ordinal
+        );
 
     private static RelationalWriteConstraintResolution ResolveAbstractIdentityUniqueConstraint(
         RelationalWriteConstraintResolutionRequest request,
