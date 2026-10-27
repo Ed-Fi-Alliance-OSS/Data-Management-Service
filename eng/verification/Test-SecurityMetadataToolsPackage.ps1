@@ -9,7 +9,8 @@
 .DESCRIPTION
     Reusable local/CI smoke action. Uses the shared version calculation and locked restore,
     checks the shared claims validator/schema and both bundled base policies,
-    then compares installed conversion output with the reviewed representative fixture.
+    then verifies installed conversion, bundled-base merging and deterministic resolution
+    against existing reviewed fixtures from a working directory outside the checkout.
     Leaves the exact nupkg in the repository root; disposable feed/cache/tool files are removed.
 #>
 [CmdletBinding()]
@@ -30,6 +31,49 @@ $packageId = "EdFi.Api.SecurityMetadataTools"
 $packageFile = Join-Path $repoRoot "$packageId.$packageVersion.nupkg"
 $projectDirectory = Join-Path $repoRoot "src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools"
 $fixtureDirectory = "$projectDirectory.Tests.Unit/Fixtures/OdsSecurityMetadata"
+
+# Every installed command gets an explicit external working directory and captured streams.
+function Invoke-InstalledTool {
+    param(
+        [string[]] $ToolArguments,
+        [int] $ExpectedExitCode = 0,
+        [switch] $AllowOutput
+    )
+
+    $startInfo = [Diagnostics.ProcessStartInfo]::new($executable)
+    $startInfo.WorkingDirectory = $workspace
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    foreach ($argument in $ToolArguments) { $startInfo.ArgumentList.Add($argument) }
+    $process = [Diagnostics.Process]::Start($startInfo)
+    try {
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
+        $process.WaitForExit()
+        $stdout = $stdoutTask.GetAwaiter().GetResult()
+        $stderr = $stderrTask.GetAwaiter().GetResult()
+        if ($process.ExitCode -ne $ExpectedExitCode) {
+            throw "Installed $($ToolArguments[0]) returned $($process.ExitCode), expected ${ExpectedExitCode}: $stderr"
+        }
+        if ((-not $AllowOutput -and $stdout.Length -ne 0) -or
+            ($ExpectedExitCode -eq 0 -and $stderr.Length -ne 0)) {
+            throw "Installed $($ToolArguments[0]) wrote unexpected console output: $stdout $stderr"
+        }
+        return [pscustomobject]@{ Stdout = $stdout; Stderr = $stderr }
+    }
+    finally { $process.Dispose() }
+}
+
+function Assert-JsonDocument {
+    param([string] $ActualPath, [string] $ExpectedPath)
+
+    $actual = [System.Text.Json.Nodes.JsonNode]::Parse([IO.File]::ReadAllText($ActualPath))
+    $expected = [System.Text.Json.Nodes.JsonNode]::Parse([IO.File]::ReadAllText($ExpectedPath))
+    if (-not [System.Text.Json.Nodes.JsonNode]::DeepEquals($expected, $actual)) {
+        throw "Installed output '$ActualPath' differs from reviewed document '$ExpectedPath'."
+    }
+}
 
 # A child process contains Invoke-Main's exit and allows every native failure to be checked.
 pwsh -NoProfile -File (Join-Path $repoRoot "build-config.ps1") Package `
@@ -75,6 +119,28 @@ try {
             throw "Tool runtime asset is missing: $file"
         }
     }
+    $dependencies = [System.Text.Json.JsonDocument]::Parse(
+        [IO.File]::ReadAllText((Join-Path $runtime "security-metadata-tools.deps.json")))
+    try {
+        foreach ($target in $dependencies.RootElement.GetProperty("targets").EnumerateObject()) {
+            foreach ($library in $target.Value.EnumerateObject()) {
+                $assets = [System.Text.Json.JsonElement]::new()
+                if ($library.Value.TryGetProperty("runtime", [ref] $assets)) {
+                    foreach ($asset in $assets.EnumerateObject()) {
+                        if (-not (Test-Path -LiteralPath (Join-Path $runtime ([IO.Path]::GetFileName($asset.Name))))) {
+                            throw "Declared managed runtime asset is missing from the package: $($asset.Name)"
+                        }
+                    }
+                }
+            }
+        }
+    }
+    finally { $dependencies.Dispose() }
+    foreach ($file in @("EdFi.DmsConfigurationService.Backend*.dll", "EdFi.DmsConfigurationService.Frontend*.dll")) {
+        if (Get-ChildItem -LiteralPath $runtime -Filter $file) {
+            throw "Tool package unexpectedly includes a host/backend-only dependency: $file"
+        }
+    }
     # Read metadata without loading the .NET 10 assembly into PowerShell's runtime or
     # retaining a file lock that would prevent scratch cleanup on Windows.
     $claimsStream = [IO.File]::OpenRead((Join-Path $runtime "EdFi.DmsConfigurationService.Claims.dll"))
@@ -110,22 +176,65 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Local-only tool installation failed ($LASTEXITCODE)." }
 
     $executable = Join-Path $toolPath $(if ($IsWindows) { "security-metadata-tools.exe" } else { "security-metadata-tools" })
-    $reportedVersion = & $executable --version
+    $workspace = (New-Item -ItemType Directory -Path (Join-Path $scratch "workspace")).FullName
+    $relativeWorkspace = [IO.Path]::GetRelativePath($repoRoot, $workspace)
+    if (-not [IO.Path]::IsPathRooted($relativeWorkspace) -and $relativeWorkspace -notmatch '^\.\.([/\\]|$)') {
+        throw "Installed command workspace must be outside the checkout: $workspace"
+    }
+    # Copy explicit inputs only; no checkout files are supplied to the installed process.
+    Copy-Item -LiteralPath (Join-Path $fixtureDirectory "representative.xml") -Destination $workspace
+    Copy-Item -LiteralPath (Join-Path $repoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/AuthorizationMetadata/inheritance-input.json") -Destination $workspace
+    $reportedVersion = (Invoke-InstalledTool -ToolArguments @("--version") -AllowOutput).Stdout.Trim()
     $revisionSeparator = if ($toolVersion.Contains("+")) { "." } else { "+" }
     $expectedVersionPattern = '^' + [regex]::Escape($toolVersion) + '(' + [regex]::Escape($revisionSeparator) + '[0-9a-f]{40})?$'
-    if ($LASTEXITCODE -ne 0 -or $reportedVersion -cnotmatch $expectedVersionPattern) {
+    if ($reportedVersion -cnotmatch $expectedVersionPattern) {
         throw "Installed command reports '$reportedVersion', expected '$toolVersion'."
     }
-    $output = Join-Path $scratch "Claims.json"
-    & $executable convert-ods-xml --input (Join-Path $fixtureDirectory "representative.xml") --output $output
-    if ($LASTEXITCODE -ne 0) { throw "Installed conversion failed ($LASTEXITCODE)." }
-    $actual = [System.Text.Json.Nodes.JsonNode]::Parse([IO.File]::ReadAllText($output))
-    $expected = [System.Text.Json.Nodes.JsonNode]::Parse([IO.File]::ReadAllText((Join-Path $fixtureDirectory "expected-claims.json")))
-    if (-not [System.Text.Json.Nodes.JsonNode]::DeepEquals($expected, $actual)) {
-        throw "Installed conversion differs from the reviewed expected document."
-    }
+    $output = Join-Path $workspace "Claims.json"
+    $null = Invoke-InstalledTool -ToolArguments @("convert-ods-xml", "--input", "representative.xml", "--output", $output)
+    Assert-JsonDocument -ActualPath $output -ExpectedPath (Join-Path $fixtureDirectory "expected-claims.json")
+    Write-Output "Installed conversion matches the reviewed representative fixture."
 
-    Write-Output "Verified $packageId $toolVersion; installed version $reportedVersion; representative conversion matches."
+    $fragments = (New-Item -ItemType Directory -Path (Join-Path $workspace "empty-fragments")).FullName
+    foreach ($version in @("5.2", "6.1")) {
+        $merged = Join-Path $workspace "merged-$version.json"
+        $null = Invoke-InstalledTool -ToolArguments @("merge", "--fragments", $fragments,
+            "--data-standard-version", $version, "--output", $merged)
+        $basePath = Join-Path $repoRoot "src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds$($version.Replace('.', ''))/Claims.json"
+        Assert-JsonDocument -ActualPath $merged -ExpectedPath $basePath
+        Write-Output "Installed merge $version matches the complete bundled base."
+    }
+    $defaultOutput = Join-Path $workspace "merged-default.json"
+    $null = Invoke-InstalledTool -ToolArguments @("merge", "--fragments", $fragments, "--output", $defaultOutput)
+    if ((Get-FileHash $defaultOutput).Hash -cne (Get-FileHash (Join-Path $workspace "merged-5.2.json")).Hash) {
+        throw "Installed merge default differs from explicit 5.2 output."
+    }
+    $originalHash = (Get-FileHash $defaultOutput).Hash
+    $unsupported = Invoke-InstalledTool -ToolArguments @("merge", "--fragments", $fragments,
+        "--data-standard-version", "9.9", "--output", $defaultOutput, "--force") -ExpectedExitCode 1
+    if ($unsupported.Stderr -cnotmatch "^Merge failed: Configuration .*data standard version '9\.9'" -or
+        (Get-FileHash $defaultOutput).Hash -cne $originalHash) {
+        throw "Installed unsupported-version failure must diagnose 9.9 and preserve the destination even with --force."
+    }
+    Write-Output "Installed merge default equals 5.2; unsupported version exits 1 and preserves destination bytes."
+
+    $resolved = Join-Path $workspace "resolved.json"
+    $expectedText = [IO.File]::ReadAllText("$projectDirectory.Tests.Unit/Fixtures/ResolveCommand/inheritance-expected.json").TrimEnd([char[]]"`r`n")
+    $expectedBytes = [Text.Encoding]::UTF8.GetBytes($expectedText)
+    $inputHash = (Get-FileHash (Join-Path $workspace "inheritance-input.json")).Hash
+    foreach ($force in @($false, $true)) {
+        $resolveArguments = @("resolve", "--input", "inheritance-input.json", "--output", $resolved)
+        if ($force) { $resolveArguments += "--force" }
+        $null = Invoke-InstalledTool -ToolArguments $resolveArguments
+        if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($resolved)) -cne [Convert]::ToBase64String($expectedBytes)) {
+            throw "Installed resolve differs from reviewed canonical UTF-8 metadata (force=$force)."
+        }
+    }
+    if ((Get-FileHash (Join-Path $workspace "inheritance-input.json")).Hash -cne $inputHash) {
+        throw "Installed resolve changed its input document."
+    }
+    Write-Output "Installed resolve matches reviewed inheritance metadata byte-for-byte on both runs."
+    Write-Output "Verified $packageId $toolVersion; installed version $reportedVersion; all offline commands ran in $workspace."
     Write-Output "Package: $packageFile"
     Write-Output "SHA256: $((Get-FileHash -LiteralPath $packageFile -Algorithm SHA256).Hash)"
 }
