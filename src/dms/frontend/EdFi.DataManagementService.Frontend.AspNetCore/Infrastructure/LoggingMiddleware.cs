@@ -113,17 +113,15 @@ public class LoggingMiddleware
             }
             catch (BadHttpRequestException ex) when (ex.StatusCode == StatusCodes.Status413PayloadTooLarge)
             {
-                if (IsTokenEndpoint(context) && context.RequestAborted.IsCancellationRequested)
-                {
-                    throw;
-                }
-
                 stopwatch.Stop();
 
                 var response = context.Response;
                 if (!response.HasStarted)
                 {
-                    if (IsTokenEndpoint(context))
+                    response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+                    // Preserve the completion diagnostic after disconnect without attempting
+                    // to write the token error body to a canceled request.
+                    if (IsTokenEndpoint(context) && !context.RequestAborted.IsCancellationRequested)
                     {
                         using var tokenError = OAuthErrorResponse.Create(
                             HttpStatusCode.RequestEntityTooLarge,
@@ -136,10 +134,6 @@ public class LoggingMiddleware
                             tokenError,
                             context.RequestAborted
                         );
-                    }
-                    else
-                    {
-                        response.StatusCode = StatusCodes.Status413PayloadTooLarge;
                     }
                 }
 

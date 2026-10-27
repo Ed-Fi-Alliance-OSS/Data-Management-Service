@@ -365,17 +365,28 @@ public class Given_LoggingMiddleware
         logger.Entries.Should().NotContain(e => e.EventId.Name == "HttpRequestFailed");
     }
 
-    [Test]
-    public async Task It_propagates_a_canceled_token_size_rejection_without_writing_or_completion_logging()
+    [TestCase(false, StatusCodes.Status413PayloadTooLarge)]
+    [TestCase(true, StatusCodes.Status202Accepted)]
+    public async Task It_logs_a_canceled_token_size_rejection_without_writing_a_body(
+        bool responseStarted,
+        int expectedStatusCode
+    )
     {
         using var cancellationSource = new CancellationTokenSource();
         await cancellationSource.CancelAsync();
         var httpContext = new DefaultHttpContext { RequestAborted = cancellationSource.Token };
         httpContext.Request.Method = HttpMethods.Post;
         httpContext.Request.Path = "/oauth/token";
+        httpContext.Request.Headers["x-correlation-id"] = "canceled-token-trace";
         httpContext.SetEndpoint(
             new Endpoint(null, new EndpointMetadataCollection(TokenEndpointMetadata.Instance), "token")
         );
+        if (responseStarted)
+        {
+            httpContext.Features.Set<IHttpResponseFeature>(
+                new StartedHttpResponseFeature { StatusCode = StatusCodes.Status202Accepted }
+            );
+        }
         using var responseBody = new MemoryStream();
         httpContext.Response.Body = responseBody;
         var exception = new BadHttpRequestException(
@@ -385,16 +396,21 @@ public class Given_LoggingMiddleware
         var logger = new TestLogger<LoggingMiddleware>();
         var middleware = new LoggingMiddleware(
             _ => throw exception,
-            AppSettingsWithCorrelationHeader(string.Empty)
+            AppSettingsWithCorrelationHeader("x-correlation-id")
         );
 
-        Func<Task> invoke = () => middleware.Invoke(httpContext, logger);
-        (await invoke.Should().ThrowAsync<BadHttpRequestException>()).Which.Should().BeSameAs(exception);
+        await FluentActions.Awaiting(() => middleware.Invoke(httpContext, logger)).Should().NotThrowAsync();
 
-        httpContext.Response.StatusCode.Should().Be(StatusCodes.Status200OK);
+        httpContext.Response.StatusCode.Should().Be(expectedStatusCode);
+        httpContext.Response.ContentType.Should().BeNull();
         httpContext.Response.Headers.Should().NotContainKey(OAuthErrorResponse.CorrelationHeaderName);
         responseBody.ToArray().Should().BeEmpty();
-        logger.Entries.Should().NotContain(e => e.EventId.Name == "HttpRequestCompleted");
+        var entry = logger.Entries.Single(e => e.EventId.Name == "HttpRequestCompleted");
+        entry.Level.Should().Be(LogLevel.Information);
+        entry.Exception.Should().BeNull();
+        entry.State.ContainStructuredProperty("StatusCode", expectedStatusCode);
+        entry.State.ContainStructuredProperty("TraceId", "canceled-token-trace");
+        entry.State.ContainKey("DurationMs");
         logger.Entries.Should().NotContain(e => e.EventId.Name == "HttpRequestFailed");
     }
 
