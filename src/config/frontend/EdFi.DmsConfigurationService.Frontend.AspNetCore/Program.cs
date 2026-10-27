@@ -140,6 +140,30 @@ EnsureTokenIntrospectionSupport(app);
 
 if (!ReportInvalidConfiguration(app))
 {
+    ConnectRateLimitSettings limits = app
+        .Services.GetRequiredService<IOptions<ConnectRateLimitSettings>>()
+        .Value;
+    if (
+        limits.Enabled
+        && TokenRevocationProviderName(app.Configuration["AppSettings:IdentityProvider"]) == "self-contained"
+        && string.IsNullOrEmpty(limits.RequiredProxyAddress)
+        && (
+            !useReverseProxyHeaders
+            || (
+                reverseProxySettings.GetKnownProxies().Length == 0
+                && reverseProxySettings.GetKnownNetworks().Length == 0
+            )
+        )
+    )
+    {
+        app.Logger.LogWarning(
+            "ConnectRateLimit is enabled without explicit forwarded-header trust. If DMS proxies token "
+                + "requests to this service, all proxied callers and DMS system-token refresh share one source budget; "
+                + "unauthenticated traffic can exhaust it and block token requests and refresh. Configure "
+                + "AppSettings:ReverseProxy:UseForwardedHeaders and KnownProxies/KnownNetworks for the DMS peer "
+                + "and set ConnectRateLimit:RequiredProxyAddress, or raise or disable the limits before upgrading."
+        );
+    }
     InitializeDatabase(app);
     await InitializeClaimsData(app);
 }
@@ -165,7 +189,7 @@ app.UseCors("AllowSwaggerUI");
 // The /connect/* source gate (DMS-1482). After forwarded headers, so the remote address is the trusted
 // one; inside both exception boundaries and after CORS, so Swagger UI can read a 429; before
 // authentication, so a refused request does no bearer work. The per-client budget is applied inside the
-// token and revoke handlers, immediately before secret verification.
+// token, revoke and authenticated introspect handlers, immediately before secret verification.
 app.UseMiddleware<ConnectSourceRateLimitMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();

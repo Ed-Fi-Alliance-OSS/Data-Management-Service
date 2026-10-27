@@ -2,7 +2,8 @@
 
 **Status:** approved 2026-10-22; implemented on branch `DMS-1482`.
 **Story:** [DMS-1482](https://edfi.atlassian.net/browse/DMS-1482) (parent DMS-1475), including comment 98735.
-**Baseline:** `DMS-1482` at `6bb7d328a` (equal to `origin/main` on 2026-10-22).
+**Original baseline:** `DMS-1482` at `6bb7d328a` (equal to `origin/main` on 2026-10-22).
+**Integration baseline:** `main` at `0a544eb76`, including DMS-1479's authenticated introspection.
 
 **Review remediation (2026-10-26):** D2 now uses a source-plus-client budget alongside the independent
 source budget, as proposed by the story. The original global client budget let public failed attempts
@@ -33,11 +34,11 @@ Original acceptance criteria (Jira, verified 2026-10-22):
 | D2 | Two budgets, and both must admit a request: **per source address** and **per source address and `client_id` pair**. | The independent source budget stops enumeration that varies client IDs. The pair budget limits guessing against one client at that source without letting public failed attempts exhaust another source's private refresh allowance. Distributed sources have separate allowances. Callers behind one NAT or IPv6 /64 still share both budgets. |
 | D3 | **Backoff excluded.** The failed-attempt counter with exponential backoff that the story and comment say to "consider" is deferred, as a possible follow-up ticket. | It needs handler-to-limiter outcome feedback and new state, carries its own lockout-DoS tradeoff, and overlaps DMS-1490. |
 | D4 | Enabled by default. Source 120, client 30, per 60-second fixed window. No queueing. Enforcement is per process. | Real per-client traffic is already capped by `BearerTokenPerClientLimit` (15 active tokens per 30-minute token lifetime). Proxy deployments require trusted source attribution; aggregate capacity alone does not provide caller isolation. |
-| D5 | Split admission: a source gate in middleware, plus a client gate inside the token and revoke handlers. | Reuses each route's existing credential parser. Avoids early form reads, so revoke's percent-encoding and UTF-8 validation is preserved. Client admission remains inside the route exception boundary. |
+| D5 | Split admission: a source gate in middleware, plus a client gate inside token, revoke and authenticated introspect handlers. | Reuses each route's existing credential parser. Avoids early form reads, so revoke's and introspect's percent-encoding and UTF-8 validation is preserved. Client admission remains inside the route exception boundary. |
 | D6 | Native IPv6 sources are keyed on their /64 prefix. | A subscriber normally owns a whole /64, so per-address keys would allow free address rotation. |
 | D7 | DMS forwards its processed source address; paired Compose stacks configure an exactly trusted DMS peer. | Isolates public callers from each other and from unforwarded system refresh. The dedicated link makes the transport address deterministic without trusting the shared bridge. The readiness validator detects later overrides that break this trust. Standalone CMS retains its existing forwarding defaults. |
 | D8 | Client counting conservatively merges common linguistic aliases across providers. | SQL Server can authenticate width, accent, case and padding aliases as the same client. Ordinal comparison would give those aliases fresh budgets. Distinct PostgreSQL or Keycloak clients can consequently share capacity; arbitrary SQL collations are not emulated. |
-| D9 | Token and revoke reject parsed client IDs longer than 1024 UTF-16 code units with their existing 400 validation formats, before client admission. | Bounds linguistic processing and allocations. The limit leaves room above the stored MSSQL identifier size, applies to Basic and form credentials even when limiting is disabled, and does not truncate credentials. An oversized fallback partition would split long aliases from short IDs and reopen a bypass. |
+| D9 | Token, revoke and authenticated introspect reject parsed client IDs longer than 1024 UTF-16 code units with their existing 400 validation formats, before client admission. | Bounds linguistic processing and allocations. The limit leaves room above the stored MSSQL identifier size, applies to Basic and form credentials even when limiting is disabled, and does not truncate credentials. An oversized fallback partition would split long aliases from short IDs and reopen a bypass. |
 
 Rejected approaches: a single middleware that extracts `client_id` itself would pre-read the form, bypassing revoke's `UrlEncodedFormValidatingStream` because `FormFeature` caches the result, and duplicate two deliberately different parsers. ASP.NET `AddRateLimiter`/`UseRateLimiter` endpoint policies can provide source admission, but cannot replace the client gate without extracting credentials before the handler. Keeping client admission after the existing parsers preserves validation order; the singleton owns and disposes both partitioned limiters.
 
@@ -48,7 +49,7 @@ Rejected approaches: a single middleware that extracts `client_id` itself would 
 **Out of scope:**
 - DMS-1490 enumeration code and timing fixes.
 - DMS-1491 OAuth migration of other routes and status codes.
-- DMS-1479 introspection authentication.
+- Changes to DMS-1479 introspection authentication beyond integrating client admission before its existing credential verification.
 - DMS-1484 header and `Cache-Control` changes.
 - Backoff (D3).
 - Distributed or cross-replica enforcement.
@@ -83,7 +84,7 @@ This position means:
 request → source gate (all four connect routes; no body read)
   ├─ rejected → 429
   └─ admitted → handler parses exactly as today
-        → client gate (token, revoke) immediately before the manager call
+        → client gate (token, revoke, authenticated introspect) immediately before the manager call
             ├─ rejected → 429; no manager, hasher, Keycloak call or revocation
             └─ admitted → unchanged manager flow
 ```
@@ -91,8 +92,9 @@ request → source gate (all four connect routes; no body read)
 Handler gate positions:
 - **`GetClientAccessToken`:** after `validator.GuardAsync` and the grant-type check, before `tokenManager.GetAccessTokenAsync`.
 - **`RevokeToken`:** after the D-03 shape checks and credential parsing (Basic or form), before the revocation manager call.
+- **`IntrospectToken`:** when an introspection manager is registered (self-contained mode), after the same shape checks and credential parsing as revoke, before the introspection manager call. The no-manager Keycloak path keeps source admission only.
 
-Existing malformed-request checks retain their order. Token validation and revoke's post-parsing length check reject oversized client IDs before linguistic processing (D9). Only requests that would reach secret verification use the client budget. The budget is spent whether or not the client exists, so a 429 is not an existence oracle.
+Existing malformed-request checks retain their order. Token validation and revoke's and authenticated introspect's post-parsing length checks reject oversized client IDs before linguistic processing (D9). Only requests that would reach secret verification use the client budget. The budget is spent whether or not the client exists, so a 429 is not an existence oracle.
 
 Route coverage:
 
@@ -101,7 +103,7 @@ Route coverage:
 | `/connect/token` | yes | yes |
 | `/connect/revoke` | yes | yes |
 | `/connect/register` | yes | no: its `ClientId` names the client being created, not the caller |
-| `/connect/introspect` | yes | no: it has no caller credentials at baseline (see §7, DMS-1479) |
+| `/connect/introspect` | yes | yes in self-contained mode; no in Keycloak mode, which does not authenticate a caller |
 
 Route-context suffixes, path base and path case are handled by endpoint routing, not string matching. Non-connect endpoints never carry the marker.
 
@@ -112,7 +114,7 @@ Route-context suffixes, path base and path case are handled by endpoint routing,
   - Native IPv6 is masked to its /64 (D6).
   - A null address goes to one shared `"unknown"` partition, never exempt.
 - **Client:** the source key above paired with the `client_id` produced by the route's existing parser.
-  - Both handlers enforce the 1024-code-unit input limit before key generation (D9).
+  - All three client-authenticated handlers enforce the 1024-code-unit input limit before key generation (D9).
   - An invariant linguistic sort key ignores case, accents, width and kana type. This merges common MSSQL lookup aliases, including full-width ASCII letters. It is deliberately conservative across providers and does not emulate every locale-specific SQL collation.
   - Trailing spaces and linguistically ignored suffix characters are removed before key generation, because SQL Server equality pads with spaces. The original credential is still passed unchanged to authentication. No Unicode normalization is performed, avoiding exceptions on malformed UTF-16.
   - The entire remaining ID is converted to a sort key, hashed with SHA-256 and encoded as base64, with no prefix truncation. The 44-character fingerprint bounds retained state; the validated input length bounds temporary comparison and allocation work. Distinct significant suffixes contribute to the fingerprint. The source and base64 key are joined with `|`, which neither component can contain.
@@ -147,7 +149,7 @@ Route-context suffixes, path base and path case are handled by endpoint routing,
 
 - **Invalid configuration:** reported through the existing `ReportInvalidConfiguration` path. The limiter is never used, because that middleware short-circuits before routing.
 - **Logging:** a Debug-level rejection log carries the gate (`source`/`client`) and route template only. Client ID, IP, credentials and tokens are never logged. `RequestLoggingMiddleware` still records the 429. DMS recognizes the exact CMS throttle type/status and rebuilds its generic 429 without warning; unknown upstream responses retain their warning and no upstream text is relayed.
-- **Availability boundary:** DMS's system client (`ConfigurationServiceTokenHandler.FetchTokenAsync`) throws on any non-token response, a 429 included. With trusted forwarding configured, public attempts and private refresh use separate source-plus-client budgets even when they name the same identity. No anonymous client ID is exempt. Callers sharing a source, including a NAT or IPv6 /64, still share capacity; deployments must preserve trusted source attribution. The regression fixture exhausts public failed attempts and then calls the actual DMS refresh handler with an empty cache on the private path, while public attempts remain rejected.
+- **Availability boundary:** DMS's system client (`ConfigurationServiceTokenHandler.FetchTokenAsync`) throws on any non-token response, a 429 included. With trusted forwarding configured, public attempts and private refresh use separate source-plus-client budgets even when they name the same identity. No anonymous client ID is exempt. Callers sharing a source, including a NAT or IPv6 /64, still share capacity; deployments must preserve trusted source attribution. The CMS regression fixture exhausts public failed attempts and then sends the same unforwarded credential-and-scope POST as DMS refresh on the private path, while public attempts remain rejected. CMS tests do not reference DMS Core. Self-contained CMS warns at startup when limiting is enabled without a required proxy address and forwarding is disabled or has no explicit trust configuration; deployments must still verify that configured peers match their topology.
 - **Preserved behavior:**
   - token's lenient Basic/form precedence and malformed-Basic fallback;
   - revoke's strict shape checks, D-03 first-error order, `%`/UTF-8 validation, ownership and indistinguishable outcomes;
@@ -162,9 +164,9 @@ Tests follow NUnit, FluentAssertions and FakeItEasy, with `Given_` fixtures that
 
 | AC | Design | Verification (each must fail if the feature is reverted) |
 |---|---|---|
-| REQ-1 | §4.2 source and client gates; §4.3 keys; D2, D6 | Source: N admitted and N+1 → 429 when only `client_id` varies, and when Host, `Tenant` header, route-context suffix or path case vary. A different remote IP (via `RemoteIpStartupFilter`) is still admitted. Untrusted `X-Forwarded-For` doesn't change the bucket; a trusted proxy's does. IPv6 addresses in one /64 share both budgets. Client: client A exhausted while client B from the same IP is admitted; case and trailing-space variants of A share a budget across token and revoke at that source; a different source has its own allowance. Private system refresh succeeds through the real DMS token handler after public attempts against the same identity exhaust either gate, while public attempts remain rejected. Long IDs with significant suffix differences stay independent. All four routes are source-limited. `/v3/*` and look-alike paths (for example `/connectx/token`) are never limited. |
-| REQ-2 | §4.4 | Exact Ed-Fi body, media type and status/body agreement on all four routes for source rejection, and on token and revoke for client rejection. `Retry-After` present and rounded up. Security headers present. A malformed revoke within the allowance retains its OAuth 400. `FailureResponse.ForTooManyRequests` unit test. Existing too-many-tokens fixtures unchanged. |
-| REQ-3 | §4.2 gate positions | With a fake `ITokenManager` and `ITokenRevocationManager`: an admitted known client reaches the manager (control); a client-rejected request makes zero manager calls. A source-rejected revoke with a malformed body gets 429 (the body was not read), while an admitted malformed `%GG` revoke still gets 400 with limiting enabled. |
+| REQ-1 | §4.2 source and client gates; §4.3 keys; D2, D6 | Source: N admitted and N+1 → 429 when only `client_id` varies, and when Host, `Tenant` header, route-context suffix or path case vary. A different remote IP (via `RemoteIpStartupFilter`) is still admitted. Untrusted `X-Forwarded-For` doesn't change the bucket; a trusted proxy's does. IPv6 addresses in one /64 share both budgets. Client: client A exhausted while client B from the same IP is admitted; case and trailing-space variants of A share a budget across token, revoke and authenticated introspect at that source; a different source has its own allowance. A private POST matching DMS system refresh succeeds after public attempts against the same identity exhaust either gate, while public attempts remain rejected. Long IDs with significant suffix differences stay independent. All four routes are source-limited. `/v3/*` and look-alike paths (for example `/connectx/token`) are never limited. |
+| REQ-2 | §4.4 | Exact Ed-Fi body, media type and status/body agreement on all four routes for source rejection, and on token, revoke and authenticated introspect for client rejection. `Retry-After` present and rounded up. Security headers present. A malformed revoke within the allowance retains its OAuth 400. `FailureResponse.ForTooManyRequests` unit test. Existing too-many-tokens fixtures unchanged. |
+| REQ-3 | §4.2 gate positions | With fake `ITokenManager`, `ITokenRevocationManager` and `ITokenIntrospectionManager` implementations: an admitted known client reaches the manager (control); a client-rejected request makes zero manager calls. A source-rejected revoke with a malformed body gets 429 (the body was not read), while an admitted malformed `%GG` revoke still gets 400 with limiting enabled. |
 | REQ-4 | §4.1 settings; §4.5 | Shipped `appsettings.json` values (enabled, 120/30/60) read as in `ClientSecretHashingIterationsSettingsTests`. Environment and in-memory overrides take effect. Invalid values (zero, negative) are reported at startup (pattern: `JobOptionsStartupTests`). `Enabled=false` means no 429 past the limits. Documentation updated. |
 | REQ-5 | All of the above | The rows above, plus: `ConnectRateLimiter` is disposed with the host. |
 
@@ -172,10 +174,10 @@ Regression surfaces to leave unchanged: `IdentityModuleTests` (`TokenEndpointBas
 
 ## 7. Dependencies, coordination and remaining items
 
-- **DMS-1479 (merged into `main` at `0113a0a40`, absent from this branch's baseline)** adds caller authentication to introspect and shares its credential parser with revoke. Integration must retain the source marker, apply the client gate after parsing and before the introspection manager call, and preserve the client-ID bound on both authenticated routes. Add introspection rejection and no-manager-call coverage against that combined code. The baseline handler here has no caller credentials; the submitted token's claims must never supply a client partition key.
+- **DMS-1479 (integrated from `main` at `0113a0a40`)** adds caller authentication to introspect and shares its credential parser with revoke. The integrated handler retains the source marker, applies the client gate after parsing and before the introspection manager call, and preserves the client-ID bound on both authenticated routes. Coverage includes introspection rejection, skipped manager calls and a shared token/revoke/introspect budget. The submitted token's claims never supply a client partition key.
 - **DMS-1491** owns any later change to the throttle response format or codes. The current Ed-Fi 429 on all four routes follows REQ-2; a future OAuth migration must update both rejection paths and their tests. No blocking dependency.
 - **DMS-1490 (Open)** is independent. The client budget is spent regardless of whether the client exists, so this work adds no new oracle.
 - **Follow-up candidate:** a per-source failed-attempt backoff ticket (D3), if the product owner wants it.
 - **Remaining assumptions (not blockers):** the D4 numbers come from repository evidence (token-count cap, DMS-proxy topology), not measured production load. Operators can tune them, and the documentation says so. Proxy trust in each deployment remains an operator responsibility under the existing `ReverseProxy` settings.
 - **Proxy integration (D7):** other topologies must configure their actual trusted peers; a higher shared limit does not provide source isolation. Pipeline fixtures distinguish an exhausted caller, a second caller, an unforwarded system refresh and forged forwarding values. Compose fixtures cover standalone compatibility, paired routing/trust alignment and subnet overrides.
-- **Credential bounds (D9):** handler fixtures cover Basic/form credentials on token/revoke, the accepted length boundary, oversized padding before and after exhaustion, unchanged short-alias counting, and rejected calls not reaching either manager.
+- **Credential bounds (D9):** handler fixtures cover Basic/form credentials on token/revoke/authenticated introspect, the accepted length boundary, oversized padding before and after exhaustion, unchanged short-alias counting, and rejected calls not reaching their managers.

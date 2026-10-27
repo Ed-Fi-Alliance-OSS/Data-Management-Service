@@ -33,7 +33,8 @@ internal static class ConnectRateLimitTestHost
         int? clientPermitLimit = null,
         bool? enabled = null,
         ITokenManager? tokenManager = null,
-        ITokenRevocationManager? revocationManager = null
+        ITokenRevocationManager? revocationManager = null,
+        ITokenIntrospectionManager? introspectionManager = null
     ) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -70,6 +71,11 @@ internal static class ConnectRateLimitTestHost
                 collection.AddTransient(_ => tokens);
                 collection.RemoveAll<ITokenRevocationManager>();
                 collection.AddSingleton(revocationManager ?? CompletingRevocationManager());
+                if (introspectionManager is not null)
+                {
+                    collection.RemoveAll<ITokenIntrospectionManager>();
+                    collection.AddSingleton(introspectionManager);
+                }
             });
         });
 
@@ -97,6 +103,14 @@ internal static class ConnectRateLimitTestHost
 
     public static FormUrlEncodedContent TokenForm(string clientId, string grantType = "client_credentials") =>
         new([new("client_id", clientId), new("client_secret", ClientSecret), new("grant_type", grantType)]);
+
+    public static ITokenIntrospectionManager InactiveIntrospectionManager()
+    {
+        ITokenIntrospectionManager manager = A.Fake<ITokenIntrospectionManager>();
+        A.CallTo(() => manager.IntrospectTokenAsync(A<TokenIntrospectionRequest>._, A<CancellationToken>._))
+            .Returns(new TokenIntrospectionResult.Inactive());
+        return manager;
+    }
 
     public static FormUrlEncodedContent RevokeForm(string clientId) =>
         new([new("token", "opaque-token"), new("client_id", clientId), new("client_secret", ClientSecret)]);

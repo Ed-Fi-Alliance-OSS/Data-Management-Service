@@ -9,7 +9,7 @@ using Microsoft.Extensions.Options;
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 
 /// <summary>
-/// Limits for the anonymous <c>/connect/*</c> endpoints (DMS-1482), bound from the top-level
+/// Limits for the <c>/connect/*</c> endpoints (DMS-1482), bound from the top-level
 /// <c>ConnectRateLimit</c> section. Each budget is a fixed window of <see cref="WindowSeconds"/> with no
 /// queue, enforced per process. See docs/CONFIGURATION.md#connectratelimit.
 /// </summary>
@@ -26,7 +26,10 @@ public class ConnectRateLimitSettings
     /// </summary>
     public int SourcePermitLimit { get; set; } = 120;
 
-    /// <summary>Token and revocation requests admitted per source and <c>client_id</c> pair in each window.</summary>
+    /// <summary>
+    /// Token, revocation and authenticated introspection requests admitted per source and
+    /// <c>client_id</c> pair in each window.
+    /// </summary>
     public int ClientPermitLimit { get; set; } = 30;
 
     /// <summary>Length in seconds of the fixed window that both budgets are counted over.</summary>

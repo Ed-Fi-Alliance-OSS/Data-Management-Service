@@ -14,7 +14,7 @@ using static EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrast
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 /// <summary>
-/// The per-client gate inside /connect/token and /connect/revoke (DMS-1482 REQ-1, REQ-2, REQ-3). The
+/// The per-client gate inside token, revoke and authenticated introspect (DMS-1482 REQ-1, REQ-2, REQ-3). The
 /// source budget is raised out of the way. The managers are fakes, so "the manager was not called" is
 /// exactly "the secret was not verified".
 /// </summary>
@@ -33,14 +33,23 @@ public class IdentityModuleRateLimitTests
             )
             .MustHaveHappened(times, Times.Exactly);
 
-    [TestFixture("/connect/token", false)]
-    [TestFixture("/connect/token", true)]
-    [TestFixture("/connect/revoke", false)]
-    [TestFixture("/connect/revoke", true)]
-    public class Given_oversized_client_credentials(string path, bool useBasic)
+    private static void IntrospectionCalls(ITokenIntrospectionManager manager, int times) =>
+        A.CallTo(() => manager.IntrospectTokenAsync(A<TokenIntrospectionRequest>._, A<CancellationToken>._))
+            .MustHaveHappened(times, Times.Exactly);
+
+    [TestFixture("/connect/token", false, true)]
+    [TestFixture("/connect/token", true, true)]
+    [TestFixture("/connect/revoke", false, true)]
+    [TestFixture("/connect/revoke", true, true)]
+    [TestFixture("/connect/introspect", false, true)]
+    [TestFixture("/connect/introspect", true, true)]
+    [TestFixture("/connect/introspect", false, false)]
+    [TestFixture("/connect/introspect", true, false)]
+    public class Given_oversized_client_credentials(string path, bool useBasic, bool enabled)
     {
         private ITokenManager _tokenManager = null!;
         private ITokenRevocationManager _revocationManager = null!;
+        private ITokenIntrospectionManager _introspectionManager = null!;
         private List<int> _statuses = [];
         private JsonObject _body = null!;
 
@@ -72,11 +81,14 @@ public class IdentityModuleRateLimitTests
         {
             _tokenManager = SucceedingTokenManager();
             _revocationManager = CompletingRevocationManager();
+            _introspectionManager = InactiveIntrospectionManager();
             await using WebApplicationFactory<Program> factory = Create(
                 sourcePermitLimit: 1000,
                 clientPermitLimit: 1,
+                enabled: enabled,
                 tokenManager: _tokenManager,
-                revocationManager: _revocationManager
+                revocationManager: _revocationManager,
+                introspectionManager: _introspectionManager
             );
             using HttpClient client = factory.CreateClient();
             using HttpResponseMessage oversized = await client.SendAsync(Request(new string('x', 1025)));
@@ -98,19 +110,21 @@ public class IdentityModuleRateLimitTests
 
         [Test]
         public void It_rejects_oversized_ids_before_counting_and_preserves_the_boundary() =>
-            _statuses.Should().Equal(400, 400, 200, 200, 400, 429);
+            _statuses.Should().Equal(400, 400, 200, 200, 400, enabled ? 429 : 200);
 
         [Test]
-        public void It_verifies_only_the_two_admitted_credentials()
+        public void It_verifies_only_the_admitted_credentials()
         {
-            ManagerCalls(_tokenManager, path == "/connect/token" ? 2 : 0);
-            RevocationCalls(_revocationManager, path == "/connect/revoke" ? 2 : 0);
+            int admitted = enabled ? 2 : 3;
+            ManagerCalls(_tokenManager, path == "/connect/token" ? admitted : 0);
+            RevocationCalls(_revocationManager, path == "/connect/revoke" ? admitted : 0);
+            IntrospectionCalls(_introspectionManager, path == "/connect/introspect" ? admitted : 0);
         }
 
         [Test]
         public void It_uses_the_routes_existing_validation_contract()
         {
-            if (path == "/connect/revoke")
+            if (path != "/connect/token")
             {
                 _body["error"]!.GetValue<string>().Should().Be("invalid_request");
                 _body["error_description"]!
@@ -533,31 +547,180 @@ public class IdentityModuleRateLimitTests
         public void It_revokes_only_for_the_valid_request() => RevocationCalls(_revocationManager, 1);
     }
 
-    [TestFixture]
-    public class Given_token_and_revocation_requests_for_one_client
+    [TestFixture("/connect/token", "/connect/revoke", "/connect/introspect")]
+    [TestFixture("/connect/introspect", "/connect/token", "/connect/revoke")]
+    [TestFixture("/connect/revoke", "/connect/introspect", "/connect/token")]
+    public class Given_authenticated_connect_requests_for_one_client(
+        string first,
+        string second,
+        string third
+    )
     {
         private List<int> _statuses = null!;
+        private ITokenManager _tokenManager = null!;
+        private ITokenRevocationManager _revocationManager = null!;
+        private ITokenIntrospectionManager _introspectionManager = null!;
+
+        private static HttpRequestMessage Request(string path) =>
+            Post(path, path == "/connect/token" ? TokenForm("ClientA") : RevokeForm("ClientA"));
 
         [SetUp]
         public async Task Setup()
         {
+            _tokenManager = SucceedingTokenManager();
+            _revocationManager = CompletingRevocationManager();
+            _introspectionManager = InactiveIntrospectionManager();
             await using WebApplicationFactory<Program> factory = Create(
                 sourcePermitLimit: 1000,
-                clientPermitLimit: 2
+                clientPermitLimit: 3,
+                tokenManager: _tokenManager,
+                revocationManager: _revocationManager,
+                introspectionManager: _introspectionManager
             );
             using HttpClient client = factory.CreateClient();
             _statuses = await SendAll(
                 client,
                 [
-                    () => Post("/connect/token", TokenForm("ClientA")),
-                    () => Post("/connect/revoke", RevokeForm("ClientA")),
-                    () => Post("/connect/token", TokenForm("ClientA")),
+                    () => Request(first),
+                    () => Request(second),
+                    () => Request(third),
+                    () => Request(first),
+                    () => Request(second),
+                    () => Request(third),
                 ]
             );
         }
 
         [Test]
-        public void It_spends_one_client_budget_across_both_routes() =>
-            _statuses.Should().Equal(200, 200, 429);
+        public void It_spends_one_client_budget_across_all_authenticated_routes() =>
+            _statuses.Should().Equal(200, 200, 200, 429, 429, 429);
+
+        [Test]
+        public void It_calls_each_manager_only_for_its_admitted_request()
+        {
+            ManagerCalls(_tokenManager, 1);
+            RevocationCalls(_revocationManager, 1);
+            IntrospectionCalls(_introspectionManager, 1);
+        }
+    }
+
+    [TestFixture(false)]
+    [TestFixture(true)]
+    public class Given_a_client_over_its_introspection_limit(bool useBasic)
+    {
+        private ITokenIntrospectionManager _manager = null!;
+        private List<int> _statuses = [];
+        private HttpResponseMessage _rejected = null!;
+        private JsonObject _body = null!;
+
+        private HttpRequestMessage Request()
+        {
+            HttpRequestMessage request = Post(
+                "/connect/introspect",
+                useBasic ? new FormUrlEncodedContent([new("token", "opaque-token")]) : RevokeForm("ClientA")
+            );
+            if (useBasic)
+            {
+                request.Headers.Authorization = Basic("ClientA");
+            }
+            return request;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _manager = InactiveIntrospectionManager();
+            await using WebApplicationFactory<Program> factory = Create(
+                sourcePermitLimit: 1000,
+                clientPermitLimit: 2,
+                introspectionManager: _manager
+            );
+            using HttpClient client = factory.CreateClient();
+            _statuses = await SendAll(client, [Request, Request]);
+            _rejected = await client.SendAsync(Request());
+            _body = JsonNode.Parse(await _rejected.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [TearDown]
+        public void TearDown() => _rejected.Dispose();
+
+        [Test]
+        public void It_admits_up_to_the_limit() => _statuses.Should().Equal(200, 200);
+
+        [Test]
+        public void It_answers_429_with_the_complete_ed_fi_contract()
+        {
+            ((int)_rejected.StatusCode).Should().Be(429);
+            _rejected.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            _body.Count.Should().Be(7);
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:too-many-requests");
+            _body["detail"]!.GetValue<string>().Should().Be(Detail);
+            _body["title"]!.GetValue<string>().Should().Be("Too Many Requests");
+            _body["status"]!.GetValue<int>().Should().Be(429);
+            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
+            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _body["errors"]!.AsArray().Count.Should().Be(0);
+        }
+
+        [Test]
+        public void It_sends_retry_after() =>
+            _rejected.Headers.RetryAfter!.Delta!.Value.TotalSeconds.Should().BeInRange(1, 60);
+
+        [Test]
+        public void It_preserves_security_headers() =>
+            _rejected.Headers.GetValues("X-Content-Type-Options").Should().Equal("nosniff");
+
+        [Test]
+        public void It_skips_secret_verification_for_the_rejected_request() =>
+            IntrospectionCalls(_manager, 2);
+    }
+
+    [TestFixture]
+    public class Given_introspection_requests_that_fail_shape_checks
+    {
+        private ITokenIntrospectionManager _manager = null!;
+        private List<int> _statuses = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _manager = InactiveIntrospectionManager();
+            await using WebApplicationFactory<Program> factory = Create(
+                sourcePermitLimit: 1000,
+                clientPermitLimit: 1,
+                introspectionManager: _manager
+            );
+            using HttpClient client = factory.CreateClient();
+            _statuses = await SendAll(
+                client,
+                [
+                    () =>
+                        Post(
+                            "/connect/introspect",
+                            new FormUrlEncodedContent([
+                                new("client_id", "ClientA"),
+                                new("client_secret", ClientSecret),
+                            ])
+                        ),
+                    () => Post("/connect/introspect", RevokeForm("ClientA")),
+                    () =>
+                        Post(
+                            "/connect/introspect",
+                            new FormUrlEncodedContent([
+                                new("client_id", "ClientA"),
+                                new("client_secret", ClientSecret),
+                            ])
+                        ),
+                    () => Post("/connect/introspect", RevokeForm("ClientA")),
+                ]
+            );
+        }
+
+        [Test]
+        public void It_keeps_shape_errors_before_client_admission_even_after_exhaustion() =>
+            _statuses.Should().Equal(400, 200, 400, 429);
+
+        [Test]
+        public void It_verifies_only_the_admitted_request() => IntrospectionCalls(_manager, 1);
     }
 }

@@ -3,16 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Core.Configuration;
-using EdFi.DataManagementService.Core.Security;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.Extensions.Caching.Hybrid;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure.ConnectRateLimitTestHost;
 
@@ -84,25 +80,25 @@ public class ConnectRateLimitRefreshTests
             using HttpClient publicClient = factory.CreateClient();
             _publicStatuses = await SendAll(publicClient, [PublicAttempt, PublicAttempt, PublicAttempt]);
 
-            // An empty cache forces the actual DMS refresh handler to post its credentials to CMS.
-            // Its request has no forwarded address, matching the private Compose connection.
-            ServiceCollection services = new();
-            services.AddMemoryCache();
-            services.AddHybridCache();
-            using ServiceProvider provider = services.BuildServiceProvider();
+            // Match ConfigurationServiceTokenHandler's private POST: client credentials and scope,
+            // from the DMS transport address with no X-Forwarded-For.
             using HttpClient privateClient = factory.CreateClient();
-            privateClient.DefaultRequestHeaders.Add(RemoteIpStartupFilter.HeaderName, ProxyAddress);
-            ConfigurationServiceTokenHandler handler = new(
-                provider.GetRequiredService<HybridCache>(),
-                new CacheSettings(),
-                new ConfigurationServiceApiClient(privateClient),
-                NullLogger<ConfigurationServiceTokenHandler>.Instance
+            using HttpResponseMessage refresh = await privateClient.SendAsync(
+                Post(
+                    "/connect/token",
+                    new FormUrlEncodedContent([
+                        new("client_id", InternalClientId),
+                        new("client_secret", ClientSecret),
+                        new("grant_type", "client_credentials"),
+                        new("scope", "edfi_admin_api/readonly_access"),
+                    ]),
+                    ProxyAddress
+                )
             );
-            _privateToken = await handler.GetTokenAsync(
-                InternalClientId,
-                ClientSecret,
-                "edfi_admin_api/readonly_access"
-            );
+            refresh.EnsureSuccessStatusCode();
+            _privateToken = JsonNode.Parse(await refresh.Content.ReadAsStringAsync())![
+                "access_token"
+            ]!.GetValue<string>();
             using HttpResponseMessage stillRejected = await publicClient.SendAsync(PublicAttempt());
             _publicStatusAfterRefresh = (int)stillRejected.StatusCode;
         }

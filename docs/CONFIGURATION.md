@@ -796,7 +796,7 @@ These settings configure the allowed client-secret length range used by Configur
 
 ## ConnectRateLimit
 
-The Configuration Service rate limits its four anonymous OAuth endpoints, `POST /connect/token`,
+The Configuration Service rate limits its four OAuth endpoints, `POST /connect/token`,
 `/connect/revoke`, `/connect/register` and `/connect/introspect` (route-context suffixes included),
 to slow client-secret guessing and client enumeration. No other endpoint is limited. Two independent
 budgets apply, and a request must fit both:
@@ -804,9 +804,10 @@ budgets apply, and a request must fit both:
 - **Per source address**, across all four routes. The address is the connection's remote address after
   [forwarded headers](#reverse-proxy-and-forwarded-headers) from trusted proxies are applied. A native
   IPv6 address counts against its /64. Requests whose address is unknown share one budget.
-- **Per source address and `client_id` pair**, for `/connect/token` and `/connect/revoke` only, spent just
-  before the client secret is verified. A request rejected earlier (malformed form, unsupported grant
-  type, missing token) does not spend it. For counting, case, accents, character width, kana type and
+- **Per source address and `client_id` pair**, for `/connect/token`, `/connect/revoke` and authenticated
+  `/connect/introspect` requests (self-contained mode), spent just before the client secret is verified.
+  A request rejected earlier (malformed form, unsupported grant type, missing token) does not spend it.
+  For counting, case, accents, character width, kana type and
   trailing padding are ignored. This conservatively merges common SQL Server lookup aliases on every
   provider, so distinct PostgreSQL or Keycloak clients with these spellings also share a budget. Authentication receives the
   original client ID. This comparison does not reproduce every locale-specific SQL Server collation;
@@ -814,8 +815,9 @@ budgets apply, and a request must fit both:
   The budget is spent whether or not the client exists, so a `429` reveals nothing about which clients
   exist.
 
-Token and revocation credentials accept a `client_id` of at most 1024 UTF-16 code units, including
-padding, with either Basic or form authentication. Longer IDs receive `400` in the route's validation
+Token, revocation and authenticated introspection credentials accept a `client_id` of at most
+1024 UTF-16 code units, including padding, with either Basic or form authentication. Longer IDs
+receive `400` in the route's validation
 format before client-budget processing or authentication. This bounds client-key processing and
 prevents oversized aliases from obtaining a separate budget. The validation limit also applies when
 rate limiting is disabled.
@@ -824,7 +826,7 @@ rate limiting is disabled.
 | --- | --- | --- |
 | `Enabled` | `true` | `false` turns all `/connect/*` limiting off. |
 | `SourcePermitLimit` | `120` | Requests per source address in each window. Must be > 0 when enabled. |
-| `ClientPermitLimit` | `30` | Token and revocation requests per source address and `client_id` pair in each window. Must be > 0 when enabled. |
+| `ClientPermitLimit` | `30` | Token, revocation and authenticated introspection requests per source address and `client_id` pair in each window. Must be > 0 when enabled. |
 | `WindowSeconds` | `60` | Fixed-window length in seconds. Must be > 0 when enabled. |
 | `RequiredProxyAddress` | empty | When set and limiting is enabled, requires forwarded-header processing and this exact IP in `AppSettings:ReverseProxy:KnownProxies`. Compose sets this to its reserved DMS peer. Leave empty for direct deployments. |
 
@@ -853,6 +855,9 @@ Sizing notes:
   vendors. Raising that limit alone does not resolve the availability risk. The shipped Compose
   stacks configure the dedicated link described below. Other deployments must configure their own
   trusted proxy addresses and should set `RequiredProxyAddress` to detect missing trust at startup.
+  Self-contained CMS logs a startup warning when limiting is enabled, `RequiredProxyAddress` is empty,
+  and forwarding is disabled or no explicit trusted proxy or network is configured. This warning
+  cannot verify that a configured proxy address matches the actual DMS peer.
 - Partitions are held in memory per process. The source budget limits new client keys from each source
   per window; it does not impose a global memory cap across sources. Idle enabled partitions are
   removed by the framework. Disabled limiting uses one shared partition per budget.

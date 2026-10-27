@@ -12,7 +12,8 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 /// The source gate for the <c>/connect/*</c> endpoints (DMS-1482). Applies the per-source budget to every
 /// endpoint carrying <see cref="ConnectRateLimitMetadata"/> and answers a refusal with 429 without reading
 /// the request body, so the handlers' own parsing and validation, revoke's encoding check included, stay
-/// exactly as they are. The per-client budget is applied later, inside the token and revoke handlers.
+/// exactly as they are. The per-client budget is applied later, inside token, revoke and authenticated
+/// introspect handlers.
 /// </summary>
 public class ConnectSourceRateLimitMiddleware(RequestDelegate next)
 {

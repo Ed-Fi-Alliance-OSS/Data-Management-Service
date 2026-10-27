@@ -161,8 +161,8 @@
       },
       "Json.More.Net": {
         "type": "Transitive",
-        "resolved": "2.0.2",
-        "contentHash": "izscdjjk8EAHDBCjyz7V7n77SzkrSjh/hUGV6cyR6PlVdjYDh5ohc8yqvwSqJ9+6Uof8W6B24dIHlDKD+I1F8A=="
+        "resolved": "2.0.1.2",
+        "contentHash": "uF3QeiaXEfH92emz0/BWUiNtMSfxIIvgynuB0Bf1vF4s8eWTcZitBx9l+g/FDaJk5XxqBv9buQXizXKQcXFG1w=="
       },
       "JsonPointer.Net": {
         "type": "Transitive",
@@ -705,12 +705,6 @@
         "resolved": "8.0.0",
         "contentHash": "7mu9v0QDv66ar3DpGSZHg9NuNcxDaaAcnMULuZlaTpP9+hwXhrxNGsF5GmLkSHxFdb5bBc1TzeujsRgTrPWi+Q=="
       },
-      "EdFi.Api.CustomValidation": {
-        "type": "Project"
-      },
-      "EdFi.Api.Identity": {
-        "type": "Project"
-      },
       "edfi.api.plugins": {
         "type": "Project",
         "dependencies": {
@@ -731,54 +725,6 @@
       },
       "EdFi.Api.Secrets": {
         "type": "Project"
-      },
-      "edfi.datamanagementservice.backend.external": {
-        "type": "Project",
-        "dependencies": {
-          "EdFi.DataManagementService.Core.External": "[1.0.0, )"
-        }
-      },
-      "edfi.datamanagementservice.core": {
-        "type": "Project",
-        "dependencies": {
-          "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": "[4.0.0, )",
-          "EdFi.Api.CustomValidation": "[1.0.0, )",
-          "EdFi.Api.Identity": "[1.0.0, )",
-          "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
-          "EdFi.DataManagementService.Core.External": "[1.0.0, )",
-          "FastGuid": "[1.4.1, )",
-          "JsonPath.Net": "[1.1.6, )",
-          "JsonSchema.Net": "[7.2.2, )",
-          "Microsoft.CodeAnalysis": "[4.12.0, )",
-          "Microsoft.Extensions.Caching.Abstractions": "[10.0.1, )",
-          "Microsoft.Extensions.Caching.Hybrid": "[9.5.0, )",
-          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
-          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.1, )",
-          "Microsoft.Extensions.Http": "[10.0.1, )",
-          "Microsoft.Extensions.Logging": "[10.0.1, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
-          "Microsoft.Extensions.Options": "[10.0.1, )",
-          "Microsoft.Extensions.Resilience": "[10.1.0, )",
-          "Microsoft.IdentityModel.Protocols.OpenIdConnect": "[8.12.0, )",
-          "Microsoft.IdentityModel.Tokens": "[8.12.0, )",
-          "Npgsql": "[8.0.4, )",
-          "Serilog": "[4.2.0, )",
-          "Serilog.Extensions.Logging": "[8.0.0, )",
-          "Serilog.Settings.Configuration": "[8.0.2, )",
-          "Serilog.Sinks.Console": "[6.0.0, )",
-          "Serilog.Sinks.File": "[6.0.0, )",
-          "System.IdentityModel.Tokens.Jwt": "[8.12.0, )"
-        }
-      },
-      "edfi.datamanagementservice.core.external": {
-        "type": "Project",
-        "dependencies": {
-          "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": "[4.0.0, )",
-          "Microsoft.CodeAnalysis": "[4.12.0, )",
-          "Microsoft.Extensions.Logging": "[10.0.1, )",
-          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
-          "Sandwych.QuickGraph.Core": "[1.0.0, )"
-        }
       },
       "edfi.dmsconfigurationservice.backend": {
         "type": "Project",
@@ -895,7 +841,6 @@
       "edfi.dmsconfigurationservice.frontend.aspnetcore.tests.unit": {
         "type": "Project",
         "dependencies": {
-          "EdFi.DataManagementService.Core": "[1.0.0, )",
           "EdFi.DmsConfigurationService.Frontend.AspNetCore": "[1.0.0, )",
           "FakeItEasy": "[8.3.0, )",
           "FluentAssertions": "[6.12.1, )",
@@ -908,12 +853,6 @@
           "NUnit3TestAdapter": "[4.6.0, )",
           "System.IdentityModel.Tokens.Jwt": "[8.12.0, )"
         }
-      },
-      "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": {
-        "type": "CentralTransitive",
-        "requested": "[4.0.0, )",
-        "resolved": "4.0.0",
-        "contentHash": "ssdML8g+JqdP2BbDxg/bqzUBz81RD3SCGAbop6qs+o1xCGPXnlCSNAOp22TDKTtFmHfp+sKSPuWL0JONf3fYYA=="
       },
       "Dapper": {
         "type": "CentralTransitive",
@@ -948,12 +887,6 @@
           "dbup-core": "5.0.37"
         }
       },
-      "FastGuid": {
-        "type": "CentralTransitive",
-        "requested": "[1.4.1, )",
-        "resolved": "1.4.1",
-        "contentHash": "aYodIyihe8YqrPVmqW8chz/BukxSlSnDIMqIrYfbsmyg4HH4Eg5mhxyQUcu9IW5bXVX6OwRHLGGlLKESxh+acA=="
-      },
       "FluentValidation": {
         "type": "CentralTransitive",
         "requested": "[11.11.0, )",
@@ -968,15 +901,6 @@
         "dependencies": {
           "FluentValidation": "11.5.1",
           "FluentValidation.DependencyInjectionExtensions": "11.5.1"
-        }
-      },
-      "JsonPath.Net": {
-        "type": "CentralTransitive",
-        "requested": "[1.1.6, )",
-        "resolved": "1.1.6",
-        "contentHash": "FQLbFJdjIa70GdYGR3RpdGkLTMZwQCqcd8gC35yx6aGofVEP3QxMvSuXHn75N30jj9SS6yvsPPTDzJmPMt/Mdw==",
-        "dependencies": {
-          "Json.More.Net": "2.0.2"
         }
       },
       "JsonSchema.Net": {
@@ -1060,22 +984,10 @@
       "Microsoft.Extensions.Caching.Abstractions": {
         "type": "CentralTransitive",
         "requested": "[10.0.1, )",
-        "resolved": "10.0.1",
-        "contentHash": "Vb1vVAQDxHpXVdL9fpOX2BzeV7bbhzG4pAcIKRauRl0/VfkE8mq0f+fYC+gWICh3dlzTZInJ/cTeBS2MgU/XvQ==",
+        "resolved": "9.0.11",
+        "contentHash": "PRv1SPyrgl/ullMF6eKDuEULRkTc10fVcnWvzFhqIMDA3m5f91znKH9ZNsKZBgu4xVc4ulNt7TEXyyt0rdlB3g==",
         "dependencies": {
-          "Microsoft.Extensions.Primitives": "10.0.1"
-        }
-      },
-      "Microsoft.Extensions.Caching.Hybrid": {
-        "type": "CentralTransitive",
-        "requested": "[9.5.0, )",
-        "resolved": "9.5.0",
-        "contentHash": "M4B0z8sdOFEntf0KbvmL7nv0LfQgGHiBDH2cfSAscJ3FTGxnq7uOpFo7sVaPuYZmpPK/KIJdWDAzu/Bc2Otrxg==",
-        "dependencies": {
-          "Microsoft.Extensions.Caching.Abstractions": "9.0.5",
-          "Microsoft.Extensions.Caching.Memory": "9.0.5",
-          "Microsoft.Extensions.Logging.Abstractions": "9.0.5",
-          "Microsoft.Extensions.Options": "9.0.5"
+          "Microsoft.Extensions.Primitives": "9.0.11"
         }
       },
       "Microsoft.Extensions.Caching.Memory": {
@@ -1309,11 +1221,11 @@
       "Microsoft.IdentityModel.Protocols.OpenIdConnect": {
         "type": "CentralTransitive",
         "requested": "[8.12.0, )",
-        "resolved": "8.12.0",
-        "contentHash": "KubWl8TJ3a53zWkFdm16KQagA4C/WXH7U8mIGk2cuDLeYAEW3beOGsA6QtDDaGwHTYmy96C1zW4U8DjQA+/t0Q==",
+        "resolved": "8.0.1",
+        "contentHash": "AQDbfpL+yzuuGhO/mQhKNsp44pm5Jv8/BI4KiFXR7beVGZoSH35zMV3PrmcfvSTsyI6qrcR898NzUauD6SRigg==",
         "dependencies": {
-          "Microsoft.IdentityModel.Protocols": "8.12.0",
-          "System.IdentityModel.Tokens.Jwt": "8.12.0"
+          "Microsoft.IdentityModel.Protocols": "8.0.1",
+          "System.IdentityModel.Tokens.Jwt": "8.0.1"
         }
       },
       "Microsoft.IdentityModel.Tokens": {
@@ -1405,12 +1317,6 @@
           "Microsoft.Extensions.Http.Resilience": "9.6.0",
           "OpenIddict.Validation": "7.0.0"
         }
-      },
-      "Sandwych.QuickGraph.Core": {
-        "type": "CentralTransitive",
-        "requested": "[1.0.0, )",
-        "resolved": "1.0.0",
-        "contentHash": "OJEAm5kik+51yBaDfDuSD9+bx3dI23IvcfFcSL+H6v/YfAYtHbiMkAn5aOljNlkHSig3uakMRGhCTYr3lDKrEA=="
       },
       "Serilog": {
         "type": "CentralTransitive",

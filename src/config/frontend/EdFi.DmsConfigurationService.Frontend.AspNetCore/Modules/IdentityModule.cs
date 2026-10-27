@@ -411,6 +411,7 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
     private static async Task<IResult> IntrospectToken(
         [FromServices] ILogger<IdentityModule> logger,
         [FromServices] ITokenIntrospectionManager? introspectionManager,
+        [FromServices] ConnectRateLimiter rateLimiter,
         HttpContext httpContext
     )
     {
@@ -443,6 +444,25 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
             TokenTypeHint tokenTypeHint,
             bool basicAttempted
         ) = (ClientAuthenticatedForm.Accepted)form;
+
+        // Bound client-key processing after the shared parser's shape checks, as on revoke.
+        if (clientId.Length > TokenRequest.MaxClientIdLength)
+        {
+            return InvalidRequest(
+                $"The client_id must not exceed {TokenRequest.MaxClientIdLength} characters."
+            );
+        }
+
+        using RateLimitLease clientLease = rateLimiter.AttemptClient(httpContext, clientId);
+        if (!clientLease.IsAcquired)
+        {
+            return ConnectRateLimitRejection.Create(
+                httpContext,
+                clientLease,
+                ConnectRateLimitRejection.ClientGate,
+                logger
+            );
+        }
 
         TokenIntrospectionResult result = await introspectionManager.IntrospectTokenAsync(
             new TokenIntrospectionRequest(clientId, clientSecret, token, tokenTypeHint),

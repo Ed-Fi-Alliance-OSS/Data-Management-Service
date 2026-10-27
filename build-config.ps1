@@ -256,11 +256,8 @@ function RunTests {
             Invoke-Execute {
                 #Execution with coverage
                 # Threshold need to be defined
-                # Cross-service regression tests reference DMS Core. Its coverage belongs to the
-                # DMS suite; including those assemblies here dilutes CMS coverage with untested DMS code.
                 dotnet tool run coverlet -- $($_) `
                     --target dotnet --targetargs "test $target --logger:console --logger:trx --nologo"`
-                    --exclude '[EdFi.DataManagementService.*]*' `
                     --threshold $thresholdCoverage `
                     --threshold-type line `
                     --threshold-type branch `
