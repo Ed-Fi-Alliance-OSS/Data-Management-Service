@@ -2525,6 +2525,7 @@ creates admin-scoped clients.
 | `AppSettings__AuthenticationService` | `http://localhost:8081/connect/token` (self-contained) or `http://localhost:8045/realms/edfi/protocol/openid-connect/token` (Keycloak) | Token endpoint must match the selected `-IdentityProvider`, using host-reachable URLs rather than Docker-internal addresses. |
 | `JwtAuthentication__Authority` | `http://localhost:8081` (self-contained) or `http://localhost:8045/realms/edfi` (Keycloak) | Self-contained value must exactly match the localhost CMS issuer configured in `.env.ide`. |
 | `JwtAuthentication__MetadataAddress` | `http://localhost:8081/.well-known/openid-configuration` (self-contained) or `http://localhost:8045/realms/edfi/.well-known/openid-configuration` (Keycloak) | Self-contained metadata and its advertised JWKS URL must share the localhost origin. |
+| `JwtAuthentication__RequireHttpsMetadata` | `false` | Required because the local identity provider's metadata address above is plain http; the committed DMS default is `true`, and without this override a `Development` run fails at startup. Keep `false` only for an identity provider not reachable over an untrusted network; see `JwtAuthentication.RequireHttpsMetadata` in [`docs/CONFIGURATION.md`](../../../../../docs/CONFIGURATION.md). |
 | `JwtAuthentication__ClientRole` | `dms-client` | Required DMS client role issued by the Docker-managed local identity provider. Overrides the committed DMS default so IDE-hosted DMS uses the same role contract as Docker-hosted local DMS. |
 | `JwtAuthentication__RoleClaimType` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | Role claim type emitted by the Docker-managed local identity provider. Keeps local IDE token validation aligned with the committed DMS default and maps `dms-client` into role claims. |
 | `AppSettings__ApiSchema__UseCustomPath` | `true` | Required for IDE-hosted DMS so it reads the staged schema workspace instead of falling back to the default packaged schema input. |
@@ -2560,6 +2561,7 @@ These values can be placed in `src/dms/frontend/EdFi.DataManagementService.Front
   "JwtAuthentication": {
     "Authority": "http://localhost:8081",
     "MetadataAddress": "http://localhost:8081/.well-known/openid-configuration",
+    "RequireHttpsMetadata": false,
     "ClientRole": "dms-client",
     "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
   },

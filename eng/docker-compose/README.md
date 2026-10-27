@@ -147,6 +147,37 @@ already brought up infra and the Configuration Service:
 The same E2E provisioning requirement is handled by the `E2ETests` build target
 (`build-dms.ps1` -> `Initialize-E2EDatabase`).
 
+Before any reset, provisioning refuses an E2E database that is not dedicated. It compares the E2E
+name with each protected name: `POSTGRES_DB_NAME`, `MSSQL_DB_NAME`, and every `Database`, `DB` or
+`Initial Catalog` value it reads from `DATABASE_CONNECTION_STRING_ADMIN` and
+`CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING`. The comparison ignores case and trailing spaces,
+ideographic spaces (U+3000), tabs, line feeds, carriage returns and form feeds, so a protected
+`'edfi_dms '` blocks an E2E database named `edfi_dms`. Once that trailing whitespace is removed,
+an E2E or protected name must be 1 to 63 ASCII letters, digits or underscores; any other name stops
+provisioning, on either engine, because the check cannot compare it reliably. The length limit
+exists because PostgreSQL keeps only the first 63 bytes of a database name, so two longer names
+that share their first 63 characters are one PostgreSQL database. Connection-string values are
+checked as the connection-string parser reads them, without env-file rules applied a second time.
+Provisioning also refuses an environment file that declares a protected key, or a name one of
+them references, more than once or in more than one letter case, because Compose could then use a
+different value than the one checked. It likewise refuses a file where Compose, which resolves the
+file line by line with case-sensitive names, would give a protected key a different value or
+presence than the check reads: for example a reference to a name declared on a later line, a
+reference spelled in another letter case than its declaration, or a protected key declared only in
+lowercase. The Instance Management route of `build-dms.ps1`, the Instance Management
+`setup-local-dms.ps1` and the CDC E2E setup run these declaration checks before they start
+infrastructure, and provisioning repeats them before any reset. A value set in the shell overrides
+the file, so the file's declarations of that name are not checked; the shell value is still
+compared with the E2E name.
+
+When `POSTGRES_DB_NAME` is absent from both the environment file and the shell, the check protects
+`edfi_datamanagementservice`, the name `postgresql.yml` uses by default. Other absent keys are
+skipped, so Compose can still give a container a database name the check never sees: without
+`CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` the Configuration Service builds its connection
+from `CONFIGURATION_SERVICE_DATABASE_NAME` or `POSTGRES_DB_NAME`. Declare the engine's database-name
+key and both connection strings in any environment file used for E2E provisioning, especially when
+running `provision-e2e-database.ps1` directly.
+
 If DMS starts before provisioning has run (or against a database missing
 `dms.EffectiveSchema`), DMS will start successfully but requests to the
 affected data stores return HTTP 503 (Service Unavailable). To recover, stop or
@@ -1026,6 +1057,7 @@ The artifact includes:
 | `AppSettings:AuthenticationService` | `http://localhost:8081/connect/token` |
 | `JwtAuthentication:Authority` | `http://localhost:8081` (must exactly match the self-contained Configuration Service issuer configured in `.env.ide`) |
 | `JwtAuthentication:MetadataAddress` | `http://localhost:8081/.well-known/openid-configuration` (must share the advertised JWKS origin) |
+| `JwtAuthentication:RequireHttpsMetadata` | `false` (local http Configuration Service; the shipped default is `true`, see [docs/CONFIGURATION.md](../../docs/CONFIGURATION.md#jwtauthentication-parameters-in-appsettingsjson-dms-api-service)) |
 | `JwtAuthentication:ClientRole` | `dms-client` |
 | `JwtAuthentication:RoleClaimType` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
 

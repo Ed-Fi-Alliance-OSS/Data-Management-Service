@@ -91,6 +91,11 @@ var app = builder.Build();
 // registration problem stops startup before any schema deployment and before a request can be served.
 await AuditPluginRegistrations(app);
 
+// Before the DatabaseOptions gate, the token-revocation check and ReportInvalidConfiguration,
+// so a host that goes on to run in configuration-report mode still logs it. Reads the flag
+// from configuration without binding and resolves nothing from the container.
+RequireHttpsMetadataStartupWarning.Emit(app.Logger, app.Environment, app.Configuration);
+
 var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");
 if (!string.IsNullOrEmpty(pathBase))
 {
@@ -150,6 +155,10 @@ app.UseRouting();
 // whose exception content is not under CMS control has that content withheld before the framework's
 // exception middleware can log it, endpoint parameter binding included (DMS-1327 D-15, D-17).
 app.UseMiddleware<ExceptionContentBoundaryMiddleware>();
+
+// Marks OAuth and authorization-required responses no-store. Placed right after routing, so the endpoint is
+// known and the authentication and authorization short-circuits further down are covered.
+app.UseMiddleware<ResponseCachePolicyMiddleware>();
 
 // Shape framework-generated bodiless error responses into the Ed-Fi contract. Placed after routing
 // but before CORS/authentication/authorization so it wraps the auth short-circuits and the endpoint

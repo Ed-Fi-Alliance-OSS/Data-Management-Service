@@ -2286,6 +2286,7 @@ $importBlock
 
 foreach (`$commandName in @(
         'Assert-E2EDatabaseIsDedicated',
+        'Assert-UnambiguousProtectedDeclaration',
         'Get-ComposeResolvedEnvValue',
         'Resolve-DotenvFileSequentially',
         'Assert-DmsContainerSchemaEnvironment',
@@ -2324,9 +2325,11 @@ catch {
         $LASTEXITCODE | Should -Be 0 -Because "the $Label import sequence must not fail"
 
         $observations = @(Get-Content -LiteralPath $observationPath)
-        # The three the wrappers call after importing this module: the up-front dedicated-database gate,
-        # the Compose-equivalent scalar reader, and the sequential env-file resolver.
+        # The four the wrappers call after importing this module: the up-front dedicated-database gate
+        # and the declaration check before it, the Compose-equivalent scalar reader, and the sequential
+        # env-file resolver.
         $observations | Should -Contain "Assert-E2EDatabaseIsDedicated=True" -Because "the Instance Management wrapper's up-front dedicated-database gate runs after this import"
+        $observations | Should -Contain "Assert-UnambiguousProtectedDeclaration=True" -Because "the Instance Management wrapper's declaration check runs after this import"
         $observations | Should -Contain "Get-ComposeResolvedEnvValue=True" -Because "both wrappers read a scalar through it after this import"
         $observations | Should -Contain "Resolve-DotenvFileSequentially=True" -Because "no import may strip the caller's sequential env-file resolver"
         # The import still has to do its own job, so this is not satisfiable by removing it outright.

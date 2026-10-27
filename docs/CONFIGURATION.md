@@ -399,8 +399,8 @@ Behavior:
   are trusted (the ASP.NET Core default). This is safe, but a proxy container running on
   another host is not trusted unless you configure its address explicitly.
 - `ReverseProxy:UseForwardedHeaders=true` with trusted sources: forwarded headers are honored only
-  when the connecting proxy matches `KnownProxies` or `KnownNetworks`; otherwise they are
-  ignored.
+  when the connecting proxy is a loopback address or matches `KnownProxies` or `KnownNetworks`;
+  otherwise they are ignored.
 
 Invalid IP or CIDR values cause the service to fail startup with a configuration error.
 
@@ -433,6 +433,52 @@ REVERSE_PROXY_KNOWN_NETWORKS=10.20.30.0/24
 For the Configuration Service, use the `CONFIGURATION_SERVICE_`-prefixed variables
 (`CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS`, `CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_PROXIES`,
 `CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_NETWORKS`).
+
+### Security response headers
+
+Both services send these headers on every response.
+The values are fixed and are not configurable.
+
+| Header | Value |
+| --- | --- |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `no-referrer` |
+| `X-Frame-Options` | `DENY` |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'` |
+
+`Strict-Transport-Security: max-age=31536000` is sent only when the request is HTTPS as the application sees it.
+That means TLS terminated by Kestrel, or `X-Forwarded-Proto: https` from a proxy the application trusts once `ReverseProxy:UseForwardedHeaders` is `true`: a loopback proxy, or one listed in `KnownProxies` or `KnownNetworks`.
+It is never sent for `localhost`, `127.0.0.1` or `[::1]`, or when the hosting environment is `Development` (`ASPNETCORE_ENVIRONMENT=Development`).
+A browser keeps the policy for a year and applies it to every port on the hostname, so on a developer machine it would force HTTPS onto unrelated local services.
+It carries no `includeSubDomains` or `preload`, because those are decisions for whoever owns the domain, so they belong at the edge.
+When TLS terminates at a proxy and forwarded headers are not enabled, the application does not send HSTS and the proxy should.
+
+`Cache-Control: no-store` is sent on:
+
+- Non-2xx responses, except 304, in both services.
+- Every DMS data API response, whatever its status: the resource and descriptor endpoints with their `deletes` and `keyChanges` routes, and Change Queries `availableChangeVersions`.
+- The token endpoints, together with `Pragma: no-cache`: DMS `/oauth/token` and every Configuration Service `/connect/*` endpoint.
+- Authenticated Configuration Service endpoints.
+- The Configuration Service discovery document, `/.well-known/openid-configuration`.
+- DMS `/oauth/token_info`.
+- DMS claimset management endpoints (`view-claimsets` and `reload-claimsets`).
+- The DMS DocumentCache status endpoint, `/health/document-cache`, when `DataManagement:DocumentCache:Status:RequiredRole` maps it.
+- DMS identity operations, as described in [IDENTITY-MANAGEMENT.md](IDENTITY-MANAGEMENT.md).
+
+DMS data API responses still carry their `ETag`, so a client that keeps it can revalidate with `If-None-Match` and receive `304 Not Modified`, but no browser or other HTTP cache stores the records.
+Public documents, such as the DMS discovery and metadata endpoints and `/health` in both services, carry no `Cache-Control`.
+
+The application cannot see headers a proxy adds.
+A proxy that appends headers, as nginx `add_header` does, sends its fields after the application's instead of replacing them.
+Duplicate `X-Frame-Options`, `Content-Security-Policy` and `Cache-Control` fields resolve to the stricter value.
+For `Strict-Transport-Security`, browsers use only the first field, so behind an appending proxy the application's value wins.
+To apply a different value at the edge, remove the application's header first.
+With nginx, use `proxy_hide_header`, as the review gateway does for HSTS:
+
+```nginx
+proxy_hide_header Strict-Transport-Security;
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+```
 
 ## DatabaseOptions
 
@@ -1216,6 +1262,7 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 |------------------|------------------------------------------------------------------|------------------------------------------------------|-----------------------------------------------|
 | `AppSettings.IdentityProvider` | Selects the identity provider                                    | `keycloak`                                           | `self-contained`                              |
 | `IdentitySettings.Authority`        | Identity provider issuer. In self-contained mode, also the base URL for every advertised discovery endpoint: omit `AppSettings.PathBase` from this value, and keep DMS `JwtAuthentication.MetadataAddress` on the same origin (scheme, host, and port). DMS `JwtAuthentication.Authority` must exactly match the issuer. | `http://dms-keycloak:8080/realms/edfi` | `http://ed-fi-api-config:8081` |
+| `IdentitySettings.RequireHttpsMetadata` | Default `true`: OIDC discovery and signing-key documents must be fetched over https. Set `false` only when the identity provider is not reachable over an untrusted network, for example a container on the same private Compose network. A Configuration Service whose hosting environment is not `Development` logs a startup warning while the value is `false`. In self-contained mode the Configuration Service validates tokens from its own signing-key snapshot and performs no metadata retrieval, so the setting has no retrieval effect there; it still governs Keycloak mode and still triggers the warning. The Compose files under `eng/docker-compose` (test and demonstration configurations, not for production use) deliberately override this default to `false` for their private-network identity providers through `CONFIGURATION_SERVICE_IDENTITY_REQUIRE_HTTPS`, and the `eng/azure-vm` review stack sets `false` directly; copy that override only where the same condition holds. | `false` (local http Keycloak) | `false` (local http Configuration Service) |
 | `IdentitySettings.EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
 | `IdentitySettings.TokenCleanup.Enabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
 | `IdentitySettings.TokenCleanup.IntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
@@ -1350,6 +1397,7 @@ it covers verifying the change on every instance and refreshing each consumer.
 | `AppSettings.AuthenticationService`       | URL of the identity provider's authority (issuer)   | `http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token`              | `http://ed-fi-api-config:8081/connect/token`              |
 | `JwtAuthentication.Authority`       | URL of the identity provider's authority (issuer). It must equal the `issuer` in the metadata document exactly; DMS will not start otherwise, and a mismatch that appears later makes DMS reject tokens (401) until it re-fetches metadata that matches. DMS retries at most once per `RefreshIntervalMinutes` (default 60), so recovery can lag the fix by up to that long; restarting DMS recovers immediately. The first rejected request is logged as an error and repeats at debug level | `http://localhost:8045/realms/edfi`              | `http://ed-fi-api-config:8081`              |
 | `JwtAuthentication.MetadataAddress` | OpenID Connect metadata endpoint. DMS fetches signing keys only from this address's origin (scheme, host and port): a metadata document whose `jwks_uri` names another origin is refused, which stops DMS from starting, or keeps the last good metadata on a later refresh. DMS then retries until a fetch succeeds (once the automatic refresh is due, on every request), logging the first refusal as an error and repeats at debug level. DMS does not follow redirects for these fetches. For Keycloak reached over an internal hostname, set `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true`; Keycloak's default makes `jwks_uri` name the public host | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://ed-fi-api-config:8081/.well-known/openid-configuration` |
+| `JwtAuthentication.RequireHttpsMetadata` | Default `true`: OIDC discovery and signing-key documents must be fetched over https. Set `false` only when the identity provider is not reachable over an untrusted network, for example a container on the same private Compose network. A DMS instance whose hosting environment is not `Development` logs a startup warning while the value is `false`. The Compose files under `eng/docker-compose` (test and demonstration configurations, not for production use) deliberately override this default to `false` for their private-network identity providers through `DMS_JWT_REQUIRE_HTTPS_METADATA`, and the `eng/azure-vm` review stack sets `false` directly; copy that override only where the same condition holds. | `false` (local http Keycloak) | `false` (local http Configuration Service) |
 | `JwtAuthentication.RoleClaimType` | Exact inbound claim type used by endpoints that require a specifically configured role | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
 | `JwtAuthentication.ClockSkewSeconds` | Clock skew tolerance in seconds applied to a token's `nbf` and `exp` checks, so a token is still accepted for this long after it expires. Environment override: `JwtAuthentication__ClockSkewSeconds`; the shipped Docker Compose files map it from `DMS_JWT_CLOCK_SKEW_SECONDS`. Default: `30` | `30` | `30` |
 | `JwtAuthentication.ValidatedTokenCacheEntryMaxLifetimeSeconds` | The longest DMS reuses a successful token validation, in process, before it validates the same token again. An entry never outlives the token's expiry less `ClockSkewSeconds`, and `0` means a validation is never reused. Environment override: `JwtAuthentication__ValidatedTokenCacheEntryMaxLifetimeSeconds`. Default: `300` | `300` | `300` |

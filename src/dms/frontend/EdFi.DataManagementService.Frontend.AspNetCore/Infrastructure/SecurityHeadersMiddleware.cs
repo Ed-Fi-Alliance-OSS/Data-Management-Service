@@ -9,14 +9,27 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 /// Adds baseline security response headers to every response. Registered on OnStarting so the
 /// headers are written just before the response is sent, which keeps them on short-circuited and
 /// error responses produced later in the pipeline, and makes the final status code available when
-/// the headers are applied. TryAdd leaves any value already set upstream intact.
+/// the headers are applied. TryAdd preserves values written earlier in this pipeline. A reverse
+/// proxy adds its headers after the response leaves the process, so they cannot be seen here; a
+/// proxy that wants a different value must remove the application's (see docs/CONFIGURATION.md).
 /// </summary>
-public class SecurityHeadersMiddleware(RequestDelegate next)
+/// <remarks>
+/// Strict-Transport-Security is written only for HTTPS requests (RFC 6797 section 7.2 forbids the
+/// header over HTTP), and neither for loopback hosts nor in the Development environment, as with
+/// UseHsts: a browser keeps the policy for a year and applies it to every port on the hostname, so
+/// a developer machine would be pinned to HTTPS. It is applied here rather than with UseHsts, which
+/// writes before the endpoint runs and is lost on any path that clears the response headers.
+/// </remarks>
+public class SecurityHeadersMiddleware(RequestDelegate next, IHostEnvironment environment)
 {
+    private readonly bool _isDevelopment = environment.IsDevelopment();
+
     private static readonly (string Name, string Value)[] _securityHeaders =
     [
         ("X-Content-Type-Options", "nosniff"),
         ("Referrer-Policy", "no-referrer"),
+        ("X-Frame-Options", "DENY"),
+        ("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'"),
     ];
 
     public Task Invoke(HttpContext context)
@@ -25,13 +38,19 @@ public class SecurityHeadersMiddleware(RequestDelegate next)
         return next(context);
     }
 
-    private static Task ApplyHeaders(object state)
+    private Task ApplyHeaders(object state)
     {
-        HttpResponse response = ((HttpContext)state).Response;
+        HttpContext context = (HttpContext)state;
+        HttpResponse response = context.Response;
         IHeaderDictionary headers = response.Headers;
         foreach ((string name, string value) in _securityHeaders)
         {
             headers.TryAdd(name, value);
+        }
+
+        if (context.Request.IsHttps && !_isDevelopment && !IsLoopbackHost(context.Request.Host.Host))
+        {
+            headers.TryAdd("Strict-Transport-Security", "max-age=31536000");
         }
 
         if (ShouldPreventSharedCaching(response.StatusCode))
@@ -41,6 +60,12 @@ public class SecurityHeadersMiddleware(RequestDelegate next)
 
         return Task.CompletedTask;
     }
+
+    // Matches the ASP.NET Core HstsOptions.ExcludedHosts defaults.
+    private static bool IsLoopbackHost(string host) =>
+        host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+        || host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+        || host.Equals("[::1]", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Whether this response must be marked no-store so that a CDN or other shared cache in front
@@ -52,8 +77,9 @@ public class SecurityHeadersMiddleware(RequestDelegate next)
     /// statuses DMS emits (404, 405, 501 among them) are heuristically cacheable under RFC 9110
     /// section 15.1, with no explicit freshness header required. The catch-all 404 in Program.cs
     /// is the sharpest case: unauthenticated, reachable on any unmatched route, and echoing the
-    /// caller's correlation ID. Success responses are deliberately left alone - a 200 carries an
-    /// etag and is what the conditional-GET support in GetByIdHandler exists to revalidate.
+    /// caller's correlation ID. Success responses are deliberately left alone, so public documents
+    /// such as discovery and metadata stay cacheable; the data API marks its own responses no-store
+    /// (DataResponseCachePolicyMiddleware).
     ///
     /// *** 304 must stay excluded - do not simplify this to "not 2xx" or ">= 300". ***
     /// A 304 tells a cache its stored copy is still good, so answering with no-store makes the
@@ -61,7 +87,10 @@ public class SecurityHeadersMiddleware(RequestDelegate next)
     /// RFC 9110 section 15.4.5 directs a cache to update its stored response from the 304 (the
     /// mechanism is RFC 9111 section 4.3.4), so the no-store would be written onto the stored 200
     /// as well. 304 is the only 3xx DMS emits today (GetByIdHandler.TryCreateNotModified); the
-    /// rest of the 3xx range is left in scope rather than excluded on speculation.
+    /// data API marks that one no-store on purpose, because no cache is meant to hold data
+    /// responses at all. The exclusion keeps this generic rule safe for any public endpoint that
+    /// revalidates later. The rest of the 3xx range is left in scope rather than excluded on
+    /// speculation.
     /// </remarks>
     private static bool ShouldPreventSharedCaching(int statusCode) =>
         statusCode is not (>= 200 and <= 299) && statusCode != StatusCodes.Status304NotModified;

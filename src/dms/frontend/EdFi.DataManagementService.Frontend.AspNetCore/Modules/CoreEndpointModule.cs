@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using Microsoft.Extensions.Options;
 using static EdFi.DataManagementService.Frontend.AspNetCore.AspNetCoreFrontend;
 
@@ -19,10 +20,10 @@ public class CoreEndpointModule(IOptions<AppSettings> appSettings) : IEndpointMo
             appSettings.Value.MultiTenancy
         );
 
-        endpoints.MapPost(routePattern, Upsert);
-        endpoints.MapGet(routePattern, Get);
-        endpoints.MapPut(routePattern, UpdateById);
-        endpoints.MapDelete(routePattern, DeleteById);
+        endpoints.MapPost(routePattern, Upsert).WithMetadata(DataEndpointMetadata.Instance);
+        endpoints.MapGet(routePattern, Get).WithMetadata(DataEndpointMetadata.Instance);
+        endpoints.MapPut(routePattern, UpdateById).WithMetadata(DataEndpointMetadata.Instance);
+        endpoints.MapDelete(routePattern, DeleteById).WithMetadata(DataEndpointMetadata.Instance);
 
         // Terminal for data-route requests whose method is none of the verbs above. Core decides
         // 404-vs-405 (unknown resource vs unsupported method), matching ODS/API's ordering.

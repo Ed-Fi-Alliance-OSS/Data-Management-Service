@@ -33,8 +33,14 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
     {
         // Support dynamic route contexts: allows zero or more path segments after the endpoint
         // Examples: /connect/token, /connect/token/{districtId}, /connect/token/{districtId}/{schoolYear}
-        endpoints.MapPost("connect/register/{**contextPath}", RegisterClient).DisableAntiforgery();
-        endpoints.MapPost("connect/token/{**contextPath}", GetClientAccessToken).DisableAntiforgery();
+        endpoints
+            .MapPost("connect/register/{**contextPath}", RegisterClient)
+            .DisableAntiforgery()
+            .WithMetadata(OAuthEndpointMetadata.Instance);
+        endpoints
+            .MapPost("connect/token/{**contextPath}", GetClientAccessToken)
+            .DisableAntiforgery()
+            .WithMetadata(OAuthEndpointMetadata.Instance);
         // No RequireAuthorization() here: RFC 7009 §2.1 requires the caller to authenticate with
         // client credentials (RFC 6749 §2.3), the same as at /connect/token, not with a bearer
         // access token. The ITokenRevocationManager authenticates the caller inside
@@ -52,7 +58,8 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
                 OAuthErrorContractMetadata.Revocation,
                 ExceptionTypeOnlyLoggingMetadata.Instance,
                 BearerAuthenticationExemptMetadata.Instance,
-                ClientCredentialAuthenticationMetadata.Instance
+                ClientCredentialAuthenticationMetadata.Instance,
+                OAuthEndpointMetadata.Instance
             );
         // The same contract as /connect/revoke. RFC 7662 §2.1 requires some form of authorization
         // to call the endpoint; in self-contained mode CMS uses client credentials (RFC 6749 §2.3),
@@ -69,7 +76,8 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
             .WithMetadata(
                 OAuthErrorContractMetadata.Introspection,
                 ExceptionTypeOnlyLoggingMetadata.Instance,
-                BearerAuthenticationExemptMetadata.Instance
+                BearerAuthenticationExemptMetadata.Instance,
+                OAuthEndpointMetadata.Instance
             );
         if (
             string.Equals(

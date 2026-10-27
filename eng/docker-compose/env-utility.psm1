@@ -2510,6 +2510,91 @@ function Get-DotenvDependencyClosure {
     return @($closure)
 }
 
+function Assert-UnambiguousProtectedDeclaration {
+    <#
+    .SYNOPSIS
+        Refuses an env file whose protected database settings Docker Compose could resolve differently
+        from the dedicated-E2E guard. Callers run it before starting infrastructure or resetting a
+        database.
+
+    .DESCRIPTION
+        The guard reads EnvironmentValues, a map that keeps the last value of each name, compared
+        case-insensitively, and resolves a reference against the whole map. Docker Compose resolves the
+        file line by line with case-sensitive names: a reference sees only earlier declarations, a
+        reference between two declarations keeps the earlier value, and 'mssql_db_name' is not
+        MSSQL_DB_NAME on Linux. Two checks close that gap:
+
+          - A name a protected setting depends on must be declared once, in one letter case.
+          - Each protected setting must have the same presence and value under Compose's sequential
+            resolution as under the guard's map, compared ordinally. For a connection string the
+            database names the guard extracts are compared, so a difference elsewhere in the string
+            does not refuse the file. Blank values agree; the guard refuses them itself.
+
+        A name the ambient environment supplies resolves to the ambient value on both sides, so its
+        file declarations are inert and refuse nothing. The guard still compares the ambient value.
+        Values are never logged.
+    #>
+    param(
+        [Parameter(Mandatory)] [string]$EnvironmentFilePath,
+        [hashtable]$EnvironmentValues
+    )
+
+    $connectionStringKeys = @("DATABASE_CONNECTION_STRING_ADMIN", "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING")
+    $protectedKeys = @("POSTGRES_DB_NAME", "MSSQL_DB_NAME") + $connectionStringKeys
+    $evaluation = Resolve-DotenvFileSequentially -Path $EnvironmentFilePath
+    $dependencies = Get-DotenvDependencyClosure -Evaluation $evaluation -RootKey $protectedKeys
+
+    foreach ($name in $dependencies) {
+        if ($null -ne [System.Environment]::GetEnvironmentVariable($name)) {
+            continue
+        }
+
+        $declarations = @($evaluation.Declarations | Where-Object {
+                [string]::Equals($_.Key, $name, [System.StringComparison]::OrdinalIgnoreCase)
+            })
+        if ($declarations.Count -gt 1) {
+            $locations = ($declarations | ForEach-Object { "$($_.Key) on line $($_.LineIndex + 1)" }) -join ", "
+            throw "E2E database safety check: '$EnvironmentFilePath' declares $name more than once or in more than one letter case ($locations), and a protected database setting depends on it. Docker Compose resolves the file line by line with case-sensitive names, so the value it uses can differ from the one this check compares; refusing a destructive reset. Keep a single declaration."
+        }
+    }
+
+    foreach ($key in $protectedKeys) {
+        # $null means absent. Both sides give an ambient value precedence; Compose's side then reads
+        # the file sequentially with ordinal names, the guard's side reads the map.
+        $composeValue = Get-SequentialEffectiveValue -Evaluation $evaluation -Name $key
+        $guardValue =
+            if (Test-ProtectedKeyConfigured -EnvironmentValues $EnvironmentValues -Name $key) {
+                Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name $key
+            }
+            else {
+                $null
+            }
+
+        $agrees =
+            if ($null -eq $composeValue -or $null -eq $guardValue) {
+                $null -eq $composeValue -and $null -eq $guardValue
+            }
+            elseif ([string]::IsNullOrWhiteSpace($composeValue) -or [string]::IsNullOrWhiteSpace($guardValue)) {
+                [string]::IsNullOrWhiteSpace($composeValue) -and [string]::IsNullOrWhiteSpace($guardValue)
+            }
+            elseif ($key -in $connectionStringKeys) {
+                $composeNames = @(Get-DatabaseNameFromConnectionString -ConnectionString $composeValue)
+                $guardNames = @(Get-DatabaseNameFromConnectionString -ConnectionString $guardValue)
+                $sameNames = $composeNames.Count -eq $guardNames.Count
+                for ($index = 0; $sameNames -and $index -lt $composeNames.Count; $index++) {
+                    $sameNames = [string]::Equals($composeNames[$index], $guardNames[$index], [System.StringComparison]::Ordinal)
+                }
+                $sameNames
+            }
+            else {
+                [string]::Equals($composeValue, $guardValue, [System.StringComparison]::Ordinal)
+            }
+
+        if (-not $agrees) {
+            throw "E2E database safety check: '$EnvironmentFilePath' gives $key a different value or presence under Docker Compose's line-by-line, case-sensitive resolution than the one this check compares. A reference sees only earlier declarations of the same letter case, and a declaration in another letter case is a different name; refusing a destructive reset. Declare each name once, in one letter case, before any line that references it. The values are withheld."
+        }
+    }
+}
 
 function Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase {
     <#
@@ -2537,11 +2622,14 @@ function Test-InitializedDatastoreNameCollidesWithReservedCmsDatabase {
         create that database: they create databases literally named that way. An offline verdict stays
         sound because the identifier now travels verbatim.
 
-        SQL Server has NO offline verdict, here or anywhere: database names inherit the INSTANCE
-        collation, and the equivalence class differs between instances (measured: a case variant that
-        collides under the default collation is a genuinely distinct database on a case-sensitive
-        instance), so no fixed rule answers for every server. MSSQL physical distinctness is decided by
-        the server-backed authority, Assert-MssqlTopologyPhysicalConsistency, against the RUNNING
+        The CMS topology checks render NO offline SQL Server verdict: database names inherit the
+        INSTANCE collation, and the equivalence class differs between instances (measured: a case
+        variant that collides under the default collation is a genuinely distinct database on a
+        case-sensitive instance), so no fixed rule answers for every server. The dedicated-E2E guard
+        in database-safety.psm1 is separate: before a destructive reset it compares and refuses SQL
+        Server names offline with a fixed rule built to over-reject, and it is not a physical-identity
+        authority. MSSQL physical distinctness for the CMS topology is decided by the server-backed
+        authority, Assert-MssqlTopologyPhysicalConsistency, against the RUNNING
         instance - which is why -DatabaseEngine refuses "mssql" at parameter binding instead of handing
         back a silent non-verdict.
 
@@ -2987,12 +3075,14 @@ function Assert-MssqlTopologyPhysicalConsistency {
         datastore candidates distinct from it - and throws unless every relation is verified.
 
     .DESCRIPTION
-        The single final MSSQL name authority. No offline comparer renders any MSSQL name
-        verdict: database names inherit the INSTANCE collation, and the equivalence class was
-        measured in BOTH directions (the default collation folds an ASCII case variant onto the
-        expected name; a case-sensitive instance keeps the same pair distinct), so only the
-        server this stack actually runs against can answer - and it answers for EVERY candidate,
-        exact spellings included.
+        The single final MSSQL name authority for the CMS topology checks. No offline topology
+        comparer renders an MSSQL name verdict: database names inherit the INSTANCE collation, and
+        the equivalence class was measured in BOTH directions (the default collation folds an ASCII
+        case variant onto the expected name; a case-sensitive instance keeps the same pair
+        distinct), so only the server this stack actually runs against can answer - and it answers
+        for EVERY candidate, exact spellings included. The dedicated-E2E guard in
+        database-safety.psm1 is separate: before a destructive reset it conservatively refuses
+        offline, as MssqlCollationParity.Tests.ps1 records.
 
         Runs for BOTH topologies. The mode comes from the marker
         (DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE), read RAW from the effective environment file's

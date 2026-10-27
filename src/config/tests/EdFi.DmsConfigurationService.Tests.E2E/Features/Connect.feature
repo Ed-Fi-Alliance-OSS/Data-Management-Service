@@ -182,6 +182,13 @@ Feature: Connect endpoints
                   | grant_type    | client_credentials                             |
                   | scope         | edfi_admin_api/full_access                     |
              Then it should respond with 200
+              And the response headers include
+                  """
+                  {
+                    "Cache-Control": "no-store",
+                    "Pragma": "no-cache"
+                  }
+                  """
               And the token response body is valid
               And the token has an empty namespacePrefixes claim
 
@@ -208,6 +215,13 @@ Feature: Connect endpoints
                   | grant_type    | client_credentials         |
                   | scope         | edfi_admin_api/full_access |
              Then it should respond with 401
+              And the response headers include
+                  """
+                  {
+                    "Cache-Control": "no-store",
+                    "Pragma": "no-cache"
+                  }
+                  """
               And the response body is
                   """
                   {

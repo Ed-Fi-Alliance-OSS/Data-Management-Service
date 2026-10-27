@@ -3998,9 +3998,9 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
         It "protects MSSQL_DB_NAME as a first-class database-name key" {
             {
                 Assert-E2EDatabaseIsDedicated `
-                    -EnvironmentValues @{ MSSQL_DB_NAME = "edfi_datamanagementservice" } `
+                    -EnvironmentValues @{ MSSQL_DB_NAME = "edfi_dms_mssql" } `
                     -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "Edfi_DataManagementService"
+                    -E2EDatabaseName "Edfi_Dms_Mssql"
             } | Should -Throw "*MSSQL_DB_NAME*"
         }
 
@@ -4008,10 +4008,10 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
             {
                 Assert-E2EDatabaseIsDedicated `
                     -EnvironmentValues @{
-                        DATABASE_CONNECTION_STRING_ADMIN = "Server=dms-mssql,1433;Initial Catalog=edfi_datamanagementservice;User ID=sa;Password=p;"
+                        DATABASE_CONNECTION_STRING_ADMIN = "Server=dms-mssql,1433;Initial Catalog=edfi_dms_admin;User ID=sa;Password=p;"
                     } `
                     -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "edfi_datamanagementservice"
+                    -E2EDatabaseName "edfi_dms_admin"
             } | Should -Throw "*DATABASE_CONNECTION_STRING_ADMIN*"
         }
 
@@ -4214,7 +4214,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                 Assert-E2EDatabaseIsDedicated `
                     -EnvironmentValues @{ $Key = "" } `
                     -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "edfi_datamanagementservice"
+                    -E2EDatabaseName "edfi_datamanagementservice_e2e"
             } | Should -Throw "*could not resolve $Key*"
         }
 
@@ -4226,7 +4226,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                 Assert-E2EDatabaseIsDedicated `
                     -EnvironmentValues @{ $Key = "" } `
                     -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "edfi_datamanagementservice"
+                    -E2EDatabaseName "edfi_datamanagementservice_e2e"
             } | Should -Throw "*could not resolve $Key*"
         }
 

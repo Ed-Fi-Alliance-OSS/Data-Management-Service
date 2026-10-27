@@ -107,11 +107,11 @@ RUN version_args=""; \
         -c Release --no-restore --self-contained false -o /app/Frontend \
         $version_args
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.3-alpine3.23@sha256:258b939d6d684ff05ad7ea16782b4bee55260de4acc6f99bec897fd11de7640c AS runtimebase
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.13-alpine3.24@sha256:819bd3649d8bf53f35527c68d62e17b348ef6f24ae73073f497f00a878348062 AS runtimebase
 
 # Install OpenSSL on the 3.5 line and runtime helpers; ICU because
 # Microsoft.Data.SqlClient does not support globalization-invariant mode
-RUN apk add --no-cache openssl=~3.5 bash=~5 postgresql18-client=~18 icu-libs=~76 icu-data-full=~76
+RUN apk add --no-cache openssl=~3.5 bash=~5 postgresql18-client=~18 icu-libs=~78 icu-data-full=~78
 
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 
