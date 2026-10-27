@@ -185,8 +185,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         /// <summary>
         /// Reads only what client authentication needs, before the presented secret is verified:
         /// the credential of the application registered under <paramref name="clientId"/>, or
-        /// <c>null</c> when none is. The statement does the same database work whether or not the
-        /// client id is registered.
+        /// <c>null</c> when none is. The statement makes the same index probes whether or not the
+        /// client id is registered; a registered id also reads its matched rows.
         /// </summary>
         Task<ClientCredential?> GetClientCredentialAsync(string clientId);
 

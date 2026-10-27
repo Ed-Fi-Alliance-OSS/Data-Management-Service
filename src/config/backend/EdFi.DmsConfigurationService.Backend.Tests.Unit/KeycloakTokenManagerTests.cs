@@ -191,15 +191,54 @@ public class KeycloakTokenManagerTests
             ProviderError().GetType().Should().Be(typeof(IdentityProviderError));
     }
 
-    [TestFixture]
-    public class Given_keycloak_answers_401 : TokenManagerFixture
+    [TestFixture("unauthorized_client", "Invalid client or Invalid client credentials")]
+    [TestFixture("invalid_client", "Invalid client or Invalid client credentials")]
+    [TestFixture("invalid_client", "some other description")]
+    public class Given_keycloak_answers_401_for_a_failed_client_authentication(
+        string error,
+        string description
+    ) : TokenManagerFixture
     {
         protected override HttpResponseMessage Answer() =>
-            Json(HttpStatusCode.Unauthorized, """{"error":"unauthorized_client"}""");
+            Json(
+                HttpStatusCode.Unauthorized,
+                $$"""{"error":"{{error}}","error_description":"{{description}}"}"""
+            );
+
+        [Test]
+        public void It_answers_invalid_client_with_the_shared_message() =>
+            _result
+                .Should()
+                .Be(
+                    new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    )
+                );
+    }
+
+    [TestFixture]
+    public class Given_keycloak_answers_401_with_another_error : TokenManagerFixture
+    {
+        protected override HttpResponseMessage Answer() =>
+            Json(HttpStatusCode.Unauthorized, """{"error":"invalid_token"}""");
 
         [Test]
         public void It_returns_Unauthorized() =>
             ProviderError().GetType().Should().Be(typeof(IdentityProviderError.Unauthorized));
+    }
+
+    [TestFixture]
+    public class Given_keycloak_answers_400_unauthorized_client : TokenManagerFixture
+    {
+        private const string Body =
+            """{"error":"unauthorized_client","error_description":"Client not enabled to retrieve service account"}""";
+
+        protected override HttpResponseMessage Answer() => Json(HttpStatusCode.BadRequest, Body);
+
+        [Test]
+        public void It_returns_the_base_type_with_the_raw_body() =>
+            ProviderError().Should().Be(new IdentityProviderError(Body));
     }
 
     [TestFixture]

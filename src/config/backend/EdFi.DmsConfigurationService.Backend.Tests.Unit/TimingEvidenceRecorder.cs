@@ -146,8 +146,8 @@ internal static class TimingEvidenceRecorder
         int[] positions = [.. Enumerable.Range(0, arms.Count)];
         DateTime startedUtc = clock.UtcNow();
 
-        // Warm-up rounds are discarded. They absorb first-use costs: JIT, connection set-up, and the
-        // token manager's placeholder generation on its first unknown-client request.
+        // Warm-up rounds are discarded. They absorb first-use costs such as JIT and connection
+        // set-up. The placeholder hash exists before the first round, so no round generates it.
         // Their samples are kept apart, in the warm-up file, and never enter the analysis.
         List<string> warmupRows = new((settings.WarmupRounds * arms.Count) + 1) { Columns };
         await RunRoundsAsync(settings.WarmupRounds, order, positions, arms, clock, warmupRows);

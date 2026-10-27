@@ -19,14 +19,6 @@ namespace EdFi.DmsConfigurationService.Secrets;
 /// The host resolves this contract unkeyed from its root provider, so a keyed registration would
 /// replace nothing and a scoped or transient one does not match how the host consumes it.
 /// </para>
-/// <para>
-/// <b>Unknown clients.</b> On the self-contained identity provider the host calls
-/// <see cref="HashSecretAsync"/> once at startup, on a random secret, and refuses to start when that
-/// call throws or returns a null, empty or whitespace hash. For every client id that is not
-/// registered, it calls <see cref="VerifySecretAsync"/> with the presented secret and that
-/// placeholder, discards the answer and rejects the client. An unknown client id then costs what a
-/// wrong secret costs only while stored hashes cost the same to verify as the placeholder.
-/// </para>
 /// </summary>
 public interface IClientSecretHasher
 {

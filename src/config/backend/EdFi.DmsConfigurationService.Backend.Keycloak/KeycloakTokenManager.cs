@@ -16,6 +16,17 @@ public class KeycloakTokenManager(
     IHttpClientFactory httpClientFactory
 ) : ITokenManager
 {
+    /// <summary>
+    /// Keycloak answers an unknown client with <c>invalid_client</c> and a wrong secret with
+    /// <c>unauthorized_client</c>, both as a 401. Both are failed client authentications, which
+    /// RFC 6749 section 5.2 reports as <c>invalid_client</c>, so both get this one answer and the
+    /// response does not reveal whether the client id exists.
+    /// </summary>
+    private static readonly TokenResult.FailureAuthentication _clientAuthenticationFailure = new(
+        "invalid_client",
+        "Invalid client or Invalid client credentials"
+    );
+
     public async Task<TokenResult> GetAccessTokenAsync(IEnumerable<KeyValuePair<string, string>> credentials)
     {
         try
@@ -33,6 +44,9 @@ public class KeycloakTokenManager(
             return response.StatusCode switch
             {
                 HttpStatusCode.OK => new TokenResult.Success(responseString),
+                HttpStatusCode.Unauthorized
+                    when HasError(responseString, "invalid_client", "unauthorized_client") =>
+                    _clientAuthenticationFailure,
                 HttpStatusCode.Unauthorized => new TokenResult.FailureIdentityProvider(
                     new IdentityProviderError.Unauthorized(responseString)
                 ),
@@ -42,7 +56,7 @@ public class KeycloakTokenManager(
                 HttpStatusCode.NotFound => new TokenResult.FailureIdentityProvider(
                     new IdentityProviderError.NotFound(responseString)
                 ),
-                HttpStatusCode.BadRequest when IsInvalidScope(responseString) =>
+                HttpStatusCode.BadRequest when HasError(responseString, "invalid_scope") =>
                     new TokenResult.FailureIdentityProvider(
                         new IdentityProviderError.InvalidScope(responseString)
                     ),
@@ -64,10 +78,10 @@ public class KeycloakTokenManager(
     }
 
     /// <summary>
-    /// True when the body is a JSON object whose top-level "error" is the string "invalid_scope".
-    /// Any other body shape is not an invalid scope answer.
+    /// True when the body is a JSON object whose top-level "error" is a string equal to one of
+    /// <paramref name="errors"/>. Any other body shape matches none of them.
     /// </summary>
-    private static bool IsInvalidScope(string responseBody)
+    private static bool HasError(string responseBody, params string[] errors)
     {
         try
         {
@@ -75,7 +89,7 @@ public class KeycloakTokenManager(
             return document.RootElement.ValueKind == JsonValueKind.Object
                 && document.RootElement.TryGetProperty("error", out var error)
                 && error.ValueKind == JsonValueKind.String
-                && string.Equals(error.GetString(), "invalid_scope", StringComparison.Ordinal);
+                && errors.Contains(error.GetString(), StringComparer.Ordinal);
         }
         catch (JsonException)
         {

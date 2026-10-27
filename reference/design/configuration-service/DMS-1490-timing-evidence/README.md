@@ -7,8 +7,9 @@ that placeholder once, at startup. This page records the timing evidence for the
 observer could ask: can an absent client id still be told apart from an existing one by response
 time?
 
-The raw samples, run logs, analysis outputs and analysis scripts are not kept in the repository; see
-[Where the data is](#where-the-data-is).
+The analysis scripts, `analyze_timing.py` and `diagnostics.py`, are kept beside this README so the
+collectors' output can be analysed from the repository. The raw samples, run logs and analysis
+outputs are not kept in the repository; see [Where the data is](#where-the-data-is).
 
 ## Result on the current code (step 3)
 
@@ -54,6 +55,10 @@ The result is NOT EQUIVALENT if the CI is disjoint from ±250 µs, and INCONCLUS
   an unknown id returned no row and skipped the API client lookup. Step 3 ran on a different LocalDB
   instance on a different day, so the two runs are not a controlled comparison: the step 2 difference
   was not reproduced on the current code, and the two intervals overlap.
+- **Database work:** the credential statement makes the same application and API client index
+  probes for every client id, but a registered id also reads its matched rows and an unknown id
+  does not. Equal timing is therefore not guaranteed by construction; that residual is part of what
+  these runs measured.
 - **The interval:** it is conditional statistical evidence, not a hard maximum and not a bound on
   individual request times.
 - **Startup:** every measured request follows 1,200 warm-up rounds, so the runs say nothing about the
@@ -63,6 +68,8 @@ The result is NOT EQUIVALENT if the CI is disjoint from ±250 µs, and INCONCLUS
   and loopback HTTP.
 - **Hasher:** the result holds for the default hasher, whose stored hashes and placeholder share one
   format and work factor. See the `IClientSecretHasher` contract README for a replacement that does not.
+- **Identity provider:** the runs measure the self-contained provider. Under Keycloak, client
+  authentication, and so its timing, happens in Keycloak, outside the Configuration Service.
 
 ## Method
 
@@ -99,20 +106,25 @@ It holds:
 - `step2-mssql/` and `step1-mssql/`: the earlier SQL Server runs on `d86bb6e95` and `a5c4b7570`,
   with `README-step1-step2.md` and `SHA256SUMS-step1-step2.txt` as they were committed.
 - `a5-final/`: the two fixtures for `diagnostics.py selftest`.
-- `analyze_timing.py` and `diagnostics.py`.
+- `analyze_timing.py` and `diagnostics.py`, the same files as those beside this README.
 - `BUNDLE-SHA256SUMS.txt`: the SHA-256 and size of every file in the archive.
 
 `SHA256SUMS.txt` beside this README repeats those checksums, so a copy of the archive can be checked
 against the repository. The files removed from this folder also remain in the branch history at
 `38be2e413`.
 
-To reproduce the analysis, run these from the archive's `step3/<database>/` folder:
+To analyse a collector's output, or to reproduce the analysis above from the archive's
+`step3/<database>/` samples, run these with Python 3 and numpy, where `<this folder>` is the folder
+of this README:
 
 ```
-python -I -B ../../analyze_timing.py analyze --csv <samples>.csv --delta 250
-python -I -B ../../analyze_timing.py analyze --csv <samples>.csv --delta 250 --arm-a unapproved_correct_secret
-python -I -B ../../diagnostics.py diagnose --csv <samples>.csv --delta 250
+python -I -B <this folder>/analyze_timing.py analyze --csv <samples>.csv --delta 250
+python -I -B <this folder>/analyze_timing.py analyze --csv <samples>.csv --delta 250 --arm-a unapproved_correct_secret
+python -I -B <this folder>/diagnostics.py diagnose --csv <samples>.csv --delta 250
 ```
+
+`analyze_timing.py selftest` runs from the repository. `diagnostics.py selftest` reads the
+`a5-final/` fixtures beside the script, so run it from the archive's copy.
 
 Earlier campaigns, on code before the narrow credential lookup, are in the branch history up to
 `a5c4b7570` and do not bear on the current code.

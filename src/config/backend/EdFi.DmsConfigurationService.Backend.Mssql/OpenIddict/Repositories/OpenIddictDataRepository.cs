@@ -360,8 +360,9 @@ UPDATE dmscs.OpenIddictApplication
         /// none). The client id is matched with the same predicate as that lookup, so under the
         /// database's collation. A stored null becomes an empty string. The statement is driven by
         /// the requested client id and always returns one row, with no application id when none is
-        /// registered, so an unknown client id costs the same application and API client lookups
-        /// as a registered one.
+        /// registered, so an unknown client id makes the same application and API client index
+        /// probes as a registered one. A registered id also reads its matched rows, which an
+        /// unknown id does not.
         /// </summary>
         public async Task<ClientCredential?> GetClientCredentialAsync(string clientId)
         {
