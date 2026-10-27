@@ -20,15 +20,14 @@ namespace EdFi.DmsConfigurationService.Tests.E2E.Timing;
 /// run; run it only in the documented controlled environment, against a freshly provisioned stack,
 /// with the <c>TIMING_EVIDENCE_*</c> settings: <c>TIMING_EVIDENCE_BACKEND</c> names the database the
 /// stack uses, <c>TIMING_EVIDENCE_TARGET_BUILD</c> the build the stack runs (distinct from the
-/// collector's own <c>TIMING_EVIDENCE_COMMIT</c>), <c>TIMING_EVIDENCE_DECLARED_ITERATIONS</c> its
-/// configured hashing count, and <c>TIMING_EVIDENCE_CONTRACT</c> (<c>current</c>, the default, or
-/// <c>pre-fix</c>) the error contract that build answers with. These are declarations; the run
-/// submission verifies them against the deployment.
+/// collector's own <c>TIMING_EVIDENCE_COMMIT</c>), and <c>TIMING_EVIDENCE_DECLARED_ITERATIONS</c> its
+/// configured hashing count. These are declarations; the run submission verifies them against the
+/// deployment.
 /// <para>
 /// Arms: an absent client id; a client registered for the run, presented with a wrong secret; and
-/// an unapproved API client created for the run, presented with its own secret. Each arm must
-/// receive the response its contract names (<see cref="TokenEndpointTimingContract"/>); anything
-/// else aborts the run. Each request's time covers building the form, sending it, reading the whole
+/// an unapproved API client created for the run, presented with its own secret. Every arm must
+/// receive the <c>invalid_client</c> 401 (<see cref="TokenEndpointTimingContract"/>); anything else
+/// aborts the run. Each request's time covers building the form, sending it, reading the whole
 /// response body and disposing the response. The clients the run creates are left in place.
 /// </para>
 /// </summary>
@@ -165,9 +164,6 @@ public class Given_token_endpoint_requests_measured_for_timing_evidence
     {
         _settings = TimingRunSettings.FromEnvironment();
         string backend = TimingRunSettings.Required("TIMING_EVIDENCE_BACKEND");
-        TokenEndpointContract contract = TokenEndpointTimingContract.Parse(
-            Environment.GetEnvironmentVariable("TIMING_EVIDENCE_CONTRACT")
-        );
         string targetBuild = _settings.Declared("TIMING_EVIDENCE_TARGET_BUILD");
         string declaredIterations = _settings.Declared("TIMING_EVIDENCE_DECLARED_ITERATIONS");
         string apiUrl = new PlaywrightContext().ApiUrl;
@@ -192,21 +188,17 @@ public class Given_token_endpoint_requests_measured_for_timing_evidence
         string absentClientId = $"timing-absent-{runId}";
         string wrongSecret = $"Wr0ng!Timing{runId}";
 
-        Func<(HttpStatusCode Status, string Body), bool> Expects(string arm) =>
-            response => TokenEndpointTimingContract.IsExpected(contract, arm, response.Status, response.Body);
+        static bool Expected((HttpStatusCode Status, string Body) response) =>
+            TokenEndpointTimingContract.IsExpected(response.Status, response.Body);
 
         TimingArm<(HttpStatusCode, string)>[] arms =
         [
-            new("absent", () => RequestTokenAsync(absentClientId, wrongSecret), Expects("absent")),
-            new(
-                TokenEndpointTimingContract.WrongSecretArm,
-                () => RequestTokenAsync(knownClientId, wrongSecret),
-                Expects(TokenEndpointTimingContract.WrongSecretArm)
-            ),
+            new("absent", () => RequestTokenAsync(absentClientId, wrongSecret), Expected),
+            new("wrong_secret", () => RequestTokenAsync(knownClientId, wrongSecret), Expected),
             new(
                 "unapproved_correct_secret",
                 () => RequestTokenAsync(unapprovedKey, unapprovedSecret),
-                Expects("unapproved_correct_secret")
+                Expected
             ),
         ];
         _arms = arms.Length;
@@ -214,7 +206,6 @@ public class Given_token_endpoint_requests_measured_for_timing_evidence
         Dictionary<string, string> context = new()
         {
             ["backend"] = backend,
-            ["contract"] = TokenEndpointTimingContract.Name(contract),
             ["target_build"] = targetBuild,
             ["api_authority"] = new Uri(apiUrl).Authority,
             ["declared_iterations"] = declaredIterations,

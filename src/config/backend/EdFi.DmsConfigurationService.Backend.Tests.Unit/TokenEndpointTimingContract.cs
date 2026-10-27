@@ -9,54 +9,17 @@ using System.Text.Json.Nodes;
 
 namespace EdFi.DmsConfigurationService.Tests.TimingEvidence;
 
-/// <summary>The <c>/connect/token</c> error contract of the build an endpoint timing run measures.</summary>
-internal enum TokenEndpointContract
-{
-    /// <summary>Every failed client authentication answers <c>invalid_client</c>.</summary>
-    Current,
-
-    /// <summary>The build before the fix, measured once for contrast: a known client's wrong secret answered <c>unauthorized_client</c>.</summary>
-    PreFix,
-}
-
 /// <summary>
-/// The response each endpoint timing arm must receive. Only the wrong-secret arm under the pre-fix
-/// contract expects <c>unauthorized_client</c>. Every other arm, and every arm under the current
-/// contract, expects <c>invalid_client</c>, so a current-contract run can never accept the old code.
-/// A response is expected only when it is a 401 whose problem-details <c>errors</c> array holds
-/// exactly that one message.
+/// The response every endpoint timing arm must receive: a 401 whose problem-details <c>errors</c>
+/// array holds exactly the <c>invalid_client</c> message. Every failed client authentication answers
+/// it, so a run can never accept a build that answers one arm differently.
 /// </summary>
 internal static class TokenEndpointTimingContract
 {
-    public const string WrongSecretArm = "wrong_secret";
     public const string InvalidClientError = "invalid_client. Invalid client or Invalid client credentials";
-    public const string PreFixWrongSecretError =
-        "unauthorized_client. Invalid client or Invalid client credentials";
 
-    public static TokenEndpointContract Parse(string? value) =>
-        value switch
-        {
-            null or "" or "current" => TokenEndpointContract.Current,
-            "pre-fix" => TokenEndpointContract.PreFix,
-            _ => throw new InvalidOperationException(
-                $"TIMING_EVIDENCE_CONTRACT must be 'current' or 'pre-fix', not '{value}'."
-            ),
-        };
-
-    public static string Name(TokenEndpointContract contract) =>
-        contract == TokenEndpointContract.PreFix ? "pre-fix" : "current";
-
-    public static string ExpectedError(TokenEndpointContract contract, string arm) =>
-        contract == TokenEndpointContract.PreFix && arm == WrongSecretArm
-            ? PreFixWrongSecretError
-            : InvalidClientError;
-
-    public static bool IsExpected(
-        TokenEndpointContract contract,
-        string arm,
-        HttpStatusCode status,
-        string body
-    ) => status == HttpStatusCode.Unauthorized && SingleError(body) == ExpectedError(contract, arm);
+    public static bool IsExpected(HttpStatusCode status, string body) =>
+        status == HttpStatusCode.Unauthorized && SingleError(body) == InvalidClientError;
 
     private static string? SingleError(string body)
     {
