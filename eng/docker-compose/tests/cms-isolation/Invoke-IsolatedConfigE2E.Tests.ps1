@@ -252,7 +252,12 @@ Describe 'Isolated launcher environment and cleanup' {
             $env:NODE_OPTIONS | Should -BeNullOrEmpty
             $trxPath = Join-Path $global:CmsLaunchercheckout 'TestResults/EdFi.DmsConfigurationService.Tests.E2E.trx'
             $null = New-Item -ItemType Directory (Split-Path $trxPath) -Force
-            Write-TestTrx $trxPath -Outcome $(if ($global:CmsLauncherinjectFailure) { 'Failed' } else { 'Passed' })
+            $testName = if ($args -contains '-E2ETestFilter') {
+                $filter = $args[[array]::IndexOf($args, '-E2ETestFilter') + 1]
+                if ($filter -match 'Name=(?<Name>[^)]+)') { $Matches.Name } else { 'It_checks_policy' }
+            } else { 'It_checks_policy' }
+            if ($global:CmsLauncherwrongTest) { $testName = 'Wrong_test' }
+            Write-TestTrx $trxPath -Name $testName -Outcome $(if ($global:CmsLauncherinjectFailure) { 'Failed' } else { 'Passed' })
             Set-Content (Join-Path $env:SECURITY_METADATA_TOOLS_EVIDENCE_DIRECTORY 'comparison.txt') 'sanitized policy evidence'
             $global:LASTEXITCODE = if ($global:CmsLauncherinjectFailure) { 1 } else { 0 }
         }
@@ -301,6 +306,7 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         Get-ChildItem Env: | ForEach-Object { $global:CmsLauncherbeforeEnvironment[$_.Name] = $_.Value }
         $global:CmsTeardownCalls = 0
         $global:CmsLauncherinjectFailure = $false
+        $global:CmsLauncherwrongTest = $false
         $global:CmsLauncherlauncher = Join-Path $launcherDirectory 'Invoke-IsolatedConfigE2E.ps1'
     }
 
@@ -332,6 +338,49 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $after = @{}
         Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }
         ($after | ConvertTo-Json -Compress) | Should -Be ($global:CmsLauncherbeforeEnvironment | ConvertTo-Json -Compress)
+    }
+
+    It 'selects exactly the Hybrid <Version> case and retains versioned evidence' -TestCases @(@{ Version = '5.2' }, @{ Version = '6.1' }) {
+        param($Version)
+        $fixture = Join-Path $global:CmsLaunchercheckout 'src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Hybrid/fragments'
+        $null = New-Item -ItemType Directory $fixture -Force
+        [IO.File]::WriteAllBytes((Join-Path $fixture 'input-claims.json'), [byte[]]@(123,125,10))
+        & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Hybrid -DataStandardVersion $Version -SkipDockerBuild
+        $expectedName = "It_matches_reviewed_Hybrid_permissions_for_DS_$($Version.Replace('.', '_'))"
+        $global:CmsLaunchercapturedArguments | Should -Contain "(TestCategory=SecurityMetadataToolsService)&(TestCategory=SecurityMetadataToolsHybrid)&(Name=$expectedName)"
+        $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be 'Hybrid'
+        $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_DATA_STANDARD_VERSION | Should -Be $Version
+        $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING | Should -Be 'false'
+        $results = @(Get-ChildItem (Join-Path $global:CmsLaunchercheckout "TestResults/cms-isolation/postgresql/Hybrid/$Version") -Recurse -Filter results.trx)
+        $results.Count | Should -Be 1
+        (Get-Content $results[0].FullName -Raw) | Should -Match $expectedName
+        $global:CmsTeardownCalls | Should -Be 2
+        Test-Path $global:CmsLauncherprepared | Should -BeFalse
+        $after = @{}
+        Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }
+        ($after | ConvertTo-Json -Compress) | Should -Be ($global:CmsLauncherbeforeEnvironment | ConvertTo-Json -Compress)
+    }
+
+    It 'rejects the wrong executed Hybrid case and cleans up' {
+        $fixture = Join-Path $global:CmsLaunchercheckout 'src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Hybrid/fragments'
+        $null = New-Item -ItemType Directory $fixture -Force
+        [IO.File]::WriteAllBytes((Join-Path $fixture 'input-claims.json'), [byte[]]@(123,125,10))
+        $global:CmsLauncherwrongTest = $true
+        { & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Hybrid } | Should -Throw '*requested test*'
+        $global:CmsTeardownCalls | Should -Be 2
+        Test-Path $global:CmsLauncherprepared | Should -BeFalse
+    }
+
+    It 'rejects overrides that could change the named scenario contract' -TestCases @(
+        @{ Override = @{ ClaimsSource = 'Filesystem' } },
+        @{ Override = @{ ClaimsFixtureDirectory = 'custom' } },
+        @{ Override = @{ EnableUnrestrictedClaimsLoading = $true } },
+        @{ Override = @{ E2ETestFilter = 'OtherTest' } }
+    ) {
+        param($Override)
+        $scenarioOverrides = $Override
+        { & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Hybrid @scenarioOverrides } | Should -Throw '*Named policy scenarios own*'
+        $global:CmsTeardownCalls | Should -Be 0
     }
 
     It 'archives failure results before cleanup and restores temporary process settings' {

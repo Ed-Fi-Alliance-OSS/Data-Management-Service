@@ -3,12 +3,18 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using EdFi.DmsConfigurationService.Tests.E2E.Management;
+using FluentAssertions;
 using Microsoft.Playwright;
 
 namespace EdFi.DmsConfigurationService.Tests.E2E.SecurityMetadataTools;
 
 /// <summary>
-/// Shared setup for the policy scenarios added alongside their launcher selectors.
+/// Shared setup and Hybrid parity checks for the isolated policy scenario selectors.
 /// These tests own a fresh isolated deployment; they never use Reqnroll cleanup or snapshots.
 /// </summary>
 [TestFixture]
@@ -52,6 +58,270 @@ public partial class Given_SecurityMetadataToolsService
         }
         _playwright?.Dispose();
     }
+
+    [TestCase("5.2", TestName = "It_matches_reviewed_Hybrid_permissions_for_DS_5_2")]
+    [TestCase("6.1", TestName = "It_matches_reviewed_Hybrid_permissions_for_DS_6_1")]
+    [Category("SecurityMetadataToolsHybrid")]
+    public async Task It_matches_reviewed_Hybrid_permissions(string version)
+    {
+        await AssertHybridContainerAsync(version);
+        string referenceDirectory = Path.Combine(
+            AppContext.BaseDirectory,
+            "TestData",
+            "Claims",
+            "SecurityMetadataTools",
+            "Hybrid"
+        );
+        var sourceHashes = HashFiles(Path.Combine(referenceDirectory, "fragments"));
+        HashFiles(FixtureDirectory).Should().BeEquivalentTo(sourceHashes);
+
+        // The same startup mount is supplied to the standalone CLI; generated files stay outside it.
+        string merged = Path.Combine(EvidenceDirectory, "merged.json");
+        string resolved = Path.Combine(EvidenceDirectory, "offline-metadata.json");
+        await RunToolAsync(
+            "merge",
+            "",
+            ["merge", "--fragments", FixtureDirectory, "--data-standard-version", version, "--output", merged]
+        );
+        await RunToolAsync("resolve", "", ["resolve", "--input", merged, "--output", resolved]);
+        string offline = await File.ReadAllTextAsync(resolved);
+        AssertReviewedPermissions(offline, referenceDirectory, version);
+
+        var anonymous = await _context.GetAsync("/v3/authorizationMetadata");
+        anonymous.Status.Should().Be(401);
+        var tokenResponse = await CmsTestRequests.GetClientAccessTokenAsync(
+            _context,
+            "DmsConfigurationService",
+            "ValidClientSecret1234567890!Abcd",
+            "edfi_admin_api/full_access"
+        );
+        tokenResponse.Status.Should().Be(200, "the isolated self-contained client must authenticate");
+        using var tokenDocument = JsonDocument.Parse(await tokenResponse.TextAsync());
+        string token = tokenDocument.RootElement.GetProperty("access_token").GetString()!;
+        // Assert presence without including the credential in failure diagnostics.
+        string.IsNullOrWhiteSpace(token).Should().BeFalse();
+        var headers = new Dictionary<string, string> { ["Authorization"] = $"Bearer {token}" };
+        var response = await _context.GetAsync("/v3/authorizationMetadata", new() { Headers = headers });
+        response.Status.Should().Be(200);
+        string api = await response.TextAsync();
+        await File.WriteAllTextAsync(Path.Combine(EvidenceDirectory, "api-metadata.json"), api);
+        AssertReviewedPermissions(api, referenceDirectory, version);
+        // Independent dereferencing compares the complete catalog, ignoring only generated IDs and
+        // unordered containers. Strategy sequences remain positional; no production resolver is used.
+        ProjectPermissions(api).ToJsonString().Should().Be(ProjectPermissions(offline).ToJsonString());
+        var management = await _context.GetAsync("/management/current-claims", new() { Headers = headers });
+        management.Status.Should().Be(404);
+
+        byte[] mergedBytes = await File.ReadAllBytesAsync(merged);
+        await RunToolAsync(
+            "verify",
+            token,
+            [
+                "verify",
+                "--input",
+                merged,
+                "--cms-url",
+                RequiredSetting("CONFIGURATION_SERVICE_E2E_API_URL"),
+                "--access-token-env",
+                "CMS_POLICY_TEST_TOKEN",
+            ]
+        );
+        (await File.ReadAllBytesAsync(merged)).Should().Equal(mergedBytes);
+        HashFiles(FixtureDirectory).Should().BeEquivalentTo(sourceHashes);
+        HashFiles(Path.Combine(referenceDirectory, "fragments")).Should().BeEquivalentTo(sourceHashes);
+        await File.WriteAllTextAsync(
+            Path.Combine(EvidenceDirectory, "fixture-sha256.json"),
+            JsonSerializer.Serialize(sourceHashes)
+        );
+    }
+
+    private async Task AssertHybridContainerAsync(string version)
+    {
+        // Assert and retain only these nonsecret configuration values.
+        string[] keys =
+        [
+            "ClaimsOptions__ClaimsSource",
+            "ClaimsOptions__DataStandardVersion",
+            "ClaimsOptions__ClaimsDirectory",
+            "ClaimsOptions__DangerouslyEnableUnrestrictedClaimsLoading",
+        ];
+        // Capture JSON in memory and retain only allowlisted settings, never credentials.
+        var inspect = await RunProcessAsync(
+            "docker",
+            [
+                "inspect",
+                RequiredSetting("CONFIGURATION_SERVICE_CONTAINER"),
+                "--format",
+                "{{json .Config.Env}}",
+            ],
+            ""
+        );
+        inspect.ExitCode.Should().Be(0, "the selected isolated container must be running");
+        string[] environment = JsonSerializer.Deserialize<string[]>(inspect.Output)!;
+        var settings = keys.ToDictionary(
+            key => key,
+            key =>
+                environment.Single(value => value.StartsWith(key + "=", StringComparison.Ordinal))[
+                    (key.Length + 1)..
+                ]
+        );
+        settings
+            .Should()
+            .BeEquivalentTo(
+                new Dictionary<string, string>
+                {
+                    [keys[0]] = "Hybrid",
+                    [keys[1]] = version,
+                    [keys[2]] = "/app/additional-claims",
+                    [keys[3]] = "false",
+                }
+            );
+        await File.WriteAllTextAsync(
+            Path.Combine(EvidenceDirectory, "container-policy-settings.json"),
+            JsonSerializer.Serialize(settings)
+        );
+    }
+
+    private static void AssertReviewedPermissions(string json, string referenceDirectory, string version)
+    {
+        var actual = ProjectPermissions(json);
+        string[] catalog = JsonSerializer.Deserialize<string[]>(
+            File.ReadAllText(Path.Combine(referenceDirectory, "expected-catalog.json"))
+        )!;
+        actual.Select(set => set.Key).Should().Equal(catalog);
+        var expected = ProjectPermissions(
+            File.ReadAllText(Path.Combine(referenceDirectory, $"expected-metadata-{version}.json"))
+        );
+        foreach (string name in new[] { "HybridPolicy", "HybridEmpty" })
+        {
+            actual[name]!
+                .ToJsonString()
+                .Should()
+                .Be(expected[name]!.ToJsonString(), $"reviewed {name} permissions");
+        }
+        var baseline = expected["EdFiSandbox"]!.AsObject().Single();
+        actual["EdFiSandbox"]![baseline.Key]!.ToJsonString().Should().Be(baseline.Value!.ToJsonString());
+        string otherVersionClaim =
+            "http://ed-fi.org/identity/claims/"
+            + (version == "5.2" ? "ed-fi" : "tpdm")
+            + "/accreditationStatusDescriptor";
+        actual["EdFiSandbox"]!.AsObject().ContainsKey(otherVersionClaim).Should().BeFalse();
+        // Empty catalog entries must also have no unreferenced authorization records.
+        var empty = JsonNode
+            .Parse(json)!
+            .AsArray()
+            .Single(set => set!["claimSetName"]!.GetValue<string>() == "HybridEmpty")!;
+        empty["authorizations"]!.AsArray().Should().BeEmpty();
+    }
+
+    private static JsonObject ProjectPermissions(string json)
+    {
+        JsonObject result = new();
+        foreach (
+            var set in JsonNode
+                .Parse(json)!
+                .AsArray()
+                .OrderBy(set => set!["claimSetName"]!.GetValue<string>(), StringComparer.Ordinal)
+        )
+        {
+            JsonObject claims = new();
+            var authorizations = set!["authorizations"]!
+                .AsArray()
+                .ToDictionary(a => a!["id"]!.GetValue<int>());
+            foreach (
+                var claim in set["claims"]!
+                    .AsArray()
+                    .OrderBy(c => c!["name"]!.GetValue<string>(), StringComparer.Ordinal)
+            )
+            {
+                JsonObject actions = new();
+                foreach (
+                    var action in authorizations[claim!["authorizationId"]!.GetValue<int>()]!["actions"]!
+                        .AsArray()
+                        .OrderBy(a => a!["name"]!.GetValue<string>(), StringComparer.Ordinal)
+                )
+                {
+                    actions.Add(
+                        action!["name"]!.GetValue<string>(),
+                        action["authorizationStrategies"]!.DeepClone()
+                    );
+                }
+                claims.Add(claim!["name"]!.GetValue<string>(), actions);
+            }
+            result.Add(set["claimSetName"]!.GetValue<string>(), claims);
+        }
+        return result;
+    }
+
+    private async Task RunToolAsync(string operation, string token, string[] arguments)
+    {
+        var result = await RunProcessAsync("dotnet", [ToolPath, .. arguments], token);
+        bool leakedToken =
+            token.Length > 0
+            && (
+                result.Output.Contains(token, StringComparison.Ordinal)
+                || result.Error.Contains(token, StringComparison.Ordinal)
+            );
+        string output =
+            token.Length > 0
+                ? result.Output.Replace(token, "[REDACTED]", StringComparison.Ordinal)
+                : result.Output;
+        string error =
+            token.Length > 0
+                ? result.Error.Replace(token, "[REDACTED]", StringComparison.Ordinal)
+                : result.Error;
+        await File.WriteAllTextAsync(Path.Combine(EvidenceDirectory, $"{operation}-stdout.txt"), output);
+        await File.WriteAllTextAsync(Path.Combine(EvidenceDirectory, $"{operation}-stderr.txt"), error);
+        leakedToken.Should().BeFalse("credentials must never reach tool diagnostics");
+        result.ExitCode.Should().Be(0, error);
+        error.Should().BeEmpty();
+        output
+            .Should()
+            .Be(
+                operation == "verify"
+                    ? "CMS authorization metadata matches the expected effective permissions."
+                        + Environment.NewLine
+                    : ""
+            );
+    }
+
+    private static async Task<(int ExitCode, string Output, string Error)> RunProcessAsync(
+        string executable,
+        string[] arguments,
+        string token
+    )
+    {
+        using var process = new Process
+        {
+            StartInfo = new ProcessStartInfo(executable)
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            },
+        };
+        foreach (string argument in arguments)
+        {
+            process.StartInfo.ArgumentList.Add(argument);
+        }
+        if (token.Length > 0)
+        {
+            process.StartInfo.Environment["CMS_POLICY_TEST_TOKEN"] = token;
+        }
+        process.Start();
+        Task<string> output = process.StandardOutput.ReadToEndAsync();
+        Task<string> error = process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        return (process.ExitCode, await output, await error);
+    }
+
+    private static Dictionary<string, string> HashFiles(string directory) =>
+        Directory
+            .GetFiles(directory, "*", SearchOption.AllDirectories)
+            .ToDictionary(
+                path => Path.GetRelativePath(directory, path),
+                path => Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path)))
+            );
 
     private static string RequiredSetting(string name) =>
         Environment.GetEnvironmentVariable(name) is { Length: > 0 } value

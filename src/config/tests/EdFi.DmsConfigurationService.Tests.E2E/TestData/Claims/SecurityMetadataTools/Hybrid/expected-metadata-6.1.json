@@ -1,0 +1,137 @@
+[
+  {
+    "claimSetName": "HybridEmpty",
+    "claims": [],
+    "authorizations": []
+  },
+  {
+    "claimSetName": "HybridPolicy",
+    "claims": [
+      {
+        "name": "http://ed-fi.org/identity/claims/ed-fi/student",
+        "authorizationId": 1
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/inherited",
+        "authorizationId": 2
+      },
+      {
+        "name": "http://ed-fi.org/identity/claims/sample/overridden",
+        "authorizationId": 3
+      }
+    ],
+    "authorizations": [
+      {
+        "id": 1,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "RelationshipsWithEdOrgsAndPeople"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "claimSetName": "EdFiSandbox",
+    "claims": [
+      {
+        "name": "http://ed-fi.org/identity/claims/ed-fi/accreditationStatusDescriptor",
+        "authorizationId": 4
+      }
+    ],
+    "authorizations": [
+      {
+        "id": 4,
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          },
+          {
+            "name": "ReadChanges",
+            "authorizationStrategies": [
+              {
+                "name": "NoFurtherAuthorizationRequired"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -3,7 +3,8 @@
 The isolated CMS launcher copies each scenario directory recursively into a fresh temporary
 claims mount, preserving bytes and relative paths. The same directory is exposed to NUnit
 through `SECURITY_METADATA_TOOLS_FIXTURE_DIRECTORY`; default E2E claims are not staged over it.
-Scenario selectors and reviewed policy fixtures are added with their service tests.
+The [Hybrid scenario](Hybrid/README.md) covers both bundled Data Standards with reviewed
+permissions and full API/offline comparison. Only its `fragments/` subdirectory is mounted.
 
 Service cases belong to `Given_SecurityMetadataToolsService`, carry both
 `SecurityMetadataToolsService` and their scenario category, and require

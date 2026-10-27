@@ -54,7 +54,11 @@ param(
     [string]
     $E2ETestFilter = "",
 
-    # Opt-in fixture plumbing. Named policy scenario selectors are added with their service cases.
+    [ValidateSet("Hybrid")]
+    [string]
+    $SecurityMetadataToolsScenario = "",
+
+    # Custom fixture plumbing remains available independently of named scenarios.
     [string]
     $ClaimsFixtureDirectory = "",
 
@@ -120,6 +124,21 @@ $isolation = [ordered]@{
     KEYCLOAK_OAUTH_TOKEN_ENDPOINT = "http://localhost:8145/realms/edfi/protocol/openid-connect/token"
     KEYCLOAK_DMS_JWT_AUTHORITY = "http://localhost:8145/realms/edfi"
     CONFIGURATION_SERVICE_DOCKER_IMAGE = "ed-fi-api-config-$IsolationName"
+}
+
+$expectedTestNames = @()
+if ($SecurityMetadataToolsScenario) {
+    foreach ($conflictingParameter in @('ClaimsFixtureDirectory', 'ClaimsSource', 'EnableUnrestrictedClaimsLoading', 'E2ETestFilter')) {
+        if ($PSBoundParameters.ContainsKey($conflictingParameter)) {
+            throw "Named policy scenarios own $conflictingParameter; omit that override."
+        }
+    }
+    $ClaimsFixtureDirectory = Join-Path $repoRoot "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Hybrid/fragments"
+    $ClaimsSource = 'Hybrid'
+    $EnableUnrestrictedClaimsLoading = $false
+    $testName = "It_matches_reviewed_Hybrid_permissions_for_DS_$($DataStandardVersion.Replace('.', '_'))"
+    $expectedTestNames = @($testName)
+    $E2ETestFilter = "(TestCategory=SecurityMetadataToolsService)&(TestCategory=SecurityMetadataToolsHybrid)&(Name=$testName)"
 }
 
 Import-Module (Join-Path $PSScriptRoot "IsolatedConfigE2E.psm1") -Force
@@ -356,7 +375,7 @@ try {
         return
     }
 
-    $scenarioName = if ($preparedFixtureDirectory) { "CustomFixture" } else { "OrdinarySuite" }
+    $scenarioName = if ($SecurityMetadataToolsScenario) { $SecurityMetadataToolsScenario } elseif ($preparedFixtureDirectory) { "CustomFixture" } else { "OrdinarySuite" }
     $selectedVersion = if ($derivedValues["CONFIGURATION_SERVICE_DATA_STANDARD_VERSION"]) { $derivedValues["CONFIGURATION_SERVICE_DATA_STANDARD_VERSION"] } else { "5.2" }
     $artifactDirectory = Join-Path $repoRoot "TestResults/cms-isolation/$datastore/$scenarioName/$selectedVersion/$runId"
     if ($preparedFixtureDirectory) {
@@ -368,7 +387,7 @@ try {
         Set-HarnessVariable -Name SECURITY_METADATA_TOOLS_SERVICE_RUNNER -Value "false"
     }
     $workingTrx = Join-Path $repoRoot "TestResults/EdFi.DmsConfigurationService.Tests.E2E.trx"
-    Invoke-IsolatedCmsTestRun -WorkingTrx $workingTrx -ArtifactDirectory $artifactDirectory -Execute {
+    Invoke-IsolatedCmsTestRun -WorkingTrx $workingTrx -ArtifactDirectory $artifactDirectory -ExpectedTestNames $expectedTestNames -Execute {
         Push-Location $repoRoot
         try {
             $arguments = @{
