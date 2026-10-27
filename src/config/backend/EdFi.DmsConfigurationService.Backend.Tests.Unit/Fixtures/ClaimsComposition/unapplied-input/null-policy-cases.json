@@ -219,5 +219,73 @@
     },
     "expected": "new-parent.json",
     "diagnostics": []
+  },
+  {
+    "name": "matched-parent-null-ignored-values",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true,
+          "claimSets": [
+            null
+          ],
+          "_defaultAuthorizationStrategiesForCrud": [
+            {
+              "actionName": "Read",
+              "authorizationStrategies": [
+                null
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].claimSets"
+      },
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0]._defaultAuthorizationStrategiesForCrud"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-null-ignored-values",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false,
+          "claimSets": [
+            null
+          ]
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].claimSets"
+      },
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
   }
 ]

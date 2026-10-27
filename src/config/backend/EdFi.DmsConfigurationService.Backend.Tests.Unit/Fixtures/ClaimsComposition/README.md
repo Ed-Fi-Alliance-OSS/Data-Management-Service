@@ -24,6 +24,9 @@ be linked as content by CLI tests without a shared test-helper assembly.
   the expected document is the CMS base-only fallback.
 - `retired`: retired filenames, unrelated files, and Claims.json are ignored.
 - `no-resource-claims`: null resource claims are skipped.
+- `null-structures`: missing/null grant names and null resource claims, children,
+  applied claim sets, actions, and strategies produce contextual fatal failures.
+  CMS still rejects loading; CLI failures preserve the destination without a stack trace.
 - `empty` / `missing`: the composer returns the base in either case. CMS itself
   rejects a missing configured directory before composition.
 
@@ -53,7 +56,8 @@ assembly. These are schema-valid CMS results even when composition is incomplete
   Discard diagnostics retain the matched hierarchy claim and original indexes.
 - `null-policy-cases.json`: null-only, mixed valid/null, empty and absent lists
   at both `OfType` discard points. Mixed nulls occupy indexes 0 and 2; remaining
-  policies retain their order and exact grants/defaults.
+  policies retain their order and exact grants/defaults. Null values in ignored
+  policy fields still produce unapplied-input diagnostics without failing CMS loading.
 - `informational-cases.json`: isolated `Isolated` claim set, enabled/disabled/
   absent actions crossed with absent/empty/applied overrides. The declared action
   is Delete and the override action is Read, proving only the override controls

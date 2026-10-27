@@ -464,14 +464,20 @@ public class ClaimsFragmentComposer
             else
             {
                 DiagnoseIgnoredPolicy(resourceClaim, context, diagnostics);
-                ApplyChildResourceClaim(
-                    fragmentFilePath,
-                    resourceClaim,
-                    existingClaims,
-                    claimSetName,
-                    context,
-                    diagnostics
-                );
+                if (
+                    ApplyChildResourceClaim(
+                        fragmentFilePath,
+                        resourceClaim,
+                        existingClaims,
+                        claimSetName,
+                        context,
+                        diagnostics
+                    )
+                    is ClaimsFailure failure
+                )
+                {
+                    return (null, failure);
+                }
                 definesClaimSet = true;
             }
         }
@@ -593,6 +599,17 @@ public class ClaimsFragmentComposer
                     diagnostics
                 );
             }
+            string nullPath = FindNullAppliedPolicyPath(resourceClaim);
+            if (nullPath.Length > 0)
+            {
+                return NullStructureFailure(
+                    context with
+                    {
+                        JsonPath = context.JsonPath + nullPath,
+                    },
+                    diagnostics
+                );
+            }
             // Add claim at root level
             existingClaims.Add(
                 new TransformationClaim
@@ -677,7 +694,7 @@ public class ClaimsFragmentComposer
         diagnostics.Add(context with { Code = ClaimsCompositionDiagnosticCode.MalformedFragment });
         return new ClaimsFailure(
             "NullFragmentStructure",
-            "Fragment contains a null resource claim or children collection.",
+            "Fragment contains a missing or null required value.",
             context.SourcePath
         );
     }
@@ -687,7 +704,7 @@ public class ClaimsFragmentComposer
     /// first, and only when no claim has that name is its singular form tried. When neither matches,
     /// a warning is logged and the entry is skipped.
     /// </summary>
-    private void ApplyChildResourceClaim(
+    private ClaimsFailure? ApplyChildResourceClaim(
         string fragmentFilePath,
         ResourceClaim resourceClaim,
         List<TransformationClaim> existingClaims,
@@ -696,7 +713,11 @@ public class ClaimsFragmentComposer
         List<ClaimsCompositionDiagnostic> diagnostics
     )
     {
-        string name = resourceClaim.Name!;
+        if (resourceClaim.Name is null)
+        {
+            return NullStructureFailure(context with { JsonPath = $"{context.JsonPath}.name" }, diagnostics);
+        }
+        string name = resourceClaim.Name;
         if (FindGrantClaim(existingClaims, name) is not TransformationClaim existingClaim)
         {
             diagnostics.Add(
@@ -724,6 +745,17 @@ public class ClaimsFragmentComposer
                     context with
                     {
                         JsonPath = $"{context.JsonPath}.authorizationStrategyOverridesForCRUD",
+                    },
+                    diagnostics
+                );
+            }
+            string nullPath = FindNullAppliedPolicyPath(resourceClaim);
+            if (nullPath.Length > 0)
+            {
+                return NullStructureFailure(
+                    context with
+                    {
+                        JsonPath = context.JsonPath + nullPath,
                     },
                     diagnostics
                 );
@@ -767,6 +799,79 @@ public class ClaimsFragmentComposer
                 }
             }
         }
+        return null;
+    }
+
+    // Validate only policy that composition reads. Ignored fields and null CRUD entries
+    // retain their existing diagnostics and CMS continuation behavior.
+    private static string FindNullAppliedPolicyPath(ResourceClaim resourceClaim)
+    {
+        if (resourceClaim.IsParent)
+        {
+            foreach (var (claimSetIndex, claimSet) in (resourceClaim.ClaimSets ?? []).Index())
+            {
+                string claimSetPath = $".claimSets[{claimSetIndex}]";
+                if (claimSet is null)
+                {
+                    return claimSetPath;
+                }
+                foreach (var (actionIndex, action) in (claimSet.Actions ?? []).Index())
+                {
+                    string actionPath = $"{claimSetPath}.actions[{actionIndex}]";
+                    if (action is null)
+                    {
+                        return actionPath;
+                    }
+                    string nullPath = FindNullStrategyPath(
+                        action.AuthorizationStrategyOverrides ?? [],
+                        $"{actionPath}.authorizationStrategyOverrides"
+                    );
+                    if (nullPath.Length > 0)
+                    {
+                        return nullPath;
+                    }
+                }
+            }
+        }
+
+        string field = resourceClaim.IsParent
+            ? "_defaultAuthorizationStrategiesForCrud"
+            : "authorizationStrategyOverridesForCRUD";
+        var entries = resourceClaim.IsParent
+            ? resourceClaim.DefaultAuthorizationStrategiesForCRUD
+            : resourceClaim.AuthorizationStrategyOverridesForCRUD;
+        foreach (var (actionIndex, action) in (entries ?? []).Index())
+        {
+            // The composer intentionally skips null CRUD entries; these already have diagnostics.
+            if (action is null)
+            {
+                continue;
+            }
+            string nullPath = FindNullStrategyPath(
+                action.AuthorizationStrategies ?? [],
+                $".{field}[{actionIndex}].authorizationStrategies"
+            );
+            if (nullPath.Length > 0)
+            {
+                return nullPath;
+            }
+        }
+        return "";
+    }
+
+    private static string FindNullStrategyPath(
+        IEnumerable<TransformationAuthorizationStrategy> strategies,
+        string path
+    )
+    {
+        foreach (var (index, strategy) in strategies.Index())
+        {
+            if (strategy is null)
+            {
+                return $"{path}[{index}]";
+            }
+        }
+        return "";
     }
 
     // These fields are discarded on non-parent entries and on children copied by name only.

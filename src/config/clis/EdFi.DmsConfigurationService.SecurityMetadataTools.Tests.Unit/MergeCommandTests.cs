@@ -670,6 +670,25 @@ public class Given_MergeCommand_bundled_composition(string version) : MergeComma
 [TestFixture("resource-claim", "", "$.resourceClaims[1]")]
 [TestFixture("children", "edfi/parent\\u2028name", "$.resourceClaims[1].children")]
 [TestFixture("child", "edfi/parent\\u2028name", "$.resourceClaims[1].children[1]")]
+[TestFixture("missing-name", "", "$.resourceClaims[1].name")]
+[TestFixture("null-name", "", "$.resourceClaims[1].name")]
+[TestFixture(
+    "grant-strategy",
+    "edfi/student",
+    "$.resourceClaims[1].authorizationStrategyOverridesForCRUD[1].authorizationStrategies[1]"
+)]
+[TestFixture(
+    "default-strategy",
+    "edfi/parent\\u2028name",
+    "$.resourceClaims[1]._defaultAuthorizationStrategiesForCrud[1].authorizationStrategies[1]"
+)]
+[TestFixture("claim-set", "edfi/parent\\u2028name", "$.resourceClaims[1].claimSets[0]")]
+[TestFixture("claim-set-action", "edfi/parent\\u2028name", "$.resourceClaims[1].claimSets[0].actions[0]")]
+[TestFixture(
+    "claim-set-strategy",
+    "edfi/parent\\u2028name",
+    "$.resourceClaims[1].claimSets[0].actions[0].authorizationStrategyOverrides[1]"
+)]
 public class Given_MergeCommand_null_structure(string scenario, string safeClaimName, string jsonPath)
     : MergeCommandTests
 {
@@ -693,7 +712,7 @@ public class Given_MergeCommand_null_structure(string scenario, string safeClaim
             .Should()
             .Be(
                 $"Merge failed: MalformedFragment: source '{source}', claim '{safeClaimName}', claim set 'Policy\\u000AName', path '{jsonPath}'.{Environment.NewLine}"
-                    + $"Merge failed: NullFragmentStructure at '{source}': Fragment contains a null resource claim or children collection.{Environment.NewLine}"
+                    + $"Merge failed: NullFragmentStructure at '{source}': Fragment contains a missing or null required value.{Environment.NewLine}"
             );
     }
 
