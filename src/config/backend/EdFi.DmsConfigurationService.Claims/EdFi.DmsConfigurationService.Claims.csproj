@@ -15,4 +15,9 @@
     <ItemGroup>
         <EmbeddedResource Include="Claims/JsonSchemaForClaims.json" />
     </ItemGroup>
+    <ItemGroup>
+        <!-- Per-data-standard embedded base claims. Adding a DS version is dropping a
+             Claims/Standards/ds<NN>/Claims.json folder; the version is selected at runtime. -->
+        <EmbeddedResource Include="Claims/Standards/**/Claims.json" />
+    </ItemGroup>
 </Project>

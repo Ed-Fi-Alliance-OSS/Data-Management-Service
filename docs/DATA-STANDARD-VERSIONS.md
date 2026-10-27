@@ -17,7 +17,7 @@ artifacts, and the design goal is that **each artifact has one obvious place to 
 | Concern | Single obvious place | Selected by |
 |---------|----------------------|-------------|
 | **Schema** (ApiSchema + extensions) | `SCHEMA_PACKAGES` in the `.env.ds<NN>` overlay, with matching `PackageVersion` entries in `src/Directory.Packages.props` | `USE_API_SCHEMA_PATH=true` + `SCHEMA_PACKAGES` (downloaded at container start by `src/dms/run.sh`) |
-| **Security metadata** (Configuration Service claims) | `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds<NN>/Claims.json` | `ClaimsOptions:DataStandardVersion` (env `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION`) |
+| **Security metadata** (Configuration Service claims) | `src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds<NN>/Claims.json` | `ClaimsOptions:DataStandardVersion` (env `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION`) |
 | **Local dev** | the `.env.ds<NN>` overlay | the `-DataStandardVersion` script parameter |
 | **CI** (template/package builds) | the per-workflow `standard_version` matrix | the matrix `include` entry |
 

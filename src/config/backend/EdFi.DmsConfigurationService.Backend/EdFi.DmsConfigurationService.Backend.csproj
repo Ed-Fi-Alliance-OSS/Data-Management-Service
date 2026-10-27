@@ -20,9 +20,4 @@
         <ProjectReference Include="..\..\datamodel\EdFi.DmsConfigurationService.DataModel\EdFi.DmsConfigurationService.DataModel.csproj" />
         <ProjectReference Include="..\..\contracts\EdFi.DmsConfigurationService.Secrets\EdFi.DmsConfigurationService.Secrets.csproj" />
     </ItemGroup>
-    <ItemGroup>
-        <!-- Per-data-standard embedded base claims. Adding a DS version is dropping a
-             Claims/Standards/ds<NN>/Claims.json folder; the version is selected at runtime. -->
-        <EmbeddedResource Include="Claims/Standards/**/Claims.json" />
-    </ItemGroup>
 </Project>

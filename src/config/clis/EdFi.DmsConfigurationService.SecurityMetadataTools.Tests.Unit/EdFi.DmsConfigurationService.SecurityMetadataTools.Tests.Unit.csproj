@@ -25,7 +25,7 @@
         <Using Include="NUnit.Framework" />
         <None Update="Fixtures/**/*" CopyToOutputDirectory="PreserveNewest" />
         <None
-            Include="../../backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds52/Claims.json"
+            Include="../../backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds52/Claims.json"
             Link="Fixtures/ds52-claims.json"
             CopyToOutputDirectory="PreserveNewest"
         />

@@ -3,11 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
+using EdFi.DmsConfigurationService.Claims;
+using EdFi.DmsConfigurationService.DataModel;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -44,7 +45,7 @@ public class ClaimsOptions
     /// <summary>
     /// Default Ed-Fi Data Standard version used when none is configured.
     /// </summary>
-    public const string DefaultDataStandardVersion = "5.2";
+    public const string DefaultDataStandardVersion = BundledClaimsProvider.DefaultDataStandardVersion;
 
     /// <summary>
     /// The source for loading claims configuration
@@ -455,116 +456,27 @@ public class ClaimsProvider(
     }
 
     /// <summary>
-    /// Gets the assembly to use for embedded resource loading
-    /// </summary>
-    protected virtual Assembly GetAssemblyForEmbeddedResource()
-    {
-        return Assembly.GetExecutingAssembly();
-    }
-
-    /// <summary>
-    /// Resolves the configured Ed-Fi Data Standard version, falling back to the default when unset.
-    /// </summary>
-    private string ResolveDataStandardVersion()
-    {
-        string version = claimsOptions.Value.DataStandardVersion;
-        return string.IsNullOrWhiteSpace(version) ? ClaimsOptions.DefaultDataStandardVersion : version.Trim();
-    }
-
-    /// <summary>
-    /// Builds the embedded resource name for a data standard version. Version "5.2" maps to the
-    /// Claims/Standards/ds52/ folder, preserving the historical DS 5.2 base claims.
-    /// </summary>
-    private static string EmbeddedClaimsResourceName(Assembly assembly, string dataStandardVersion)
-    {
-        string folder = "ds" + dataStandardVersion.Replace(".", "");
-        return $"{assembly.GetName().Name}.Claims.Standards.{folder}.Claims.json";
-    }
-
-    /// <summary>
-    /// Loads claims from assembly
+    /// Loads the shared bundled policy and preserves CMS logging and failure handling.
     /// </summary>
     private ClaimsLoadResult LoadClaimsFromAssembly()
     {
-        try
+        ClaimsLoadResult result = BundledClaimsProvider.Load(claimsOptions.Value.DataStandardVersion);
+        foreach (ClaimsFailure failure in result.Failures)
         {
-            Assembly assembly = GetAssemblyForEmbeddedResource();
-            string dataStandardVersion = ResolveDataStandardVersion();
-            string resourceName = EmbeddedClaimsResourceName(assembly, dataStandardVersion);
+            logger.LogError(failure.Exception, "{Message}", LoggingUtility.SanitizeForLog(failure.Message));
+        }
 
-            using Stream? stream = assembly.GetManifestResourceStream(resourceName);
-            if (stream == null)
-            {
-                ClaimsFailure failure = new(
-                    "Configuration",
-                    $"Could not load embedded Claims.json for data standard version '{dataStandardVersion}' (resource '{resourceName}')"
-                );
-                logger.LogError(failure.Message);
-                return new ClaimsLoadResult(null, [failure]);
-            }
-
-            using StreamReader reader = new(stream);
-            string jsonContent = reader.ReadToEnd();
-
-            JsonNode? claimsJson = JsonNode.Parse(jsonContent);
-            if (claimsJson == null)
-            {
-                ClaimsFailure failure = new(
-                    "ParseError",
-                    "Unable to parse assembly-bundled Claims.json file"
-                );
-                logger.LogError(failure.Message);
-                return new ClaimsLoadResult(null, [failure]);
-            }
-
-            JsonNode? claimSetsNode = claimsJson["claimSets"];
-            JsonNode? claimsHierarchyNode = claimsJson["claimsHierarchy"];
-
-            if (claimSetsNode == null || claimsHierarchyNode == null)
-            {
-                ClaimsFailure failure = new(
-                    "Configuration",
-                    "Assembly Claims.json missing required properties"
-                );
-                logger.LogError(failure.Message);
-                return new ClaimsLoadResult(null, [failure]);
-            }
-
+        if (result.Failures.Count == 0)
+        {
             logger.LogInformation(
                 "Loaded embedded Claims.json for data standard version {DataStandardVersion}",
-                dataStandardVersion
+                LoggingUtility.SanitizeForLog(
+                    BundledClaimsProvider.ResolveDataStandardVersion(claimsOptions.Value.DataStandardVersion)
+                )
             );
+        }
 
-            return new ClaimsLoadResult(new ClaimsDocument(claimSetsNode, claimsHierarchyNode), []);
-        }
-        catch (JsonException ex)
-        {
-            ClaimsFailure failure = new("JsonError", "Invalid JSON format in embedded Claims.json", null, ex);
-            logger.LogError(ex, failure.Message);
-            return new ClaimsLoadResult(null, [failure]);
-        }
-        catch (IOException ex)
-        {
-            ClaimsFailure failure = new(
-                "IOError",
-                "Failed to read embedded Claims.json from assembly",
-                null,
-                ex
-            );
-            logger.LogError(ex, failure.Message);
-            return new ClaimsLoadResult(null, [failure]);
-        }
-        catch (InvalidOperationException ex)
-        {
-            ClaimsFailure failure = new(
-                "ResourceError",
-                "Embedded Claims.json resource not found in assembly",
-                null,
-                ex
-            );
-            logger.LogError(ex, failure.Message);
-            return new ClaimsLoadResult(null, [failure]);
-        }
+        return result;
     }
 
     /// <summary>

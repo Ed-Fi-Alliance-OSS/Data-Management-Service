@@ -7,7 +7,7 @@ This directory contains reference data for E2E claims management tests.
 - [authoritative-composition.json](authoritative-composition.json) - Reference hierarchy
   snapshot loaded by the ClaimsManagement hybrid composition scenarios. It is a
   hierarchy array, not a complete upload document. The current hybrid inputs are the
-  [Data Standard 5.2 base claims](../../../../backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds52/Claims.json),
+  [Data Standard 5.2 base claims](../../../../backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds52/Claims.json),
   the test-owned fragments below, and the shipped
   [Sample and Homograph extension fragments](../../../../backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims/).
 

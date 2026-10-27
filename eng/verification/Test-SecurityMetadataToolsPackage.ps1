@@ -8,7 +8,7 @@
     Pack, inspect, install and run Security Metadata Tools from a fresh local-only feed.
 .DESCRIPTION
     Reusable local/CI smoke action. Uses the shared version calculation and locked restore,
-    checks the shared claims validator/schema,
+    checks the shared claims validator/schema and both bundled base policies,
     then compares installed conversion output with the reviewed representative fixture.
     Leaves the exact nupkg in the repository root; disposable feed/cache/tool files are removed.
 #>
@@ -85,8 +85,14 @@ try {
             $resource = $reader.GetManifestResource($_)
             if ($resource.Implementation.IsNil) { $reader.GetString($resource.Name) }
         })
-        if ($embeddedResources -cnotcontains "EdFi.DmsConfigurationService.Claims.Claims.JsonSchemaForClaims.json") {
-            throw "Packaged shared claims library lacks the real CMS claims schema."
+        foreach ($resourceName in @(
+            "EdFi.DmsConfigurationService.Claims.Claims.JsonSchemaForClaims.json",
+            "EdFi.DmsConfigurationService.Claims.Claims.Standards.ds52.Claims.json",
+            "EdFi.DmsConfigurationService.Claims.Claims.Standards.ds61.Claims.json"
+        )) {
+            if (@($embeddedResources | Where-Object { $_ -ceq $resourceName }).Count -ne 1) {
+                throw "Packaged shared claims library must contain exactly one embedded resource: $resourceName"
+            }
         }
     }
     finally {
