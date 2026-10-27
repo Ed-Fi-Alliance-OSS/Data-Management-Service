@@ -74,9 +74,22 @@ public partial class StepDefinitions
         );
     }
 
+    [Given(
+        "API client {string} inheriting the Application's educationOrganizationIds is created on the Application"
+    )]
+    public async Task GivenAnInheritingApiClientIsCreated(string clientName)
+    {
+        _scopedClients[clientName] = await AuthorizationDataProvider.CreateApiClient(
+            ScopedApplicationId,
+            "\"inheritsApplicationEducationOrganizations\": true",
+            await SystemAdministrator.GetToken()
+        );
+    }
+
     /// <summary>
     /// Saves the Application a scenario created without default credentials with a new list,
-    /// through the Application update that refreshes the Application's first client.
+    /// through the Application update, which updates every client the change affects in the
+    /// identity provider before it responds 204.
     /// </summary>
     [When("the Application's educationOrganizationIds are changed to {string}")]
     public async Task WhenTheApplicationEducationOrganizationIdsAreChanged(string educationOrganizationIds)

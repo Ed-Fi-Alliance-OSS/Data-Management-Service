@@ -5,7 +5,7 @@
 | Jira | [DMS-1642](https://edfi.atlassian.net/browse/DMS-1642), scope item "First, measure" |
 | Recorded | 2026-10-27, branch `DMS-1642` at `765c002185cd10315ada284c2418b9b7bb11a9a0` (DMS-1640 base) plus the probe |
 | Probe | `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/Measurement/ApplicationUpdateFanoutMeasurementTests.cs` |
-| Status | Evidence for the synchronous-loop decision. No runtime behavior changes. |
+| Status | Evidence for the synchronous-loop decision, then for the finished endpoint (see [Finished endpoint](#finished-endpoint-task-4a)). |
 
 ## Question
 
@@ -169,7 +169,8 @@ client also includes connection and JIT warm-up. Neither adds more than about 60
   will differ. The probe reaches Keycloak and the database through Docker Desktop's published
   ports rather than the Docker network, which adds a hop the Configuration Service does not pay.
 - Only the provider calls are timed. The loop the ticket builds also marks and clears each
-  client's sync-pending state in the database; that cost is not in these numbers.
+  client's sync-pending state in the database; that cost is measured separately, through the
+  finished endpoint, in [Finished endpoint](#finished-endpoint-task-4a).
 - Keycloak's update lists every realm client scope while resolving the target scope, so its cost
   grows with the number of client scopes in the realm. The isolated realm held only the stack's
   standard scopes plus those this run created (its count was not recorded); a realm with many
@@ -182,3 +183,71 @@ client also includes connection and JIT warm-up. Neither adds more than about 60
   both providers, but Keycloak's stored-scope read was not separately shown to flag a stale client.
 - Only newly issued tokens are checked. Tokens issued before a change keep their claims until
   they expire.
+
+## Finished endpoint (Task 4a)
+
+Recorded 2026-10-27 on the same machine, at `7121db50` plus the probe change, after the endpoint
+work landed (`a71892b3` atomic save and marking, `3ec358fb` sequential synchronization, `4b6f3990`
+marker completion on client PUT).
+
+The probe now has two fixtures in the same opt-in category, sharing the setup and verification above:
+
+- `Given_claim_set_changes_applied_to_every_client_of_one_application` (provider mode) repeats the
+  direct-provider baseline.
+- `Given_claim_set_changes_saved_through_the_application_endpoint` (endpoint mode) sends each change
+  as one `PUT /v3/applications/{id}` to the running Configuration Service. The stopwatch covers that
+  request alone: the atomic save and marking, the provider update of every client and the clear of
+  every marker. A run counts a client as updated only when the request answered 204 and, read from the
+  Configuration Service database afterwards, no client of the Application is still pending. The
+  endpoint gives no per-client timing, so only totals are reported for it.
+
+The setup also narrows the second client to the Application's whole list, so every run covers the
+first client, secondary clients, ten inheriting clients, one client narrowed to the whole list and 189
+narrowed to one education organization, four of them unapproved. After every change each of the 200
+clients is verified as above: stored state, the provider's scopes without the previous claim set, and a
+newly issued token (or an exact `401 invalid_client` refusal) carrying exactly the new claim set and the
+client's own education organizations, data stores and namespace, with its original key and secret.
+
+Lanes, run one at a time by `Invoke-IsolatedConfigE2E.ps1`, each removed afterwards:
+
+| Lane | Isolation name | Environment file |
+|---|---|---|
+| Keycloak 26.1, PostgreSQL 18.6 | `dms-1642-4a-kc-pg` | `.env.config.e2e` |
+| OpenIddict, PostgreSQL 18.6 | `dms-1642-4a-oi-pg` | `.env.config.e2e` |
+| Keycloak 26.1, SQL Server 2025 | `dms-1642-4a-kc-ms` | `.env.config.mssql.e2e` |
+| OpenIddict, SQL Server 2025 | `dms-1642-4a-oi-ms` | `.env.config.mssql.e2e` |
+
+```shell
+CONFIGURATION_SERVICE_FANOUT_MEASUREMENT=true CONFIGURATION_SERVICE_FANOUT_MEASUREMENT_OUTPUT=<dir> \
+  pwsh eng/docker-compose/tests/cms-isolation/Invoke-IsolatedConfigE2E.ps1 -EnvironmentFile <file> \
+  -IdentityProvider <keycloak|self-contained> -IsolationName <name> \
+  -E2ETestFilter "TestCategory=ApplicationUpdateFanoutMeasurement"
+```
+
+Every lane passed the launcher's 2-test target preflight and then 8 of 8 measurement tests with no
+skip (4 per fixture). Every run in every lane: 200 attempted,
+200 updated, 0 failures, 0 verification mismatches, and a clean baseline.
+
+Total time for the 200 clients, in milliseconds (cold, then the two repeats):
+
+| Lane | Endpoint PUT | Direct provider loop |
+|---|---:|---:|
+| Keycloak, PostgreSQL | 2,748 / 2,213 / 2,304 | 4,322 / 3,596 / 3,394 |
+| Keycloak, SQL Server | 2,698 / 2,663 / 2,517 | 4,206 / 3,687 / 3,584 |
+| OpenIddict, PostgreSQL | 307 / 283 / 310 | 461 / 396 / 400 |
+| OpenIddict, SQL Server | 661 / 499 / 525 | 862 / 718 / 715 |
+
+The direct loop's per-client p50 was 17–21 ms on Keycloak, 1.9–2.2 ms on OpenIddict with PostgreSQL
+and 3.5–4.0 ms with SQL Server, as in the baseline above.
+
+The endpoint is faster than the direct loop even though it also writes and clears 200 markers. The
+endpoint runs inside the stack and reaches Keycloak and the database over the Docker network; the
+direct loop runs in the test process and goes through Docker Desktop's published ports, which the
+Limits above already note. The two columns are measurements over different network paths and do not
+isolate the marker writes' cost. The finished request stays within a few seconds for 200 clients on Keycloak and
+well under one second on OpenIddict.
+
+Limits of this section: one run per lane on one developer machine, no elapsed-time assertion, and
+the provider failures that leave clients pending are injected through a fake provider in the
+Configuration Service's own HTTP tests (`ApplicationUpdateSyncApiTests`, on both databases) rather
+than against these real providers. The tokens and stored state checked here are real.

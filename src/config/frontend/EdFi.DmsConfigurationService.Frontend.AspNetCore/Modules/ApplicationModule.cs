@@ -88,7 +88,30 @@ public class ApplicationModule : IEndpointModule
             .MapLimitedAccess($"/v3/applications/{{id}}", GetById)
             .Produces<ApplicationResponse>(200)
             .WithDescription(ApplicationClientStateDescription);
-        endpoints.MapSecuredPut($"/v3/applications/{{id}}", Update);
+        endpoints
+            .MapSecuredPut($"/v3/applications/{{id}}", Update)
+            .Produces(204)
+            .ProducesProblem(400)
+            .ProducesProblem(404)
+            .ProducesProblem(409)
+            .ProducesProblem(500)
+            .ProducesProblem(502)
+            .WithDescription(UpdateDescription)
+            .AddOpenApiOperationTransformer(
+                (operation, context, ct) =>
+                {
+                    SetResponseDescription(operation, "404", "The Application does not exist.");
+                    SetResponseDescription(
+                        operation,
+                        "409",
+                        "The vendor or a profile does not exist, or a concurrent change to the Application "
+                            + "held the request up; retry in that last case."
+                    );
+                    SetResponseDescription(operation, "502", PartialSyncDescription);
+                    SetPartialSyncExample(operation);
+                    return Task.CompletedTask;
+                }
+            );
         endpoints.MapSecuredDelete($"/v3/applications/{{id}}", Delete);
 
         endpoints
@@ -114,6 +137,41 @@ public class ApplicationModule : IEndpointModule
                     return Task.CompletedTask;
                 }
             );
+    }
+
+    private const string UpdateDescription =
+        "Updates an Application. The change is saved first, in one transaction that also marks every "
+        + "API client it affects as pending: every client for a name or claim set change, inheriting "
+        + "clients for an added or removed education organization, and narrowed clients that held a "
+        + "removed one. A client narrowed to the Application's whole list keeps its list and does not "
+        + "gain added education organizations. Each pending client of the Application, including any "
+        + "left pending by an earlier request, is then updated in the identity provider in turn, and the "
+        + "service clears its pending marker after the provider confirms the update. Tokens requested afterwards carry the "
+        + "change; tokens already issued keep their claims until they expire. 204 means no client is "
+        + "pending. When the identity provider could not update some clients the change stays saved and "
+        + "the response is 502 urn:ed-fi:management-api:bad-gateway:partial-sync; send the same request "
+        + "again to retry only the clients still pending. An Application with no API clients is "
+        + "updated without an identity provider call. The update never changes client keys, secrets, "
+        + "names, approval, data stores or education organization scope choices.";
+
+    private const string PartialSyncDescription =
+        "The Application change is saved, but the identity provider synchronization of some API "
+        + "clients is not confirmed. type is urn:ed-fi:management-api:bad-gateway:partial-sync, "
+        + "detail counts the pending clients, and apiClientIds lists their numeric ids in ascending "
+        + "order. Send the same request again to retry only those clients.";
+
+    /// <summary>Publishes the partial-sync 502 the update returns, built by the code that returns it.</summary>
+    private static void SetPartialSyncExample(OpenApiOperation operation)
+    {
+        if (
+            operation.Responses is not null
+            && operation.Responses.TryGetValue("502", out var iResponse)
+            && iResponse is OpenApiResponse { Content: not null } response
+            && response.Content.TryGetValue("application/problem+json", out var mediaType)
+        )
+        {
+            mediaType.Example = FailureResponse.ForPartialSync([12, 15], "0HNPKBEDOO2G9:00000001");
+        }
     }
 
     /// <summary>

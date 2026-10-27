@@ -28,10 +28,12 @@ internal static class ApiClientOpenApiMetadata
         + "tokens requested afterwards; tokens already issued keep their claims until they expire.";
 
     private const string ApplicationSync =
-        "An Application update (PUT /v3/applications/{id}) refreshes the identity provider claims of "
-        + "the Application's first API client only. Every client's effective list reflects the "
-        + "Application change at once, but another client's tokens can keep its earlier list until "
-        + "that client is updated with PUT /v3/apiClients/{id}.";
+        "An Application update (PUT /v3/applications/{id}) saves the change and then sends it to the "
+        + "identity provider for every API client it affects. A client the identity provider could not "
+        + "update stays pending, and its tokens can keep its earlier claims, until the same Application "
+        + "update is sent again, a later Application update affects it, or the client is updated "
+        + "successfully with PUT /v3/apiClients/{id}, which completes its pending synchronization even "
+        + "when nothing else changes.";
 
     public const string InsertDescription =
         "Creates an API client of an Application and returns its credentials. "

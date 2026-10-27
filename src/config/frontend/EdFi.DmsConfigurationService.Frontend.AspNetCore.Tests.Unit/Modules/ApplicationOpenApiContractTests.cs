@@ -357,5 +357,50 @@ public partial class ApplicationModuleTests
                 .GetValue<string>()
                 .Should()
                 .Contain("Deleting an Application's last API client keeps the Application");
+
+        private JsonNode UpdateOperation => Operation("/v3/applications/{id}", "put");
+
+        [Test]
+        public void It_documents_the_update_as_saved_first_then_synchronized_with_every_affected_client() =>
+            UpdateOperation["description"]!
+                .GetValue<string>()
+                .Should()
+                .Contain("The change is saved first")
+                .And.Contain("marks every API client it affects as pending")
+                .And.Contain("narrowed clients that held a removed one")
+                .And.Contain("including any left pending by an earlier request")
+                .And.Contain("send the same request again to retry only the clients still pending")
+                .And.Contain("tokens already issued keep their claims until they expire")
+                .And.Contain(
+                    "An Application with no API clients is updated without an identity provider call"
+                );
+
+        [Test]
+        public void It_documents_each_update_status() =>
+            UpdateOperation["responses"]!
+                .AsObject()
+                .Select(response => response.Key)
+                .Should()
+                .Contain(["204", "400", "404", "409", "500", "502"]);
+
+        [Test]
+        public void It_documents_the_partial_sync_502()
+        {
+            JsonNode response = UpdateOperation["responses"]!["502"]!;
+            response["description"]!
+                .GetValue<string>()
+                .Should()
+                .Contain("The Application change is saved")
+                .And.Contain("urn:ed-fi:management-api:bad-gateway:partial-sync")
+                .And.Contain("apiClientIds lists their numeric ids");
+
+            JsonNode example = response["content"]!["application/problem+json"]!["example"]!;
+            example["status"]!.GetValue<int>().Should().Be(502);
+            example["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:management-api:bad-gateway:partial-sync");
+            example["apiClientIds"]!.AsArray().Select(id => id!.GetValue<int>()).Should().Equal(12, 15);
+        }
     }
 }

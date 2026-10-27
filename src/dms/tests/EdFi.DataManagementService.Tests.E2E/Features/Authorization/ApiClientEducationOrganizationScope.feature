@@ -92,8 +92,8 @@ Feature: API client education organization scope authorization
                   """
               And the response body has a non-empty correlationId
 
-        # The Application update refreshes the Application's first client. Removing the only education
-        # organization of a narrowed first client leaves its token with no education organization access.
+        # Removing the only education organization of a narrowed client leaves its token with no
+        # education organization access.
         @e2e-ci-shard-4 @MssqlRepresentative
         Scenario: 02 A narrowed client whose only education organization leaves its Application has no access
             Given an Application without default credentials for claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" with educationOrganizationIds "255901001, 255901002"
@@ -123,3 +123,101 @@ Feature: API client education organization scope authorization
               And the response body has a non-empty correlationId
              When a GET request is made to "/ed-fi/bellschedules/{leaOneSchedule}"
              Then it should respond with 403
+
+        # The Application update reaches every client it affects, not only the first one. The first
+        # client is a narrowed control the removal leaves untouched; the secondary inheriting client,
+        # the client narrowed to the Application's whole list and the client narrowed to the removed
+        # organization alone each lose access to it with their next token.
+        @e2e-ci-shard-4 @MssqlRepresentative
+        Scenario: 03 Removing an education organization reaches every affected client of the Application
+            Given an Application without default credentials for claimSet "E2E-RelationshipsWithEdOrgsOnlyClaimSet" with educationOrganizationIds "255901001, 255901002"
+              And API client "control" narrowed to educationOrganizationIds "255901001" is created on the Application
+              And API client "inheritor" inheriting the Application's educationOrganizationIds is created on the Application
+              And API client "fullList" narrowed to educationOrganizationIds "255901001, 255901002" is created on the Application
+              And API client "emptied" narrowed to educationOrganizationIds "255901002" is created on the Application
+             # Before the removal every client but the control reads LEA Two's data
+             When the token of API client "control" is used
+             Then the current token carries exactly the education organizations "255901001"
+             When a GET request is made to "/ed-fi/bellschedules/{leaOneSchedule}"
+             Then it should respond with 200
+             When the token of API client "inheritor" is used
+             Then the current token carries exactly the education organizations "255901001,255901002"
+             When a GET request is made to "/ed-fi/bellschedules/{leaTwoSchedule}"
+             Then it should respond with 200
+             When a GET request is made to "/ed-fi/bellschedules/{leaOneSchedule}"
+             Then it should respond with 200
+             When the token of API client "fullList" is used
+             Then the current token carries exactly the education organizations "255901001,255901002"
+             When a GET request is made to "/ed-fi/bellschedules/{leaTwoSchedule}"
+             Then it should respond with 200
+             When the token of API client "emptied" is used
+             Then the current token carries exactly the education organizations "255901002"
+             When a GET request is made to "/ed-fi/bellschedules/{leaTwoSchedule}"
+             Then it should respond with 200
+             When the Application's educationOrganizationIds are changed to "255901001"
+             # The control is unaffected and keeps its access
+              And the token of API client "control" is used
+             Then the current token carries exactly the education organizations "255901001"
+             When a GET request is made to "/ed-fi/bellschedules/{leaOneSchedule}"
+             Then it should respond with 200
+             # The secondary inheriting client keeps LEA One and loses LEA Two
+             When the token of API client "inheritor" is used
+             Then the current token carries exactly the education organizations "255901001"
+             When a GET request is made to "/ed-fi/bellschedules/{leaOneSchedule}"
+             Then it should respond with 200
+             When a GET request is made to "/ed-fi/bellschedules/{leaTwoSchedule}"
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                      "detail": "Access to the requested data could not be authorized.",
+                      "type": "urn:ed-fi:api:security:authorization",
+                      "title": "Authorization Denied",
+                      "status": 403,
+                      "validationErrors": {},
+                      "errors": [
+                        "No relationships have been established between the caller's education organization id claim ('255901001') and the resource item's 'SchoolId' value."
+                      ]
+                  }
+                  """
+              And the response body has a non-empty correlationId
+             # The client narrowed to the Application's whole list keeps LEA One and loses LEA Two
+             When the token of API client "fullList" is used
+             Then the current token carries exactly the education organizations "255901001"
+             When a GET request is made to "/ed-fi/bellschedules/{leaOneSchedule}"
+             Then it should respond with 200
+             When a GET request is made to "/ed-fi/bellschedules/{leaTwoSchedule}"
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                      "detail": "Access to the requested data could not be authorized.",
+                      "type": "urn:ed-fi:api:security:authorization",
+                      "title": "Authorization Denied",
+                      "status": 403,
+                      "validationErrors": {},
+                      "errors": [
+                        "No relationships have been established between the caller's education organization id claim ('255901001') and the resource item's 'SchoolId' value."
+                      ]
+                  }
+                  """
+              And the response body has a non-empty correlationId
+             # The client narrowed to LEA Two alone is left with no education organization access
+             When the token of API client "emptied" is used
+             Then the current token carries no education organizations
+             When a GET request is made to "/ed-fi/bellschedules/{leaTwoSchedule}"
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                      "detail": "Access to the requested data could not be authorized.",
+                      "type": "urn:ed-fi:api:security:authorization",
+                      "title": "Authorization Denied",
+                      "status": 403,
+                      "validationErrors": {},
+                      "errors": [
+                        "No relationships have been established between the caller's education organization id claims (none) and the resource item's 'SchoolId' value."
+                      ]
+                  }
+                  """
+              And the response body has a non-empty correlationId

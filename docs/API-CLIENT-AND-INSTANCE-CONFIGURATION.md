@@ -214,9 +214,8 @@ behaves the same as one created without clients:
 - `POST /v3/apiClients` adds a client to it, and
   `DELETE /v3/applications/{id}` deletes it.
 
-`PUT /v3/applications/{id}` still returns `404` for an application with no
-clients. Support for it is planned under
-[DMS-1642](https://edfi.atlassian.net/browse/DMS-1642).
+`PUT /v3/applications/{id}` updates an application with no clients like any
+other and returns `204` without calling the identity provider.
 
 ### API Client Education Organization Scope
 
@@ -247,9 +246,9 @@ A narrowed client whose education organizations are all removed from its
 Application reports `"educationOrganizationIds": []`. That effective scope grants
 no education organization access; the client stays approved and still
 authenticates. Its token claims can lag the saved scope: tokens already issued
-keep their claims until they expire, and the identity provider's claims for a
-client other than the Application's first are refreshed only when that client
-is updated (see [Application changes](#application-changes)). Namespace-based
+keep their claims until they expire, and a client the identity provider could
+not update stays pending until it is updated (see
+[Application changes](#application-changes)). Namespace-based
 permissions are a separate claim and are not affected. To withdraw a client's
 access on purpose, disable it (`"isApproved": false`) or delete it; a request
 cannot set an empty list. An inheriting client of an Application with no
@@ -371,27 +370,48 @@ Application with zero or several clients; reset a specific client instead.
 
 #### Application changes
 
-`PUT /v3/applications/{id}` changes the Application's education organizations.
-The database follows for every client right away: removed ids leave every
-client's stored list, and `GET` reports each client's effective list. The
-identity provider is updated only for the Application's **first** client (the
-one with the lowest numeric `id`):
+`PUT /v3/applications/{id}` saves the change first. One transaction saves the
+Application and marks every client the change affects as pending an identity
+provider update:
 
-- An inheriting first client receives the Application's new list.
-- A narrowed first client keeps its narrowing: it loses removed ids and never
-  gains added ones.
+- A name or claim set change affects every client.
+- An added or removed education organization affects every inheriting client.
+- A removed education organization also affects each narrowed client that held
+  it. A narrowed client keeps its narrowing: it loses removed ids and never gains
+  added ones, even when its list equals the Application's whole list.
 
-Other clients' identity provider claims are not refreshed by an Application
-change. Until such a client is updated through `PUT /v3/apiClients/{id}`, its
-new tokens can still carry its earlier list, so a removed education
-organization can remain in them. After removing education organizations from an
-Application with several clients, update each affected client with
-`PUT /v3/apiClients/{id}`. A credential reset does not refresh claims.
+A change to profiles or the vendor alone affects no client. The database follows
+for every client right away: removed ids leave every client's stored list, and
+`GET` reports each client's effective list.
 
-Refreshing every client on an Application change, recovering from a partial
-identity provider update, and `PUT /v3/applications/{id}` for an Application
-with no clients are planned under
-[DMS-1642](https://edfi.atlassian.net/browse/DMS-1642) and are not implemented.
+The Configuration Service then updates each pending client of the Application in
+the identity provider, one after another in id order, and clears a client's
+pending marker once the provider confirms its update. Each client receives the
+Application's name and claim set with its own effective list, data stores and
+approval. Clients left pending by an earlier request are included. Tokens
+requested afterwards carry the change; tokens already issued keep their claims
+until they expire.
+
+- `204`: no client of the Application is pending.
+- `502` with type `urn:ed-fi:management-api:bad-gateway:partial-sync`: the
+  Application change is saved, but some clients are still pending. `detail`
+  counts them and `apiClientIds` lists their numeric ids, for example
+  `"apiClientIds": [12, 15]`. Their tokens can keep their earlier claims until
+  they are updated.
+
+A pending client is updated by any of these:
+
+- Sending the same `PUT /v3/applications/{id}` again. Only the pending clients
+  are sent to the identity provider.
+- A later Application update that affects the client, or any later Application
+  update while it is still pending.
+- A successful `PUT /v3/apiClients/{id}` of the client, even one that changes
+  nothing. A failed client update keeps the client pending.
+
+There is no scheduled retry. An unchanged Application update does not refresh
+clients that are not pending, and a credential reset neither refreshes claims
+nor completes a pending update. The Application update never changes client
+keys, secrets, names, approval, data stores or scope choices.
 
 #### SEA workflow: one Application, a client per LEA
 
@@ -477,9 +497,11 @@ decides which resources and actions the client has, and the client reaches data
 only in its assigned data stores. With a claim set using relationship-based
 authorization, an LEA client narrowed to its own school reads that school's
 records, and a read of another LEA's school's record is denied with `403`
-(`urn:ed-fi:api:security:authorization`). An Application's first client whose
-list became empty through an Application change is denied the same way with a
-newly requested token.
+(`urn:ed-fi:api:security:authorization`). Any client of the Application whose
+list lost an education organization, or became empty, through an Application
+change is denied that organization's records the same way with a token
+requested after that client's identity provider update succeeds. A client still
+pending after a `502` can keep its earlier claims until then.
 
 ### Context-Based Routing
 

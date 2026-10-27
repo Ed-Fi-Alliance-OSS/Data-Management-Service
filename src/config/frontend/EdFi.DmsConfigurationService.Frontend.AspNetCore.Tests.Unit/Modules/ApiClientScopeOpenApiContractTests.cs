@@ -564,6 +564,20 @@ public partial class ApiClientModuleTests
             Description(Response("/v3/apiClients", "post", "400")).Should().Contain("already has the name");
 
         [Test]
+        public void It_documents_that_a_successful_update_completes_a_pending_synchronization()
+        {
+            foreach (string path in new[] { "/v3/apiClients", "/v3/apiClients/{id}" })
+            {
+                string method = path == "/v3/apiClients" ? "post" : "put";
+                Description(Operation(path, method))
+                    .Should()
+                    .Contain("for every API client it affects")
+                    .And.Contain("completes its pending synchronization even when nothing else changes")
+                    .And.NotContain("first API client only");
+            }
+        }
+
+        [Test]
         public void It_documents_reset_as_secret_only() =>
             Description(Operation("/v3/apiClients/{id}/reset-credential", "put"))
                 .Should()

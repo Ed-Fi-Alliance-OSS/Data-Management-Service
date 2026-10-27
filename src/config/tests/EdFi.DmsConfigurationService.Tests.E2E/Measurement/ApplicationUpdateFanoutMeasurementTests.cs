@@ -116,7 +116,8 @@ public sealed record FanoutClient(
     string Name,
     bool IsApproved,
     long[] EducationOrganizationIds,
-    int[] DataStoreIds
+    int[] DataStoreIds,
+    bool Inherits
 )
 {
     public string EducationOrganizationClaim => string.Join(",", EducationOrganizationIds.Order());
@@ -291,7 +292,10 @@ public sealed class OpenIddictFanoutProvider : FanoutProvider
     }
 }
 
-/// <summary>Timings and outcomes of one sequential pass over every client.</summary>
+/// <summary>
+/// Timings and outcomes of one change applied to every client. A provider-mode run times each
+/// client's update; an endpoint-mode run has only the request's total, so its per-client list is empty.
+/// </summary>
 public sealed record MeasuredRun(
     string Label,
     string FromClaimSet,
@@ -314,32 +318,36 @@ public sealed record MeasuredRun(
 }
 
 /// <summary>
-/// DMS-1642 measurement (Jira scope "First, measure"): how long a claim set change takes when it
-/// is applied, one client after another, to every API client of one Application, through the real
-/// IIdentityProviderRepository.UpdateClientAsync of the provider the isolated stack runs. Only the
-/// update calls are timed. Setup, token requests and verification are outside the timed interval,
-/// and every run is verified for every client with newly issued tokens and the provider's stored
-/// state, so an early return or a skipped client cannot pass as a fast run. No elapsed-time
-/// assertion is made; the timings are evidence, written to the measurement report.
+/// DMS-1642 measurement: how long a claim set change takes when it is applied to every API client of
+/// one Application, and whether every client's newly issued token carries it. Each fixture times the
+/// change its own way (<see cref="MeasureAsync"/>). Setup, token requests and verification are outside
+/// the timed interval, and every run is verified for every client with newly issued tokens and the
+/// provider's stored state, so an early return or a skipped client cannot pass as a fast run. No
+/// elapsed-time assertion is made; the timings are evidence, written to the measurement report.
 /// </summary>
-[TestFixture]
-[Category(FanoutMeasurementEnvironment.Category)]
-[NonParallelizable]
-public class Given_claim_set_changes_applied_to_every_client_of_one_application
+public abstract class ApplicationUpdateFanoutMeasurement
 {
     private const string NamespacePrefixes = "uri://ed-fi-fanout.org";
     private const int VerificationConcurrency = 8;
     private const long FirstEducationOrganizationId = 255901;
 
     private readonly SensitiveValueRegistry _sensitive = new();
-    private readonly HttpClient _http = new();
-    private readonly List<FanoutClient> _clients = [];
+    protected readonly HttpClient _http = new();
+    protected readonly List<FanoutClient> _clients = [];
     private readonly List<MeasuredRun> _runs = [];
     private readonly List<string> _baselineMismatches = [];
     private readonly Dictionary<Guid, string?> _credentialFingerprints = [];
     private readonly Dictionary<Guid, string[]> _otherTokenScopes = [];
-    private FanoutProvider _provider = null!;
+    protected FanoutProvider _provider = null!;
     private string _runTag = "";
+
+    protected int ApplicationId { get; private set; }
+    protected int VendorId { get; private set; }
+    protected long[] ApplicationEducationOrganizationIds { get; private set; } = [];
+    protected string ApplicationName => $"Fanout Application {_runTag}";
+
+    /// <summary>The mode named in the report and its file name.</summary>
+    protected abstract string Mode { get; }
     private TimeSpan _setupDuration;
 
     [OneTimeSetUp]
@@ -410,8 +418,8 @@ public class Given_claim_set_changes_applied_to_every_client_of_one_application
 
     /// <summary>
     /// One Application, as an SEA keeps per vendor product, whose clients are mostly narrowed to one
-    /// education organization each; every twentieth inherits the whole list, a few are unapproved,
-    /// and a third hold a second data store.
+    /// education organization each; every twentieth inherits the whole list, the second client is
+    /// narrowed to the whole list, a few are unapproved, and a third hold a second data store.
     /// </summary>
     private async Task CreateClientsAsync(string claimSet)
     {
@@ -422,7 +430,7 @@ public class Given_claim_set_changes_applied_to_every_client_of_one_application
         ];
 
         await AuthenticateAdminAsync();
-        int vendorId = await PostForLocationIdAsync(
+        VendorId = await PostForLocationIdAsync(
             "/v3/vendors",
             new
             {
@@ -455,14 +463,16 @@ public class Given_claim_set_changes_applied_to_every_client_of_one_application
             "/v3/applications",
             new
             {
-                vendorId,
-                applicationName = $"Fanout Application {_runTag}",
+                vendorId = VendorId,
+                applicationName = ApplicationName,
                 claimSetName = claimSet,
                 educationOrganizationIds,
                 dataStoreIds = new[] { dataStore1 },
             }
         );
         int applicationId = application["id"]!.GetValue<int>();
+        ApplicationId = applicationId;
+        ApplicationEducationOrganizationIds = educationOrganizationIds;
         string firstSecret = application["secret"]!.GetValue<string>();
         _sensitive.Register(firstSecret);
 
@@ -475,6 +485,8 @@ public class Given_claim_set_changes_applied_to_every_client_of_one_application
         for (int ordinal = 1; ordinal < count; ordinal++)
         {
             bool inherits = ordinal % 20 == 0;
+            // The second client is narrowed to the whole list, so it must not follow later changes
+            bool narrowedToWholeList = ordinal == 1;
             JsonNode credentials = await PostForBodyAsync(
                 "/v3/apiClients",
                 new Dictionary<string, object>
@@ -484,9 +496,10 @@ public class Given_claim_set_changes_applied_to_every_client_of_one_application
                     ["isApproved"] = ordinal % 50 != 25,
                     ["dataStoreIds"] =
                         ordinal % 3 == 0 ? new[] { dataStore1, dataStore2 } : new[] { dataStore1 },
-                    ["educationOrganizationIds"] = inherits
-                        ? educationOrganizationIds
-                        : new[] { educationOrganizationIds[ordinal] },
+                    ["educationOrganizationIds"] =
+                        inherits || narrowedToWholeList
+                            ? educationOrganizationIds
+                            : new[] { educationOrganizationIds[ordinal] },
                     ["inheritsApplicationEducationOrganizations"] = inherits,
                 }
             );
@@ -509,60 +522,15 @@ public class Given_claim_set_changes_applied_to_every_client_of_one_application
                     stored["name"]!.GetValue<string>(),
                     stored["isApproved"]!.GetValue<bool>(),
                     [.. stored["educationOrganizationIds"]!.AsArray().Select(id => id!.GetValue<long>())],
-                    [.. stored["dataStoreIds"]!.AsArray().Select(id => id!.GetValue<int>())]
+                    [.. stored["dataStoreIds"]!.AsArray().Select(id => id!.GetValue<int>())],
+                    stored["inheritsApplicationEducationOrganizations"]!.GetValue<bool>()
                 )
             );
         }
     }
 
-    /// <summary>
-    /// The timed interval: one repository, as one Application PUT would resolve, updating each
-    /// client in turn with its own name, effective education organizations, data stores and approval.
-    /// </summary>
-    private async Task<MeasuredRun> MeasureAsync(string label, string fromClaimSet, string toClaimSet)
-    {
-        IIdentityProviderRepository repository = _provider.CreateRepository();
-        double[] perClient = new double[_clients.Count];
-        List<string> failures = [];
-        int succeeded = 0;
-
-        Stopwatch total = Stopwatch.StartNew();
-        foreach (FanoutClient client in _clients)
-        {
-            long started = Stopwatch.GetTimestamp();
-            ClientUpdateResult result = await repository.UpdateClientAsync(
-                client.ClientUuid.ToString(),
-                client.Name,
-                toClaimSet,
-                client.EducationOrganizationClaim,
-                client.DataStoreIds,
-                client.IsApproved,
-                "dms-client"
-            );
-            perClient[client.Ordinal] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
-
-            if (result is ClientUpdateResult.Success success && success.ClientUuid == client.ClientUuid)
-            {
-                succeeded++;
-            }
-            else
-            {
-                failures.Add($"client {client.Ordinal}: {result.GetType().Name}");
-            }
-        }
-        total.Stop();
-
-        return new MeasuredRun(
-            label,
-            fromClaimSet,
-            toClaimSet,
-            total.Elapsed.TotalMilliseconds,
-            perClient,
-            _clients.Count,
-            succeeded,
-            [.. failures]
-        );
-    }
+    /// <summary>Applies the change to every client, timing only the change itself.</summary>
+    protected abstract Task<MeasuredRun> MeasureAsync(string label, string fromClaimSet, string toClaimSet);
 
     /// <summary>
     /// Every client, after every run: the Configuration Service still holds what it was created
@@ -822,7 +790,7 @@ public class Given_claim_set_changes_applied_to_every_client_of_one_application
     }
 
     /// <summary>A new administrator token for each phase, so no phase outlives one.</summary>
-    private async Task AuthenticateAdminAsync()
+    protected async Task AuthenticateAdminAsync()
     {
         using var response = await _http.PostAsync(
             $"{FanoutMeasurementEnvironment.ApiUrl}/connect/token",
@@ -880,12 +848,17 @@ public class Given_claim_set_changes_applied_to_every_client_of_one_application
         var report = new
         {
             ticket = "DMS-1642",
+            mode = Mode,
             recordedAt = DateTimeOffset.UtcNow,
             provider = _provider.Description,
             configurationService = FanoutMeasurementEnvironment.ApiUrl,
             clients = _clients.Count,
             approvedClients = _clients.Count(client => client.IsApproved),
-            inheritingClients = _clients.Count(client => client.EducationOrganizationIds.Length > 1),
+            inheritingClients = _clients.Count(client => client.Inherits),
+            narrowedToWholeListClients = _clients.Count(client =>
+                !client.Inherits
+                && client.EducationOrganizationIds.Length == ApplicationEducationOrganizationIds.Length
+            ),
             setupSeconds = Math.Round(_setupDuration.TotalSeconds, 1),
             baselineMismatches = _baselineMismatches,
             runs = _runs.Select(run => new
@@ -894,20 +867,26 @@ public class Given_claim_set_changes_applied_to_every_client_of_one_application
                 run.FromClaimSet,
                 run.ToClaimSet,
                 totalMilliseconds = Math.Round(run.TotalMilliseconds, 1),
-                firstClientMilliseconds = Math.Round(run.PerClientMilliseconds[0], 1),
-                minMilliseconds = Math.Round(run.PerClientMilliseconds.Min(), 1),
-                meanMilliseconds = Math.Round(run.PerClientMilliseconds.Average(), 1),
-                p50Milliseconds = Math.Round(run.Percentile(50), 1),
-                p90Milliseconds = Math.Round(run.Percentile(90), 1),
-                p95Milliseconds = Math.Round(run.Percentile(95), 1),
-                p99Milliseconds = Math.Round(run.Percentile(99), 1),
-                maxMilliseconds = Math.Round(run.PerClientMilliseconds.Max(), 1),
+                // Only a provider-mode run times each client; an endpoint-mode run has no per-client timing
+                perClient = run.PerClientMilliseconds.Length == 0
+                    ? null
+                    : new
+                    {
+                        firstClientMilliseconds = Math.Round(run.PerClientMilliseconds[0], 1),
+                        minMilliseconds = Math.Round(run.PerClientMilliseconds.Min(), 1),
+                        meanMilliseconds = Math.Round(run.PerClientMilliseconds.Average(), 1),
+                        p50Milliseconds = Math.Round(run.Percentile(50), 1),
+                        p90Milliseconds = Math.Round(run.Percentile(90), 1),
+                        p95Milliseconds = Math.Round(run.Percentile(95), 1),
+                        p99Milliseconds = Math.Round(run.Percentile(99), 1),
+                        maxMilliseconds = Math.Round(run.PerClientMilliseconds.Max(), 1),
+                        milliseconds = run.PerClientMilliseconds.Select(ms => Math.Round(ms, 2)),
+                    },
                 run.Attempted,
                 run.Succeeded,
                 failed = run.Attempted - run.Succeeded,
                 run.Failures,
                 run.VerificationMismatches,
-                perClientMilliseconds = run.PerClientMilliseconds.Select(ms => Math.Round(ms, 2)),
             }),
         };
 
@@ -922,21 +901,186 @@ public class Given_claim_set_changes_applied_to_every_client_of_one_application
         Directory.CreateDirectory(FanoutMeasurementEnvironment.OutputDirectory);
         string path = Path.Combine(
             FanoutMeasurementEnvironment.OutputDirectory,
-            $"dms-1642-fanout-{FanoutMeasurementEnvironment.IdentityProvider}-{(SetupHooks.UseMssql ? "mssql" : "postgresql")}-{_runTag}.json"
+            $"dms-1642-fanout-{Mode}-{FanoutMeasurementEnvironment.IdentityProvider}-{(SetupHooks.UseMssql ? "mssql" : "postgresql")}-{_runTag}.json"
         );
         await File.WriteAllTextAsync(path, json);
 
         await TestContext.Progress.WriteLineAsync($"[fanout] report: {path}");
         await TestContext.Progress.WriteLineAsync(
-            $"[fanout] {_provider.Description}; {_clients.Count} clients; setup {_setupDuration.TotalSeconds:F1}s"
+            $"[fanout] {Mode}; {_provider.Description}; {_clients.Count} clients; setup {_setupDuration.TotalSeconds:F1}s"
         );
         foreach (MeasuredRun run in _runs)
         {
+            string perClient =
+                run.PerClientMilliseconds.Length == 0
+                    ? ""
+                    : $"first {run.PerClientMilliseconds[0]:F1}ms, p50 {run.Percentile(50):F1}ms, "
+                        + $"p95 {run.Percentile(95):F1}ms, max {run.PerClientMilliseconds.Max():F1}ms, ";
             await TestContext.Progress.WriteLineAsync(
-                $"[fanout] {run.Label}: total {run.TotalMilliseconds / 1000:F2}s, first {run.PerClientMilliseconds[0]:F1}ms, "
-                    + $"p50 {run.Percentile(50):F1}ms, p95 {run.Percentile(95):F1}ms, max {run.PerClientMilliseconds.Max():F1}ms, "
+                $"[fanout] {run.Label}: total {run.TotalMilliseconds / 1000:F2}s, {perClient}"
                     + $"succeeded {run.Succeeded}/{run.Attempted}, verification mismatches {run.VerificationMismatches.Count}"
             );
         }
+    }
+}
+
+/// <summary>
+/// Task 1's baseline (Jira scope "First, measure"): the real IIdentityProviderRepository.UpdateClientAsync
+/// of the provider the isolated stack runs, called for every client in turn, each call timed.
+/// </summary>
+[TestFixture]
+[Category(FanoutMeasurementEnvironment.Category)]
+[NonParallelizable]
+public class Given_claim_set_changes_applied_to_every_client_of_one_application
+    : ApplicationUpdateFanoutMeasurement
+{
+    protected override string Mode => "provider";
+
+    /// <summary>
+    /// The timed interval: one repository, as one Application PUT would resolve, updating each
+    /// client in turn with its own name, effective education organizations, data stores and approval.
+    /// </summary>
+    protected override async Task<MeasuredRun> MeasureAsync(
+        string label,
+        string fromClaimSet,
+        string toClaimSet
+    )
+    {
+        IIdentityProviderRepository repository = _provider.CreateRepository();
+        double[] perClient = new double[_clients.Count];
+        List<string> failures = [];
+        int succeeded = 0;
+
+        Stopwatch total = Stopwatch.StartNew();
+        foreach (FanoutClient client in _clients)
+        {
+            long started = Stopwatch.GetTimestamp();
+            ClientUpdateResult result = await repository.UpdateClientAsync(
+                client.ClientUuid.ToString(),
+                client.Name,
+                toClaimSet,
+                client.EducationOrganizationClaim,
+                client.DataStoreIds,
+                client.IsApproved,
+                "dms-client"
+            );
+            perClient[client.Ordinal] = Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+
+            if (result is ClientUpdateResult.Success success && success.ClientUuid == client.ClientUuid)
+            {
+                succeeded++;
+            }
+            else
+            {
+                failures.Add($"client {client.Ordinal}: {result.GetType().Name}");
+            }
+        }
+        total.Stop();
+
+        return new MeasuredRun(
+            label,
+            fromClaimSet,
+            toClaimSet,
+            total.Elapsed.TotalMilliseconds,
+            perClient,
+            _clients.Count,
+            succeeded,
+            [.. failures]
+        );
+    }
+}
+
+/// <summary>
+/// The finished feature: the claim set change sent as one PUT /v3/applications/{id} to the running
+/// Configuration Service, which saves it, marks every client, updates each client in its identity
+/// provider and clears each marker before responding. The timed interval is that request alone. A run
+/// counts a client as updated only when the request answered 204 and the client's marker is cleared in
+/// the Configuration Service database afterwards.
+/// </summary>
+[TestFixture]
+[Category(FanoutMeasurementEnvironment.Category)]
+[NonParallelizable]
+public class Given_claim_set_changes_saved_through_the_application_endpoint
+    : ApplicationUpdateFanoutMeasurement
+{
+    protected override string Mode => "endpoint";
+
+    protected override async Task<MeasuredRun> MeasureAsync(
+        string label,
+        string fromClaimSet,
+        string toClaimSet
+    )
+    {
+        await AuthenticateAdminAsync();
+        using HttpRequestMessage request = new(
+            HttpMethod.Put,
+            $"{FanoutMeasurementEnvironment.ApiUrl}/v3/applications/{ApplicationId}"
+        )
+        {
+            Content = JsonContent.Create(
+                new
+                {
+                    id = ApplicationId,
+                    applicationName = ApplicationName,
+                    vendorId = VendorId,
+                    claimSetName = toClaimSet,
+                    educationOrganizationIds = ApplicationEducationOrganizationIds,
+                    profileIds = Array.Empty<int>(),
+                }
+            ),
+        };
+
+        Stopwatch total = Stopwatch.StartNew();
+        using HttpResponseMessage response = await _http.SendAsync(request);
+        total.Stop();
+
+        List<string> failures = [];
+        if (response.StatusCode != HttpStatusCode.NoContent)
+        {
+            failures.Add($"the request answered {(int)response.StatusCode}");
+        }
+
+        int[] pending = await PendingClientIdsAsync();
+        failures.AddRange(pending.Select(apiClientId => $"API client {apiClientId} is still pending"));
+
+        return new MeasuredRun(
+            label,
+            fromClaimSet,
+            toClaimSet,
+            total.Elapsed.TotalMilliseconds,
+            [],
+            _clients.Count,
+            _clients.Count - pending.Length,
+            [.. failures]
+        );
+    }
+
+    /// <summary>The Application's clients whose pending marker is set, read from the database.</summary>
+    private async Task<int[]> PendingClientIdsAsync()
+    {
+        const string Sql =
+            "SELECT \"Id\" FROM \"dmscs\".\"ApiClient\" WHERE \"ApplicationId\" = @ApplicationId AND \"IdentityProviderSyncPendingSince\" IS NOT NULL";
+        const string MssqlSql =
+            "SELECT Id FROM dmscs.ApiClient WHERE ApplicationId = @ApplicationId AND IdentityProviderSyncPendingSince IS NOT NULL";
+
+        await using System.Data.Common.DbConnection connection = SetupHooks.UseMssql
+            ? new Microsoft.Data.SqlClient.SqlConnection(SetupHooks.DatabaseConnectionString)
+            : new Npgsql.NpgsqlConnection(SetupHooks.DatabaseConnectionString);
+        await connection.OpenAsync();
+        await using System.Data.Common.DbCommand command = connection.CreateCommand();
+        command.CommandText = SetupHooks.UseMssql ? MssqlSql : Sql;
+        System.Data.Common.DbParameter parameter = command.CreateParameter();
+        parameter.ParameterName = "ApplicationId";
+        parameter.Value = ApplicationId;
+        command.Parameters.Add(parameter);
+
+        List<int> ids = [];
+        await using System.Data.Common.DbDataReader reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            ids.Add(reader.GetInt32(0));
+        }
+
+        return [.. ids];
     }
 }
