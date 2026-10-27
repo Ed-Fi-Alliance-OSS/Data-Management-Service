@@ -108,25 +108,22 @@ public partial class StepDefinitions
     [Then("the current token carries exactly the education organizations {string}")]
     public void ThenTheCurrentTokenCarriesExactlyTheEducationOrganizations(string educationOrganizationIds)
     {
-        EducationOrganizationIdClaims().Should().Equal(educationOrganizationIds);
+        EducationOrganizationIdClaims(CurrentToken()).Should().Equal(educationOrganizationIds);
     }
 
     /// <summary>
     /// The token states an empty scope the way its identity provider does: the self-contained
     /// provider issues one empty educationOrganizationIds claim and Keycloak issues none. DMS reads
-    /// both as no education organization access.
+    /// both as no education organization access. The provider is read from the token's own issuer,
+    /// a Keycloak realm URL or the Configuration Service authority, so the expectation follows the
+    /// stack that issued the token whatever the test process was configured with.
     /// </summary>
     [Then("the current token carries no education organizations")]
     public void ThenTheCurrentTokenCarriesNoEducationOrganizations()
     {
-        string[] claims = EducationOrganizationIdClaims();
-        if (
-            string.Equals(
-                Environment.GetEnvironmentVariable("CONFIGURATION_SERVICE_IDENTITY_PROVIDER"),
-                "keycloak",
-                StringComparison.OrdinalIgnoreCase
-            )
-        )
+        JwtSecurityToken token = CurrentToken();
+        string[] claims = EducationOrganizationIdClaims(token);
+        if (token.Issuer.Contains("/realms/", StringComparison.Ordinal))
         {
             claims.Should().BeEmpty("Keycloak issues no educationOrganizationIds claim for an empty scope");
         }
@@ -140,10 +137,12 @@ public partial class StepDefinitions
         }
     }
 
-    private string[] EducationOrganizationIdClaims() =>
+    private JwtSecurityToken CurrentToken() =>
+        new JwtSecurityTokenHandler().ReadJwtToken(GetDmsTokenFromContext().Replace("Bearer ", string.Empty));
+
+    private static string[] EducationOrganizationIdClaims(JwtSecurityToken token) =>
         [
-            .. new JwtSecurityTokenHandler()
-                .ReadJwtToken(GetDmsTokenFromContext().Replace("Bearer ", string.Empty))
+            .. token
                 .Claims.Where(claim => claim.Type == "educationOrganizationIds")
                 .Select(claim => claim.Value),
         ];
