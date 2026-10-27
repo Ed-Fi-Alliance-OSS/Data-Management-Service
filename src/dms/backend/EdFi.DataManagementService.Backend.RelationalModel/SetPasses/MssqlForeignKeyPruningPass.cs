@@ -67,9 +67,13 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
         IReadOnlySet<string> immutableAbstractOrigins
     )
     {
-        // Abstract identity tables have no incoming candidate edges, so on a cut path only the
-        // directly mutable concrete roots (allowIdentityUpdates) ever match this set.
-        var mutableOrigins = origins.ToHashSet(StringComparer.Ordinal);
+        // The origins that can actually rename; immutable abstract origins never do. Abstract
+        // identity tables have no incoming candidate edges, so on a first-arrival chain only the
+        // directly mutable concrete roots (allowIdentityUpdates) match this set; an independent
+        // feed can also reach a mutable abstract identity table.
+        var mutableOrigins = origins
+            .Where(candidateOrigin => !immutableAbstractOrigins.Contains(candidateOrigin))
+            .ToHashSet(StringComparer.Ordinal);
         List<PruningDecision> decisions = [];
         HashSet<PruningEdgeKey> cutEdges = [];
         Dictionary<PruningEdgeKey, int> retainedEdgeCounts = [];
@@ -276,13 +280,7 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
                 }
 
                 failure =
-                    EvaluateIntermediateCoverage(
-                        cut,
-                        survivor,
-                        convergence.PredecessorEdgeByVertex,
-                        origin,
-                        mutableOrigins
-                    )
+                    EvaluateIntermediateCoverage(cut, survivor, convergence, origin, mutableOrigins)
                     ?? (
                         waiveOriginRename
                             ? null
@@ -319,31 +317,59 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     /// runs through the intermediate: the survivor (another role of that resource, or a reference
     /// to a resource below it) then reaches the receiver from that resource by a disjoint route,
     /// which Settled Decision 8 leaves to fail closed at runtime, exactly as the intermediate's own walk
-    /// decides. The walked origin's own rename is left to <see cref="EvaluateSafeCut"/>. Returns
-    /// null when covered, otherwise the native-coverage failure. The trace is discarded after
-    /// this evaluation.
+    /// decides. When the trace stops short of the walked origin without reaching such a resource,
+    /// the pairing where it stops is checked for an independent mutable feed (see
+    /// <see cref="FindIndependentMutableFeed"/>): a mutable resource whose only cascade route to the
+    /// receiver is the cut needs a carrier through that pairing, because once the edge is cut no
+    /// later walk can see the lost route. A feed whose source still reaches the receiver avoiding
+    /// this choice's cuts is that source's own convergence (Settled Decision 8) and is skipped.
+    /// The walked origin's own rename is left to <see cref="EvaluateSafeCut"/>. Returns null when
+    /// covered, otherwise the native-coverage failure. The trace is discarded after this
+    /// evaluation.
     /// </summary>
     private static string? EvaluateIntermediateCoverage(
         PruningCandidate cut,
         PruningCandidate survivor,
-        IReadOnlyDictionary<string, PruningCandidate> predecessorEdgeByVertex,
+        ConvergenceDiscovery convergence,
         string origin,
         IReadOnlySet<string> mutableOrigins
     )
     {
+        var predecessorEdgeByVertex = convergence.PredecessorEdgeByVertex;
+
         for (var index = 0; index < cut.LocalColumns.Count - 1; index++)
         {
-            var intermediate = TraceToSource(
-                    FormatTable(cut.TargetTable),
-                    cut.TargetColumns[index],
-                    predecessorEdgeByVertex,
-                    out _
-                )
-                .Find(pairing => pairing.Table != origin && mutableOrigins.Contains(pairing.Table));
+            var trace = TraceToSource(
+                FormatTable(cut.TargetTable),
+                cut.TargetColumns[index],
+                predecessorEdgeByVertex,
+                out _
+            );
+            var intermediate = trace.Find(pairing =>
+                pairing.Table != origin && mutableOrigins.Contains(pairing.Table)
+            );
+            var mutableSource = intermediate.Table;
 
             if (intermediate == default)
             {
-                continue;
+                // The trace stopped without a directly mutable pairing. Unless it stopped at the
+                // walked origin, the column may be fed by a reference outside the walked origin's
+                // chain; the pairing where that feed joins stands in for the intermediate.
+                intermediate = trace[^1];
+                mutableSource =
+                    intermediate.Table == origin
+                        ? null
+                        : FindIndependentMutableFeed(
+                            intermediate,
+                            convergence.IncomingEdgesByVertex,
+                            origin,
+                            mutableOrigins
+                        );
+
+                if (mutableSource is null || ReachesAvoidingCuts(mutableSource, convergence, survivor))
+                {
+                    continue;
+                }
             }
 
             var column = cut.LocalColumns[index];
@@ -374,12 +400,109 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
                 }
 
                 return $"native coverage: cut '{cut.ConstraintName}' column '{column.Value}' changes when "
-                    + $"directly mutable '{intermediate.Table}' updates its identity, and retained "
+                    + $"directly mutable '{mutableSource}' updates its identity, and retained "
                     + $"'{survivor.ConstraintName}' does not carry that change";
             }
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Searches back from a pairing where the walked origin's first-arrival trace stopped, through
+    /// every retained candidate edge that feeds the column and on through each fed column, for the
+    /// nearest mutable origin other than the walked origin. Returns that table, or null when every
+    /// feed is static. Follows existing FK column pairs only; the search is discarded after one
+    /// evaluation.
+    /// </summary>
+    private static string? FindIndependentMutableFeed(
+        (string Table, string Column) pairing,
+        IReadOnlyDictionary<string, List<PruningCandidate>> incomingEdgesByVertex,
+        string origin,
+        IReadOnlySet<string> mutableOrigins
+    )
+    {
+        Stack<(string Table, DbColumnName Column)> pending = new();
+        HashSet<(string Table, DbColumnName Column)> visited = [];
+        pending.Push((pairing.Table, new DbColumnName(pairing.Column)));
+
+        while (pending.TryPop(out var current))
+        {
+            if (!visited.Add(current) || !incomingEdgesByVertex.TryGetValue(current.Table, out var incoming))
+            {
+                continue;
+            }
+
+            foreach (var edge in incoming)
+            {
+                var index = FindColumnIndex(edge.LocalColumns, current.Column);
+
+                if (index < 0 || index == edge.LocalColumns.Count - 1)
+                {
+                    continue;
+                }
+
+                var target = FormatTable(edge.TargetTable);
+
+                if (target == origin)
+                {
+                    continue;
+                }
+
+                if (mutableOrigins.Contains(target))
+                {
+                    return target;
+                }
+
+                pending.Push((target, edge.TargetColumns[index]));
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Whether the source reaches the convergence receiver over retained candidate edges without
+    /// using any of this survivor choice's cut edges.
+    /// </summary>
+    private static bool ReachesAvoidingCuts(
+        string source,
+        ConvergenceDiscovery convergence,
+        PruningCandidate survivor
+    )
+    {
+        HashSet<string> visited = [source];
+        Queue<string> frontier = new([source]);
+
+        while (frontier.TryDequeue(out var vertex))
+        {
+            if (!convergence.OutgoingEdgesBySource.TryGetValue(vertex, out var outgoing))
+            {
+                continue;
+            }
+
+            foreach (var edge in outgoing)
+            {
+                if (!ReferenceEquals(edge, survivor) && convergence.IncomingChoices.Contains(edge))
+                {
+                    continue;
+                }
+
+                var receiver = FormatTable(edge.ReceiverTable);
+
+                if (receiver == convergence.Receiver)
+                {
+                    return true;
+                }
+
+                if (visited.Add(receiver))
+                {
+                    frontier.Enqueue(receiver);
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -831,7 +954,10 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     {
         // Retained outgoing edges by source vertex, in stable candidate order. Cut edges no longer
         // cascade, so they neither extend reachability nor count as convergence choices.
+        // Retained incoming edges by receiver cover every vertex, reachable or not, so the coverage
+        // check can follow a feed from outside this origin's walk.
         Dictionary<string, List<PruningCandidate>> outgoingBySource = new(StringComparer.Ordinal);
+        Dictionary<string, List<PruningCandidate>> incomingByReceiver = new(StringComparer.Ordinal);
 
         foreach (var candidate in candidates)
         {
@@ -849,6 +975,16 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
             }
 
             outgoing.Add(candidate);
+
+            var candidateReceiver = FormatTable(candidate.ReceiverTable);
+
+            if (!incomingByReceiver.TryGetValue(candidateReceiver, out var retainedIncoming))
+            {
+                retainedIncoming = [];
+                incomingByReceiver[candidateReceiver] = retainedIncoming;
+            }
+
+            retainedIncoming.Add(candidate);
         }
 
         // Breadth-first reachability with first-arrival depth and predecessor edge per vertex.
@@ -935,19 +1071,28 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
         return earliestReceiver is null
             ? null
-            : new ConvergenceDiscovery(earliestReceiver, earliestChoices!, predecessorEdgeByVertex);
+            : new ConvergenceDiscovery(
+                earliestReceiver,
+                earliestChoices!,
+                predecessorEdgeByVertex,
+                incomingByReceiver,
+                outgoingBySource
+            );
     }
 
     /// <summary>
     /// The result of per-origin convergence discovery: the earliest receiver with distinct
     /// reachable incoming physical edges, those edges as the only pruning choices, and the
-    /// first-arrival predecessor trace the structural safe-cut test follows. Pass-local only;
-    /// discarded after selection.
+    /// first-arrival predecessor trace the structural safe-cut test follows, plus the retained
+    /// candidate edges by receiver and by source that the independent-feed check follows.
+    /// Pass-local only; discarded after selection.
     /// </summary>
     internal sealed record ConvergenceDiscovery(
         string Receiver,
         IReadOnlyList<PruningCandidate> IncomingChoices,
-        IReadOnlyDictionary<string, PruningCandidate> PredecessorEdgeByVertex
+        IReadOnlyDictionary<string, PruningCandidate> PredecessorEdgeByVertex,
+        IReadOnlyDictionary<string, List<PruningCandidate>> IncomingEdgesByVertex,
+        IReadOnlyDictionary<string, List<PruningCandidate>> OutgoingEdgesBySource
     );
 
     /// <summary>

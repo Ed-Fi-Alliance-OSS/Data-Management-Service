@@ -1962,6 +1962,109 @@ public class Given_Mssql_Pruning_With_Uncarried_Intermediate_Renames
 }
 
 /// <summary>
+/// An independent mutable feed into a cut: Alpha and Other allow identity updates, Bridge's identity
+/// references both, the directly mutable Section references Alpha, and Receiver references Bridge
+/// and Section through disjoint columns. Alpha's walk converges at Receiver. Keeping Bridge leaves
+/// Section's key change uncarried; keeping Section cuts Bridge, which is Other's only cascade route
+/// to Receiver, although the first-arrival trace of Bridge's Other key stops at Bridge. No survivor
+/// is safe, so derivation fails whichever Receiver edge sorts first and however deep the feed is.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_An_Independent_Mutable_Feed_Into_The_Cut
+{
+    private static DerivedRelationalModelSet Build(string sectionName, bool feedThroughOtherMid) =>
+        PruningTopologyTestHelpers.BuildMssqlModelSet(
+            PruningTestSchemaBuilder.BuildProjectSchema(
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Alpha",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["alphaKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Other",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["otherKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "OtherMid",
+                    IdentityScalars: ["otherMidKey"],
+                    References: [new PruningTestSchemaBuilder.ReferenceSpec("Other", PartOfIdentity: true)]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Bridge",
+                    IdentityScalars: ["bridgeKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Alpha", PartOfIdentity: true),
+                        new PruningTestSchemaBuilder.ReferenceSpec(
+                            feedThroughOtherMid ? "OtherMid" : "Other",
+                            PartOfIdentity: true
+                        ),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    sectionName,
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["sectionKey"],
+                    References: [new PruningTestSchemaBuilder.ReferenceSpec("Alpha", PartOfIdentity: true)]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Receiver",
+                    IdentityScalars: ["receiverKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Bridge"),
+                        new PruningTestSchemaBuilder.ReferenceSpec(sectionName),
+                    ]
+                )
+            )
+        );
+
+    /// <summary>
+    /// It should fail with the native-coverage diagnostic, whether Other feeds Bridge directly or
+    /// through the transitively mutable OtherMid.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void It_should_fail_when_the_bridge_edge_sorts_first(bool feedThroughOtherMid)
+    {
+        var act = () => Build("Section", feedThroughOtherMid);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "NoSafeSqlServerForeignKeyPruning:*"
+                    + "mutable origin 'edfi.Alpha'*"
+                    + "convergence receiver 'edfi.Receiver'*"
+                    + "'FK_Receiver_Bridge_RefKey'*"
+                    + "'FK_Receiver_Section_RefKey'*"
+                    + "First failed condition: native coverage*"
+            );
+    }
+
+    /// <summary>
+    /// It should name Other as the uncarried source when the section edge sorts first, so keeping
+    /// it is the first choice tried and the independent feed is the first failed condition.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void It_should_name_the_independent_feed_when_the_section_edge_sorts_first(
+        bool feedThroughOtherMid
+    )
+    {
+        var act = () => Build("Asection", feedThroughOtherMid);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "NoSafeSqlServerForeignKeyPruning:*"
+                    + "First failed condition: native coverage: cut 'FK_Receiver_Bridge_RefKey'*"
+                    + "directly mutable 'edfi.Other'*"
+            );
+    }
+}
+
+/// <summary>
 /// Settled Decision 8 for a directly mutable intermediate: Upstream → Middle → Receiver, where
 /// Receiver references Middle under two non-unified roles and both Upstream and Middle allow
 /// identity updates. Middle's own walk passes the disjoint cut as a plain NO ACTION reference, so

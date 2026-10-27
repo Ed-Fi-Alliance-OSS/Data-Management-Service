@@ -30,7 +30,10 @@ multiple-cascade-path convergence.
    `NO ACTION` reference, not an unsupported cut: the safe-cut test passes it and it derives. A directly mutable
    intermediate's rename on such a column is different: it makes the survivor unsafe (see Safe-Cut Test), unless the
    survivor's own first-arrival chain also runs through that intermediate (another role of it, or a reference to a
-   resource below it), which is this decision's shape seen from an upstream origin and is passed the same way. The one shape this does not specially guard is a genuinely mutable
+   resource below it), which is this decision's shape seen from an upstream origin and is passed the same way. The
+   same holds for a mutable resource that feeds the cut column through a reference outside the walked origin's chain,
+   unless that resource still reaches the receiver by another retained route. The one shape this does not specially
+   guard is a genuinely mutable
    resource referenced through two disjoint, non-unified roles by one receiver. That shape does not occur in standard
    Ed-Fi (every disjoint role there resolves to an immutable abstract identity), and it is deliberately left to fail
    closed at runtime — a clean SQL Server error on a rename, never a corrupt tuple — rather than to fail derivation. This
@@ -238,7 +241,8 @@ other shapes are rejected.
 The path check reuses the predecessor trace already needed for per-origin convergence detection. For one tentative cut,
 it follows only that cut's already-selected survivor chain and compares adjacent existing FK column pairs edge by edge.
 It discards the trace after that evaluation; it does not compose, store, or reuse transitive propagation vectors, and it
-does not search alternate routes.
+does not search alternate routes. Only the directly mutable intermediate rule below looks past that chain, and only to
+find whether a mutable resource feeds a cut column from outside it.
 
 This evaluation returns only a yes/no result for the tentative cut; it creates no composed column mapping, reusable
 route representation, or new derivation artifact.
@@ -269,6 +273,14 @@ A direct DMS write that replaces a receiver reference supplies the complete publ
 validated by the full-composite FK directly. It is not a carrier obligation for an incoming cut. Conversely, if a directly
 mutable intermediate identity change would require a cut tuple to change without a retained carrier, that survivor is
 unsafe. DMS need not model arbitrary value combinations to make this determination.
+
+The rule also covers an independent feed. When a cut column's first-arrival trace stops short of the walked origin, the
+pairing where it stops may be fed by a reference outside the walked origin's chain. DMS follows the retained candidate
+edges feeding that pairing back to the nearest mutable origin, skipping immutable abstract identities. If that origin's
+only cascade route to the receiver is through this choice's cuts, the cut strands its rename. No later walk can see
+that, because the route is already cut. The survivor is then unsafe unless it carries the column through the same
+pairing. If the origin still reaches the receiver by another retained route, the convergence is its own and Settled
+Decision 8 applies.
 
 For the walked origin's rename, a cut column that the retained cascade does not update carries no carrier obligation.
 Safe-cut rule 1 applies only to a column the survivor also updates, so a column the survivor does not update leaves the
