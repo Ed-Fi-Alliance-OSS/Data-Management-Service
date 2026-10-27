@@ -32,10 +32,12 @@
 -- Everything runs in one explicit transaction. The schema changes take their table locks before
 -- the backfill reads and hold them until COMMIT, so no client or Application education
 -- organization can change between the backfill and the commit. XACT_ABORT dooms the transaction on
--- any statement error and the CATCH block rolls it back and rethrows. The existence guards and
--- NOT EXISTS make a retry converge. The whole script is a single batch with no GO, which can't
--- compile a statement naming a column the batch adds, so the sync-pending mark runs through
--- sp_executesql.
+-- any statement error and the CATCH block rolls it back and rethrows, so a failed run leaves
+-- nothing behind. The existence guards let a rerun after a lost journal row succeed. The mark and
+-- the backfill run only when this run added the sync-pending column, so a rerun neither re-marks
+-- clients the application has since synchronized nor widens clients it has since narrowed. The
+-- whole script is a single batch with no GO, which can't compile a statement naming a column the
+-- batch adds, so the sync-pending mark runs through sp_executesql.
 SET XACT_ABORT ON;
 BEGIN TRY
     BEGIN TRANSACTION;
@@ -85,22 +87,22 @@ BEGIN TRY
         SET @SyncPendingColumnAdded = 1;
     END;
 
-    -- Only when this run added the column, so a rerun never re-marks clients the application has
-    -- since synchronized.
     IF @SyncPendingColumnAdded = 1
+    BEGIN
         EXEC sp_executesql N'UPDATE dmscs.ApiClient SET IdentityProviderSyncPendingSince = SYSUTCDATETIME();';
 
-    INSERT INTO dmscs.ApiClientEducationOrganization (ApiClientId, ApplicationId, EducationOrganizationId)
-    SELECT client.Id, client.ApplicationId, applicationEdOrg.EducationOrganizationId
-    FROM dmscs.ApiClient client
-    JOIN dmscs.ApplicationEducationOrganization applicationEdOrg
-        ON applicationEdOrg.ApplicationId = client.ApplicationId
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM dmscs.ApiClientEducationOrganization existing
-        WHERE existing.ApiClientId = client.Id
-          AND existing.EducationOrganizationId = applicationEdOrg.EducationOrganizationId
-    );
+        INSERT INTO dmscs.ApiClientEducationOrganization (ApiClientId, ApplicationId, EducationOrganizationId)
+        SELECT client.Id, client.ApplicationId, applicationEdOrg.EducationOrganizationId
+        FROM dmscs.ApiClient client
+        JOIN dmscs.ApplicationEducationOrganization applicationEdOrg
+            ON applicationEdOrg.ApplicationId = client.ApplicationId
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM dmscs.ApiClientEducationOrganization existing
+            WHERE existing.ApiClientId = client.Id
+              AND existing.EducationOrganizationId = applicationEdOrg.EducationOrganizationId
+        );
+    END;
 
     COMMIT TRANSACTION;
 END TRY

@@ -31,8 +31,10 @@
 -- Everything runs in one DO block, which executes as a single statement and therefore as one
 -- transaction. The constraints and the new columns take their table locks before the backfill
 -- reads, and hold them until the block ends, so no client or Application education organization
--- can change between the backfill and the commit. The existence guards and NOT EXISTS make a retry
--- converge.
+-- can change between the backfill and the commit, and a failed run leaves nothing behind. The
+-- existence guards let a rerun after a lost journal row succeed. The mark and the backfill run only
+-- when this run added the sync-pending column, so a rerun neither re-marks clients the application
+-- has since synchronized nor widens clients it has since narrowed.
 DO $$
 DECLARE
     sync_pending_column_added BOOLEAN;
@@ -98,23 +100,21 @@ BEGIN
         ADD COLUMN IF NOT EXISTS "InheritsApplicationEducationOrganizations" BOOLEAN NOT NULL DEFAULT true,
         ADD COLUMN IF NOT EXISTS "IdentityProviderSyncPendingSince" TIMESTAMPTZ NULL;
 
-    -- Only when this run added the column, so a rerun never re-marks clients the application has
-    -- since synchronized.
     IF sync_pending_column_added THEN
         UPDATE "dmscs"."ApiClient" SET "IdentityProviderSyncPendingSince" = NOW();
-    END IF;
 
-    INSERT INTO "dmscs"."ApiClientEducationOrganization" ("ApiClientId", "ApplicationId", "EducationOrganizationId")
-    SELECT client."Id", client."ApplicationId", application_edorg."EducationOrganizationId"
-    FROM "dmscs"."ApiClient" client
-    JOIN "dmscs"."ApplicationEducationOrganization" application_edorg
-        ON application_edorg."ApplicationId" = client."ApplicationId"
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM "dmscs"."ApiClientEducationOrganization" existing
-        WHERE existing."ApiClientId" = client."Id"
-          AND existing."EducationOrganizationId" = application_edorg."EducationOrganizationId"
-    );
+        INSERT INTO "dmscs"."ApiClientEducationOrganization" ("ApiClientId", "ApplicationId", "EducationOrganizationId")
+        SELECT client."Id", client."ApplicationId", application_edorg."EducationOrganizationId"
+        FROM "dmscs"."ApiClient" client
+        JOIN "dmscs"."ApplicationEducationOrganization" application_edorg
+            ON application_edorg."ApplicationId" = client."ApplicationId"
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM "dmscs"."ApiClientEducationOrganization" existing
+            WHERE existing."ApiClientId" = client."Id"
+              AND existing."EducationOrganizationId" = application_edorg."EducationOrganizationId"
+        );
+    END IF;
 END$$;
 
 COMMENT ON TABLE "dmscs"."ApiClientEducationOrganization" IS 'Relationship of API clients with their Application''s education organizations';

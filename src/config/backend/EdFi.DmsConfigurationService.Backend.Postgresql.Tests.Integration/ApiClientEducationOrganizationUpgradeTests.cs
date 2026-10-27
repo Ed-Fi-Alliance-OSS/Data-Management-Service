@@ -179,6 +179,12 @@ public class Given_a_database_deployed_through_0037_with_api_clients : ApiClient
     private ClientRow[] _rowsAfterRepeatDeploy = [];
     private ClientState[] _statesAfterUpgrade = [];
     private int _clientOfEmptyApplication;
+    private DatabaseDeployResult _rerunResult = null!;
+    private string[] _journalAfterRerun = [];
+    private ClientRow[] _rowsBeforeRerun = [];
+    private ClientRow[] _rowsAfterRerun = [];
+    private ClientState[] _statesBeforeRerun = [];
+    private ClientState[] _statesAfterRerun = [];
 
     [OneTimeSetUp]
     public async Task OneTimeSetup()
@@ -221,6 +227,30 @@ public class Given_a_database_deployed_through_0037_with_api_clients : ApiClient
         _repeatDeployResult = Database.Deploy(JobUpgradeTestDatabase.ApiClientEducationOrganizationScript);
         _journalAfterRepeatDeploy = await Database.JournalAsync();
         _rowsAfterRepeatDeploy = await ClientRowsAsync(connection);
+
+        // A rerun after the application has run, which a lost journal row allows: one client is
+        // narrowed and every client synchronized since the upgrade.
+        await connection.ExecuteAsync(
+            """
+            DELETE FROM "dmscs"."ApiClientEducationOrganization"
+            WHERE "ApiClientId" = @Id AND "EducationOrganizationId" = 255902;
+            UPDATE "dmscs"."ApiClient" SET "InheritsApplicationEducationOrganizations" = false WHERE "Id" = @Id;
+            UPDATE "dmscs"."ApiClient" SET "IdentityProviderSyncPendingSince" = NULL;
+            DELETE FROM public."dmscs_SchemaVersions" WHERE scriptname = @ScriptName;
+            """,
+            new
+            {
+                Id = secondOfTwo,
+                ScriptName = JobUpgradeTestDatabase.ApiClientEducationOrganizationScriptName,
+            }
+        );
+        _rowsBeforeRerun = await ClientRowsAsync(connection);
+        _statesBeforeRerun = await ClientStatesAsync(connection);
+
+        _rerunResult = Database.Deploy(JobUpgradeTestDatabase.ApiClientEducationOrganizationScript);
+        _journalAfterRerun = await Database.JournalAsync();
+        _rowsAfterRerun = await ClientRowsAsync(connection);
+        _statesAfterRerun = await ClientStatesAsync(connection);
     }
 
     [Test]
@@ -269,6 +299,27 @@ public class Given_a_database_deployed_through_0037_with_api_clients : ApiClient
     [Test]
     public void It_leaves_the_client_rows_unchanged_on_a_repeat_deploy() =>
         _rowsAfterRepeatDeploy.Should().Equal(_rowsAfterUpgrade);
+
+    [Test]
+    public void It_succeeds_on_a_rerun_after_a_lost_journal_row()
+    {
+        _rerunResult.Should().BeOfType<DatabaseDeployResult.DatabaseDeploySuccess>();
+        _journalAfterRerun.Should().Equal(_journalAfterUpgrade);
+    }
+
+    [Test]
+    public void It_leaves_a_narrowed_client_narrowed_on_a_rerun()
+    {
+        _rowsBeforeRerun.Should().HaveCount(_rowsAfterUpgrade.Length - 1);
+        _rowsAfterRerun.Should().Equal(_rowsBeforeRerun);
+    }
+
+    [Test]
+    public void It_marks_no_client_on_a_rerun()
+    {
+        _statesBeforeRerun.Should().OnlyContain(state => state.IdentityProviderSyncPendingSince == null);
+        _statesAfterRerun.Should().Equal(_statesBeforeRerun);
+    }
 }
 
 [TestFixture]
