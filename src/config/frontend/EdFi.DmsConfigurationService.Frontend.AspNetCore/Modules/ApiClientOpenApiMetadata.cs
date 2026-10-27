@@ -90,9 +90,10 @@ internal static class ApiClientOpenApiMetadata
     public const string InsertConflict =
         "The Application or a data store does not exist "
         + "(urn:ed-fi:management-api:conflict:unresolved-reference), or the generated client key is "
-        + "already in use, or the identity provider client the request created is already associated "
-        + "with another API client (urn:ed-fi:management-api:conflict); retry the request after a key "
-        + "collision.";
+        + "already in use, the identity provider client the request created is already associated "
+        + "with another API client, or a concurrent change to the Application held the request up "
+        + "(urn:ed-fi:management-api:conflict); retry the request after a key collision or a "
+        + "concurrent change.";
 
     public const string InsertBadGateway =
         "The identity provider reported a failure; no API client record was saved.";

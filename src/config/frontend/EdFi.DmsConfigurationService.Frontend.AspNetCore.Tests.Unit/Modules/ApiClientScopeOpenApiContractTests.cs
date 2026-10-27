@@ -668,6 +668,13 @@ public partial class ApiClientModuleTests
                 .And.Contain(ProblemType(_insertUuidCollision));
         }
 
+        [TestCase("/v3/apiClients", "post")]
+        [TestCase("/v3/apiClients/{id}", "put")]
+        public void It_documents_the_Application_lock_timeout_as_a_409(string path, string method) =>
+            Description(Response(path, method, "409"))
+                .Should()
+                .Contain("a concurrent change to the Application held the request up");
+
         [Test]
         public void It_reports_an_update_uuid_collision_as_the_documented_500()
         {
