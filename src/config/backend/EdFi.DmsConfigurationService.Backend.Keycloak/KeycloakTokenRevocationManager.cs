@@ -40,7 +40,7 @@ public sealed class KeycloakTokenRevocationManager(
     internal const string OwnershipMismatchDescription = "Unmatching clients";
 
     /// <summary>The largest error body read; a larger one is treated as unparseable (D-09).</summary>
-    internal const int MaxResponseBodyBytes = KeycloakProviderAnswer.MaxResponseBodyBytes;
+    internal const int MaxResponseBodyBytes = 64 * 1024;
 
     /// <summary>
     /// The named client for the delegated revoke request, registered with automatic redirects off:
@@ -78,7 +78,7 @@ public sealed class KeycloakTokenRevocationManager(
         // Decided here: a longer id can name no Keycloak client, the admin API's client-type lookup
         // fails on the URL length once the id is long enough, and the caller-sized id is kept out of
         // every log.
-        if (request.ClientId.Length > KeycloakProviderAnswer.MaxClientIdLength)
+        if (KeycloakProviderAnswer.IsLongerThanAnyClientId(request.ClientId))
         {
             logger.LogInformation("Revocation refused: the client id is longer than any Keycloak client id");
             return new TokenRevocationResult.InvalidClient();
@@ -292,7 +292,11 @@ public sealed class KeycloakTokenRevocationManager(
             {
                 using var bodyBudget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 bodyBudget.CancelAfter(httpClient.Timeout);
-                body = await KeycloakProviderAnswer.ReadBoundedAsync(response.Content, bodyBudget.Token);
+                body = await KeycloakProviderAnswer.ReadBoundedAsync(
+                    response.Content,
+                    MaxResponseBodyBytes,
+                    bodyBudget.Token
+                );
             }
             catch (Exception) when (cancellationToken.IsCancellationRequested)
             {

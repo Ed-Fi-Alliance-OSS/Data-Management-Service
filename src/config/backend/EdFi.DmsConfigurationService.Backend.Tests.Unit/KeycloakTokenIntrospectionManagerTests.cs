@@ -297,16 +297,38 @@ public class KeycloakTokenIntrospectionManagerTests
         LongClientIdSentinel + new string('c', length - LongClientIdSentinel.Length);
 
     /// <summary>
-    /// 255 characters is the longest client id Keycloak can hold (observed on 26.1.4 and 26.7.5), so a
-    /// client id of that length is still Keycloak's to judge.
+    /// A client id of <paramref name="codePoints"/> code points that starts with a sentinel and goes on
+    /// with a character outside the Basic Multilingual Plane, two UTF-16 code units each.
     /// </summary>
-    [TestFixture]
-    public class Given_a_client_id_of_keycloaks_maximum_length : KeycloakTokenIntrospectionManagerTests
+    protected static string SupplementaryClientIdOf(int codePoints) =>
+        LongClientIdSentinel
+        + string.Concat(Enumerable.Repeat("\U0001F600", codePoints - LongClientIdSentinel.Length));
+
+    /// <summary>
+    /// Keycloak keeps a client id in a 255-character column, which PostgreSQL counts in code points
+    /// (observed on 26.7.5: 255 code points outside the Basic Multilingual Plane, 510 UTF-16 code units,
+    /// are stored).
+    /// </summary>
+    public static IEnumerable<TestFixtureData> ClientIdsOfKeycloaksMaximumLength()
+    {
+        yield return new TestFixtureData(ClientIdOfLength(255)).SetArgDisplayNames("255 characters");
+        yield return new TestFixtureData(SupplementaryClientIdOf(255)).SetArgDisplayNames(
+            "255 code points outside the Basic Multilingual Plane"
+        );
+    }
+
+    /// <summary>A client id Keycloak can hold is still Keycloak's to judge.</summary>
+    [TestFixtureSource(
+        typeof(KeycloakTokenIntrospectionManagerTests),
+        nameof(ClientIdsOfKeycloaksMaximumLength)
+    )]
+    public class Given_a_client_id_of_keycloaks_maximum_length(string clientId)
+        : KeycloakTokenIntrospectionManagerTests
     {
         private TokenIntrospectionResult _result = null!;
 
         [SetUp]
-        public async Task Setup() => _result = await Introspect(clientId: ClientIdOfLength(255));
+        public async Task Setup() => _result = await Introspect(clientId: clientId);
 
         [Test]
         public void It_asks_keycloak_with_that_client_id() =>
@@ -314,7 +336,7 @@ public class KeycloakTokenIntrospectionManagerTests
                 .Requests.Should()
                 .ContainSingle()
                 .Which.Form.Should()
-                .Contain(new KeyValuePair<string, string>("client_id", ClientIdOfLength(255)));
+                .Contain(new KeyValuePair<string, string>("client_id", clientId));
 
         [Test]
         public void It_maps_keycloaks_answer() =>
@@ -322,17 +344,20 @@ public class KeycloakTokenIntrospectionManagerTests
     }
 
     /// <summary>
-    /// Each length with what Keycloak answers it when asked: an unknown client just past the maximum,
-    /// and a 413 once the id is over Keycloak's form attribute limit.
+    /// Each client id with what Keycloak answers it when asked: an unknown client just past the
+    /// maximum, whether counted in characters or in code points, and a 413 once the id is over
+    /// Keycloak's form attribute limit.
     /// </summary>
     public static IEnumerable<TestFixtureData> ClientIdsLongerThanKeycloaksMaximum()
     {
-        yield return new TestFixtureData(
-            256,
-            401,
-            OAuthError("invalid_client", "Invalid client or Invalid client credentials")
-        ).SetArgDisplayNames("256 characters");
-        yield return new TestFixtureData(131073, 413, FormLimitAnswer).SetArgDisplayNames(
+        string unknownClient = OAuthError("invalid_client", "Invalid client or Invalid client credentials");
+        yield return new TestFixtureData(ClientIdOfLength(256), 401, unknownClient).SetArgDisplayNames(
+            "256 characters"
+        );
+        yield return new TestFixtureData(SupplementaryClientIdOf(256), 401, unknownClient).SetArgDisplayNames(
+            "256 code points outside the Basic Multilingual Plane"
+        );
+        yield return new TestFixtureData(ClientIdOfLength(131073), 413, FormLimitAnswer).SetArgDisplayNames(
             "over Keycloak's form attribute limit"
         );
     }
@@ -345,7 +370,7 @@ public class KeycloakTokenIntrospectionManagerTests
         typeof(KeycloakTokenIntrospectionManagerTests),
         nameof(ClientIdsLongerThanKeycloaksMaximum)
     )]
-    public class Given_a_client_id_longer_than_keycloaks_maximum(int length, int status, string body)
+    public class Given_a_client_id_longer_than_keycloaks_maximum(string clientId, int status, string body)
         : KeycloakTokenIntrospectionManagerTests
     {
         private TokenIntrospectionResult _result = null!;
@@ -354,7 +379,7 @@ public class KeycloakTokenIntrospectionManagerTests
         public async Task Setup()
         {
             KeycloakAnswers(() => Response(status, body));
-            _result = await Introspect(clientId: ClientIdOfLength(length));
+            _result = await Introspect(clientId: clientId);
         }
 
         [Test]
@@ -1361,6 +1386,41 @@ public class KeycloakTokenIntrospectionManagerTests
 
         [Test]
         public void It_reads_and_maps_it() => _result.Should().Be(new TokenIntrospectionResult.Inactive());
+    }
+
+    /// <summary>
+    /// A client with many education organizations gets a long token, and Keycloak's answer repeats its
+    /// claims. 9,600 nine-digit ids give the longest token Keycloak's form attribute limit lets
+    /// through (129,287 characters on 26.7.5, whose answer was 96,671 bytes), so the owner is told
+    /// about the largest token Keycloak can describe.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_owners_answer_for_the_longest_token_keycloak_accepts
+        : KeycloakTokenIntrospectionManagerTests
+    {
+        private string _body = null!;
+        private TokenIntrospectionResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _body = Answer(answer =>
+                answer["educationOrganizationIds"] = string.Join(",", Enumerable.Range(255900001, 9600))
+            );
+            KeycloakAnswers(() => Response(200, _body));
+            _result = await Introspect();
+        }
+
+        [Test]
+        public void It_is_an_answer_over_64_KiB() =>
+            Encoding.UTF8.GetByteCount(_body).Should().BeGreaterThan(64 * 1024);
+
+        [Test]
+        public void It_describes_the_token() =>
+            AssertResult(_result, new TokenIntrospectionResult.Active(OwnedToken()));
+
+        [Test]
+        public void It_logs_no_provider_content() => AssertNoDisclosure();
     }
 
     [TestFixture]

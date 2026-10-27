@@ -517,20 +517,21 @@ public class KeycloakClientRepository(
 
     /// <summary>
     /// Gives a client created before clients were put into their own audience the mapper that
-    /// does so. An audience mapper already naming the client satisfies it, whatever that mapper is
-    /// called, so no duplicate is ever added; every other mapper is left untouched.
+    /// does so. An audience mapper already putting the client into its access tokens satisfies it,
+    /// whatever that mapper is called, so no duplicate is ever added; every other mapper is left
+    /// untouched.
     /// </summary>
     private void UpsertSelfAudience(List<ClientProtocolMapper> protocolMappers, string clientId)
     {
-        if (protocolMappers.Exists(mapper => IsAudienceMapperNaming(mapper, clientId)))
+        if (protocolMappers.Exists(mapper => GivesOwnAudience(mapper, clientId)))
         {
             return;
         }
 
-        // A mapper holding the reserved name without naming this client was changed outside this
-        // service. Overwriting it could remove an audience something else relies on, and a second
-        // mapper under the same name is not allowed, so it is kept as it is and the update goes
-        // ahead without the client's own audience.
+        // A mapper holding the reserved name without putting this client into its access tokens was
+        // changed outside this service. Overwriting it could remove an audience something else relies
+        // on, and a second mapper under the same name is not allowed, so it is kept as it is and the
+        // update goes ahead without the client's own audience.
         if (
             protocolMappers.Exists(mapper =>
                 SelfAudienceMapperName.Equals(mapper.Name, StringComparison.Ordinal)
@@ -538,7 +539,7 @@ public class KeycloakClientRepository(
         )
         {
             logger.LogWarning(
-                "Client {ClientId} already has a protocol mapper named {MapperName} that does not name the client as an audience; it is left unchanged, so introspecting the client's own tokens may report them inactive",
+                "Client {ClientId} already has a protocol mapper named {MapperName} that does not put the client into its own access tokens' audience; it is left unchanged, so introspecting the client's own tokens may report them inactive",
                 SanitizeForLog(clientId),
                 SelfAudienceMapperName
             );
@@ -956,11 +957,22 @@ public class KeycloakClientRepository(
         && mapper.Config.TryGetValue("claim.name", out string? configuredClaimName)
         && claimName.Equals(configuredClaimName, StringComparison.Ordinal);
 
-    private static bool IsAudienceMapperNaming(ClientProtocolMapper mapper, string clientId) =>
+    /// <summary>
+    /// An audience mapper that puts the client into its own access tokens' <c>aud</c>. Keycloak adds
+    /// a mapper to access tokens only when <c>access.token.claim</c> is <c>"true"</c>, and its
+    /// introspection audience check reads the access token's <c>aud</c>, so a mapper left out of
+    /// access tokens does not count. Whether it is also added to introspection answers does not
+    /// matter: an answer's <c>aud</c> starts from the token's.
+    /// </summary>
+    private static bool GivesOwnAudience(ClientProtocolMapper mapper, string clientId) =>
         AudienceMapperType.Equals(mapper.ProtocolMapper, StringComparison.Ordinal)
         && mapper.Config is not null
-        && mapper.Config.TryGetValue(IncludedClientAudienceKey, out string? includedAudience)
-        && string.Equals(clientId, includedAudience, StringComparison.Ordinal);
+        && string.Equals(
+            clientId,
+            mapper.Config.GetValueOrDefault(IncludedClientAudienceKey),
+            StringComparison.Ordinal
+        )
+        && "true".Equals(mapper.Config.GetValueOrDefault("access.token.claim"), StringComparison.Ordinal);
 
     /// <summary>
     /// A default client scope is the client's own claim-set assignment — and therefore removable

@@ -194,7 +194,8 @@ authentication error, because request shape is checked first. A public client is
 with the same `invalid_client` description as a wrong secret, so the response does not
 reveal the client's type.
 
-In `keycloak` mode, a `client_id` longer than 255 characters (Keycloak's maximum) is answered `invalid_client` without calling Keycloak.
+In `keycloak` mode, a `client_id` of more than 255 Unicode code points is answered `invalid_client` without calling Keycloak.
+Keycloak keeps client ids in a 255-character column, and PostgreSQL measures it in code points, so 255 characters outside the Basic Multilingual Plane are a valid client id.
 
 In `keycloak` mode, a `client_secret` or `token` longer than Keycloak's form attribute limit (128 KiB by default) is answered `400 invalid_request` and logged at Information.
 CMS accepts form values up to 4 MiB, so such a request reaches Keycloak, which rejects it with `413` before it authenticates the caller.
@@ -544,10 +545,11 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
   The Configuration Service therefore describes a token only when Keycloak reports it active and its `azp` equals the caller's client id, ordinally, and copies only the members listed above, never Keycloak's other claims.
   Keycloak leaves `scope` out of its answer for a token without scopes, as RFC 7662 §2.2 allows; the owner then receives an empty `scope`.
   Credentials Keycloak rejects, and a public client (which Keycloak refuses at introspection), answer `invalid_client` by the same rules as `self-contained` mode.
-  A `client_id` longer than 255 characters (Keycloak's maximum) is answered `invalid_client` without calling Keycloak.
+  A `client_id` of more than 255 Unicode code points, the most Keycloak's client id column holds, is answered `invalid_client` without calling Keycloak.
   A `client_secret` or `token` longer than Keycloak's form attribute limit (128 KiB by default) is answered `400 invalid_request` ("The identity provider rejected the introspection request.") and logged at Information, as at `/connect/revoke`.
   The Configuration Service accepts form values up to 4 MiB, and Keycloak rejects such a request with `413` before it authenticates the caller, so the answer is neither `invalid_client` nor `503`.
   Any other Keycloak answer, a timeout or an unreachable Keycloak is `503 temporarily_unavailable`.
+  Keycloak's answer is read up to 128 KiB, enough for any token Keycloak's default form attribute limit lets through, such as one listing thousands of education organizations: the answer repeats the token's claims, which take three quarters of the token's length.
   The timeout is one `AppSettings:TokenRequestTimeoutSeconds` budget for Keycloak's response headers and another for reading its body, so a request can wait up to twice that setting.
   Unlike an undecided token in `self-contained` mode, a `503` here is not `{"active": false}`, because the same Keycloak call authenticates the caller: without a usable answer the caller is not authenticated either.
   Retrying is safe.
@@ -558,10 +560,11 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
   The client's access tokens carry `aud` `["<client id>", "account"]`, and its owner receives its own token's metadata on Keycloak 26.1.x and on 26.6.2 or later.
   DMS and the Configuration Service validate `aud` against their configured audience (`account` by default), which the array still contains.
   A client created by an earlier version gains the mapper the next time the Configuration Service rewrites it in Keycloak, even with unchanged values: `PUT /v3/apiClients/{id}` rewrites that API client, `PUT /v3/applications/{id}` the application's first API client, and `PUT /v3/vendors/{id}` every API client of the vendor's applications.
-  The exception is a client that already has a mapper named `Client's own audience` that does not name the client, for example one edited in Keycloak.
+  An audience mapper counts only when it names the client and has *Add to access token* on, because Keycloak checks the access token's `aud`; the mapper is added beside one that is left out of access tokens, such as one added only to ID tokens, which stays as it is.
+  The exception is a client that already has a mapper named `Client's own audience` that does not put the client into its access tokens, for example one edited in Keycloak.
   The update leaves that mapper as it is, so as not to remove an audience something else may rely on, still succeeds, and logs the Warning in [Log signals](#log-signals).
   On Keycloak 26.6.2 or later, an earlier client that is never updated that way, or that kept such a mapper, is answered `{"active": false}` for its own live token until an operator adds the same mapper in Keycloak: in the client's `<client id>-dedicated` scope, an *Audience* mapper with *Included Client Audience* set to the client itself and *Add to access token* and *Add to token introspection* on.
-  When `Client's own audience` is taken, the operator gives the new mapper another name; any audience mapper that names the client satisfies later updates, which then add no other.
+  When `Client's own audience` is taken, the operator gives the new mapper another name; any audience mapper that names the client with *Add to access token* on satisfies later updates, which then add no other.
   Only tokens issued after the mapper is added carry the audience.
   Keycloak also has opt-outs, the server option `allow-token-introspection-without-audience-check` and the client setting *Allow token introspection without audience check*, but both are deprecated and not recommended.
   The compose files pin Keycloak 26.1.4; the Azure VM reference deployment runs 26.7.
@@ -1027,7 +1030,7 @@ Clients holding tokens signed with the old certificate must obtain new ones.
 | Introspection client id longer than any Keycloak client id (`keycloak`, answers `invalid_client`) | Information | `Introspection refused: the client id is longer than any Keycloak client id` |
 | Revocation client id longer than any Keycloak client id (`keycloak`, answers `invalid_client`) | Information | `Revocation refused: the client id is longer than any Keycloak client id` |
 | Keycloak reported another client's token (`keycloak`, answers `{"active": false}`) | Debug | `Introspection answered inactive: the supplied token was not issued to the calling client {ClientId}` |
-| A client update kept a `Client's own audience` mapper that does not name the client (`keycloak`, the update succeeds without the client's own audience) | Warning | `Client {ClientId} already has a protocol mapper named {MapperName} that does not name the client as an audience; it is left unchanged, …` |
+| A client update kept a `Client's own audience` mapper that does not put the client into its access tokens (`keycloak`, the update succeeds without the client's own audience) | Warning | `Client {ClientId} already has a protocol mapper named {MapperName} that does not put the client into its own access tokens' audience; it is left unchanged, …` |
 | Introspection Basic credentials malformed | Information | `Introspection Basic credentials were malformed at the {Stage} stage` |
 
 A snapshot publication labelled `Request` is a normal background reload started by a

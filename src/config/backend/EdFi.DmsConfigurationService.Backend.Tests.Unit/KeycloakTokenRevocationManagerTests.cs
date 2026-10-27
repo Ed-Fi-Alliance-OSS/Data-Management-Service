@@ -349,19 +349,41 @@ public class KeycloakTokenRevocationManagerTests
         LongClientIdSentinel + new string('c', length - LongClientIdSentinel.Length);
 
     /// <summary>
-    /// 255 characters is the longest client id Keycloak can hold (observed on 26.1.4 and 26.7.5), so a
-    /// client id of that length still goes through the client-type lookup.
+    /// A client id of <paramref name="codePoints"/> code points that starts with a sentinel and goes on
+    /// with a character outside the Basic Multilingual Plane, two UTF-16 code units each.
     /// </summary>
-    [TestFixture]
-    public class Given_a_client_id_of_keycloaks_maximum_length : KeycloakTokenRevocationManagerTests
+    protected static string SupplementaryClientIdOf(int codePoints) =>
+        LongClientIdSentinel
+        + string.Concat(Enumerable.Repeat("\U0001F600", codePoints - LongClientIdSentinel.Length));
+
+    /// <summary>
+    /// Keycloak keeps a client id in a 255-character column, which PostgreSQL counts in code points
+    /// (observed on 26.7.5: 255 code points outside the Basic Multilingual Plane, 510 UTF-16 code units,
+    /// are stored).
+    /// </summary>
+    public static IEnumerable<TestFixtureData> ClientIdsOfKeycloaksMaximumLength()
+    {
+        yield return new TestFixtureData(ClientIdOfLength(255)).SetArgDisplayNames("255 characters");
+        yield return new TestFixtureData(SupplementaryClientIdOf(255)).SetArgDisplayNames(
+            "255 code points outside the Basic Multilingual Plane"
+        );
+    }
+
+    /// <summary>A client id Keycloak can hold still goes through the client-type lookup.</summary>
+    [TestFixtureSource(
+        typeof(KeycloakTokenRevocationManagerTests),
+        nameof(ClientIdsOfKeycloaksMaximumLength)
+    )]
+    public class Given_a_client_id_of_keycloaks_maximum_length(string clientId)
+        : KeycloakTokenRevocationManagerTests
     {
         private TokenRevocationResult _result = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            GateAnswers(ConfidentialClient(ClientIdOfLength(255)));
-            _result = await Revoke(clientId: ClientIdOfLength(255));
+            GateAnswers(ConfidentialClient(clientId));
+            _result = await Revoke(clientId: clientId);
         }
 
         [Test]
@@ -369,7 +391,7 @@ public class KeycloakTokenRevocationManagerTests
             A.CallTo(() =>
                     _facade.GetClientsByClientIdAsync(
                         A<string>._,
-                        ClientIdOfLength(255),
+                        clientId,
                         A<TimeSpan>._,
                         A<CancellationToken>._
                     )
@@ -384,15 +406,20 @@ public class KeycloakTokenRevocationManagerTests
     }
 
     /// <summary>
-    /// Each length with what the admin API answers its client-type lookup: no client just past the
-    /// maximum, and 414 once the id makes the lookup URL too long (past 32718 characters).
+    /// Each client id with what the admin API answers its client-type lookup: no client just past the
+    /// maximum, whether counted in characters or in code points, and 414 once the id makes the lookup
+    /// URL too long (past 32718 characters).
     /// </summary>
     public static IEnumerable<TestFixtureData> ClientIdsLongerThanKeycloaksMaximum()
     {
-        yield return new TestFixtureData(256, null).SetArgDisplayNames("256 characters");
-        yield return new TestFixtureData(32719, FlurlStatusException(414)).SetArgDisplayNames(
-            "too long for the lookup URL"
+        yield return new TestFixtureData(ClientIdOfLength(256), null).SetArgDisplayNames("256 characters");
+        yield return new TestFixtureData(SupplementaryClientIdOf(256), null).SetArgDisplayNames(
+            "256 code points outside the Basic Multilingual Plane"
         );
+        yield return new TestFixtureData(
+            ClientIdOfLength(32719),
+            FlurlStatusException(414)
+        ).SetArgDisplayNames("too long for the lookup URL");
     }
 
     /// <summary>
@@ -403,7 +430,7 @@ public class KeycloakTokenRevocationManagerTests
         typeof(KeycloakTokenRevocationManagerTests),
         nameof(ClientIdsLongerThanKeycloaksMaximum)
     )]
-    public class Given_a_client_id_longer_than_keycloaks_maximum(int length, Exception? lookupFailure)
+    public class Given_a_client_id_longer_than_keycloaks_maximum(string clientId, Exception? lookupFailure)
         : KeycloakTokenRevocationManagerTests
     {
         private TokenRevocationResult _result = null!;
@@ -420,7 +447,7 @@ public class KeycloakTokenRevocationManagerTests
                 GateThrows(lookupFailure);
             }
 
-            _result = await Revoke(clientId: ClientIdOfLength(length));
+            _result = await Revoke(clientId: clientId);
         }
 
         [Test]

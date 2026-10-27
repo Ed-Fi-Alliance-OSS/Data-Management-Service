@@ -39,8 +39,14 @@ public sealed class KeycloakTokenIntrospectionManager(
     /// </summary>
     internal const string PublicClientRefusalDescription = "Client not allowed.";
 
-    /// <summary>The largest answer read; a larger one is treated as unparseable.</summary>
-    internal const int MaxResponseBodyBytes = KeycloakProviderAnswer.MaxResponseBodyBytes;
+    /// <summary>
+    /// The largest answer read; a larger one is treated as unparseable. An answer describes a token
+    /// that reached Keycloak as one form value, which Keycloak's form attribute limit (128 KiB by
+    /// default) bounds, and repeats the token's claims, which take three quarters of its length; so the
+    /// answer for any token Keycloak accepts fits, with room for the members Keycloak adds. The longest
+    /// token of a client with 9,600 education organizations was answered in 96,729 bytes (I-28).
+    /// </summary>
+    internal const int MaxResponseBodyBytes = 128 * 1024;
 
     /// <summary>
     /// The named client for the delegated introspection request, registered with automatic redirects
@@ -97,7 +103,7 @@ public sealed class KeycloakTokenIntrospectionManager(
 
         // Decided here: a longer id can name no Keycloak client, so asking Keycloak could not change
         // the answer, and the caller-sized id is kept out of every log.
-        if (request.ClientId.Length > KeycloakProviderAnswer.MaxClientIdLength)
+        if (KeycloakProviderAnswer.IsLongerThanAnyClientId(request.ClientId))
         {
             logger.LogInformation(
                 "Introspection refused: the client id is longer than any Keycloak client id"
@@ -165,7 +171,11 @@ public sealed class KeycloakTokenIntrospectionManager(
                 using var bodyBudget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 bodyBudget.CancelAfter(httpClient.Timeout);
                 body =
-                    await KeycloakProviderAnswer.ReadBoundedAsync(response.Content, bodyBudget.Token) ?? [];
+                    await KeycloakProviderAnswer.ReadBoundedAsync(
+                        response.Content,
+                        MaxResponseBodyBytes,
+                        bodyBudget.Token
+                    ) ?? [];
             }
             catch (Exception) when (cancellationToken.IsCancellationRequested)
             {

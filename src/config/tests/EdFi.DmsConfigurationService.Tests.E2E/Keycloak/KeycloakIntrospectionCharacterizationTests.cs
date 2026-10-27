@@ -80,7 +80,10 @@ public readonly record struct KeycloakServerVersion(int Major, int Minor, int Pa
 /// <c>aud</c>); CMS-legacy mirrors one created before the Configuration Service added that mapper and
 /// shares CMS's claim-set scope, as two clients of one claim set do; S names no default client scope,
 /// so its tokens carry an empty <c>scope</c>, and carries the same own audience mapper as CMS;
-/// R also issues refresh tokens for <c>client_credentials</c>; E's access tokens live 10 seconds; P is
+/// CMS-many is CMS with 9,600 education organization ids, which put its access token just within
+/// Keycloak's form attribute limit; CMS-intro-aud and CMS-access-aud are CMS with its own audience
+/// mapper left out of access tokens, or out of introspection answers, as an edit in Keycloak can leave
+/// it; R also issues refresh tokens for <c>client_credentials</c>; E's access tokens live 10 seconds; P is
 /// public and holds a per-run user; BO is bearer-only with a secret; D is disabled after creation. The
 /// audience scopes set <c>include.in.token.scope=false</c> so they change <c>aud</c> only. Every name
 /// carries the run id, and <see cref="DisposeAsync"/> removes the user, the clients and the scopes.
@@ -88,6 +91,17 @@ public readonly record struct KeycloakServerVersion(int Major, int Minor, int Pa
 public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
 {
     public const int ExpiryClientAccessTokenLifespanSeconds = 10;
+
+    /// <summary>
+    /// 9,600 nine-digit education organization ids, comma-separated as the Configuration Service stores
+    /// them: they give a client shaped as it creates them the longest access token within Keycloak's
+    /// form attribute limit (129,287 characters for a client the Configuration Service created on
+    /// 26.7.5; 9,900 ids went over it).
+    /// </summary>
+    public static readonly string ManyEducationOrganizationIds = string.Join(
+        ",",
+        Enumerable.Range(255900001, 9600)
+    );
 
     // The role claim type the Configuration Service compose files configure, passed unescaped to the
     // realm-role protocol mapper exactly as KeycloakClientRepository does.
@@ -144,6 +158,12 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
     public CharacterizationClient LegacyCms => ClientLabelled("CMS-legacy");
 
     public CharacterizationClient Scopeless => ClientLabelled("S");
+
+    public CharacterizationClient ManyEdOrgsCms => ClientLabelled("CMS-many");
+
+    public CharacterizationClient IntrospectionAudienceCms => ClientLabelled("CMS-intro-aud");
+
+    public CharacterizationClient AccessAudienceCms => ClientLabelled("CMS-access-aud");
 
     public CharacterizationClient R => ClientLabelled("R");
 
@@ -359,14 +379,33 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
         await CreateConfidentialAsync(adminToken, "C", "c", attributes: null);
         await AttachAudienceScopeAsync(adminToken, holder: C, audience: B2);
         await CreateCmsClaimSetScopeAsync(adminToken);
-        CmsDefaultClientScopes = await CreateCmsShapedAsync(adminToken, "CMS", "cms", ownAudience: true);
+        CmsDefaultClientScopes = await CreateCmsShapedAsync(adminToken, "CMS", "cms", OwnAudienceMapper);
         LegacyCmsDefaultClientScopes = await CreateCmsShapedAsync(
             adminToken,
             "CMS-legacy",
             "cms-legacy",
-            ownAudience: false
+            ownAudienceMapper: null
         );
         ScopelessDefaultClientScopes = await CreateScopelessAsync(adminToken);
+        await CreateCmsShapedAsync(
+            adminToken,
+            "CMS-many",
+            "cms-many",
+            OwnAudienceMapper,
+            ManyEducationOrganizationIds
+        );
+        await CreateCmsShapedAsync(
+            adminToken,
+            "CMS-intro-aud",
+            "cms-intro-aud",
+            clientId => OwnAudienceMapper(clientId, accessToken: false, introspection: true)
+        );
+        await CreateCmsShapedAsync(
+            adminToken,
+            "CMS-access-aud",
+            "cms-access-aud",
+            clientId => OwnAudienceMapper(clientId, accessToken: true, introspection: false)
+        );
         await CreateConfidentialAsync(
             adminToken,
             "R",
@@ -498,15 +537,16 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
     // Mirrors KeycloakClientRepository.CreateClientAsync: a client whose representation names the
     // claim-set scope as its only default client scope and carries, in the repository's order, the
     // realm-role mapper, the Namespace Prefixes and Education Organization Ids hardcoded-claim mappers,
-    // the "Client's own audience" mapper and the Data Store IDs mapper (placeholder claim values).
-    // Without ownAudience it is the shape CreateClientAsync built before it added the audience mapper.
-    // The realm-role assignment to the service account is not mirrored. Returns the client's default
-    // client scopes as Keycloak stored them.
+    // the "Client's own audience" mapper and the Data Store IDs mapper (placeholder claim values unless
+    // education organization ids are given). Without an own audience mapper it is the shape
+    // CreateClientAsync built before it added that mapper. The realm-role assignment to the service
+    // account is not mirrored. Returns the client's default client scopes as Keycloak stored them.
     private async Task<IReadOnlyList<string>> CreateCmsShapedAsync(
         string adminToken,
         string label,
         string role,
-        bool ownAudience
+        Func<string, JsonObject>? ownAudienceMapper,
+        string educationOrganizationIds = "255901"
     )
     {
         string clientId = $"cs-char-introspect-{role}-{RunId}";
@@ -529,11 +569,15 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
                 },
             },
             HardcodedClaimMapper("Namespace Prefixes", "namespacePrefixes", "uri://ed-fi.org"),
-            HardcodedClaimMapper("Education Organization Ids", "educationOrganizationIds", "255901")
+            HardcodedClaimMapper(
+                "Education Organization Ids",
+                "educationOrganizationIds",
+                educationOrganizationIds
+            )
         );
-        if (ownAudience)
+        if (ownAudienceMapper is not null)
         {
-            protocolMappers.Add(OwnAudienceMapper(clientId));
+            protocolMappers.Add(ownAudienceMapper(clientId));
         }
 
         protocolMappers.Add(HardcodedClaimMapper("Data Store IDs", "dataStoreIds", "1"));
@@ -583,8 +627,11 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
         return await Api.GetDefaultClientScopeNamesAsync(adminToken, uuid);
     }
 
-    // Mirrors KeycloakClientRepository.SelfAudienceProtocolMapper.
-    private static JsonObject OwnAudienceMapper(string clientId) =>
+    // Mirrors KeycloakClientRepository.SelfAudienceProtocolMapper; accessToken or introspection false is
+    // an edit of it in Keycloak (Add to access token, Add to token introspection).
+    private static JsonObject OwnAudienceMapper(string clientId) => OwnAudienceMapper(clientId, true, true);
+
+    private static JsonObject OwnAudienceMapper(string clientId, bool accessToken, bool introspection) =>
         new()
         {
             ["name"] = "Client's own audience",
@@ -594,8 +641,8 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
             {
                 ["included.client.audience"] = clientId,
                 ["id.token.claim"] = "false",
-                ["access.token.claim"] = "true",
-                ["introspection.token.claim"] = "true",
+                ["access.token.claim"] = accessToken ? "true" : "false",
+                ["introspection.token.claim"] = introspection ? "true" : "false",
                 ["lightweight.claim"] = "false",
             },
         };
@@ -826,6 +873,12 @@ public static class ExpectedIntrospection
     /// </summary>
     public const int FormAttributeLimit = 131072;
 
+    /// <summary>
+    /// The largest answer the Configuration Service reads (KeycloakTokenIntrospectionManager's
+    /// MaxResponseBodyBytes); it read 64 KiB before.
+    /// </summary>
+    public const int ConfigurationServiceAnswerBudget = 128 * 1024;
+
     // The members of an active access-token answer for a client holding the realm's default client
     // scopes, identical on both versions. clientHost and clientAddress are not among them, although
     // the refresh-token answer (I-16) carries both.
@@ -921,6 +974,37 @@ public static class ExpectedIntrospection
     /// <summary>CMS-legacy's access token: the claim-set scope's audience-resolve mapper yields only <c>account</c>.</summary>
     public static IntrospectionPrediction LegacyCmsAccessToken() =>
         CmsShapedAccessToken(Realm.LegacyCms, MemberShape.OfString("account"));
+
+    /// <summary>CMS-many's access token: CMS's shape with 9,600 education organization ids.</summary>
+    public static IntrospectionPrediction ManyEdOrgsCmsAccessToken() =>
+        CmsShapedAccessToken(
+            Realm.ManyEdOrgsCms,
+            MemberShape.OfArray(Realm.ManyEdOrgsCms.ClientId, "account")
+        );
+
+    /// <summary>
+    /// CMS-intro-aud's access token as its owner is answered: its own audience mapper is left out of
+    /// access tokens, so the token's <c>aud</c> is <c>account</c> alone, and from 26.6.2 the owner is
+    /// outside it. Before that the answer's <c>aud</c> gains the owner, because the mapper still runs for
+    /// introspection answers.
+    /// </summary>
+    public static IntrospectionPrediction IntrospectionAudienceCmsAccessToken() =>
+        Realm.AudienceChecked
+            ? IntrospectionPrediction.Inactive()
+            : CmsShapedAccessToken(
+                Realm.IntrospectionAudienceCms,
+                MemberShape.OfArray(Realm.IntrospectionAudienceCms.ClientId, "account")
+            );
+
+    /// <summary>
+    /// CMS-access-aud's access token: its own audience mapper is left out of introspection answers, but
+    /// an answer's <c>aud</c> starts from the token's, which the mapper put the owner into.
+    /// </summary>
+    public static IntrospectionPrediction AccessAudienceCmsAccessToken() =>
+        CmsShapedAccessToken(
+            Realm.AccessAudienceCms,
+            MemberShape.OfArray(Realm.AccessAudienceCms.ClientId, "account")
+        );
 
     /// <summary>
     /// S's access token, answered active without a <c>scope</c> member: Keycloak leaves it out when the
@@ -1455,6 +1539,8 @@ public class Given_the_introspection_characterization_realm
     private MemberShape _audLegacyCms = MemberShape.Absent;
     private MemberShape _audS = MemberShape.Absent;
     private MemberShape _scopeS = MemberShape.Absent;
+    private MemberShape _audIntrospectionAudienceCms = MemberShape.Absent;
+    private MemberShape _audAccessAudienceCms = MemberShape.Absent;
     private MemberShape _audR = MemberShape.Absent;
     private MemberShape _audE = MemberShape.Absent;
     private MemberShape _audP = MemberShape.Absent;
@@ -1478,6 +1564,10 @@ public class Given_the_introspection_characterization_realm
         );
         _audS = MemberShape.Of(scopelessToken, "aud");
         _scopeS = MemberShape.Of(scopelessToken, "scope");
+        _audIntrospectionAudienceCms = await AudienceOfServiceAccountTokenAsync(
+            Realm.IntrospectionAudienceCms
+        );
+        _audAccessAudienceCms = await AudienceOfServiceAccountTokenAsync(Realm.AccessAudienceCms);
         _audE = await AudienceOfServiceAccountTokenAsync(Realm.E);
         TokenGrant refresh = await Realm.ServiceAccountGrantAsync(Realm.R);
         _audR = MemberShape.Of(JwtPayload.Read(refresh.AccessToken), "aud");
@@ -1488,7 +1578,7 @@ public class Given_the_introspection_characterization_realm
             "I-00",
             "Preconditions: server, client setup and the `aud` each client's access tokens carry (unverified JWT payload)",
             $"server {Realm.ServerVersion}; audience check predicted {(Realm.AudienceChecked ? "yes" : "no")}; sslRequired={Realm.SslRequired ?? "(absent)"}; "
-                + $"aud of A {Render(_audA)}, A2 {Render(_audA2)}, C {Render(_audC)}, CMS {Render(_audCms)}, CMS-legacy {Render(_audLegacyCms)}, S {Render(_audS)}, R {Render(_audR)}, E {Render(_audE)}, P's user {Render(_audP)}; "
+                + $"aud of A {Render(_audA)}, A2 {Render(_audA2)}, C {Render(_audC)}, CMS {Render(_audCms)}, CMS-legacy {Render(_audLegacyCms)}, S {Render(_audS)}, CMS-intro-aud {Render(_audIntrospectionAudienceCms)}, CMS-access-aud {Render(_audAccessAudienceCms)}, R {Render(_audR)}, E {Render(_audE)}, P's user {Render(_audP)}; "
                 + $"scope of S's tokens {Render(_scopeS)}; "
                 + $"CMS default client scopes [{RenderScopes(Realm.CmsDefaultClientScopes)}]; "
                 + $"CMS-legacy default client scopes [{RenderScopes(Realm.LegacyCmsDefaultClientScopes)}]; "
@@ -1558,6 +1648,20 @@ public class Given_the_introspection_characterization_realm
     [Test]
     public void It_issues_S_tokens_whose_aud_is_exactly_S() =>
         _audS.Matches(MemberShape.OfString(Realm.Scopeless.ClientId)).Should().BeTrue(Render(_audS));
+
+    [Test]
+    public void It_issues_CMS_intro_aud_tokens_whose_aud_is_exactly_account() =>
+        _audIntrospectionAudienceCms
+            .Matches(MemberShape.OfString("account"))
+            .Should()
+            .BeTrue(Render(_audIntrospectionAudienceCms));
+
+    [Test]
+    public void It_issues_CMS_access_aud_tokens_whose_aud_is_exactly_the_client_and_account() =>
+        _audAccessAudienceCms
+            .Matches(MemberShape.OfArray(Realm.AccessAudienceCms.ClientId, "account"))
+            .Should()
+            .BeTrue(Render(_audAccessAudienceCms));
 
     [Test]
     public void It_stores_BO_as_bearer_only() => Realm.BearerOnlyStored.Should().BeTrue();
@@ -2334,6 +2438,104 @@ public class Given_a_client_whose_tokens_carry_no_scope_introspecting_its_own_to
             outcome,
             ActiveBefore: null,
             $"{TokenAudience(grant.AccessToken)}; token scope {IntrospectionRendering.Shape(MemberShape.Of(JwtPayload.Read(grant.AccessToken), "scope"), Realm.Alias)}; RFC 7662 §2.2 makes `scope` optional"
+        );
+    }
+}
+
+/// <summary>
+/// The answer repeats the token's claims, so the longest token Keycloak's form attribute limit lets
+/// through is answered in more than the 64 KiB the Configuration Service once read, and within the
+/// 128 KiB it reads now.
+/// </summary>
+[TestFixture]
+public class Given_a_configuration_service_shaped_client_with_many_education_organizations_introspecting_its_own_token
+    : IntrospectionCharacterizationRow
+{
+    private int _tokenLength;
+
+    protected override string RowId => "I-28";
+
+    protected override string Scenario =>
+        "CMS-many, shaped as CMS with 9,600 education organization ids, introspects its own access token";
+
+    protected override IntrospectionPrediction Prediction => ExpectedIntrospection.ManyEdOrgsCmsAccessToken();
+
+    protected override async Task<IntrospectionObservation> ObserveAsync()
+    {
+        TokenGrant grant = await Realm.ServiceAccountGrantAsync(Realm.ManyEdOrgsCms);
+        _tokenLength = grant.AccessToken.Length;
+        IntrospectionOutcome outcome = await IntrospectWithFormCredentialsAsync(
+            Realm.ManyEdOrgsCms.Credentials,
+            grant.AccessToken
+        );
+        return new IntrospectionObservation(
+            outcome,
+            ActiveBefore: null,
+            $"{TokenAudience(grant.AccessToken)}; token {_tokenLength} characters, Keycloak's form attribute limit {ExpectedIntrospection.FormAttributeLimit}; answer {outcome.BodyLength} characters, the Configuration Service reads {ExpectedIntrospection.ConfigurationServiceAnswerBudget}"
+        );
+    }
+
+    [Test]
+    public void It_starts_from_a_token_within_the_form_attribute_limit() =>
+        _tokenLength.Should().BeLessThanOrEqualTo(ExpectedIntrospection.FormAttributeLimit);
+
+    [Test]
+    public void It_answers_in_more_than_64_KiB_and_within_the_configuration_services_budget() =>
+        Observation
+            .Outcome.BodyLength.Should()
+            .BeInRange(64 * 1024 + 1, ExpectedIntrospection.ConfigurationServiceAnswerBudget);
+}
+
+[TestFixture]
+public class Given_a_client_whose_own_audience_mapper_is_left_out_of_access_tokens_introspecting_its_own_token
+    : IntrospectionCharacterizationRow
+{
+    protected override string RowId => "I-29";
+
+    protected override string Scenario =>
+        "CMS-intro-aud, whose own audience mapper has Add to access token off and Add to token introspection on, introspects its own access token";
+
+    protected override IntrospectionPrediction Prediction =>
+        ExpectedIntrospection.IntrospectionAudienceCmsAccessToken();
+
+    protected override async Task<IntrospectionObservation> ObserveAsync()
+    {
+        TokenGrant grant = await Realm.ServiceAccountGrantAsync(Realm.IntrospectionAudienceCms);
+        IntrospectionOutcome outcome = await IntrospectWithFormCredentialsAsync(
+            Realm.IntrospectionAudienceCms.Credentials,
+            grant.AccessToken
+        );
+        return new IntrospectionObservation(
+            outcome,
+            ActiveBefore: null,
+            $"{TokenAudience(grant.AccessToken)}; the audience check reads the token's `aud`, not the answer's"
+        );
+    }
+}
+
+[TestFixture]
+public class Given_a_client_whose_own_audience_mapper_is_left_out_of_introspection_introspecting_its_own_token
+    : IntrospectionCharacterizationRow
+{
+    protected override string RowId => "I-30";
+
+    protected override string Scenario =>
+        "CMS-access-aud, whose own audience mapper has Add to access token on and Add to token introspection off, introspects its own access token";
+
+    protected override IntrospectionPrediction Prediction =>
+        ExpectedIntrospection.AccessAudienceCmsAccessToken();
+
+    protected override async Task<IntrospectionObservation> ObserveAsync()
+    {
+        TokenGrant grant = await Realm.ServiceAccountGrantAsync(Realm.AccessAudienceCms);
+        IntrospectionOutcome outcome = await IntrospectWithFormCredentialsAsync(
+            Realm.AccessAudienceCms.Credentials,
+            grant.AccessToken
+        );
+        return new IntrospectionObservation(
+            outcome,
+            ActiveBefore: null,
+            $"{TokenAudience(grant.AccessToken)}; the answer's `aud` starts from the token's"
         );
     }
 }
