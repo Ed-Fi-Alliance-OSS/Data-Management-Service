@@ -592,7 +592,7 @@ public partial class ApiClientModuleTests
             A.CallTo(() =>
                     _identityProviderRepository.UpdateClientAsync(
                         A<string>.Ignored,
-                        "Updated API Client",
+                        "Test Application",
                         "TestClaimSet",
                         "1,2",
                         A<int[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 1),
@@ -7060,11 +7060,11 @@ public partial class ApiClientModuleTests
             await AssertDuplicateApiClientNameContract(_updateResponse);
 
         [Test]
-        public void It_applies_the_requested_name_to_the_provider_first()
+        public void It_updates_the_provider_first_with_the_Application_name()
         {
             _providerUpdates.Should().HaveCount(2);
             _providerUpdates[0].ClientUuid.Should().Be(_existingUuid.ToString());
-            _providerUpdates[0].DisplayName.Should().Be("Updated");
+            _providerUpdates[0].DisplayName.Should().Be("Test Application");
         }
 
         [Test]
@@ -7072,7 +7072,7 @@ public partial class ApiClientModuleTests
         {
             _providerUpdates.Should().HaveCount(2);
             _providerUpdates[1].ClientUuid.Should().Be(_updatedUuid.ToString());
-            _providerUpdates[1].DisplayName.Should().Be("Test");
+            _providerUpdates[1].DisplayName.Should().Be("Test Application");
             _providerUpdates[1].DataStoreIds.Should().Equal(1);
             _providerUpdates[1].IsApproved.Should().BeTrue();
         }

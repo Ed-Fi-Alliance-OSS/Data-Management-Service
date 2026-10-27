@@ -1016,9 +1016,10 @@ public class ApiClientModule : IEndpointModule
             command.EducationOrganizationScope = scope.Scope;
 
             // Update client in identity provider FIRST
+            // The display name is the Application's, as on create and an Application update.
             var clientUpdateResult = await identityProviderRepository.UpdateClientAsync(
                 existingApiClient.ClientUuid.ToString(),
-                command.Name,
+                application.ApplicationName,
                 application.ClaimSetName,
                 scope.Claim,
                 command.DataStoreIds,
@@ -1101,7 +1102,7 @@ public class ApiClientModule : IEndpointModule
                         {
                             rollbackResult = await identityProviderRepository.UpdateClientAsync(
                                 updateSuccess.ClientUuid.ToString(),
-                                existingApiClient.Name,
+                                originalApplication.ApplicationName,
                                 originalApplication.ClaimSetName,
                                 originalClaim,
                                 [.. existingApiClient.DataStoreIds],
