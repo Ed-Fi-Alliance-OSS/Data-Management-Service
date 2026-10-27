@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -17,8 +18,20 @@ namespace EdFi.DmsConfigurationService.Claims.Composition;
 /// Composes a complete claims document from base Claims.json and claim-set fragments,
 /// applying resource grants to the hierarchy and registering fragment-defined claim sets.
 /// </summary>
-public class ClaimsFragmentComposer(ILogger logger)
+public class ClaimsFragmentComposer
 {
+    private readonly ILogger _logger;
+    private readonly IClaimsCompositionFileSystem _fileSystem;
+
+    public ClaimsFragmentComposer(ILogger logger)
+        : this(logger, new ClaimsCompositionFileSystem()) { }
+
+    internal ClaimsFragmentComposer(ILogger logger, IClaimsCompositionFileSystem fileSystem)
+    {
+        _logger = logger;
+        _fileSystem = fileSystem;
+    }
+
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -36,60 +49,82 @@ public class ClaimsFragmentComposer(ILogger logger)
     /// <summary>
     /// Composes claims from base Claims.json and fragment files in the specified directory
     /// </summary>
-    public ClaimsLoadResult ComposeClaimsFromFragments(ClaimsDocument baseClaimsNodes, string fragmentsPath)
+    [SuppressMessage(
+        "Major Code Smell",
+        "S6667",
+        Justification = "Raw exception text may contain input paths or JSON; log sanitized text and retain the original exception only in the structured result."
+    )]
+    public ClaimsCompositionResult ComposeClaimsFromFragments(
+        ClaimsDocument baseClaimsNodes,
+        string fragmentsPath
+    )
     {
+        List<ClaimsCompositionDiagnostic> diagnostics = [];
+        string sourcePath = fragmentsPath;
         try
         {
-            logger.LogInformation(
+            _logger.LogInformation(
                 "Composing claims from base and fragments in path: {FragmentsPath}",
                 LoggingUtility.SanitizeForLog(fragmentsPath)
             );
 
             // Discover fragment files
-            List<string> fragmentFiles = DiscoverFragmentFiles(fragmentsPath);
+            List<string> fragmentFiles = DiscoverFragmentFiles(fragmentsPath, diagnostics);
             if (fragmentFiles.Count == 0)
             {
-                logger.LogInformation("No fragment files found - returning base claims");
-                return new ClaimsLoadResult(baseClaimsNodes, []);
+                _logger.LogInformation("No fragment files found - returning base claims");
+                return new(new ClaimsLoadResult(baseClaimsNodes, []), diagnostics.ToArray());
             }
 
-            logger.LogInformation("Found {FragmentCount} fragment files to compose", fragmentFiles.Count);
+            _logger.LogInformation("Found {FragmentCount} fragment files to compose", fragmentFiles.Count);
 
             // Convert base claims to our transformation model
             List<TransformationClaim> baseClaims = ConvertToTransformationModel(
                 baseClaimsNodes.ClaimsHierarchyNode
             );
-            logger.LogDebug(
+            _logger.LogDebug(
                 "Base claims converted to transformation model: {BaseClaimsCount} claims",
                 baseClaims.Count
             );
 
             // Apply each fragment transformation, collecting the claim sets the fragments define
-            List<string> definedClaimSetNames = [];
+            List<ClaimSetDefinition> definedClaimSets = [];
             foreach (string fragmentFile in fragmentFiles)
             {
-                logger.LogInformation(
+                _logger.LogInformation(
                     "Applying fragment: {FragmentFile}",
                     LoggingUtility.SanitizeForLog(fragmentFile)
                 );
-                if (ApplyFragmentTransformation(fragmentFile, baseClaims) is string definedClaimSetName)
+                sourcePath = fragmentFile;
+                if (
+                    ApplyFragmentTransformation(fragmentFile, baseClaims, diagnostics)
+                    is ClaimSetDefinition definition
+                )
                 {
                     // An invalid name is not registered, but the composition continues: failing it
                     // would make Hybrid mode fall back to the base claims and drop every fragment
-                    if (ClaimSetNameValidator.IsValid(definedClaimSetName))
+                    if (ClaimSetNameValidator.IsValid(definition.Name))
                     {
-                        definedClaimSetNames.Add(definedClaimSetName);
+                        definedClaimSets.Add(definition);
                     }
                     else
                     {
-                        logger.LogError(
+                        diagnostics.Add(
+                            new(
+                                ClaimsCompositionDiagnosticCode.InvalidClaimSetRegistration,
+                                fragmentFile,
+                                ClaimSetName: definition.Name,
+                                JsonPath: definition.JsonPath
+                            )
+                        );
+                        _logger.LogError(
                             "Fragment {FragmentFile} defines a claim set name that is empty, longer than {MaxLength} characters, or contains white space; the claim set is not registered",
                             LoggingUtility.SanitizeForLog(fragmentFile),
                             ValidationConstants.ClaimSetNameMaxLength
                         );
                     }
                 }
-                logger.LogDebug(
+                _logger.LogDebug(
                     "After applying {FragmentFile}: {ClaimsCount} claims",
                     LoggingUtility.SanitizeForLog(fragmentFile),
                     baseClaims.Count
@@ -103,11 +138,11 @@ public class ClaimsFragmentComposer(ILogger logger)
             JsonNode transformedHierarchy = ConvertFromTransformationModel(baseClaims);
 
             // Debug logging to check the composed results
-            logger.LogInformation(
+            _logger.LogInformation(
                 "Transformed hierarchy JSON: {HierarchyJson}",
                 LoggingUtility.SanitizeForLog(transformedHierarchy?.ToJsonString())
             );
-            logger.LogInformation(
+            _logger.LogInformation(
                 "Base claim sets JSON: {ClaimSetsJson}",
                 LoggingUtility.SanitizeForLog(baseClaimsNodes.ClaimSetsNode?.ToJsonString())
             );
@@ -120,15 +155,16 @@ public class ClaimsFragmentComposer(ILogger logger)
 
             JsonNode claimSetsNode = WithDefinedClaimSets(
                 baseClaimsNodes.ClaimSetsNode,
-                definedClaimSetNames
+                definedClaimSets,
+                diagnostics
             );
             ClaimsDocument composedNodes = new ClaimsDocument(claimSetsNode, transformedHierarchy);
 
-            logger.LogInformation(
+            _logger.LogInformation(
                 "Successfully composed claims from {FragmentCount} fragments",
                 fragmentFiles.Count
             );
-            return new ClaimsLoadResult(composedNodes, []);
+            return new(new ClaimsLoadResult(composedNodes, []), diagnostics.ToArray());
         }
         catch (JsonException ex)
         {
@@ -138,8 +174,15 @@ public class ClaimsFragmentComposer(ILogger logger)
                 fragmentsPath,
                 ex
             );
-            logger.LogError(ex, "{Message}", LoggingUtility.SanitizeForLog(failure.Message));
-            return new ClaimsLoadResult(null, [failure]);
+            _logger.LogError(
+                "{Message}: {Exception}",
+                LoggingUtility.SanitizeForLog(failure.Message),
+                LoggingUtility.SanitizeForLog(ex.ToString())
+            );
+            diagnostics.Add(
+                new(ClaimsCompositionDiagnosticCode.MalformedFragment, sourcePath, JsonPath: ex.Path ?? "")
+            );
+            return new(new ClaimsLoadResult(null, [failure]), diagnostics.ToArray());
         }
         catch (DirectoryNotFoundException ex)
         {
@@ -149,8 +192,13 @@ public class ClaimsFragmentComposer(ILogger logger)
                 fragmentsPath,
                 ex
             );
-            logger.LogError(ex, "{Message}", LoggingUtility.SanitizeForLog(failure.Message));
-            return new ClaimsLoadResult(null, [failure]);
+            _logger.LogError(
+                "{Message}: {Exception}",
+                LoggingUtility.SanitizeForLog(failure.Message),
+                LoggingUtility.SanitizeForLog(ex.ToString())
+            );
+            diagnostics.Add(new(ClaimsCompositionDiagnosticCode.FragmentReadFailed, sourcePath));
+            return new(new ClaimsLoadResult(null, [failure]), diagnostics.ToArray());
         }
         catch (FileNotFoundException ex)
         {
@@ -160,8 +208,13 @@ public class ClaimsFragmentComposer(ILogger logger)
                 fragmentsPath,
                 ex
             );
-            logger.LogError(ex, "{Message}", LoggingUtility.SanitizeForLog(failure.Message));
-            return new ClaimsLoadResult(null, [failure]);
+            _logger.LogError(
+                "{Message}: {Exception}",
+                LoggingUtility.SanitizeForLog(failure.Message),
+                LoggingUtility.SanitizeForLog(ex.ToString())
+            );
+            diagnostics.Add(new(ClaimsCompositionDiagnosticCode.FragmentReadFailed, sourcePath));
+            return new(new ClaimsLoadResult(null, [failure]), diagnostics.ToArray());
         }
         catch (IOException ex)
         {
@@ -171,47 +224,86 @@ public class ClaimsFragmentComposer(ILogger logger)
                 fragmentsPath,
                 ex
             );
-            logger.LogError(ex, "{Message}", LoggingUtility.SanitizeForLog(failure.Message));
-            return new ClaimsLoadResult(null, [failure]);
+            _logger.LogError(
+                "{Message}: {Exception}",
+                LoggingUtility.SanitizeForLog(failure.Message),
+                LoggingUtility.SanitizeForLog(ex.ToString())
+            );
+            diagnostics.Add(new(ClaimsCompositionDiagnosticCode.FragmentReadFailed, sourcePath));
+            return new(new ClaimsLoadResult(null, [failure]), diagnostics.ToArray());
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            diagnostics.Add(new(ClaimsCompositionDiagnosticCode.FragmentReadFailed, sourcePath));
+            return new(
+                new ClaimsLoadResult(
+                    null,
+                    [
+                        new ClaimsFailure(
+                            "UnauthorizedAccess",
+                            "Access denied reading fragment file",
+                            fragmentsPath,
+                            ex
+                        ),
+                    ]
+                ),
+                diagnostics.ToArray()
+            );
         }
     }
 
     /// <summary>
     /// Discovers fragment files matching the pattern *-claims.json in the specified directory
     /// </summary>
-    public List<string> DiscoverFragmentFiles(string fragmentsPath)
+    public List<string> DiscoverFragmentFiles(string fragmentsPath) =>
+        DiscoverFragmentFiles(fragmentsPath, []);
+
+    [SuppressMessage(
+        "Major Code Smell",
+        "S6667",
+        Justification = "Raw exception text may contain input paths or JSON; log sanitized text and retain the original exception only in the structured result."
+    )]
+    private List<string> DiscoverFragmentFiles(
+        string fragmentsPath,
+        List<ClaimsCompositionDiagnostic> diagnostics
+    )
     {
         try
         {
-            if (!Directory.Exists(fragmentsPath))
+            if (!_fileSystem.DirectoryExists(fragmentsPath))
             {
-                logger.LogWarning(
+                diagnostics.Add(new(ClaimsCompositionDiagnosticCode.MissingDirectory, fragmentsPath));
+                _logger.LogWarning(
                     "Fragment path does not exist: {FragmentsPath}",
                     LoggingUtility.SanitizeForLog(fragmentsPath)
                 );
                 return [];
             }
 
-            List<string> fragmentFiles = Directory
-                .GetFiles(fragmentsPath, "*-claims.json", SearchOption.AllDirectories)
+            List<string> fragmentFiles = _fileSystem
+                .GetFiles(fragmentsPath, "*-claims.json")
                 .Where(f => !Path.GetFileName(f).Equals("Claims.json", StringComparison.OrdinalIgnoreCase))
                 .OrderBy(f => f)
                 .ToList();
 
             // Fragments were named *-claimset.json before 8.1; they are not read, so say so
             foreach (
-                string retiredFile in Directory
-                    .GetFiles(fragmentsPath, "*-claimset.json", SearchOption.AllDirectories)
-                    .OrderBy(f => f)
+                string retiredFile in _fileSystem.GetFiles(fragmentsPath, "*-claimset.json").OrderBy(f => f)
             )
             {
-                logger.LogWarning(
+                diagnostics.Add(new(ClaimsCompositionDiagnosticCode.RetiredFragment, retiredFile));
+                _logger.LogWarning(
                     "Claims fragment file {FilePath} is not read: fragment file names must end in -claims.json. Rename the file to apply it.",
                     LoggingUtility.SanitizeForLog(retiredFile)
                 );
             }
 
-            logger.LogDebug(
+            if (fragmentFiles.Count == 0 && diagnostics.Count == 0)
+            {
+                diagnostics.Add(new(ClaimsCompositionDiagnosticCode.EmptyDirectory, fragmentsPath));
+            }
+
+            _logger.LogDebug(
                 "Discovered {Count} fragment files in {Path}",
                 fragmentFiles.Count,
                 LoggingUtility.SanitizeForLog(fragmentsPath)
@@ -220,28 +312,31 @@ public class ClaimsFragmentComposer(ILogger logger)
         }
         catch (DirectoryNotFoundException ex)
         {
-            logger.LogError(
-                ex,
-                "Directory not found when discovering fragment files: {FragmentsPath}",
-                LoggingUtility.SanitizeForLog(fragmentsPath)
+            diagnostics.Add(new(ClaimsCompositionDiagnosticCode.DirectoryDiscoveryFailed, fragmentsPath));
+            _logger.LogError(
+                "Directory not found when discovering fragment files: {FragmentsPath}: {Exception}",
+                LoggingUtility.SanitizeForLog(fragmentsPath),
+                LoggingUtility.SanitizeForLog(ex.ToString())
             );
             return [];
         }
         catch (IOException ex)
         {
-            logger.LogError(
-                ex,
-                "I/O error when discovering fragment files in path: {FragmentsPath}",
-                LoggingUtility.SanitizeForLog(fragmentsPath)
+            diagnostics.Add(new(ClaimsCompositionDiagnosticCode.DirectoryDiscoveryFailed, fragmentsPath));
+            _logger.LogError(
+                "I/O error when discovering fragment files in path: {FragmentsPath}: {Exception}",
+                LoggingUtility.SanitizeForLog(fragmentsPath),
+                LoggingUtility.SanitizeForLog(ex.ToString())
             );
             return [];
         }
         catch (UnauthorizedAccessException ex)
         {
-            logger.LogError(
-                ex,
-                "Access denied when discovering fragment files in path: {FragmentsPath}",
-                LoggingUtility.SanitizeForLog(fragmentsPath)
+            diagnostics.Add(new(ClaimsCompositionDiagnosticCode.DirectoryDiscoveryFailed, fragmentsPath));
+            _logger.LogError(
+                "Access denied when discovering fragment files in path: {FragmentsPath}: {Exception}",
+                LoggingUtility.SanitizeForLog(fragmentsPath),
+                LoggingUtility.SanitizeForLog(ex.ToString())
             );
             return [];
         }
@@ -269,7 +364,11 @@ public class ClaimsFragmentComposer(ILogger logger)
     /// Copies the base claim sets and appends, as system-reserved, each fragment-defined claim set
     /// that the base does not already declare
     /// </summary>
-    private JsonNode WithDefinedClaimSets(JsonNode? baseClaimSetsNode, List<string> definedClaimSetNames)
+    private JsonNode WithDefinedClaimSets(
+        JsonNode? baseClaimSetsNode,
+        List<ClaimSetDefinition> definitions,
+        List<ClaimsCompositionDiagnostic> diagnostics
+    )
     {
         // Re-parse so the composed document never shares nodes with the base document
         JsonArray claimSets = JsonNode.Parse(baseClaimSetsNode?.ToJsonString() ?? "[]")!.AsArray();
@@ -279,10 +378,19 @@ public class ClaimsFragmentComposer(ILogger logger)
             StringComparer.OrdinalIgnoreCase
         );
 
-        foreach (string claimSetName in definedClaimSetNames.Where(declaredClaimSetNames.Add))
+        foreach (ClaimSetDefinition definition in definitions.Where(d => declaredClaimSetNames.Add(d.Name)))
         {
+            string claimSetName = definition.Name;
+            diagnostics.Add(
+                new(
+                    ClaimsCompositionDiagnosticCode.ClaimSetRegistered,
+                    definition.SourcePath,
+                    ClaimSetName: claimSetName,
+                    JsonPath: definition.JsonPath
+                )
+            );
             claimSets.Add(new JsonObject { ["claimSetName"] = claimSetName, ["isSystemReserved"] = true });
-            logger.LogInformation(
+            _logger.LogInformation(
                 "Registered claim set {ClaimSetName} defined by a claims fragment",
                 LoggingUtility.SanitizeForLog(claimSetName)
             );
@@ -297,18 +405,28 @@ public class ClaimsFragmentComposer(ILogger logger)
     /// defines its top-level name (or file name) as a claim set when it has a non-parent resource
     /// claim, because those grants are attached under that name.
     /// </summary>
-    private string? ApplyFragmentTransformation(
+    private ClaimSetDefinition? ApplyFragmentTransformation(
         string fragmentFilePath,
-        List<TransformationClaim> existingClaims
+        List<TransformationClaim> existingClaims,
+        List<ClaimsCompositionDiagnostic> diagnostics
     )
     {
-        string jsonData = File.ReadAllText(fragmentFilePath);
-        if (
-            JsonSerializer.Deserialize<ClaimSetResourceClaims>(jsonData, _jsonOptions)
-            is not { ResourceClaims: not null } claimSetData
-        )
+        string jsonData = _fileSystem.ReadAllText(fragmentFilePath);
+        ClaimSetResourceClaims claimSetData = JsonSerializer.Deserialize<ClaimSetResourceClaims>(
+            jsonData,
+            _jsonOptions
+        )!;
+        if (claimSetData is null || claimSetData.ResourceClaims is null)
         {
-            logger.LogWarning(
+            diagnostics.Add(
+                new(
+                    ClaimsCompositionDiagnosticCode.NoResourceClaims,
+                    fragmentFilePath,
+                    ClaimSetName: claimSetData?.Name ?? "",
+                    JsonPath: "$.resourceClaims"
+                )
+            );
+            _logger.LogWarning(
                 "Fragment file {FilePath} has no resource claims",
                 LoggingUtility.SanitizeForLog(fragmentFilePath)
             );
@@ -317,20 +435,29 @@ public class ClaimsFragmentComposer(ILogger logger)
 
         string claimSetName = claimSetData.Name ?? Path.GetFileNameWithoutExtension(fragmentFilePath);
         bool definesClaimSet = false;
-        foreach (ResourceClaim resourceClaim in claimSetData.ResourceClaims)
+        for (int index = 0; index < claimSetData.ResourceClaims.Count; index++)
         {
+            ResourceClaim resourceClaim = claimSetData.ResourceClaims[index];
             if (resourceClaim.IsParent)
             {
                 ApplyParentResourceClaim(resourceClaim, existingClaims);
             }
             else
             {
-                ApplyChildResourceClaim(fragmentFilePath, resourceClaim, existingClaims, claimSetName);
+                ApplyChildResourceClaim(
+                    fragmentFilePath,
+                    resourceClaim,
+                    existingClaims,
+                    claimSetName,
+                    $"$.resourceClaims[{index}].name",
+                    diagnostics
+                );
                 definesClaimSet = true;
             }
         }
 
-        return definesClaimSet ? claimSetName : null;
+        string namePath = claimSetData.Name is null ? "" : "$.name";
+        return definesClaimSet ? new ClaimSetDefinition(claimSetName, fragmentFilePath, namePath) : null;
     }
 
     /// <summary>
@@ -439,13 +566,24 @@ public class ClaimsFragmentComposer(ILogger logger)
         string fragmentFilePath,
         ResourceClaim resourceClaim,
         List<TransformationClaim> existingClaims,
-        string claimSetName
+        string claimSetName,
+        string jsonPath,
+        List<ClaimsCompositionDiagnostic> diagnostics
     )
     {
         string name = resourceClaim.Name!;
         if (FindGrantClaim(existingClaims, name) is not TransformationClaim existingClaim)
         {
-            logger.LogWarning(
+            diagnostics.Add(
+                new(
+                    ClaimsCompositionDiagnosticCode.UnmatchedGrantTarget,
+                    fragmentFilePath,
+                    name,
+                    claimSetName,
+                    jsonPath
+                )
+            );
+            _logger.LogWarning(
                 "Fragment {FragmentFile} grants claim set {ClaimSetName} access to {ResourceClaimName}, which matches no resource claim by that name or its singular form; the entry is skipped",
                 LoggingUtility.SanitizeForLog(fragmentFilePath),
                 LoggingUtility.SanitizeForLog(claimSetName),
@@ -630,6 +768,8 @@ public class ClaimsFragmentComposer(ILogger logger)
             }
         }
     }
+
+    private sealed record ClaimSetDefinition(string Name, string SourcePath, string JsonPath);
 
     #region Internal Hierarchy Models and Fragment Input Records
 

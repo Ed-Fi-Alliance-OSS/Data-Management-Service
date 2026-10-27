@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using ClaimsCompositionResult = EdFi.DmsConfigurationService.Claims.Composition.ClaimsCompositionResult;
 using SharedClaimsFragmentComposer = EdFi.DmsConfigurationService.Claims.Composition.ClaimsFragmentComposer;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
@@ -31,7 +32,7 @@ public class Given_ClaimsFragmentComposer_characterization(string scenario)
     private ClaimsDocument _base = null!;
     private ClaimsDocument _expected = null!;
     private ClaimsLoadResult _result = null!;
-    private ClaimsLoadResult _sharedResult = null!;
+    private ClaimsCompositionResult _sharedResult = null!;
     private ClaimsProvider _provider = null!;
     private ClaimsDocument _cmsResult = null!;
     private Action _load = null!;
@@ -158,16 +159,24 @@ public class Given_ClaimsFragmentComposer_characterization(string scenario)
     public void It_uses_the_same_shared_result_and_failure_contract()
     {
         _sharedResult
-            .Failures.Should()
+            .LoadResult.Failures.Should()
             .BeEquivalentTo(_result.Failures, options => options.Excluding(f => f.Exception));
         if (scenario == "malformed")
         {
-            _sharedResult.Nodes.Should().BeNull();
+            _sharedResult.LoadResult.Nodes.Should().BeNull();
         }
         else
         {
-            AssertDocument(_sharedResult.Nodes!, _expected);
+            AssertDocument(_sharedResult.LoadResult.Nodes!, _expected);
         }
+    }
+
+    [Test]
+    public void It_distinguishes_incomplete_input_from_normal_precedence()
+    {
+        _sharedResult
+            .IsComplete.Should()
+            .Be(scenario is "empty" or "first-wins" or "reverse-wins" or "base-wins" or "discarded-children");
     }
 
     [Test]
