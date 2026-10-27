@@ -53,6 +53,7 @@ internal static class CommandHost
             )
         );
         root.Subcommands.Add(convert);
+        root.Subcommands.Add(MergeCommand.Create(error));
         root.Subcommands.Add(VerifyCommand.Create(output, error, createHttpClient));
         return root;
     }
