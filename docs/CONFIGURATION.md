@@ -462,6 +462,7 @@ When TLS terminates at a proxy and forwarded headers are not enabled, the applic
 - The Configuration Service discovery document, `/.well-known/openid-configuration`.
 - DMS `/oauth/token_info`.
 - DMS claimset management endpoints (`view-claimsets` and `reload-claimsets`).
+- The DMS DocumentCache status endpoint, `/health/document-cache`, when `DataManagement:DocumentCache:Status:RequiredRole` maps it.
 - DMS identity operations, as described in [IDENTITY-MANAGEMENT.md](IDENTITY-MANAGEMENT.md).
 
 DMS data API responses still carry their `ETag`, so a client that keeps it can revalidate with `If-None-Match` and receive `304 Not Modified`, but no browser or other HTTP cache stores the records.
