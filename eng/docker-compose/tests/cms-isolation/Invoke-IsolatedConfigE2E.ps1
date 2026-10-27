@@ -54,7 +54,7 @@ param(
     [string]
     $E2ETestFilter = "",
 
-    [ValidateSet("Hybrid", "Filesystem")]
+    [ValidateSet("Hybrid", "Filesystem", "Upload")]
     [string]
     $SecurityMetadataToolsScenario = "",
 
@@ -134,13 +134,15 @@ if ($SecurityMetadataToolsScenario) {
         }
     }
     $ClaimsFixtureDirectory = Join-Path $repoRoot "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Hybrid/fragments"
-    if ($SecurityMetadataToolsScenario -eq 'Filesystem' -and $DataStandardVersion -ne '5.2') {
-        throw 'The Filesystem policy scenario requires DataStandardVersion 5.2.'
+    if ($SecurityMetadataToolsScenario -in @('Filesystem', 'Upload') -and $DataStandardVersion -ne '5.2') {
+        throw "The $SecurityMetadataToolsScenario policy scenario requires DataStandardVersion 5.2."
     }
-    $ClaimsSource = $SecurityMetadataToolsScenario
-    $EnableUnrestrictedClaimsLoading = $false
+    $ClaimsSource = if ($SecurityMetadataToolsScenario -eq 'Upload') { 'Hybrid' } else { $SecurityMetadataToolsScenario }
+    $EnableUnrestrictedClaimsLoading = $SecurityMetadataToolsScenario -eq 'Upload'
     $testName = if ($SecurityMetadataToolsScenario -eq 'Filesystem') {
         'It_loads_unmodified_merge_output_through_Filesystem_startup'
+    } elseif ($SecurityMetadataToolsScenario -eq 'Upload') {
+        'It_uploads_unmodified_merge_output_and_verifies_stored_permissions'
     } else {
         "It_matches_reviewed_Hybrid_permissions_for_DS_$($DataStandardVersion.Replace('.', '_'))"
     }
@@ -220,7 +222,8 @@ $exitCode = 1
 try {
     Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
     if ($preparedFixtureDirectory) {
-        if ($SecurityMetadataToolsScenario -eq 'Filesystem') {
+        if ($SecurityMetadataToolsScenario -in @('Filesystem', 'Upload')) {
+            # Upload starts base-only; its test merges fragments outside this empty mount.
             $null = New-Item -ItemType Directory -Path $preparedFixtureDirectory
         } else {
             $null = Copy-IsolatedClaimsFixture -Source $ClaimsFixtureDirectory -Destination $preparedFixtureDirectory

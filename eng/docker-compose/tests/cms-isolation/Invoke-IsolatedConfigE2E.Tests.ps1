@@ -263,6 +263,8 @@ Describe 'Isolated launcher environment and cleanup' {
                 @(Get-ChildItem -LiteralPath $global:CmsLauncherprepared -Force).Name | Should -Be @('Claims.json')
                 [IO.File]::ReadAllBytes((Join-Path $global:CmsLauncherprepared 'Claims.json')) | Should -Be ([byte[]]@(239,187,191,123,13,10,125))
                 if ($global:CmsLaunchermutateInput) { Add-Content (Join-Path $global:CmsLauncherprepared 'Claims.json') 'changed' }
+            } elseif ($args -match 'SecurityMetadataToolsUpload') {
+                @(Get-ChildItem -LiteralPath $global:CmsLauncherprepared -Force).Count | Should -Be 0
             } else {
                 [IO.File]::ReadAllBytes((Join-Path $global:CmsLauncherprepared 'input-claims.json')) | Should -Be ([byte[]]@(123,125,10))
             }
@@ -402,6 +404,41 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $after = @{}
         Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }
         ($after | ConvertTo-Json -Compress) | Should -Be ($global:CmsLauncherbeforeEnvironment | ConvertTo-Json -Compress)
+    }
+
+    It 'starts Upload base-only with its gate enabled and cleans up after <Outcome>' -TestCases @(
+        @{ Outcome = 'success'; Fails = $false }, @{ Outcome = 'failure'; Fails = $true }
+    ) {
+        param($Outcome, $Fails)
+        $global:CmsLauncherinjectFailure = $Fails
+        if ($Outcome -eq 'failure') {
+            { & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Upload -DataStandardVersion '5.2' -SkipDockerBuild } | Should -Throw '*execution failed*'
+        } else {
+            & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Upload -DataStandardVersion '5.2' -SkipDockerBuild
+        }
+        $global:CmsLaunchermergeArguments | Should -BeNullOrEmpty
+        $global:CmsLaunchercapturedArguments | Should -Contain '(TestCategory=SecurityMetadataToolsService)&(TestCategory=SecurityMetadataToolsUpload)&(Name=It_uploads_unmodified_merge_output_and_verifies_stored_permissions)'
+        $global:CmsLaunchercapturedArguments | Should -Contain '-ClaimsFixtureDirectory'
+        $global:CmsLaunchercapturedArguments | Should -Contain $global:CmsLauncherprepared
+        $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be 'Hybrid'
+        $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_DATA_STANDARD_VERSION | Should -Be '5.2'
+        $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING | Should -Be 'true'
+        $derived = Get-Content (Join-Path $global:CmsLaunchercheckout 'eng/docker-compose/.derived/test.env.isolated')
+        $derived | Should -Contain 'CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid'
+        $derived | Should -Contain 'CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true'
+        $results = @(Get-ChildItem (Join-Path $global:CmsLaunchercheckout 'TestResults/cms-isolation/postgresql/Upload/5.2') -Recurse -Filter results.trx)
+        $results.Count | Should -Be 1
+        (Get-Content $results[0].FullName -Raw) | Should -Match 'It_uploads_unmodified_merge_output_and_verifies_stored_permissions'
+        $global:CmsTeardownCalls | Should -Be 2
+        Test-Path $global:CmsLauncherprepared | Should -BeFalse
+        $after = @{}
+        Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }
+        ($after | ConvertTo-Json -Compress) | Should -Be ($global:CmsLauncherbeforeEnvironment | ConvertTo-Json -Compress)
+    }
+
+    It 'rejects Upload 6.1 before starting any stack' {
+        { & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Upload -DataStandardVersion '6.1' } | Should -Throw '*requires DataStandardVersion 5.2*'
+        $global:CmsTeardownCalls | Should -Be 0
     }
 
     It 'rejects a failed merge before startup and removes the empty mount' {
