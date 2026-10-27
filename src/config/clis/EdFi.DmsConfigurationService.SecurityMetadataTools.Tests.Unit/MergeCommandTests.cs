@@ -341,14 +341,15 @@ public class Given_MergeCommand_bundled_base(string version) : MergeCommandTests
     {
         ExitCode.Should().Be(0, Error);
         Error.Should().BeEmpty();
-        var result = CompleteClaimsDocumentValidator.Validate(File.ReadAllText(Destination));
-        var document = result
+        string json = File.ReadAllText(Destination);
+        CompleteClaimsDocumentValidator
+            .Validate(json)
             .Should()
-            .BeOfType<CompleteClaimsDocumentValidationResult.Success>()
-            .Subject.Document;
+            .BeOfType<CompleteClaimsDocumentValidationResult.Success>();
+        var document = JsonNode.Parse(json)!;
         var bundled = BundledClaimsProvider.Load(version).Nodes!;
-        JsonNode.DeepEquals(document.ClaimSetsNode, bundled.ClaimSetsNode).Should().BeTrue();
-        JsonNode.DeepEquals(document.ClaimsHierarchyNode, bundled.ClaimsHierarchyNode).Should().BeTrue();
+        JsonNode.DeepEquals(document["claimSets"], bundled.ClaimSetsNode).Should().BeTrue();
+        JsonNode.DeepEquals(document["claimsHierarchy"], bundled.ClaimsHierarchyNode).Should().BeTrue();
     }
 
     [Test]

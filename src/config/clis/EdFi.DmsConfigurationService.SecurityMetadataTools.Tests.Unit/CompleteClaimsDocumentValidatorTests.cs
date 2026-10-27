@@ -244,13 +244,11 @@ public class Given_CompleteClaimsDocumentValidator_invalid_shape(string scenario
 public class Given_CompleteClaimsDocumentValidator_valid_document
 {
     private CompleteClaimsDocumentValidationResult.Success _result = null!;
-    private JsonNode _input = null!;
 
     [SetUp]
     public void Setup()
     {
         string json = CompleteClaimsDocumentValidatorFixtures.Read("valid.json");
-        _input = JsonNode.Parse(json)!;
         _result = CompleteClaimsDocumentValidator
             .Validate(json)
             .Should()
@@ -259,14 +257,9 @@ public class Given_CompleteClaimsDocumentValidator_valid_document
     }
 
     [Test]
-    public void It_preserves_the_complete_catalog_and_document()
+    public void It_preserves_the_complete_catalog_and_hierarchy_reference_names()
     {
         _result.ClaimSetNames.Should().Equal("ReviewSet", "EmptySet");
-        JsonNode.DeepEquals(_result.Document.ClaimSetsNode, _input["claimSets"]).Should().BeTrue();
-        JsonNode
-            .DeepEquals(_result.Document.ClaimsHierarchyNode, _input["claimsHierarchy"])
-            .Should()
-            .BeTrue();
         _result.Hierarchy.Single().ClaimSets.Single().Name.Should().Be("reviewset");
     }
 

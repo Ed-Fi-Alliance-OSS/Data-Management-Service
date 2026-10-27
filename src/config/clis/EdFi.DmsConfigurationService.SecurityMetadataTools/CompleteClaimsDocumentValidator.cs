@@ -6,7 +6,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
-using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Claims;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
@@ -34,11 +33,8 @@ internal sealed record CompleteClaimsFailure(
 
 internal abstract record CompleteClaimsDocumentValidationResult
 {
-    internal sealed record Success(
-        ClaimsDocument Document,
-        IReadOnlyList<string> ClaimSetNames,
-        IReadOnlyList<Claim> Hierarchy
-    ) : CompleteClaimsDocumentValidationResult;
+    internal sealed record Success(IReadOnlyList<string> ClaimSetNames, IReadOnlyList<Claim> Hierarchy)
+        : CompleteClaimsDocumentValidationResult;
 
     internal sealed record Failure(IReadOnlyList<CompleteClaimsFailure> Failures)
         : CompleteClaimsDocumentValidationResult;
@@ -139,7 +135,6 @@ internal static class CompleteClaimsDocumentValidator
         }
 
         return new CompleteClaimsDocumentValidationResult.Success(
-            new ClaimsDocument(catalog, hierarchy),
             claimSetNames,
             hierarchy.Deserialize<List<Claim>>()!
         );
