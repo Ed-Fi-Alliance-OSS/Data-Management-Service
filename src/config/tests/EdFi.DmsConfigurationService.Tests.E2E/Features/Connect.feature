@@ -192,6 +192,8 @@ Feature: Connect endpoints
               And the token response body is valid
               And the token has an empty namespacePrefixes claim
 
+        # A wrong secret is answered exactly as an unknown client id (scenario 06), so the response
+        # does not reveal that the client exists.
         Scenario: 05 Verify token creation with invalid client_secret value
              When a Form URL Encoded POST request is made to "/connect/register" with
                   | Key          | Value                                          |
@@ -229,7 +231,7 @@ Feature: Connect endpoints
                     "status":401,
                     "validationErrors":{},
                      "errors": [
-                        "unauthorized_client. Invalid client or Invalid client credentials"
+                        "invalid_client. Invalid client or Invalid client credentials"
                         ]
                   }
                   """

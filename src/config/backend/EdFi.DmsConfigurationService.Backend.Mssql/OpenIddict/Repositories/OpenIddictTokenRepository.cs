@@ -83,5 +83,10 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
         {
             return await dataRepository.GetClientRolesAsync(clientId);
         }
+
+        public async Task<ClientCredential?> GetClientCredentialAsync(string clientId)
+        {
+            return await dataRepository.GetClientCredentialAsync(clientId);
+        }
     }
 }
