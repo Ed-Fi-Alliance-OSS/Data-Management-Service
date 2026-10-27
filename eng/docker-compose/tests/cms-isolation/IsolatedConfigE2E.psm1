@@ -89,7 +89,18 @@ function Invoke-IsolatedCmsTestRun {
             Set-Content -LiteralPath (Join-Path $ArtifactDirectory "run-status.txt") -Value $status
         }
         finally {
-            & $Teardown
+            if ($passed) {
+                & $Teardown
+            }
+            else {
+                # Preserve the run's failure if cleanup fails as well.
+                try {
+                    & $Teardown
+                }
+                catch {
+                    Write-Warning $_.Exception.Message
+                }
+            }
         }
     }
 }

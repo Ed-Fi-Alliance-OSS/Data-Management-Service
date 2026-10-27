@@ -9,7 +9,7 @@
 .DESCRIPTION
     Reusable local/CI smoke action. Uses the shared version calculation and locked restore,
     checks the shared claims validator/schema and both bundled base policies,
-    then verifies installed conversion, bundled-base merging and deterministic resolution
+    then verifies installed conversion, bundled-base and fragment merging, and deterministic resolution
     against existing reviewed fixtures from a working directory outside the checkout.
     Leaves the exact nupkg in the repository root; disposable feed/cache/tool files are removed.
 #>
@@ -205,6 +205,38 @@ try {
         throw "Installed unsupported-version failure must diagnose 9.9 and preserve the destination even with --force."
     }
     Write-Output "Installed merge default equals 5.2; unsupported version exits 1 and preserves destination bytes."
+
+    # One real grant proves the installed composer applies fragments, not just the bundled base.
+    $populatedFragments = (New-Item -ItemType Directory -Path (Join-Path $workspace "populated-fragments")).FullName
+    Set-Content -LiteralPath (Join-Path $populatedFragments "offline-claims.json") -Value @'
+{"name":"Offline","resourceClaims":[{
+  "name":"ed-fi/students",
+  "authorizationStrategyOverridesForCRUD":[{
+    "actionName":"Read","authorizationStrategies":[{"name":"NoFurtherAuthorizationRequired"}]
+  }]
+}]}
+'@
+    $populatedOutput = Join-Path $workspace "merged-fragments.json"
+    $populatedMetadata = Join-Path $workspace "resolved-fragments.json"
+    $null = Invoke-InstalledTool -ToolArguments @("merge", "--fragments", $populatedFragments,
+        "--data-standard-version", "5.2", "--output", $populatedOutput)
+    $null = Invoke-InstalledTool -ToolArguments @("resolve", "--input", $populatedOutput, "--output", $populatedMetadata)
+    $metadataNodes = [System.Text.Json.Nodes.JsonNode]::Parse([IO.File]::ReadAllText($populatedMetadata))
+    $offlineSets = @($metadataNodes | Where-Object { $_["claimSetName"].GetValue[string]() -ceq "Offline" })
+    if ($offlineSets.Count -ne 1 -or $offlineSets[0]["claims"].Count -ne 1 -or
+        $offlineSets[0]["authorizations"].Count -ne 1) {
+        throw "Installed fragment merge must produce exactly one Offline resource grant and authorization."
+    }
+    $offlineClaim = $offlineSets[0]["claims"][0]
+    $offlineAuthorization = $offlineSets[0]["authorizations"][0]
+    $expectedActions = [System.Text.Json.Nodes.JsonNode]::Parse(
+        '[{"name":"Read","authorizationStrategies":[{"name":"NoFurtherAuthorizationRequired"}]}]')
+    if ($offlineClaim["name"].GetValue[string]() -cne "http://ed-fi.org/identity/claims/ed-fi/student" -or
+        $offlineClaim["authorizationId"].GetValue[int]() -ne $offlineAuthorization["id"].GetValue[int]() -or
+        -not [System.Text.Json.Nodes.JsonNode]::DeepEquals($expectedActions, $offlineAuthorization["actions"])) {
+        throw "Installed fragment merge differs from the exact requested student Read grant."
+    }
+    Write-Output "Installed fragment merge and resolve match the exact requested student Read grant."
 
     $resolved = Join-Path $workspace "resolved.json"
     $expectedText = [IO.File]::ReadAllText("$projectDirectory.Tests.Unit/Fixtures/ResolveCommand/inheritance-expected.json").TrimEnd([char[]]"`r`n")

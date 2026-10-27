@@ -131,6 +131,22 @@ Describe 'Isolated CMS result lifecycle' {
         (Get-Content (Join-Path $script:artifacts 'results.trx') -Raw).Trim() | Should -Be 'not xml'
         $script:events | Should -Be @('teardown')
     }
+
+    It 'preserves the execution failure and warns when teardown also fails' {
+        $script:invokeArguments.Execute = { throw 'primary test failure' }
+        $script:invokeArguments.Teardown = { throw 'secondary teardown failure' }
+        $script:teardownWarnings = @()
+        {
+            Invoke-IsolatedCmsTestRun @script:invokeArguments -WarningVariable script:teardownWarnings -WarningAction SilentlyContinue
+        } | Should -Throw '*primary test failure*'
+        @($script:teardownWarnings).Count | Should -Be 1
+        $script:teardownWarnings[0].Message | Should -Be 'secondary teardown failure'
+    }
+
+    It 'fails when teardown fails after passing tests' {
+        $script:invokeArguments.Teardown = { throw 'teardown failure after success' }
+        { Invoke-IsolatedCmsTestRun @script:invokeArguments } | Should -Throw '*teardown failure after success*'
+    }
 }
 
 Describe 'Claims fixture preparation' {
