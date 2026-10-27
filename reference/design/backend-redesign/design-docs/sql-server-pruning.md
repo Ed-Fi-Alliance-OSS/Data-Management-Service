@@ -31,11 +31,11 @@ multiple-cascade-path convergence.
    intermediate's rename on such a column is different: it makes the survivor unsafe (see Safe-Cut Test), unless that
    intermediate still reaches the receiver by a retained route through the survivor (another role of it, or a reference
    to a resource below it), which is this decision's shape seen from an upstream origin and is passed the same way. The
-   same holds for a mutable resource that feeds the cut column through a reference outside the walked origin's chain,
-   unless that resource still reaches the receiver by another retained route. The one shape this does not specially
-   guard is a genuinely mutable
-   resource referenced through two disjoint, non-unified roles by one receiver. That shape does not occur in standard
-   Ed-Fi (every disjoint role there resolves to an immutable abstract identity), and it is deliberately left to fail
+   same holds for every mutable resource that feeds the cut column through any retained reference, on or off the walked
+   origin's chain: it is passed only when the retained cascade does not update the column and the resource still
+   reaches the receiver by another retained route. A column the retained cascade does update needs a required carrier
+   fed by the same resource. The one shape this does not specially guard is a genuinely mutable resource referenced
+   through two disjoint, non-unified roles by one receiver. That shape does not occur in standard Ed-Fi (every disjoint role there resolves to an immutable abstract identity), and it is deliberately left to fail
    closed at runtime — a clean SQL Server error on a rename, never a corrupt tuple — rather than to fail derivation. This
    is settled, intended behavior; do not read the surviving `NO ACTION` reference as an unproven or out-of-scope cut.
 
@@ -241,9 +241,9 @@ other shapes are rejected.
 The path check reuses the predecessor trace already needed for per-origin convergence detection. For one tentative cut,
 it follows only that cut's already-selected survivor chain and compares adjacent existing FK column pairs edge by edge.
 It discards the trace after that evaluation; it does not compose, store, or reuse transitive propagation vectors, and it
-does not search alternate routes. Only the directly mutable intermediate rule below looks past that chain: to find
-whether a mutable resource feeds a cut column from outside it, and to check whether such a resource, or an intermediate
-on the chain, still reaches the receiver by another retained route.
+does not search alternate routes. Only the directly mutable intermediate rule below looks past that chain: it follows
+every retained candidate edge that feeds a cut column back to each mutable resource, and checks whether the survivor is
+fed by the same resource or whether that resource still reaches the receiver by another retained route.
 
 This evaluation returns only a yes/no result for the tentative cut; it creates no composed column mapping, reusable
 route representation, or new derivation artifact.
@@ -275,20 +275,23 @@ validated by the full-composite FK directly. It is not a carrier obligation for 
 mutable intermediate identity change would require a cut tuple to change without a retained carrier, that survivor is
 unsafe. DMS need not model arbitrary value combinations to make this determination.
 
-The rule also covers an independent feed. When a cut column's first-arrival trace stops short of the walked origin, the
-pairing where it stops may be fed by a reference outside the walked origin's chain. DMS follows the retained candidate
-edges feeding that pairing back to the nearest mutable origin, skipping immutable abstract identities. If that origin's
-only cascade route to the receiver is through this choice's cuts, the cut strands its rename. No later walk can see
-that, because the route is already cut. The survivor is then unsafe unless it carries the column through the same
-pairing. If the origin still reaches the receiver by another retained route, the convergence is its own and Settled
-Decision 8 applies.
+The rule covers every mutable resource that can change a cut column, not only one on the walked origin's first-arrival
+chain. From the cut's target, DMS follows every retained candidate edge that feeds the column, and on through each fed
+column, stopping at the walked origin and skipping immutable abstract identities. It collects every mutable origin it
+reaches. A feed can join anywhere: at the pairing where the chain stops, or at a pairing the chain itself passes through
+when the column is unified across several references. One column can have several feeds. Each must be carried or
+exempt. The survivor carries a feed when it is a required binding that updates the same canonical local column and is
+fed by the same source column. Otherwise, a column the survivor does not update is exempt when that resource still
+reaches the receiver by another retained route: the convergence is its own and Settled Decision 8 applies. A column the
+survivor does update is never exempt. Rows whose retained reference is absent, or fed from elsewhere, would lose the
+cut's cascade. If the cut is a feed's only cascade route to the receiver, no later walk can see the stranded rename,
+because the route is already cut.
 
 For the walked origin's rename, a cut column that the retained cascade does not update carries no carrier obligation.
 Safe-cut rule 1 applies only to a column the survivor also updates, so a column the survivor does not update leaves the
 cut a plain full-composite `NO ACTION` reference and the test passes it. The directly mutable intermediate rule above is
-checked separately and is not waived by this pass-through: a cut column whose trace reaches a directly mutable
-intermediate needs a retained carrier even when the survivor does not update it. The one exception is an intermediate that
-still reaches the receiver by a retained route through the survivor, whichever route the walked origin used to reach the
+checked separately and is not waived by this pass-through: a cut column fed by a directly mutable resource needs a
+retained carrier even when the survivor does not update it. The one exception is an intermediate that still reaches the receiver by a retained route through the survivor, whichever route the walked origin used to reach the
 survivor first. The survivor then reaches the receiver from that same resource by a disjoint route, which is the Settled
 Decision 8 shape, and the column is passed exactly as that intermediate's own walk would pass it, so the outcome
 does not depend on which origin's walk reaches the convergence first. This is a safe, supported result of the safe-cut test — not an unsupported

@@ -67,10 +67,9 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
         IReadOnlySet<string> immutableAbstractOrigins
     )
     {
-        // The origins that can actually rename; immutable abstract origins never do. Abstract
-        // identity tables have no incoming candidate edges, so on a first-arrival chain only the
-        // directly mutable concrete roots (allowIdentityUpdates) match this set; an independent
-        // feed can also reach a mutable abstract identity table.
+        // The origins that can actually rename; immutable abstract origins never do. The
+        // mutable-source search can reach directly mutable concrete roots (allowIdentityUpdates)
+        // and mutable abstract identity tables, which have no incoming candidate edges.
         var mutableOrigins = origins
             .Where(candidateOrigin => !immutableAbstractOrigins.Contains(candidateOrigin))
             .ToHashSet(StringComparer.Ordinal);
@@ -306,25 +305,21 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
     /// <summary>
     /// The directly-mutable-intermediate rule of the safe-cut test (design-docs/sql-server-pruning.md,
-    /// "Safe-Cut Test"): if a directly mutable intermediate identity change would require a cut
-    /// tuple to change without a retained carrier, the survivor is unsafe. For each cut identity
-    /// column, the first-arrival trace from the cut's target is followed to the nearest directly
-    /// mutable resource other than the walked origin. When one exists, the survivor carries its
-    /// rename only when it is a required binding that updates the same canonical local column and
-    /// its own trace passes through the same pairing. Checking only the nearest pairing is
-    /// sufficient: each vertex has one predecessor edge, so two traces that meet stay identical
-    /// upstream. A column the survivor does not update is exempt when the intermediate still reaches
-    /// the receiver avoiding this choice's cuts: it then reaches it through the survivor (another
-    /// role of that resource, or a resource below it, by any retained route), which Settled
-    /// Decision 8 leaves to fail closed at runtime, exactly as the intermediate's own walk decides. When the trace stops short of the walked origin without reaching such a resource,
-    /// the pairing where it stops is checked for an independent mutable feed (see
-    /// <see cref="FindIndependentMutableFeed"/>): a mutable resource whose only cascade route to the
-    /// receiver is the cut needs a carrier through that pairing, because once the edge is cut no
-    /// later walk can see the lost route. A feed whose source still reaches the receiver avoiding
-    /// this choice's cuts is that source's own convergence (Settled Decision 8) and is skipped.
-    /// The walked origin's own rename is left to <see cref="EvaluateSafeCut"/>. Returns null when
-    /// covered, otherwise the native-coverage failure. The trace is discarded after this
-    /// evaluation.
+    /// "Safe-Cut Test"): if a directly mutable resource's identity change would require a cut tuple
+    /// to change without a retained carrier, the survivor is unsafe. For each cut identity column,
+    /// every mutable resource other than the walked origin that feeds the column over retained
+    /// candidate edges is found (see <see cref="FindMutableSources"/>): a directly mutable
+    /// intermediate on the walked origin's chain, or a feed that joins anywhere along it, possibly
+    /// several per column. Each must be carried or exempt. The survivor carries a source when it is
+    /// a required binding that updates the same canonical local column and is fed by the same source
+    /// column. A column the survivor does not update is exempt when the source still reaches the
+    /// receiver avoiding this choice's cuts: it then reaches it through the survivor (another role of
+    /// that resource, or a resource below it, by any retained route), which Settled Decision 8 leaves
+    /// to fail closed at runtime, exactly as the source's own walk decides. A column the survivor
+    /// does update is never exempt: an optional or differently fed carrier leaves rows uncovered,
+    /// and once the edge is cut no later walk can see the lost route. The walked origin's own rename
+    /// is left to <see cref="EvaluateSafeCut"/>. Returns null when covered, otherwise the
+    /// native-coverage failure. The searches are discarded after this evaluation.
     /// </summary>
     private static string? EvaluateIntermediateCoverage(
         PruningCandidate cut,
@@ -334,73 +329,55 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
         IReadOnlySet<string> mutableOrigins
     )
     {
-        var predecessorEdgeByVertex = convergence.PredecessorEdgeByVertex;
-
         for (var index = 0; index < cut.LocalColumns.Count - 1; index++)
         {
-            var trace = TraceToSource(
+            var sources = FindMutableSources(
                 FormatTable(cut.TargetTable),
                 cut.TargetColumns[index],
-                predecessorEdgeByVertex,
-                out _
+                convergence.IncomingEdgesByVertex,
+                origin,
+                mutableOrigins
             );
-            var intermediate = trace.Find(pairing =>
-                pairing.Table != origin && mutableOrigins.Contains(pairing.Table)
-            );
-            var mutableSource = intermediate.Table;
 
-            if (intermediate == default)
+            if (sources.Count == 0)
             {
-                // The trace stopped without a directly mutable pairing. Unless it stopped at the
-                // walked origin, the column may be fed by a reference outside the walked origin's
-                // chain; the pairing where that feed joins stands in for the intermediate.
-                intermediate = trace[^1];
-                mutableSource =
-                    intermediate.Table == origin
-                        ? null
-                        : FindIndependentMutableFeed(
-                            intermediate,
-                            convergence.IncomingEdgesByVertex,
-                            origin,
-                            mutableOrigins
-                        );
-
-                if (mutableSource is null || ReachesAvoidingCuts(mutableSource, convergence, survivor))
-                {
-                    continue;
-                }
+                continue;
             }
 
             var column = cut.LocalColumns[index];
             var survivorIndex = FindColumnIndex(survivor.LocalColumns, column);
-            var carried =
+            List<(string Table, DbColumnName Column)> survivorSources =
                 survivorIndex >= 0
                 && survivorIndex < survivor.LocalColumns.Count - 1
                 && survivor.LocalDocumentIdIsRequired
-                && TraceToSource(
+                    ? FindMutableSources(
                         FormatTable(survivor.TargetTable),
                         survivor.TargetColumns[survivorIndex],
-                        predecessorEdgeByVertex,
-                        out _
+                        convergence.IncomingEdgesByVertex,
+                        origin,
+                        mutableOrigins
                     )
-                    .Contains(intermediate);
+                    : [];
 
-            if (!carried)
+            foreach (var source in sources)
             {
-                // Settled Decision 8: when the survivor does not update this column and the
-                // intermediate still reaches the receiver avoiding this choice's cuts, it does so
-                // through the survivor: another role of it, or a resource below it by any retained
-                // route, whether or not the walked origin reached the survivor through it first.
-                // The convergence is then the intermediate's own, and its own walk passes the
-                // column as a plain NO ACTION reference that fails closed at runtime. Skipping
-                // it here makes the outcome independent of which origin's walk reaches it first.
-                if (survivorIndex < 0 && ReachesAvoidingCuts(intermediate.Table, convergence, survivor))
+                if (survivorSources.Contains(source))
+                {
+                    continue;
+                }
+
+                // Settled Decision 8: when the survivor does not update this column and the source
+                // still reaches the receiver avoiding this choice's cuts, it does so through the
+                // survivor. The convergence is then the source's own, and its own walk passes the
+                // column as a plain NO ACTION reference that fails closed at runtime. Skipping it
+                // here makes the outcome independent of which origin's walk reaches it first.
+                if (survivorIndex < 0 && ReachesAvoidingCuts(source.Table, convergence, survivor))
                 {
                     continue;
                 }
 
                 return $"native coverage: cut '{cut.ConstraintName}' column '{column.Value}' changes when "
-                    + $"directly mutable '{mutableSource}' updates its identity, and retained "
+                    + $"directly mutable '{source.Table}' updates its identity, and retained "
                     + $"'{survivor.ConstraintName}' does not carry that change";
             }
         }
@@ -409,56 +386,58 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Searches back from a pairing where the walked origin's first-arrival trace stopped, through
-    /// every retained candidate edge that feeds the column and on through each fed column, for the
-    /// nearest mutable origin other than the walked origin. Returns that table, or null when every
-    /// feed is static. Follows existing FK column pairs only; the search is discarded after one
-    /// evaluation.
+    /// Searches back from a column through every retained candidate edge that feeds it, and on
+    /// through each fed column, collecting every mutable origin pairing other than the walked
+    /// origin, which is neither visited nor expanded past. Immutable abstract origins are not
+    /// mutable origins and are never collected. The search continues past a collected pairing, so
+    /// the sources above a mutable intermediate are included too. Edges are visited in stable
+    /// candidate order, so the result order is deterministic. Follows existing FK column pairs only,
+    /// never a local DocumentId anchor; the search is discarded after one evaluation.
     /// </summary>
-    private static string? FindIndependentMutableFeed(
-        (string Table, string Column) pairing,
+    private static List<(string Table, DbColumnName Column)> FindMutableSources(
+        string table,
+        DbColumnName column,
         IReadOnlyDictionary<string, List<PruningCandidate>> incomingEdgesByVertex,
         string origin,
         IReadOnlySet<string> mutableOrigins
     )
     {
-        Stack<(string Table, DbColumnName Column)> pending = new();
+        List<(string Table, DbColumnName Column)> sources = [];
         HashSet<(string Table, DbColumnName Column)> visited = [];
-        pending.Push((pairing.Table, new DbColumnName(pairing.Column)));
+        Stack<(string Table, DbColumnName Column)> pending = new();
+        pending.Push((table, column));
 
         while (pending.TryPop(out var current))
         {
-            if (!visited.Add(current) || !incomingEdgesByVertex.TryGetValue(current.Table, out var incoming))
+            if (current.Table == origin || !visited.Add(current))
             {
                 continue;
             }
 
-            foreach (var edge in incoming)
+            if (mutableOrigins.Contains(current.Table))
             {
+                sources.Add(current);
+            }
+
+            if (!incomingEdgesByVertex.TryGetValue(current.Table, out var incoming))
+            {
+                continue;
+            }
+
+            // Pushed in reverse so the stack pops the edges in stable candidate order.
+            for (var edgeIndex = incoming.Count - 1; edgeIndex >= 0; edgeIndex--)
+            {
+                var edge = incoming[edgeIndex];
                 var index = FindColumnIndex(edge.LocalColumns, current.Column);
 
-                if (index < 0 || index == edge.LocalColumns.Count - 1)
+                if (index >= 0 && index < edge.LocalColumns.Count - 1)
                 {
-                    continue;
+                    pending.Push((FormatTable(edge.TargetTable), edge.TargetColumns[index]));
                 }
-
-                var target = FormatTable(edge.TargetTable);
-
-                if (target == origin)
-                {
-                    continue;
-                }
-
-                if (mutableOrigins.Contains(target))
-                {
-                    return target;
-                }
-
-                pending.Push((target, edge.TargetColumns[index]));
             }
         }
 
-        return null;
+        return sources;
     }
 
     /// <summary>
@@ -572,13 +551,13 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
                 survivor.TargetColumns[survivorIndex],
                 predecessorEdgeByVertex,
                 out var survivorDocumentIdPairing
-            )[^1];
+            );
             var cutSource = TraceToSource(
                 FormatTable(cut.TargetTable),
                 cut.TargetColumns[index],
                 predecessorEdgeByVertex,
                 out var cutDocumentIdPairing
-            )[^1];
+            );
 
             if (survivorDocumentIdPairing || cutDocumentIdPairing)
             {
@@ -634,13 +613,11 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
     /// <summary>
     /// Follows a column's existing FK pairings backward along the first-arrival predecessor edges
-    /// until the column is no longer fed by an upstream cascade edge, returning every pairing it
-    /// visits: the starting pairing first and the ultimate source column last. Sets the DocumentId
-    /// flag when the pairing steps through a local reference DocumentId anchor. Follows only the
-    /// traced chain; it never searches alternate routes, and the caller discards the pairings after
-    /// one evaluation.
+    /// until the column is no longer fed by an upstream cascade edge, returning the ultimate
+    /// source column. Sets the DocumentId flag when the pairing steps through a local reference
+    /// DocumentId anchor. Follows only the traced chain; it never searches alternate routes.
     /// </summary>
-    private static List<(string Table, string Column)> TraceToSource(
+    private static (string Table, string Column) TraceToSource(
         string table,
         DbColumnName column,
         IReadOnlyDictionary<string, PruningCandidate> predecessorEdgeByVertex,
@@ -648,7 +625,6 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     )
     {
         documentIdPairing = false;
-        List<(string Table, string Column)> pairings = [(table, column.Value)];
 
         while (predecessorEdgeByVertex.TryGetValue(table, out var edge))
         {
@@ -667,10 +643,9 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
             column = edge.TargetColumns[index];
             table = FormatTable(edge.TargetTable);
-            pairings.Add((table, column.Value));
         }
 
-        return pairings;
+        return (table, column.Value);
     }
 
     /// <summary>
@@ -1058,8 +1033,8 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     /// The result of per-origin convergence discovery: the earliest receiver with distinct
     /// reachable incoming physical edges, those edges as the only pruning choices, and the
     /// first-arrival predecessor trace the structural safe-cut test follows, plus the retained
-    /// candidate edges by receiver and by source that the independent-feed check follows.
-    /// Pass-local only; discarded after selection.
+    /// candidate edges by receiver and by source that the mutable-source search and the reachability
+    /// exemption follow. Pass-local only; discarded after selection.
     /// </summary>
     internal sealed record ConvergenceDiscovery(
         string Receiver,
