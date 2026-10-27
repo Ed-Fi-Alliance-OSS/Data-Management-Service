@@ -54,6 +54,21 @@ param(
     [string]
     $E2ETestFilter = "",
 
+    # Opt-in fixture plumbing. Named policy scenario selectors are added with their service cases.
+    [string]
+    $ClaimsFixtureDirectory = "",
+
+    [ValidateSet("Hybrid", "Filesystem")]
+    [string]
+    $ClaimsSource = "Hybrid",
+
+    [ValidateSet("5.2", "6.1")]
+    [string]
+    $DataStandardVersion = "5.2",
+
+    [switch]
+    $EnableUnrestrictedClaimsLoading,
+
     [switch]
     $SkipDockerBuild,
 
@@ -107,6 +122,25 @@ $isolation = [ordered]@{
     CONFIGURATION_SERVICE_DOCKER_IMAGE = "ed-fi-api-config-$IsolationName"
 }
 
+Import-Module (Join-Path $PSScriptRoot "IsolatedConfigE2E.psm1") -Force
+$preparedFixtureDirectory = ""
+$runId = [guid]::NewGuid().ToString("N")
+if ($ClaimsFixtureDirectory) {
+    if ($KeepStack) {
+        throw "Custom fixture runs require teardown; KeepStack is supported only for ordinary runs."
+    }
+    $ClaimsFixtureDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ClaimsFixtureDirectory)
+    $preparedFixtureDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "cms-policy-$runId"
+    $isolation.CONFIGURATION_SERVICE_CLAIMS_SOURCE = $ClaimsSource
+    $isolation.CONFIGURATION_SERVICE_DATA_STANDARD_VERSION = $DataStandardVersion
+    $isolation.CONFIGURATION_SERVICE_CLAIMS_DIRECTORY = "/app/additional-claims"
+    $isolation.CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING = $EnableUnrestrictedClaimsLoading.ToString().ToLowerInvariant()
+    $isolation.CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = $preparedFixtureDirectory
+}
+elseif ($PSBoundParameters.ContainsKey("DataStandardVersion")) {
+    $isolation.CONFIGURATION_SERVICE_DATA_STANDARD_VERSION = $DataStandardVersion
+}
+
 $derivedDirectory = Join-Path $composeDirectory ".derived"
 $null = New-Item -ItemType Directory -Path $derivedDirectory -Force
 # Named for the isolation as well as the source, so a run under another -IsolationName never overwrites the
@@ -145,8 +179,23 @@ function Set-HarnessVariable {
     [System.Environment]::SetEnvironmentVariable($Name, $Value)
 }
 
+# Child setup/build scripts also change process settings. Snapshot them before invoking any child.
+foreach ($name in @(
+    'CONFIGURATION_SERVICE_MULTI_TENANCY', 'POSTGRES_PASSWORD', 'POSTGRES_PORT', 'POSTGRES_DB_NAME',
+    'MSSQL_SA_PASSWORD', 'MSSQL_PORT', 'CONFIGURATION_SERVICE_IDENTITY_PROVIDER',
+    'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY', 'DMS_JWT_METADATA_ADDRESS',
+    'CONFIGURATION_SERVICE_E2E_EXPECTED_IDENTITY_PROVIDER', 'CONFIGURATION_SERVICE_E2E_EXPECTED_ROLE_CLAIM_TYPE',
+    'CONFIGURATION_SERVICE_E2E_EXPECTED_CLIENT_ROLE', 'CONFIGURATION_SERVICE_E2E_EXPECTED_SELF_CONTAINED_ROLE_CLAIM_TYPE',
+    'NODE_OPTIONS'
+)) {
+    $priorEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
+}
 $exitCode = 1
 try {
+    Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
+    if ($preparedFixtureDirectory) {
+        $null = Copy-IsolatedClaimsFixture -Source $ClaimsFixtureDirectory -Destination $preparedFixtureDirectory
+    }
     # Compose gives the process environment precedence over --env-file, so every isolation value is also
     # set in this process: a value inherited from the caller's shell cannot override any of them.
     foreach ($key in $isolation.Keys) {
@@ -260,6 +309,9 @@ try {
     }
 
     # The values the suite's hooks read, as build-config.ps1 will export them for the run itself.
+    foreach ($name in @('POSTGRES_PASSWORD', 'MSSQL_SA_PASSWORD', 'CONFIGURATION_SERVICE_MULTI_TENANCY')) {
+        Set-HarnessVariable -Name $name -Value $derivedValues[$name]
+    }
     Set-HarnessVariable -Name POSTGRES_DB_NAME -Value $derivedValues["POSTGRES_DB_NAME"]
     Set-HarnessVariable -Name CONFIGURATION_SERVICE_DATASTORE -Value $datastore
     Set-HarnessVariable -Name CONFIGURATION_SERVICE_E2E_PREFLIGHT_API_URL -Value $isolation.CONFIGURATION_SERVICE_E2E_API_URL
@@ -304,49 +356,59 @@ try {
         return
     }
 
-    Push-Location $repoRoot
-    try {
-        $arguments = @{
-            Command = "E2ETest"
-            Configuration = $Configuration
-            IdentityProvider = $IdentityProvider
-            EnvironmentFile = $derivedEnvironmentFile
-        }
-        if ($E2ETestFilter) {
-            $arguments.E2ETestFilter = $E2ETestFilter
-        }
-        if ($SkipDockerBuild) {
-            $arguments.SkipDockerBuild = $true
-        }
-
-        # build-config.ps1 and the stack scripts it calls are written for, and run in CI, without strict
-        # mode; this harness's strict mode would otherwise reach them, and setup-keycloak.ps1 fails under it.
-        & {
-            Set-StrictMode -Off
-            ./build-config.ps1 @arguments
-        }
-        $exitCode = $LASTEXITCODE
+    $scenarioName = if ($preparedFixtureDirectory) { "CustomFixture" } else { "OrdinarySuite" }
+    $selectedVersion = if ($derivedValues["CONFIGURATION_SERVICE_DATA_STANDARD_VERSION"]) { $derivedValues["CONFIGURATION_SERVICE_DATA_STANDARD_VERSION"] } else { "5.2" }
+    $artifactDirectory = Join-Path $repoRoot "TestResults/cms-isolation/$datastore/$scenarioName/$selectedVersion/$runId"
+    if ($preparedFixtureDirectory) {
+        Set-HarnessVariable -Name SECURITY_METADATA_TOOLS_SERVICE_RUNNER -Value "true"
+        Set-HarnessVariable -Name SECURITY_METADATA_TOOLS_FIXTURE_DIRECTORY -Value $preparedFixtureDirectory
+        Set-HarnessVariable -Name SECURITY_METADATA_TOOLS_EVIDENCE_DIRECTORY -Value $artifactDirectory
     }
-    finally {
-        Pop-Location
+    else {
+        Set-HarnessVariable -Name SECURITY_METADATA_TOOLS_SERVICE_RUNNER -Value "false"
+    }
+    $workingTrx = Join-Path $repoRoot "TestResults/EdFi.DmsConfigurationService.Tests.E2E.trx"
+    Invoke-IsolatedCmsTestRun -WorkingTrx $workingTrx -ArtifactDirectory $artifactDirectory -Execute {
+        Push-Location $repoRoot
+        try {
+            $arguments = @{
+                Command = "E2ETest"
+                Configuration = $Configuration
+                IdentityProvider = $IdentityProvider
+                EnvironmentFile = $derivedEnvironmentFile
+            }
+            if ($E2ETestFilter) { $arguments.E2ETestFilter = $E2ETestFilter }
+            if ($SkipDockerBuild) { $arguments.SkipDockerBuild = $true }
+            if ($preparedFixtureDirectory) { $arguments.ClaimsFixtureDirectory = $preparedFixtureDirectory }
+
+            # A child PowerShell process contains build-config's exit calls; finally must still archive
+            # results and tear down when startup or the test command fails.
+            $commandArguments = @('-NoProfile', '-File', (Join-Path $repoRoot 'build-config.ps1'))
+            foreach ($key in $arguments.Keys) {
+                $commandArguments += "-$key"
+                if ($arguments[$key] -isnot [bool]) { $commandArguments += [string]$arguments[$key] }
+            }
+            & pwsh @commandArguments
+            $exitCode = $LASTEXITCODE
+            if ($exitCode -ne 0) {
+                throw "Isolated CMS execution failed (exit $exitCode); inspect retained results. Startup/database failures are environment failures, not policy mismatches."
+            }
+        }
+        finally { Pop-Location }
+    } -Teardown {
         if ($KeepStack) {
             Write-Output "Isolated stack left running (project $($isolation.CONFIGURATION_SERVICE_COMPOSE_PROJECT))."
         }
-        elseif ($exitCode -eq 0) {
+        else {
             Remove-IsolatedStack
         }
-        else {
-            # The suite's own failure is the one to report; a teardown failure on top of it is a warning.
-            try {
-                Remove-IsolatedStack
-            }
-            catch {
-                Write-Warning $_.Exception.Message
-            }
-        }
     }
+    $exitCode = 0
 }
 finally {
+    if ($preparedFixtureDirectory -and (Test-Path -LiteralPath $preparedFixtureDirectory)) {
+        Remove-Item -LiteralPath $preparedFixtureDirectory -Recurse -Force
+    }
     # A $null prior value means the variable was absent and must be removed. Remove-Item is required for
     # that: SetEnvironmentVariable with $null from PowerShell coerces the value to "", which pwsh on Unix
     # stores as a present-but-blank variable instead of removing it (see bootstrap-manifest.psm1).
