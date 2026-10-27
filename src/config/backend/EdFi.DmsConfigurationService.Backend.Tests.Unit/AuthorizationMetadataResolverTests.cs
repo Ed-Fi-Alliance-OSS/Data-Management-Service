@@ -54,6 +54,7 @@ public class AuthorizationMetadataResolverTests
         return repository;
     }
 
+    [TestFixture("collisions")]
     [TestFixture("inheritance")]
     [TestFixture("empty-actions")]
     [TestFixture("empty-hierarchy")]
@@ -214,5 +215,49 @@ public class AuthorizationMetadataResolverTests
             expected["claims"] = new JsonArray();
             JsonNode.DeepEquals(serialized, expected).Should().BeTrue();
         }
+    }
+
+    private sealed class ConstantHashAuthorizationComparer : IEqualityComparer<ClaimSetMetadata.Authorization>
+    {
+        public bool Equals(ClaimSetMetadata.Authorization? x, ClaimSetMetadata.Authorization? y) =>
+            EqualityComparer<ClaimSetMetadata.Authorization>.Default.Equals(x, y);
+
+        public int HashCalls { get; private set; }
+
+        public int GetHashCode(ClaimSetMetadata.Authorization obj)
+        {
+            HashCalls++;
+            return 42;
+        }
+    }
+
+    [TestFixture("collisions")]
+    [TestFixture("inheritance")]
+    public class Given_AuthorizationMetadata_resolver_hash_collisions(string scenario)
+    {
+        private ConstantHashAuthorizationComparer _comparer = null!;
+        private JsonNode _actual = null!;
+        private JsonNode _expected = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var input = ReadFixture($"{scenario}-input.json");
+            _expected = ReadFixture($"{scenario}-expected.json");
+            _comparer = new ConstantHashAuthorizationComparer();
+            var result = AuthorizationMetadataResolver.Resolve(
+                input["claimSets"]!.AsArray().Select(entry => entry!["claimSetName"]!.GetValue<string>()),
+                input["claimsHierarchy"]!.Deserialize<List<Claim>>()!,
+                _comparer
+            );
+            _actual = JsonSerializer.SerializeToNode(result.ClaimSets, _jsonOptions)!;
+        }
+
+        [Test]
+        public void It_exercises_the_constant_hash_lookup() => _comparer.HashCalls.Should().BeGreaterThan(0);
+
+        [Test]
+        public void It_preserves_every_permission_reference_sequence_and_id_under_collisions() =>
+            JsonNode.DeepEquals(_actual, _expected).Should().BeTrue();
     }
 }

@@ -19,6 +19,12 @@ public static class AuthorizationMetadataResolver
     public static AuthorizationMetadataResponse Resolve(
         IEnumerable<string> claimSetNames,
         IReadOnlyList<Claim> hierarchy
+    ) => Resolve(claimSetNames, hierarchy, EqualityComparer<ClaimSetMetadata.Authorization>.Default);
+
+    internal static AuthorizationMetadataResponse Resolve(
+        IEnumerable<string> claimSetNames,
+        IReadOnlyList<Claim> hierarchy,
+        IEqualityComparer<ClaimSetMetadata.Authorization> authorizationComparer
     )
     {
         const int UninitializedId = 0;
@@ -30,7 +36,7 @@ public static class AuthorizationMetadataResolver
         {
             var responseClaims = new List<ClaimSetMetadata.Claim>();
             var responseAuthorizations = new List<ClaimSetMetadata.Authorization>();
-            var authorizationIdByHashCode = new Dictionary<long, int>();
+            var authorizationIds = new Dictionary<ClaimSetMetadata.Authorization, int>(authorizationComparer);
 
             // Process each root claim in the hierarchy (there are actually multiple hierarchies present, with a true single root)
             foreach (var rootClaim in hierarchy)
@@ -118,8 +124,8 @@ public static class AuthorizationMetadataResolver
                         {
                             // Look for an existing equivalent authorization
                             if (
-                                authorizationIdByHashCode.TryGetValue(
-                                    proposedAuthorization.GetHashCode(),
+                                authorizationIds.TryGetValue(
+                                    proposedAuthorization,
                                     out int existingAuthorizationId
                                 )
                             )
@@ -132,7 +138,7 @@ public static class AuthorizationMetadataResolver
                             var newAuthorization = proposedAuthorization with { Id = newAuthorizationId };
 
                             // Capture this unique authorization's Id (for reuse by other claims)
-                            authorizationIdByHashCode.Add(newAuthorization.GetHashCode(), newAuthorizationId);
+                            authorizationIds.Add(newAuthorization, newAuthorizationId);
 
                             // Add the authorization to the response
                             responseAuthorizations.Add(newAuthorization);

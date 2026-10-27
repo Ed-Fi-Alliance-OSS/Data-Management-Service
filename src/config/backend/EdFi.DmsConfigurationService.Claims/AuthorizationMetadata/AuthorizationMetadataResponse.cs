@@ -17,9 +17,7 @@ public record ClaimSetMetadata(
 
     public record Authorization(int Id, Action[] Actions)
     {
-        private readonly Lazy<int> _hashCode = new(() => ComputeHashCode(Actions));
-
-        public override int GetHashCode() => _hashCode.Value;
+        public override int GetHashCode() => ComputeHashCode(Actions);
 
         public virtual bool Equals(Authorization? other)
         {
@@ -33,19 +31,34 @@ public record ClaimSetMetadata(
                 return true;
             }
 
-            return _hashCode.Value.Equals(other._hashCode.Value);
+            if (Actions.Length != other.Actions.Length)
+            {
+                return false;
+            }
+
+            // Match each occurrence once: order is irrelevant, but multiplicity is not.
+            var unmatched = other.Actions.ToList();
+            foreach (var action in Actions)
+            {
+                int index = unmatched.FindIndex(candidate => ActionsEqual(action, candidate));
+                if (index < 0)
+                {
+                    return false;
+                }
+
+                unmatched.RemoveAt(index);
+            }
+
+            return true;
         }
 
         private static int ComputeHashCode(Action[] actions)
         {
-            int hash = 0;
-
-            if (actions.Length > 0)
+            // Commutative accumulation also handles reordered actions with the same name.
+            int hash = actions.Length;
+            foreach (var action in actions)
             {
-                foreach (var action in actions.OrderBy(a => a.Name))
-                {
-                    hash = HashCode.Combine(hash, action.GetHashCode());
-                }
+                hash = unchecked(hash + action.GetHashCode());
             }
 
             return hash;
@@ -54,15 +67,16 @@ public record ClaimSetMetadata(
 
     public record Action(string Name, AuthorizationStrategy[] AuthorizationStrategies)
     {
-        private readonly Lazy<int> _hashCode = new(() => ComputeHashCode(Name, AuthorizationStrategies));
+        public override int GetHashCode() => ComputeHashCode(Name, AuthorizationStrategies);
 
-        public override int GetHashCode() => _hashCode.Value;
+        public virtual bool Equals(Action? other) =>
+            other is not null && EqualityContract == other.EqualityContract && ActionsEqual(this, other);
 
         private static int ComputeHashCode(string name, AuthorizationStrategy[] strategies)
         {
-            int hash = name.GetHashCode();
+            int hash = StringComparer.Ordinal.GetHashCode(name);
 
-            foreach (var strategy in strategies.OrderBy(a => a.Name))
+            foreach (var strategy in strategies.OrderBy(a => a.Name, StringComparer.Ordinal))
             {
                 hash = HashCode.Combine(hash, strategy.GetHashCode());
             }
@@ -70,6 +84,16 @@ public record ClaimSetMetadata(
             return hash;
         }
     }
+
+    private static bool ActionsEqual(Action left, Action right) =>
+        StringComparer.Ordinal.Equals(left.Name, right.Name)
+        && left.AuthorizationStrategies.Length == right.AuthorizationStrategies.Length
+        && left.AuthorizationStrategies.Select(s => s.Name)
+            .Order(StringComparer.Ordinal)
+            .SequenceEqual(
+                right.AuthorizationStrategies.Select(s => s.Name).Order(StringComparer.Ordinal),
+                StringComparer.Ordinal
+            );
 
     public record AuthorizationStrategy(string Name);
 }
