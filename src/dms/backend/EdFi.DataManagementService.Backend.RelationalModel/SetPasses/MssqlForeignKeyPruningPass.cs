@@ -313,9 +313,11 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     /// several per column. Each must be carried or exempt. The survivor carries a source when it is
     /// a required binding that updates the same canonical local column and is fed by the same source
     /// column. A column the survivor does not update is exempt when the source still reaches the
-    /// receiver avoiding this choice's cuts: it then reaches it through the survivor (another role of
-    /// that resource, or a resource below it, by any retained route), which Settled Decision 8 leaves
-    /// to fail closed at runtime, exactly as the source's own walk decides. A column the survivor
+    /// receiver avoiding this choice's cuts through a reference that does not update the column
+    /// (the survivor, as another role of that resource or a resource below it, or a reference
+    /// outside this convergence's choices) or that carries it (see
+    /// <see cref="ReachesAvoidingCuts"/>). Settled Decision 8 then leaves the column to fail closed at
+    /// runtime, exactly as the source's own walk decides. A column the survivor
     /// does update is never exempt: an optional or differently fed carrier leaves rows uncovered,
     /// and once the edge is cut no later walk can see the lost route. The walked origin's own rename
     /// is left to <see cref="EvaluateSafeCut"/>. Returns null when covered, otherwise the
@@ -346,32 +348,24 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
             var column = cut.LocalColumns[index];
             var survivorIndex = FindColumnIndex(survivor.LocalColumns, column);
-            List<(string Table, DbColumnName Column)> survivorSources =
-                survivorIndex >= 0
-                && survivorIndex < survivor.LocalColumns.Count - 1
-                && survivor.LocalDocumentIdIsRequired
-                    ? FindMutableSources(
-                        FormatTable(survivor.TargetTable),
-                        survivor.TargetColumns[survivorIndex],
-                        convergence.IncomingEdgesByVertex,
-                        origin,
-                        mutableOrigins
-                    )
-                    : [];
 
             foreach (var source in sources)
             {
-                if (survivorSources.Contains(source))
+                if (CarriesSource(survivor, survivorIndex, source, convergence, origin, mutableOrigins))
                 {
                     continue;
                 }
 
                 // Settled Decision 8: when the survivor does not update this column and the source
-                // still reaches the receiver avoiding this choice's cuts, it does so through the
-                // survivor. The convergence is then the source's own, and its own walk passes the
-                // column as a plain NO ACTION reference that fails closed at runtime. Skipping it
-                // here makes the outcome independent of which origin's walk reaches it first.
-                if (survivorIndex < 0 && ReachesAvoidingCuts(source.Table, convergence, survivor))
+                // still reaches the receiver avoiding this choice's cuts, through the survivor or
+                // through a reference outside this convergence's choices that does not update the
+                // column or carries it, the convergence is the source's own and its own walk would
+                // pass this cut too. Skipping it here makes the outcome independent of which
+                // origin's walk reaches it first.
+                if (
+                    survivorIndex < 0
+                    && ReachesAvoidingCuts(source, column, convergence, survivor, origin, mutableOrigins)
+                )
                 {
                     continue;
                 }
@@ -441,17 +435,50 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Whether the source reaches the convergence receiver over retained candidate edges without
-    /// using any of this survivor choice's cut edges.
+    /// Whether the reference carries the source's rename of a receiver column: the column is at the
+    /// given position before the trailing DocumentId anchor, the reference is a required binding,
+    /// and the column it pairs with is fed by the same source column.
     /// </summary>
-    private static bool ReachesAvoidingCuts(
-        string source,
+    private static bool CarriesSource(
+        PruningCandidate carrier,
+        int index,
+        (string Table, DbColumnName Column) source,
         ConvergenceDiscovery convergence,
-        PruningCandidate survivor
+        string origin,
+        IReadOnlySet<string> mutableOrigins
     )
     {
-        HashSet<string> visited = [source];
-        Queue<string> frontier = new([source]);
+        return index >= 0
+            && index < carrier.LocalColumns.Count - 1
+            && carrier.LocalDocumentIdIsRequired
+            && FindMutableSources(
+                    FormatTable(carrier.TargetTable),
+                    carrier.TargetColumns[index],
+                    convergence.IncomingEdgesByVertex,
+                    origin,
+                    mutableOrigins
+                )
+                .Contains(source);
+    }
+
+    /// <summary>
+    /// Whether the source reaches the convergence receiver over retained candidate edges without
+    /// using any of this survivor choice's cut edges, entering the receiver through a reference
+    /// that either does not update the column or carries the source's rename of it. An entry that
+    /// updates the column without carrying it (optional, or fed from another source column) does
+    /// not count: the source's own walk would keep the cut as the carrier.
+    /// </summary>
+    private static bool ReachesAvoidingCuts(
+        (string Table, DbColumnName Column) source,
+        DbColumnName column,
+        ConvergenceDiscovery convergence,
+        PruningCandidate survivor,
+        string origin,
+        IReadOnlySet<string> mutableOrigins
+    )
+    {
+        HashSet<string> visited = [source.Table];
+        Queue<string> frontier = new([source.Table]);
 
         while (frontier.TryDequeue(out var vertex))
         {
@@ -471,7 +498,17 @@ public sealed class MssqlForeignKeyPruningPass : IRelationalModelSetPass
 
                 if (receiver == convergence.Receiver)
                 {
-                    return true;
+                    var entryIndex = FindColumnIndex(edge.LocalColumns, column);
+
+                    if (
+                        entryIndex < 0
+                        || CarriesSource(edge, entryIndex, source, convergence, origin, mutableOrigins)
+                    )
+                    {
+                        return true;
+                    }
+
+                    continue;
                 }
 
                 if (visited.Add(receiver))

@@ -2329,6 +2329,125 @@ public class Given_Mssql_Pruning_With_A_Shared_Column_From_An_Independent_Mutabl
 }
 
 /// <summary>
+/// An independent mutable feed that bypasses the cut through its own Receiver reference sharing the
+/// cut column: Bridge's identity references Origin and the source, the directly mutable Section
+/// references Origin, and Receiver references Bridge, Section, and the source, with the source
+/// reference unified with Bridge's source key. Keeping Bridge leaves Section's key change uncarried;
+/// keeping Section cuts Bridge, so the bypass reference must carry the source's key change: it must
+/// be required and paired with the same source column. Otherwise derivation fails, whichever
+/// origin's walk reaches the convergence first.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_An_Independent_Mutable_Feed_Bypassing_The_Cut_On_A_Shared_Column
+{
+    private static DerivedRelationalModelSet Build(
+        string sourceName,
+        bool bypassRequired,
+        string bypassLeaf
+    ) =>
+        PruningTopologyTestHelpers.BuildMssqlModelSet(
+            PruningTestSchemaBuilder.BuildProjectSchema(
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Origin",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["originKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    sourceName,
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["sourceKey", "sourceKey2"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Bridge",
+                    IdentityScalars: ["bridgeKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Origin", PartOfIdentity: true),
+                        new PruningTestSchemaBuilder.ReferenceSpec(sourceName, PartOfIdentity: true),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Section",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["sectionKey"],
+                    References: [new PruningTestSchemaBuilder.ReferenceSpec("Origin", PartOfIdentity: true)]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Receiver",
+                    IdentityScalars: ["receiverKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Bridge"),
+                        new PruningTestSchemaBuilder.ReferenceSpec("Section"),
+                        new PruningTestSchemaBuilder.ReferenceSpec(sourceName, Required: bypassRequired),
+                    ],
+                    EqualityConstraints:
+                    [
+                        (
+                            "$.bridgeReference.sourceKey",
+                            $"$.{char.ToLowerInvariant(sourceName[0]) + sourceName[1..]}Reference.{bypassLeaf}"
+                        ),
+                    ]
+                )
+            )
+        );
+
+    /// <summary>
+    /// It should fail derivation with an optional bypass, both when the source's walk runs after
+    /// Origin's (Source) and when it runs first (Asource).
+    /// </summary>
+    [TestCase("Source")]
+    [TestCase("Asource")]
+    public void It_should_fail_derivation_with_an_optional_bypass(string sourceName)
+    {
+        var act = () => Build(sourceName, bypassRequired: false, bypassLeaf: "sourceKey");
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("NoSafeSqlServerForeignKeyPruning:*convergence receiver 'edfi.Receiver'*");
+    }
+
+    /// <summary>
+    /// It should fail derivation with a required bypass paired with a different source column, in
+    /// both name orders: it does not carry the source key the cut column follows.
+    /// </summary>
+    [TestCase("Source")]
+    [TestCase("Asource")]
+    public void It_should_fail_derivation_with_a_bypass_paired_with_another_source_column(string sourceName)
+    {
+        var act = () => Build(sourceName, bypassRequired: true, bypassLeaf: "sourceKey2");
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("NoSafeSqlServerForeignKeyPruning:*convergence receiver 'edfi.Receiver'*");
+    }
+
+    /// <summary>
+    /// It should cut Bridge and keep Section and a required bypass paired with the same source
+    /// column cascading, in both name orders: the bypass carries the shared column.
+    /// </summary>
+    [TestCase("Source")]
+    [TestCase("Asource")]
+    public void It_should_keep_a_required_bypass_paired_with_the_same_source_column(string sourceName)
+    {
+        var result = Build(sourceName, bypassRequired: true, bypassLeaf: "sourceKey");
+
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "Bridge_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "Section_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", $"{sourceName}_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+    }
+}
+
+/// <summary>
 /// Settled Decision 8 for a directly mutable intermediate: Upstream → Middle → Receiver, where
 /// Receiver references Middle under two non-unified roles and both Upstream and Middle allow
 /// identity updates. Middle's own walk passes the disjoint cut as a plain NO ACTION reference, so

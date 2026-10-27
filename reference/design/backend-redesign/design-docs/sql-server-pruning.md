@@ -33,8 +33,9 @@ multiple-cascade-path convergence.
    to a resource below it), which is this decision's shape seen from an upstream origin and is passed the same way. The
    same holds for every mutable resource that feeds the cut column through any retained reference, on or off the walked
    origin's chain: it is passed only when the retained cascade does not update the column and the resource still
-   reaches the receiver by another retained route. A column the retained cascade does update needs a required carrier
-   fed by the same resource. The one shape this does not specially guard is a genuinely mutable resource referenced
+   reaches the receiver by another retained route whose reference into the receiver does not update the column either,
+   or carries it as a required binding fed by the same resource. A column the retained cascade does update needs a
+   required carrier fed by the same resource. The one shape this does not specially guard is a genuinely mutable resource referenced
    through two disjoint, non-unified roles by one receiver. That shape does not occur in standard Ed-Fi (every disjoint role there resolves to an immutable abstract identity), and it is deliberately left to fail
    closed at runtime — a clean SQL Server error on a rename, never a corrupt tuple — rather than to fail derivation. This
    is settled, intended behavior; do not read the surviving `NO ACTION` reference as an unproven or out-of-scope cut.
@@ -243,7 +244,8 @@ it follows only that cut's already-selected survivor chain and compares adjacent
 It discards the trace after that evaluation; it does not compose, store, or reuse transitive propagation vectors, and it
 does not search alternate routes. Only the directly mutable intermediate rule below looks past that chain: it follows
 every retained candidate edge that feeds a cut column back to each mutable resource, and checks whether the survivor is
-fed by the same resource or whether that resource still reaches the receiver by another retained route.
+fed by the same resource or whether that resource still reaches the receiver by another retained route that enters the
+receiver through a reference that does not update the column or carries it.
 
 This evaluation returns only a yes/no result for the tentative cut; it creates no composed column mapping, reusable
 route representation, or new derivation artifact.
@@ -282,7 +284,11 @@ reaches. A feed can join anywhere: at the pairing where the chain stops, or at a
 when the column is unified across several references. One column can have several feeds. Each must be carried or
 exempt. The survivor carries a feed when it is a required binding that updates the same canonical local column and is
 fed by the same source column. Otherwise, a column the survivor does not update is exempt when that resource still
-reaches the receiver by another retained route: the convergence is its own and Settled Decision 8 applies. A column the
+reaches the receiver by another retained route: the convergence is its own and Settled Decision 8 applies. That route's
+reference into the receiver must not update the column, or must carry it as a required binding fed by the same source
+column. A route entering through an optional or differently fed reference to the column does not count: the resource's
+own walk would keep the cut edge as the carrier, so cutting it here would strand rows where that reference is absent or
+fed from elsewhere. A column the
 survivor does update is never exempt. Rows whose retained reference is absent, or fed from elsewhere, would lose the
 cut's cascade. If the cut is a feed's only cascade route to the receiver, no later walk can see the stranded rename,
 because the route is already cut.
