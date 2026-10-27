@@ -560,11 +560,12 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
   The client's access tokens carry `aud` `["<client id>", "account"]`, and its owner receives its own token's metadata on Keycloak 26.1.x and on 26.6.2 or later.
   DMS and the Configuration Service validate `aud` against their configured audience (`account` by default), which the array still contains.
   A client created by an earlier version gains the mapper the next time the Configuration Service rewrites it in Keycloak, even with unchanged values: `PUT /v3/apiClients/{id}` rewrites that API client, `PUT /v3/applications/{id}` the application's first API client, and `PUT /v3/vendors/{id}` every API client of the vendor's applications.
-  An audience mapper counts only when it names the client and has *Add to access token* on, because Keycloak checks the access token's `aud`; the mapper is added beside one that is left out of access tokens, such as one added only to ID tokens, which stays as it is.
-  The exception is a client that already has a mapper named `Client's own audience` that does not put the client into its access tokens, for example one edited in Keycloak.
+  An audience mapper counts only when it is an OpenID Connect mapper that names the client and has *Add to access token* on, because Keycloak runs only the mappers of the client's protocol and checks the access token's `aud`; the mapper is added beside one that is left out of access tokens, such as one added only to ID tokens, or one of another protocol, which stays as it is.
+  The exception is a client that already has an OpenID Connect mapper named `Client's own audience` that does not put the client into its access tokens, for example one edited in Keycloak.
+  Keycloak requires mapper names to be unique only within a protocol, so a mapper of another protocol under that name, such as a SAML one, is no exception.
   The update leaves that mapper as it is, so as not to remove an audience something else may rely on, still succeeds, and logs the Warning in [Log signals](#log-signals).
   On Keycloak 26.6.2 or later, an earlier client that is never updated that way, or that kept such a mapper, is answered `{"active": false}` for its own live token until an operator adds the same mapper in Keycloak: in the client's `<client id>-dedicated` scope, an *Audience* mapper with *Included Client Audience* set to the client itself and *Add to access token* and *Add to token introspection* on.
-  When `Client's own audience` is taken, the operator gives the new mapper another name; any audience mapper that names the client with *Add to access token* on satisfies later updates, which then add no other.
+  When `Client's own audience` is taken, the operator gives the new mapper another name; any OpenID Connect audience mapper that names the client with *Add to access token* on satisfies later updates, which then add no other.
   Only tokens issued after the mapper is added carry the audience.
   Keycloak also has opt-outs, the server option `allow-token-introspection-without-audience-check` and the client setting *Allow token introspection without audience check*, but both are deprecated and not recommended.
   The compose files pin Keycloak 26.1.4; the Azure VM reference deployment runs 26.7.
@@ -1030,7 +1031,7 @@ Clients holding tokens signed with the old certificate must obtain new ones.
 | Introspection client id longer than any Keycloak client id (`keycloak`, answers `invalid_client`) | Information | `Introspection refused: the client id is longer than any Keycloak client id` |
 | Revocation client id longer than any Keycloak client id (`keycloak`, answers `invalid_client`) | Information | `Revocation refused: the client id is longer than any Keycloak client id` |
 | Keycloak reported another client's token (`keycloak`, answers `{"active": false}`) | Debug | `Introspection answered inactive: the supplied token was not issued to the calling client {ClientId}` |
-| A client update kept a `Client's own audience` mapper that does not put the client into its access tokens (`keycloak`, the update succeeds without the client's own audience) | Warning | `Client {ClientId} already has a protocol mapper named {MapperName} that does not put the client into its own access tokens' audience; it is left unchanged, …` |
+| A client update kept an OpenID Connect `Client's own audience` mapper that does not put the client into its access tokens (`keycloak`, the update succeeds without the client's own audience) | Warning | `Client {ClientId} already has an OpenID Connect protocol mapper named {MapperName} that does not put the client into its own access tokens' audience; it is left unchanged, …` |
 | Introspection Basic credentials malformed | Information | `Introspection Basic credentials were malformed at the {Stage} stage` |
 
 A snapshot publication labelled `Request` is a normal background reload started by a

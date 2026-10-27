@@ -301,18 +301,9 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         List<Exception> failures = [];
-        string? adminToken = null;
         try
         {
-            adminToken = await GetAdminTokenAsync();
-        }
-        catch (Exception exception)
-        {
-            failures.Add(exception);
-        }
-
-        if (adminToken is not null)
-        {
+            string adminToken = await GetAdminTokenAsync();
             if (_publicUser is not null)
             {
                 await TryAsync(() => Api.DeleteUserAsync(adminToken, _publicUser.Uuid), failures);
@@ -327,6 +318,11 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
             {
                 await TryAsync(() => Api.DeleteClientScopeAsync(adminToken, scopeUuid), failures);
             }
+        }
+        catch (Exception exception)
+        {
+            // Each deletion records its own failure, so only the admin token can fail here.
+            failures.Add(exception);
         }
 
         Api.Dispose();
@@ -1383,7 +1379,6 @@ public class KeycloakIntrospectionCharacterizationSetup
 
         IntrospectionCharacterizationRealm realm = _realm;
         _realm = null;
-        Exception? evidenceFailure = null;
         try
         {
             string evidencePath = Path.Combine(
@@ -1393,11 +1388,7 @@ public class KeycloakIntrospectionCharacterizationSetup
             await File.WriteAllTextAsync(evidencePath, Evidence.RenderMarkdown(realm));
             await TestContext.Progress.WriteLineAsync($"[evidence] table written to {evidencePath}");
         }
-        catch (Exception exception)
-        {
-            evidenceFailure = exception;
-        }
-        finally
+        catch (Exception evidenceFailure)
         {
             // Realm cleanup must happen even when the evidence file could not be written. If both
             // fail, both are reported: the cleanup failure names what was left behind and the
@@ -1406,7 +1397,7 @@ public class KeycloakIntrospectionCharacterizationSetup
             {
                 await realm.DisposeAsync();
             }
-            catch (Exception cleanupFailure) when (evidenceFailure is not null)
+            catch (Exception cleanupFailure)
             {
                 throw new AggregateException(
                     "Writing the evidence table and cleaning up the realm resources both failed.",
@@ -1414,15 +1405,14 @@ public class KeycloakIntrospectionCharacterizationSetup
                     cleanupFailure
                 );
             }
-        }
 
-        if (evidenceFailure is not null)
-        {
             throw new InvalidOperationException(
                 "The evidence table could not be written; the realm resources were cleaned up.",
                 evidenceFailure
             );
         }
+
+        await realm.DisposeAsync();
     }
 }
 

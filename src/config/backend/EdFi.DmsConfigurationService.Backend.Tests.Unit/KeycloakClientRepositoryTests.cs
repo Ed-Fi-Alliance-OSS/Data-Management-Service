@@ -175,6 +175,54 @@ public class KeycloakClientRepositoryTests
     }
 
     /// <summary>
+    /// Mappers of the SAML protocol on the client's OpenID Connect client. Keycloak requires a mapper's
+    /// name to be unique only within its protocol, and runs only the mappers of the client's own
+    /// protocol, so none of these puts the client into its access tokens or keeps the client's own
+    /// mapper from being added.
+    /// </summary>
+    public static IEnumerable<TestFixtureData> MappersOfAnotherProtocol()
+    {
+        yield return Case(
+            "SAML attribute under the self-audience name",
+            SelfAudienceMapperName,
+            "saml-hardcode-attribute-mapper",
+            new() { { "attribute.name", "audience" }, { "attribute.value", "test-client" } }
+        );
+        yield return Case(
+            "audience mapper of the SAML protocol under the self-audience name",
+            SelfAudienceMapperName,
+            AudienceMapperType,
+            SelfAudienceConfig("test-client")
+        );
+        yield return Case(
+            "audience mapper of the SAML protocol under another name",
+            "SAML-protocol audience",
+            AudienceMapperType,
+            SelfAudienceConfig("test-client")
+        );
+
+        static TestFixtureData Case(
+            string displayName,
+            string name,
+            string protocolMapper,
+            Dictionary<string, string> config
+        ) => new TestFixtureData(name, protocolMapper, config).SetArgDisplayNames(displayName);
+    }
+
+    protected static ClientProtocolMapper SamlMapper(
+        string name,
+        string protocolMapper,
+        Dictionary<string, string> config
+    ) =>
+        new()
+        {
+            Name = name,
+            Protocol = "saml",
+            ProtocolMapper = protocolMapper,
+            Config = new Dictionary<string, string>(config),
+        };
+
+    /// <summary>
     /// The audience mappers that name the given client, whatever the mappers are called.
     /// </summary>
     protected static List<ClientProtocolMapper> AudienceMappersNaming(Client client, string audience) =>
@@ -182,8 +230,7 @@ public class KeycloakClientRepositoryTests
             .. client.ProtocolMappers.Where(mapper =>
                 mapper.ProtocolMapper == AudienceMapperType
                 && mapper.Config is not null
-                && mapper.Config.TryGetValue("included.client.audience", out string? included)
-                && included == audience
+                && mapper.Config.GetValueOrDefault("included.client.audience") == audience
             ),
         ];
 
@@ -1007,6 +1054,67 @@ public class KeycloakClientRepositoryTests
                     && entry.Message.Contains(SelfAudienceMapperName)
                     && entry.Message.Contains("test-client")
                 );
+    }
+
+    /// <summary>
+    /// A mapper of another protocol neither puts the client into its access tokens nor holds the
+    /// self-audience name among the client's OpenID Connect mappers, so the client's own mapper is
+    /// added beside it, and it is kept as it is.
+    /// </summary>
+    [TestFixtureSource(typeof(KeycloakClientRepositoryTests), nameof(MappersOfAnotherProtocol))]
+    public class Given_an_update_of_a_client_carrying_a_mapper_of_another_protocol(
+        string mapperName,
+        string protocolMapper,
+        Dictionary<string, string> config
+    ) : InPlaceUpdateTestBase
+    {
+        private ClientProtocolMapper _otherProtocolMapper = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _otherProtocolMapper = SamlMapper(mapperName, protocolMapper, config);
+            _storedClient.ProtocolMappers = [.. _storedClient.ProtocolMappers, _otherProtocolMapper];
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientUpdateResult.Success>();
+
+        [Test]
+        public void It_adds_the_openid_connect_mapper_naming_the_client_as_its_own_audience()
+        {
+            ClientProtocolMapper added = AppliedClient()
+                .ProtocolMappers.Should()
+                .ContainSingle(mapper =>
+                    mapper.Protocol == "openid-connect" && mapper.ProtocolMapper == AudienceMapperType
+                )
+                .Subject;
+            added.Name.Should().Be(SelfAudienceMapperName);
+            added.Config.Should().BeEquivalentTo(SelfAudienceConfig("test-client"));
+        }
+
+        [Test]
+        public void It_leaves_the_other_protocols_mapper_untouched()
+        {
+            AppliedClient().ProtocolMappers.Should().Contain(_otherProtocolMapper);
+            _otherProtocolMapper
+                .Should()
+                .BeEquivalentTo(
+                    new
+                    {
+                        Name = mapperName,
+                        Protocol = "saml",
+                        ProtocolMapper = protocolMapper,
+                        Config = config,
+                    }
+                );
+        }
+
+        [Test]
+        public void It_logs_no_warning() =>
+            _logger.LoggedEntries().Should().NotContain(entry => entry.Level == LogLevel.Warning);
     }
 
     [TestFixture]
@@ -1888,6 +1996,62 @@ public class KeycloakClientRepositoryTests
                     && entry.Message.Contains(SelfAudienceMapperName)
                     && entry.Message.Contains("test-client")
                 );
+    }
+
+    [TestFixtureSource(typeof(KeycloakClientRepositoryTests), nameof(MappersOfAnotherProtocol))]
+    public class Given_a_namespace_claim_update_of_a_client_carrying_a_mapper_of_another_protocol(
+        string mapperName,
+        string protocolMapper,
+        Dictionary<string, string> config
+    ) : NamespaceClaimUpdateTestBase
+    {
+        private ClientProtocolMapper _otherProtocolMapper = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _otherProtocolMapper = SamlMapper(mapperName, protocolMapper, config);
+            _storedClient.ProtocolMappers = [.. _storedClient.ProtocolMappers, _otherProtocolMapper];
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientUpdateResult.Success>();
+
+        [Test]
+        public void It_adds_the_openid_connect_mapper_naming_the_client_as_its_own_audience()
+        {
+            ClientProtocolMapper added = AppliedClient()
+                .ProtocolMappers.Should()
+                .ContainSingle(mapper =>
+                    mapper.Protocol == "openid-connect" && mapper.ProtocolMapper == AudienceMapperType
+                )
+                .Subject;
+            added.Name.Should().Be(SelfAudienceMapperName);
+            added.Config.Should().BeEquivalentTo(SelfAudienceConfig("test-client"));
+        }
+
+        [Test]
+        public void It_leaves_the_other_protocols_mapper_untouched()
+        {
+            AppliedClient().ProtocolMappers.Should().Contain(_otherProtocolMapper);
+            _otherProtocolMapper
+                .Should()
+                .BeEquivalentTo(
+                    new
+                    {
+                        Name = mapperName,
+                        Protocol = "saml",
+                        ProtocolMapper = protocolMapper,
+                        Config = config,
+                    }
+                );
+        }
+
+        [Test]
+        public void It_logs_no_warning() =>
+            _logger.LoggedEntries().Should().NotContain(entry => entry.Level == LogLevel.Warning);
     }
 
     [TestFixture]

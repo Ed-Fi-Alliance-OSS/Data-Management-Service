@@ -139,12 +139,12 @@ public sealed record HttpOutcome(
     public static async Task<HttpOutcome> FromResponseAsync(HttpResponseMessage response)
     {
         string body = await response.Content.ReadAsStringAsync();
-        (BodyKind kind, JsonObject? json) = Classify(body);
+        (BodyKind kind, JsonObject json) = Classify(body);
 
         return new HttpOutcome(
             (int)response.StatusCode,
-            json is null ? null : StringMember(json, "error"),
-            json is null ? null : StringMember(json, "error_description"),
+            StringMember(json, "error"),
+            StringMember(json, "error_description"),
             body.Length,
             kind,
             response.Content.Headers.ContentType?.MediaType,
@@ -154,11 +154,15 @@ public sealed record HttpOutcome(
         );
     }
 
-    public static (BodyKind Kind, JsonObject? Json) Classify(string body)
+    /// <summary>
+    /// The kind of <paramref name="body"/> and its members, which are none unless the body is a JSON
+    /// object.
+    /// </summary>
+    public static (BodyKind Kind, JsonObject Json) Classify(string body)
     {
         if (body.Length == 0)
         {
-            return (BodyKind.Empty, null);
+            return (BodyKind.Empty, []);
         }
 
         try
@@ -166,13 +170,13 @@ public sealed record HttpOutcome(
             return JsonNode.Parse(body) switch
             {
                 JsonObject json => (BodyKind.JsonObject, json),
-                JsonArray => (BodyKind.JsonArray, null),
-                _ => (BodyKind.JsonValue, null),
+                JsonArray => (BodyKind.JsonArray, []),
+                _ => (BodyKind.JsonValue, []),
             };
         }
         catch (JsonException)
         {
-            return (BodyKind.NotJson, null);
+            return (BodyKind.NotJson, []);
         }
     }
 
@@ -206,26 +210,28 @@ public sealed record MemberShape(JsonValueKind Kind, IReadOnlyList<string> Value
     /// <summary>The shape of a member of <paramref name="json"/>, keeping string values and string array elements.</summary>
     public static MemberShape Of(JsonObject json, string name)
     {
-        if (!json.TryGetPropertyValue(name, out JsonNode? node))
+        if (!json.ContainsKey(name))
         {
             return Absent;
         }
 
-        return node switch
+        return json[name] switch
         {
             null => new MemberShape(JsonValueKind.Null, []),
-            JsonValue value when value.TryGetValue(out string? text) => OfString(text),
+            JsonValue value when value.GetValueKind() == JsonValueKind.String => OfString(
+                value.GetValue<string>()
+            ),
             JsonArray array => new MemberShape(
                 JsonValueKind.Array,
                 [
                     .. array.Select(static element =>
-                        element is JsonValue item && item.TryGetValue(out string? text)
-                            ? text
+                        element is JsonValue item && item.GetValueKind() == JsonValueKind.String
+                            ? item.GetValue<string>()
                             : element?.ToJsonString() ?? "null"
                     ),
                 ]
             ),
-            _ => new MemberShape(node.GetValueKind(), []),
+            JsonNode node => new MemberShape(node.GetValueKind(), []),
         };
     }
 
@@ -277,12 +283,12 @@ public sealed record IntrospectionOutcome(
     public static async Task<IntrospectionOutcome> FromResponseAsync(HttpResponseMessage response)
     {
         string body = await response.Content.ReadAsStringAsync();
-        (BodyKind kind, JsonObject? json) = HttpOutcome.Classify(body);
+        (BodyKind kind, JsonObject json) = HttpOutcome.Classify(body);
 
         Dictionary<string, MemberShape> members = new(StringComparer.Ordinal);
         foreach (string name in RecordedMembers)
         {
-            MemberShape shape = json is null ? MemberShape.Absent : MemberShape.Of(json, name);
+            MemberShape shape = MemberShape.Of(json, name);
             members[name] = name switch
             {
                 _ when _kindOnlyMembers.Contains(name) => shape.KindOnly(),
@@ -298,12 +304,12 @@ public sealed record IntrospectionOutcome(
             RawHeader(response.Content.Headers.NonValidated, "Content-Type"),
             RawHeader(response.Headers.NonValidated, "Cache-Control"),
             RawHeader(response.Headers.NonValidated, "WWW-Authenticate"),
-            json is null ? null : StringMember(json, "error"),
-            json is null ? null : StringMember(json, "error_description"),
-            json?["active"] is JsonValue active && active.TryGetValue(out bool isActive) ? isActive : null,
-            json is null ? [] : [.. json.Select(static member => member.Key).Order(StringComparer.Ordinal)],
+            StringMember(json, "error"),
+            StringMember(json, "error_description"),
+            json["active"] is JsonValue active && active.TryGetValue(out bool isActive) ? isActive : null,
+            [.. json.Select(static member => member.Key).Order(StringComparer.Ordinal)],
             members,
-            json is null ? null : ExpAfterIatOf(json)
+            ExpAfterIatOf(json)
         );
     }
 
@@ -814,7 +820,7 @@ public sealed class KeycloakCharacterizationApi : IDisposable
     private static async Task<JsonObject> ReadJsonObjectAsync(HttpResponseMessage response, string operation)
     {
         string body = await response.Content.ReadAsStringAsync();
-        (BodyKind kind, JsonObject? json) = HttpOutcome.Classify(body);
+        (BodyKind kind, JsonObject json) = HttpOutcome.Classify(body);
         if (!response.IsSuccessStatusCode)
         {
             throw new InvalidOperationException(
@@ -822,8 +828,9 @@ public sealed class KeycloakCharacterizationApi : IDisposable
             );
         }
 
-        return json
-            ?? throw new InvalidOperationException(
+        return kind == BodyKind.JsonObject
+            ? json
+            : throw new InvalidOperationException(
                 $"The {operation} answered HTTP {(int)response.StatusCode} with {Describe(kind)} instead of a JSON object."
             );
     }
