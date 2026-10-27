@@ -8,7 +8,9 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Middleware;
@@ -41,12 +43,17 @@ public class Given_The_Cms_Pipeline
     private static async Task<HttpResponseMessage> SendAsync(
         string baseAddress,
         string path,
-        string? forwardedFromIp = null
+        string? forwardedFromIp = null,
+        string environment = "Test"
     )
     {
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            builder.UseEnvironment("Test");
+            builder.UseEnvironment(environment);
+            if (environment != "Test")
+            {
+                UseTestSettings(builder);
+            }
             builder.ConfigureServices(collection =>
                 collection.AddSingleton<IStartupFilter, RemoteIpStartupFilter>()
             );
@@ -63,6 +70,24 @@ public class Given_The_Cms_Pipeline
         }
 
         return await client.SendAsync(request);
+    }
+
+    /// <summary>
+    /// Another environment reads its own appsettings file instead of appsettings.Test.json, so the
+    /// Test settings are supplied through UseSetting, which registration-time readers see.
+    /// </summary>
+    private static void UseTestSettings(IWebHostBuilder builder)
+    {
+        IConfiguration testSettings = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.Test.json"))
+            .Build();
+        foreach ((string key, string? value) in testSettings.AsEnumerable())
+        {
+            if (value is not null)
+            {
+                builder.UseSetting(key, value);
+            }
+        }
     }
 
     private static void TrustProxy(string proxyIp)
@@ -99,6 +124,22 @@ public class Given_The_Cms_Pipeline
         using var response = await SendAsync("https://localhost", "/");
 
         response.Headers.Contains(Hsts).Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_does_not_add_hsts_over_https_in_the_development_environment()
+    {
+        // A non-loopback host, so only the environment keeps HSTS off: a developer browser would
+        // otherwise pin this hostname to HTTPS on every port for a year.
+        using var response = await SendAsync(
+            "https://cms.example",
+            "/",
+            environment: Environments.Development
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.Contains(Hsts).Should().BeFalse();
+        response.Headers.GetValues("X-Frame-Options").Should().Equal("DENY");
     }
 
     [Test]

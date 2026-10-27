@@ -8,6 +8,7 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Hosting;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
@@ -22,7 +23,8 @@ public class SecurityHeadersMiddlewareTests
         Action<IHeaderDictionary>? seedUpstreamHeaders = null,
         int statusCode = StatusCodes.Status200OK,
         string scheme = "http",
-        string host = "dms.example"
+        string host = "dms.example",
+        string environmentName = "Production"
     )
     {
         var headers = new HeaderDictionary();
@@ -54,7 +56,10 @@ public class SecurityHeadersMiddlewareTests
 
         seedUpstreamHeaders?.Invoke(context.Response.Headers);
 
-        var middleware = new SecurityHeadersMiddleware(_ => Task.CompletedTask);
+        IHostEnvironment environment = A.Fake<IHostEnvironment>();
+        A.CallTo(() => environment.EnvironmentName).Returns(environmentName);
+
+        var middleware = new SecurityHeadersMiddleware(_ => Task.CompletedTask, environment);
         await middleware.Invoke(context);
 
         if (onStarting is not null)
@@ -170,6 +175,17 @@ public class SecurityHeadersMiddlewareTests
     public async Task It_does_not_add_hsts_over_http()
     {
         IHeaderDictionary headers = await RunAndStartResponseAsync(scheme: "http", host: "dms.example");
+        headers.ContainsKey("Strict-Transport-Security").Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_does_not_add_hsts_over_https_for_a_non_loopback_host_in_development()
+    {
+        IHeaderDictionary headers = await RunAndStartResponseAsync(
+            scheme: "https",
+            host: "dms.example",
+            environmentName: Environments.Development
+        );
         headers.ContainsKey("Strict-Transport-Security").Should().BeFalse();
     }
 

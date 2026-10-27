@@ -448,7 +448,8 @@ The values are fixed and are not configurable.
 
 `Strict-Transport-Security: max-age=31536000` is sent only when the request is HTTPS as the application sees it.
 That means TLS terminated by Kestrel, or `X-Forwarded-Proto: https` from a proxy the application trusts once `ReverseProxy:UseForwardedHeaders` is `true`: a loopback proxy, or one listed in `KnownProxies` or `KnownNetworks`.
-It is never sent for `localhost`, `127.0.0.1` or `[::1]`.
+It is never sent for `localhost`, `127.0.0.1` or `[::1]`, or when the hosting environment is `Development` (`ASPNETCORE_ENVIRONMENT=Development`).
+A browser keeps the policy for a year and applies it to every port on the hostname, so on a developer machine it would force HTTPS onto unrelated local services.
 It carries no `includeSubDomains` or `preload`, because those are decisions for whoever owns the domain, so they belong at the edge.
 When TLS terminates at a proxy and forwarded headers are not enabled, the application does not send HSTS and the proxy should.
 

@@ -15,13 +15,16 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 /// </summary>
 /// <remarks>
 /// Strict-Transport-Security is written only for HTTPS requests (RFC 6797 section 7.2 forbids the
-/// header over HTTP) and not for loopback hosts, so developer browsers are not pinned to HTTPS on
-/// localhost. It is applied here rather than with UseHsts, which writes before the endpoint runs
-/// and is lost when the exception handler clears the response headers.
+/// header over HTTP), and neither for loopback hosts nor in the Development environment, as with
+/// UseHsts: a browser keeps the policy for a year and applies it to every port on the hostname, so
+/// a developer machine would be pinned to HTTPS. It is applied here rather than with UseHsts, which
+/// writes before the endpoint runs and is lost when the exception handler clears the response headers.
 /// </remarks>
-public class SecurityHeadersMiddleware(RequestDelegate next)
+public class SecurityHeadersMiddleware(RequestDelegate next, IHostEnvironment environment)
 {
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
+
+    private readonly bool _isDevelopment = environment.IsDevelopment();
 
     private static readonly (string Name, string Value)[] _securityHeaders =
     [
@@ -37,7 +40,7 @@ public class SecurityHeadersMiddleware(RequestDelegate next)
         return _next(context);
     }
 
-    private static Task ApplyHeaders(object state)
+    private Task ApplyHeaders(object state)
     {
         HttpContext context = (HttpContext)state;
         HttpResponse response = context.Response;
@@ -47,7 +50,7 @@ public class SecurityHeadersMiddleware(RequestDelegate next)
             headers.TryAdd(name, value);
         }
 
-        if (context.Request.IsHttps && !IsLoopbackHost(context.Request.Host.Host))
+        if (context.Request.IsHttps && !_isDevelopment && !IsLoopbackHost(context.Request.Host.Host))
         {
             headers.TryAdd("Strict-Transport-Security", "max-age=31536000");
         }

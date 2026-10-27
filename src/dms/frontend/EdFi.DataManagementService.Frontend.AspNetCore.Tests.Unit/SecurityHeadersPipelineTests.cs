@@ -11,7 +11,9 @@ using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
@@ -34,7 +36,7 @@ public class Given_SecurityHeaders_In_The_Dms_Pipeline
         Environment.SetEnvironmentVariable(KnownProxiesEnv, null);
     }
 
-    private static WebApplicationFactory<Program> CreateFactory()
+    private static WebApplicationFactory<Program> CreateFactory(string environment)
     {
         var versionProvider = A.Fake<IVersionProvider>();
         A.CallTo(() => versionProvider.Version).Returns("1.0");
@@ -46,7 +48,11 @@ public class Given_SecurityHeaders_In_The_Dms_Pipeline
 
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
-            builder.UseEnvironment("Test");
+            builder.UseEnvironment(environment);
+            if (environment != "Test")
+            {
+                UseTestSettings(builder);
+            }
             builder.ConfigureServices(collection =>
             {
                 TestMockHelper.AddEssentialMocks(collection);
@@ -57,11 +63,33 @@ public class Given_SecurityHeaders_In_The_Dms_Pipeline
         });
     }
 
+    /// <summary>
+    /// Another environment reads its own appsettings file instead of appsettings.Test.json, so the
+    /// Test settings are supplied through UseSetting, which registration-time readers see.
+    /// </summary>
+    private static void UseTestSettings(IWebHostBuilder builder)
+    {
+        IConfiguration testSettings = new ConfigurationBuilder()
+            .AddJsonFile(Path.Combine(AppContext.BaseDirectory, "appsettings.Test.json"))
+            .Build();
+        foreach ((string key, string? value) in testSettings.AsEnumerable())
+        {
+            if (value is not null)
+            {
+                builder.UseSetting(key, value);
+            }
+        }
+    }
+
     // Headers stay readable after the factory and client are disposed, because the in-memory
     // test server buffers the response.
-    private static async Task<HttpResponseMessage> GetAsync(string baseAddress, string? remoteIp = null)
+    private static async Task<HttpResponseMessage> GetAsync(
+        string baseAddress,
+        string? remoteIp = null,
+        string environment = "Test"
+    )
     {
-        await using var factory = CreateFactory();
+        await using var factory = CreateFactory(environment);
         using var client = factory.CreateClient(
             new WebApplicationFactoryClientOptions { BaseAddress = new Uri(baseAddress) }
         );
@@ -104,6 +132,18 @@ public class Given_SecurityHeaders_In_The_Dms_Pipeline
         using var response = await GetAsync("https://localhost");
 
         response.Headers.Contains("Strict-Transport-Security").Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_does_not_add_hsts_over_https_in_the_development_environment()
+    {
+        // A non-loopback host, so only the environment keeps HSTS off: a developer browser would
+        // otherwise pin this hostname to HTTPS on every port for a year.
+        using var response = await GetAsync("https://dms.example", environment: Environments.Development);
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.Contains("Strict-Transport-Security").Should().BeFalse();
+        response.Headers.GetValues("X-Frame-Options").Should().Equal("DENY");
     }
 
     [Test]
