@@ -662,14 +662,19 @@ public class Given_ClaimsFragmentComposer_null_structure(string scenario, string
     public void It_keeps_CMS_composition_fatal()
     {
         Action compose = () => _cms.ComposeClaimsFromFragments(BaseDocument, DirectoryPath);
-        compose.Should().Throw<Exception>();
+        compose.Should().ThrowExactly<InvalidOperationException>();
     }
 
     [Test]
     public void It_keeps_CMS_loading_fatal_instead_of_returning_base_or_partial_policy()
     {
-        Action load = () => Provider(_cms).GetClaimsDocumentNodes();
-        load.Should().Throw<Exception>();
+        ClaimsProvider provider = Provider(_cms);
+        Action load = () => provider.GetClaimsDocumentNodes();
+        load.Should().ThrowExactly<InvalidOperationException>();
+        provider.IsClaimsValid.Should().BeFalse();
+        ClaimsFailure failure = provider.ClaimsFailures.Should().ContainSingle().Which;
+        failure.FailureType.Should().Be("OperationError");
+        failure.Exception.Should().BeOfType<InvalidOperationException>();
     }
 }
 

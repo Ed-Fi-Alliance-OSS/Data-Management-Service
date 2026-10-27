@@ -402,11 +402,21 @@ public class Given_MergeCommand_output_protection : MergeCommandTests
     }
 }
 
-[TestFixture("duplicate-leaf", "DuplicateClaimName")]
-[TestFixture("duplicate-parent", "DuplicateClaimName")]
-[TestFixture("undeclared-reference", "UndeclaredClaimSet")]
+[TestFixture(
+    "duplicate-leaf",
+    "DuplicateClaimName at $.claimsHierarchy[0].claims[0].name, $.claimsHierarchy[2].claims[0].name: Duplicate hierarchy claim 'edfi/student'."
+)]
+[TestFixture(
+    "duplicate-parent",
+    "DuplicateClaimName at $.claimsHierarchy[0].name, $.claimsHierarchy[2].claims[0].name: Duplicate hierarchy claim 'edfi/domain'."
+)]
+[TestFixture(
+    "undeclared-reference",
+    "UndeclaredClaimSet at $.claimsHierarchy[2].claimSets[0].name: Hierarchy claim 'new/parent' references undeclared claim set 'Undeclared'."
+)]
 [TestFixture("schema", "Schema")]
-public class Given_MergeCommand_invalid_composed_document(string scenario, string code) : MergeCommandTests
+public class Given_MergeCommand_invalid_composed_document(string scenario, string expectedDiagnostic)
+    : MergeCommandTests
 {
     [SetUp]
     public async Task Setup()
@@ -435,7 +445,14 @@ public class Given_MergeCommand_invalid_composed_document(string scenario, strin
     public void It_rejects_with_the_integrity_or_schema_location()
     {
         AssertNoOutput(true);
-        Error.Should().Contain(code).And.Contain("$");
+        if (scenario == "schema")
+        {
+            Error.Should().Contain(expectedDiagnostic).And.Contain("$");
+        }
+        else
+        {
+            Error.Should().Be($"Merge failed: {expectedDiagnostic}{Environment.NewLine}");
+        }
     }
 
     [Test]
