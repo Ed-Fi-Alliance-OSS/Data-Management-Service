@@ -866,6 +866,62 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
     }
 
     [TestFixture]
+    public class Given_a_narrowed_client_create_whose_list_leaves_the_Application_inside_the_repository_transaction
+        : ApiClientEducationOrganizationApiTests
+    {
+        private (HttpStatusCode Status, JsonNode Body) _response;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // The removal is held uncommitted until the create waits on it, then commits, so it lands
+            // between the repository's check of the list and its insert of the client rows
+            await using var removal = await DataSource!.OpenConnectionAsync();
+            await using var transaction = await removal.BeginTransactionAsync();
+            await removal.ExecuteAsync(
+                """DELETE FROM "dmscs"."ApplicationEducationOrganization" WHERE "ApplicationId" = @ApplicationId AND "EducationOrganizationId" = @EducationOrganizationId;""",
+                new { ApplicationId = ApplicationA, EducationOrganizationId = A2 },
+                transaction
+            );
+
+            Task<(HttpStatusCode Status, JsonNode Body)> create = PostClientAsync(ApplicationA, List(A2));
+            await WaitUntilBlockedByAsync(removal.ProcessID, create);
+            await transaction.CommitAsync();
+            _response = await create;
+        }
+
+        [Test]
+        public void It_rejects_the_list() => ShouldBeDataValidation(_response, "EducationOrganizationIds");
+
+        [Test]
+        public void It_deletes_the_provider_client_it_created() =>
+            ProviderDeletes.Should().Equal(ProviderCreates.Single().ClientUuid.ToString());
+
+        [Test]
+        public async Task It_creates_no_client() => (await ApiClientCountAsync()).Should().Be(0);
+
+        /// <summary>
+        /// Returns once a database session waits on <paramref name="blockingProcessId"/>; the bound only
+        /// turns a request that never waits into a failure instead of a hang.
+        /// </summary>
+        private async Task WaitUntilBlockedByAsync(int blockingProcessId, Task request)
+        {
+            await using var monitor = await DataSource!.OpenConnectionAsync();
+            using CancellationTokenSource bound = new(TimeSpan.FromSeconds(60));
+            while (
+                !await monitor.ExecuteScalarAsync<bool>(
+                    "SELECT EXISTS (SELECT 1 FROM pg_stat_activity WHERE @BlockingProcessId = ANY(pg_blocking_pids(pid)));",
+                    new { BlockingProcessId = blockingProcessId }
+                )
+            )
+            {
+                request.IsCompleted.Should().BeFalse("the create must wait on the uncommitted removal");
+                await Task.Delay(TimeSpan.FromMilliseconds(20), bound.Token);
+            }
+        }
+    }
+
+    [TestFixture]
     public class Given_a_narrowed_client_move_whose_replacement_list_leaves_the_destination_during_the_provider_call
         : ApiClientEducationOrganizationApiTests
     {

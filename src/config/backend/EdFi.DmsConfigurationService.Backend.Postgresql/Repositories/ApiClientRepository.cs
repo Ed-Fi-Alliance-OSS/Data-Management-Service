@@ -119,9 +119,8 @@ public class ApiClientRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
-            long[]? narrowedEducationOrganizationIds = NarrowedEducationOrganizationIds(
-                command.EducationOrganizationScope
-            );
+            ApiClientEducationOrganizationScope scope =
+                command.EducationOrganizationScope ?? new ApiClientEducationOrganizationScope.Inherit();
 
             string sql = $"""
                 INSERT INTO "dmscs"."ApiClient" ("ApplicationId", "ClientId", "ClientUuid", "Name", "IsApproved", "InheritsApplicationEducationOrganizations", "CreatedBy")
@@ -139,7 +138,7 @@ public class ApiClientRepository(
                     clientCommand.ClientUuid,
                     command.Name,
                     command.IsApproved,
-                    Inherits = narrowedEducationOrganizationIds is null,
+                    Inherits = scope is not ApiClientEducationOrganizationScope.Narrow,
                     CreatedBy = auditContext.GetCurrentUser(),
                     TenantId,
                 },
@@ -153,17 +152,9 @@ public class ApiClientRepository(
                 return new ApiClientInsertResult.FailureApplicationNotFound();
             }
 
-            if (narrowedEducationOrganizationIds is null)
+            if (scope is ApiClientEducationOrganizationScope.Narrow narrow)
             {
-                await InsertApplicationEducationOrganizationsAsync(
-                    connection,
-                    transaction,
-                    apiClientId.Value,
-                    command.ApplicationId
-                );
-            }
-            else
-            {
+                long[] narrowedEducationOrganizationIds = DistinctEducationOrganizationIds(narrow);
                 long[] missingIds = narrowedEducationOrganizationIds
                     .Except(
                         await ApplicationEducationOrganizationIdsAsync(
@@ -191,6 +182,15 @@ public class ApiClientRepository(
                     apiClientId.Value,
                     command.ApplicationId,
                     narrowedEducationOrganizationIds
+                );
+            }
+            else
+            {
+                await InsertApplicationEducationOrganizationsAsync(
+                    connection,
+                    transaction,
+                    apiClientId.Value,
+                    command.ApplicationId
                 );
             }
 
@@ -546,10 +546,9 @@ public class ApiClientRepository(
                     );
             }
 
-            long[]? narrowedEducationOrganizationIds = NarrowedEducationOrganizationIds(scope);
-            if (narrowedEducationOrganizationIds is not null)
+            if (scope is ApiClientEducationOrganizationScope.Narrow narrow)
             {
-                long[] missingIds = narrowedEducationOrganizationIds
+                long[] missingIds = DistinctEducationOrganizationIds(narrow)
                     .Except(
                         await ApplicationEducationOrganizationIdsAsync(
                             connection,
@@ -599,7 +598,9 @@ public class ApiClientRepository(
                     command.Name,
                     command.IsApproved,
                     ClientUuid = command.ClientUuid,
-                    Inherits = scope is null ? (bool?)null : narrowedEducationOrganizationIds is null,
+                    Inherits = scope is null
+                        ? (bool?)null
+                        : scope is ApiClientEducationOrganizationScope.Inherit,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
                     ModifiedBy = auditContext.GetCurrentUser(),
                     TenantId,
@@ -614,14 +615,14 @@ public class ApiClientRepository(
                 return new ApiClientUpdateResult.FailureApplicationNotFound();
             }
 
-            if (narrowedEducationOrganizationIds is not null)
+            if (scope is ApiClientEducationOrganizationScope.Narrow narrowed)
             {
                 await InsertStoredEducationOrganizationsAsync(
                     connection,
                     transaction,
                     command.Id,
                     command.ApplicationId,
-                    narrowedEducationOrganizationIds
+                    DistinctEducationOrganizationIds(narrowed)
                 );
             }
             else if (scope is not null)
@@ -969,6 +970,12 @@ public class ApiClientRepository(
             )
         ).ToArray();
 
+    /// <summary>
+    /// The Application's education organization ids, each row locked until the transaction ends. A
+    /// concurrent Application update that removes one either waits for this transaction, then cascades
+    /// to the client rows it stored, or commits first and leaves the id out of the result, so a list
+    /// checked against these ids can always be stored.
+    /// </summary>
     private static async Task<long[]> ApplicationEducationOrganizationIdsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -979,7 +986,8 @@ public class ApiClientRepository(
                 """
                 SELECT "EducationOrganizationId" FROM "dmscs"."ApplicationEducationOrganization"
                 WHERE "ApplicationId" = @ApplicationId
-                ORDER BY "EducationOrganizationId";
+                ORDER BY "EducationOrganizationId"
+                FOR KEY SHARE;
                 """,
                 new { ApplicationId = applicationId },
                 transaction
@@ -1022,13 +1030,10 @@ public class ApiClientRepository(
         );
     }
 
-    /// <summary>
-    /// The distinct ids of a narrowed scope, or null when the scope is absent or inherits.
-    /// </summary>
-    private static long[]? NarrowedEducationOrganizationIds(ApiClientEducationOrganizationScope? scope) =>
-        scope is ApiClientEducationOrganizationScope.Narrow narrow
-            ? [.. narrow.EducationOrganizationIds.Distinct()]
-            : null;
+    /// <summary>The distinct ids of a narrowed scope.</summary>
+    private static long[] DistinctEducationOrganizationIds(
+        ApiClientEducationOrganizationScope.Narrow narrow
+    ) => [.. narrow.EducationOrganizationIds.Distinct()];
 
     /// <summary>Stores the Application's current list as an inheriting client's rows.</summary>
     private Task InsertApplicationEducationOrganizationsAsync(
