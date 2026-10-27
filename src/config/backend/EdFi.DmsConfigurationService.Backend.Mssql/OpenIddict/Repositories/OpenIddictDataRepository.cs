@@ -358,7 +358,10 @@ UPDATE dmscs.OpenIddictApplication
         /// stored secret, and the approval <see cref="GetApplicationByClientIdAsync"/> reports
         /// (every API client registered under the client id approved; approved when there is
         /// none). The client id is matched with the same predicate as that lookup, so under the
-        /// database's collation. A stored null becomes an empty string.
+        /// database's collation. A stored null becomes an empty string. The statement is driven by
+        /// the requested client id and always returns one row, with no application id when none is
+        /// registered, so an unknown client id costs the same application and API client lookups
+        /// as a registered one.
         /// </summary>
         public async Task<ClientCredential?> GetClientCredentialAsync(string clientId)
         {
@@ -371,19 +374,18 @@ UPDATE dmscs.OpenIddictApplication
                        COALESCE(a.ClientSecret, N'') AS StoredClientSecret,
                        CAST(COALESCE((SELECT MIN(CAST(ac.IsApproved AS INT))
                                       FROM dmscs.ApiClient ac
-                                      WHERE ac.ClientId = a.ClientId), 1) AS BIT) AS IsApproved
-                FROM dmscs.OpenIddictApplication a
-                WHERE a.ClientId = @ClientId
+                                      WHERE ac.ClientId = r.ClientId), 1) AS BIT) AS IsApproved
+                FROM (SELECT @ClientId AS ClientId) r
+                LEFT JOIN dmscs.OpenIddictApplication a ON a.ClientId = r.ClientId
                 """;
 
-            return
-                await connection.QuerySingleOrDefaultAsync<ClientCredentialRow>(
-                    credentialSql,
-                    new { ClientId = clientId }
-                )
-                    is { } row
+            ClientCredentialRow row = await connection.QuerySingleAsync<ClientCredentialRow>(
+                credentialSql,
+                new { ClientId = clientId }
+            );
+            return row.ApplicationId is { } applicationId
                 ? new ClientCredential(
-                    row.ApplicationId,
+                    applicationId,
                     row.StoredClientId ?? string.Empty,
                     row.StoredClientSecret ?? string.Empty,
                     row.IsApproved
@@ -715,7 +717,7 @@ UPDATE dmscs.OpenIddictApplication
         );
 
         private sealed record ClientCredentialRow(
-            Guid ApplicationId,
+            Guid? ApplicationId,
             string? StoredClientId,
             string? StoredClientSecret,
             bool IsApproved

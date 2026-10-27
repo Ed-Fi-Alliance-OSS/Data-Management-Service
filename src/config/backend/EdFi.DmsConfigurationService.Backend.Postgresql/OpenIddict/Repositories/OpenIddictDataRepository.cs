@@ -357,10 +357,13 @@ UPDATE ""dmscs"".""OpenIddictApplication""
         }
 
         /// <summary>
-        /// One statement and no joins: the application's id, stored client id and stored secret,
-        /// and the approval <see cref="GetApplicationByClientIdAsync"/> reports (every API client
+        /// One statement: the application's id, stored client id and stored secret, and the
+        /// approval <see cref="GetApplicationByClientIdAsync"/> reports (every API client
         /// registered under the client id approved; approved when there is none). The client id
         /// is matched exactly, as that lookup matches it. A stored null becomes an empty string.
+        /// The statement is driven by the requested client id and always returns one row, with no
+        /// application id when none is registered, so an unknown client id costs the same
+        /// application and API client lookups as a registered one.
         /// </summary>
         public async Task<ClientCredential?> GetClientCredentialAsync(string clientId)
         {
@@ -372,20 +375,19 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                          COALESCE(a.""ClientId"", '') AS ""StoredClientId"",
                          COALESCE(a.""ClientSecret"", '') AS ""StoredClientSecret"",
                          COALESCE(
-                             (SELECT BOOL_AND(ac.""IsApproved"") FROM ""dmscs"".""ApiClient"" ac WHERE ac.""ClientId"" = a.""ClientId""),
+                             (SELECT BOOL_AND(ac.""IsApproved"") FROM ""dmscs"".""ApiClient"" ac WHERE ac.""ClientId"" = r.""ClientId""),
                              true
                          ) AS ""IsApproved""
-                  FROM ""dmscs"".""OpenIddictApplication"" a
-                  WHERE a.""ClientId"" = @ClientId";
+                  FROM (SELECT @ClientId AS ""ClientId"") r
+                  LEFT JOIN ""dmscs"".""OpenIddictApplication"" a ON a.""ClientId"" = r.""ClientId""";
 
-            return
-                await connection.QuerySingleOrDefaultAsync<ClientCredentialRow>(
-                    credentialSql,
-                    new { ClientId = clientId }
-                )
-                    is { } row
+            ClientCredentialRow row = await connection.QuerySingleAsync<ClientCredentialRow>(
+                credentialSql,
+                new { ClientId = clientId }
+            );
+            return row.ApplicationId is { } applicationId
                 ? new ClientCredential(
-                    row.ApplicationId,
+                    applicationId,
                     row.StoredClientId ?? string.Empty,
                     row.StoredClientSecret ?? string.Empty,
                     row.IsApproved
@@ -394,7 +396,7 @@ UPDATE ""dmscs"".""OpenIddictApplication""
         }
 
         private sealed record ClientCredentialRow(
-            Guid ApplicationId,
+            Guid? ApplicationId,
             string? StoredClientId,
             string? StoredClientSecret,
             bool IsApproved
