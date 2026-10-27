@@ -233,6 +233,25 @@ Describe 'Isolated launcher environment and cleanup' {
     BeforeAll {
         # Run the launcher itself in a tiny checkout; replace only native/build boundaries.
         function dotnet {
+            if ($args[0] -eq 'tool') {
+                $global:CmsLauncherinstallArguments = @($args)
+                $toolPath = $args[[array]::IndexOf($args, '--tool-path') + 1]
+                $global:CmsLauncherinstallScratch = Split-Path $toolPath
+                $global:CmsLauncherinstallCache = $env:NUGET_PACKAGES
+                $null = New-Item -ItemType Directory $toolPath -Force
+                $null = New-Item -ItemType Directory $env:NUGET_PACKAGES -Force
+                Set-Content (Join-Path $toolPath $(if ($IsWindows) { 'security-metadata-tools.exe' } else { 'security-metadata-tools' })) 'installed shim'
+                $config = $args[[array]::IndexOf($args, '--configfile') + 1]
+                [xml] $configuration = Get-Content $config -Raw
+                @($configuration.configuration.packageSources.add).Count | Should -Be 1
+                $configuration.configuration.packageSources.add.key | Should -Be 'local'
+                $configuration.configuration.packageSources.add.value | Should -Be (Join-Path $global:CmsLauncherinstallScratch 'feed')
+                $configuration.SelectSingleNode('/configuration/packageSources/clear') | Should -Not -BeNullOrEmpty
+                $configuration.SelectSingleNode('/configuration/fallbackPackageFolders/clear') | Should -Not -BeNullOrEmpty
+                $configuration.SelectSingleNode('/configuration/packageSourceMapping/clear') | Should -Not -BeNullOrEmpty
+                $global:LASTEXITCODE = if ($global:CmsLauncherinstallFailure) { 1 } else { 0 }
+                return
+            }
             if ($args[0] -eq 'test') {
                 $logger = $args | Where-Object { $_ -like 'trx;LogFileName=*' }
                 $path = $logger.Substring('trx;LogFileName='.Length)
@@ -253,8 +272,14 @@ Describe 'Isolated launcher environment and cleanup' {
         }
         function docker { $global:LASTEXITCODE = 0 }
         function pwsh {
+            if ($args -match 'Test-SecurityMetadataToolsPackage.ps1$') {
+                $global:CmsLauncherpackageArguments = @($args)
+                Set-Content (Join-Path $global:CmsLaunchercheckout 'EdFi.Api.SecurityMetadataTools.8.1.0-alpha.0.42.nupkg') 'validated package'
+                $global:LASTEXITCODE = if ($global:CmsLauncherpackageFailure) { 1 } else { 0 }
+                return
+            }
             $global:CmsLaunchercapturedPolicy = @{}
-            foreach ($name in @('CONFIGURATION_SERVICE_CLAIMS_SOURCE', 'CONFIGURATION_SERVICE_DATA_STANDARD_VERSION', 'CONFIGURATION_SERVICE_CLAIMS_DIRECTORY', 'CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING', 'CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE', 'CONFIGURATION_SERVICE_E2E_API_URL', 'POSTGRES_PORT', 'SECURITY_METADATA_TOOLS_SERVICE_RUNNER')) {
+            foreach ($name in @('CONFIGURATION_SERVICE_CLAIMS_SOURCE', 'CONFIGURATION_SERVICE_DATA_STANDARD_VERSION', 'CONFIGURATION_SERVICE_CLAIMS_DIRECTORY', 'CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING', 'CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE', 'CONFIGURATION_SERVICE_E2E_API_URL', 'POSTGRES_PORT', 'SECURITY_METADATA_TOOLS_SERVICE_RUNNER', 'SECURITY_METADATA_TOOLS_USE_INSTALLED_TOOL', 'SECURITY_METADATA_TOOLS_INSTALLED_EXECUTABLE', 'SECURITY_METADATA_TOOLS_EXPECTED_VERSION')) {
                 $global:CmsLaunchercapturedPolicy[$name] = [Environment]::GetEnvironmentVariable($name)
             }
             $global:CmsLaunchercapturedArguments = @($args)
@@ -291,6 +316,19 @@ Describe 'Isolated launcher environment and cleanup' {
         $null = New-Item -ItemType Directory $launcherDirectory -Force
         Copy-Item (Join-Path $PSScriptRoot 'Invoke-IsolatedConfigE2E.ps1') $launcherDirectory
         Copy-Item (Join-Path $PSScriptRoot 'IsolatedConfigE2E.psm1') $launcherDirectory
+        $verification = Join-Path $global:CmsLaunchercheckout 'eng/verification'
+        $null = New-Item -ItemType Directory $verification
+        Copy-Item (Join-Path $PSScriptRoot '../../../verification/SecurityMetadataToolsPackage.psm1') $verification
+        # Modules have their own command lookup scope; replace only the native boundary in this copy.
+        Add-Content (Join-Path $verification 'SecurityMetadataToolsPackage.psm1') ("`nfunction dotnet {`n" + ${function:dotnet}.ToString() + "`n}")
+        Set-Content (Join-Path $global:CmsLaunchercheckout 'package-helpers.psm1') @'
+function Get-SecurityMetadataToolsVersion {
+    param($AppVersion)
+    if ($AppVersion -ne '8.1.9-alpha.0.42') { throw 'Wrong application version supplied' }
+    return '8.1.0-alpha.0.42'
+}
+Export-ModuleMember -Function Get-SecurityMetadataToolsVersion
+'@
         Set-Content (Join-Path $global:CmsLaunchercheckout 'eng/build-helpers.psm1') @'
 function Get-RequiredTestAssembly {
     param($SolutionRoot, $Filter, $Configuration)
@@ -332,10 +370,17 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $global:CmsLaunchermergeArguments = @()
         $global:CmsLaunchermergeFailure = $false
         $global:CmsLaunchermutateInput = $false
+        $global:CmsLauncherinstallFailure = $false
+        $global:CmsLauncherpackageFailure = $false
+        $global:CmsLauncherinstallScratch = ''
+        $global:CmsLauncherinstallArguments = @()
+        $global:CmsLauncherpackageArguments = @()
         $global:CmsLauncherlauncher = Join-Path $launcherDirectory 'Invoke-IsolatedConfigE2E.ps1'
     }
 
     AfterEach {
+        # Imported copies must not contaminate other Pester files that mock the real named modules.
+        Get-Module | Where-Object { $_.Path.StartsWith($global:CmsLaunchercheckout + [IO.Path]::DirectorySeparatorChar, [StringComparison]::Ordinal) } | Remove-Module
         if ($null -eq $global:CmsLauncheroriginalNodeOptions) { Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue }
         else { $env:NODE_OPTIONS = $global:CmsLauncheroriginalNodeOptions }
         Remove-Variable CmsTeardownCalls -Scope Global -ErrorAction SilentlyContinue
@@ -351,6 +396,8 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_E2E_API_URL | Should -Be 'http://localhost:8191'
         $global:CmsLaunchercapturedPolicy.POSTGRES_PORT | Should -Be '5536'
         $global:CmsLaunchercapturedPolicy.SECURITY_METADATA_TOOLS_SERVICE_RUNNER | Should -Be 'true'
+        $global:CmsLaunchercapturedPolicy.SECURITY_METADATA_TOOLS_USE_INSTALLED_TOOL | Should -Be 'false'
+        $global:CmsLaunchercapturedPolicy.SECURITY_METADATA_TOOLS_INSTALLED_EXECUTABLE | Should -BeNullOrEmpty
         $global:CmsLaunchercapturedArguments | Should -Contain '-ClaimsFixtureDirectory'
         $global:CmsLaunchercapturedArguments | Should -Contain $global:CmsLauncherprepared
         $derived = Get-Content (Join-Path $global:CmsLaunchercheckout 'eng/docker-compose/.derived/test.env.isolated')
@@ -471,6 +518,68 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $after = @{}
         Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }
         ($after | ConvertTo-Json -Compress) | Should -Be ($global:CmsLauncherbeforeEnvironment | ConvertTo-Json -Compress)
+    }
+
+    It 'runs the same Drift test with a local installation and cleans up after <Outcome>' -TestCases @(
+        @{ Outcome = 'success' }, @{ Outcome = 'service failure' },
+        @{ Outcome = 'install failure' }, @{ Outcome = 'package failure' }
+    ) {
+        param($Outcome)
+        $fixture = Join-Path $global:CmsLaunchercheckout 'src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Drift'
+        $null = New-Item -ItemType Directory $fixture -Force
+        # Existing startup stub asserts the exact fixture bytes.
+        [IO.File]::WriteAllBytes((Join-Path $fixture 'Claims.json'), [byte[]]@(123,125,10))
+        $global:CmsLauncherinjectFailure = $Outcome -eq 'service failure'
+        $global:CmsLauncherinstallFailure = $Outcome -eq 'install failure'
+        $global:CmsLauncherpackageFailure = $Outcome -eq 'package failure'
+        $invoke = {
+            & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Drift -UseInstalledTool -AppVersion '8.1.9-alpha.0.42' -Configuration Release -SkipDockerBuild
+        }
+        switch ($Outcome) {
+            'success' { & $invoke }
+            'service failure' { $invoke | Should -Throw '*execution failed*' }
+            'install failure' { $invoke | Should -Throw '*installation failed*' }
+            'package failure' { $invoke | Should -Throw '*package verification failed*' }
+        }
+        $global:CmsLauncherpackageArguments | Should -Contain '8.1.9-alpha.0.42'
+        $global:CmsLauncherpackageArguments | Should -Contain 'Release'
+        $mountSetting = Get-Content (Join-Path $global:CmsLaunchercheckout 'eng/docker-compose/.derived/test.env.isolated') | Where-Object { $_ -like 'CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=*' }
+        $mount = $mountSetting.Substring('CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE='.Length)
+        Test-Path $mount | Should -BeFalse
+        $global:CmsTeardownCalls | Should -Be 2
+        if ($Outcome -ne 'package failure') {
+            $global:CmsLauncherinstallArguments[0..2] | Should -Be @('tool', 'install', 'EdFi.Api.SecurityMetadataTools')
+            $global:CmsLauncherinstallArguments | Should -Contain '8.1.0-alpha.0.42'
+            $global:CmsLauncherinstallArguments | Should -Contain '--no-cache'
+            $global:CmsLauncherinstallCache | Should -Be (Join-Path $global:CmsLauncherinstallScratch 'nuget-packages')
+            Test-Path $global:CmsLauncherinstallScratch | Should -BeFalse
+        }
+        if ($Outcome -in @('success', 'service failure')) {
+            $global:CmsLaunchercapturedArguments | Should -Contain '(TestCategory=SecurityMetadataToolsService)&(TestCategory=SecurityMetadataToolsDrift)&(Name=It_detects_a_precise_stored_policy_edit_from_an_editable_baseline)'
+            $global:CmsLaunchercapturedPolicy.SECURITY_METADATA_TOOLS_USE_INSTALLED_TOOL | Should -Be 'true'
+            $global:CmsLaunchercapturedPolicy.SECURITY_METADATA_TOOLS_EXPECTED_VERSION | Should -Be '8.1.0-alpha.0.42'
+            $executable = $global:CmsLaunchercapturedPolicy.SECURITY_METADATA_TOOLS_INSTALLED_EXECUTABLE
+            $executable | Should -Be (Join-Path $global:CmsLauncherinstallScratch "tool/$(if ($IsWindows) { 'security-metadata-tools.exe' } else { 'security-metadata-tools' })")
+            Test-Path $global:CmsLauncherprepared | Should -BeFalse
+            $evidence = @(Get-ChildItem (Join-Path $global:CmsLaunchercheckout 'TestResults/cms-isolation') -Recurse -Filter installed-package.json)
+            $evidence.Count | Should -Be 1
+            (Get-Content $evidence[0] -Raw | ConvertFrom-Json).Executable | Should -Be $executable
+        }
+        $after = @{}
+        Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }
+        ($after | ConvertTo-Json -Compress) | Should -Be ($global:CmsLauncherbeforeEnvironment | ConvertTo-Json -Compress)
+    }
+
+    It 'rejects unsupported installed-tool selections before starting any stack' -TestCases @(
+        @{ Selection = @{ SecurityMetadataToolsScenario = 'Hybrid'; UseInstalledTool = $true; AppVersion = '8.1.9-alpha.0.42' } },
+        @{ Selection = @{ SecurityMetadataToolsScenario = 'Drift'; UseInstalledTool = $true } },
+        @{ Selection = @{ SecurityMetadataToolsScenario = 'Drift'; AppVersion = '8.1.9-alpha.0.42' } }
+    ) {
+        param($Selection)
+        $selectedArguments = $Selection
+        { & $global:CmsLauncherlauncher -EnvironmentFile './test.env' @selectedArguments } | Should -Throw '*requires*'
+        $global:CmsTeardownCalls | Should -Be 0
+        $global:CmsLauncherpackageArguments | Should -BeNullOrEmpty
     }
 
     It 'detects changed Drift input and still removes the stack and mount' {

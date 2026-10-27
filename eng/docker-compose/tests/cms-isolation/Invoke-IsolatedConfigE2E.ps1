@@ -58,6 +58,12 @@ param(
     [string]
     $SecurityMetadataToolsScenario = "",
 
+    [switch]
+    $UseInstalledTool,
+
+    [string]
+    $AppVersion = "",
+
     # Custom fixture plumbing remains available independently of named scenarios.
     [string]
     $ClaimsFixtureDirectory = "",
@@ -126,6 +132,13 @@ $isolation = [ordered]@{
     CONFIGURATION_SERVICE_DOCKER_IMAGE = "ed-fi-api-config-$IsolationName"
 }
 
+if ($UseInstalledTool -and ($SecurityMetadataToolsScenario -ne 'Drift' -or [string]::IsNullOrWhiteSpace($AppVersion))) {
+    throw 'UseInstalledTool requires the Drift scenario and an explicit AppVersion.'
+}
+if ($PSBoundParameters.ContainsKey('AppVersion') -and -not $UseInstalledTool) {
+    throw 'AppVersion requires UseInstalledTool.'
+}
+
 $expectedTestNames = @()
 if ($SecurityMetadataToolsScenario) {
     foreach ($conflictingParameter in @('ClaimsFixtureDirectory', 'ClaimsSource', 'EnableUnrestrictedClaimsLoading', 'E2ETestFilter')) {
@@ -160,6 +173,7 @@ if ($SecurityMetadataToolsScenario) {
 }
 
 Import-Module (Join-Path $PSScriptRoot "IsolatedConfigE2E.psm1") -Force
+$toolScratch = ""
 $preparedFixtureDirectory = ""
 $runId = [guid]::NewGuid().ToString("N")
 if ($ClaimsFixtureDirectory) {
@@ -409,8 +423,33 @@ try {
     else {
         Set-HarnessVariable -Name SECURITY_METADATA_TOOLS_SERVICE_RUNNER -Value "false"
     }
+    # A caller's installed path must never silently affect an ordinary or staged-DLL run.
+    Set-HarnessVariable -Name SECURITY_METADATA_TOOLS_USE_INSTALLED_TOOL -Value $UseInstalledTool.ToString().ToLowerInvariant()
+    Set-HarnessVariable -Name SECURITY_METADATA_TOOLS_INSTALLED_EXECUTABLE -Value ""
+    Set-HarnessVariable -Name SECURITY_METADATA_TOOLS_EXPECTED_VERSION -Value ""
     $workingTrx = Join-Path $repoRoot "TestResults/EdFi.DmsConfigurationService.Tests.E2E.trx"
     Invoke-IsolatedCmsTestRun -WorkingTrx $workingTrx -ArtifactDirectory $artifactDirectory -ExpectedTestNames $expectedTestNames -Execute {
+        if ($UseInstalledTool) {
+            # Reuse the standalone package contract before installing the same local artifact for CMS.
+            & pwsh -NoProfile -File (Join-Path $repoRoot 'eng/verification/Test-SecurityMetadataToolsPackage.ps1') -AppVersion $AppVersion -Configuration $Configuration
+            if ($LASTEXITCODE -ne 0) { throw "Security Metadata Tools package verification failed ($LASTEXITCODE)." }
+            Import-Module (Join-Path $repoRoot 'package-helpers.psm1')
+            Import-Module (Join-Path $repoRoot 'eng/verification/SecurityMetadataToolsPackage.psm1') -Force
+            $toolVersion = Get-SecurityMetadataToolsVersion -AppVersion $AppVersion
+            $packageVersion = ($toolVersion -split '\+', 2)[0]
+            $packageFile = Join-Path $repoRoot "EdFi.Api.SecurityMetadataTools.$packageVersion.nupkg"
+            # The execution block runs in a child scope; retain ownership for the outer finally.
+            $script:toolScratch = Join-Path ([IO.Path]::GetTempPath()) "cms-installed-tool-$runId"
+            $executable = Install-SecurityMetadataToolsPackage -PackageFile $packageFile -PackageVersion $packageVersion -ScratchDirectory $toolScratch
+            Set-HarnessVariable -Name SECURITY_METADATA_TOOLS_INSTALLED_EXECUTABLE -Value $executable
+            Set-HarnessVariable -Name SECURITY_METADATA_TOOLS_EXPECTED_VERSION -Value $toolVersion
+            [ordered]@{
+                PackageId = 'EdFi.Api.SecurityMetadataTools'
+                PackageVersion = $packageVersion
+                PackageSha256 = (Get-FileHash -LiteralPath $packageFile -Algorithm SHA256).Hash
+                Executable = $executable
+            } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactDirectory 'installed-package.json')
+        }
         if ($SecurityMetadataToolsScenario -in @('Filesystem', 'Drift')) {
             $sourceHashes = @(Get-ChildItem -LiteralPath $ClaimsFixtureDirectory -File -Recurse | Sort-Object FullName | Get-FileHash -Algorithm SHA256)
             $sourceHashes | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifactDirectory 'source-sha256-before.json')
@@ -489,18 +528,23 @@ try {
     $exitCode = 0
 }
 finally {
-    if ($preparedFixtureDirectory -and (Test-Path -LiteralPath $preparedFixtureDirectory)) {
-        Remove-Item -LiteralPath $preparedFixtureDirectory -Recurse -Force
+    try {
+        if ($toolScratch) { Remove-SecurityMetadataToolsInstallation -ScratchDirectory $toolScratch }
     }
-    # A $null prior value means the variable was absent and must be removed. Remove-Item is required for
-    # that: SetEnvironmentVariable with $null from PowerShell coerces the value to "", which pwsh on Unix
-    # stores as a present-but-blank variable instead of removing it (see bootstrap-manifest.psm1).
-    foreach ($name in $priorEnvironment.Keys) {
-        if ($null -eq $priorEnvironment[$name]) {
-            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+    finally {
+        if ($preparedFixtureDirectory -and (Test-Path -LiteralPath $preparedFixtureDirectory)) {
+            Remove-Item -LiteralPath $preparedFixtureDirectory -Recurse -Force
         }
-        else {
-            [System.Environment]::SetEnvironmentVariable($name, $priorEnvironment[$name])
+        # A $null prior value means the variable was absent and must be removed. Remove-Item is required for
+        # that: SetEnvironmentVariable with $null from PowerShell coerces the value to "", which pwsh on Unix
+        # stores as a present-but-blank variable instead of removing it (see bootstrap-manifest.psm1).
+        foreach ($name in $priorEnvironment.Keys) {
+            if ($null -eq $priorEnvironment[$name]) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($name, $priorEnvironment[$name])
+            }
         }
     }
 }

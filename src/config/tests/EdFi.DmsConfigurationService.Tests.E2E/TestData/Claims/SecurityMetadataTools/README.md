@@ -40,6 +40,15 @@ snapshots before/after and unchanged source/mount hashes are retained. Run it wi
 pwsh ./eng/docker-compose/tests/cms-isolation/Invoke-IsolatedConfigE2E.ps1 -Configuration Release -EnvironmentFile ./.env.config.e2e -SecurityMetadataToolsScenario Drift -DataStandardVersion 5.2
 ```
 
+To exercise that same Drift test through a real local tool installation, add
+`-UseInstalledTool -AppVersion '8.1.9-alpha.0.42'`. The launcher runs the standalone package
+smoke, installs the validated package from a temporary local-only feed, and supplies the
+installed executable to the existing test. It records the package hash, installed version,
+and executable used for each verification; reports must still match the same literal oracles.
+The token is supplied only through `CMS_POLICY_TEST_TOKEN` in the child environment.
+Installation/feed/cache and the isolated stack are removed on success or failure.
+`-UseInstalledTool` is supported only for Drift and requires an explicit `-AppVersion`.
+
 Service cases belong to `Given_SecurityMetadataToolsService`, carry both
 `SecurityMetadataToolsService` and their scenario category, and require
 `SECURITY_METADATA_TOOLS_SERVICE_RUNNER=true`. The launcher must select and validate the exact

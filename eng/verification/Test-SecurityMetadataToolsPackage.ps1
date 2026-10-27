@@ -25,6 +25,7 @@ param(
 $ErrorActionPreference = "Stop"
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../.."))
 Import-Module (Join-Path $repoRoot "package-helpers.psm1")
+Import-Module (Join-Path $PSScriptRoot "SecurityMetadataToolsPackage.psm1")
 $toolVersion = Get-SecurityMetadataToolsVersion -AppVersion $AppVersion
 $packageVersion = ($toolVersion -split '\+', 2)[0]
 $packageId = "EdFi.Api.SecurityMetadataTools"
@@ -81,10 +82,7 @@ pwsh -NoProfile -File (Join-Path $repoRoot "build-config.ps1") Package `
 if ($LASTEXITCODE -ne 0) { throw "Security Metadata Tools packaging failed ($LASTEXITCODE)." }
 
 $scratch = Join-Path ([IO.Path]::GetTempPath()) "security-metadata-tools-$([guid]::NewGuid())"
-$originalPackages = $env:NUGET_PACKAGES
 try {
-    $feed = New-Item -ItemType Directory -Path (Join-Path $scratch "feed")
-    Copy-Item -LiteralPath $packageFile -Destination $feed.FullName
     $extracted = Join-Path $scratch "extracted"
     Expand-Archive -LiteralPath $packageFile -DestinationPath $extracted
 
@@ -165,17 +163,7 @@ try {
         $peReader.Dispose()
         $claimsStream.Dispose()
     }
-    $env:NUGET_PACKAGES = Join-Path $scratch "nuget-packages"
-    $toolPath = Join-Path $scratch "tool"
-    $nugetConfig = Join-Path $scratch "NuGet.Config"
-    # Clear inherited sources, fallback folders and source mappings as well as the global cache.
-    $escapedFeed = [Security.SecurityElement]::Escape($feed.FullName)
-    Set-Content -LiteralPath $nugetConfig -Value "<configuration><packageSources><clear /><add key=""local"" value=""$escapedFeed"" /></packageSources><fallbackPackageFolders><clear /></fallbackPackageFolders><packageSourceMapping><clear /></packageSourceMapping></configuration>"
-    dotnet tool install $packageId --tool-path $toolPath --source $feed.FullName `
-        --configfile $nugetConfig --version $packageVersion --no-cache
-    if ($LASTEXITCODE -ne 0) { throw "Local-only tool installation failed ($LASTEXITCODE)." }
-
-    $executable = Join-Path $toolPath $(if ($IsWindows) { "security-metadata-tools.exe" } else { "security-metadata-tools" })
+    $executable = Install-SecurityMetadataToolsPackage -PackageFile $packageFile -PackageVersion $packageVersion -ScratchDirectory $scratch
     $workspace = (New-Item -ItemType Directory -Path (Join-Path $scratch "workspace")).FullName
     $relativeWorkspace = [IO.Path]::GetRelativePath($repoRoot, $workspace)
     if (-not [IO.Path]::IsPathRooted($relativeWorkspace) -and $relativeWorkspace -notmatch '^\.\.([/\\]|$)') {
@@ -239,6 +227,5 @@ try {
     Write-Output "SHA256: $((Get-FileHash -LiteralPath $packageFile -Algorithm SHA256).Hash)"
 }
 finally {
-    $env:NUGET_PACKAGES = $originalPackages
-    if (Test-Path -LiteralPath $scratch) { Remove-Item -LiteralPath $scratch -Recurse -Force }
+    Remove-SecurityMetadataToolsInstallation -ScratchDirectory $scratch
 }

@@ -27,6 +27,7 @@ public partial class Given_SecurityMetadataToolsService
     protected string FixtureDirectory { get; private set; } = string.Empty;
     protected string EvidenceDirectory { get; private set; } = string.Empty;
     protected string ToolPath { get; private set; } = string.Empty;
+    private bool UseInstalledTool { get; set; }
 
     [OneTimeSetUp]
     public async Task SetUpIsolatedScenario()
@@ -43,6 +44,36 @@ public partial class Given_SecurityMetadataToolsService
             "SecurityMetadataTools",
             "security-metadata-tools.dll"
         );
+        UseInstalledTool =
+            Environment.GetEnvironmentVariable("SECURITY_METADATA_TOOLS_USE_INSTALLED_TOOL") == "true";
+        if (UseInstalledTool)
+        {
+            ToolPath = RequiredSetting("SECURITY_METADATA_TOOLS_INSTALLED_EXECUTABLE");
+            Path.IsPathFullyQualified(ToolPath).Should().BeTrue();
+            Path.GetFileName(ToolPath)
+                .Should()
+                .Be(OperatingSystem.IsWindows() ? "security-metadata-tools.exe" : "security-metadata-tools");
+            File.Exists(ToolPath).Should().BeTrue();
+            string expectedVersion = RequiredSetting("SECURITY_METADATA_TOOLS_EXPECTED_VERSION");
+            var version = await RunProcessAsync(ToolPath, ["--version"], "");
+            version.ExitCode.Should().Be(0);
+            version.Error.Should().BeEmpty();
+            string separator = expectedVersion.Contains('+') ? @"\." : @"\+";
+            version
+                .Output.Trim()
+                .Should()
+                .MatchRegex(
+                    "^"
+                        + System.Text.RegularExpressions.Regex.Escape(expectedVersion)
+                        + "("
+                        + separator
+                        + "[0-9a-f]{40})?$"
+                );
+            await File.WriteAllTextAsync(
+                Path.Combine(EvidenceDirectory, "installed-tool-version.txt"),
+                version.Output
+            );
+        }
         _playwright = await Playwright.CreateAsync();
         _context = await _playwright.APIRequest.NewContextAsync(
             new() { BaseURL = RequiredSetting("CONFIGURATION_SERVICE_E2E_API_URL"), IgnoreHTTPSErrors = true }
@@ -385,7 +416,14 @@ public partial class Given_SecurityMetadataToolsService
         string expectedOutput = ""
     )
     {
-        var result = await RunProcessAsync("dotnet", [ToolPath, .. arguments], token);
+        string executable = UseInstalledTool ? ToolPath : "dotnet";
+        string[] processArguments = UseInstalledTool ? arguments : [ToolPath, .. arguments];
+        // Record the actual launch choice; an installed run must never fall back to the staged DLL.
+        await File.WriteAllTextAsync(
+            Path.Combine(EvidenceDirectory, $"{operation}-execution.json"),
+            JsonSerializer.Serialize(new { executable, installed = UseInstalledTool })
+        );
+        var result = await RunProcessAsync(executable, processArguments, token);
         bool leakedToken =
             token.Length > 0
             && (
@@ -425,6 +463,15 @@ public partial class Given_SecurityMetadataToolsService
         string token
     )
     {
+        bool tokenInCommand =
+            token.Length > 0
+            && (
+                executable.Contains(token, StringComparison.Ordinal)
+                || Array.Exists(arguments, argument => argument.Contains(token, StringComparison.Ordinal))
+            );
+        tokenInCommand
+            .Should()
+            .BeFalse("credentials must reach child processes only through the named environment variable");
         using var process = new Process
         {
             StartInfo = new ProcessStartInfo(executable)
