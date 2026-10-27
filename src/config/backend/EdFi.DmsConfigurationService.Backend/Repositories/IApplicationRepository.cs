@@ -27,6 +27,32 @@ public interface IApplicationRepository
         ApplicationUpdateCommand command,
         ApiClientCommand clientCommand
     );
+
+    /// <summary>
+    /// Saves an Application change and marks every API client it affects as awaiting an identity
+    /// provider update, in one transaction. A name or claim set change affects every client; an
+    /// added or removed education organization affects every inheriting client; a removed one also
+    /// affects each narrowed client that held it. Affected clients are found before the removal
+    /// cascades to their rows. A client already marked keeps its original time. Client keys,
+    /// UUIDs, names, approval, data stores and education organization scope choices are unchanged.
+    /// On success the result carries the state this transaction committed, including every pending
+    /// client, whether or not this save marked it. Only
+    /// <see cref="ApplicationSaveResult.FailureCommitOutcomeUnknown"/> leaves the outcome open;
+    /// every other failure committed nothing. The caller holds the Application's aggregate lock
+    /// (<see cref="IApplicationLockManager"/>), which the API client workflows also take, so no client
+    /// of the Application changes during the save; the row locks taken here order the save against
+    /// writers outside that lock without deadlocking them.
+    /// </summary>
+    Task<ApplicationSaveResult> SaveApplication(ApplicationUpdateCommand command);
+
+    /// <summary>
+    /// Reads an Application's committed state and its pending clients, in the shape
+    /// <see cref="SaveApplication"/> returns. Locking the Application row waits out any in-flight
+    /// save, so the result reflects that save's final outcome. Like the save, it is read under the
+    /// caller's aggregate lock.
+    /// </summary>
+    Task<ApplicationSyncStateResult> GetApplicationSyncState(int applicationId);
+
     Task<ApplicationDeleteResult> DeleteApplication(int id);
     Task<ApplicationApiClientsResult> GetApplicationApiClients(int id);
 
@@ -206,6 +232,83 @@ public record ApplicationUpdateResult
     /// Unexpected exception thrown and caught
     /// </summary>
     public record FailureUnknown(string FailureMessage) : ApplicationUpdateResult();
+}
+
+/// <summary>
+/// An Application's committed state and the clients still awaiting an identity provider update.
+/// </summary>
+public record ApplicationSyncState(
+    string ApplicationName,
+    int VendorId,
+    string ClaimSetName,
+    long[] EducationOrganizationIds,
+    int[] ProfileIds,
+    ApplicationSyncPendingClient[] PendingClients
+);
+
+/// <summary>
+/// A client awaiting an identity provider update, with what that update sends. An inheriting
+/// client's education organizations are the Application's; a narrowed client's are its own rows.
+/// </summary>
+public record ApplicationSyncPendingClient(
+    int Id,
+    string ClientId,
+    Guid ClientUuid,
+    bool IsApproved,
+    int[] DataStoreIds,
+    long[] EducationOrganizationIds,
+    DateTime PendingSince
+);
+
+public record ApplicationSaveResult
+{
+    public record Success(ApplicationSyncState State) : ApplicationSaveResult();
+
+    /// <summary>
+    /// Application id not found in the current tenant
+    /// </summary>
+    public record FailureNotExists() : ApplicationSaveResult();
+
+    /// <summary>
+    /// Referenced vendor not found
+    /// </summary>
+    public record FailureVendorNotFound() : ApplicationSaveResult();
+
+    /// <summary>
+    /// Referenced profile not found
+    /// </summary>
+    public record FailureProfileNotFound() : ApplicationSaveResult();
+
+    /// <summary>
+    /// Application name already exists for the vendor
+    /// </summary>
+    public record FailureDuplicateApplication(string ApplicationName) : ApplicationSaveResult();
+
+    /// <summary>
+    /// Unexpected exception before the commit; nothing was committed
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ApplicationSaveResult();
+
+    /// <summary>
+    /// The commit failed without a known outcome; the save may or may not have been committed.
+    /// <see cref="IApplicationRepository.GetApplicationSyncState"/> reads what was.
+    /// </summary>
+    public record FailureCommitOutcomeUnknown(string FailureMessage) : ApplicationSaveResult();
+}
+
+public record ApplicationSyncStateResult
+{
+    public record Success(ApplicationSyncState State) : ApplicationSyncStateResult();
+
+    /// <summary>
+    /// Application id not found in the current tenant
+    /// </summary>
+    public record FailureNotExists() : ApplicationSyncStateResult();
+
+    /// <summary>
+    /// Unexpected exception thrown and caught
+    /// </summary>
+    public record FailureUnknown(string FailureMessage) : ApplicationSyncStateResult();
 }
 
 public record ApplicationDeleteResult

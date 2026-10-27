@@ -15,6 +15,11 @@ public interface IApiClientRepository
         ApiClientInsertCommand command,
         ApiClientCommand clientCommand
     );
+    /// <summary>
+    /// Saves an API client update. When <see cref="ApiClientUpdateCommand.CompletesIdentityProviderSync"/>
+    /// is set, the same transaction also clears the client's pending identity provider
+    /// synchronization; otherwise any pending marker is kept with its original time.
+    /// </summary>
     Task<ApiClientUpdateResult> UpdateApiClient(ApiClientUpdateCommand command);
     Task<ApiClientDeleteResult> DeleteApiClient(int id);
     Task<ApiClientQueryResult> QueryApiClient(ApiClientQuery query);
@@ -150,7 +155,9 @@ public record ApiClientResolutionState(
     Guid ClientUuid,
     int[] DataStoreIds,
     bool InheritsApplicationEducationOrganizations,
-    long[] StoredEducationOrganizationIds
+    long[] StoredEducationOrganizationIds,
+    // When the client's identity provider synchronization began pending (UTC); null when none is
+    DateTime? IdentityProviderSyncPendingSince = null
 );
 
 public record ApiClientResolutionResult

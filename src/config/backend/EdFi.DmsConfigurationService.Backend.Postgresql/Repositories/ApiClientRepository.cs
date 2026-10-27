@@ -598,6 +598,7 @@ public class ApiClientRepository(
                 SET "ApplicationId" = @ApplicationId, "Name" = @Name, "IsApproved" = @IsApproved,
                     "ClientUuid" = COALESCE(@ClientUuid, "ClientUuid"),
                     "InheritsApplicationEducationOrganizations" = COALESCE(@Inherits, "InheritsApplicationEducationOrganizations"),
+                    "IdentityProviderSyncPendingSince" = CASE WHEN @CompletesIdentityProviderSync THEN NULL ELSE "IdentityProviderSyncPendingSince" END,
                     "LastModifiedAt" = @LastModifiedAt, "ModifiedBy" = @ModifiedBy
                 WHERE "Id" = @Id AND {ApplicationInTenantExistsCondition};
                 """;
@@ -614,6 +615,7 @@ public class ApiClientRepository(
                     Inherits = rewritesScope
                         ? scope is ApiClientEducationOrganizationScope.Inherit
                         : (bool?)null,
+                    command.CompletesIdentityProviderSync,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
                     ModifiedBy = auditContext.GetCurrentUser(),
                     TenantId,
@@ -1090,7 +1092,7 @@ public class ApiClientRepository(
             // reads below observe that transaction's final outcome.
             string clientSql = $"""
                 SELECT ac."ApplicationId", ac."Name", ac."IsApproved", ac."ClientId", ac."ClientUuid",
-                    ac."InheritsApplicationEducationOrganizations"
+                    ac."InheritsApplicationEducationOrganizations", ac."IdentityProviderSyncPendingSince"
                 FROM "dmscs"."ApiClient" ac
                 WHERE ac."Id" = @Id AND {TenantScopedApplicationCondition("ac")}
                 FOR UPDATE OF ac;
@@ -1101,7 +1103,8 @@ public class ApiClientRepository(
                 bool IsApproved,
                 string ClientId,
                 Guid ClientUuid,
-                bool InheritsApplicationEducationOrganizations
+                bool InheritsApplicationEducationOrganizations,
+                DateTime? IdentityProviderSyncPendingSince
             )?>(clientSql, new { Id = id, TenantId }, transaction);
 
             if (client is null)
@@ -1140,7 +1143,8 @@ public class ApiClientRepository(
                     client.Value.ClientUuid,
                     dataStoreIds,
                     client.Value.InheritsApplicationEducationOrganizations,
-                    storedEducationOrganizationIds
+                    storedEducationOrganizationIds,
+                    client.Value.IdentityProviderSyncPendingSince
                 )
             );
         }

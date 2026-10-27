@@ -123,5 +123,16 @@ public class ApiClientEducationOrganizationRequestTests
             command.InheritsApplicationEducationOrganizationsSupplied.Should().BeTrue();
             command.InheritsApplicationEducationOrganizations.Should().BeFalse();
         }
+
+        [Test]
+        public void It_does_not_let_the_body_complete_a_pending_synchronization()
+        {
+            var command = JsonSerializer.Deserialize<ApiClientUpdateCommand>(
+                """{ "id": 1, "applicationId": 1, "name": "Client", "isApproved": true, "completesIdentityProviderSync": true, "CompletesIdentityProviderSync": true }""",
+                WebOptions
+            )!;
+
+            command.CompletesIdentityProviderSync.Should().BeFalse();
+        }
     }
 }
