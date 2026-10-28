@@ -78,11 +78,11 @@ The mechanics live in `eng/docker-compose/env-utility.psm1`
 The shared `EdFi.DmsConfigurationService.Claims` project embeds each version's base
 `Claims.json` as an assembly resource under `Claims/Standards/ds<NN>/`. Its csproj globs
 `Claims/Standards/**/Claims.json`, so **adding a version's claims is dropping a folder**
-— no csproj edit. CMS `ClaimsProvider` delegates to the shared `BundledClaimsProvider`,
-which also serves offline `merge`. It selects the embedded resource from
-`ClaimsOptions:DataStandardVersion` (default `5.2`), and fails fast with a clear message
-if the requested version's resource is absent. This covers the **Embedded** and
-**Hybrid** claims-loading modes (both load the embedded base); see
+— no csproj edit. CMS `ClaimsProvider` passes `ClaimsOptions:DataStandardVersion` to
+the shared `BundledClaimsProvider`; offline `merge` passes `--data-standard-version`
+instead. Both default to `5.2` and fail with a clear message if the requested version's
+resource is absent. In CMS, this covers the **Embedded** and **Hybrid** claims-loading
+modes (both load the embedded base); see
 [Claims Loading Deployment Guide](./CLAIMS-LOADING-GUIDE.md) for the full mode matrix.
 
 The shared claims schema is
@@ -273,8 +273,10 @@ ones.
 
 [Ed-Fi API Security Metadata Tools](../src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/README.md)
 requires .NET 10. Once the intended release is published, install the exact tool
-version corresponding to your CMS release/build from the Ed-Fi feed (replace
-`<tool-version>` with that package version):
+version corresponding to your CMS release/build from the Ed-Fi feed. Find that version
+in the `EdFi.Api.SecurityMetadataTools` package entry in `EdFi.Api.SecurityMetadataTools-SBOM.zip`,
+attached to the corresponding [GitHub release](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/releases).
+Replace `<tool-version>` with that package version:
 
 ```sh
 dotnet tool install --global EdFi.Api.SecurityMetadataTools --version '<tool-version>' --add-source https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json

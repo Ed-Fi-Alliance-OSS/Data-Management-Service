@@ -131,12 +131,12 @@ The Claims.json file contains two main sections and is used as:
 
 The embedded base `Claims.json` is stored per Data Standard version under
 `src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds<NN>/Claims.json`
-(`ds52`, `ds61`, ...). The shared `BundledClaimsProvider`, used by CMS and the tool,
-selects the version's resource at startup from `ClaimsOptions:DataStandardVersion`
-(environment variable `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION`, default `5.2`), and fails
-fast if the requested version's resource is absent. This selection applies to the
-**Embedded** and **Hybrid** modes below (both load the embedded base); **Filesystem**
-mode reads its base from disk instead. See
+(`ds52`, `ds61`, ...). CMS passes `ClaimsOptions:DataStandardVersion`
+(Compose environment variable `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION`) to the
+shared `BundledClaimsProvider`; offline `merge` passes `--data-standard-version`
+instead. Both default to `5.2` and fail if the requested version's resource is absent.
+In CMS, this selection applies to the **Embedded** and **Hybrid** modes below
+(both load the embedded base); **Filesystem** mode reads its base from disk instead. See
 [Data Standard Versions](./DATA-STANDARD-VERSIONS.md) for the full version mechanism.
 
 ## Claims Loading Modes
@@ -414,6 +414,9 @@ Use the .NET 10 [Security Metadata Tools](../src/config/clis/EdFi.DmsConfigurati
 from the corresponding CMS release/build. Run `security-metadata-tools --version`
 to record the installed build; see the authoritative
 [version allocation and release policy](../src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/VERSIONING.md).
+For a published release, find the matching tool version in the
+`EdFi.Api.SecurityMetadataTools` package entry in `EdFi.Api.SecurityMetadataTools-SBOM.zip`,
+attached to the corresponding [GitHub release](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/releases).
 Tool and app patch numbers need not match. There is no cross-release compatibility
 guarantee. `merge --data-standard-version` must match
 `ClaimsOptions:DataStandardVersion`, configured in Compose through

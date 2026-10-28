@@ -47,8 +47,11 @@ Help and version output use stdout.
 ## Prepare → inspect → deploy → verify (8.1)
 
 Use the tool from the corresponding CMS release/build and record
-`security-metadata-tools --version` to identify the installed build. Tool patch
-allocation follows [VERSIONING.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/VERSIONING.md);
+`security-metadata-tools --version` to identify the installed build. For a published
+release, find the matching tool version in the `EdFi.Api.SecurityMetadataTools` package
+entry in `EdFi.Api.SecurityMetadataTools-SBOM.zip`, attached to the corresponding
+[GitHub release](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/releases).
+Tool patch allocation follows [VERSIONING.md](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/VERSIONING.md);
 the tool and app patch numbers need not be equal. Cross-release compatibility is
 not guaranteed. Select the same Data Standard as CMS's
 `ClaimsOptions:DataStandardVersion` (Compose variable
