@@ -1123,6 +1123,83 @@ public abstract class ApplicationSaveRepositoryTests : ApiClientEducationOrganiz
             (await PendingClientsAsync()).Should().ContainKey(UnrelatedClientId);
     }
 
+    /// <summary>
+    /// A client moved out of an Application whose claim set rename has locked that Application but
+    /// not yet marked its clients. The move waits for the rename before it locks the client, so the
+    /// rename marks its clients without a deadlock and the move then completes on its new
+    /// Application, which still has the claim set name the provider was sent.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_move_out_of_an_Application_whose_claim_set_rename_is_uncommitted
+        : ApplicationSaveRepositoryTests
+    {
+        private ApiClientUpdateResult _moveResult = null!;
+        private (int ApplicationId, DateTime? PendingSince) _moved;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+
+            await using SqlConnection renamer = await OpenConnectionAsync();
+            await using SqlTransaction transaction = (SqlTransaction)await renamer.BeginTransactionAsync();
+            short renamerSession = await renamer.ExecuteScalarAsync<short>(
+                "SELECT @@SPID;",
+                transaction: transaction
+            );
+
+            // A claim set rename's first statement, on the client's current Application
+            await renamer.ExecuteAsync(
+                "UPDATE dmscs.Application SET ClaimSetName = @ClaimSetName WHERE Id = @ApplicationId;",
+                new { ClaimSetName = "Renamed Claim set", ApplicationId = ScopedApplicationId },
+                transaction
+            );
+
+            Task<ApiClientUpdateResult> move = ApiClientRepository.UpdateApiClient(
+                new ApiClientUpdateCommand
+                {
+                    Id = InheritingClientId,
+                    ApplicationId = UnrelatedApplicationId,
+                    Name = "Moved Client",
+                    IsApproved = true,
+                    CompletesIdentityProviderSync = true,
+                    SentClaimSetName = ScopedClaimSetName,
+                }
+            );
+            await WaitUntilBlockedByAsync(renamer, transaction, renamerSession, move);
+
+            // Its second statement, which needs the client row the move would otherwise hold
+            DynamicParameters parameters = new(new { ApplicationId = ScopedApplicationId });
+            parameters.Add("PendingSince", PendingSince, DbType.DateTime2);
+            await renamer.ExecuteAsync(
+                """
+                UPDATE dmscs.ApiClient
+                SET IdentityProviderSyncPendingSince = COALESCE(IdentityProviderSyncPendingSince, @PendingSince)
+                WHERE ApplicationId = @ApplicationId;
+                """,
+                parameters,
+                transaction
+            );
+            await transaction.CommitAsync();
+            _moveResult = await move;
+
+            _moved = await Connection!.QuerySingleAsync<(int, DateTime?)>(
+                "SELECT ApplicationId, IdentityProviderSyncPendingSince FROM dmscs.ApiClient WHERE Id = @Id;",
+                new { Id = InheritingClientId }
+            );
+        }
+
+        [Test]
+        public void It_saves_the_move() => _moveResult.Should().BeOfType<ApiClientUpdateResult.Success>();
+
+        [Test]
+        public void It_moves_the_client_to_its_new_Application() =>
+            _moved.ApplicationId.Should().Be(UnrelatedApplicationId);
+
+        [Test]
+        public void It_completes_the_client_on_its_new_Application() => _moved.PendingSince.Should().BeNull();
+    }
+
     [TestFixture]
     public class Given_a_save_of_a_missing_Application : ApplicationSaveRepositoryTests
     {

@@ -505,28 +505,45 @@ public class ApiClientRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
-            // A completing update share-locks its target Application before the client row, the order
-            // a claim set rename takes. A rename in progress is waited for and its new name read, and
-            // one that starts later waits for this transaction and then finds the client there. A
-            // client moving in stays on its old Application until this commits, so no rename marks
-            // it, and this update marks it itself when the name the provider was sent is stale.
-            // The read is not tenant scoped; the UPDATE's tenant condition rejects a foreign target.
-            // The name is compared exactly, so a rename that changes only its case also marks it.
-            bool sentClaimSetIsCurrent = false;
-            if (command.CompletesIdentityProviderSync)
-            {
-                string? claimSetName = await connection.QuerySingleOrDefaultAsync<string?>(
-                    """
-                    SELECT ClaimSetName FROM dmscs.Application WITH (INDEX(PK_Application), HOLDLOCK, ROWLOCK)
-                    WHERE Id = @ApplicationId;
-                    """,
-                    new { command.ApplicationId },
-                    transaction
+            // Share-lock the client's current Application and its target before the client row, the
+            // order a claim set rename takes: it locks its Applications and then marks their clients.
+            // Locking only the target would deadlock a move out of an Application being renamed, since
+            // the client lock below also reads the current Application. The current Application is
+            // read first without a lock, and both are locked in one seek in ascending key order, the
+            // order the rename's Application update takes. A rename in progress is waited for and its
+            // new name read, and one that starts later waits for this transaction and then finds the
+            // client where this update leaves it. A client moving in stays on its old Application
+            // until this commits, so no rename of the target marks it, and a completing update marks
+            // it itself when the name the provider was sent is stale. The reads are not tenant scoped,
+            // and the client lock and the UPDATE reject a client or target of another tenant. The name is
+            // compared exactly, so a rename that changes only its case also marks it.
+            int? currentApplicationId = await connection.QuerySingleOrDefaultAsync<int?>(
+                "SELECT ApplicationId FROM dmscs.ApiClient WHERE Id = @Id;",
+                new { command.Id },
+                transaction
+            );
+            var lockedApplications = await connection.QueryAsync<(int Id, string ClaimSetName)>(
+                """
+                SELECT Id, ClaimSetName FROM dmscs.Application WITH (INDEX(PK_Application), HOLDLOCK, ROWLOCK)
+                WHERE Id IN (@ApplicationId, @CurrentApplicationId);
+                """,
+                new
+                {
+                    command.ApplicationId,
+                    CurrentApplicationId = currentApplicationId ?? command.ApplicationId,
+                },
+                transaction
+            );
+            bool sentClaimSetIsCurrent =
+                command.CompletesIdentityProviderSync
+                && lockedApplications.Any(application =>
+                    application.Id == command.ApplicationId
+                    && string.Equals(
+                        application.ClaimSetName,
+                        command.SentClaimSetName,
+                        StringComparison.Ordinal
+                    )
                 );
-                sentClaimSetIsCurrent =
-                    claimSetName is not null
-                    && string.Equals(claimSetName, command.SentClaimSetName, StringComparison.Ordinal);
-            }
 
             // Lock the ApiClient within the current tenant; a move rewrites its education organization
             // rows. XLOCK, not UPDLOCK, so a state read holding a shared lock never interleaves.
