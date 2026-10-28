@@ -199,10 +199,11 @@ reveal the client's type.
 In `keycloak` mode, a `client_id` of more than 255 Unicode code points is answered `invalid_client` without calling Keycloak.
 Keycloak keeps client ids in a 255-character column, and PostgreSQL measures it in code points, so 255 characters outside the Basic Multilingual Plane are a valid client id.
 
-In `keycloak` mode, a `client_secret` or `token` longer than Keycloak's form attribute limit (128 KiB by default) is answered `400 invalid_request` and logged at Information.
-CMS accepts form values up to 4 MiB, so such a request reaches Keycloak, which rejects it with `413` before it authenticates the caller.
-The answer is therefore not `invalid_client`, and it is not `503`, because Keycloak is not failing.
-`/connect/introspect` answers the same way (see [Token introspection](#token-introspection)).
+In `keycloak` mode, the client-type gate comes first: an unknown, public or bearer-only `client_id` is answered `invalid_client` there, whatever the size of `client_secret` or `token`, and nothing is sent to Keycloak's revocation endpoint.
+Only a request that passes the gate is delegated to Keycloak.
+CMS accepts form values up to 4 MiB, so a delegated request whose `client_secret` or `token` is longer than Keycloak's form attribute limit (128 KiB by default) reaches Keycloak, which rejects it with `413` before it authenticates the caller; that answer is `400 invalid_request` and logged at Information.
+It is therefore not `invalid_client`, and it is not `503`, because Keycloak is not failing.
+`/connect/introspect` maps Keycloak's `413` the same way. Introspection has no client-type gate; requests that pass its other validation and admission checks are delegated to Keycloak (see [Token introspection](#token-introspection)).
 Each request to Keycloak's token, revocation and introspection endpoints closes its connection after the answer: Keycloak 26.1.4 answers a form value over its limit with `413` without reading the rest of the request and keeps the connection open, so a reused connection would leave the next caller, possibly another client, without an answer until the timeout.
 
 Except for rate-limit rejections introduced by DMS-1482, this endpoint and `/connect/introspect` do not answer in the `application/problem+json`
@@ -552,7 +553,7 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
   Keycloak 26.1.4 also refuses a bearer-only client that sends its secret (`invalid_client`), while 26.7.5 authenticates it; a bearer-only client obtains no tokens, so it is never told about one.
   Keycloak 26.7.5 answers an unexpected failure while it authenticates the caller as 26.1.4 answers wrong credentials (`401 invalid_request` "Authentication failed."), so that failure is answered `invalid_client` too, not `503`.
   A `client_id` of more than 255 Unicode code points, the most Keycloak's client id column holds, is answered `invalid_client` without calling Keycloak.
-  A `client_secret` or `token` longer than Keycloak's form attribute limit (128 KiB by default) is answered `400 invalid_request` ("The identity provider rejected the introspection request.") and logged at Information, as at `/connect/revoke`.
+  A `client_secret` or `token` longer than Keycloak's form attribute limit (128 KiB by default) is answered `400 invalid_request` ("The identity provider rejected the introspection request.") and logged at Information, as a delegated request is at `/connect/revoke`, where an unknown, public or bearer-only client id is answered `invalid_client` before any delegation.
   The Configuration Service accepts form values up to 4 MiB, and Keycloak rejects such a request with `413` before it authenticates the caller, so the answer is neither `invalid_client` nor `503`.
   Once it has authenticated the caller, Keycloak answers any failure while it checks the token or builds its answer with `400 invalid_request` "Failed to introspect token.": a JWT whose header has no `alg` as much as a failure of its own stores or mappers.
   The two cannot be told apart, so that answer is `503 temporarily_unavailable`, not `{"active": false}`, which could tell an owner its live token is not active; it is logged at Warning, not Error, because any caller can cause it with a malformed token.
@@ -566,7 +567,10 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
 - **Each Keycloak client the Configuration Service creates is in its own tokens' audience.**
   From Keycloak 26.6.2 (the Red Hat build of Keycloak 26.4.12; see [Migrating to 26.6.2](https://www.keycloak.org/docs/latest/upgrading/index.html#migrating-to-26-6-2); observed on 26.7.5, not on 26.1.4) Keycloak answers `active:false` to an introspecting client that is not in the token's `aud`; `azp` alone does not count.
   The Configuration Service therefore adds an audience mapper (`oidc-audience-mapper`, with the client's own client id as its included client audience) to every Keycloak client it creates.
-  `eng/docker-compose/setup-keycloak.ps1` adds the same mapper to the clients it creates, such as `DmsConfigurationService`; it leaves a client that already exists unchanged, so running it again adds no mapper to a client it created before.
+  `eng/docker-compose/setup-keycloak.ps1` adds the same mapper to the clients it creates, such as `DmsConfigurationService`.
+  Run again for a client that already exists, it adds the mapper to that client only when no audience mapper counting by the rules below gives the client its own audience, and changes nothing else: credentials, roles, scopes and other mappers stay as they are, and a second run adds nothing.
+  A conflicting `Client's own audience` mapper (below) is left as it is, and the script warns that the client was not repaired and needs an operator.
+  It reaches only the client it is run for, not the other clients the Configuration Service manages.
   The client's access tokens carry `aud` `["<client id>", "account"]`, and its owner receives its own token's metadata on Keycloak 26.1.x and on 26.6.2 or later.
   DMS and the Configuration Service validate `aud` against their configured audience (`account` by default), which the array still contains.
   A client created by an earlier version gains the mapper from the next of these updates, even with unchanged values: `PUT /v3/apiClients/{id}` for that API client, `PUT /v3/applications/{id}` for the application's first API client, and `PUT /v3/vendors/{id}` for every API client of the vendor's applications.
@@ -577,7 +581,7 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
   The update leaves that mapper as it is, so as not to remove an audience something else may rely on, still succeeds, and logs the Warning in [Log signals](#log-signals).
   On Keycloak 26.6.2 or later, an earlier client that is never updated that way, or that kept such a mapper, is answered `{"active": false}` for its own live token until an operator adds the same mapper in Keycloak: in the client's `<client id>-dedicated` scope, an *Audience* mapper with *Included Client Audience* set to the client itself and *Add to access token* and *Add to token introspection* on.
   When `Client's own audience` is taken, the operator gives the new mapper another name; any OpenID Connect audience mapper of the client itself (its dedicated scope) that names the client with *Add to access token* on satisfies later updates, which then add no other; one in a shared client scope does not.
-  Only tokens issued after the mapper is added carry the audience.
+  Only tokens issued after the mapper is added carry the audience, whichever way it is added: on Keycloak 26.6.2 or later, a live token issued before then is answered `{"active": false}` to its owner until it expires, so the owner requests a new token to be described.
   Keycloak also has opt-outs, the server option `allow-token-introspection-without-audience-check` and the client setting *Allow token introspection without audience check*, but its migration guide deprecates both, and they are not recommended.
   The compose files pin Keycloak 26.1.4; the Azure VM reference deployment runs 26.7.
 - **Discovery.**

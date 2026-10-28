@@ -1110,6 +1110,53 @@ public class KeycloakTokenRevocationManagerTests
     }
 
     /// <summary>
+    /// The client-type gate runs before the revoke request, so a token over Keycloak's form limit from
+    /// a client id Keycloak does not hold is answered at the gate and never reaches the 413.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_unknown_client_id_with_a_token_over_keycloaks_form_limit
+        : KeycloakTokenRevocationManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            GateAnswers();
+            KeycloakAnswers(() => Response(413, FormLimitAnswer));
+            _result = await CreateManager()
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest(
+                        CallerClientId,
+                        CallerSecret,
+                        new string('a', 400_000),
+                        TokenTypeHint.None
+                    ),
+                    CancellationToken.None
+                );
+        }
+
+        [Test]
+        public void It_is_an_invalid_client() =>
+            _result.Should().Be(new TokenRevocationResult.InvalidClient());
+
+        [Test]
+        public void It_looks_up_the_client() =>
+            A.CallTo(() =>
+                    _facade.GetClientsByClientIdAsync(
+                        "edfi",
+                        CallerClientId,
+                        A<TimeSpan>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_sends_no_revoke_request() => _events.Should().Equal("client-type-read");
+    }
+
+    /// <summary>
     /// Keycloak authenticated no one, so the rejection is logged without the caller's client id, even
     /// one of the longest length Keycloak can hold.
     /// </summary>

@@ -467,3 +467,101 @@ Describe "setup-keycloak.ps1 percent-encodes the role name in both role lookup U
         $text | Should -Not -Match '/roles/\$roleName' -Because "a raw interpolation is the shape this closes"
     }
 }
+
+Describe "setup-keycloak.ps1 rerun against an existing client" {
+    # From Keycloak 26.6.2 introspection answers active:false unless the introspecting client is in the
+    # token's audience. Rerunning the script repairs the selected existing client's missing own-audience
+    # mapper and touches nothing else: the fake Keycloak below answers only the reads the script makes
+    # and the mapper POST, so any credential, role or scope write fails the run.
+    BeforeAll {
+        $script:keycloakScript = Join-Path ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))) "setup-keycloak.ps1"
+
+        function Invoke-SetupKeycloak {
+            & $script:keycloakScript -KeycloakServer "http://keycloak.test:8045" -NewClientId "DmsConfigurationService" 3>&1
+        }
+    }
+
+    BeforeEach {
+        # The mock runs inside the script, where $script: is the script's own scope, so the fake's state
+        # is a variable of this test's scope that the mock reaches dynamically.
+        $fakeKeycloak = @{
+            Mappers = [System.Collections.Generic.List[object]]::new()
+            Posted  = [System.Collections.Generic.List[object]]::new()
+        }
+        Mock Invoke-WebRequest { [pscustomobject]@{ StatusCode = 200 } }
+        Mock Invoke-RestMethod {
+            $target = "$Method $($Uri.AbsoluteUri)"
+            switch ($target) {
+                "Post http://keycloak.test:8045/realms/master/protocol/openid-connect/token" { return [pscustomobject]@{ access_token = "token" } }
+                "Get http://keycloak.test:8045/admin/realms/edfi" { return [pscustomobject]@{ realm = "edfi" } }
+                "Get http://keycloak.test:8045/admin/realms/edfi/clients?clientId=DmsConfigurationService" {
+                    return , @([pscustomobject]@{ id = "client-uuid"; clientId = "DmsConfigurationService" })
+                }
+                "Get http://keycloak.test:8045/admin/realms/edfi/clients/client-uuid/protocol-mappers/models" { return $fakeKeycloak.Mappers.ToArray() }
+                "Post http://keycloak.test:8045/admin/realms/edfi/clients/client-uuid/protocol-mappers/models" {
+                    $mapper = $Body | ConvertFrom-Json
+                    $fakeKeycloak.Posted.Add($mapper)
+                    $fakeKeycloak.Mappers.Add($mapper)
+                    return
+                }
+                default { throw "Unexpected Keycloak request: $target" }
+            }
+        }
+    }
+
+    It "adds the own-audience mapper once and adds nothing on a second run" {
+        $roleMapper = [pscustomobject]@{ name = "Dms service role mapper"; protocol = "openid-connect"; protocolMapper = "oidc-usermodel-realm-role-mapper"; config = [pscustomobject]@{ "access.token.claim" = "true" } }
+        $fakeKeycloak.Mappers.AddRange([object[]]@($roleMapper))
+
+        $firstRun = Invoke-SetupKeycloak
+
+        $fakeKeycloak.Posted.Count | Should -Be 1
+        $fakeKeycloak.Posted[0].name | Should -Be "Client's own audience"
+        $fakeKeycloak.Posted[0].protocol | Should -Be "openid-connect"
+        $fakeKeycloak.Posted[0].protocolMapper | Should -Be "oidc-audience-mapper"
+        $fakeKeycloak.Posted[0].config.'included.client.audience' | Should -Be "DmsConfigurationService"
+        $fakeKeycloak.Posted[0].config.'access.token.claim' | Should -Be "true"
+        $firstRun | Should -Contain "Own audience added to client 'DMS Configuration Service'."
+
+        $secondRun = Invoke-SetupKeycloak
+
+        $fakeKeycloak.Posted.Count | Should -Be 1 -Because "the mapper added by the first run already gives the client its own audience"
+        $secondRun | Should -Contain "Client 'DmsConfigurationService' already puts itself into its access tokens' audience."
+        $fakeKeycloak.Mappers.Count | Should -Be 2
+        $fakeKeycloak.Mappers[0] | Should -Be $roleMapper
+    }
+
+    It "recognizes an equivalent mapper under another name through its custom audience" {
+        $fakeKeycloak.Mappers.AddRange([object[]]@(
+                [pscustomobject]@{ name = "Operator audience"; protocol = "openid-connect"; protocolMapper = "oidc-audience-mapper"; config = [pscustomobject]@{ "included.custom.audience" = "DmsConfigurationService"; "access.token.claim" = "true" } }
+            ))
+
+        Invoke-SetupKeycloak | Out-Null
+
+        $fakeKeycloak.Posted.Count | Should -Be 0
+    }
+
+    It "does not count a mapper left out of access tokens or of another protocol" {
+        $fakeKeycloak.Mappers.AddRange([object[]]@(
+                [pscustomobject]@{ name = "Id token audience"; protocol = "openid-connect"; protocolMapper = "oidc-audience-mapper"; config = [pscustomobject]@{ "included.client.audience" = "DmsConfigurationService"; "access.token.claim" = "false" } },
+                [pscustomobject]@{ name = "Client's own audience"; protocol = "saml"; protocolMapper = "oidc-audience-mapper"; config = [pscustomobject]@{ "included.client.audience" = "DmsConfigurationService"; "access.token.claim" = "true" } }
+            ))
+
+        Invoke-SetupKeycloak | Out-Null
+
+        $fakeKeycloak.Posted.Count | Should -Be 1
+    }
+
+    It "keeps a conflicting mapper under the reserved name and reports the client as not repaired" {
+        $fakeKeycloak.Mappers.AddRange([object[]]@(
+                [pscustomobject]@{ name = "Client's own audience"; protocol = "openid-connect"; protocolMapper = "oidc-audience-mapper"; config = [pscustomobject]@{ "included.client.audience" = "SomeOtherClient"; "access.token.claim" = "true" } }
+            ))
+
+        $run = Invoke-SetupKeycloak
+
+        $fakeKeycloak.Posted.Count | Should -Be 0
+        $warnings = @($run | Where-Object { $_ -is [System.Management.Automation.WarningRecord] } | ForEach-Object Message)
+        $warnings | Should -Contain "Client 'DmsConfigurationService' was NOT repaired: its OpenID Connect protocol mapper named 'Client's own audience' does not put the client into its access tokens' audience and was left unchanged. On Keycloak 26.6.2 or later, introspecting the client's own tokens reports them inactive until an operator corrects or removes that mapper and reruns this script."
+        $run | Should -Not -Contain "Own audience added to client 'DMS Configuration Service'."
+    }
+}
