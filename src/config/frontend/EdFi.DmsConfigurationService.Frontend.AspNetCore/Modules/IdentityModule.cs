@@ -272,6 +272,12 @@ public class IdentityModule : IEndpointModule
         HttpContext httpContext
     )
     {
+        // Support HTTP Basic authentication in every identity provider mode. Parsing only reads the
+        // header and decides nothing; the checks below still run request shape before credentials.
+        // It stays ahead of them, as before DMS-1491, so no request-controlled condition guards the
+        // call (CodeQL cs/user-controlled-bypass).
+        TryParseBasicAuthCredentials(httpContext, logger, out string clientId, out string clientSecret);
+
         if (!httpContext.Request.HasFormContentType)
         {
             return InvalidRequest(FormContentTypeRequiredDescription);
@@ -292,9 +298,6 @@ public class IdentityModule : IEndpointModule
         {
             return InvalidRequest(RepeatedParameterDescription);
         }
-
-        // Support HTTP Basic authentication in every identity provider mode
-        TryParseBasicAuthCredentials(httpContext, logger, out string clientId, out string clientSecret);
 
         // Use form credentials if Basic auth didn't provide them
         if (string.IsNullOrEmpty(clientId))
