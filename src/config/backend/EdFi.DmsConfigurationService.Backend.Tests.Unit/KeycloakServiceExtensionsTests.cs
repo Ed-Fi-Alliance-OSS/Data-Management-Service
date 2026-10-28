@@ -25,7 +25,7 @@ public class KeycloakServiceExtensionsTests
         private ServiceCollection _services = null!;
         private ServiceProvider _provider = null!;
         private ITokenRevocationManager? _resolved;
-        private ITokenIntrospectionManager? _resolvedIntrospection;
+        private ITokenIntrospectionManager _resolvedIntrospection = null!;
 
         [SetUp]
         public void Setup()
@@ -44,7 +44,7 @@ public class KeycloakServiceExtensionsTests
 
             using IServiceScope scope = _provider.CreateScope();
             _resolved = scope.ServiceProvider.GetService<ITokenRevocationManager>();
-            _resolvedIntrospection = scope.ServiceProvider.GetService<ITokenIntrospectionManager>();
+            _resolvedIntrospection = scope.ServiceProvider.GetRequiredService<ITokenIntrospectionManager>();
         }
 
         [TearDown]

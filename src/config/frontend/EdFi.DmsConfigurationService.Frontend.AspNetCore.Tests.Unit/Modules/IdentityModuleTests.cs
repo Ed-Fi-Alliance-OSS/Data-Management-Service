@@ -5314,7 +5314,8 @@ public class IntrospectionRequestContractTests
             1893455100,
             "subject-1",
             ["audience-1"],
-            "issuer-1"
+            "issuer-1",
+            "Bearer"
         );
 
     internal sealed class RecordingIntrospectionManager(Func<TokenIntrospectionResult> respond)
@@ -5725,6 +5726,25 @@ public class IntrospectionRequestContractTests
                 .Should()
                 .Be(
                     """{"active":true,"client_id":"introspect-client","scope":"edfi_admin_api/full_access","exp":1893456000,"iat":1893455100,"sub":"subject-1","aud":["introspect-client","account"],"iss":"issuer-1","token_type":"Bearer"}"""
+                );
+    }
+
+    /// <summary>RFC 9449 §6.2: a DPoP-bound access token is reported with token_type DPoP, never Bearer.</summary>
+    [TestFixture]
+    public class Given_an_introspection_the_manager_reports_an_active_dpop_bound_token
+        : IntrospectionRequestFixture
+    {
+        protected override TokenIntrospectionResult Respond() =>
+            new TokenIntrospectionResult.Active(ActiveToken with { TokenType = "DPoP" });
+
+        protected override HttpContent? Body => Form(WithFormCredentials(("token", Token)));
+
+        [Test]
+        public void It_reports_the_dpop_token_type_in_the_established_byte_form() =>
+            Content
+                .Should()
+                .Be(
+                    """{"active":true,"client_id":"introspect-client","scope":"edfi_admin_api/full_access","exp":1893456000,"iat":1893455100,"sub":"subject-1","aud":"audience-1","iss":"issuer-1","token_type":"DPoP"}"""
                 );
     }
 

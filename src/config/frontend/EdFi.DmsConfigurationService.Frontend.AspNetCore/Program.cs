@@ -396,23 +396,23 @@ void EnsureTokenRevocationSupport(WebApplication app)
 void EnsureTokenIntrospectionSupport(WebApplication app)
 {
     string provider = TokenRevocationProviderName(app.Configuration["AppSettings:IdentityProvider"]);
-    Exception? constructionFailure = null;
-    ITokenIntrospectionManager? introspectionManager = null;
+    // Only the type names leave the catch, and the log is written after it.
+    string exceptionTypes = string.Empty;
+    bool registered = false;
 
     try
     {
         // In a scope: the Keycloak manager depends on the scoped KeycloakContext.
         using IServiceScope scope = app.Services.CreateScope();
-        introspectionManager = scope.ServiceProvider.GetService<ITokenIntrospectionManager>();
+        registered = scope.ServiceProvider.GetService<ITokenIntrospectionManager>() is not null;
     }
     catch (Exception exception)
     {
-        constructionFailure = exception;
+        exceptionTypes = ExceptionTypeNames.Chain(exception);
     }
 
-    if (constructionFailure is not null)
+    if (exceptionTypes.Length > 0)
     {
-        string exceptionTypes = ExceptionTypeNames.Chain(constructionFailure);
         app.Logger.LogCritical(
             "The token introspection manager for AppSettings:IdentityProvider '{Provider}' could not be "
                 + "constructed ({ExceptionTypes}). Correct the registration or its dependencies, then restart.",
@@ -425,7 +425,7 @@ void EnsureTokenIntrospectionSupport(WebApplication app)
         );
     }
 
-    if (introspectionManager is null)
+    if (!registered)
     {
         app.Logger.LogCritical(
             "No token introspection manager is registered for AppSettings:IdentityProvider '{Provider}'. "

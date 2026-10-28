@@ -525,7 +525,7 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
   This is an exception to the problem-details format DMS-1218 gave that response, as it is for revoke.
   Failed credentials answer `invalid_client`: `401` with a `WWW-Authenticate: Basic` challenge when HTTP Basic was attempted, `400` otherwise.
 - **Only the token's own client receives metadata.**
-  For the owner's valid token the answer is `200` with `active` true, `client_id`, `scope`, `exp`, `iat`, `sub`, `aud`, `iss` and `token_type` `Bearer`.
+  For the owner's valid token the answer is `200` with `active` true, `client_id`, `scope`, `exp`, `iat`, `sub`, `aud`, `iss` and `token_type` `Bearer`, or `DPoP` for a Keycloak DPoP-bound access token (RFC 9449 §6.2).
   `scope` is space-delimited, and empty for a token without scopes.
   `exp` and `iat` are JSON integers.
   `aud` is a string for one audience and an array for several, as RFC 7662 §2.2 allows.

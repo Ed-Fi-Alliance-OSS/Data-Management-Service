@@ -4474,7 +4474,8 @@ public class OpenIddictTokenManagerTests
                         IntrospectionIssuedAt,
                         OwnerClientId,
                         [TestAudience],
-                        TestIssuer
+                        TestIssuer,
+                        "Bearer"
                     ),
                     options => options.ComparingByMembers<IntrospectedToken>().WithStrictOrdering()
                 );

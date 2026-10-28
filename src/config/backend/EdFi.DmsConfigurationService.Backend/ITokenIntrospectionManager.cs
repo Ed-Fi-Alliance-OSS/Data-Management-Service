@@ -41,7 +41,8 @@ public sealed record TokenIntrospectionRequest(
 /// <paramref name="Aud"/> holds every audience in the provider's order and is empty when the token
 /// has none; the endpoint emits a single audience as a string and several as an array (RFC 7662
 /// §2.2). The record compares <paramref name="Aud"/> by reference, so compare instances member by
-/// member.
+/// member. <paramref name="TokenType"/> is the access token's type as RFC 7662 §2.2 <c>token_type</c>
+/// reports it: <c>Bearer</c>, or <c>DPoP</c> for a DPoP-bound access token (RFC 9449 §6.2).
 /// </summary>
 public sealed record IntrospectedToken(
     string ClientId,
@@ -50,7 +51,8 @@ public sealed record IntrospectedToken(
     long Iat,
     string? Sub,
     IReadOnlyList<string> Aud,
-    string? Iss
+    string? Iss,
+    string TokenType
 );
 
 /// <summary>

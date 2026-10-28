@@ -444,7 +444,7 @@ public class IdentityModule : IEndpointModule
                     sub = active.Token.Sub,
                     aud = AudienceMember(active.Token.Aud),
                     iss = active.Token.Iss,
-                    token_type = "Bearer",
+                    token_type = active.Token.TokenType,
                 }
             ),
             // Every other token outcome, another client's token included, is the same answer.

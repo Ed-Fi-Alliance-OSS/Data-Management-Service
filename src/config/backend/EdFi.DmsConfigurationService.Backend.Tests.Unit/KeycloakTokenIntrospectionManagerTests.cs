@@ -137,8 +137,9 @@ public class KeycloakTokenIntrospectionManagerTests
         IReadOnlyList<string>? aud = null,
         string? sub = Subject,
         string? iss = Issuer,
-        string scope = "profile email"
-    ) => new(CallerClientId, scope, Exp, Iat, sub, aud ?? ["account"], iss);
+        string scope = "profile email",
+        string tokenType = "Bearer"
+    ) => new(CallerClientId, scope, Exp, Iat, sub, aud ?? ["account"], iss, tokenType);
 
     protected static TokenIntrospectionResult.Active Active(IntrospectedToken token) => new(token);
 
@@ -615,6 +616,34 @@ public class KeycloakTokenIntrospectionManagerTests
         // Only access tokens are disclosed; ownership is decided before the token type.
         yield return Case("200 typ ID", 200, Answer(body => body["typ"] = "ID"), inactive);
         yield return Case("200 typ in another case", 200, Answer(body => body["typ"] = "bearer"), inactive);
+        yield return Case(
+            "200 owner, DPoP-bound access token",
+            200,
+            Answer(body =>
+            {
+                body["typ"] = "DPoP";
+                body["token_type"] = "DPoP";
+            }),
+            Active(OwnedToken(tokenType: "DPoP"))
+        );
+        yield return Case(
+            "200 another client's DPoP-bound access token",
+            200,
+            Answer(body =>
+            {
+                body["typ"] = "DPoP";
+                body["token_type"] = "DPoP";
+                body["azp"] = OtherClientId;
+                body["client_id"] = OtherClientId;
+            }),
+            inactive
+        );
+        yield return Case(
+            "200 typ DPoP in another case",
+            200,
+            Answer(body => body["typ"] = "dpop"),
+            inactive
+        );
         yield return Case(
             "200 typ Bearer but token_type Refresh",
             200,
@@ -1401,7 +1430,7 @@ public class KeycloakTokenIntrospectionManagerTests
             "200 owner with escaped member names and values",
             200,
             """{"\u0061zp":"caller\u002Dclient","exp":1792607774,"iat":1792605974,"typ":"B\u0065arer","scope":"profile email","active":true}""",
-            Active(new IntrospectedToken(CallerClientId, "profile email", Exp, Iat, null, [], null))
+            Active(new IntrospectedToken(CallerClientId, "profile email", Exp, Iat, null, [], null, "Bearer"))
         );
         yield return Case(
             "200 azp repeated through an escaped name",
@@ -1413,7 +1442,7 @@ public class KeycloakTokenIntrospectionManagerTests
             "200 valid surrogate pair as an unrelated name",
             200,
             $$"""{"\uD83D\uDE00":0,"azp":"caller-client",{{owned}}}""",
-            Active(new IntrospectedToken(CallerClientId, "profile email", Exp, Iat, null, [], null))
+            Active(new IntrospectedToken(CallerClientId, "profile email", Exp, Iat, null, [], null, "Bearer"))
         );
         yield return Case(
             "403 public client written with escapes",
@@ -1430,8 +1459,8 @@ public class KeycloakTokenIntrospectionManagerTests
         TokenIntrospectionResult expected
     ) : KeycloakTokenIntrospectionManagerTests
     {
-        private TokenIntrospectionResult? _result;
-        private Exception? _exception;
+        private TokenIntrospectionResult _result = null!;
+        private Exception _exception = null!;
 
         [SetUp]
         public async Task Setup()
@@ -1455,7 +1484,7 @@ public class KeycloakTokenIntrospectionManagerTests
         public void It_lets_no_exception_escape() => _exception.Should().BeNull();
 
         [Test]
-        public void It_maps_to_the_expected_result() => AssertResult(_result!, expected);
+        public void It_maps_to_the_expected_result() => AssertResult(_result, expected);
 
         [Test]
         public void It_logs_no_provider_content_and_attaches_no_exception() => AssertNoDisclosure();
@@ -1697,7 +1726,7 @@ public class KeycloakTokenIntrospectionManagerTests
     public class Given_the_caller_cancels_while_waiting_for_keycloak : KeycloakTokenIntrospectionManagerTests
     {
         private CancellationTokenSource _caller = null!;
-        private Exception? _exception;
+        private Exception _exception = null!;
 
         [SetUp]
         public async Task Setup()
@@ -1710,7 +1739,7 @@ public class KeycloakTokenIntrospectionManagerTests
                 await Task.Delay(Timeout.Infinite, token);
                 return Response(200, InactiveAnswer);
             };
-            _exception = await Catch(Introspect(cancellationToken: _caller.Token));
+            _exception = (await Catch(Introspect(cancellationToken: _caller.Token)))!;
         }
 
         [TearDown]
@@ -1725,7 +1754,7 @@ public class KeycloakTokenIntrospectionManagerTests
                 .Be(_caller.Token);
 
         [Test]
-        public void It_wraps_nothing() => _exception!.InnerException.Should().BeNull();
+        public void It_wraps_nothing() => _exception.InnerException.Should().BeNull();
 
         [Test]
         public void It_logs_no_failure() =>
@@ -1736,7 +1765,7 @@ public class KeycloakTokenIntrospectionManagerTests
     public class Given_the_caller_cancels_while_the_answer_is_read : KeycloakTokenIntrospectionManagerTests
     {
         private CancellationTokenSource _caller = null!;
-        private Exception? _exception;
+        private Exception _exception = null!;
 
         [SetUp]
         public async Task Setup()
@@ -1746,7 +1775,7 @@ public class KeycloakTokenIntrospectionManagerTests
             KeycloakAnswers(() =>
                 Response(200, new StreamContent(ProbeStream.Stalling(onRead: () => _caller.Cancel())))
             );
-            _exception = await Catch(Introspect(cancellationToken: _caller.Token));
+            _exception = (await Catch(Introspect(cancellationToken: _caller.Token)))!;
         }
 
         [TearDown]

@@ -55,8 +55,16 @@ public sealed class KeycloakTokenIntrospectionManager(
     /// </summary>
     public const string HttpClientName = "KeycloakIntrospectionClient";
 
-    /// <summary>The <c>typ</c> of a Keycloak access token; a refresh token is <c>Refresh</c> (I-16).</summary>
-    private const string AccessTokenType = "Bearer";
+    /// <summary>
+    /// The <c>typ</c> values of a Keycloak access token: <c>Bearer</c>, and <c>DPoP</c> for one bound to
+    /// a DPoP key (Keycloak 26.7.5 <c>DPoPUtil</c>), which Keycloak introspects as active for its
+    /// confidential client. A refresh token is <c>Refresh</c> (I-16) and an ID token <c>ID</c>.
+    /// </summary>
+    private static readonly HashSet<string> _accessTokenTypes = new(StringComparer.Ordinal)
+    {
+        "Bearer",
+        "DPoP",
+    };
 
     private const string TimeoutReason = "timeout";
     private const string UnreachableReason = "unreachable";
@@ -287,7 +295,7 @@ public sealed class KeycloakTokenIntrospectionManager(
             return AnswerNotUsable(UnrecognizedResponseReason, clientId, "typ is missing or not a string");
         }
 
-        if (!string.Equals(tokenType, AccessTokenType, StringComparison.Ordinal))
+        if (!_accessTokenTypes.Contains(tokenType))
         {
             logger.LogDebug(
                 "Introspection answered inactive: the supplied token is not an access token; calling client {ClientId}",
@@ -344,7 +352,8 @@ public sealed class KeycloakTokenIntrospectionManager(
                 iat,
                 StringMember(members, "sub"),
                 aud,
-                StringMember(members, "iss")
+                StringMember(members, "iss"),
+                tokenType
             )
         );
     }
