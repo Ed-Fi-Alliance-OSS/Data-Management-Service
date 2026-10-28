@@ -335,8 +335,9 @@ Describe 'Isolated launcher environment and cleanup' {
             $global:LASTEXITCODE = 0
         }
         function docker {
+            if ($args[0] -eq 'ps' -and $global:CmsLauncheroccupied) { 'existing-container' }
             if ($args[0] -eq 'logs') {
-                if ($global:CmsTeardownCalls -ne 1) { throw 'Logs must be captured before final teardown.' }
+                if ($global:CmsTeardownCalls -ne 0) { throw 'Logs must be captured before final teardown.' }
                 "retained logs for $($args[2])"
             }
             $global:LASTEXITCODE = 0
@@ -436,6 +437,7 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $global:CmsLauncherbeforeEnvironment = @{}
         Get-ChildItem Env: | ForEach-Object { $global:CmsLauncherbeforeEnvironment[$_.Name] = $_.Value }
         $global:CmsTeardownCalls = 0
+        $global:CmsLauncheroccupied = $false
         $global:CmsLauncherinjectFailure = $false
         $global:CmsLauncherwrongTest = $false
         $global:CmsLaunchermergeArguments = @()
@@ -458,6 +460,12 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         Get-Variable CmsLauncher* -Scope Global | Remove-Variable -Scope Global
     }
 
+    It 'refuses an occupied isolation without tearing down the existing stack' {
+        $global:CmsLauncheroccupied = $true
+        { & $global:CmsLauncherlauncher @global:CmsLauncherlauncherArguments } | Should -Throw '*refusing to run*'
+        $global:CmsTeardownCalls | Should -Be 0
+    }
+
     It 'pins policy settings in both environments and restores settings after success' {
         & $global:CmsLauncherlauncher @global:CmsLauncherlauncherArguments
         $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be 'Filesystem'
@@ -471,11 +479,11 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $global:CmsLaunchercapturedPolicy.SECURITY_METADATA_TOOLS_INSTALLED_EXECUTABLE | Should -BeNullOrEmpty
         $global:CmsLaunchercapturedArguments | Should -Contain '-ClaimsFixtureDirectory'
         $global:CmsLaunchercapturedArguments | Should -Contain $global:CmsLauncherprepared
-        $derived = Get-Content (Join-Path $global:CmsLaunchercheckout 'eng/docker-compose/.derived/test.env.isolated')
+        $derived = Get-Content (Join-Path $global:CmsLaunchercheckout 'eng/docker-compose/.derived/test.env.cms-e2e-isolated.isolated')
         foreach ($name in $global:CmsLaunchercapturedPolicy.Keys | Where-Object { $_ -notlike 'SECURITY_*' }) {
             $derived | Should -Contain "$name=$($global:CmsLaunchercapturedPolicy[$name])"
         }
-        $global:CmsTeardownCalls | Should -Be 2
+        $global:CmsTeardownCalls | Should -Be 1
         Test-Path $global:CmsLauncherprepared | Should -BeFalse
         @(Get-ChildItem (Join-Path $global:CmsLaunchercheckout 'TestResults/cms-isolation/postgresql/CustomFixture/6.1') -Recurse -Filter results.trx).Count | Should -Be 1
         $after = @{}
@@ -497,7 +505,7 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $results = @(Get-ChildItem (Join-Path $global:CmsLaunchercheckout "TestResults/cms-isolation/postgresql/Hybrid/$Version") -Recurse -Filter results.trx)
         $results.Count | Should -Be 1
         (Get-Content $results[0].FullName -Raw) | Should -Match $expectedName
-        $global:CmsTeardownCalls | Should -Be 2
+        $global:CmsTeardownCalls | Should -Be 1
         Test-Path $global:CmsLauncherprepared | Should -BeFalse
         $after = @{}
         Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }
@@ -520,7 +528,7 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $evidence = $results[0].DirectoryName
         [IO.File]::ReadAllBytes((Join-Path $evidence 'merged.json')) | Should -Be ([byte[]]@(239,187,191,123,13,10,125))
         (Get-Content (Join-Path $evidence 'source-sha256-before.json') -Raw) | Should -Be (Get-Content (Join-Path $evidence 'source-sha256-after.json') -Raw)
-        $global:CmsTeardownCalls | Should -Be 2
+        $global:CmsTeardownCalls | Should -Be 1
         Test-Path $global:CmsLauncherprepared | Should -BeFalse
         $after = @{}
         Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }
@@ -544,13 +552,13 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be 'Hybrid'
         $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_DATA_STANDARD_VERSION | Should -Be '5.2'
         $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING | Should -Be 'true'
-        $derived = Get-Content (Join-Path $global:CmsLaunchercheckout 'eng/docker-compose/.derived/test.env.isolated')
+        $derived = Get-Content (Join-Path $global:CmsLaunchercheckout 'eng/docker-compose/.derived/test.env.cms-e2e-isolated.isolated')
         $derived | Should -Contain 'CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid'
         $derived | Should -Contain 'CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true'
         $results = @(Get-ChildItem (Join-Path $global:CmsLaunchercheckout 'TestResults/cms-isolation/postgresql/Upload/5.2') -Recurse -Filter results.trx)
         $results.Count | Should -Be 1
         (Get-Content $results[0].FullName -Raw) | Should -Match 'It_uploads_unmodified_merge_output_and_verifies_stored_permissions'
-        $global:CmsTeardownCalls | Should -Be 2
+        $global:CmsTeardownCalls | Should -Be 1
         Test-Path $global:CmsLauncherprepared | Should -BeFalse
         $after = @{}
         Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }
@@ -575,7 +583,7 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be 'Filesystem'
         $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_DATA_STANDARD_VERSION | Should -Be '5.2'
         $global:CmsLaunchercapturedPolicy.CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING | Should -Be 'false'
-        $derived = Get-Content (Join-Path $global:CmsLaunchercheckout 'eng/docker-compose/.derived/test.env.isolated')
+        $derived = Get-Content (Join-Path $global:CmsLaunchercheckout 'eng/docker-compose/.derived/test.env.cms-e2e-isolated.isolated')
         $derived | Should -Contain 'CONFIGURATION_SERVICE_CLAIMS_SOURCE=Filesystem'
         $derived | Should -Contain 'CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=false'
         $results = @(Get-ChildItem (Join-Path $global:CmsLaunchercheckout 'TestResults/cms-isolation/postgresql/Drift/5.2') -Recurse -Filter results.trx)
@@ -584,7 +592,7 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         (Get-Content $results[0].FullName -Raw) | Should -Match 'It_detects_a_precise_stored_policy_edit_from_an_editable_baseline'
         (Get-Content (Join-Path $evidence 'source-sha256-before.json') -Raw) | Should -Be (Get-Content (Join-Path $evidence 'source-sha256-after.json') -Raw)
         [IO.File]::ReadAllBytes((Join-Path $fixture 'Claims.json')) | Should -Be ([byte[]]@(123,125,10))
-        $global:CmsTeardownCalls | Should -Be 2
+        $global:CmsTeardownCalls | Should -Be 1
         Test-Path $global:CmsLauncherprepared | Should -BeFalse
         $after = @{}
         Get-ChildItem Env: | ForEach-Object { $after[$_.Name] = $_.Value }
@@ -614,10 +622,10 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         }
         $global:CmsLauncherpackageArguments | Should -Contain '8.1.9-alpha.0.42'
         $global:CmsLauncherpackageArguments | Should -Contain 'Release'
-        $mountSetting = Get-Content (Join-Path $global:CmsLaunchercheckout 'eng/docker-compose/.derived/test.env.isolated') | Where-Object { $_ -like 'CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=*' }
+        $mountSetting = Get-Content (Join-Path $global:CmsLaunchercheckout 'eng/docker-compose/.derived/test.env.cms-e2e-isolated.isolated') | Where-Object { $_ -like 'CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=*' }
         $mount = $mountSetting.Substring('CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE='.Length)
         Test-Path $mount | Should -BeFalse
-        $global:CmsTeardownCalls | Should -Be 2
+        $global:CmsTeardownCalls | Should -Be 1
         if ($Outcome -ne 'package failure') {
             $global:CmsLauncherinstallArguments[0..2] | Should -Be @('tool', 'install', 'EdFi.Api.SecurityMetadataTools')
             $global:CmsLauncherinstallArguments | Should -Contain '8.1.0-alpha.0.42'
@@ -659,7 +667,7 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         [IO.File]::WriteAllBytes((Join-Path $fixture 'Claims.json'), [byte[]]@(123,125,10))
         $global:CmsLaunchermutateInput = $true
         { & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Drift } | Should -Throw '*changed the mounted fixture*'
-        $global:CmsTeardownCalls | Should -Be 2
+        $global:CmsTeardownCalls | Should -Be 1
         Test-Path $global:CmsLauncherprepared | Should -BeFalse
     }
 
@@ -680,7 +688,7 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         $global:CmsLaunchermergeFailure = $true
         { & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Filesystem } | Should -Throw '*merge failed*'
         Get-Variable CmsLaunchercapturedArguments -Scope Global -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
-        $global:CmsTeardownCalls | Should -Be 2
+        $global:CmsTeardownCalls | Should -Be 1
         Test-Path $global:CmsLauncherprepared | Should -BeFalse
     }
 
@@ -690,7 +698,7 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         Set-Content (Join-Path $fixture 'input-claims.json') '{}'
         $global:CmsLaunchermutateInput = $true
         { & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Filesystem } | Should -Throw '*changed the merged document*'
-        $global:CmsTeardownCalls | Should -Be 2
+        $global:CmsTeardownCalls | Should -Be 1
         Test-Path $global:CmsLauncherprepared | Should -BeFalse
     }
 
@@ -705,7 +713,7 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
         [IO.File]::WriteAllBytes((Join-Path $fixture 'input-claims.json'), [byte[]]@(123,125,10))
         $global:CmsLauncherwrongTest = $true
         { & $global:CmsLauncherlauncher -EnvironmentFile './test.env' -SecurityMetadataToolsScenario Hybrid } | Should -Throw '*requested test*'
-        $global:CmsTeardownCalls | Should -Be 2
+        $global:CmsTeardownCalls | Should -Be 1
         Test-Path $global:CmsLauncherprepared | Should -BeFalse
     }
 
@@ -724,7 +732,7 @@ CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=wrong
     It 'archives failure results before cleanup and restores temporary process settings' {
         $global:CmsLauncherinjectFailure = $true
         { & $global:CmsLauncherlauncher @global:CmsLauncherlauncherArguments } | Should -Throw '*execution failed*'
-        $global:CmsTeardownCalls | Should -Be 2
+        $global:CmsTeardownCalls | Should -Be 1
         Test-Path $global:CmsLauncherprepared | Should -BeFalse
         $results = @(Get-ChildItem (Join-Path $global:CmsLaunchercheckout 'TestResults/cms-isolation') -Recurse -Filter results.trx)
         $results.Count | Should -Be 1
