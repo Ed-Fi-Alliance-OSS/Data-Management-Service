@@ -1876,6 +1876,101 @@ Describe 'CDC runbook failure diagnostics' {
         $failures[0].Phase | Should -Be 'Teardown'
         (Get-ChildItem $script:published -File | Get-Content -Raw) -join '' | Should -Not -Match 'opaque|private-document|unlabelled|/home/|ScriptStackTrace'
     }
+    It 'exports sanitized <Operation> evidence before the live runtime assertion fails' -ForEach @(
+        @{ Operation = 'status'; State = 'Unknown'; Category = 'StatusObservationUnavailable'; DiagnosticCode = 'statusObservationUnavailable' },
+        @{ Operation = 'watch'; State = 'NotSatisfied'; Category = 'SnapshotIncomplete'; DiagnosticCode = 'snapshotIncomplete' }
+    ) {
+        $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
+        $ast = [Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $repo 'eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1'), [ref]$null, [ref]$null)
+        # Execute the shipped observation loop so moving collection after an assertion
+        # breaks this regression. Only the external command is replaced.
+        $loop = $ast.Find({ param($node)
+            $node -is [Management.Automation.Language.ForEachStatementAst] -and
+            $node.Variable.VariablePath.UserPath -eq 'observation'
+        }, $true).Extent.Text
+        $config = New-PesterConfiguration
+        $config.Run.Container = New-PesterContainer -Data @{
+            Repo = $repo; Loop = $loop; Operation = $Operation; State = $State; Category = $Category; DiagnosticCode = $DiagnosticCode
+        } -ScriptBlock {
+            param($Repo, $Loop, $Operation, $State, $Category, $DiagnosticCode)
+            Describe 'live status assertion' -ForEach @(@{ Repo = $Repo; Loop = $Loop; Operation = $Operation; State = $State; Category = $Category; DiagnosticCode = $DiagnosticCode }) {
+                BeforeAll {
+                    Set-StrictMode -Version Latest
+                    . (Join-Path $Repo 'eng/docker-compose/tests/cdc-runbook-snippets.ps1')
+                    $script:repo = $Repo
+                    $script:fixture = $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY
+                    $script:runbookProgress = @{}
+                    $script:runbookCase = 'cdc-managed-start'
+                    Mock Invoke-CdcRunbookScript {
+                        param($Id)
+                        Set-CdcRunbookOperation -Operation $Id
+                        Complete-CdcRunbookOperation ([pscustomobject]@{ ExitCode = 1; FailureKind = 'None' })
+                        $command = if ($Id -like '*watch') { 'watch' } else { 'status' }
+                        $runtimeState = if ($command -eq $Operation) { $State } else { 'Satisfied' }
+                        $result = @{
+                            operation = $command; exitCode = 1
+                            deploymentProfile = @{ aclIsolationProven = $false }
+                            diagnostics = @(
+                                @{ component = 'Connect'; failure = 'Unavailable'; message = 'opaque-credential' },
+                                @{ component = 'private-component'; failure = 'Unavailable' },
+                                @{ component = 'Connect'; failure = "Timeout`nprivate-secret" }
+                            )
+                            data = @{
+                                aggregate = @{ readiness = 'NotReady' }
+                                targets = @(@{
+                                    status = @{
+                                        targetIdentity = @{ dataStoreId = 'private-identity' }
+                                        providerSetup = @{ state = 'Satisfied' }
+                                        connectorRuntime = @{ state = $runtimeState; category = $Category; message = 'private-message' }
+                                        projection = @{ state = 'Unknown' }
+                                        diagnostics = @(
+                                            @{ code = $DiagnosticCode; message = 'private-message'; observed = 'private-value' },
+                                            @{ code = $DiagnosticCode },
+                                            @{ code = 'private-code' },
+                                            @{ code = @('snapshotIncomplete', 'private-code') }
+                                        )
+                                    }
+                                })
+                            }
+                            settings = @{ password = 'opaque-credential' }
+                        }
+                        [pscustomobject]@{ ExitCode = 1; StandardOutput = ($result | ConvertTo-Json -Depth 12) }
+                    }
+                }
+                It 'CDC-DOC cdc-managed-start' {
+                    Set-Variable -Name prefix -Value 'cdc-pg'
+                    Set-Variable -Name entry -Value @{ SettingsPath = 'private-settings' }
+                    Set-Variable -Name statePath -Value 'private-state'
+                    & ([scriptblock]::Create($Loop))
+                }
+            }
+        }
+        $config.Run.PassThru = $true
+        $config.Output.Verbosity = 'None'
+        $nested = Invoke-Pester -Configuration $config
+        $nested.FailedCount | Should -Be 1
+        $report = Get-CdcRunbookPesterReport -Tests @($nested.Tests) -PesterResult $nested -QualificationProfile PostgresqlLifecycle `
+            -ProgressPath (Join-Path $script:private 'runbook-progress.json')
+        Export-CdcRunbookReport -Report $report -RawDirectory $script:private -Destination $script:published -FileName 'cdc-runbook-live-lifecycle.json'
+        $json = Get-Content (Join-Path $script:published 'cdc-runbook-live-lifecycle.json') -Raw
+        $case = ($json | ConvertFrom-Json -NoEnumerate)[0]
+        $case.Outcome | Should -Be 'NotPassed'
+        $case.Failures[0].Category | Should -Be 'AssertionFailed'
+        $case.Operations[-1].Operation | Should -Be "cdc-pg-$Operation"
+        $record = $case.Operations[-1].StatusObservation
+        $record.Operation | Should -Be $Operation
+        $record.ConnectorRuntimeState | Should -BeExactly $State
+        $record.ConnectorRuntimeCategory | Should -BeExactly $Category
+        $record.DiagnosticCodes | Should -BeExactly @($DiagnosticCode)
+        $record.ControllerFailureCodes | Should -BeExactly @('Connect/Unavailable')
+        $record.PSObject.Properties.Name | Should -Be @(
+            'Operation', 'ConnectorRuntimeState', 'ConnectorRuntimeCategory', 'DiagnosticCodes', 'ControllerFailureCodes'
+        )
+        $json | Should -Not -Match 'private-|opaque-credential|password|settings|message|observed|targetIdentity'
+        (Get-Content (Join-Path $script:private 'runbook-progress.json') -Raw) | Should -Not -Match 'private-|opaque-credential|password'
+    }
+
     It 'retains parameterized BeforeEach failures when Pester cannot expand the case name' {
         $config = New-PesterConfiguration
         $config.Run.Container = New-PesterContainer -ScriptBlock {
@@ -2191,6 +2286,8 @@ function docker { `$global:LASTEXITCODE = 0 }
             Cases = @(@{ TestId = 'CDC-DOC cdc-managed-start'; SnippetId = 'cdc-managed-start'; Outcome = 'NotPassed'
                 Failures = @(@{ Phase = 'private'; Category = 'opaque'; Source = '/home/private.ps1'; Line = 'secret'; Message = 'raw' })
                 Operations = @(@{ Operation = 'cdc-secret-credential'; FailureKind = 'password'; ExitCode = 'secret'; ElapsedMilliseconds = -1
+                    StatusObservation = @{ Operation = @('status'); ConnectorRuntimeState = 'private-state'; ConnectorRuntimeCategory = @('snapshotIncomplete');
+                        DiagnosticCodes = @('private-code', @('snapshotIncomplete')); ControllerFailureCodes = @("Connect/Timeout`n", 'private-code'); Message = 'raw' }
                     ChildFailures = @(1..20 | ForEach-Object { @{ Category = 'ChildProcessFailure'; ErrorCategory = 'secret'; Source = '/tmp/private.ps1'; Message = 'raw';
                         ExceptionType = 'private-exception'; Reason = 'opaque-reason'; HResult = 'secret';
                         ControllerOperation = 'private'; ControllerExitCode = 'secret'; ControllerFailureCodes = @('private');
@@ -2202,6 +2299,9 @@ function docker { `$global:LASTEXITCODE = 0 }
         $case = ($json | ConvertFrom-Json -NoEnumerate)[0]
         $case.Outcome | Should -Be 'NotPassed'
         $case.Operations[0].ChildFailures.Count | Should -Be 8
+        $case.Operations[0].StatusObservation.PSObject.Properties.Name | Should -Be @('DiagnosticCodes', 'ControllerFailureCodes')
+        $case.Operations[0].StatusObservation.DiagnosticCodes.Count | Should -Be 0
+        $case.Operations[0].StatusObservation.ControllerFailureCodes.Count | Should -Be 0
         $case.Operations[0].ChildFailures[0].PSObject.Properties.Name | Should -Be @('Category')
     }
 }
