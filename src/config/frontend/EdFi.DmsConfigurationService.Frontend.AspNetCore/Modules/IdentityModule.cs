@@ -665,8 +665,8 @@ public class IdentityModule : IEndpointModule
         ) = (ClientAuthenticatedForm.Accepted)form;
 
         // DMS-1482 client gate: after the D-03 shape checks and credential parsing, before the manager
-        // authenticates the caller. Spent whether or not the client exists; rate-limit rejections use
-        // Ed-Fi problem details, while this route's other errors retain their OAuth contract.
+        // authenticates the caller. Spent whether or not the client exists; a rejection is answered in
+        // this route's OAuth contract, like its other errors.
         if (
             ConnectRateLimitRejection.RejectClient(rateLimiter, httpContext, clientId, logger) is
             { } rateLimitRejection

@@ -1474,9 +1474,10 @@ rebuilds its external response using the positive integer limit alone. Token err
 problem-details `type` or `title`; their normalized correlation ID is UTF-8 percent-encoded in
 `X-Correlation-ID`. Decode that header once to find the matching log entry. See the
 [token error contract](../reference/adr-oauth-token-errors-DMS-1606.md).
-Upgrade DMS before, or together with, the Configuration Service: an earlier DMS does not recognize
-the OAuth body and answers a generic 429 of type
-`urn:ed-fi:api:too-many-requests` without the limit message.
+Upgrade DMS before, or together with, the Configuration Service: an 8.1 pre-release DMS does not
+recognize the OAuth body and answers a generic 429 of type `urn:ed-fi:api:too-many-requests`
+without the limit message, and DMS 8.0.0 answers any upstream 429 with a 502 whose `detail`
+carries the Configuration Service's body.
 
 > **Changing `ClientSecretHashingIterations` invalidates existing client secrets.** The iteration
 > count is not stored with a hashed secret, so verification always derives at the currently
