@@ -6234,26 +6234,22 @@ public partial class ApiClientModuleTests
     }
 
     /// <summary>
-    /// The complete 400 body a duplicate API client name answers, on both create and update.
+    /// The complete 409 body a duplicate API client name answers, on both create and update.
     /// </summary>
     protected static async Task AssertDuplicateApiClientNameContract(HttpResponseMessage response)
     {
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
         JsonNode actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
         JsonNode expectedResponse = JsonNode.Parse(
             """
             {
-              "detail": "Data validation failed. See 'validationErrors' for details.",
-              "type": "urn:ed-fi:management-api:bad-request:data",
-              "title": "Data Validation Failed",
-              "status": 400,
+              "detail": "An API client with this name already exists for the application.",
+              "type": "urn:ed-fi:management-api:conflict",
+              "title": "Conflict",
+              "status": 409,
               "correlationId": "{correlationId}",
-              "validationErrors": {
-                "Name": [
-                  "An API client with this name already exists for the application."
-                ]
-              },
+              "validationErrors": {},
               "errors": []
             }
             """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
@@ -6338,7 +6334,7 @@ public partial class ApiClientModuleTests
         public void TearDownInsertResponse() => _insertResponse?.Dispose();
 
         [Test]
-        public async Task It_returns_the_data_validation_contract() =>
+        public async Task It_returns_the_duplicate_name_conflict() =>
             await AssertDuplicateApiClientNameContract(_insertResponse);
 
         [Test]
@@ -6394,7 +6390,7 @@ public partial class ApiClientModuleTests
         }
 
         [Test]
-        public async Task It_returns_the_data_validation_contract() =>
+        public async Task It_returns_the_duplicate_name_conflict() =>
             await AssertDuplicateApiClientNameContract(_insertResponse);
 
         [Test]
@@ -6711,7 +6707,7 @@ public partial class ApiClientModuleTests
         }
 
         [Test]
-        public async Task It_returns_the_data_validation_contract() =>
+        public async Task It_returns_the_duplicate_name_conflict() =>
             await AssertDuplicateApiClientNameContract(_insertResponse);
 
         [Test]
@@ -6922,7 +6918,7 @@ public partial class ApiClientModuleTests
         }
 
         [Test]
-        public async Task It_returns_the_data_validation_contract() =>
+        public async Task It_returns_the_duplicate_name_conflict() =>
             await AssertDuplicateApiClientNameContract(_updateResponse);
 
         [Test]
@@ -7056,7 +7052,7 @@ public partial class ApiClientModuleTests
         }
 
         [Test]
-        public async Task It_returns_the_data_validation_contract() =>
+        public async Task It_returns_the_duplicate_name_conflict() =>
             await AssertDuplicateApiClientNameContract(_updateResponse);
 
         [Test]

@@ -560,8 +560,20 @@ public partial class ApiClientModuleTests
         }
 
         [Test]
-        public void It_documents_the_duplicate_name_as_a_400() =>
-            Description(Response("/v3/apiClients", "post", "400")).Should().Contain("already has the name");
+        public void It_documents_the_duplicate_name_as_a_409()
+        {
+            foreach (
+                (string path, string method) in new[]
+                {
+                    ("/v3/apiClients", "post"),
+                    ("/v3/apiClients/{id}", "put"),
+                }
+            )
+            {
+                Description(Response(path, method, "409")).Should().Contain("already has the name");
+                Description(Response(path, method, "400")).Should().NotContain("already has the name");
+            }
+        }
 
         [Test]
         public void It_documents_that_a_successful_update_completes_a_pending_synchronization()

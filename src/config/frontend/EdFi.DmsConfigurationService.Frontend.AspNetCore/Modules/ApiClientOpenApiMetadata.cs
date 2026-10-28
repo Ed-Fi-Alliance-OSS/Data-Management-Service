@@ -83,13 +83,14 @@ internal static class ApiClientOpenApiMetadata
         "A concurrent change to the API client's Application held the request up; retry the request.";
 
     public const string InsertBadRequest =
-        "The request is invalid: a field failed validation, another API client of the Application "
-        + "already has the name (on Name), or the education organization scope breaks a rule above "
-        + "(urn:ed-fi:management-api:bad-request:data, with the error on the field concerned).";
+        "The request is invalid: a field failed validation, or the education organization scope "
+        + "breaks a rule above (urn:ed-fi:management-api:bad-request:data, with the error on the field "
+        + "concerned).";
 
     public const string InsertConflict =
         "The Application or a data store does not exist "
-        + "(urn:ed-fi:management-api:conflict:unresolved-reference), or the generated client key is "
+        + "(urn:ed-fi:management-api:conflict:unresolved-reference), or another API client of the "
+        + "Application already has the name, the generated client key is "
         + "already in use, the identity provider client the request created is already associated "
         + "with another API client, or a concurrent change to the Application held the request up "
         + "(urn:ed-fi:management-api:conflict); retry the request after a key collision or a "
@@ -100,8 +101,7 @@ internal static class ApiClientOpenApiMetadata
 
     public const string UpdateBadRequest =
         "The request is invalid: the id is not an integer (urn:ed-fi:management-api:bad-request:parameter), "
-        + "a field failed validation, the route and body ids differ, another "
-        + "API client of the Application already has the name (on Name), or the education organization "
+        + "a field failed validation, the route and body ids differ, or the education organization "
         + "scope breaks a rule above (urn:ed-fi:management-api:bad-request:data, with the error on the "
         + "field concerned).";
 
@@ -109,9 +109,9 @@ internal static class ApiClientOpenApiMetadata
         "The Application or a data store does not exist "
         + "(urn:ed-fi:management-api:conflict:unresolved-reference); a narrowed client moved with "
         + "neither scope field is not covered by its new Application "
-        + "(urn:ed-fi:management-api:conflict:education-organization-scope); or a concurrent change to "
-        + "the Application held the request up, in which case retry the request "
-        + "(urn:ed-fi:management-api:conflict).";
+        + "(urn:ed-fi:management-api:conflict:education-organization-scope); or another API client of "
+        + "the Application already has the name, or a concurrent change to the Application held the "
+        + "request up, in which case retry the request (urn:ed-fi:management-api:conflict).";
 
     public const string UpdateBadGateway =
         "The identity provider reported a failure before the API client record was updated; the record "

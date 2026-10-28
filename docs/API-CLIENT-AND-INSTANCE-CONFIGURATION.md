@@ -671,8 +671,9 @@ Stores OAuth client credentials for applications.
 
 **Constraint:** `UNIQUE (ApplicationId, Name)` ensures API client names are
 unique within an application; clients of different applications may share a
-name. A duplicate name is rejected with `400`, on `POST` and on a `PUT` that
-renames a client or moves it to another application.
+name. A duplicate name is rejected with `409` (type
+`urn:ed-fi:management-api:conflict`), on `POST` and on a `PUT` that renames a
+client or moves it to another application.
 
 #### ApiClientDataStore
 

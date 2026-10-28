@@ -17,7 +17,6 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
-using FluentValidation.Results;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -41,10 +40,13 @@ public class ApiClientModule : IEndpointModule
             statusCode: (int)HttpStatusCode.Conflict
         );
 
+    // A 409, as the Management API specification and ODS Admin API answer a name already used
+    // by another API client of the Application
     private static IResult DuplicateName(HttpContext httpContext) =>
-        FailureResults.DataValidation(
-            [new ValidationFailure("Name", DuplicateNameError)],
-            httpContext.TraceIdentifier
+        Results.Json(
+            FailureResponse.ForConflict(DuplicateNameError, httpContext.TraceIdentifier),
+            contentType: "application/problem+json",
+            statusCode: (int)HttpStatusCode.Conflict
         );
 
     /// <summary>
