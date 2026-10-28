@@ -241,6 +241,26 @@ public class Given_CompleteClaimsDocumentValidator_invalid_shape(string scenario
 }
 
 [TestFixture]
+public class Given_CompleteClaimsDocumentValidator_catalog_final_newline
+{
+    private CompleteClaimsDocumentValidationResult _result = null!;
+
+    [SetUp]
+    public void Setup() =>
+        _result = CompleteClaimsDocumentValidator.Validate(
+            CompleteClaimsDocumentValidatorFixtures.Read("catalog-final-newline.json")
+        );
+
+    [Test]
+    public void It_preserves_the_name_accepted_by_the_existing_CMS_regex() =>
+        _result
+            .Should()
+            .BeOfType<CompleteClaimsDocumentValidationResult.Success>()
+            .Subject.ClaimSetNames.Should()
+            .Equal("ReviewSet", "Abc\n");
+}
+
+[TestFixture]
 public class Given_CompleteClaimsDocumentValidator_valid_document
 {
     private CompleteClaimsDocumentValidationResult.Success _result = null!;

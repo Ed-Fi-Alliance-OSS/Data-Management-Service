@@ -139,16 +139,6 @@ public class ClaimsFragmentComposer
             // Convert back to ClaimsDocumentNodes format
             JsonNode transformedHierarchy = ConvertFromTransformationModel(baseClaims);
 
-            // Debug logging to check the composed results
-            _logger.LogInformation(
-                "Transformed hierarchy JSON: {HierarchyJson}",
-                LoggingUtility.SanitizeForLog(transformedHierarchy?.ToJsonString())
-            );
-            _logger.LogInformation(
-                "Base claim sets JSON: {ClaimSetsJson}",
-                LoggingUtility.SanitizeForLog(baseClaimsNodes.ClaimSetsNode?.ToJsonString())
-            );
-
             // Ensure both nodes are not null
             if (transformedHierarchy is null)
             {

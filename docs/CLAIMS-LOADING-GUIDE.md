@@ -133,7 +133,7 @@ The embedded base `Claims.json` is stored per Data Standard version under
 `src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds<NN>/Claims.json`
 (`ds52`, `ds61`, ...). CMS passes `ClaimsOptions:DataStandardVersion`
 (Compose environment variable `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION`) to the
-shared `BundledClaimsProvider`; offline `merge` passes `--data-standard-version`
+shared CMS claims library; offline `merge` passes `--data-standard-version`
 instead. Both default to `5.2` and fail if the requested version's resource is absent.
 In CMS, this selection applies to the **Embedded** and **Hybrid** modes below
 (both load the embedded base); **Filesystem** mode reads its base from disk instead. See
@@ -426,14 +426,29 @@ versions fail with exit `1` and preserve the destination.
 
 ### Prepare and inspect offline
 
-From the repository root, with the matching tool installed, run this Bash example
-against the same [Hybrid fragments](../src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Hybrid/README.md)
-used by the service parity tests:
+With the matching tool installed, start in an empty working directory. This Bash
+example creates an `Offline` claim set granting Read access to students:
 
 ```sh
-mkdir -p policy-output
+mkdir -p fragments policy-output
+cat > fragments/offline-claims.json <<'JSON'
+{
+  "name": "Offline",
+  "resourceClaims": [
+    {
+      "name": "ed-fi/students",
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [{ "name": "NoFurtherAuthorizationRequired" }]
+        }
+      ]
+    }
+  ]
+}
+JSON
 security-metadata-tools merge \
-  --fragments src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Hybrid/fragments \
+  --fragments ./fragments \
   --data-standard-version 5.2 --output policy-output/Claims.json
 security-metadata-tools resolve \
   --input policy-output/Claims.json --output policy-output/authorization-metadata.json
@@ -545,9 +560,10 @@ match. Shared resolution's order-insensitive deduplication keeps the first
 representative; ordering differences already erased there cannot be detected.
 
 The three new commands enforce the shared schema plus catalog names of 1–256
-UTF-16 code units without whitespace, case-insensitive catalog uniqueness and
-reference lookup, and references only to declared sets. Claim names/URIs must be
-ordinally unique across the entire complete-document hierarchy, including parents
+UTF-16 code units satisfying the existing CMS naming rules, case-insensitive
+catalog uniqueness and reference lookup, and references only to declared sets.
+Claim names/URIs must be ordinally unique across the entire complete-document
+hierarchy, including parents
 and separate branches, even for identical policy. Received CMS metadata must have
 ordinally unique URIs within each set (reuse across different sets is valid).
 Duplicates or inconsistent metadata are exit `1`, not mismatches. These CLI

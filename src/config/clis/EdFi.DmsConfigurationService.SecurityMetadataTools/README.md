@@ -67,14 +67,29 @@ security-metadata-tools merge --fragments ./fragments \
   --data-standard-version 9.9 --output Claims.json --force
 ```
 
-From the repository root, this Bash example uses the reviewed Hybrid fragments
-that the service parity tests run for both Data Standards. Use a fresh output
-directory, or add `--force` when intentionally replacing its files:
+With the matching tool installed, start in an empty working directory. This Bash
+example creates an `Offline` claim set granting Read access to students:
 
 ```sh
-mkdir -p policy-output
+mkdir -p fragments policy-output
+cat > fragments/offline-claims.json <<'JSON'
+{
+  "name": "Offline",
+  "resourceClaims": [
+    {
+      "name": "ed-fi/students",
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [{ "name": "NoFurtherAuthorizationRequired" }]
+        }
+      ]
+    }
+  ]
+}
+JSON
 security-metadata-tools merge \
-  --fragments src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/Hybrid/fragments \
+  --fragments ./fragments \
   --data-standard-version 5.2 --output policy-output/Claims.json
 security-metadata-tools resolve \
   --input policy-output/Claims.json --output policy-output/authorization-metadata.json
@@ -126,7 +141,8 @@ no tokens and performs no upload, edit, reload, or cache invalidation.
 
 The three new commands validate the CMS schema and then require:
 
-- Catalog names of 1–256 UTF-16 code units with no whitespace, preserved unchanged.
+- Catalog names of 1–256 UTF-16 code units satisfying the existing CMS naming rules,
+  preserved unchanged.
   Catalog uniqueness and hierarchy reference lookup use `OrdinalIgnoreCase`;
   every hierarchy claim-set reference must name a declared catalog entry.
 - Claim names/URIs unique across the **entire hierarchy**, including non-leaf nodes

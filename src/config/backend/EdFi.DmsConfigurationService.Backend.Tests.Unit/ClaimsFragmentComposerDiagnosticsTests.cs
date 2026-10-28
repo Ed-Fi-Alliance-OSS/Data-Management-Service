@@ -218,7 +218,7 @@ public class Given_ClaimsFragmentComposer_read_failure(string error, string fail
 [TestFixture("no-resource-claims")]
 [TestFixture("unmatched")]
 [TestFixture("invalid-name")]
-[TestFixture("invalid-final-newline")]
+[TestFixture("registered-final-newline")]
 [TestFixture("registered")]
 [TestFixture("filename-name")]
 public class Given_ClaimsFragmentComposer_diagnostic_context(string scenario)
@@ -235,7 +235,7 @@ public class Given_ClaimsFragmentComposer_diagnostic_context(string scenario)
         string name = scenario switch
         {
             "invalid-name" => "Bad Name",
-            "invalid-final-newline" => "Policy\n",
+            "registered-final-newline" => "Policy\n",
             _ => "Policy",
         };
         string claim = scenario == "unmatched" ? "edfi/missing" : "edfi/student";
@@ -302,7 +302,7 @@ public class Given_ClaimsFragmentComposer_diagnostic_context(string scenario)
                 }
                 expected.Add(
                     new(
-                        scenario is "invalid-name" or "invalid-final-newline"
+                        scenario == "invalid-name"
                             ? ClaimsCompositionDiagnosticCode.InvalidClaimSetRegistration
                             : ClaimsCompositionDiagnosticCode.ClaimSetRegistered,
                         file,
@@ -320,8 +320,21 @@ public class Given_ClaimsFragmentComposer_diagnostic_context(string scenario)
     public void It_returns_exact_codes_and_available_context()
     {
         _result.Diagnostics.Should().Equal(_expected);
-        _result.IsComplete.Should().Be(scenario is "empty" or "registered" or "filename-name");
+        _result
+            .IsComplete.Should()
+            .Be(scenario is "empty" or "registered" or "registered-final-newline" or "filename-name");
         _result.LoadResult.Failures.Should().BeEmpty();
+        _result
+            .LoadResult.Nodes!.ClaimSetsNode.AsArray()
+            .Select(node => node!["claimSetName"]!.GetValue<string>())
+            .Should()
+            .Equal(
+                new[] { "Existing" }.Concat(
+                    _expected
+                        .Where(d => d.Code == ClaimsCompositionDiagnosticCode.ClaimSetRegistered)
+                        .Select(d => d.ClaimSetName)
+                )
+            );
     }
 }
 
