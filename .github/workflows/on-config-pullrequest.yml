@@ -477,6 +477,11 @@ jobs:
         if: success()
         run: ./build-config.ps1 E2ETest  -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{matrix.identityprovider}}
 
+      - name: Stop Ordinary Config Stack Before Isolated Policy Scenarios
+        if: matrix.identityprovider == 'self-contained'
+        working-directory: eng/docker-compose
+        run: ./start-local-config.ps1 -d -v -EnvironmentFile ./.env.config.e2e
+
       # The launcher uses one isolated project/port set, so these scenarios run sequentially.
       # It archives the ordinary suite TRX before the first scenario and requires each named test to pass.
       - name: Reuse Config Image for Isolated Policy Scenarios
@@ -617,6 +622,11 @@ jobs:
       - name: Run End to End Tests - MSSQL - IdentityProvider (${{matrix.identityprovider}})
         if: success()
         run: ./build-config.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{matrix.identityprovider}} -EnvironmentFile "./.env.config.mssql.e2e" -E2ETestFilter "TestCategory=MssqlRepresentative"
+
+      - name: Stop Ordinary Config Stack Before Isolated Policy Scenarios
+        if: matrix.identityprovider == 'self-contained'
+        working-directory: eng/docker-compose
+        run: ./start-local-config.ps1 -d -v -EnvironmentFile ./.env.config.mssql.e2e
 
       # The launcher uses one isolated project/port set, so these scenarios run sequentially.
       # It archives the ordinary suite TRX before the first scenario and requires each named test to pass.

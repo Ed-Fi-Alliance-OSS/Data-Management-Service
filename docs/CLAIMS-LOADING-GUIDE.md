@@ -587,26 +587,8 @@ remains case-insensitive. Export IDs/descriptive flags and non-parent
 `actions`/`enabled` are informational, with the Create-only behavior explained in
 [Fragment File Structure](#fragment-file-structure).
 
-### Reproduce the deployment and drift checks
-
-The existing isolated launcher exercises these exact contracts on fresh storage.
-Run sequentially from the repository root with Docker available:
-
-```powershell
-pwsh ./eng/docker-compose/tests/cms-isolation/Invoke-IsolatedConfigE2E.ps1 -Configuration Release -EnvironmentFile ./.env.config.e2e -SecurityMetadataToolsScenario Filesystem -DataStandardVersion 5.2
-pwsh ./eng/docker-compose/tests/cms-isolation/Invoke-IsolatedConfigE2E.ps1 -Configuration Release -EnvironmentFile ./.env.config.e2e -SecurityMetadataToolsScenario Upload -DataStandardVersion 5.2
-pwsh ./eng/docker-compose/tests/cms-isolation/Invoke-IsolatedConfigE2E.ps1 -Configuration Release -EnvironmentFile ./.env.config.e2e -SecurityMetadataToolsScenario Drift -DataStandardVersion 5.2 -UseInstalledTool -AppVersion '8.1.9-alpha.0.42'
-```
-
-The app version above is a local verification example, not a publication allocation.
-The launcher builds/installs the calculated tool version from a local-only feed.
-Filesystem and Upload use the unmodified merge output and require exit `0`.
-Drift uses a separate editable complete fixture, verifies exit `0`, enables Create
-while retaining Read through the supported claim-set API, then requires exit `2`
-and the exact unexpected-Create report from the same unchanged input. See the
-[scenario fixtures and evidence](../src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/README.md).
-The launcher removes its stack and temporary installation and retains per-run
-TRX, policy hashes, API/offline metadata, and reports under `TestResults/cms-isolation/`.
+For developer instructions to reproduce the deployment and drift checks, see the
+[isolated policy test README](../src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/README.md).
 
 ## Deployment Steps
 

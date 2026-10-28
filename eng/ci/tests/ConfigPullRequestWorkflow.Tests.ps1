@@ -210,7 +210,13 @@ bash "$CLASSIFIER"
         $tags = @($steps | Where-Object { $_ -match 'run: docker tag ed-fi-api-config-local:latest ed-fi-api-config-cms-e2e-isolated:latest' })
         $tags.Count | Should -Be 1
         $tags[0] | Should -Match "if: matrix.identityprovider == 'self-contained'"
-        $job.IndexOf('./build-config.ps1 E2ETest') | Should -BeLessThan $job.IndexOf($tags[0])
+        $teardown = @($steps | Where-Object { $_ -match '- name: Stop Ordinary Config Stack Before Isolated Policy Scenarios' })
+        $teardown.Count | Should -Be 1
+        $teardown[0] | Should -Match "if: matrix.identityprovider == 'self-contained'"
+        $teardown[0] | Should -Match 'working-directory: eng/docker-compose'
+        $teardown[0] | Should -Match ('run: ./start-local-config.ps1 -d -v -EnvironmentFile ' + [regex]::Escape($Environment))
+        $job.IndexOf('./build-config.ps1 E2ETest') | Should -BeLessThan $job.IndexOf($teardown[0])
+        $job.IndexOf($teardown[0]) | Should -BeLessThan $job.IndexOf($tags[0])
         $job.IndexOf($tags[0]) | Should -BeLessThan $job.IndexOf($scenarios[0])
         $upload = @($steps | Where-Object { $_ -match '- name: Upload Test Results' })
         $upload.Count | Should -Be 1

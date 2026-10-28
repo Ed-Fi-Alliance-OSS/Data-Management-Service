@@ -30,13 +30,14 @@ public partial class Given_SecurityMetadataToolsService
         await File.WriteAllBytesAsync(Path.Combine(EvidenceDirectory, "input-before.json"), inputBytes);
         string token = await GetAccessTokenAsync();
         var headers = new Dictionary<string, string> { ["Authorization"] = $"Bearer {token}" };
+        // Both E2E environments configure PathBase=config; exercise prefixed verification here.
         string[] verifyArguments =
         [
             "verify",
             "--input",
             input,
             "--cms-url",
-            RequiredSetting("CONFIGURATION_SERVICE_E2E_API_URL"),
+            $"{RequiredSetting("CONFIGURATION_SERVICE_E2E_API_URL").TrimEnd('/')}/config",
             "--access-token-env",
             "CMS_POLICY_TEST_TOKEN",
         ];

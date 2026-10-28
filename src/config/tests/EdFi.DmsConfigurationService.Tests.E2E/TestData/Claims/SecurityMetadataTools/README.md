@@ -41,7 +41,8 @@ pwsh ./eng/docker-compose/tests/cms-isolation/Invoke-IsolatedConfigE2E.ps1 -Conf
 The [Drift 5.2 scenario](Drift/README.md) loads its independent complete editable policy
 through Filesystem startup with unrestricted loading disabled. It verifies an exact match,
 resolves IDs through secured APIs, then enables Create while preserving Read. The same input
-must report only the reviewed unexpected-Create difference (exit 2). Full stored metadata
+must report only the reviewed unexpected-Create difference (exit 2). Both verification
+calls use the configured `/config` path prefix on PostgreSQL and SQL Server. Full stored metadata
 snapshots before/after and unchanged source/mount hashes are retained. Run it with:
 
 ```powershell
