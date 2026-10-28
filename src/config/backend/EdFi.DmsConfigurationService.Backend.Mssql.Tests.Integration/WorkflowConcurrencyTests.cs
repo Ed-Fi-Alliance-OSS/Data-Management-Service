@@ -348,7 +348,12 @@ public abstract class WorkflowConcurrencyTestBase : DatabaseTestBase
                 }
             });
 
-        A.CallTo(() => _apiClientRepository.ClearApiClientIdentityProviderSyncPending(A<int>.Ignored))
+        A.CallTo(() =>
+                _apiClientRepository.ClearApiClientIdentityProviderSyncPending(
+                    A<int>.Ignored,
+                    A<string>.Ignored
+                )
+            )
             .Returns(new ApiClientSyncPendingResult.Success());
 
         // Answers from the shared client state, as the real repository answers from the ApiClient

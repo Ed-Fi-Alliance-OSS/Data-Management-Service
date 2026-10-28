@@ -1054,9 +1054,11 @@ public class ApiClientModule : IEndpointModule
                     // Persist the client UUID the provider reports: unchanged when it updated the
                     // client in place, or a replacement when it recreated the client. The provider
                     // now holds this client's current settings, so the save also completes any
-                    // pending identity provider synchronization of the client (DMS-1642).
+                    // pending identity provider synchronization of the client (DMS-1642), unless a
+                    // claim set rename has committed since the Application was read above.
                     command.ClientUuid = updateSuccess.ClientUuid;
                     command.CompletesIdentityProviderSync = true;
+                    command.SentClaimSetName = application.ClaimSetName;
 
                     ApiClientUpdateResult repositoryResult;
                     try
@@ -1303,6 +1305,8 @@ public class ApiClientModule : IEndpointModule
                         )
                         // The committed update cleared the pending marker; a still-pending client
                         // whose other fields already matched (an unchanged request) did not commit.
+                        // A claim set rename committed alongside it keeps the client pending, which
+                        // resolves as a partial match and leaves the rename's marker in place.
                         && resolved.IdentityProviderSyncPendingSince is null;
 
                     bool MatchesOriginal(ApiClientResolutionState resolved) =>

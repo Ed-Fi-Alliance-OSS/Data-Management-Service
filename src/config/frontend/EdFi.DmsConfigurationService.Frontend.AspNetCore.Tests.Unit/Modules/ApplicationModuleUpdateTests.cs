@@ -118,6 +118,7 @@ public partial class ApplicationModuleTests
 
         protected List<ProviderUpdate> ProviderUpdates { get; } = [];
         protected List<int> Clears { get; } = [];
+        protected List<string> ClearedClaimSetNames { get; } = [];
         protected List<string> CallOrder { get; } = [];
         protected Dictionary<Guid, Func<ClientUpdateResult>> ProviderOutcomes { get; } = [];
         protected Dictionary<int, Func<ApiClientSyncPendingResult>> ClearOutcomes { get; } = [];
@@ -241,12 +242,18 @@ public partial class ApplicationModuleTests
                     );
                 });
 
-            A.CallTo(() => _apiClientRepository.ClearApiClientIdentityProviderSyncPending(A<int>.Ignored))
+            A.CallTo(() =>
+                    _apiClientRepository.ClearApiClientIdentityProviderSyncPending(
+                        A<int>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
                 .ReturnsLazily(call =>
                 {
                     int apiClientId = call.GetArgument<int>(0);
                     CallOrder.Add($"clear:{apiClientId}");
                     Clears.Add(apiClientId);
+                    ClearedClaimSetNames.Add(call.GetArgument<string>(1)!);
                     if (ClearOutcomes.TryGetValue(apiClientId, out var outcome))
                     {
                         if (ClearsTakingEffectDespiteFailure.Contains(apiClientId))
@@ -543,6 +550,31 @@ public partial class ApplicationModuleTests
 
         [Test]
         public void It_reads_the_markers_back_after_the_last_client() => CallOrder[^1].Should().Be("read");
+    }
+
+    [TestFixture]
+    public class Given_an_application_update_racing_a_claim_set_rename : UpdateWorkflowTestBase
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            ClearOutcomes[Second.Id] = () => new ApiClientSyncPendingResult.FailureClaimSetChanged();
+            await ActAsync();
+        }
+
+        [Test]
+        public void It_clears_each_marker_only_for_the_claim_set_name_it_sent() =>
+            ClearedClaimSetNames.Should().Equal("OtherClaimSet", "OtherClaimSet", "OtherClaimSet");
+
+        [Test]
+        public async Task It_reports_the_client_whose_claim_set_was_renamed_as_pending() =>
+            await ShouldBePartialSyncAsync(5);
+
+        [Test]
+        public void It_warns_that_the_renamed_client_stays_pending() =>
+            Warnings
+                .Should()
+                .Contain(message => message.Contains("API client 5") && message.Contains("was renamed"));
     }
 
     [TestFixture]

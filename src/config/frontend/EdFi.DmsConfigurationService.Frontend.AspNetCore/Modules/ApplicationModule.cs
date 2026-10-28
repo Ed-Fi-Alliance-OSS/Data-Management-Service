@@ -983,7 +983,8 @@ public class ApplicationModule : IEndpointModule
 
     /// <summary>
     /// Updates each pending client in the identity provider, in id order, and clears its marker
-    /// only once the provider confirms the update. A client that fails stays pending and the rest
+    /// only once the provider confirms the update and only while no claim set rename has committed
+    /// since its claim set name was read. A client that fails stays pending and the rest
     /// are still attempted; the committed Application change is never reverted. Returns 204 when no
     /// client remains pending, and otherwise the partial-sync 502 naming the pending clients, read
     /// back from the database rather than assumed.
@@ -1004,7 +1005,7 @@ public class ApplicationModule : IEndpointModule
         {
             everyMarkerCleared &=
                 await TryUpdateProviderClientAsync(id, state, client, clientRepository, clientRole, logger)
-                && await TryClearMarkerAsync(id, client.Id, apiClientRepository, logger);
+                && await TryClearMarkerAsync(id, client.Id, state.ClaimSetName, apiClientRepository, logger);
         }
 
         if (everyMarkerCleared)
@@ -1155,12 +1156,15 @@ public class ApplicationModule : IEndpointModule
     }
 
     /// <summary>
-    /// Clears a synchronized client's marker. False when the clear is not confirmed, whether it
-    /// failed or its outcome is unknown; the caller then reads the markers back instead of assuming.
+    /// Clears a synchronized client's marker, unless a claim set rename has committed since
+    /// <paramref name="sentClaimSetName"/> was read and sent; that client keeps the marker the rename
+    /// set. False when the clear is not confirmed, whether it failed, was refused or its outcome is
+    /// unknown; the caller then reads the markers back instead of assuming.
     /// </summary>
     private static async Task<bool> TryClearMarkerAsync(
         int id,
         int apiClientId,
+        string sentClaimSetName,
         IApiClientRepository apiClientRepository,
         ILogger<ApplicationModule> logger
     )
@@ -1168,7 +1172,10 @@ public class ApplicationModule : IEndpointModule
         ApiClientSyncPendingResult result;
         try
         {
-            result = await apiClientRepository.ClearApiClientIdentityProviderSyncPending(apiClientId);
+            result = await apiClientRepository.ClearApiClientIdentityProviderSyncPending(
+                apiClientId,
+                sentClaimSetName
+            );
         }
         catch (Exception ex)
         {
@@ -1188,6 +1195,13 @@ public class ApplicationModule : IEndpointModule
         {
             case ApiClientSyncPendingResult.Success:
                 return true;
+            case ApiClientSyncPendingResult.FailureClaimSetChanged:
+                logger.LogWarning(
+                    "The claim set of API client {ApiClientId} of Application {Id} was renamed after the identity provider update; it stays pending",
+                    apiClientId,
+                    id
+                );
+                return false;
             case ApiClientSyncPendingResult.FailureUnknown failure:
                 logger.LogWarning(
                     "Clearing the pending marker of API client {ApiClientId} of Application {Id} failed: {Message}",

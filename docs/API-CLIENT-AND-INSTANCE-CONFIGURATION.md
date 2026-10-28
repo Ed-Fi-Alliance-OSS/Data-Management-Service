@@ -420,6 +420,11 @@ by one of the ways above, its tokens carry the old claim set name, which DMS no
 longer recognizes, so its requests are refused. After a rename, send each
 affected Application's `PUT /v3/applications/{id}` again, unchanged.
 
+An Application or client update that was already sending the old name when the
+rename committed does not complete the client: the client stays pending, and an
+Application update reports it in its `502` response. Sending that Application
+update again, unchanged, sends the new name.
+
 #### Upgrading from 8.0
 
 Before 8.1, an Application update refreshed only the Application's first client,

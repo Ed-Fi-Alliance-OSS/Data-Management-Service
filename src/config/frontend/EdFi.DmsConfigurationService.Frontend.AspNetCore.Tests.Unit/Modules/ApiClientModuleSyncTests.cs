@@ -69,7 +69,12 @@ public partial class ApiClientModuleTests
         protected Task ActUnchangedUpdateAsync() => ActUpdateAsync(name: "Test");
 
         protected void AssertNoMarkerWrite() =>
-            A.CallTo(() => _apiClientRepository.ClearApiClientIdentityProviderSyncPending(A<int>.Ignored))
+            A.CallTo(() =>
+                    _apiClientRepository.ClearApiClientIdentityProviderSyncPending(
+                        A<int>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
                 .MustNotHaveHappened();
     }
 
@@ -90,6 +95,10 @@ public partial class ApiClientModuleTests
         [Test]
         public void It_saves_once_with_the_synchronization_completed() =>
             SavedCommands.Should().ContainSingle().Which.CompletesIdentityProviderSync.Should().BeTrue();
+
+        [Test]
+        public void It_saves_the_claim_set_name_sent_to_the_provider() =>
+            SavedCommands.Should().ContainSingle().Which.SentClaimSetName.Should().Be("TestClaimSet");
     }
 
     [TestFixture]

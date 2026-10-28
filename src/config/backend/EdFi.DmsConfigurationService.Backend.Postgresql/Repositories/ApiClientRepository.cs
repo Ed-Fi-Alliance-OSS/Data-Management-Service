@@ -46,6 +46,18 @@ public class ApiClientRepository(
             """;
     }
 
+    /// <summary>
+    /// The client's target Application still has the claim set name the identity provider was sent.
+    /// The client row is already locked, so a claim set rename either committed before this read or
+    /// waits for the transaction and marks the client again after it.
+    /// </summary>
+    private const string SentClaimSetIsCurrentCondition = """
+        EXISTS (
+            SELECT 1 FROM "dmscs"."Application" sa
+            WHERE sa."Id" = @ApplicationId AND sa."ClaimSetName" = @SentClaimSetName
+        )
+        """;
+
     private string ApplicationInTenantExistsCondition =>
         $"""
             EXISTS (
@@ -598,7 +610,7 @@ public class ApiClientRepository(
                 SET "ApplicationId" = @ApplicationId, "Name" = @Name, "IsApproved" = @IsApproved,
                     "ClientUuid" = COALESCE(@ClientUuid, "ClientUuid"),
                     "InheritsApplicationEducationOrganizations" = COALESCE(@Inherits, "InheritsApplicationEducationOrganizations"),
-                    "IdentityProviderSyncPendingSince" = CASE WHEN @CompletesIdentityProviderSync THEN NULL ELSE "IdentityProviderSyncPendingSince" END,
+                    "IdentityProviderSyncPendingSince" = CASE WHEN @CompletesIdentityProviderSync AND {SentClaimSetIsCurrentCondition} THEN NULL ELSE "IdentityProviderSyncPendingSince" END,
                     "LastModifiedAt" = @LastModifiedAt, "ModifiedBy" = @ModifiedBy
                 WHERE "Id" = @Id AND {ApplicationInTenantExistsCondition};
                 """;
@@ -616,6 +628,7 @@ public class ApiClientRepository(
                         ? scope is ApiClientEducationOrganizationScope.Inherit
                         : (bool?)null,
                     command.CompletesIdentityProviderSync,
+                    command.SentClaimSetName,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
                     ModifiedBy = auditContext.GetCurrentUser(),
                     TenantId,
@@ -853,23 +866,64 @@ public class ApiClientRepository(
         }
     }
 
-    public async Task<ApiClientSyncPendingResult> ClearApiClientIdentityProviderSyncPending(int id)
+    public async Task<ApiClientSyncPendingResult> ClearApiClientIdentityProviderSyncPending(
+        int id,
+        string sentClaimSetName
+    )
     {
         try
         {
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
             await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
 
-            string sql = $"""
+            // The Application row is share-locked first, the order a claim set rename takes. A rename
+            // in progress is waited for and its claim set name read; one that starts later waits for
+            // this transaction and marks the client again after it. A plain read in the UPDATE would
+            // see the name from before a rename it waited on and clear that rename's marker.
+            string applicationSql = $"""
+                SELECT a."Id" AS ApplicationId, a."ClaimSetName"
+                FROM "dmscs"."ApiClient" ac
+                JOIN "dmscs"."Application" a ON a."Id" = ac."ApplicationId"
+                JOIN "dmscs"."Vendor" v ON a."VendorId" = v."Id"
+                WHERE ac."Id" = @Id AND {TenantContext.TenantWhereClause("v")}
+                FOR SHARE OF a;
+                """;
+            var application = await connection.QuerySingleOrDefaultAsync<(
+                int ApplicationId,
+                string ClaimSetName
+            )?>(applicationSql, new { Id = id, TenantId }, transaction);
+
+            if (application is null)
+            {
+                await transaction.RollbackAsync();
+                return new ApiClientSyncPendingResult.FailureNotFound();
+            }
+
+            if (application.Value.ClaimSetName != sentClaimSetName)
+            {
+                await transaction.RollbackAsync();
+                return new ApiClientSyncPendingResult.FailureClaimSetChanged();
+            }
+
+            int updatedRows = await connection.ExecuteAsync(
+                """
                 UPDATE "dmscs"."ApiClient"
                 SET "IdentityProviderSyncPendingSince" = NULL
-                WHERE "Id" = @Id AND {TenantScopedApplicationCondition()};
-                """;
-            int updatedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
+                WHERE "Id" = @Id AND "ApplicationId" = @ApplicationId;
+                """,
+                new { Id = id, application.Value.ApplicationId },
+                transaction
+            );
 
-            return updatedRows == 0
-                ? new ApiClientSyncPendingResult.FailureNotFound()
-                : new ApiClientSyncPendingResult.Success();
+            if (updatedRows == 0)
+            {
+                await transaction.RollbackAsync();
+                return new ApiClientSyncPendingResult.FailureNotFound();
+            }
+
+            await transaction.CommitAsync();
+            return new ApiClientSyncPendingResult.Success();
         }
         catch (Exception ex)
         {

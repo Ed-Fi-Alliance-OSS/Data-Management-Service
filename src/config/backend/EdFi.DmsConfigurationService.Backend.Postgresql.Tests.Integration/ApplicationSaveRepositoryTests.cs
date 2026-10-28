@@ -748,6 +748,7 @@ public abstract class ApplicationSaveRepositoryTests : ApiClientEducationOrganiz
                     Name = "Completed Client",
                     IsApproved = true,
                     CompletesIdentityProviderSync = true,
+                    SentClaimSetName = ScopedClaimSetName,
                 }
             );
             _keptState = (await ApiClientRepository.GetApiClientResolutionState(NarrowedClientId))
@@ -814,6 +815,7 @@ public abstract class ApplicationSaveRepositoryTests : ApiClientEducationOrganiz
                     ClientUuid = Guid.NewGuid(),
                     EducationOrganizationScope = new ApiClientEducationOrganizationScope.Narrow([1002, 1003]),
                     CompletesIdentityProviderSync = true,
+                    SentClaimSetName = ScopedClaimSetName,
                 }
             );
         }
@@ -851,6 +853,145 @@ public abstract class ApplicationSaveRepositoryTests : ApiClientEducationOrganiz
                         [SecondNarrowedClientId] = PendingSince,
                     }
                 );
+    }
+
+    /// <summary>
+    /// Pending clients synchronized with the claim set name read before a claim set rename committed:
+    /// the provider holds the old name, so neither the Application update's clear nor a completing
+    /// client update may clear the marker. Sent the current name, the clear succeeds.
+    /// </summary>
+    [TestFixture]
+    public class Given_pending_clients_synchronized_before_a_claim_set_rename : ApplicationSaveRepositoryTests
+    {
+        private const string RenamedClaimSetName = "Renamed Claim set";
+
+        private ApiClientSyncPendingResult _staleClear = null!;
+        private ApiClientUpdateResult _staleCompletion = null!;
+        private Dictionary<int, DateTime> _pendingAfterStaleWrites = [];
+        private ApiClientSyncPendingResult _currentClear = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+            await MarkPendingAsync(NarrowedClientId);
+            await MarkPendingAsync(SecondNarrowedClientId);
+
+            // The claim set is renamed after the provider was sent the old name
+            await Connection!.ExecuteAsync(
+                """
+                UPDATE "dmscs"."Application" SET "ClaimSetName" = @ClaimSetName WHERE "Id" = @ApplicationId;
+                """,
+                new { ClaimSetName = RenamedClaimSetName, ApplicationId = ScopedApplicationId }
+            );
+
+            _staleClear = await ApiClientRepository.ClearApiClientIdentityProviderSyncPending(
+                NarrowedClientId,
+                ScopedClaimSetName
+            );
+            _staleCompletion = await ApiClientRepository.UpdateApiClient(
+                new ApiClientUpdateCommand
+                {
+                    Id = SecondNarrowedClientId,
+                    ApplicationId = ScopedApplicationId,
+                    Name = "Completed Client",
+                    IsApproved = true,
+                    CompletesIdentityProviderSync = true,
+                    SentClaimSetName = ScopedClaimSetName,
+                }
+            );
+            _pendingAfterStaleWrites = await PendingClientsAsync();
+
+            _currentClear = await ApiClientRepository.ClearApiClientIdentityProviderSyncPending(
+                NarrowedClientId,
+                RenamedClaimSetName
+            );
+        }
+
+        [Test]
+        public void It_refuses_the_clear_of_the_old_name() =>
+            _staleClear.Should().BeOfType<ApiClientSyncPendingResult.FailureClaimSetChanged>();
+
+        [Test]
+        public void It_saves_the_completing_client_update() =>
+            _staleCompletion.Should().BeOfType<ApiClientUpdateResult.Success>();
+
+        [Test]
+        public void It_keeps_both_clients_pending_since_their_original_time() =>
+            _pendingAfterStaleWrites
+                .Should()
+                .BeEquivalentTo(
+                    new Dictionary<int, DateTime>
+                    {
+                        [NarrowedClientId] = PendingSince,
+                        [SecondNarrowedClientId] = PendingSince,
+                    }
+                );
+
+        [Test]
+        public async Task It_clears_the_client_sent_the_current_name()
+        {
+            _currentClear.Should().BeOfType<ApiClientSyncPendingResult.Success>();
+            (await PendingClientsAsync()).Keys.Should().Equal(SecondNarrowedClientId);
+        }
+    }
+
+    /// <summary>
+    /// A clear of a client synchronized with the old claim set name, started while a claim set rename
+    /// that has already marked the client is uncommitted: the clear waits for the rename and then
+    /// reads the new name, so the rename's marker survives.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_clear_started_while_a_claim_set_rename_is_uncommitted
+        : ApplicationSaveRepositoryTests
+    {
+        private static readonly DateTime _renamedAt = new(2030, 6, 7, 8, 9, 10, DateTimeKind.Utc);
+
+        private ApiClientSyncPendingResult _clearResult = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+
+            await using NpgsqlConnection renamer = await DataSource!.OpenConnectionAsync();
+            await using NpgsqlTransaction transaction = await renamer.BeginTransactionAsync();
+
+            // The statements a claim set rename runs: the Application first, then its clients
+            await renamer.ExecuteAsync(
+                """
+                UPDATE "dmscs"."Application" SET "ClaimSetName" = @ClaimSetName WHERE "Id" = @ApplicationId;
+                """,
+                new { ClaimSetName = "Renamed Claim set", ApplicationId = ScopedApplicationId },
+                transaction
+            );
+            await renamer.ExecuteAsync(
+                """
+                UPDATE "dmscs"."ApiClient"
+                SET "IdentityProviderSyncPendingSince" = COALESCE("IdentityProviderSyncPendingSince", @RenamedAt)
+                WHERE "ApplicationId" = @ApplicationId;
+                """,
+                new { RenamedAt = _renamedAt, ApplicationId = ScopedApplicationId },
+                transaction
+            );
+
+            Task<ApiClientSyncPendingResult> clear =
+                ApiClientRepository.ClearApiClientIdentityProviderSyncPending(
+                    NarrowedClientId,
+                    ScopedClaimSetName
+                );
+            await WaitUntilBlockedByAsync(renamer.ProcessID, clear);
+            await transaction.CommitAsync();
+            _clearResult = await clear;
+        }
+
+        [Test]
+        public void It_refuses_the_clear() =>
+            _clearResult.Should().BeOfType<ApiClientSyncPendingResult.FailureClaimSetChanged>();
+
+        [Test]
+        public async Task It_keeps_the_rename_marker() =>
+            (await PendingClientsAsync())[NarrowedClientId].Should().Be(_renamedAt);
     }
 
     [TestFixture]

@@ -19,7 +19,9 @@ public interface IApiClientRepository
     /// <summary>
     /// Saves an API client update. When <see cref="ApiClientUpdateCommand.CompletesIdentityProviderSync"/>
     /// is set, the same transaction also clears the client's pending identity provider
-    /// synchronization; otherwise any pending marker is kept with its original time.
+    /// synchronization, while the client's Application still has
+    /// <see cref="ApiClientUpdateCommand.SentClaimSetName"/>; otherwise any pending marker is kept
+    /// with its original time.
     /// </summary>
     Task<ApiClientUpdateResult> UpdateApiClient(ApiClientUpdateCommand command);
     Task<ApiClientDeleteResult> DeleteApiClient(int id);
@@ -62,9 +64,14 @@ public interface IApiClientRepository
 
     /// <summary>
     /// Clears the time since which an ApiClient awaits an identity-provider update for an
-    /// Application change, once the provider has confirmed that update.
+    /// Application change, once the provider has confirmed that update. The marker is cleared only
+    /// while the client's Application still has <paramref name="sentClaimSetName"/>, the claim set
+    /// name the provider was sent; a claim set rename committed since then keeps it pending.
     /// </summary>
-    Task<ApiClientSyncPendingResult> ClearApiClientIdentityProviderSyncPending(int id);
+    Task<ApiClientSyncPendingResult> ClearApiClientIdentityProviderSyncPending(
+        int id,
+        string sentClaimSetName
+    );
 }
 
 /// <summary>
@@ -105,6 +112,12 @@ public record ApiClientSyncPendingResult
     /// The ApiClient does not exist in the current tenant; nothing was written.
     /// </summary>
     public record FailureNotFound() : ApiClientSyncPendingResult();
+
+    /// <summary>
+    /// The client's Application no longer has the claim set name the provider was sent, so the
+    /// marker is kept; nothing was written.
+    /// </summary>
+    public record FailureClaimSetChanged() : ApiClientSyncPendingResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught

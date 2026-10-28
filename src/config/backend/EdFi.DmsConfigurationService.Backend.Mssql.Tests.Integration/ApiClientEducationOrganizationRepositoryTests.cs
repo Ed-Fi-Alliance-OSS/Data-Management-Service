@@ -971,7 +971,8 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
             _afterUnrelatedChanges = await StateAsync(SecondNarrowedClientId);
 
             _clearResult = await ApiClientRepository.ClearApiClientIdentityProviderSyncPending(
-                SecondNarrowedClientId
+                SecondNarrowedClientId,
+                "Test Claim set"
             );
             _afterClear = await StateAsync(SecondNarrowedClientId);
         }
@@ -1207,7 +1208,12 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
 
         [Test]
         public async Task It_reports_a_pending_time_clear_not_found() =>
-            (await ApiClientRepository.ClearApiClientIdentityProviderSyncPending(MissingClientId))
+            (
+                await ApiClientRepository.ClearApiClientIdentityProviderSyncPending(
+                    MissingClientId,
+                    "Test Claim set"
+                )
+            )
                 .Should()
                 .BeOfType<ApiClientSyncPendingResult.FailureNotFound>();
     }
@@ -1286,7 +1292,8 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
                 }
             );
             _pendingResult = await _otherTenantRepository.ClearApiClientIdentityProviderSyncPending(
-                SecondNarrowedClientId
+                SecondNarrowedClientId,
+                "Test Claim set"
             );
             _moveResult = await _otherTenantRepository.UpdateApiClient(
                 new ApiClientUpdateCommand

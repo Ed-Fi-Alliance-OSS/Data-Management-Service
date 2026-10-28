@@ -124,7 +124,8 @@ Both engines get the same objects:
   every current education organization must not pick up new ones.
 - A nullable sync-pending timestamp on `dmscs.ApiClient`,
   `IdentityProviderSyncPendingSince`, set when an Application change commits (and by
-  the upgrade, below) and cleared when that client's provider update succeeds.
+  the upgrade, below) and cleared when that client's provider update succeeds, unless
+  a claim set rename committed after the claim set name it was sent was read.
 
 A client's rows are tied to its current Application by the second foreign key
 Confluence proposes (O-1): `(ApiClientId, ApplicationId)` to a new unique
@@ -178,7 +179,8 @@ update and compensation:
    provider call. A validation failure changes nothing.
 2. In one transaction, save the Application and mark every affected client
    sync-pending.
-3. Update each affected client in the identity provider; clear its marker on success.
+3. Update each affected client in the identity provider; clear its marker on success,
+   only while the Application still has the claim set name the provider was sent.
 4. All succeed: 204. Some fail: 502 `urn:ed-fi:management-api:bad-gateway:partial-sync`,
    with `detail` stating that the Application change is saved and an `apiClientIds`
    extension member listing pending clients. Pending clients are logged as warnings.
