@@ -553,9 +553,11 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 {
                     // CMS source/client throttling is expected. Rebuild the generic answer without
                     // relaying upstream content or warning on every rejected authentication attempt.
-                    return GenerateProblemDetailResponse(
+                    return OAuthErrorResponse.Create(
                         HttpStatusCode.TooManyRequests,
-                        FailureResponse.ForTooManyRequests(traceId)
+                        "temporarily_unavailable",
+                        OAuthErrorResponse.RateLimitDescription,
+                        traceId
                     );
                 }
 
