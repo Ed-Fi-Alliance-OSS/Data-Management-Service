@@ -1877,8 +1877,8 @@ Describe 'CDC runbook failure diagnostics' {
         (Get-ChildItem $script:published -File | Get-Content -Raw) -join '' | Should -Not -Match 'opaque|private-document|unlabelled|/home/|ScriptStackTrace'
     }
     It 'exports sanitized <Operation> evidence before the live runtime assertion fails' -ForEach @(
-        @{ Operation = 'status'; State = 'unknown'; Category = 'statusObservationUnavailable' },
-        @{ Operation = 'watch'; State = 'notSatisfied'; Category = 'snapshotIncomplete' }
+        @{ Operation = 'status'; State = 'Unknown'; Category = 'StatusObservationUnavailable'; DiagnosticCode = 'statusObservationUnavailable' },
+        @{ Operation = 'watch'; State = 'NotSatisfied'; Category = 'SnapshotIncomplete'; DiagnosticCode = 'snapshotIncomplete' }
     ) {
         $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
         $ast = [Management.Automation.Language.Parser]::ParseFile(
@@ -1891,10 +1891,10 @@ Describe 'CDC runbook failure diagnostics' {
         }, $true).Extent.Text
         $config = New-PesterConfiguration
         $config.Run.Container = New-PesterContainer -Data @{
-            Repo = $repo; Loop = $loop; Operation = $Operation; State = $State; Category = $Category
+            Repo = $repo; Loop = $loop; Operation = $Operation; State = $State; Category = $Category; DiagnosticCode = $DiagnosticCode
         } -ScriptBlock {
-            param($Repo, $Loop, $Operation, $State, $Category)
-            Describe 'live status assertion' -ForEach @(@{ Repo = $Repo; Loop = $Loop; Operation = $Operation; State = $State; Category = $Category }) {
+            param($Repo, $Loop, $Operation, $State, $Category, $DiagnosticCode)
+            Describe 'live status assertion' -ForEach @(@{ Repo = $Repo; Loop = $Loop; Operation = $Operation; State = $State; Category = $Category; DiagnosticCode = $DiagnosticCode }) {
                 BeforeAll {
                     Set-StrictMode -Version Latest
                     . (Join-Path $Repo 'eng/docker-compose/tests/cdc-runbook-snippets.ps1')
@@ -1907,7 +1907,7 @@ Describe 'CDC runbook failure diagnostics' {
                         Set-CdcRunbookOperation -Operation $Id
                         Complete-CdcRunbookOperation ([pscustomobject]@{ ExitCode = 1; FailureKind = 'None' })
                         $command = if ($Id -like '*watch') { 'watch' } else { 'status' }
-                        $runtimeState = if ($command -eq $Operation) { $State } else { 'satisfied' }
+                        $runtimeState = if ($command -eq $Operation) { $State } else { 'Satisfied' }
                         $result = @{
                             operation = $command; exitCode = 1
                             deploymentProfile = @{ aclIsolationProven = $false }
@@ -1917,16 +1917,16 @@ Describe 'CDC runbook failure diagnostics' {
                                 @{ component = 'Connect'; failure = "Timeout`nprivate-secret" }
                             )
                             data = @{
-                                aggregate = @{ readiness = 'notReady' }
+                                aggregate = @{ readiness = 'NotReady' }
                                 targets = @(@{
                                     status = @{
                                         targetIdentity = @{ dataStoreId = 'private-identity' }
-                                        providerSetup = @{ state = 'satisfied' }
+                                        providerSetup = @{ state = 'Satisfied' }
                                         connectorRuntime = @{ state = $runtimeState; category = $Category; message = 'private-message' }
-                                        projection = @{ state = 'unknown' }
+                                        projection = @{ state = 'Unknown' }
                                         diagnostics = @(
-                                            @{ code = $Category; message = 'private-message'; observed = 'private-value' },
-                                            @{ code = $Category },
+                                            @{ code = $DiagnosticCode; message = 'private-message'; observed = 'private-value' },
+                                            @{ code = $DiagnosticCode },
                                             @{ code = 'private-code' },
                                             @{ code = @('snapshotIncomplete', 'private-code') }
                                         )
@@ -1960,10 +1960,10 @@ Describe 'CDC runbook failure diagnostics' {
         $case.Operations[-1].Operation | Should -Be "cdc-pg-$Operation"
         $record = $case.Operations[-1].StatusObservation
         $record.Operation | Should -Be $Operation
-        $record.ConnectorRuntimeState | Should -Be $State
-        $record.ConnectorRuntimeCategory | Should -Be $Category
-        $record.DiagnosticCodes | Should -Be @($Category)
-        $record.ControllerFailureCodes | Should -Be @('Connect/Unavailable')
+        $record.ConnectorRuntimeState | Should -BeExactly $State
+        $record.ConnectorRuntimeCategory | Should -BeExactly $Category
+        $record.DiagnosticCodes | Should -BeExactly @($DiagnosticCode)
+        $record.ControllerFailureCodes | Should -BeExactly @('Connect/Unavailable')
         $record.PSObject.Properties.Name | Should -Be @(
             'Operation', 'ConnectorRuntimeState', 'ConnectorRuntimeCategory', 'DiagnosticCodes', 'ControllerFailureCodes'
         )

@@ -32,24 +32,30 @@ function ConvertTo-CdcRunbookWorkerDiagnostic {
 function ConvertTo-CdcRunbookStatusDiagnostic {
     param([Collections.IDictionary] $Value)
     $safe = [ordered]@{}
+    # CLI enum values are PascalCase; diagnostic codes are lower-camel strings.
     $blockingCategories = @(
-        'none', 'bindingMissing', 'bindingMismatch', 'sourceMismatch', 'sourceHistoryLost',
-        'projectionNonOperational', 'providerSetupInvalid', 'kafkaPolicyInvalid',
-        'connectOffsetStoreInvalid', 'connectorConfigInvalid', 'connectorNotRunning',
-        'snapshotIncomplete', 'projectionBacklog', 'providerHistoryUnknown',
-        'providerBarrierNotReached', 'lagExceeded', 'statusObservationUnavailable'
+        'None', 'BindingMissing', 'BindingMismatch', 'SourceMismatch', 'SourceHistoryLost',
+        'ProjectionNonOperational', 'ProviderSetupInvalid', 'KafkaPolicyInvalid',
+        'ConnectOffsetStoreInvalid', 'ConnectorConfigInvalid', 'ConnectorNotRunning',
+        'SnapshotIncomplete', 'ProjectionBacklog', 'ProviderHistoryUnknown',
+        'ProviderBarrierNotReached', 'LagExceeded', 'StatusObservationUnavailable'
     )
     if ($Value['Operation'] -is [string] -and $Value['Operation'] -cin @('status', 'watch')) {
         $safe.Operation = $Value.Operation
     }
     if ($Value['ConnectorRuntimeState'] -is [string] -and
-        $Value['ConnectorRuntimeState'] -cin @('satisfied', 'notSatisfied', 'unknown', 'notApplicable')) {
+        $Value['ConnectorRuntimeState'] -cin @('Satisfied', 'NotSatisfied', 'Unknown', 'NotApplicable')) {
         $safe.ConnectorRuntimeState = $Value.ConnectorRuntimeState
     }
     if ($Value['ConnectorRuntimeCategory'] -is [string] -and $Value['ConnectorRuntimeCategory'] -cin $blockingCategories) {
         $safe.ConnectorRuntimeCategory = $Value.ConnectorRuntimeCategory
     }
-    $diagnosticCodes = $blockingCategories + @(
+    $diagnosticCodes = @(
+        'none', 'bindingMissing', 'bindingMismatch', 'sourceMismatch', 'sourceHistoryLost',
+        'projectionNonOperational', 'providerSetupInvalid', 'kafkaPolicyInvalid',
+        'connectOffsetStoreInvalid', 'connectorConfigInvalid', 'connectorNotRunning',
+        'snapshotIncomplete', 'projectionBacklog', 'providerHistoryUnknown',
+        'providerBarrierNotReached', 'lagExceeded', 'statusObservationUnavailable',
         'missingRequiredField', 'invalidEnumValue', 'malformedPayload', 'invalidContractVersion',
         'futureUtcTimestamp', 'localStateUnavailable', 'malformedProof', 'invalidOperationId',
         'invalidTimestamp', 'bindingIdentityMismatch', 'verificationIncomplete', 'inventoryIncomplete',
