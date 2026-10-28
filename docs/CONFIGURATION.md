@@ -818,8 +818,8 @@ budgets apply, and a request must fit both:
 
 Token, revocation and authenticated introspection credentials accept a `client_id` of at most
 1024 UTF-16 code units, including padding, with either Basic or form authentication. Longer IDs
-receive an Ed-Fi validation `400` on `/connect/token`. Revocation and authenticated introspection
-return OAuth `invalid_client`: `401` with a Basic challenge for Basic authentication, `400` otherwise.
+receive OAuth `invalid_client` on all three routes: `401` with a Basic challenge for Basic
+authentication, `400` otherwise.
 These checks precede client-budget processing or authentication. This bounds client-key processing and
 prevents oversized aliases from obtaining a separate budget. The validation limit also applies when
 rate limiting is disabled.
@@ -902,10 +902,18 @@ container address alone does not attribute those requests. Do not trust the enti
 
 ### Rejection response
 
-A refused request receives `429 Too Many Requests` with a `Retry-After` header: the limiter's
-recommended delay rounded up to whole seconds, omitted if the limiter supplies none. All four
-`/connect/*` routes, including `/connect/revoke`, answer with an Ed-Fi problem-details body served as
-`application/problem+json`. Its `correlationId` is the request's trace identifier:
+A refused request receives `429 Too Many Requests` with a `Retry-After` header: the limiter's recommended delay rounded up to whole seconds, omitted if the limiter supplies none.
+The body follows the route's own error contract.
+`/connect/token`, `/connect/revoke` and `/connect/introspect` answer in the OAuth error format of RFC 6749 §5.2, served as `application/json`:
+
+```json
+{
+  "error": "temporarily_unavailable",
+  "error_description": "The number of allowed requests has been exceeded. Retry the request later."
+}
+```
+
+`/connect/register` answers with an Ed-Fi problem-details body served as `application/problem+json`, whose `correlationId` is the request's trace identifier:
 
 ```json
 {
@@ -919,11 +927,11 @@ recommended delay rounded up to whole seconds, omitted if the limiter supplies n
 }
 ```
 
-`/connect/revoke` keeps its OAuth error format for other statuses (see
-[CS-AUTH](../reference/design/configuration-service/CS-AUTH.md#token-revocation)).
+[CS-AUTH](../reference/design/configuration-service/CS-AUTH.md#token-endpoints) describes every route's other errors.
 
-This `429` is distinct from the active-token limit's `429`
-(`urn:ed-fi:management-api:security:authentication:too-many-tokens`), which is unchanged.
+The rate-limit `429` of `/connect/token` is distinct from its active-token limit `429`.
+Both carry `temporarily_unavailable`, but the active-token limit's `error_description` is `Too many access tokens have been requested (limit is N). Access tokens should be reused until they expire.`
+The DMS `/oauth/token` proxy tells the two apart by that description.
 
 ## Plugins
 

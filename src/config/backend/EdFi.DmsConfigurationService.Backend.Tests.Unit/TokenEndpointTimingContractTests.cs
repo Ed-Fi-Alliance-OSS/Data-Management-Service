@@ -54,7 +54,9 @@ public class Given_the_token_endpoint_timing_contract
 
     [Test]
     public void It_refuses_a_body_without_an_error() =>
-        Expected(400, new JsonObject { ["error_description"] = Description }.ToJsonString()).Should().BeFalse();
+        Expected(400, new JsonObject { ["error_description"] = Description }.ToJsonString())
+            .Should()
+            .BeFalse();
 
     [Test]
     public void It_refuses_an_error_that_is_not_a_string() =>

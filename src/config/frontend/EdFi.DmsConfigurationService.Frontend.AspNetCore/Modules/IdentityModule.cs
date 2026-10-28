@@ -260,9 +260,10 @@ public class IdentityModule : IEndpointModule
     /// request shape before credentials (DMS-1327 D-03): a body that is not a form, a repeated
     /// parameter or <c>Authorization</c> header, or a missing <c>grant_type</c> is
     /// <c>invalid_request</c>, an unsupported grant type is <c>unsupported_grant_type</c>, and a
-    /// missing or blank client id or secret, after the lenient Basic parsing and the form fallback, is
-    /// <c>invalid_client</c>, with the Basic challenge only when the caller attempted Basic. Every
-    /// failure is answered in the OAuth format.
+    /// missing or blank client id or secret, after the lenient Basic parsing and the form fallback, or
+    /// a client id over the length limit, is <c>invalid_client</c>, with the Basic challenge only when
+    /// the caller attempted Basic. Only then does the client rate limit apply, before the manager
+    /// verifies the secret. Every failure is answered in the OAuth format.
     /// </summary>
     private static async Task<IResult> GetClientAccessToken(
         [FromServices] ITokenManager tokenManager,

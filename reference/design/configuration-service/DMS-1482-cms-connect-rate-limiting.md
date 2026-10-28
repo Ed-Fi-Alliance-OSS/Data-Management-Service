@@ -14,6 +14,11 @@ For CAR-002, the user chose to align every new rate-limit rejection with REQ-2's
 including revoke, while preserving the existing OAuth errors for other statuses. D1 records this
 decision; the acceptance criteria remain unchanged.
 
+> **Superseded by [DMS-1491](https://edfi.atlassian.net/browse/DMS-1491):** the rate-limit `429` follows each route's own error contract.
+> `/connect/token`, `/connect/revoke` and `/connect/introspect` answer the OAuth error `temporarily_unavailable` with the same text as `error_description`, and only `/connect/register` keeps the Ed-Fi problem details.
+> An oversized client id at `/connect/token` is `invalid_client`, as at revoke and introspect, instead of an Ed-Fi validation `400`.
+> See `CS-AUTH.md` (Token Endpoints).
+
 ## 1. Requirements
 
 Original acceptance criteria (Jira, verified 2026-10-22):
@@ -124,6 +129,8 @@ Route-context suffixes, path base and path case are handled by endpoint routing,
 
 ### 4.4 Rejection contracts
 
+> **Superseded by [DMS-1491](https://edfi.atlassian.net/browse/DMS-1491):** `ConnectRateLimitRejection.Create` now selects the format by the endpoint's `OAuthErrorContractMetadata`: the OAuth error `temporarily_unavailable` on token, revoke and introspect, and the Ed-Fi body below only on register.
+
 - **Format:** both gates return Ed-Fi problem details on every route, independently of the endpoint's `OAuthErrorContractMetadata`. That metadata continues to select the contract for other errors.
 - **Ed-Fi** (token, register, introspect, revoke): `application/problem+json`, status 429.
   ```json
@@ -177,6 +184,7 @@ Regression surfaces to leave unchanged: `IdentityModuleTests` (`TokenEndpointBas
 
 - **DMS-1479 (integrated from `main` at `0113a0a40`)** adds caller authentication to introspect and shares its credential parser with revoke. The integrated handler retains the source marker, applies the client gate after parsing and before the introspection manager call, and preserves the client-ID bound on both authenticated routes. Coverage includes introspection rejection, skipped manager calls and a shared token/revoke/introspect budget. The submitted token's claims never supply a client partition key.
 - **DMS-1491** owns any later change to the throttle response format or codes. The current Ed-Fi 429 on all four routes follows REQ-2; a future OAuth migration must update both rejection paths and their tests. No blocking dependency.
+  > **Superseded by [DMS-1491](https://edfi.atlassian.net/browse/DMS-1491):** that migration is done; see the note at the top of this document.
 - **DMS-1490 (Open)** is independent. The client budget is spent regardless of whether the client exists, so this work adds no new oracle.
 - **Follow-up candidate:** a per-source failed-attempt backoff ticket (D3), if the product owner wants it.
 - **Remaining assumptions (not blockers):** the D4 numbers come from repository evidence (token-count cap, DMS-proxy topology), not measured production load. Operators can tune them, and the documentation says so. Proxy trust in each deployment remains an operator responsibility under the existing `ReverseProxy` settings.

@@ -159,9 +159,10 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     /// The <c>type</c> a problem-details token-limit rejection from the Configuration Service
     /// carries. The Configuration Service has answered in three shapes: the Management API's
     /// <c>urn:ed-fi:management-api</c> problem-details type, an earlier <c>urn:ed-fi:api</c>
-    /// problem-details type, and an OAuth envelope (see <see cref="TokenLimitOAuthError"/>). Each
-    /// type is matched exactly, so a DMS deployed beside any version still recognizes the
-    /// rejection. DMS returns an OAuth error rather than forwarding any of them.
+    /// problem-details type, and an OAuth envelope (see
+    /// <see cref="TemporarilyUnavailableOAuthError"/>). Each type is matched exactly, so a DMS
+    /// deployed beside any version still recognizes the rejection. DMS returns an OAuth error
+    /// rather than forwarding any of them.
     /// </summary>
     private const string LegacyTooManyTokensType = "urn:ed-fi:api:security:authentication:too-many-tokens";
 
@@ -169,10 +170,19 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         "urn:ed-fi:management-api:security:authentication:too-many-tokens";
 
     /// <summary>
-    /// The <c>error</c> value of the OAuth-envelope token-limit answer. It is only believed together
-    /// with a canonical <c>error_description</c>.
+    /// The <c>error</c> value of both OAuth-envelope 429 answers, the token limit and the rate limit.
+    /// Each is only believed together with its canonical <c>error_description</c>.
     /// </summary>
-    private const string TokenLimitOAuthError = "temporarily_unavailable";
+    private const string TemporarilyUnavailableOAuthError = "temporarily_unavailable";
+
+    /// <summary>
+    /// The <c>error_description</c> of the Configuration Service's OAuth-envelope rate-limit answer,
+    /// the same text DMS uses for its own rate-limit rejection. The CMS DataModel's
+    /// <c>FailureResponse.TooManyRequestsMessage</c> is its source, and <c>OAuthManagerTests</c> builds
+    /// the envelope from that constant.
+    /// </summary>
+    private const string RateLimitOAuthErrorDescription =
+        "The number of allowed requests has been exceeded. Retry the request later.";
 
     /// <summary>
     /// The canonical token-limit message, split either side of the limit it carries. Each half is
@@ -554,12 +564,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             {
                 // A non-object response has no fields to summarize.
                 JsonObject rateLimit = JsonObjectOrNull(body) ?? new();
-                if (
-                    ScalarValueOrNull(rateLimit["type"]) == "urn:ed-fi:management-api:too-many-requests"
-                    && rateLimit["status"] is JsonValue status
-                    && status.TryGetValue<int>(out int statusCode)
-                    && statusCode == 429
-                )
+                if (IsConfigurationServiceRateLimit(rateLimit))
                 {
                     // CMS source/client throttling is expected. Rebuild the generic answer without
                     // relaying upstream content or warning on every rejected authentication attempt.
@@ -616,6 +621,20 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             );
         }
 
+        // The Configuration Service's /connect/* rate-limit answer, matched exactly: the OAuth error
+        // its /connect/token sends, or the problem details an earlier Configuration Service sent.
+        static bool IsConfigurationServiceRateLimit(JsonObject body) =>
+            (
+                ScalarValueOrNull(body["error"]) == TemporarilyUnavailableOAuthError
+                && ScalarValueOrNull(body["error_description"]) == RateLimitOAuthErrorDescription
+            )
+            || (
+                ScalarValueOrNull(body["type"]) == "urn:ed-fi:management-api:too-many-requests"
+                && body["status"] is JsonValue status
+                && status.TryGetValue<int>(out int statusCode)
+                && statusCode == 429
+            );
+
         static async Task<string> ReadStatusClassifiedBody(HttpContent content)
         {
             // Complete I/O outside the decoding guard: an interrupted body remains a gateway
@@ -665,7 +684,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         {
             if (
                 ScalarValueOrNull(obj["error"]) is not string error
-                || !string.Equals(error, TokenLimitOAuthError, StringComparison.Ordinal)
+                || !string.Equals(error, TemporarilyUnavailableOAuthError, StringComparison.Ordinal)
             )
             {
                 return null;

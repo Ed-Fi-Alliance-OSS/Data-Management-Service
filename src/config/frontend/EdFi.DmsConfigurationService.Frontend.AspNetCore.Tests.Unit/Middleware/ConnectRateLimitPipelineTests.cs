@@ -175,8 +175,16 @@ public class ConnectRateLimitPipelineTests
         public void It_answers_429() => ((int)_response.StatusCode).Should().Be(429);
 
         [Test]
-        public void It_answers_in_the_ed_fi_contract()
+        public void It_answers_in_the_routes_error_contract()
         {
+            if (path != "/connect/register")
+            {
+                _response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+                _body.Count.Should().Be(2);
+                _body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+                _body["error_description"]!.GetValue<string>().Should().Be(Detail);
+                return;
+            }
             _response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
             _body.Count.Should().Be(7);
             _body["detail"]!.GetValue<string>().Should().Be(Detail);

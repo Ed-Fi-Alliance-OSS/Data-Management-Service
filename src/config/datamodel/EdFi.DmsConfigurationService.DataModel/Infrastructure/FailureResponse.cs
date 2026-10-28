@@ -13,9 +13,6 @@ namespace EdFi.DmsConfigurationService.DataModel.Infrastructure;
 
 public static class FailureResponse
 {
-    private const string TooManyRequestsDetail =
-        "The number of allowed requests has been exceeded. Retry the request later.";
-
     private static readonly JsonSerializerOptions _serializerOptions = new()
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
@@ -83,6 +80,23 @@ public static class FailureResponse
     public const string TooManyTokensError = "temporarily_unavailable";
 
     /// <summary>
+    /// The <c>error</c> of the <c>/connect/*</c> rate-limit 429 on <c>/connect/token</c>,
+    /// <c>/connect/revoke</c> and <c>/connect/introspect</c>. RFC 6749 §5.2 defines no rate-limit code,
+    /// so it is the <c>temporarily_unavailable</c> of §4.1.2.1, as for the token limit.
+    /// </summary>
+    public const string TooManyRequestsError = "temporarily_unavailable";
+
+    /// <summary>
+    /// The text of the <c>/connect/*</c> rate-limit 429: the <c>detail</c> of the problem details on
+    /// <c>/connect/register</c>, and the <c>error_description</c> of the OAuth error on the other three
+    /// routes. It is the text DMS uses for its own rate-limit rejection. The DMS <c>/oauth/token</c>
+    /// proxy (<c>OAuthManager</c> in <c>src/dms</c>) recognizes the rate-limit answer by it, and DMS's
+    /// <c>OAuthManagerTests</c> builds its envelope from it.
+    /// </summary>
+    public const string TooManyRequestsMessage =
+        "The number of allowed requests has been exceeded. Retry the request later.";
+
+    /// <summary>
     /// The canonical token-limit sentence, formatted with the culture-invariant limit. This is the one
     /// copy of the cross-service text: the CMS <c>/connect/token</c> endpoint returns it as the
     /// <c>error_description</c> of its 429, and the DMS <c>/oauth/token</c> proxy's 429 parser
@@ -98,14 +112,15 @@ public static class FailureResponse
         );
 
     /// <summary>
-    /// 429 response for a request refused by the <c>/connect/*</c> rate limiter (DMS-1482). The type
-    /// mirrors DMS's established <c>urn:ed-fi:api:too-many-requests</c>, and the detail is the text DMS
-    /// uses for its own rate-limit rejection. Distinct from <see cref="TooManyTokensMessage"/>, which is the
+    /// 429 response for a <c>/connect/register</c> request refused by the <c>/connect/*</c> rate limiter
+    /// (DMS-1482); the other three routes answer the OAuth form of the same rejection. The type mirrors
+    /// DMS's established <c>urn:ed-fi:api:too-many-requests</c>, and the detail is
+    /// <see cref="TooManyRequestsMessage"/>. Distinct from <see cref="TooManyTokensMessage"/>, which is the
     /// active-token cap and whose text DMS parses.
     /// </summary>
     public static JsonNode ForTooManyRequests(string correlationId) =>
         CreateBaseJsonObject(
-            detail: TooManyRequestsDetail,
+            detail: TooManyRequestsMessage,
             type: _tooManyRequestsType,
             title: "Too Many Requests",
             status: 429,

@@ -48,9 +48,10 @@ All four `/connect/*` endpoints are rate limited per source address. `/connect/t
 and authenticated `/connect/introspect` are also limited per source address and `client_id` pair,
 under either identity provider, immediately before the client secret is verified (DMS-1482). Different sources cannot
 spend one another's client allowance.
-A refusal is `429` with `Retry-After`: an Ed-Fi problem-details body of type
-`urn:ed-fi:management-api:too-many-requests` on all four routes. Other revocation errors retain their
-OAuth format, as do other introspection errors. Limits, defaults and sizing are in
+A refusal is `429` with `Retry-After`, in the route's own error contract.
+`/connect/token`, `/connect/revoke` and `/connect/introspect` answer the OAuth error `temporarily_unavailable` with the `error_description` `The number of allowed requests has been exceeded. Retry the request later.`
+`/connect/register` answers Ed-Fi problem details of type `urn:ed-fi:management-api:too-many-requests`.
+Limits, defaults and sizing are in
 [CONFIGURATION.md](../../../docs/CONFIGURATION.md#connectratelimit); the design is
 [DMS-1482](./DMS-1482-cms-connect-rate-limiting.md).
 
@@ -86,13 +87,14 @@ Responses produced before the endpoint is selected, such as the `405` for anothe
 
 | Condition | Status | `error` |
 | --- | --- | --- |
-| Client authentication failed, or client id or secret missing or blank, HTTP Basic attempted | `401` with `WWW-Authenticate: Basic realm="EdFi.DmsConfigurationService"` | `invalid_client` |
-| Client authentication failed, or client id or secret missing or blank, no HTTP Basic attempt | `400` | `invalid_client` |
+| Client authentication failed, client id or secret missing or blank, or client id longer than 1024 UTF-16 code units, HTTP Basic attempted | `401` with `WWW-Authenticate: Basic realm="EdFi.DmsConfigurationService"` | `invalid_client` |
+| The same, no HTTP Basic attempt | `400` | `invalid_client` |
 | Body is not a form | `400` | `invalid_request` |
 | A parameter or the `Authorization` header sent more than once | `400` | `invalid_request` |
 | `grant_type` missing or empty | `400` | `invalid_request` |
 | Unsupported `grant_type` | `400` | `unsupported_grant_type` |
 | Keycloak rejected the requested scope | `400` | `invalid_scope` |
+| Source or source-plus-client rate limit exceeded | `429` with `Retry-After` | `temporarily_unavailable`, with the fixed rate-limit description (see [Token Endpoints](#token-endpoints)) |
 | Token limit reached | `429` | `temporarily_unavailable`, with the canonical limit sentence as `error_description` |
 | Concurrent token requests for the same client (lock timeout) | `409` | `temporarily_unavailable` |
 | Identity provider failure that is not the caller's to fix, a provider `403` included | `502` | `server_error` |
@@ -103,13 +105,14 @@ A caller that attempted HTTP Basic gets `401` with the `Basic` challenge that RF
 Any other caller, including one that sent form credentials, one that sent no credentials at all and one whose `Authorization` header is not `Basic`, gets `400` with no challenge, because a challenge would invite a scheme the caller did not choose.
 Before this rule a failed form credential answered `401` and a missing one answered a validation `400`.
 
-The handler checks the request without throwing, in this order: a body that is not a form, then a repeated `grant_type`, `client_id`, `client_secret` or `scope` or a repeated `Authorization` header, then `grant_type` missing, then `grant_type` unsupported, then client id or secret missing or only whitespace (after the lenient Basic parsing and the form fallback), and only then the token manager.
+The handler checks the request without throwing, in this order: a body that is not a form, then a repeated `grant_type`, `client_id`, `client_secret` or `scope` or a repeated `Authorization` header, then `grant_type` missing, then `grant_type` unsupported, then client id or secret missing or only whitespace (after the lenient Basic parsing and the form fallback), then a client id longer than 1024 UTF-16 code units, then the source-plus-client rate limit, and only then the token manager.
 A repeated parameter is rejected even when one copy is valid or empty, as at `/connect/revoke` and `/connect/introspect`.
 A request that is wrong in the request shape is therefore told so before its credentials are examined.
 
 The token limit and the lock timeout keep the statuses they always had, `429` and `409`, and take the OAuth body.
 The `409` keeps its status rather than the `503` RFC 6749 suggests for `temporarily_unavailable`, because the DMS `/oauth/token` proxy recognizes the condition by status.
 The `429` `error_description` is `Too many access tokens have been requested (limit is N). Access tokens should be reused until they expire.`, which the DMS proxy parses to rebuild its own answer.
+The rate-limit `429` shares the `temporarily_unavailable` code, and the DMS proxy tells the two apart by their descriptions.
 
 A failed client authentication is `invalid_client` whatever code the self-contained token manager or Keycloak reports.
 RFC 6749 section 5.2 defines no other code for it, and passing on a second code, such as the `unauthorized_client` both providers report for a wrong secret, would tell the caller whether the client id it sent exists.
@@ -224,8 +227,8 @@ values (Keycloak's endpoint does not read it either).
 
 ### Responses
 
-`200 OK` with an empty body is the only success. Rate-limit rejections use the Ed-Fi `429` contract
-described above. Every other error status is an RFC 6749 §5.2 JSON object served as
+`200 OK` with an empty body is the only success. Every error status, the rate-limit `429` described
+above included, is an RFC 6749 §5.2 JSON object served as
 `application/json`, with a **fixed** CMS `error_description` that
 never echoes provider text:
 
@@ -237,7 +240,7 @@ never echoes provider text:
 | --- | --- |
 | Authenticated owner, supported live token | `200`, empty; token revoked |
 | Authenticated caller; unknown, invalid, expired, already revoked, or another client's token | `200`, empty; nothing changes |
-| Source or source-plus-client rate limit exceeded | `429`, Ed-Fi problem details with `Retry-After` |
+| Source or source-plus-client rate limit exceeded | `429 temporarily_unavailable` with `Retry-After` |
 | Not a form body, malformed form, duplicated parameter or `Authorization` header, mixed mechanisms, missing or empty `token` | `400 invalid_request` |
 | Missing, incomplete or invalid credentials **without** an HTTP Basic attempt | `400 invalid_client` |
 | Malformed or invalid HTTP Basic credentials | `401 invalid_client` with `WWW-Authenticate: Basic realm="EdFi.DmsConfigurationService"` |
@@ -266,11 +269,10 @@ It is therefore not `invalid_client`, and it is not `503`, because Keycloak is n
 `/connect/introspect` maps Keycloak's `413` the same way. Introspection has no client-type gate; requests that pass its other validation and admission checks are delegated to Keycloak (see [Token introspection](#token-introspection)).
 Each request to Keycloak's token, revocation and introspection endpoints closes its connection after the answer: Keycloak 26.1.4 answers a form value over its limit with `413` without reading the rest of the request and keeps the connection open, so a reused connection would leave the next caller, possibly another client, without an answer until the timeout.
 
-Except for rate-limit rejections introduced by DMS-1482, this endpoint, `/connect/introspect` and `/connect/token` are
-the three CMS endpoints that do not answer in the `application/problem+json` contract of
-[DMS-1218](./DMS-1218-cms-error-response-compliance.md), and the departure is
+This endpoint, `/connect/introspect` and `/connect/token` are the three CMS endpoints that do not answer in the
+`application/problem+json` contract of [DMS-1218](./DMS-1218-cms-error-response-compliance.md), and the departure is
 deliberate: all three are OAuth endpoints, and an OAuth client reads `error` off the
-root of the body. It covers the other errors the endpoint produces, including the missing-token
+root of the body. It covers every error the endpoint produces, including the missing-token
 `400` (which DMS-1218 had converted to problem details) and the `500` for an unexpected
 fault. Responses produced before the endpoint is selected (Kestrel request-line and header
 limits, TLS failures) are transport failures and keep their framework form.
@@ -581,8 +583,7 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
 - **The request rules and their order are those of `/connect/revoke`.**
   See [Request rules](#request-rules).
   The client's credentials are checked after them.
-  Errors are RFC 6749 JSON (`{"error", "error_description"}`), except rate-limit rejections, which
-  use the Ed-Fi `429` problem-details contract described in [Token endpoints](#token-endpoints).
+  Errors, the rate-limit `429` described in [Token endpoints](#token-endpoints) included, are RFC 6749 JSON (`{"error", "error_description"}`).
   A missing `token` is `400 invalid_request`.
   This is an exception to the problem-details format DMS-1218 gave that response, as it is for revoke.
   Failed credentials answer `invalid_client`: `401` with a `WWW-Authenticate: Basic` challenge when HTTP Basic was attempted, `400` otherwise.

@@ -3769,11 +3769,17 @@ public class OAuthManagerTests
     }
 
     /// <summary>
-    /// The OAuth-envelope token-limit shape is believed only whole: each deviation falls back to
-    /// the generic 429 and writes the warning.
+    /// The OAuth-envelope token-limit and rate-limit shapes are believed only whole: each deviation
+    /// falls back to the generic 429 and writes the warning.
     /// </summary>
     [TestFixture(
         """{"error":"invalid_request","error_description":"Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."}"""
+    )]
+    [TestFixture(
+        """{"error":"invalid_request","error_description":"The number of allowed requests has been exceeded. Retry the request later."}"""
+    )]
+    [TestFixture(
+        """{"error":"temporarily_unavailable","error_description":"The number of allowed requests has been exceeded."}"""
     )]
     [TestFixture(
         """{"error":"temporarily_unavailable","error_description":["Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."]}"""
@@ -3967,6 +3973,39 @@ public class OAuthManagerTests
         public async Task Setup() =>
             (_status, _, _body, _logger) = await UpstreamRejectsWith(
                 CmsFailureResponse.ForTooManyRequests("upstream-correlation-id").ToJsonString()
+            );
+
+        [Test]
+        public void It_preserves_the_generic_rate_limit_contract()
+        {
+            _status.Should().Be(HttpStatusCode.TooManyRequests);
+            ShouldBeTheGenericRateLimitContract(_body);
+        }
+
+        [Test]
+        public void It_does_not_warn_about_an_expected_throttle() =>
+            _logger.Records.Should().NotContain(record => record.Level == LogLevel.Warning);
+    }
+
+    /// <summary>
+    /// The rate-limit answer of the Configuration Service's <c>/connect/token</c>, in the OAuth error
+    /// format, built from the Configuration Service's own constants so a reword there fails here.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Configuration_Service_Rate_Limit_Response_In_The_OAuth_Format
+    {
+        private RecordingLogger<OAuthManager> _logger = null!;
+        private JsonNode _body = null!;
+        private HttpStatusCode _status;
+
+        [SetUp]
+        public async Task Setup() =>
+            (_status, _, _body, _logger) = await UpstreamRejectsWith(
+                new JsonObject
+                {
+                    ["error"] = CmsFailureResponse.TooManyRequestsError,
+                    ["error_description"] = CmsFailureResponse.TooManyRequestsMessage,
+                }.ToJsonString()
             );
 
         [Test]

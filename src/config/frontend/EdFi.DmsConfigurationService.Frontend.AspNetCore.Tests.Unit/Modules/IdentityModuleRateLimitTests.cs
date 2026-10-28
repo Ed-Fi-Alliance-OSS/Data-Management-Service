@@ -151,9 +151,7 @@ public class IdentityModuleRateLimitTests
 
         [Test]
         public void It_challenges_only_basic_authentication() =>
-            _challenge
-                .Should()
-                .Be(useBasic ? "Basic realm=\"EdFi.DmsConfigurationService\"" : string.Empty);
+            _challenge.Should().Be(useBasic ? "Basic realm=\"EdFi.DmsConfigurationService\"" : string.Empty);
     }
 
     [TestFixture]
@@ -195,12 +193,12 @@ public class IdentityModuleRateLimitTests
         public void It_answers_429_past_the_limit() => ((int)_rejected.StatusCode).Should().Be(429);
 
         [Test]
-        public void It_uses_the_ed_fi_contract()
+        public void It_answers_in_the_oauth_error_format()
         {
-            _rejected.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:too-many-requests");
-            _body["detail"]!.GetValue<string>().Should().Be(Detail);
-            _body["status"]!.GetValue<int>().Should().Be(429);
+            _rejected.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+            _body.Count.Should().Be(2);
+            _body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+            _body["error_description"]!.GetValue<string>().Should().Be(Detail);
         }
 
         [Test]
@@ -506,18 +504,13 @@ public class IdentityModuleRateLimitTests
         public void It_admits_up_to_the_limit() => _statuses.Should().Equal(200, 200);
 
         [Test]
-        public void It_answers_429_in_the_ed_fi_format()
+        public void It_answers_429_in_the_oauth_error_format()
         {
             ((int)_rejected.StatusCode).Should().Be(429);
-            _rejected.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
-            _body.Count.Should().Be(7);
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:too-many-requests");
-            _body["detail"]!.GetValue<string>().Should().Be(Detail);
-            _body["title"]!.GetValue<string>().Should().Be("Too Many Requests");
-            _body["status"]!.GetValue<int>().Should().Be(429);
-            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
-            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
-            _body["errors"]!.AsArray().Count.Should().Be(0);
+            _rejected.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+            _body.Count.Should().Be(2);
+            _body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+            _body["error_description"]!.GetValue<string>().Should().Be(Detail);
         }
 
         [Test]
@@ -666,18 +659,13 @@ public class IdentityModuleRateLimitTests
         public void It_admits_up_to_the_limit() => _statuses.Should().Equal(200, 200);
 
         [Test]
-        public void It_answers_429_with_the_complete_ed_fi_contract()
+        public void It_answers_429_in_the_oauth_error_format()
         {
             ((int)_rejected.StatusCode).Should().Be(429);
-            _rejected.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
-            _body.Count.Should().Be(7);
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:too-many-requests");
-            _body["detail"]!.GetValue<string>().Should().Be(Detail);
-            _body["title"]!.GetValue<string>().Should().Be("Too Many Requests");
-            _body["status"]!.GetValue<int>().Should().Be(429);
-            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
-            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
-            _body["errors"]!.AsArray().Count.Should().Be(0);
+            _rejected.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+            _body.Count.Should().Be(2);
+            _body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+            _body["error_description"]!.GetValue<string>().Should().Be(Detail);
         }
 
         [Test]

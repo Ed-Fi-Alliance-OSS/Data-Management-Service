@@ -366,7 +366,7 @@ public class TokenRevocationStartupTests
         private IClientSecretHasher _hasher = null!;
         private RevocationBoot _boot = null!;
         private int _hashesBeforeAnyRequest;
-        private readonly List<(HttpStatusCode Status, string? Error)> _answers = [];
+        private readonly List<(HttpStatusCode Status, string? Error, string? Description)> _answers = [];
 
         private int Hashes() =>
             Fake.GetCalls(_hasher)
@@ -406,7 +406,13 @@ public class TokenRevocationStartupTests
                 JsonNode body =
                     JsonNode.Parse(await response.Content.ReadAsStringAsync())
                     ?? throw new InvalidOperationException("The token response body was JSON null.");
-                _answers.Add((response.StatusCode, body["errors"]?[0]?.GetValue<string>()));
+                _answers.Add(
+                    (
+                        response.StatusCode,
+                        body["error"]?.GetValue<string>(),
+                        body["error_description"]?.GetValue<string>()
+                    )
+                );
             }
         }
 
@@ -435,8 +441,9 @@ public class TokenRevocationStartupTests
                 .HaveCount(Requests)
                 .And.AllBeEquivalentTo(
                     (
-                        HttpStatusCode.Unauthorized,
-                        "invalid_client. Invalid client or Invalid client credentials"
+                        HttpStatusCode.BadRequest,
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
                     )
                 );
     }
