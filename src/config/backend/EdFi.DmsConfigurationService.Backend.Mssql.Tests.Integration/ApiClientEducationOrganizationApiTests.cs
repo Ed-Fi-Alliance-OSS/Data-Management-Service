@@ -33,6 +33,7 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
     protected const string DataValidationType = "urn:ed-fi:management-api:bad-request:data";
     protected const string ScopeConflictType =
         "urn:ed-fi:management-api:conflict:education-organization-scope";
+    protected const string ConflictType = "urn:ed-fi:management-api:conflict";
 
     protected sealed record ProviderCreate(string ClientId, Guid ClientUuid, string EducationOrganizationIds);
 
@@ -454,6 +455,12 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
         response.Status.Should().Be(HttpStatusCode.BadRequest, response.Body.ToJsonString());
         response.Body["type"]!.GetValue<string>().Should().Be(DataValidationType);
         response.Body["validationErrors"]!.AsObject().Select(error => error.Key).Should().Equal(field);
+    }
+
+    protected static void ShouldBeConflict((HttpStatusCode Status, JsonNode Body) response)
+    {
+        response.Status.Should().Be(HttpStatusCode.Conflict, response.Body.ToJsonString());
+        response.Body["type"]!.GetValue<string>().Should().Be(ConflictType);
     }
 
     protected static void ShouldBeScopeConflict((HttpStatusCode Status, JsonNode Body) response)
@@ -937,7 +944,7 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
         }
 
         [Test]
-        public void It_reports_the_duplicate_name() => ShouldBeDataValidation(_response, "Name");
+        public void It_reports_the_duplicate_name() => ShouldBeConflict(_response);
 
         [Test]
         public void It_restores_the_original_narrowed_claim() =>
@@ -1293,7 +1300,9 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
 
         [Test]
         public void It_sends_only_the_inheriting_client_the_new_list() =>
-            ProviderUpdates.Should().Equal(new ProviderUpdate(_second.ClientUuid, "255901,255902,255903,255905"));
+            ProviderUpdates
+                .Should()
+                .Equal(new ProviderUpdate(_second.ClientUuid, "255901,255902,255903,255905"));
 
         [Test]
         public async Task It_keeps_the_first_client_narrowed() =>

@@ -40,8 +40,8 @@ public class ApiClientModule : IEndpointModule
             statusCode: (int)HttpStatusCode.Conflict
         );
 
-    // A 409, as the Management API specification and ODS Admin API answer a name already used
-    // by another API client of the Application
+    // A 409 for a name already used by another API client of the Application, as the Management
+    // API specification and ODS Admin API answer it
     private static IResult DuplicateName(HttpContext httpContext) =>
         Results.Json(
             FailureResponse.ForConflict(DuplicateNameError, httpContext.TraceIdentifier),
