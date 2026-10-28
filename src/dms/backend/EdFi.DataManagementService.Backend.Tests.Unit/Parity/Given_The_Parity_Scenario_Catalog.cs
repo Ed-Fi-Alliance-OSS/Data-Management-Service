@@ -52,6 +52,8 @@ public class Given_The_Parity_Scenario_Catalog
         "Api/CrudRoundTrip/PagesStudentsViaQuery",
         "Api/CrudRoundTrip/RejectsCreateWithMissingReference",
         "Api/CrudRoundTrip/RejectsDeleteWhenReferenced",
+        "Api/IdentityConflict/PostOnSharedAbstractIdentity",
+        "Api/IdentityConflict/PutOnNaturalKey",
         "Api/ProfileRootOnlyMerge/CreatesAndReadsViaVisibleProfile",
         "Api/ProfileRootOnlyMerge/PreservesHiddenFieldOnProfiledPut",
         "Api/ProfileRootOnlyMerge/RejectsWriteAgainstReadOnlyProfile",

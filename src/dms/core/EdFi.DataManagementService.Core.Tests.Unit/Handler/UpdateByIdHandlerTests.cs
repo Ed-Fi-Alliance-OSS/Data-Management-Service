@@ -830,6 +830,15 @@ public class UpdateByIdHandlerTests
             requestInfo.FrontendResponse.Headers.Should().BeEmpty();
             requestInfo.FrontendResponse.LocationHeaderPath.Should().BeNull();
         }
+
+        [Test]
+        public void It_has_the_non_unique_identity_data_conflict_type()
+        {
+            requestInfo.FrontendResponse.Body!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:data-conflict:non-unique-identity");
+        }
     }
 
     [TestFixture]

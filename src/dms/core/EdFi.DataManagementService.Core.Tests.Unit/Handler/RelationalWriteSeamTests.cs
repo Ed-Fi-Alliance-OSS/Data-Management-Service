@@ -376,7 +376,7 @@ public class Given_Relational_Write_Seam
             .GetValue<string>()
             .Should()
             .Be("The identifying value(s) of the item are the same as another item that already exists.");
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:identity-conflict");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:data-conflict:non-unique-identity");
         body["title"]!.GetValue<string>().Should().Be("Identifying Values Are Not Unique");
         body["status"]!.GetValue<int>().Should().Be(409);
         body["correlationId"]!.GetValue<string>().Should().Be("relational-write-seam");
@@ -387,6 +387,119 @@ public class Given_Relational_Write_Seam
             .Contain("A natural key conflict occurred when attempting to create a new resource Student");
         body["errors"]![0]!.GetValue<string>().Should().Contain("(studentUniqueId = 1000)");
         harness.WriteExecutor.Requests.Should().ContainSingle();
+    }
+
+    [TestFixture(SqlDialect.Pgsql)]
+    [TestFixture(SqlDialect.Mssql)]
+    [Parallelizable]
+    public class Given_An_Executor_Owned_Put_Identity_Conflict(SqlDialect dialect)
+    {
+        private RelationalWriteSeamHarness _harness = null!;
+        private RequestInfo _requestInfo = null!;
+
+        private JsonObject Body => _requestInfo.FrontendResponse.Body!.AsObject();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var fixture = RelationalWriteSeamFixture.Create();
+            var existingDocumentUuid = new DocumentUuid(Guid.Parse("bbbbbbbb-1111-2222-3333-cccccccccccc"));
+            _harness = RelationalWriteSeamHarness.Create(
+                resourceInfo: fixture.ResourceInfo,
+                writeResultFactory: _ => new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureIdentityConflict(
+                        new ResourceName("Student"),
+                        [new KeyValuePair<string, string>("studentUniqueId", "1000")]
+                    )
+                )
+            );
+
+            _requestInfo = await _harness.ExecuteUpdateAsync(
+                JsonNode.Parse(
+                    """
+                    {
+                      "studentUniqueId": "1000"
+                    }
+                    """
+                )!,
+                fixture.CreateSupportedMappingSet(dialect),
+                fixture.CreateDocumentInfo(
+                    includeRootSchoolReference: false,
+                    includeNestedPeriodReferences: false,
+                    includeProgramTypeDescriptor: false
+                ),
+                existingDocumentUuid
+            );
+        }
+
+        [Test]
+        public void It_returns_status_409()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(409);
+        }
+
+        [Test]
+        public void It_returns_the_non_unique_identity_detail()
+        {
+            Body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The identifying value(s) of the item are the same as another item that already exists.");
+        }
+
+        [Test]
+        public void It_returns_the_non_unique_identity_problem_type()
+        {
+            Body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:data-conflict:non-unique-identity");
+        }
+
+        [Test]
+        public void It_returns_the_non_unique_identity_title()
+        {
+            Body["title"]!.GetValue<string>().Should().Be("Identifying Values Are Not Unique");
+        }
+
+        [Test]
+        public void It_returns_status_409_in_the_problem_details()
+        {
+            Body["status"]!.GetValue<int>().Should().Be(409);
+        }
+
+        [Test]
+        public void It_returns_the_request_correlation_id()
+        {
+            Body["correlationId"]!.GetValue<string>().Should().Be("relational-write-seam");
+        }
+
+        [Test]
+        public void It_returns_no_validation_errors()
+        {
+            Body["validationErrors"]!.AsObject().Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_returns_a_single_error()
+        {
+            Body["errors"]!.AsArray().Should().ContainSingle();
+        }
+
+        [Test]
+        public void It_returns_the_update_conflict_message_with_duplicate_keys_and_values()
+        {
+            Body["errors"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "A natural key conflict occurred when attempting to update a resource Student with a duplicate key. "
+                        + "The duplicate keys and values are (studentUniqueId = 1000)"
+                );
+        }
+
+        [Test]
+        public void It_invokes_the_write_executor_once()
+        {
+            _harness.WriteExecutor.Requests.Should().ContainSingle();
+        }
     }
 
     [TestCase(SqlDialect.Pgsql)]

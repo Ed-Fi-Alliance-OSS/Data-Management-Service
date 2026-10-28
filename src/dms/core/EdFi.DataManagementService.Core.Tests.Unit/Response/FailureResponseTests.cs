@@ -84,6 +84,98 @@ public class Given_FailureResponse_For_Data_Conflict
 
 [TestFixture]
 [Parallelizable]
+public class Given_FailureResponse_For_Identity_Conflict
+{
+    private const string FirstError = "first natural key conflict message";
+    private const string SecondError = "second natural key conflict message";
+
+    private static readonly TraceId _traceId = new("identity-conflict-trace");
+
+    private System.Text.Json.Nodes.JsonNode _response = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _response = FailureResponse.ForIdentityConflict([FirstError, SecondError], _traceId);
+    }
+
+    [Test]
+    public void It_has_the_non_unique_identity_data_conflict_type()
+    {
+        _response["type"]!.ToString().Should().Be("urn:ed-fi:api:data-conflict:non-unique-identity");
+    }
+
+    [Test]
+    public void It_has_the_identifying_values_are_not_unique_title()
+    {
+        _response["title"]!.ToString().Should().Be("Identifying Values Are Not Unique");
+    }
+
+    [Test]
+    public void It_has_status_409()
+    {
+        _response["status"]!.GetValue<int>().Should().Be(409);
+    }
+
+    [Test]
+    public void It_renders_the_identifying_values_detail()
+    {
+        _response["detail"]!
+            .ToString()
+            .Should()
+            .Be("The identifying value(s) of the item are the same as another item that already exists.");
+    }
+
+    [Test]
+    public void It_carries_the_supplied_correlation_id()
+    {
+        _response["correlationId"]!.ToString().Should().Be(_traceId.Value);
+    }
+
+    [Test]
+    public void It_has_empty_validation_errors()
+    {
+        _response["validationErrors"]!.AsObject().Count.Should().Be(0);
+    }
+
+    [Test]
+    public void It_carries_the_supplied_errors_in_order()
+    {
+        _response["errors"]!
+            .AsArray()
+            .Select(static error => error!.ToString())
+            .Should()
+            .Equal(FirstError, SecondError);
+    }
+}
+
+[TestFixture]
+[Parallelizable]
+public class Given_FailureResponse_For_Identity_Conflict_Without_Errors
+{
+    private System.Text.Json.Nodes.JsonNode _response = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _response = FailureResponse.ForIdentityConflict(null, new TraceId("identity-conflict-null-errors"));
+    }
+
+    [Test]
+    public void It_renders_an_empty_errors_array()
+    {
+        _response["errors"]!.AsArray().Count.Should().Be(0);
+    }
+
+    [Test]
+    public void It_keeps_the_non_unique_identity_data_conflict_type()
+    {
+        _response["type"]!.ToString().Should().Be("urn:ed-fi:api:data-conflict:non-unique-identity");
+    }
+}
+
+[TestFixture]
+[Parallelizable]
 public class Given_FailureResponse_For_Too_Many_Requests
 {
     private static readonly TraceId _traceId = new("rate-limit-trace");
