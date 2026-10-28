@@ -439,7 +439,9 @@ security-metadata-tools resolve \
 Omit the version flag for the same 5.2 result; use `--data-standard-version 6.1`
 when CMS is configured for 6.1. A readable directory containing no fragments
 produces the selected base. Merge uses the shared CMS discovery, order, matching,
-and precedence, with no arbitrary base-file option.
+and precedence, with no arbitrary base-file option. CLI composition uses invariant
+culture to match the default CMS container. CMS deployments with a custom culture
+must use invariant culture for the same fragment ordering.
 
 `Claims.json` is a **complete claims document** with `claimSets` and
 `claimsHierarchy`. Deploy that file. `authorization-metadata.json` is the resolved

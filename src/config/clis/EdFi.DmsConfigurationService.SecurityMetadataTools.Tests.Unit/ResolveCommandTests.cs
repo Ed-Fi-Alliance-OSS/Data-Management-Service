@@ -213,7 +213,7 @@ internal class Given_ResolveCommand_invalid_complete_document(string file, bool 
         _fixture
             .Error.Should()
             .StartWith($"Resolution failed: {expected.Kind} at ")
-            .And.Contain(expected.Value);
+            .And.Contain(expected.Value.Replace("\n", "\\u000A", StringComparison.Ordinal));
         foreach (string path in expected.Paths)
         {
             _fixture.Error.Should().Contain(path);

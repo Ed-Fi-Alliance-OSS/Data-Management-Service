@@ -1,5 +1,13 @@
 [
   {
+    "file": "catalog-final-newline.json",
+    "kind": "InvalidCatalogName",
+    "value": "Abc\n",
+    "paths": [
+      "$.claimSets[1].claimSetName"
+    ]
+  },
+  {
     "file": "catalog-whitespace.json",
     "kind": "InvalidCatalogName",
     "value": "Review Set",

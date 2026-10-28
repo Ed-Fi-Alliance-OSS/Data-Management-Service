@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.CommandLine;
+using System.Globalization;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using EdFi.DmsConfigurationService.Claims;
@@ -227,6 +228,37 @@ public class Given_MergeCommand_precedence(string scenario) : MergeCommandTests
 
     [Test]
     public void It_produces_identical_bytes() => File.ReadAllBytes(Destination).Should().Equal(_first);
+}
+
+[TestFixture("da-DK", "aa", "z")]
+[TestFixture("cs-CZ", "ch", "h")]
+public class Given_MergeCommand_culture_sensitive_filenames(string culture, string first, string second)
+    : MergeCommandTests
+{
+    [SetUp]
+    public async Task Setup()
+    {
+        string source = Path.Combine(Fixtures, "first-wins", "fragments");
+        File.Copy(Path.Combine(source, "a-claims.json"), Path.Combine(Fragments, $"{first}-claims.json"));
+        File.Copy(
+            Path.Combine(source, "nested", "z-claims.json"),
+            Path.Combine(Fragments, $"{second}-claims.json")
+        );
+        CultureInfo originalCulture = CultureInfo.CurrentCulture;
+        try
+        {
+            CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo(culture);
+            await RunFixture(Path.Combine(Fixtures, "base.json"));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+        }
+    }
+
+    [Test]
+    public void It_matches_the_reviewed_CMS_document_using_invariant_fragment_order() =>
+        AssertDocument(Path.Combine(Fixtures, "first-wins", "expected.json"));
 }
 
 [TestFixture("malformed", "MalformedFragment")]

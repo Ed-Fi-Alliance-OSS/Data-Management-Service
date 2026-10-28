@@ -133,7 +133,9 @@ These are CLI restrictions; they do not change CMS validation, loading, or respo
 
 Merge shares CMS's recursive `*-claims.json` discovery, exclusions, existing
 `OrderBy` file order, exact-name-then-singular matching, and first-association
-precedence. Numeric filename prefixes make intended order clear. A readable empty
+precedence. CLI composition uses invariant culture, matching the default CMS
+container. CMS deployments with a custom culture must use invariant culture for
+ordering parity. Numeric filename prefixes make intended order clear. A readable empty
 directory produces the bundled base. Missing/unreadable directories, unreadable or
 malformed fragments, unmatched grants, failed registration, and retired
 `*-claimset.json` files make composition incomplete and exit `1`. Unrelated files

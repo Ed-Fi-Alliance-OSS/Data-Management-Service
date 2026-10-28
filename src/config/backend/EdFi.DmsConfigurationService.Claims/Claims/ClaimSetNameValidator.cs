@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 
 namespace EdFi.DmsConfigurationService.Claims;
@@ -15,5 +14,5 @@ public static class ClaimSetNameValidator
 {
     public static bool IsValid(string claimSetName) =>
         claimSetName.Length is > 0 and <= ValidationConstants.ClaimSetNameMaxLength
-        && Regex.IsMatch(claimSetName, ValidationConstants.ClaimSetNameNoWhiteSpaceRegex);
+        && !claimSetName.Any(char.IsWhiteSpace);
 }

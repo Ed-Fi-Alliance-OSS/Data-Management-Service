@@ -10,3 +10,5 @@ branches share the same ordinal uniqueness scope.
 reference, and inherited Read/NamespaceBased permission. `distinct-uri-text.json` preserves
 case, host spelling, default ports, escapes, and trailing slashes as distinct ordinal names.
 Length/whitespace boundary and rejected input-shape cases are parameterized in the tests.
+`catalog-final-newline.json` covers the final-newline boundary that a regex `$` anchor
+can accept, through the validator and all three commands.

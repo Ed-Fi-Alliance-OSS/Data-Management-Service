@@ -158,7 +158,7 @@ internal class Given_VerifyCommand_invalid_complete_document(string file)
         _fixture
             .Error.Should()
             .StartWith($"Verification failed: {expected.Kind} at ")
-            .And.Contain(expected.Value);
+            .And.Contain(expected.Value.Replace("\n", "\\u000A", StringComparison.Ordinal));
         foreach (string path in expected.Paths)
         {
             _fixture.Error.Should().Contain(path);

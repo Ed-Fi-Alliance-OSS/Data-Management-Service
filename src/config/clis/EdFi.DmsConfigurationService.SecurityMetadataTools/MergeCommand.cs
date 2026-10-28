@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.CommandLine;
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
@@ -78,7 +79,18 @@ internal static class MergeCommand
                         return;
                     }
 
-                    var composed = compose(loaded.Nodes!, result.GetRequiredValue<string>("--fragments"));
+                    ClaimsCompositionResult composed;
+                    CultureInfo originalCulture = CultureInfo.CurrentCulture;
+                    try
+                    {
+                        // Match the default CMS container's culture-sensitive fragment ordering.
+                        CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
+                        composed = compose(loaded.Nodes!, result.GetRequiredValue<string>("--fragments"));
+                    }
+                    finally
+                    {
+                        CultureInfo.CurrentCulture = originalCulture;
+                    }
                     foreach (var diagnostic in composed.Diagnostics.Where(d => d.IsIncomplete))
                     {
                         CommandDiagnostics.ExecutionFailure(

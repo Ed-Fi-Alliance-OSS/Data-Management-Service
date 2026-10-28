@@ -218,6 +218,7 @@ public class Given_ClaimsFragmentComposer_read_failure(string error, string fail
 [TestFixture("no-resource-claims")]
 [TestFixture("unmatched")]
 [TestFixture("invalid-name")]
+[TestFixture("invalid-final-newline")]
 [TestFixture("registered")]
 [TestFixture("filename-name")]
 public class Given_ClaimsFragmentComposer_diagnostic_context(string scenario)
@@ -231,7 +232,12 @@ public class Given_ClaimsFragmentComposer_diagnostic_context(string scenario)
     {
         string file = Path.Combine(DirectoryPath, "input-claims.json");
         string source = DirectoryPath;
-        string name = scenario == "invalid-name" ? "Bad Name" : "Policy";
+        string name = scenario switch
+        {
+            "invalid-name" => "Bad Name",
+            "invalid-final-newline" => "Policy\n",
+            _ => "Policy",
+        };
         string claim = scenario == "unmatched" ? "edfi/missing" : "edfi/student";
         switch (scenario)
         {
@@ -296,7 +302,7 @@ public class Given_ClaimsFragmentComposer_diagnostic_context(string scenario)
                 }
                 expected.Add(
                     new(
-                        scenario == "invalid-name"
+                        scenario is "invalid-name" or "invalid-final-newline"
                             ? ClaimsCompositionDiagnosticCode.InvalidClaimSetRegistration
                             : ClaimsCompositionDiagnosticCode.ClaimSetRegistered,
                         file,
