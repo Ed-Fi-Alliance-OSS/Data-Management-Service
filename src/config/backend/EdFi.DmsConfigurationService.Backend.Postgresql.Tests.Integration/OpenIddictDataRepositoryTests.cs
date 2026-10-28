@@ -555,6 +555,17 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
+    /// The client changes that revoke its tokens and must refuse every grant that waited behind
+    /// them (DMS-1493 §8.1).
+    /// </summary>
+    public enum LifecycleChange
+    {
+        CredentialReset,
+        Deletion,
+        UnApproval,
+    }
+
+    /// <summary>
     /// A second session holding the client's <c>OpenIddictApplication</c> row lock, which is what
     /// a competing grant has to wait on.
     /// </summary>
@@ -2269,6 +2280,183 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [Test]
         public async Task It_stores_it_as_valid() =>
             (await _repository.GetTokenStatusAsync(_tokenId)).Should().Be("valid");
+    }
+
+    /// <summary>
+    /// DMS-1493 fixture C-3, §8.1 case (ii): a grant that arrives while a credential reset,
+    /// deletion or un-approval transaction is still open. The transaction makes its change and
+    /// revokes the client's tokens, then holds at a gate; <c>pg_locks</c> must show the grant
+    /// waiting on that transaction's backend, and once it commits the grant must refuse without
+    /// storing. The grant authenticated against <see cref="RegisteredSecret"/>, and the client
+    /// starts with an approved API client row that the un-approval sets to false inside the held
+    /// transaction. A store that takes no lock finishes before the probe sees it waiting; one that
+    /// re-validated inside its <c>FOR UPDATE</c> statement would read the snapshot taken before
+    /// that statement blocked, still see the client approved, and store (A-3).
+    /// </summary>
+    [TestFixture(LifecycleChange.CredentialReset, EnforcementDisabled)]
+    [TestFixture(LifecycleChange.CredentialReset, 15)]
+    [TestFixture(LifecycleChange.Deletion, EnforcementDisabled)]
+    [TestFixture(LifecycleChange.Deletion, 15)]
+    [TestFixture(LifecycleChange.UnApproval, EnforcementDisabled)]
+    [TestFixture(LifecycleChange.UnApproval, 15)]
+    public class Given_A_Grant_Blocked_By_A_Lifecycle_Transaction(LifecycleChange change, int maxActiveTokens)
+        : OpenIddictDataRepositoryTests
+    {
+        private readonly Guid _grantTokenId = Guid.NewGuid();
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _applicationId;
+        private string _clientId = null!;
+        private Guid _earlierTokenId;
+        private TokenStoreOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(Configuration.DatabaseOptions, NullLogger<OpenIddictDataRepository>.Instance);
+            // ApiClient.ClientId is 36 characters wide.
+            _clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(_repository, _clientId);
+            await AddApiClientRowAsync(_repository, _clientId);
+            _earlierTokenId = await StoreValidTokenAsync(_repository, _applicationId, FarFuture);
+
+            TaskCompletionSource<int> changeHeld = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource commitGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task? lifecycle = null;
+            Task<TokenStoreOutcome>? grant = null;
+            Task? probe = null;
+            try
+            {
+                lifecycle = Task.Run(() =>
+                    _repository.ExecuteInTransactionAsync(
+                        async (connection, transaction) =>
+                        {
+                            await ApplyChangeAsync(connection, transaction);
+                            changeHeld.SetResult(
+                                await connection.ExecuteScalarAsync<int>(
+                                    "SELECT pg_backend_pid()",
+                                    transaction: transaction
+                                )
+                            );
+                            await commitGate.Task;
+                        }
+                    )
+                );
+                if (await Task.WhenAny(changeHeld.Task, lifecycle) == lifecycle)
+                {
+                    await lifecycle;
+                    Assert.Fail("The lifecycle transaction ended before it held its change open.");
+                }
+                int lifecycleBackendPid = await changeHeld.Task;
+
+                grant = Task.Run(() =>
+                    _repository.StoreTokenAsync(
+                        _grantTokenId,
+                        _applicationId,
+                        "subject-blocked-grant",
+                        FarFuture,
+                        maxActiveTokens,
+                        RegisteredSecret
+                    )
+                );
+                probe = WaitUntilABackendIsBlockedBy(lifecycleBackendPid, GrantBlockedObservationTimeout);
+
+                if (await Task.WhenAny(probe, grant) == grant)
+                {
+                    Assert.Fail(
+                        $"The grant completed with {await grant} before it was observed waiting on the {change} transaction."
+                    );
+                }
+
+                await probe;
+                grant
+                    .IsCompleted.Should()
+                    .BeFalse("the grant is waiting on the lifecycle transaction's lock");
+
+                commitGate.SetResult();
+                await lifecycle;
+                _outcome = await grant;
+            }
+            finally
+            {
+                // Lets the lifecycle transaction commit (a no-op after the release), so a grant still
+                // waiting on it can finish before it is awaited.
+                commitGate.TrySetResult();
+                await AwaitWithoutObservingAsync(lifecycle, grant, probe);
+            }
+        }
+
+        /// <summary>
+        /// The statements of the lifecycle operation for this change, in its order: a reset or a
+        /// deletion writes the application row first, an un-approval locks it first and writes
+        /// <c>ApiClient</c> last. Each one revokes the client's tokens before the gate.
+        /// </summary>
+        private async Task ApplyChangeAsync(IDbConnection connection, IDbTransaction transaction)
+        {
+            switch (change)
+            {
+                case LifecycleChange.CredentialReset:
+                    (
+                        await _repository.UpdateClientSecretAsync(
+                            _applicationId,
+                            "rotated-secret",
+                            connection,
+                            transaction
+                        )
+                    )
+                        .Should()
+                        .Be(1);
+                    await RevokeAsync();
+                    break;
+                case LifecycleChange.Deletion:
+                    (await _repository.DeleteApplicationByIdAsync(_applicationId, connection, transaction))
+                        .Should()
+                        .Be(1);
+                    await RevokeAsync();
+                    break;
+                case LifecycleChange.UnApproval:
+                    (await _repository.LockApplicationAsync(_applicationId, connection, transaction))
+                        .Should()
+                        .BeTrue();
+                    await RevokeAsync();
+                    (
+                        await connection.ExecuteAsync(
+                            @"UPDATE ""dmscs"".""ApiClient"" SET ""IsApproved"" = false WHERE ""ClientId"" = @ClientId",
+                            new { ClientId = _clientId },
+                            transaction
+                        )
+                    )
+                        .Should()
+                        .Be(1);
+                    break;
+            }
+
+            async Task RevokeAsync() =>
+                (await _repository.RevokeTokensForApplicationAsync(_applicationId, connection, transaction))
+                    .Should()
+                    .Be(1);
+        }
+
+        [Test]
+        public void It_refuses_the_grant() =>
+            _outcome
+                .Should()
+                .Be(
+                    change == LifecycleChange.Deletion
+                        ? TokenStoreOutcome.ClientNotFound
+                        : TokenStoreOutcome.ClientChanged
+                );
+
+        [Test]
+        public async Task It_stores_no_token_for_the_grant() =>
+            (await _repository.GetTokenStatusAsync(_grantTokenId)).Should().BeNull();
+
+        [Test]
+        public async Task It_leaves_the_client_only_the_earlier_token() =>
+            (await TokenRowCountAsync(_applicationId)).Should().Be(1);
+
+        [Test]
+        public async Task It_commits_the_revocation_of_the_earlier_token() =>
+            (await _repository.GetTokenStatusAsync(_earlierTokenId)).Should().Be("revoked");
     }
 
     /// <summary>
