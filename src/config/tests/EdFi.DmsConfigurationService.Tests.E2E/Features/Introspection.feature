@@ -169,3 +169,59 @@ Feature: Token introspection endpoint
                     "active": false
                   }
                   """
+
+        # Keycloak rebuilds an introspection answer's claims from the client's current mappers, so a
+        # token issued before its application gained 14,000 education organizations is answered with
+        # all of them, in more characters than any token Keycloak accepts; the owner is still answered.
+        @KeycloakOnly
+        Scenario: 14 The owner introspects a token issued before its application gained many education organizations
+             When a POST request is made to "/v3/vendors" with
+                  """
+                  {
+                      "company": "Introspection Growth Vendor {scenarioRunId}",
+                      "contactName": "Introspection Growth",
+                      "contactEmailAddress": "introspection-growth@example.com",
+                      "namespacePrefixes": "uri://ed-fi-e2e.org"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Growth App {scenarioRunId}",
+                   "claimSetName": "TestClaim01",
+                   "educationOrganizationIds": [255901],
+                   "dataStoreIds": []
+                  }
+                  """
+             Then it should respond with 201
+              And the response body credentials are captured as "owner"
+             When the credentials captured as "owner" obtain the current token with scope "TestClaim01"
+             Then it should respond with 200
+             When the system client makes a PUT request to "/v3/applications/{applicationId}" with 14000 education organization ids added to
+                  """
+                  {
+                   "id": {applicationId},
+                   "vendorId": {vendorId},
+                   "applicationName": "Growth App {scenarioRunId}",
+                   "claimSetName": "TestClaim01",
+                   "dataStoreIds": []
+                  }
+                  """
+             Then it should respond with 204
+             When the current token is introspected by its owner using Basic credentials
+             Then it should respond with 200
+              And the introspection response reports the current client as active with numeric exp and iat
+
+        # Keycloak 26.1.4 answers a form value over its limit with 413 without reading the rest of the
+        # request and keeps the connection open, so the next request on that connection gets no answer;
+        # the Configuration Service closes each connection to Keycloak after its answer.
+        @KeycloakOnly
+        Scenario: 15 An introspection after one Keycloak refused as too large is answered as usual
+             When an introspection of a 400000-character token is attempted with the current client's Basic credentials
+             Then it should respond with 400
+             When the current token is introspected by its owner using Basic credentials
+             Then it should respond with 200
+              And the introspection response reports the current client as active with numeric exp and iat
+

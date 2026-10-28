@@ -53,7 +53,7 @@ public class KeycloakClientRepository(
 
     /// <summary>
     /// From Keycloak 26.6.2, introspection reports a token inactive unless the introspecting client
-    /// is in the token's <c>aud</c>; <c>azp</c> alone no longer counts. The claim-set scope's
+    /// is in the token's <c>aud</c>; <c>azp</c> alone does not count. The claim-set scope's
     /// audience-resolve mapper yields only "account", so every client carries a mapper naming
     /// itself as an audience, which lets it introspect its own tokens. "account" stays in
     /// <c>aud</c> alongside it. The name is fixed because Keycloak requires protocol mapper names
@@ -71,6 +71,7 @@ public class KeycloakClientRepository(
     private const string AudienceMapperType = "oidc-audience-mapper";
 
     private const string IncludedClientAudienceKey = "included.client.audience";
+    private const string IncludedCustomAudienceKey = "included.custom.audience";
 
     public async Task<ClientCreateResult> CreateClientAsync(
         string clientId,
@@ -967,12 +968,15 @@ public class KeycloakClientRepository(
         && claimName.Equals(configuredClaimName, StringComparison.Ordinal);
 
     /// <summary>
-    /// An audience mapper that puts the client into its own access tokens' <c>aud</c>. Keycloak runs
-    /// only the mappers of the client's protocol, and adds a mapper to access tokens only when
-    /// <c>access.token.claim</c> is <c>"true"</c>; its introspection audience check reads the access
-    /// token's <c>aud</c>, so a mapper of another protocol or left out of access tokens does not
-    /// count. Whether it is also added to introspection answers does not matter: an answer's
-    /// <c>aud</c> starts from the token's.
+    /// An audience mapper that puts the client into its own access tokens' <c>aud</c>. Keycloak's
+    /// audience mapper adds its included client audience when it has one, and its included custom
+    /// audience otherwise. Keycloak runs only the mappers of the client's protocol, and adds a mapper
+    /// to access tokens only when <c>access.token.claim</c> is <c>"true"</c>
+    /// (<c>OIDCAttributeMapperHelper.includeInAccessToken</c> on 26.1.4 and 26.7.5); its
+    /// introspection audience check reads the access token's <c>aud</c> whenever the token has one,
+    /// as every token of a client the Configuration Service creates does, so a mapper of another
+    /// protocol or left out of access tokens does not count. Whether it is also added to
+    /// introspection answers does not matter: an answer's <c>aud</c> starts from the token's.
     /// </summary>
     private static bool GivesOwnAudience(ClientProtocolMapper mapper, string clientId) =>
         OpenIdConnectProtocol.Equals(mapper.Protocol, StringComparison.Ordinal)
@@ -980,7 +984,8 @@ public class KeycloakClientRepository(
         && mapper.Config is not null
         && string.Equals(
             clientId,
-            mapper.Config.GetValueOrDefault(IncludedClientAudienceKey),
+            mapper.Config.GetValueOrDefault(IncludedClientAudienceKey)
+                ?? mapper.Config.GetValueOrDefault(IncludedCustomAudienceKey),
             StringComparison.Ordinal
         )
         && "true".Equals(mapper.Config.GetValueOrDefault("access.token.claim"), StringComparison.Ordinal);

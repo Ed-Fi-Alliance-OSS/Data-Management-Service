@@ -239,6 +239,12 @@ public sealed class KeycloakTokenRevocationManager(
         );
         message.Content = new FormUrlEncodedContent(form);
 
+        // Keycloak 26.1.4 answers a form value over its form attribute limit with 413 without reading
+        // the rest of the request and keeps the connection open, so the next request on that
+        // connection gets no answer; closing the connection after each answer keeps a caller's
+        // oversized request from stalling another caller's.
+        message.Headers.ConnectionClose = true;
+
         HttpResponseMessage response;
         try
         {
@@ -287,16 +293,23 @@ public sealed class KeycloakTokenRevocationManager(
                 return new TokenRevocationResult.Completed();
             }
 
+            if (response.StatusCode == HttpStatusCode.RequestEntityTooLarge)
+            {
+                // Decided on the status alone, so the body is never read. Information, not Error: a
+                // request any caller can repeat at will, not an outage. No client id: no one was
+                // authenticated.
+                logger.LogInformation(
+                    "Keycloak rejected a revocation request as too large (HTTP 413) before authenticating the caller"
+                );
+                return new TokenRevocationResult.InvalidRequest();
+            }
+
             byte[]? body;
             try
             {
                 using var bodyBudget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 bodyBudget.CancelAfter(httpClient.Timeout);
-                body = await KeycloakProviderAnswer.ReadBoundedAsync(
-                    response.Content,
-                    MaxResponseBodyBytes,
-                    bodyBudget.Token
-                );
+                body = await ReadBoundedAsync(response.Content, bodyBudget.Token);
             }
             catch (Exception) when (cancellationToken.IsCancellationRequested)
             {
@@ -318,23 +331,12 @@ public sealed class KeycloakTokenRevocationManager(
 
     /// <summary>
     /// D-10, restricted to the characterized answers. Keycloak's status never decides between 400
-    /// and 401 for the caller; the endpoint does that (D-03).
-    /// 413 is for a form value over Keycloak's form attribute limit (128 KiB by default), answered on
-    /// 26.1.4 and 26.7.5 before the caller is authenticated; the caller chose that value, so it is
-    /// <see cref="TokenRevocationResult.InvalidRequest"/>, decided on the status alone whatever the body.
+    /// and 401 for the caller; the endpoint does that (D-03). A 413, for a form value over Keycloak's
+    /// form attribute limit (128 KiB by default), is decided before the body is read: Keycloak answers
+    /// it on 26.1.4 and 26.7.5 before the caller is authenticated, and the caller chose that value.
     /// </summary>
     private TokenRevocationResult MapErrorResponse(int statusCode, ProviderErrorBody body, string clientId)
     {
-        if (statusCode == (int)HttpStatusCode.RequestEntityTooLarge)
-        {
-            // Information, not Error: a request any caller can repeat at will, not an outage. No
-            // client id: the oversized value may be the id itself, and no one was authenticated.
-            logger.LogInformation(
-                "Keycloak rejected a revocation request as too large (HTTP 413) before authenticating the caller"
-            );
-            return new TokenRevocationResult.InvalidRequest();
-        }
-
         string category = KeycloakProviderAnswer.ProviderErrorCategory(body.Error);
 
         if (statusCode is not (400 or 401))
@@ -373,6 +375,37 @@ public sealed class KeycloakTokenRevocationManager(
             default:
                 return ProviderAnswerNotUsable(UnrecognizedResponseReason, clientId, statusCode, category);
         }
+    }
+
+    /// <summary>
+    /// Reads at most <see cref="MaxResponseBodyBytes"/>; null when the body is larger, so an
+    /// oversized answer is unparseable without being buffered.
+    /// </summary>
+    private static async Task<byte[]?> ReadBoundedAsync(
+        HttpContent content,
+        CancellationToken cancellationToken
+    )
+    {
+        if (content.Headers.ContentLength > MaxResponseBodyBytes)
+        {
+            return null;
+        }
+
+        await using Stream stream = await content.ReadAsStreamAsync(cancellationToken);
+        byte[] buffer = new byte[MaxResponseBodyBytes + 1];
+        int total = 0;
+        while (total < buffer.Length)
+        {
+            int read = await stream.ReadAsync(buffer.AsMemory(total), cancellationToken);
+            if (read == 0)
+            {
+                break;
+            }
+
+            total += read;
+        }
+
+        return total > MaxResponseBodyBytes ? null : buffer[..total];
     }
 
     /// <summary>

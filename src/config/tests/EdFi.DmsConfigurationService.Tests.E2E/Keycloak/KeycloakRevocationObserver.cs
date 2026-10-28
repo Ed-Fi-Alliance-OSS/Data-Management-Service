@@ -17,8 +17,8 @@ public sealed record KeycloakPublicClient(string ClientUuid, string ClientId, st
 /// <item>a confidential observer client that only introspects; its credentials are held here and
 /// are never sent to <c>/connect/revoke</c>;</item>
 /// <item>a client scope with an audience mapper that puts the observer into the <c>aud</c> of every
-/// observed access token, because Keycloak from upstream 26.6.2 (the Red Hat build's 26.4.12) refuses
-/// introspection to a client absent from <c>aud</c> (§9.1.4 correction 2). It is attached to the
+/// observed access token, because Keycloak from upstream 26.6.2 (the Red Hat build's 26.4.12) answers
+/// <c>active:false</c> to an introspecting client absent from <c>aud</c> (§9.1.4 correction 2). It is attached to the
 /// existing clients whose tokens the scenarios observe and detached again on disposal; it stays out of
 /// the token's <c>scope</c> claim so the Configuration Service's own scope checks see the same value
 /// as without it;</item>

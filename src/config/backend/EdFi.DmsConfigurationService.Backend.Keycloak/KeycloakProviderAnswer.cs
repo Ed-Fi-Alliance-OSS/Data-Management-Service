@@ -7,9 +7,9 @@ namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
 /// <summary>
 /// Handling of Keycloak's answers shared by the delegated revocation and introspection requests:
-/// a bounded body read, the client id length Keycloak can hold, the loggable provider error
-/// categories and the failure classification and logging helpers. Nothing here returns anything from a provider body or a dependency exception
-/// except an allowlisted error category and exception type names.
+/// the client id length Keycloak can hold, the loggable provider error categories and the failure
+/// classification and logging helpers. Nothing here returns anything from a provider body or a
+/// dependency exception except an allowlisted error category and exception type names.
 /// </summary>
 internal static class KeycloakProviderAnswer
 {
@@ -36,39 +36,6 @@ internal static class KeycloakProviderAnswer
     internal static bool IsLongerThanAnyClientId(string clientId) =>
         clientId.EnumerateRunes().Skip(MaxClientIdCodePoints).Any();
 
-    /// <summary>
-    /// Reads at most <paramref name="maxBytes"/>; null when the body is larger, so an oversized answer
-    /// is unparseable and never read past the cap. The buffer grows with what arrives, so a small
-    /// answer costs no more than its size.
-    /// </summary>
-    internal static async Task<byte[]?> ReadBoundedAsync(
-        HttpContent content,
-        int maxBytes,
-        CancellationToken cancellationToken
-    )
-    {
-        if (content.Headers.ContentLength > maxBytes)
-        {
-            return null;
-        }
-
-        await using Stream stream = await content.ReadAsStreamAsync(cancellationToken);
-        using var body = new MemoryStream();
-        byte[] chunk = new byte[16 * 1024];
-        int read;
-        while ((read = await stream.ReadAsync(chunk, cancellationToken)) > 0)
-        {
-            if (body.Length + read > maxBytes)
-            {
-                return null;
-            }
-
-            await body.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
-        }
-
-        return body.ToArray();
-    }
-
     /// <summary>The provider <c>error</c> when it is allowlisted for logging, otherwise <c>unrecognized</c>.</summary>
     internal static string ProviderErrorCategory(string? error) =>
         error is not null && _loggableProviderErrors.Contains(error) ? error : "unrecognized";
@@ -84,12 +51,7 @@ internal static class KeycloakProviderAnswer
     /// <summary>The type names of an exception and its inner exceptions, outermost first.</summary>
     internal static string ExceptionTypeChain(Exception exception)
     {
-        var names = new List<string>();
-        for (Exception? current = exception; current is not null; current = current.InnerException)
-        {
-            names.Add(current.GetType().FullName ?? current.GetType().Name);
-        }
-
-        return string.Join(" -> ", names);
+        string name = exception.GetType().FullName ?? exception.GetType().Name;
+        return exception.InnerException is { } inner ? $"{name} -> {ExceptionTypeChain(inner)}" : name;
     }
 }

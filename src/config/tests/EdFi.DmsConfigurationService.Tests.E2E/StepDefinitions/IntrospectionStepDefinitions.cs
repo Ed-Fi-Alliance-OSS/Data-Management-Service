@@ -117,6 +117,60 @@ public partial class StepDefinitions
     /// </summary>
     private static string TokenOfLength(int length) => new('A', length);
 
+    /// <summary>
+    /// PUTs <paramref name="body"/> with <paramref name="count"/> distinct nine-digit education
+    /// organization ids added, authenticated as the system client without changing the current token or
+    /// client, so the owner can then introspect a token issued before the update.
+    /// </summary>
+    [When("the system client makes a PUT request to {string} with {int} education organization ids added to")]
+    public async Task WhenTheSystemClientMakesAPutRequestWithEducationOrganizationIds(
+        string url,
+        int count,
+        string body
+    )
+    {
+        APIRequestContextOptions tokenRequest = new()
+        {
+            Headers = new Dictionary<string, string>
+            {
+                { "Content-Type", "application/x-www-form-urlencoded" },
+            },
+            Data = await new FormUrlEncodedContent(
+                new Dictionary<string, string>
+                {
+                    { "client_id", SystemClientId },
+                    { "client_secret", SystemClientSecret },
+                    { "grant_type", "client_credentials" },
+                    { "scope", "edfi_admin_api/full_access" },
+                }
+            ).ReadAsStringAsync(),
+        };
+        IAPIResponse tokenResponse = await playwrightContext.ApiRequestContext!.PostAsync(
+            "/connect/token",
+            tokenRequest
+        );
+        string systemToken = JsonNode.Parse(await tokenResponse.TextAsync())![
+            "access_token"
+        ]!.GetValue<string>();
+
+        JsonObject update = JsonNode.Parse(await ReplaceIdsAsync(body))!.AsObject();
+        update["educationOrganizationIds"] = JsonSerializer.SerializeToNode(
+            Enumerable.Range(100_000_000, count).ToArray()
+        );
+        _apiResponse = await playwrightContext.ApiRequestContext!.PutAsync(
+            await ReplaceIdsAsync(url),
+            new()
+            {
+                Headers = new Dictionary<string, string>
+                {
+                    { "Content-Type", "application/json" },
+                    { "Authorization", $"Bearer {systemToken}" },
+                },
+                Data = update.ToJsonString(),
+            }
+        );
+    }
+
     [When("the current token is introspected with the credentials captured as {string}")]
     public async Task WhenTheCurrentTokenIsIntrospectedWithTheCredentialsCapturedAs(string slot)
     {

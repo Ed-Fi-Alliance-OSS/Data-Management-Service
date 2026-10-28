@@ -154,11 +154,13 @@ Feature: Token revocation endpoint
              Then it should respond with 200
               And the response body is empty
 
-        # Longer than any Keycloak client id, and long enough that Keycloak's admin API refuses the
-        # client-type lookup URL, so under keycloak the Configuration Service must refuse it itself.
-        Scenario: 13 A client id longer than any client id is rejected as invalid_client and revokes nothing
-             When a revocation of the current token is attempted with a 32719-character form client id
+        # Keycloak 26.1.4 answers a form value over its limit with 413 without reading the rest of the
+        # request and keeps the connection open, so the next request on that connection gets no answer;
+        # the Configuration Service closes each connection to Keycloak after its answer.
+        @KeycloakOnly
+        Scenario: 13 A revocation after one Keycloak refused as too large revokes the token
+             When a revocation of a 400000-character token is attempted with the current client's Basic credentials
              Then it should respond with 400
-              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
-              And the response header "WWW-Authenticate" is not present
-              And the current token is active at the identity provider
+             When the current token is revoked
+             Then it should respond with 200
+              And the current token is inactive at the identity provider

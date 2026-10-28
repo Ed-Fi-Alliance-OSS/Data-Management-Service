@@ -30,8 +30,9 @@ public readonly record struct KeycloakServerVersion(int Major, int Minor, int Pa
 {
     /// <summary>
     /// True from 26.6.2, the upstream release whose migration guide lists the introspection audience
-    /// check (the Red Hat build of Keycloak ships it as 26.4.12); absent on 26.1.4 and present on
-    /// 26.7.5 in DMS-1327 §9.1.4.
+    /// check ("Migrating to 26.6.2" at https://www.keycloak.org/docs/latest/upgrading/index.html; the
+    /// Red Hat build of Keycloak ships it as 26.4.12); absent on 26.1.4 and present on 26.7.5 in
+    /// DMS-1327 §9.1.4.
     /// </summary>
     public bool AudienceChecked => (Major, Minor, Patch).CompareTo((26, 6, 2)) >= 0;
 
@@ -81,7 +82,8 @@ public readonly record struct KeycloakServerVersion(int Major, int Minor, int Pa
 /// shares CMS's claim-set scope, as two clients of one claim set do; S names no default client scope,
 /// so its tokens carry an empty <c>scope</c>, and carries the same own audience mapper as CMS;
 /// CMS-many is CMS with 9,600 education organization ids, which put its access token just within
-/// Keycloak's form attribute limit; CMS-intro-aud and CMS-access-aud are CMS with its own audience
+/// Keycloak's form attribute limit; CMS-grown is CMS whose education organizations grow to 14,000 after
+/// its token is issued (I-31); CMS-intro-aud and CMS-access-aud are CMS with its own audience
 /// mapper left out of access tokens, or out of introspection answers, as an edit in Keycloak can leave
 /// it; R also issues refresh tokens for <c>client_credentials</c>; E's access tokens live 10 seconds; P is
 /// public and holds a per-run user; BO is bearer-only with a secret; D is disabled after creation. The
@@ -101,6 +103,15 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
     public static readonly string ManyEducationOrganizationIds = string.Join(
         ",",
         Enumerable.Range(255900001, 9600)
+    );
+
+    /// <summary>
+    /// 14,000 nine-digit education organization ids, more than any token within Keycloak's form
+    /// attribute limit can carry, so only an answer whose claims are rebuilt after the update holds them.
+    /// </summary>
+    public static readonly string GrownEducationOrganizationIds = string.Join(
+        ",",
+        Enumerable.Range(100_000_000, 14_000)
     );
 
     // The role claim type the Configuration Service compose files configure, passed unescaped to the
@@ -160,6 +171,8 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
     public CharacterizationClient Scopeless => ClientLabelled("S");
 
     public CharacterizationClient ManyEdOrgsCms => ClientLabelled("CMS-many");
+
+    public CharacterizationClient GrownEdOrgsCms => ClientLabelled("CMS-grown");
 
     public CharacterizationClient IntrospectionAudienceCms => ClientLabelled("CMS-intro-aud");
 
@@ -390,6 +403,7 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
             OwnAudienceMapper,
             ManyEducationOrganizationIds
         );
+        await CreateCmsShapedAsync(adminToken, "CMS-grown", "cms-grown", OwnAudienceMapper);
         await CreateCmsShapedAsync(
             adminToken,
             "CMS-intro-aud",
@@ -869,12 +883,6 @@ public static class ExpectedIntrospection
     /// </summary>
     public const int FormAttributeLimit = 131072;
 
-    /// <summary>
-    /// The largest answer the Configuration Service reads (KeycloakTokenIntrospectionManager's
-    /// MaxResponseBodyBytes); it read 64 KiB before.
-    /// </summary>
-    public const int ConfigurationServiceAnswerBudget = 128 * 1024;
-
     // The members of an active access-token answer for a client holding the realm's default client
     // scopes, identical on both versions. clientHost and clientAddress are not among them, although
     // the refresh-token answer (I-16) carries both.
@@ -976,6 +984,13 @@ public static class ExpectedIntrospection
         CmsShapedAccessToken(
             Realm.ManyEdOrgsCms,
             MemberShape.OfArray(Realm.ManyEdOrgsCms.ClientId, "account")
+        );
+
+    /// <summary>CMS-grown's access token: CMS's shape, issued with one education organization id.</summary>
+    public static IntrospectionPrediction GrownEdOrgsCmsAccessToken() =>
+        CmsShapedAccessToken(
+            Realm.GrownEdOrgsCms,
+            MemberShape.OfArray(Realm.GrownEdOrgsCms.ClientId, "account")
         );
 
     /// <summary>
@@ -2433,9 +2448,8 @@ public class Given_a_client_whose_tokens_carry_no_scope_introspecting_its_own_to
 }
 
 /// <summary>
-/// The answer repeats the token's claims, so the longest token Keycloak's form attribute limit lets
-/// through is answered in more than the 64 KiB the Configuration Service once read, and within the
-/// 128 KiB it reads now.
+/// The longest token Keycloak's form attribute limit lets through is answered as any other owner's
+/// token is.
 /// </summary>
 [TestFixture]
 public class Given_a_configuration_service_shaped_client_with_many_education_organizations_introspecting_its_own_token
@@ -2461,19 +2475,13 @@ public class Given_a_configuration_service_shaped_client_with_many_education_org
         return new IntrospectionObservation(
             outcome,
             ActiveBefore: null,
-            $"{TokenAudience(grant.AccessToken)}; token {_tokenLength} characters, Keycloak's form attribute limit {ExpectedIntrospection.FormAttributeLimit}; answer {outcome.BodyLength} characters, the Configuration Service reads {ExpectedIntrospection.ConfigurationServiceAnswerBudget}"
+            $"{TokenAudience(grant.AccessToken)}; token {_tokenLength} characters, Keycloak's form attribute limit {ExpectedIntrospection.FormAttributeLimit}; answer {outcome.BodyLength} characters"
         );
     }
 
     [Test]
     public void It_starts_from_a_token_within_the_form_attribute_limit() =>
         _tokenLength.Should().BeLessThanOrEqualTo(ExpectedIntrospection.FormAttributeLimit);
-
-    [Test]
-    public void It_answers_in_more_than_64_KiB_and_within_the_configuration_services_budget() =>
-        Observation
-            .Outcome.BodyLength.Should()
-            .BeInRange(64 * 1024 + 1, ExpectedIntrospection.ConfigurationServiceAnswerBudget);
 }
 
 [TestFixture]
@@ -2527,5 +2535,84 @@ public class Given_a_client_whose_own_audience_mapper_is_left_out_of_introspecti
             ActiveBefore: null,
             $"{TokenAudience(grant.AccessToken)}; the answer's `aud` starts from the token's"
         );
+    }
+}
+
+/// <summary>
+/// Keycloak rebuilds an answer's claims from the client's mappers as they are when it answers, not as
+/// they were when the token was issued: a token issued while CMS-grown held one education organization
+/// is answered, after an update to 14,000, in more characters than any token Keycloak's form attribute
+/// limit lets through.
+/// </summary>
+[TestFixture]
+public class Given_a_configuration_service_shaped_client_whose_education_organizations_grew_after_issuance_introspecting_its_own_token
+    : IntrospectionCharacterizationRow
+{
+    private string _tokenEducationOrganizationIds = "";
+
+    protected override string RowId => "I-31";
+
+    protected override string Scenario =>
+        "CMS-grown, shaped as CMS with one education organization id, introspects its own access token after an update gives it 14,000";
+
+    protected override IntrospectionPrediction Prediction =>
+        ExpectedIntrospection.GrownEdOrgsCmsAccessToken();
+
+    protected override async Task<IntrospectionObservation> ObserveAsync()
+    {
+        TokenGrant grant = await Realm.ServiceAccountGrantAsync(Realm.GrownEdOrgsCms);
+        _tokenEducationOrganizationIds =
+            JwtPayload.Read(grant.AccessToken)["educationOrganizationIds"]?.GetValue<string>() ?? "";
+        await Realm.Api.SetClaimValueAsync(
+            await Realm.GetAdminTokenAsync(),
+            Realm.GrownEdOrgsCms.Uuid,
+            "educationOrganizationIds",
+            IntrospectionCharacterizationRealm.GrownEducationOrganizationIds
+        );
+        IntrospectionOutcome outcome = await IntrospectWithFormCredentialsAsync(
+            Realm.GrownEdOrgsCms.Credentials,
+            grant.AccessToken
+        );
+        return new IntrospectionObservation(
+            outcome,
+            ActiveBefore: null,
+            $"{TokenAudience(grant.AccessToken)}; token {grant.AccessToken.Length} characters with education organization ids `{_tokenEducationOrganizationIds}`; answer {outcome.BodyLength} characters, Keycloak's form attribute limit {ExpectedIntrospection.FormAttributeLimit}"
+        );
+    }
+
+    [Test]
+    public void It_starts_from_a_token_issued_with_one_education_organization() =>
+        _tokenEducationOrganizationIds.Should().Be("255901");
+
+    [Test]
+    public void It_answers_in_more_characters_than_any_token_keycloak_accepts() =>
+        Observation.Outcome.BodyLength.Should().BeGreaterThan(ExpectedIntrospection.FormAttributeLimit);
+}
+
+/// <summary>
+/// A JWT whose header has no <c>alg</c>: Keycloak authenticates the caller first, then fails to read
+/// the token and answers 400, the answer it gives any failure while checking a token, where other
+/// malformed tokens are answered inactive (I-13).
+/// </summary>
+[TestFixture]
+public class Given_a_client_introspecting_a_jwt_whose_header_has_no_alg : IntrospectionCharacterizationRow
+{
+    /// <summary><c>{"typ":"JWT"}.{"sub":"x"}.sig</c>, base64url-encoded.</summary>
+    public const string JwtWithoutAlg = "eyJ0eXAiOiJKV1QifQ.eyJzdWIiOiJ4In0.c2ln";
+
+    protected override string RowId => "I-32";
+
+    protected override string Scenario => "A2 introspects a JWT whose header has no `alg`";
+
+    protected override IntrospectionPrediction Prediction =>
+        IntrospectionPrediction.ErrorBody(400, "invalid_request", "Failed to introspect token.");
+
+    protected override async Task<IntrospectionObservation> ObserveAsync()
+    {
+        IntrospectionOutcome outcome = await IntrospectWithFormCredentialsAsync(
+            Realm.A2.Credentials,
+            JwtWithoutAlg
+        );
+        return new IntrospectionObservation(outcome, ActiveBefore: null, "no token issued");
     }
 }

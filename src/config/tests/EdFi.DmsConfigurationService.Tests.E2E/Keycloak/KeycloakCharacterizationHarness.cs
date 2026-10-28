@@ -181,7 +181,9 @@ public sealed record HttpOutcome(
     }
 
     private static string? StringMember(JsonObject json, string name) =>
-        json[name] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+        json[name] is JsonValue value && value.GetValueKind() == JsonValueKind.String
+            ? value.GetValue<string>()
+            : null;
 }
 
 /// <summary>
@@ -603,6 +605,31 @@ public sealed class KeycloakCharacterizationApi : IDisposable
     {
         JsonObject representation = await GetClientRepresentationAsync(adminToken, uuid);
         representation["enabled"] = enabled;
+        await PutClientRepresentationAsync(adminToken, uuid, representation);
+        return await GetClientFlagAsync(adminToken, uuid, "enabled");
+    }
+
+    /// <summary>
+    /// Sets the <c>claim.value</c> of the client's mapper for <paramref name="claimName"/> through a
+    /// read-modify-write of its full representation, as the Configuration Service updates a client's
+    /// education organizations.
+    /// </summary>
+    public async Task SetClaimValueAsync(string adminToken, string uuid, string claimName, string value)
+    {
+        JsonObject representation = await GetClientRepresentationAsync(adminToken, uuid);
+        JsonObject config = representation["protocolMappers"] is JsonArray mappers
+            ? mappers
+                .OfType<JsonObject>()
+                .Select(mapper => mapper["config"])
+                .OfType<JsonObject>()
+                .Single(mapperConfig => OptionalString(mapperConfig, "claim.name") == claimName)
+            : throw new InvalidOperationException("The client representation has no protocol mappers.");
+        config["claim.value"] = value;
+        await PutClientRepresentationAsync(adminToken, uuid, representation);
+    }
+
+    private async Task PutClientRepresentationAsync(string adminToken, string uuid, JsonObject representation)
+    {
         using HttpRequestMessage request = AdminRequest(
             HttpMethod.Put,
             $"{_baseUrl}/admin/realms/{_realm}/clients/{uuid}",
@@ -616,8 +643,6 @@ public sealed class KeycloakCharacterizationApi : IDisposable
                 $"Updating the characterization client answered HTTP {(int)response.StatusCode}."
             );
         }
-
-        return await GetClientFlagAsync(adminToken, uuid, "enabled");
     }
 
     /// <summary>The names of a client's default client scopes, as the admin API lists them.</summary>

@@ -5798,8 +5798,8 @@ public class IntrospectionRequestContractTests
     private const string KeycloakInactiveAnswer = """{"active":false}""";
 
     /// <summary>
-    /// What Keycloak answers an active access token (I-01 on 26.1.4 and 26.7.5), Keycloak-only members
-    /// included, for a token whose <c>azp</c> and <c>client_id</c> name <paramref name="azp"/>.
+    /// What Keycloak answers an active access token (I-01 on 26.1.4; 26.7.5 gives the same members with
+    /// the owner in <c>aud</c>, I-02), Keycloak-only members included, for a token whose <c>azp</c> and <c>client_id</c> name <paramref name="azp"/>.
     /// </summary>
     private static string KeycloakActiveAnswer(string azp) =>
         $$$"""{"exp":1792607774,"iat":1792605974,"jti":"0f1e2d3c-jti","iss":"http://keycloak.test/realms/edfi","aud":"account","sub":"9f0c5a1e-subject","typ":"Bearer","azp":"{{{azp}}}","acr":"1","realm_access":{"roles":["offline_access"]},"resource_access":{"account":{"roles":["manage-account"]}},"scope":"profile email","namespacePrefixes":"uri://ed-fi.org","email_verified":false,"preferred_username":"service-account-{{{azp}}}","client_id":"{{{azp}}}","username":"service-account-{{{azp}}}","token_type":"Bearer","active":true}""";

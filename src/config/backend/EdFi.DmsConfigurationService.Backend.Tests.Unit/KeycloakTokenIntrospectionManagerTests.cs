@@ -97,9 +97,10 @@ public class KeycloakTokenIntrospectionManagerTests
         );
 
     /// <summary>
-    /// The answer Keycloak gave an access token's owner on both characterized versions (I-01, I-02,
-    /// I-05): every member recorded there, in Keycloak's order, with a sentinel in members CMS must
-    /// never disclose. <paramref name="change"/> edits it for one case.
+    /// The answer Keycloak gave an access token's owner whose token names only <c>account</c> in
+    /// <c>aud</c> (I-01 and I-05 on 26.1.4; 26.7.5 answers such an owner inactive, and with the owner in
+    /// <c>aud</c> gives the same members, I-02): every member recorded there, in Keycloak's order, with a
+    /// sentinel in members CMS must never disclose. <paramref name="change"/> edits it for one case.
     /// </summary>
     protected static string Answer(Action<JsonObject>? change = null)
     {
@@ -226,6 +227,15 @@ public class KeycloakTokenIntrospectionManagerTests
         [Test]
         public void It_sends_no_authorization_header() =>
             _handler.Requests[0].Authorization.Should().BeNull();
+
+        /// <summary>
+        /// Keycloak 26.1.4 answers a form value over its limit with 413 without reading the rest of the
+        /// request and keeps the connection open, so the next request on it gets no answer; a connection
+        /// used once is never handed to another caller.
+        /// </summary>
+        [Test]
+        public void It_asks_for_the_connection_to_be_closed_after_the_answer() =>
+            _handler.Requests[0].ConnectionClose.Should().BeTrue();
 
         [Test]
         public void It_never_sends_the_service_credentials()
@@ -516,6 +526,27 @@ public class KeycloakTokenIntrospectionManagerTests
             "I-21 400 token not provided",
             400,
             OAuthError("invalid_request", "Token not provided."),
+            providerStatus
+        );
+
+        // Keycloak's answer to a failure while checking the token (I-32) has its own fixture; only that
+        // exact answer is recognized.
+        yield return Case(
+            "400 introspection-failed description without the period",
+            400,
+            OAuthError("invalid_request", "Failed to introspect token"),
+            providerStatus
+        );
+        yield return Case(
+            "400 introspection-failed description under invalid_client",
+            400,
+            OAuthError("invalid_client", IntrospectionFailedDescriptionFromEvidence),
+            providerStatus
+        );
+        yield return Case(
+            "500 introspection-failed description",
+            500,
+            OAuthError("invalid_request", IntrospectionFailedDescriptionFromEvidence),
             providerStatus
         );
 
@@ -846,6 +877,45 @@ public class KeycloakTokenIntrospectionManagerTests
     /// <summary>Copied from the characterization (I-10, identical on 26.1.4 and 26.7.5), not from the production constant, so a drift in either fails.</summary>
     private const string PublicClientRefusalDescriptionFromEvidence = "Client not allowed.";
 
+    /// <summary>Copied from the characterization (I-32), not from the production constant, so a drift in either fails.</summary>
+    private const string IntrospectionFailedDescriptionFromEvidence = "Failed to introspect token.";
+
+    /// <summary>
+    /// Keycloak answers any failure after it authenticated the caller, a malformed token (I-32) or its
+    /// own, with this 400, so the token is undecided: never inactive, which could tell an owner its
+    /// live token is not active, and a Warning rather than an Error, since any caller can cause it.
+    /// </summary>
+    [TestFixture]
+    public class Given_keycloak_fails_while_checking_the_token : KeycloakTokenIntrospectionManagerTests
+    {
+        private TokenIntrospectionResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            KeycloakAnswers(() =>
+                Response(400, OAuthError("invalid_request", IntrospectionFailedDescriptionFromEvidence))
+            );
+            _result = await Introspect();
+        }
+
+        [Test]
+        public void It_is_undecided() => _result.Should().Be(Unavailable("undecided-token"));
+
+        [Test]
+        public void It_logs_one_warning_naming_the_reason() =>
+            _logger
+                .Entries.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<KeycloakCapturedLogEntry>(entry =>
+                    entry.Level == LogLevel.Warning && entry.Message.Contains("(undecided-token)")
+                );
+
+        [Test]
+        public void It_logs_no_provider_content_and_attaches_no_exception() => AssertNoDisclosure();
+    }
+
     [TestFixtureSource(typeof(KeycloakTokenIntrospectionManagerTests), nameof(ResponseMappings))]
     public class Given_a_keycloak_answer(int status, string body, TokenIntrospectionResult expected)
         : KeycloakTokenIntrospectionManagerTests
@@ -874,16 +944,6 @@ public class KeycloakTokenIntrospectionManagerTests
 
         [Test]
         public void It_logs_no_provider_content_and_attaches_no_exception() => AssertNoDisclosure();
-    }
-
-    [TestFixture]
-    public class Given_the_production_public_client_constant : KeycloakTokenIntrospectionManagerTests
-    {
-        [Test]
-        public void It_is_the_string_keycloak_was_observed_to_answer() =>
-            KeycloakTokenIntrospectionManager
-                .PublicClientRefusalDescription.Should()
-                .Be(PublicClientRefusalDescriptionFromEvidence);
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -1101,9 +1161,9 @@ public class KeycloakTokenIntrospectionManagerTests
         yield return new TestFixtureData(
             OAuthError("invalid_client", "Client authentication failed.")
         ).SetArgDisplayNames("an authentication error body");
-        yield return new TestFixtureData(
-            new string(' ', KeycloakTokenIntrospectionManager.MaxResponseBodyBytes + 1)
-        ).SetArgDisplayNames("a body over the read cap");
+        yield return new TestFixtureData(new string(' ', FormAttributeLimit + 1)).SetArgDisplayNames(
+            "a body larger than any token Keycloak accepts"
+        );
     }
 
     /// <summary>
@@ -1152,6 +1212,45 @@ public class KeycloakTokenIntrospectionManagerTests
 
         [Test]
         public void It_logs_neither_the_token_the_secret_nor_the_body() => AssertNoDisclosure();
+    }
+
+    public static IEnumerable<TestFixtureData> UnreadTooLargeBodies()
+    {
+        yield return new TestFixtureData(false).SetArgDisplayNames("a readable body");
+        yield return new TestFixtureData(true).SetArgDisplayNames("a body that fails when read");
+    }
+
+    /// <summary>
+    /// The status alone decides a 413, so its body is never read: one that fails while being read is
+    /// still the caller's invalid request, not a lost response.
+    /// </summary>
+    [TestFixtureSource(typeof(KeycloakTokenIntrospectionManagerTests), nameof(UnreadTooLargeBodies))]
+    public class Given_keycloak_rejects_the_request_as_too_large_with_a_body_left_unread(bool failsWhenRead)
+        : KeycloakTokenIntrospectionManagerTests
+    {
+        private TokenIntrospectionResult _result = null!;
+        private ProbeStream _stream = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            byte[] body = Encoding.UTF8.GetBytes(FormLimitAnswer);
+            _stream = failsWhenRead
+                ? ProbeStream.Failing(new IOException(Sentinel), body)
+                : new ProbeStream(body);
+            KeycloakAnswers(() => Response(413, new StreamContent(_stream)));
+            _result = await Introspect();
+        }
+
+        [TearDown]
+        public void DisposeStream() => _stream.Dispose();
+
+        [Test]
+        public void It_is_an_invalid_request() =>
+            _result.Should().Be(new TokenIntrospectionResult.InvalidRequest());
+
+        [Test]
+        public void It_does_not_read_the_body() => _stream.WasRead.Should().BeFalse();
     }
 
     /// <summary>
@@ -1363,39 +1462,25 @@ public class KeycloakTokenIntrospectionManagerTests
     }
 
     // ---------------------------------------------------------------------------------------------
-    // Bounded reading
+    // Answer size
     // ---------------------------------------------------------------------------------------------
+
+    /// <summary>
+    /// Keycloak's default form attribute limit, in characters: the longest token a caller can send.
+    /// </summary>
+    protected const int FormAttributeLimit = 131072;
 
     protected static string PaddedInactiveAnswer(int totalBytes) =>
         InactiveAnswer[..^1] + new string(' ', totalBytes - Encoding.UTF8.GetByteCount(InactiveAnswer)) + "}";
 
-    [TestFixture]
-    public class Given_an_answer_of_exactly_the_cap : KeycloakTokenIntrospectionManagerTests
-    {
-        private TokenIntrospectionResult _result = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            string body = PaddedInactiveAnswer(KeycloakTokenIntrospectionManager.MaxResponseBodyBytes);
-            KeycloakAnswers(() =>
-                Response(200, new StreamContent(new MemoryStream(Encoding.UTF8.GetBytes(body))))
-            );
-            _result = await Introspect();
-        }
-
-        [Test]
-        public void It_reads_and_maps_it() => _result.Should().Be(new TokenIntrospectionResult.Inactive());
-    }
-
     /// <summary>
-    /// A client with many education organizations gets a long token, and Keycloak's answer repeats its
-    /// claims. 9,600 nine-digit ids give the longest token Keycloak's form attribute limit lets
-    /// through (129,287 characters on 26.7.5, whose answer was 96,671 bytes), so the owner is told
-    /// about the largest token Keycloak can describe.
+    /// Keycloak rebuilds an answer's claims from the client's mappers as they are when it answers
+    /// (I-31), so a token issued before its application gained 14,000 education organizations is
+    /// short, yet its answer carries all 14,000 ids, more than any token Keycloak accepts holds. The
+    /// owner is still told about the token.
     /// </summary>
     [TestFixture]
-    public class Given_the_owners_answer_for_the_longest_token_keycloak_accepts
+    public class Given_the_owners_answer_after_its_application_gained_many_education_organizations
         : KeycloakTokenIntrospectionManagerTests
     {
         private string _body = null!;
@@ -1405,15 +1490,15 @@ public class KeycloakTokenIntrospectionManagerTests
         public async Task Setup()
         {
             _body = Answer(answer =>
-                answer["educationOrganizationIds"] = string.Join(",", Enumerable.Range(255900001, 9600))
+                answer["educationOrganizationIds"] = string.Join(",", Enumerable.Range(100_000_000, 14_000))
             );
             KeycloakAnswers(() => Response(200, _body));
             _result = await Introspect();
         }
 
         [Test]
-        public void It_is_an_answer_over_64_KiB() =>
-            Encoding.UTF8.GetByteCount(_body).Should().BeGreaterThan(64 * 1024);
+        public void It_is_an_answer_larger_than_any_token_keycloak_accepts() =>
+            Encoding.UTF8.GetByteCount(_body).Should().BeGreaterThan(FormAttributeLimit);
 
         [Test]
         public void It_describes_the_token() =>
@@ -1423,55 +1508,41 @@ public class KeycloakTokenIntrospectionManagerTests
         public void It_logs_no_provider_content() => AssertNoDisclosure();
     }
 
-    [TestFixture]
-    public class Given_an_answer_one_byte_over_the_cap_without_a_length
-        : KeycloakTokenIntrospectionManagerTests
+    public static IEnumerable<TestFixtureData> DeclaredLengths()
     {
-        private TokenIntrospectionResult _result = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            string body = PaddedInactiveAnswer(KeycloakTokenIntrospectionManager.MaxResponseBodyBytes + 1);
-            // StreamContent over a non-seekable stream carries no Content-Length, so the cap is
-            // enforced while reading.
-            KeycloakAnswers(() =>
-                Response(200, new StreamContent(new ProbeStream(Encoding.UTF8.GetBytes(body))))
-            );
-            _result = await Introspect();
-        }
-
-        [Test]
-        public void It_is_unparseable() => _result.Should().Be(Unavailable("unparseable"));
+        yield return new TestFixtureData(true).SetArgDisplayNames("with its length declared");
+        yield return new TestFixtureData(false).SetArgDisplayNames("without a declared length");
     }
 
-    [TestFixture]
-    public class Given_an_answer_that_declares_a_length_over_the_cap : KeycloakTokenIntrospectionManagerTests
+    /// <summary>
+    /// No answer is refused for its size, whether or not Keycloak declares its length: a mebibyte
+    /// of insignificant whitespace around an inactive answer is still that answer.
+    /// </summary>
+    [TestFixtureSource(typeof(KeycloakTokenIntrospectionManagerTests), nameof(DeclaredLengths))]
+    public class Given_an_answer_of_a_mebibyte(bool declaresLength) : KeycloakTokenIntrospectionManagerTests
     {
         private TokenIntrospectionResult _result = null!;
-        private ProbeStream _stream = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            _stream = new ProbeStream(Encoding.UTF8.GetBytes(InactiveAnswer));
+            byte[] body = Encoding.UTF8.GetBytes(PaddedInactiveAnswer(1024 * 1024));
             KeycloakAnswers(() =>
             {
-                var content = new StreamContent(_stream);
-                content.Headers.ContentLength = KeycloakTokenIntrospectionManager.MaxResponseBodyBytes + 1;
+                // StreamContent over a non-seekable stream carries no Content-Length of its own.
+                var content = new StreamContent(new ProbeStream(body));
+                if (declaresLength)
+                {
+                    content.Headers.ContentLength = body.Length;
+                }
+
                 return Response(200, content);
             });
             _result = await Introspect();
         }
 
-        [TearDown]
-        public void DisposeStream() => _stream.Dispose();
-
         [Test]
-        public void It_is_unparseable() => _result.Should().Be(Unavailable("unparseable"));
-
-        [Test]
-        public void It_does_not_read_the_body() => _stream.WasRead.Should().BeFalse();
+        public void It_reads_and_maps_it() => _result.Should().Be(new TokenIntrospectionResult.Inactive());
     }
 
     // ---------------------------------------------------------------------------------------------

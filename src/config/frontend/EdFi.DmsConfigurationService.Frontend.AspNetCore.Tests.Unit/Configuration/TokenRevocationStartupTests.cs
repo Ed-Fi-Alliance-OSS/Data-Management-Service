@@ -343,6 +343,13 @@ public class TokenRevocationStartupTests
             _boot.ProviderConnectionsAtStartup.Should().Be(0);
     }
 
+    /// <summary>The datastores of the self-contained shapes.</summary>
+    public static readonly object[] SelfContainedDatastores =
+    [
+        new object[] { "postgresql" },
+        new object[] { "mssql" },
+    ];
+
     /// <summary>
     /// The placeholder an unknown client's secret is verified against is generated at startup through
     /// the final hasher registration, a replacement included, before any request is served; requests

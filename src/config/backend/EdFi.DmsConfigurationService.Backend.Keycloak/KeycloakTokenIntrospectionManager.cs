@@ -14,11 +14,12 @@ namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 /// <summary>
 /// RFC 7662 introspection for the Keycloak provider, delegated to the realm's own introspection
 /// endpoint with the caller's credentials. Keycloak authenticates the caller, and refuses a public
-/// client itself (I-10), but it checks no ownership (I-03, I-04: any confidential client is told
-/// about any token), so CMS decides ownership from the answer: only an active access token whose
+/// client itself (I-10), but it checks no ownership: a confidential client in the token's
+/// <c>aud</c> is told about another client's token (I-04), as any confidential client is before
+/// 26.6.2 (I-03). So CMS decides ownership from the answer: only an active access token whose
 /// <c>azp</c>, and <c>client_id</c> when present, equal the caller's id ordinally is reported, and only
 /// its RFC 7662 members. Keycloak's answer is mapped only through the responses characterized on
-/// 26.1.4 and 26.7.5 (<c>KeycloakIntrospectionCharacterizationTests</c>, rows I-00 to I-27); anything
+/// 26.1.4 and 26.7.5 (<c>KeycloakIntrospectionCharacterizationTests</c>, rows I-00 to I-32); anything
 /// else, a timeout or an unreachable host included, is
 /// <see cref="TokenIntrospectionResult.TemporarilyUnavailable"/>: one call both authenticates and
 /// decides, so without a usable answer an authenticated caller cannot be told apart from an
@@ -40,13 +41,11 @@ public sealed class KeycloakTokenIntrospectionManager(
     internal const string PublicClientRefusalDescription = "Client not allowed.";
 
     /// <summary>
-    /// The largest answer read; a larger one is treated as unparseable. An answer describes a token
-    /// that reached Keycloak as one form value, which Keycloak's form attribute limit (128 KiB by
-    /// default) bounds, and repeats the token's claims, which take three quarters of its length; so the
-    /// answer for any token Keycloak accepts fits, with room for the members Keycloak adds. The longest
-    /// token of a client with 9,600 education organizations was answered in 96,729 bytes (I-28).
+    /// Keycloak's <c>error_description</c>, with a 400 <c>invalid_request</c>, for any exception after
+    /// it authenticated the caller, while it checks the token or builds the answer: a JWT whose header
+    /// has no <c>alg</c> (I-32) as much as a failure of its own stores or mappers.
     /// </summary>
-    internal const int MaxResponseBodyBytes = 128 * 1024;
+    internal const string IntrospectionFailedDescription = "Failed to introspect token.";
 
     /// <summary>
     /// The named client for the delegated introspection request, registered with automatic redirects
@@ -66,6 +65,7 @@ public sealed class KeycloakTokenIntrospectionManager(
     private const string UnexpectedReason = "unexpected";
     private const string ProviderStatusReason = "provider-status";
     private const string UnrecognizedResponseReason = "unrecognized-response";
+    private const string UndecidedTokenReason = "undecided-token";
 
     /// <summary>The members read from a 200 answer. Every other member, Keycloak's own claims included, is ignored.</summary>
     private static readonly HashSet<string> _answerMembers = new(StringComparer.Ordinal)
@@ -127,6 +127,12 @@ public sealed class KeycloakTokenIntrospectionManager(
             new("token", request.Token),
         ]);
 
+        // Keycloak 26.1.4 answers a form value over its form attribute limit with 413 without reading
+        // the rest of the request and keeps the connection open, so the next request on that
+        // connection gets no answer; closing the connection after each answer keeps a caller's
+        // oversized request from stalling another caller's.
+        message.Headers.ConnectionClose = true;
+
         HttpResponseMessage response;
         try
         {
@@ -162,20 +168,28 @@ public sealed class KeycloakTokenIntrospectionManager(
 
         using (response)
         {
+            if (response.StatusCode == HttpStatusCode.RequestEntityTooLarge)
+            {
+                // Decided on the status alone, so the body is never read. Information, not Error: a
+                // request any caller can repeat at will, not an outage. No client id: no one was
+                // authenticated.
+                logger.LogInformation(
+                    "Keycloak rejected an introspection request as too large (HTTP 413) before authenticating the caller"
+                );
+                return new TokenIntrospectionResult.InvalidRequest();
+            }
+
             // Headers were awaited under the client's own timeout; the body is read under a fresh
             // budget of the same length, because ResponseHeadersRead leaves it outside that timeout.
-            // An oversized body reads as empty: both are unparseable.
+            // The body is read whole: Keycloak rebuilds an answer's claims from the client's mappers
+            // as they are when it answers (I-31), so the answer's size follows what administrators
+            // configure for the client, not the token's length, and no fixed cap holds every answer.
             byte[] body;
             try
             {
                 using var bodyBudget = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
                 bodyBudget.CancelAfter(httpClient.Timeout);
-                body =
-                    await KeycloakProviderAnswer.ReadBoundedAsync(
-                        response.Content,
-                        MaxResponseBodyBytes,
-                        bodyBudget.Token
-                    ) ?? [];
+                body = await response.Content.ReadAsByteArrayAsync(bodyBudget.Token);
             }
             catch (Exception) when (cancellationToken.IsCancellationRequested)
             {
@@ -202,8 +216,9 @@ public sealed class KeycloakTokenIntrospectionManager(
     }
 
     /// <summary>
-    /// A 200 answer (I-01 to I-05, I-13 to I-17, I-19, I-22 to I-24, I-27). <c>active:false</c> is
-    /// every unknown, invalid, expired or revoked token. An active answer is a token outcome only for
+    /// A 200 answer (I-01 to I-05, I-13 to I-17, I-19, I-22 to I-24, I-27). <c>active:false</c> is how
+    /// Keycloak answered every unknown, invalid, expired and revoked token characterized (I-13 to I-15,
+    /// I-19). An active answer is a token outcome only for
     /// the caller's own access token; ownership is decided before the token type, so another client's
     /// token is inactive whatever its type. Members are required to have exactly the kinds Keycloak was
     /// observed to send.
@@ -335,15 +350,21 @@ public sealed class KeycloakTokenIntrospectionManager(
     }
 
     /// <summary>
-    /// A non-200 answer, restricted to the characterized ones. 401 is every client-authentication
-    /// failure (I-06 to I-09, I-11, I-12): 26.1.4 answers <c>invalid_request</c> "Authentication
-    /// failed.", 26.7.5 <c>invalid_client</c>. 403 <c>invalid_request</c> "Client not allowed." is a
-    /// public client (I-10). 413 is for a form value over Keycloak's form attribute limit (128 KiB by
-    /// default), answered on 26.1.4 and 26.7.5 before the caller is authenticated; the caller chose
-    /// that value, so it is <see cref="TokenIntrospectionResult.InvalidRequest"/>, decided on the
-    /// status alone whatever the body. The 400 answers (I-18, I-20, I-21) are requests CMS never
-    /// sends, so they are not usable either. Keycloak's status never decides between 400 and 401 for
-    /// the caller; the endpoint does that.
+    /// A non-200 answer other than 413, restricted to the characterized ones. 401 is a failed client
+    /// authentication (I-06 to I-09, I-12): 26.1.4 answers <c>invalid_request</c> "Authentication
+    /// failed.", 26.7.5 <c>invalid_client</c>. 26.7.5 also answers 401 <c>invalid_request</c>
+    /// "Authentication failed." when authenticating the caller throws, which cannot be told apart from
+    /// 26.1.4's answer to wrong credentials, so both are <see cref="TokenIntrospectionResult.InvalidClient"/>.
+    /// A bearer-only client with its secret is refused on 26.1.4 (I-11, 401) and authenticated on
+    /// 26.7.5 (I-11, 200); a bearer-only client obtains no tokens, so it is never told about one.
+    /// 403 <c>invalid_request</c> "Client not allowed." is a public client (I-10). 400
+    /// <c>invalid_request</c> <see cref="IntrospectionFailedDescription"/> comes after the caller is
+    /// authenticated, but does not tell a malformed token from a failure inside Keycloak (I-32), so it
+    /// is <see cref="TokenIntrospectionResult.TemporarilyUnavailable"/>: answering it inactive could
+    /// tell an owner its live token is not active. It is logged at Warning, not Error, because any
+    /// caller can cause it with a malformed token. The other 400 answers (I-18, I-20, I-21) are
+    /// requests CMS never sends, so they are not usable. Keycloak's status never decides between 400
+    /// and 401 for the caller; the endpoint does that.
     /// </summary>
     private TokenIntrospectionResult MapErrorResponse(
         int statusCode,
@@ -351,14 +372,19 @@ public sealed class KeycloakTokenIntrospectionManager(
         string clientId
     )
     {
-        if (statusCode == (int)HttpStatusCode.RequestEntityTooLarge)
+        if (
+            statusCode == (int)HttpStatusCode.BadRequest
+            && members is not null
+            && StringMember(members, "error") == "invalid_request"
+            && StringMember(members, "error_description") == IntrospectionFailedDescription
+        )
         {
-            // Information, not Error: a request any caller can repeat at will, not an outage. No
-            // client id: the oversized value may be the id itself, and no one was authenticated.
-            logger.LogInformation(
-                "Keycloak rejected an introspection request as too large (HTTP 413) before authenticating the caller"
+            logger.LogWarning(
+                "Introspection for client {ClientId} could not be completed: Keycloak failed while checking the token (HTTP 400), which a malformed token or a Keycloak failure causes alike ({Reason})",
+                LoggingUtility.SanitizeForLog(clientId),
+                UndecidedTokenReason
             );
-            return new TokenIntrospectionResult.InvalidRequest();
+            return new TokenIntrospectionResult.TemporarilyUnavailable(UndecidedTokenReason);
         }
 
         string category = KeycloakProviderAnswer.ProviderErrorCategory(
@@ -396,11 +422,10 @@ public sealed class KeycloakTokenIntrospectionManager(
 
     /// <summary>
     /// The <paramref name="read"/> members of a JSON object, each cloned so it outlives the parsed
-    /// document. Null (unparseable) when the body is empty or oversized (an oversized body is read as
-    /// empty), not UTF-8, not JSON or not an object, when any member name cannot be decoded, when a
-    /// read member is repeated, or when a string inside a read member cannot be decoded: a repeated or
-    /// undecodable member would make the ownership comparison or the reported value ambiguous. Every
-    /// name is decoded through
+    /// document. Null (unparseable) when the body is empty, not UTF-8, not JSON or not an object, when
+    /// any member name cannot be decoded, when a read member is repeated, or when a string inside a
+    /// read member cannot be decoded: a repeated or undecodable member would make the ownership
+    /// comparison or the reported value ambiguous. Every name is decoded through
     /// <see cref="JsonProperty.Name"/>, so an escaped name is recognized and an escaped, unpaired
     /// surrogate such as <c>"\uD800"</c>, valid UTF-8 and valid JSON syntax, is rejected wherever it is.
     /// </summary>

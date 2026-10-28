@@ -6,6 +6,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using FluentValidation;
 using FluentValidation.Results;
 
@@ -33,7 +34,7 @@ public class ApiClientInsertCommand
         public Validator()
         {
             RuleFor(a => a.ApplicationId).NotEmpty().GreaterThan(0);
-            RuleFor(a => a.Name).NotEmpty().MaximumLength(50);
+            RuleFor(a => a.Name).NotEmpty().MaximumLength(ValidationConstants.ApiClientNameMaxLength);
             RuleFor(a => a.DataStoreIds)
                 .NotNull()
                 .WithMessage(

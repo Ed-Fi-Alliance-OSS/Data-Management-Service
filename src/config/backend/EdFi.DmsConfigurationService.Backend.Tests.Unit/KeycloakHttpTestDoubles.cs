@@ -15,7 +15,8 @@ public sealed record RecordedRequest(
     string? Authorization,
     string? ContentType,
     IReadOnlyList<KeyValuePair<string, string>> Form,
-    string RawText
+    string RawText,
+    bool ConnectionClose
 );
 
 /// <summary>
@@ -56,7 +57,8 @@ public sealed class RecordingHandler(
                 request.Headers.Authorization?.ToString(),
                 request.Content?.Headers.ContentType?.MediaType,
                 form,
-                $"{request.RequestUri} {request.Headers} {request.Content?.Headers} {body}"
+                $"{request.RequestUri} {request.Headers} {request.Content?.Headers} {body}",
+                request.Headers.ConnectionClose == true
             )
         );
         onRequest?.Invoke();
@@ -186,18 +188,27 @@ public sealed class KeycloakCapturingLogger<T> : ILogger<T>
                 text.AppendLine(pair.Value?.ToString());
             }
 
-            foreach (object? scope in entry.Scopes)
+            foreach (string scope in entry.Scopes.Select(value => $"{value}"))
             {
-                text.AppendLine(scope?.ToString());
+                text.AppendLine(scope);
             }
 
-            for (Exception? current = entry.Exception; current is not null; current = current.InnerException)
+            if (entry.Exception is { } exception)
             {
-                text.AppendLine(current.ToString());
+                AppendExceptionChain(text, exception);
             }
         }
 
         return text.ToString();
+    }
+
+    private static void AppendExceptionChain(StringBuilder text, Exception exception)
+    {
+        text.AppendLine(exception.ToString());
+        if (exception.InnerException is { } inner)
+        {
+            AppendExceptionChain(text, inner);
+        }
     }
 
     private sealed class ScopeExit(Action exit) : IDisposable

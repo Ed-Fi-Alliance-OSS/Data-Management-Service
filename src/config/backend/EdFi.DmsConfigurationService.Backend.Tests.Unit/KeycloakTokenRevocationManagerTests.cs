@@ -224,6 +224,15 @@ public class KeycloakTokenRevocationManagerTests
         public void It_sends_no_authorization_header() =>
             _handler.Requests[0].Authorization.Should().BeNull();
 
+        /// <summary>
+        /// Keycloak 26.1.4 answers a form value over its limit with 413 without reading the rest of the
+        /// request and keeps the connection open, so the next request on it gets no answer; a connection
+        /// used once is never handed to another caller.
+        /// </summary>
+        [Test]
+        public void It_asks_for_the_connection_to_be_closed_after_the_answer() =>
+            _handler.Requests[0].ConnectionClose.Should().BeTrue();
+
         [Test]
         public void It_never_sends_the_service_credentials()
         {
@@ -1058,6 +1067,46 @@ public class KeycloakTokenRevocationManagerTests
 
         [Test]
         public void It_logs_neither_the_token_the_secret_nor_the_body() => AssertNoDisclosure();
+    }
+
+    public static IEnumerable<TestFixtureData> UnreadTooLargeBodies()
+    {
+        yield return new TestFixtureData(false).SetArgDisplayNames("a readable body");
+        yield return new TestFixtureData(true).SetArgDisplayNames("a body that fails when read");
+    }
+
+    /// <summary>
+    /// The status alone decides a 413, so its body is never read: one that fails while being read is
+    /// still the caller's invalid request, not a lost response.
+    /// </summary>
+    [TestFixtureSource(typeof(KeycloakTokenRevocationManagerTests), nameof(UnreadTooLargeBodies))]
+    public class Given_keycloak_rejects_the_revoke_request_as_too_large_with_a_body_left_unread(
+        bool failsWhenRead
+    ) : KeycloakTokenRevocationManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+        private ProbeStream _stream = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            byte[] body = Encoding.UTF8.GetBytes(FormLimitAnswer);
+            _stream = failsWhenRead
+                ? ProbeStream.Failing(new IOException(Sentinel), body)
+                : new ProbeStream(body);
+            KeycloakAnswers(() => Response(413, new StreamContent(_stream)));
+            _result = await Revoke();
+        }
+
+        [TearDown]
+        public void DisposeStream() => _stream.Dispose();
+
+        [Test]
+        public void It_is_an_invalid_request() =>
+            _result.Should().Be(new TokenRevocationResult.InvalidRequest());
+
+        [Test]
+        public void It_does_not_read_the_body() => _stream.WasRead.Should().BeFalse();
     }
 
     /// <summary>

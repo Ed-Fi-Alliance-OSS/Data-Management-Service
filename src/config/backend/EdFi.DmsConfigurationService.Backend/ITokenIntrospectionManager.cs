@@ -59,7 +59,9 @@ public sealed record IntrospectedToken(
 /// credentials. A request the provider rejects before judging the caller is
 /// <see cref="InvalidRequest"/>, answered neither as rejected credentials nor as an outage. Once the
 /// caller is authenticated, every token outcome is <see cref="Inactive"/>, including, under the
-/// self-contained provider, a token that could not be decided because a dependency failed.
+/// self-contained provider, a token that could not be decided because a dependency failed. Under
+/// Keycloak, an answer that does not tell a malformed token from Keycloak's own failure is
+/// <see cref="TemporarilyUnavailable"/>.
 /// </summary>
 public abstract record TokenIntrospectionResult
 {

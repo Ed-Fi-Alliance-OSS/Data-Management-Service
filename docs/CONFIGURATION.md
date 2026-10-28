@@ -805,7 +805,8 @@ budgets apply, and a request must fit both:
   [forwarded headers](#reverse-proxy-and-forwarded-headers) from trusted proxies are applied. A native
   IPv6 address counts against its /64. Requests whose address is unknown share one budget.
 - **Per source address and `client_id` pair**, for `/connect/token`, `/connect/revoke` and authenticated
-  `/connect/introspect` requests (self-contained mode), spent just before the client secret is verified.
+  `/connect/introspect` requests, under either identity provider, spent just before the client secret is
+  verified (by Keycloak under `keycloak`).
   A request rejected earlier (malformed form, unsupported grant type, missing token) does not spend it.
   For counting, case, accents, character width, kana type and
   trailing padding are ignored. This conservatively merges common SQL Server lookup aliases on every

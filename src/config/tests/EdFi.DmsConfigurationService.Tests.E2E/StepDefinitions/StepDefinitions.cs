@@ -952,6 +952,31 @@ public partial class StepDefinitions(
         _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
     }
 
+    // A secret over Keycloak's form attribute limit, so Keycloak refuses the request with 413 before it
+    // authenticates anyone. The current client and token are left as they were.
+    [When("a token is requested by the system client with a {int}-character client secret")]
+    public async Task WhenATokenIsRequestedByTheSystemClientWithAClientSecretOfALength(int length)
+    {
+        var content = new FormUrlEncodedContent(
+            new Dictionary<string, string>
+            {
+                { "client_id", SystemClientId },
+                { "client_secret", new string('A', length) },
+                { "grant_type", "client_credentials" },
+                { "scope", "edfi_admin_api/full_access" },
+            }
+        );
+        APIRequestContextOptions options = new()
+        {
+            Headers = new Dictionary<string, string>
+            {
+                { "Content-Type", "application/x-www-form-urlencoded" },
+            },
+            Data = await content.ReadAsStringAsync(),
+        };
+        _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
+    }
+
     private async Task PostBasicTokenRequest(string key, string secret, Dictionary<string, string> form)
     {
         var credentials = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{key}:{secret}"));
