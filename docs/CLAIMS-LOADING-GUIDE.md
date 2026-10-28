@@ -559,9 +559,10 @@ from later policy edits.
 
 CMS retains its existing continuation/fallback behavior. The offline merge rejects
 incomplete composition: missing/unreadable directories, unreadable or malformed
-fragments, unmatched grants, invalid registration, and retired `*-claimset.json`
-files. Unrelated files and ordinary informational diagnostics are not errors;
-existing precedence superseding a grant is not an error.
+fragments, fragments with missing or null `resourceClaims`, unmatched grants,
+invalid registration, and retired `*-claimset.json` files. An explicitly empty
+`resourceClaims` array is valid. Unrelated files and ordinary informational
+diagnostics are not errors; existing precedence superseding a grant is not an error.
 
 These nonempty fields are unapplied requested policy and fail merge even if their
 values repeat existing policy; absent/empty collections do not cause this error:

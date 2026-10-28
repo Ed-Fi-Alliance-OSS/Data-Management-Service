@@ -138,9 +138,10 @@ precedence. CLI composition uses invariant culture, matching the default CMS
 container. CMS deployments with a custom culture must use invariant culture for
 ordering parity. Numeric filename prefixes make intended order clear. A readable empty
 directory produces the bundled base. Missing/unreadable directories, unreadable or
-malformed fragments, unmatched grants, failed registration, and retired
-`*-claimset.json` files make composition incomplete and exit `1`. Unrelated files
-are ignored. Grants superseded by existing precedence are not errors.
+malformed fragments, fragments with missing or null `resourceClaims`, unmatched
+grants, failed registration, and retired `*-claimset.json` files make composition
+incomplete and exit `1`. Unrelated files are ignored. An explicitly empty
+`resourceClaims` array is valid. Grants superseded by existing precedence are not errors.
 
 The following **nonempty** policy fields are unapplied input and fail merge, even
 when they repeat the existing policy. Absent/empty collections do not trigger these
