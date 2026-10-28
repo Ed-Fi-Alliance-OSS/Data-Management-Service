@@ -193,8 +193,12 @@ never echoes provider text:
 
 A request without credentials and without `token` gets `400 invalid_request`, not an
 authentication error, because request shape is checked first. A public client is answered
-with the same `invalid_client` description as a wrong secret, so the response does not
-reveal the client's type.
+with the same `invalid_client` description as a wrong secret, so that answer does not
+reveal the client's type. The exception is an oversized `client_secret` or `token` in
+`keycloak` mode (below): the client-type gate answers an unknown, public or bearer-only
+client `invalid_client`, while a confidential client's request goes on to Keycloak and is
+answered `400 invalid_request`, so the two answers tell a confidential client from the
+others without a correct secret.
 
 In `keycloak` mode, a `client_id` of more than 255 Unicode code points is answered `invalid_client` without calling Keycloak.
 Keycloak keeps client ids in a 255-character column, and PostgreSQL measures it in code points, so 255 characters outside the Basic Multilingual Plane are a valid client id.

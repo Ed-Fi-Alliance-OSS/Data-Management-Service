@@ -538,7 +538,7 @@ else {
 # Check and create client
 $client = Get_Client
 if ($client) {
-    Write-Warning "Client '$script:NewClientId' already exists. Please provide new client id."
+    Write-Output "Client '$script:NewClientId' already exists; checking its own audience."
     # Its credentials, roles and scopes are left as they are; only its own audience is repaired.
     Repair_Self_Audience $client[0].id
 }
