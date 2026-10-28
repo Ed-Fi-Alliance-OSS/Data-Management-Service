@@ -234,7 +234,8 @@ Both repairs are idempotent: they add the own-audience mapper only where it is m
    A `WARNING: ... was NOT repaired` names a client with a conflicting mapper; see step 3.
 
 2. The API clients the Configuration Service manages **[bash]**.
-   An unchanged `PUT /v3/vendors/{id}` adds the mapper to every API client of every application of that vendor; `PUT /v3/applications/{id}` reaches only the application's first API client, and a credential reset none.
+   An unchanged `PUT /v3/vendors/{id}` adds the mapper to every API client of every application of that vendor.
+   An unchanged `PUT /v3/applications/{id}` schedules no new client synchronization: it only retries clients already pending, so it is not a repair; a credential reset changes only the secret.
    The block sends every vendor back exactly as `GET` returned it, a page at a time, on `st-config` and in every tenant `mt-config` lists:
 
    ```bash
