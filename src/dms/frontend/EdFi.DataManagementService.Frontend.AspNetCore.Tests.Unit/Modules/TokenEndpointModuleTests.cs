@@ -1345,7 +1345,7 @@ public class TokenEndpointModuleTests
         [SetUp]
         public async Task Setup()
         {
-            using RecordingUpstreamHandler handler = new();
+            using RecordingUpstreamHandler handler = new(HttpStatusCode.OK, "{}");
             IHttpClientFactory clientFactory = A.Fake<IHttpClientFactory>();
             A.CallTo(() => clientFactory.CreateClient(A<string>._))
                 .ReturnsLazily(() =>
