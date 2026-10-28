@@ -46,18 +46,6 @@ public class ApiClientRepository(
             """;
     }
 
-    /// <summary>
-    /// The client's target Application still has the claim set name the identity provider was sent.
-    /// The client row is already locked, so a claim set rename either committed before this read or
-    /// waits for the transaction and marks the client again after it.
-    /// </summary>
-    private const string SentClaimSetIsCurrentCondition = """
-        EXISTS (
-            SELECT 1 FROM "dmscs"."Application" sa
-            WHERE sa."Id" = @ApplicationId AND sa."ClaimSetName" = @SentClaimSetName
-        )
-        """;
-
     private string ApplicationInTenantExistsCondition =>
         $"""
             EXISTS (
@@ -521,6 +509,25 @@ public class ApiClientRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
+            // A completing update share-locks its target Application before the client row, the order
+            // a claim set rename takes. A rename in progress is waited for and its new name read, and
+            // one that starts later waits for this transaction and then finds the client there. A
+            // client moving in stays on its old Application until this commits, so no rename marks
+            // it, and this update marks it itself when the name the provider was sent is stale.
+            // The read is not tenant scoped; the UPDATE's tenant condition rejects a foreign target.
+            bool sentClaimSetIsCurrent = false;
+            if (command.CompletesIdentityProviderSync)
+            {
+                string? claimSetName = await connection.QuerySingleOrDefaultAsync<string?>(
+                    """
+                    SELECT "ClaimSetName" FROM "dmscs"."Application" WHERE "Id" = @ApplicationId FOR SHARE;
+                    """,
+                    new { command.ApplicationId },
+                    transaction
+                );
+                sentClaimSetIsCurrent = claimSetName is not null && claimSetName == command.SentClaimSetName;
+            }
+
             // Lock the ApiClient within the current tenant; a move rewrites its education organization rows
             string checkSql = $"""
                 SELECT "ApplicationId", "InheritsApplicationEducationOrganizations" FROM "dmscs"."ApiClient"
@@ -610,7 +617,10 @@ public class ApiClientRepository(
                 SET "ApplicationId" = @ApplicationId, "Name" = @Name, "IsApproved" = @IsApproved,
                     "ClientUuid" = COALESCE(@ClientUuid, "ClientUuid"),
                     "InheritsApplicationEducationOrganizations" = COALESCE(@Inherits, "InheritsApplicationEducationOrganizations"),
-                    "IdentityProviderSyncPendingSince" = CASE WHEN @CompletesIdentityProviderSync AND {SentClaimSetIsCurrentCondition} THEN NULL ELSE "IdentityProviderSyncPendingSince" END,
+                    "IdentityProviderSyncPendingSince" = CASE
+                        WHEN @CompletesIdentityProviderSync AND @SentClaimSetIsCurrent THEN NULL
+                        WHEN @CompletesIdentityProviderSync THEN COALESCE("IdentityProviderSyncPendingSince", @LastModifiedAt)
+                        ELSE "IdentityProviderSyncPendingSince" END,
                     "LastModifiedAt" = @LastModifiedAt, "ModifiedBy" = @ModifiedBy
                 WHERE "Id" = @Id AND {ApplicationInTenantExistsCondition};
                 """;
@@ -628,7 +638,7 @@ public class ApiClientRepository(
                         ? scope is ApiClientEducationOrganizationScope.Inherit
                         : (bool?)null,
                     command.CompletesIdentityProviderSync,
-                    command.SentClaimSetName,
+                    SentClaimSetIsCurrent = sentClaimSetIsCurrent,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
                     ModifiedBy = auditContext.GetCurrentUser(),
                     TenantId,

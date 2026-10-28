@@ -93,8 +93,9 @@ public class ApiClientUpdateCommand
     /// <summary>
     /// Set server-side only after the identity provider confirmed this update, so the save also
     /// clears the client's pending identity provider synchronization, provided
-    /// <see cref="SentClaimSetName"/> is still the Application's claim set name; with no name the
-    /// marker is kept. False keeps any pending marker. Not part of the HTTP request body.
+    /// <see cref="SentClaimSetName"/> is still the Application's claim set name; otherwise, or with
+    /// no name, the client becomes pending. False keeps any pending marker. Not part of the HTTP
+    /// request body.
     /// </summary>
     [JsonIgnore]
     public bool CompletesIdentityProviderSync { get; set; }
@@ -102,7 +103,8 @@ public class ApiClientUpdateCommand
     /// <summary>
     /// The claim set name the identity provider was sent with this update. The pending marker is
     /// cleared only while the client's Application still has it, so a claim set rename committed
-    /// after it was read keeps the client pending. Not part of the HTTP request body.
+    /// after it was read leaves the client pending, even one moving into the renamed Application,
+    /// which the rename itself does not mark. Not part of the HTTP request body.
     /// </summary>
     [JsonIgnore]
     public string? SentClaimSetName { get; set; }

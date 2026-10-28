@@ -125,7 +125,9 @@ Both engines get the same objects:
 - A nullable sync-pending timestamp on `dmscs.ApiClient`,
   `IdentityProviderSyncPendingSince`, set when an Application change commits (and by
   the upgrade, below) and cleared when that client's provider update succeeds, unless
-  a claim set rename committed after the claim set name it was sent was read.
+  a claim set rename committed after the claim set name it was sent was read. A client
+  update sent such a stale name sets the marker instead, since a rename never marks a
+  client that is moving into the renamed Application.
 
 A client's rows are tied to its current Application by the second foreign key
 Confluence proposes (O-1): `(ApiClientId, ApplicationId)` to a new unique

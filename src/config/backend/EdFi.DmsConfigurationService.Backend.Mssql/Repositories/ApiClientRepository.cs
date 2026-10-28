@@ -47,19 +47,6 @@ public class ApiClientRepository(
             """;
     }
 
-    /// <summary>
-    /// The client's target Application still has, exactly, the claim set name the identity provider
-    /// was sent. The client row is already locked, so a claim set rename either committed before this
-    /// read or waits for the transaction and marks the client again after it.
-    /// </summary>
-    private const string SentClaimSetIsCurrentCondition = """
-        EXISTS (
-            SELECT 1 FROM dmscs.Application sa
-            WHERE sa.Id = @ApplicationId
-              AND sa.ClaimSetName COLLATE Latin1_General_BIN2 = @SentClaimSetName COLLATE Latin1_General_BIN2
-        )
-        """;
-
     private string ApplicationInTenantExistsCondition =>
         $"""
             EXISTS (
@@ -518,6 +505,29 @@ public class ApiClientRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
+            // A completing update share-locks its target Application before the client row, the order
+            // a claim set rename takes. A rename in progress is waited for and its new name read, and
+            // one that starts later waits for this transaction and then finds the client there. A
+            // client moving in stays on its old Application until this commits, so no rename marks
+            // it, and this update marks it itself when the name the provider was sent is stale.
+            // The read is not tenant scoped; the UPDATE's tenant condition rejects a foreign target.
+            // The name is compared exactly, so a rename that changes only its case also marks it.
+            bool sentClaimSetIsCurrent = false;
+            if (command.CompletesIdentityProviderSync)
+            {
+                string? claimSetName = await connection.QuerySingleOrDefaultAsync<string?>(
+                    """
+                    SELECT ClaimSetName FROM dmscs.Application WITH (INDEX(PK_Application), HOLDLOCK, ROWLOCK)
+                    WHERE Id = @ApplicationId;
+                    """,
+                    new { command.ApplicationId },
+                    transaction
+                );
+                sentClaimSetIsCurrent =
+                    claimSetName is not null
+                    && string.Equals(claimSetName, command.SentClaimSetName, StringComparison.Ordinal);
+            }
+
             // Lock the ApiClient within the current tenant; a move rewrites its education organization
             // rows. XLOCK, not UPDLOCK, so a state read holding a shared lock never interleaves.
             string checkSql = $"""
@@ -608,7 +618,10 @@ public class ApiClientRepository(
                 SET ApplicationId = @ApplicationId, Name = @Name, IsApproved = @IsApproved,
                     ClientUuid = COALESCE(@ClientUuid, ClientUuid),
                     InheritsApplicationEducationOrganizations = COALESCE(@Inherits, InheritsApplicationEducationOrganizations),
-                    IdentityProviderSyncPendingSince = CASE WHEN @CompletesIdentityProviderSync = 1 AND {SentClaimSetIsCurrentCondition} THEN NULL ELSE IdentityProviderSyncPendingSince END,
+                    IdentityProviderSyncPendingSince = CASE
+                        WHEN @CompletesIdentityProviderSync = 1 AND @SentClaimSetIsCurrent = 1 THEN NULL
+                        WHEN @CompletesIdentityProviderSync = 1 THEN COALESCE(IdentityProviderSyncPendingSince, @LastModifiedAt)
+                        ELSE IdentityProviderSyncPendingSince END,
                     LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
                 WHERE Id = @Id AND {ApplicationInTenantExistsCondition};
                 """;
@@ -626,7 +639,7 @@ public class ApiClientRepository(
                         ? scope is ApiClientEducationOrganizationScope.Inherit
                         : (bool?)null,
                     command.CompletesIdentityProviderSync,
-                    command.SentClaimSetName,
+                    SentClaimSetIsCurrent = sentClaimSetIsCurrent,
                     LastModifiedAt = auditContext.GetCurrentTimestamp(),
                     ModifiedBy = auditContext.GetCurrentUser(),
                     TenantId,

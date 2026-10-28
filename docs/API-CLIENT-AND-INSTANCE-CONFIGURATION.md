@@ -421,9 +421,11 @@ longer recognizes, so its requests are refused. After a rename, send each
 affected Application's `PUT /v3/applications/{id}` again, unchanged.
 
 An Application or client update that was already sending the old name when the
-rename committed does not complete the client: the client stays pending, and an
-Application update reports it in its `502` response. Sending that Application
-update again, unchanged, sends the new name.
+rename committed does not complete the client: the client stays or becomes
+pending, including a client update that moves the client into a renamed
+Application, and an Application update reports it in its `502` response. Sending
+that Application's `PUT /v3/applications/{id}` again, unchanged, sends the new
+name.
 
 #### Upgrading from 8.0
 

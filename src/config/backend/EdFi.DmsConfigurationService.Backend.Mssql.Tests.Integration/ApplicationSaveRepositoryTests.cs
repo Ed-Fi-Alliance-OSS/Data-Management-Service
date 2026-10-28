@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -997,6 +998,129 @@ public abstract class ApplicationSaveRepositoryTests : ApiClientEducationOrganiz
         [Test]
         public async Task It_keeps_the_rename_marker() =>
             (await PendingClientsAsync())[NarrowedClientId].Should().Be(_renamedAt);
+    }
+
+    /// <summary>
+    /// A client that is not pending moved into an Application whose claim set rename committed after
+    /// the provider was sent the old name. The rename marked only the Application's clients at the
+    /// time, so the move itself must leave the client pending.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_moved_into_an_Application_renamed_after_its_claim_set_name_was_sent
+        : ApplicationSaveRepositoryTests
+    {
+        private ApiClientUpdateResult _moveResult = null!;
+        private DateTime _moveStartedAt;
+        private DateTime _moveFinishedAt;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+
+            // The statements a claim set rename runs: the Application first, then its clients
+            DynamicParameters parameters = new(
+                new { ClaimSetName = "Renamed Claim set", ApplicationId = ScopedApplicationId }
+            );
+            parameters.Add("PendingSince", PendingSince, DbType.DateTime2);
+            await Connection!.ExecuteAsync(
+                """
+                UPDATE dmscs.Application SET ClaimSetName = @ClaimSetName WHERE Id = @ApplicationId;
+                UPDATE dmscs.ApiClient
+                SET IdentityProviderSyncPendingSince = COALESCE(IdentityProviderSyncPendingSince, @PendingSince)
+                WHERE ApplicationId = @ApplicationId;
+                """,
+                parameters
+            );
+
+            _moveStartedAt = DateTime.UtcNow;
+            _moveResult = await ApiClientRepository.UpdateApiClient(
+                new ApiClientUpdateCommand
+                {
+                    Id = UnrelatedClientId,
+                    ApplicationId = ScopedApplicationId,
+                    Name = "Moved Client",
+                    IsApproved = true,
+                    CompletesIdentityProviderSync = true,
+                    SentClaimSetName = ScopedClaimSetName,
+                }
+            );
+            _moveFinishedAt = DateTime.UtcNow;
+        }
+
+        [Test]
+        public void It_saves_the_move() => _moveResult.Should().BeOfType<ApiClientUpdateResult.Success>();
+
+        // SqlClient binds the save's DateTime as legacy datetime, which rounds to 1/300 second
+        [Test]
+        public async Task It_marks_the_moved_client_pending_at_the_move() =>
+            (await PendingClientsAsync())[UnrelatedClientId]
+                .Should()
+                .BeOnOrAfter(_moveStartedAt.AddMilliseconds(-4))
+                .And.BeOnOrBefore(_moveFinishedAt.AddMilliseconds(4));
+    }
+
+    /// <summary>
+    /// A client that is not pending moved into an Application, sent its claim set name before a
+    /// rename of it that is uncommitted when the move is saved. The rename never sees the client on
+    /// the Application, so the move waits for it and then marks the client.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_client_move_started_while_a_claim_set_rename_is_uncommitted
+        : ApplicationSaveRepositoryTests
+    {
+        private ApiClientUpdateResult _moveResult = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await SeedAsync(new TenantContextProvider());
+
+            await using SqlConnection renamer = await OpenConnectionAsync();
+            await using SqlTransaction transaction = (SqlTransaction)await renamer.BeginTransactionAsync();
+            short renamerSession = await renamer.ExecuteScalarAsync<short>(
+                "SELECT @@SPID;",
+                transaction: transaction
+            );
+
+            // The statements a claim set rename runs: the Application first, then its clients
+            DynamicParameters parameters = new(
+                new { ClaimSetName = "Renamed Claim set", ApplicationId = ScopedApplicationId }
+            );
+            parameters.Add("PendingSince", PendingSince, DbType.DateTime2);
+            await renamer.ExecuteAsync(
+                """
+                UPDATE dmscs.Application SET ClaimSetName = @ClaimSetName WHERE Id = @ApplicationId;
+                UPDATE dmscs.ApiClient
+                SET IdentityProviderSyncPendingSince = COALESCE(IdentityProviderSyncPendingSince, @PendingSince)
+                WHERE ApplicationId = @ApplicationId;
+                """,
+                parameters,
+                transaction
+            );
+
+            Task<ApiClientUpdateResult> move = ApiClientRepository.UpdateApiClient(
+                new ApiClientUpdateCommand
+                {
+                    Id = UnrelatedClientId,
+                    ApplicationId = ScopedApplicationId,
+                    Name = "Moved Client",
+                    IsApproved = true,
+                    CompletesIdentityProviderSync = true,
+                    SentClaimSetName = ScopedClaimSetName,
+                }
+            );
+            await WaitUntilBlockedByAsync(renamer, transaction, renamerSession, move);
+            await transaction.CommitAsync();
+            _moveResult = await move;
+        }
+
+        [Test]
+        public void It_saves_the_move() => _moveResult.Should().BeOfType<ApiClientUpdateResult.Success>();
+
+        [Test]
+        public async Task It_marks_the_moved_client_pending() =>
+            (await PendingClientsAsync()).Should().ContainKey(UnrelatedClientId);
     }
 
     [TestFixture]

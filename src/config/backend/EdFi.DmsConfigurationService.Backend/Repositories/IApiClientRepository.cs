@@ -20,7 +20,8 @@ public interface IApiClientRepository
     /// Saves an API client update. When <see cref="ApiClientUpdateCommand.CompletesIdentityProviderSync"/>
     /// is set, the same transaction also clears the client's pending identity provider
     /// synchronization, while the client's Application still has
-    /// <see cref="ApiClientUpdateCommand.SentClaimSetName"/>; otherwise any pending marker is kept
+    /// <see cref="ApiClientUpdateCommand.SentClaimSetName"/>; when it no longer does, the client
+    /// becomes pending, keeping any earlier time. When the flag is not set, any pending marker is kept
     /// with its original time.
     /// </summary>
     Task<ApiClientUpdateResult> UpdateApiClient(ApiClientUpdateCommand command);
