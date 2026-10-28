@@ -465,13 +465,17 @@ in an otherwise empty claims directory, then start CMS against a fresh database:
 
 ```sh
 CONFIGURATION_SERVICE_CLAIMS_SOURCE=Filesystem
-CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/claims-files
+CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=/absolute/path/to/claims
+CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/additional-claims
 CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=5.2
 CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=false
 ```
 
-These are Compose environment-file settings; mount the host's `policy-output/Claims.json`
-at `/app/claims-files/Claims.json`. With direct application configuration, use
+These are Compose environment-file settings. Replace `/absolute/path/to/claims`
+with a host directory containing only a copy of the generated `policy-output/Claims.json`.
+The repository's local and published Compose configurations mount that directory
+at `/app/additional-claims`. Do not include the fragments already merged into the file.
+With direct application configuration, use
 `ClaimsOptions__ClaimsSource`, `ClaimsOptions__ClaimsDirectory`, and
 `ClaimsOptions__DataStandardVersion`. Filesystem loads the file rather than an
 embedded base. Keep the tool's selected Data Standard aligned with the deployment.
@@ -621,7 +625,7 @@ No additional configuration needed.
 4. Set required environment variables
 
 #### For Filesystem Mode:
-1. Prepare a complete `Claims.json` (for example, with `merge` above), optionally accompanied by `*-claims.json` fragments
+1. Prepare a complete `Claims.json` (for example, with `merge` above), optionally accompanied by `*-claims.json` fragments that have not already been merged into it
 2. Validate JSON syntax of each file
 3. Place files in designated directory
 4. Set required environment variables

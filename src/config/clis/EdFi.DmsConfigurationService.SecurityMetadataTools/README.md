@@ -88,8 +88,9 @@ sequences. Identical inputs in the same supported environment yield identical by
 Deploy `policy-output/Claims.json` separately using the existing Filesystem startup
 or upload operation in the
 [claims-loading guide](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/CLAIMS-LOADING-GUIDE.md#offline-preparation-and-verification-81).
-For Filesystem startup, mount it unchanged as `Claims.json` in the configured claims
-directory of a fresh CMS database. Startup seeds only an empty database; restarting
+For Filesystem startup, mount it unchanged as `Claims.json` in an otherwise empty
+configured claims directory of a fresh CMS database. Do not include fragments already
+merged into the file. Startup seeds only an empty database; restarting
 with changed files does not replace stored policy. For an authorized upload,
 post the unchanged file to `/management/upload-claims` with unrestricted claims
 loading enabled. Upload preserves existing reserved catalog rows, so they can
