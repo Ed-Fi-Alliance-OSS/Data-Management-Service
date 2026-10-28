@@ -10,10 +10,6 @@ namespace EdFi.DataManagementService.Backend;
 
 internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstraintResolver
 {
-    // The dms.ReferentialIdentity primary key. CoreDdlEmitter owns the DDL literal and this project does not
-    // reference it, so this must be kept in step with it by hand.
-    private const string ReferentialIdentityPrimaryKeyName = "PK_ReferentialIdentity";
-
     public RelationalWriteConstraintResolution Resolve(RelationalWriteConstraintResolutionRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -77,7 +73,11 @@ internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstr
     /// natural key.
     /// </summary>
     private static bool IsIdentityMaintenancePrimaryKey(string constraintName) =>
-        string.Equals(constraintName, ReferentialIdentityPrimaryKeyName, StringComparison.Ordinal)
+        string.Equals(
+            constraintName,
+            ReferentialIdentityTableDefinition.PrimaryKeyName,
+            StringComparison.Ordinal
+        )
         || string.Equals(
             constraintName,
             AuthObjectDefinitions.AuthEdOrgTable.PrimaryKeyName,
