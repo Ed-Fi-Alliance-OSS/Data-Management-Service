@@ -328,7 +328,12 @@ Describe 'DMS-1606 token contract E2E launcher' {
         $hadImage = Test-Path Env:DMS_DOCKER_IMAGE
         $savedImage = $env:DMS_DOCKER_IMAGE
         try {
-            [Environment]::SetEnvironmentVariable('DMS_DOCKER_IMAGE', $PreviousImage)
+            if ($null -eq $PreviousImage) {
+                Remove-Item Env:DMS_DOCKER_IMAGE -ErrorAction SilentlyContinue
+            }
+            else {
+                [Environment]::SetEnvironmentVariable('DMS_DOCKER_IMAGE', $PreviousImage)
+            }
             $SkipDockerBuild = $SkipBuild
             $schemaModule = 'unused-by-mock'
             $environmentValues = @{}
