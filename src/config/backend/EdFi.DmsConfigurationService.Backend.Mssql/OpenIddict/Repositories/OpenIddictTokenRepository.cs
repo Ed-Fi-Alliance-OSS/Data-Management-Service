@@ -21,7 +21,8 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
             Guid applicationId,
             string subject,
             DateTimeOffset expiration,
-            int maxActiveTokens
+            int maxActiveTokens,
+            string expectedClientSecret
         )
         {
             return await dataRepository.StoreTokenAsync(
@@ -29,7 +30,8 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
                 applicationId,
                 subject,
                 expiration,
-                maxActiveTokens
+                maxActiveTokens,
+                expectedClientSecret
             );
         }
 

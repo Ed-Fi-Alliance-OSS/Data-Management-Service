@@ -8,6 +8,7 @@ using Dapper;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration;
 
@@ -18,7 +19,8 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration;
 [NonParallelizable]
 public class OpenIddictPublicKeyCancellationTests : DatabaseTest
 {
-    protected OpenIddictDataRepository Repository { get; } = new(MssqlTestConfiguration.DatabaseOptions);
+    protected OpenIddictDataRepository Repository { get; } =
+        new(MssqlTestConfiguration.DatabaseOptions, NullLogger<OpenIddictDataRepository>.Instance);
 
     protected async Task InsertKeyAsync(string keyId, bool isActive) =>
         await Connection!.ExecuteAsync(

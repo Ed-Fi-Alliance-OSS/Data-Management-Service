@@ -1108,7 +1108,8 @@ public class ApplicationTests : DatabaseTest
         );
 
         private readonly OpenIddictDataRepository _openIddictDataRepository = new(
-            MssqlTestConfiguration.DatabaseOptions
+            MssqlTestConfiguration.DatabaseOptions,
+            NullLogger<OpenIddictDataRepository>.Instance
         );
 
         [SetUp]

@@ -152,14 +152,21 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
 
         /// <summary>
         /// Stores a new token, unless the application already holds the maximum number of active
-        /// tokens. When <paramref name="maxActiveTokens"/> is below 1, enforcement is disabled and
-        /// the token is always stored.
+        /// tokens. Every store runs in one transaction that locks the application row, then reads
+        /// the stored client secret and the approval in a separate statement (on PostgreSQL a
+        /// scalar read inside the locking statement would use the snapshot taken before it
+        /// blocked), and inserts only when the secret still equals
+        /// <paramref name="expectedClientSecret"/> ordinally and the client is still approved. When
+        /// <paramref name="maxActiveTokens"/> is below 1 the active-token count is skipped; the lock
+        /// and the re-validation are not.
         /// </summary>
         /// <returns>
         /// <see cref="TokenStoreOutcome.Stored"/> when the token was written,
         /// <see cref="TokenStoreOutcome.LimitExceeded"/> when the application already holds at
         /// least <paramref name="maxActiveTokens"/> active tokens,
-        /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists, or
+        /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists,
+        /// <see cref="TokenStoreOutcome.ClientChanged"/> when its stored secret no longer matches
+        /// <paramref name="expectedClientSecret"/> or the client is no longer approved, or
         /// <see cref="TokenStoreOutcome.LockTimeout"/> when a database lock wait during the store ran
         /// out, whether behind a competing grant for this application or another writer such as the
         /// expired-token sweep, or the store was chosen as a deadlock victim of such a writer.
@@ -169,7 +176,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             Guid applicationId,
             string subject,
             DateTimeOffset expiration,
-            int maxActiveTokens
+            int maxActiveTokens,
+            string expectedClientSecret
         );
 
         Task<string?> GetTokenStatusAsync(Guid tokenId);

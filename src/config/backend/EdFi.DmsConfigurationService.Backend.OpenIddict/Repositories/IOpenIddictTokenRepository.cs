@@ -21,7 +21,10 @@ public interface IOpenIddictTokenRepository
 
     /// <summary>
     /// Stores a new token in the repository, unless the application already holds the maximum
-    /// number of active tokens.
+    /// number of active tokens. Every store, whatever <paramref name="maxActiveTokens"/> is, locks
+    /// the application row and then, in a separate statement, re-reads the stored client secret and
+    /// the approval, so a credential reset, deletion or un-approval that commits first is never
+    /// answered with a stored token.
     /// </summary>
     /// <param name="tokenId">The unique identifier for the token.</param>
     /// <param name="applicationId">The application ID associated with the token.</param>
@@ -29,13 +32,19 @@ public interface IOpenIddictTokenRepository
     /// <param name="expiration">The token expiration date.</param>
     /// <param name="maxActiveTokens">
     /// The maximum number of simultaneously active tokens the application may hold. Any value
-    /// below 1 disables enforcement and the token is always stored.
+    /// below 1 disables the count, but not the lock or the re-validation.
+    /// </param>
+    /// <param name="expectedClientSecret">
+    /// The stored secret hash the grant authenticated against. It must still equal the stored
+    /// value, compared ordinally, under the lock.
     /// </param>
     /// <returns>
     /// <see cref="TokenStoreOutcome.Stored"/> when the token was written,
     /// <see cref="TokenStoreOutcome.LimitExceeded"/> when the application already holds at least
     /// <paramref name="maxActiveTokens"/> active tokens,
-    /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists, or
+    /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists,
+    /// <see cref="TokenStoreOutcome.ClientChanged"/> when its stored secret no longer matches
+    /// <paramref name="expectedClientSecret"/> or the client is no longer approved, or
     /// <see cref="TokenStoreOutcome.LockTimeout"/> when a database lock wait during the store ran
     /// out, whether behind a competing grant for this application or another writer such as the
     /// expired-token sweep, or the store was chosen as a deadlock victim of such a writer.
@@ -45,7 +54,8 @@ public interface IOpenIddictTokenRepository
         Guid applicationId,
         string subject,
         DateTimeOffset expiration,
-        int maxActiveTokens
+        int maxActiveTokens,
+        string expectedClientSecret
     );
 
     /// <summary>

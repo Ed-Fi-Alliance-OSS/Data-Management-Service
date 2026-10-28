@@ -6202,7 +6202,8 @@ public class Given_TokenEndpoint_requests_that_fail_client_authentication
                     A<Guid>._,
                     A<string>._,
                     A<DateTimeOffset>._,
-                    A<int>._
+                    A<int>._,
+                    A<string>._
                 )
             )
             .Returns(TokenStoreOutcome.Stored);

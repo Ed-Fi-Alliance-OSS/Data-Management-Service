@@ -24,6 +24,21 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration;
 
 public class OpenIddictDataRepositoryTests : DatabaseTest
 {
+    /// <summary>
+    /// The stored secret hash every <see cref="RegisterApplicationAsync"/> application carries,
+    /// and so the one a store re-validates against unless a test changed it (DMS-1493 D-11).
+    /// </summary>
+    protected const string RegisteredSecret = "hashed-secret";
+
+    /// <summary>
+    /// How long a grant test waits to observe a store blocked on a held row lock. It stays well
+    /// under the store's own 5 s lock timeout (<c>OpenIddictDataRepository.LockTimeoutMilliseconds</c>),
+    /// after which the grant stops waiting and answers <see cref="TokenStoreOutcome.LockTimeout"/>;
+    /// the probe is raced against the grant, so a grant that finishes first fails the test
+    /// naming its outcome instead (DMS-1493 R2-F1).
+    /// </summary>
+    protected static readonly TimeSpan GrantBlockedObservationTimeout = TimeSpan.FromSeconds(3);
+
     protected static async Task<Guid> RegisterApplicationAsync(
         OpenIddictDataRepository repository,
         string clientId,
@@ -38,7 +53,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 await repository.InsertApplicationAsync(
                     applicationId,
                     clientId,
-                    "hashed-secret",
+                    RegisteredSecret,
                     "Integration Test Client",
                     scopes.Length > 0 ? scopes : ["token", "authorization"],
                     ["require_pkce"],
@@ -171,7 +186,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             using var connection = await repository.CreateConnectionAsync();
             bool widthInsensitive = await connection.ExecuteScalarAsync<bool>(
                 "SELECT CAST(CASE WHEN N'ClientA' = N'\uFF23lientA' THEN 1 ELSE 0 END AS bit)"
@@ -206,7 +224,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             string apiClientId = Guid.NewGuid().ToString();
             string noRowClientId = Guid.NewGuid().ToString();
             Guid apiApplicationId = await RegisterApplicationAsync(
@@ -291,7 +312,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             string clientId = Guid.NewGuid().ToString();
             _applicationId = await RegisterApplicationAsync(repository, clientId);
             await AddApiClientRowAsync(repository, clientId);
@@ -330,7 +354,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             string clientId = Guid.NewGuid().ToString();
             _applicationId = await RegisterApplicationAsync(
                 repository,
@@ -374,7 +401,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             string clientId = Guid.NewGuid().ToString();
             _applicationId = await RegisterApplicationAsync(repository, clientId, registeredScope);
             _application =
@@ -441,7 +471,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 applicationId,
                 $"seed-subject-{i}",
                 FarFuture,
-                EnforcementDisabled
+                EnforcementDisabled,
+                RegisteredSecret
             );
 
             outcome.Should().Be(TokenStoreOutcome.Stored);
@@ -523,6 +554,38 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             "DELETE FROM dmscs.OpenIddictApplication WHERE Id = @Id",
             new { Id = applicationId }
         );
+    }
+
+    protected static async Task SetApiClientApprovalAsync(string clientId, bool isApproved)
+    {
+        await using SqlConnection connection = await OpenConnectionAsync();
+        await connection.ExecuteAsync(
+            "UPDATE dmscs.ApiClient SET IsApproved = @IsApproved WHERE ClientId = @ClientId",
+            new { ClientId = clientId, IsApproved = isApproved }
+        );
+    }
+
+    protected static Task<int> ChangeStoredSecretAsync(
+        OpenIddictDataRepository repository,
+        Guid applicationId,
+        string clientSecret
+    ) =>
+        repository.ExecuteInTransactionAsync(
+            (connection, transaction) =>
+                repository.UpdateClientSecretAsync(applicationId, clientSecret, connection, transaction)
+        );
+
+    /// <summary>
+    /// Waits for every started task without letting its outcome replace the test's own: used in
+    /// <c>finally</c> blocks, after the lock a task may be waiting on has been released, so no
+    /// task outlives its test against the shared database.
+    /// </summary>
+    protected static async Task AwaitWithoutObservingAsync(params Task?[] tasks)
+    {
+        foreach (Task task in tasks.OfType<Task>())
+        {
+            await Task.WhenAny(task);
+        }
     }
 
     /// <summary>
@@ -637,7 +700,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
 
             await _repository.ExecuteInTransactionAsync(
                 async (connection, transaction) =>
@@ -713,7 +779,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             var applicationId = await RegisterApplicationAsync(
                 _repository,
                 $"delete-expired-client-{Guid.NewGuid():N}"
@@ -732,14 +801,16 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 applicationId,
                 "subject-expired-valid",
                 past,
-                EnforcementDisabled
+                EnforcementDisabled,
+                RegisteredSecret
             );
             await _repository.StoreTokenAsync(
                 _expiredRevokedTokenId,
                 applicationId,
                 "subject-expired-revoked",
                 past,
-                EnforcementDisabled
+                EnforcementDisabled,
+                RegisteredSecret
             );
             await _repository.RevokeTokenAsync(_expiredRevokedTokenId, applicationId);
             await _repository.StoreTokenAsync(
@@ -747,7 +818,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 applicationId,
                 "subject-unexpired",
                 future,
-                EnforcementDisabled
+                EnforcementDisabled,
+                RegisteredSecret
             );
         }
 
@@ -773,7 +845,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             var applicationId = await RegisterApplicationAsync(
                 _repository,
                 $"delete-expired-boundary-client-{Guid.NewGuid():N}"
@@ -789,7 +864,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 applicationId,
                 "subject-boundary",
                 _boundary,
-                EnforcementDisabled
+                EnforcementDisabled,
+                RegisteredSecret
             );
         }
 
@@ -829,7 +905,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             Guid applicationId = await RegisterApplicationAsync(
                 _repository,
                 $"revoke-owner-{Guid.NewGuid():N}"
@@ -840,7 +919,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 applicationId,
                 "revoke-owner-subject",
                 FarFuture,
-                EnforcementDisabled
+                EnforcementDisabled,
+                RegisteredSecret
             );
             _redemptionDateBefore = await RedemptionDateAsync(_tokenId);
 
@@ -874,7 +954,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             Guid ownerApplicationId = await RegisterApplicationAsync(
                 _repository,
                 $"revoke-victim-{Guid.NewGuid():N}"
@@ -889,7 +972,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 ownerApplicationId,
                 "revoke-victim-subject",
                 FarFuture,
-                EnforcementDisabled
+                EnforcementDisabled,
+                RegisteredSecret
             );
 
             _result = await _repository.RevokeTokenAsync(_tokenId, otherApplicationId);
@@ -931,7 +1015,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             Guid applicationId = await RegisterApplicationAsync(
                 _repository,
                 $"revoke-repeat-{Guid.NewGuid():N}"
@@ -942,7 +1029,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 applicationId,
                 "revoke-repeat-subject",
                 FarFuture,
-                EnforcementDisabled
+                EnforcementDisabled,
+                RegisteredSecret
             );
             _firstResult = await _repository.RevokeTokenAsync(_tokenId, applicationId);
             await SetRedemptionDateAsync(_tokenId, _originalRedemptionDate);
@@ -975,7 +1063,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             Guid applicationId = await RegisterApplicationAsync(
                 _repository,
                 $"revoke-unknown-{Guid.NewGuid():N}"
@@ -986,7 +1077,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 applicationId,
                 "revoke-unknown-subject",
                 FarFuture,
-                EnforcementDisabled
+                EnforcementDisabled,
+                RegisteredSecret
             );
 
             _result = await _repository.RevokeTokenAsync(Guid.NewGuid(), applicationId);
@@ -1017,7 +1109,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _dataRepository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _dataRepository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             IOpenIddictTokenRepository tokenRepository = new OpenIddictTokenRepository(_dataRepository);
             Guid callerApplicationId = await RegisterApplicationAsync(
                 _dataRepository,
@@ -1034,14 +1129,16 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 callerApplicationId,
                 "revoke-wrapper-owned",
                 FarFuture,
-                EnforcementDisabled
+                EnforcementDisabled,
+                RegisteredSecret
             );
             await _dataRepository.StoreTokenAsync(
                 _foreignTokenId,
                 otherApplicationId,
                 "revoke-wrapper-foreign",
                 FarFuture,
-                EnforcementDisabled
+                EnforcementDisabled,
+                RegisteredSecret
             );
 
             _ownedResult = await tokenRepository.RevokeTokenAsync(_ownedTokenId, callerApplicationId);
@@ -1093,7 +1190,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             applicationId,
             $"subject-{tokenId:N}",
             expiration,
-            EnforcementDisabled
+            EnforcementDisabled,
+            RegisteredSecret
         );
 
         outcome.Should().Be(TokenStoreOutcome.Stored);
@@ -1151,7 +1249,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             Guid applicationId = await RegisterApplicationAsync(
                 _repository,
                 $"revoke-all-target-{Guid.NewGuid():N}"
@@ -1226,7 +1327,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             Guid applicationId = await RegisterApplicationAsync(
                 _repository,
                 $"revoke-all-repeat-{Guid.NewGuid():N}"
@@ -1277,7 +1381,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             Guid applicationId = await RegisterApplicationAsync(
                 _repository,
                 $"revoke-all-rollback-{Guid.NewGuid():N}"
@@ -1325,7 +1432,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             Guid applicationId = await RegisterApplicationAsync(
                 _repository,
                 $"revoke-all-unknown-{Guid.NewGuid():N}"
@@ -1372,7 +1482,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             _applicationId = await RegisterApplicationAsync(_repository, $"lock-existing-{Guid.NewGuid():N}");
             _connection = await _repository.CreateConnectionAsync();
             _transaction = await _repository.BeginTransactionAsync(_connection);
@@ -1440,7 +1553,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             Guid applicationId = await RegisterApplicationAsync(
                 repository,
                 $"lock-missing-{Guid.NewGuid():N}"
@@ -1468,7 +1584,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            var repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            var repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             Guid applicationId = await RegisterApplicationAsync(
                 repository,
                 $"status-owner-{Guid.NewGuid():N}"
@@ -1479,7 +1598,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 applicationId,
                 "status-owner-subject",
                 FarFuture,
-                EnforcementDisabled
+                EnforcementDisabled,
+                RegisteredSecret
             );
 
             _status = await repository.GetTokenStatusForApplicationAsync(tokenId, applicationId);
@@ -1500,7 +1620,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            var repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            var repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             Guid ownerApplicationId = await RegisterApplicationAsync(
                 repository,
                 $"status-victim-{Guid.NewGuid():N}"
@@ -1515,7 +1638,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 ownerApplicationId,
                 "status-victim-subject",
                 FarFuture,
-                EnforcementDisabled
+                EnforcementDisabled,
+                RegisteredSecret
             );
 
             _status = await repository.GetTokenStatusForApplicationAsync(tokenId, otherApplicationId);
@@ -1533,7 +1657,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            var repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            var repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             Guid applicationId = await RegisterApplicationAsync(
                 repository,
                 $"status-unknown-{Guid.NewGuid():N}"
@@ -1556,7 +1683,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             _applicationId = await RegisterApplicationAsync(_repository, $"under-limit-{Guid.NewGuid():N}");
             await SeedActiveTokensAsync(_repository, _applicationId, 2);
 
@@ -1565,7 +1695,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 _applicationId,
                 "subject-under-limit",
                 FarFuture,
-                3
+                3,
+                RegisteredSecret
             );
         }
 
@@ -1586,7 +1717,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             _applicationId = await RegisterApplicationAsync(_repository, $"at-limit-{Guid.NewGuid():N}");
             await SeedActiveTokensAsync(_repository, _applicationId, 3);
 
@@ -1595,7 +1729,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 _applicationId,
                 "subject-at-limit",
                 FarFuture,
-                3
+                3,
+                RegisteredSecret
             );
         }
 
@@ -1618,7 +1753,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             _applicationId = await RegisterApplicationAsync(_repository, $"over-limit-{Guid.NewGuid():N}");
             await SeedActiveTokensAsync(_repository, _applicationId, 6);
 
@@ -1627,7 +1765,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 _applicationId,
                 "subject-over-limit",
                 FarFuture,
-                3
+                3,
+                RegisteredSecret
             );
         }
 
@@ -1651,7 +1790,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
         [SetUp]
         public void Setup() =>
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
 
         private async Task<TokenStoreOutcome> GrantAfter(
             Func<Guid, Task> seed,
@@ -1670,7 +1812,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 applicationId,
                 "subject-grant",
                 FarFuture,
-                maxActiveTokens
+                maxActiveTokens,
+                RegisteredSecret
             );
         }
 
@@ -1687,7 +1830,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                             applicationId,
                             $"expired-{i}",
                             FarPast,
-                            EnforcementDisabled
+                            EnforcementDisabled,
+                            RegisteredSecret
                         );
                     }
                 },
@@ -1711,7 +1855,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                             applicationId,
                             $"revoked-{i}",
                             FarFuture,
-                            EnforcementDisabled
+                            EnforcementDisabled,
+                            RegisteredSecret
                         );
                         await _repository.RevokeTokenAsync(tokenId, applicationId);
                     }
@@ -1748,7 +1893,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         applicationId,
                         "expiring-soon",
                         DateTimeOffset.UtcNow.AddMinutes(2),
-                        EnforcementDisabled
+                        EnforcementDisabled,
+                        RegisteredSecret
                     ),
                 "future-boundary"
             );
@@ -1766,7 +1912,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         applicationId,
                         "just-expired",
                         DateTimeOffset.UtcNow.AddMinutes(-2),
-                        EnforcementDisabled
+                        EnforcementDisabled,
+                        RegisteredSecret
                     ),
                 "past-boundary"
             );
@@ -1800,7 +1947,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             _applicationId = await RegisterApplicationAsync(_repository, $"limit-one-{Guid.NewGuid():N}");
 
             _first = await _repository.StoreTokenAsync(
@@ -1808,14 +1958,16 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 _applicationId,
                 "subject-first",
                 FarFuture,
-                1
+                1,
+                RegisteredSecret
             );
             _second = await _repository.StoreTokenAsync(
                 Guid.NewGuid(),
                 _applicationId,
                 "subject-second",
                 FarFuture,
-                1
+                1,
+                RegisteredSecret
             );
         }
 
@@ -1851,7 +2003,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            OpenIddictDataRepository dataRepository = new(MssqlTestConfiguration.DatabaseOptions);
+            OpenIddictDataRepository dataRepository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             _tokenRepository = new OpenIddictTokenRepository(dataRepository);
             _applicationId = await RegisterApplicationAsync(
                 dataRepository,
@@ -1869,7 +2024,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 _applicationId,
                 "wrapper-subject",
                 FarFuture,
-                Limit
+                Limit,
+                RegisteredSecret
             );
 
         [Test]
@@ -1889,8 +2045,9 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// The opt-out an operator configures with a value below 1. It stores unconditionally however
-    /// many active tokens the client already holds.
+    /// The opt-out an operator configures with a value below 1. It stores however many active
+    /// tokens the client already holds, but under the same row lock and re-validation as the
+    /// enforcing path (DMS-1493 D-9).
     /// </summary>
     [TestFixture]
     public class Given_Enforcement_Is_Disabled : OpenIddictDataRepositoryTests
@@ -1899,7 +2056,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
         [SetUp]
         public void Setup() =>
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
 
         [TestCase(0)]
         [TestCase(-1)]
@@ -1916,7 +2076,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 applicationId,
                 "subject-disabled",
                 FarFuture,
-                maxActiveTokens
+                maxActiveTokens,
+                RegisteredSecret
             );
 
             outcome.Should().Be(TokenStoreOutcome.Stored);
@@ -1924,36 +2085,279 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         }
 
         /// <summary>
-        /// The zero-cost property operators opt into: the disabled path takes no row lock, so a
-        /// grant completes even while another session holds that client's application row.
+        /// The disabled path no longer skips the lock: a grant waits behind a session holding the
+        /// client's application row, which is what lets credential reset, deletion and
+        /// un-approval exclude it. The lock manager must show the grant waiting on the holder, and
+        /// the probe is raced against the grant, so a store that takes no lock fails here naming
+        /// the outcome it returned rather than waiting out a delay.
         /// </summary>
         [TestCase(0)]
         [TestCase(-1)]
-        public async Task It_stores_without_taking_the_application_row_lock(int maxActiveTokens)
+        public async Task It_waits_for_the_application_row_lock(int maxActiveTokens)
         {
             Guid applicationId = await RegisterApplicationAsync(
                 _repository,
-                $"disabled-nolock-{maxActiveTokens}-{Guid.NewGuid():N}"
+                $"disabled-lock-{maxActiveTokens}-{Guid.NewGuid():N}"
             );
 
-            await using RowLockHolder holder = await RowLockHolder.TakeAsync(applicationId);
+            RowLockHolder holder = await RowLockHolder.TakeAsync(applicationId);
+            Task<TokenStoreOutcome>? grant = null;
+            Task? probe = null;
+            try
+            {
+                grant = Task.Run(() =>
+                    _repository.StoreTokenAsync(
+                        Guid.NewGuid(),
+                        applicationId,
+                        "subject-disabled-lock",
+                        FarFuture,
+                        maxActiveTokens,
+                        RegisteredSecret
+                    )
+                );
+                probe = WaitUntilASessionIsBlockedBy(holder.SessionId, GrantBlockedObservationTimeout);
 
-            Task<TokenStoreOutcome> grant = Task.Run(() =>
-                _repository.StoreTokenAsync(
-                    Guid.NewGuid(),
-                    applicationId,
-                    "subject-disabled-nolock",
-                    FarFuture,
-                    maxActiveTokens
-                )
-            );
+                if (await Task.WhenAny(probe, grant) == grant)
+                {
+                    Assert.Fail(
+                        $"The grant completed with {await grant} before it was observed waiting on the held row lock."
+                    );
+                }
 
-            Task completed = await Task.WhenAny(grant, Task.Delay(TimeSpan.FromSeconds(10)));
-            completed.Should().BeSameAs(grant, "the disabled path must not wait on the row lock");
-            (await grant).Should().Be(TokenStoreOutcome.Stored);
+                await probe;
+                grant.IsCompleted.Should().BeFalse("the grant is waiting on the row lock the holder owns");
 
-            await holder.ReleaseAsync();
+                await holder.ReleaseAsync();
+
+                (await grant).Should().Be(TokenStoreOutcome.Stored);
+                (await TokenRowCountAsync(applicationId)).Should().Be(1);
+            }
+            finally
+            {
+                // Ends the holder's transaction first (a no-op after the release), so a grant still
+                // waiting on it can finish before it is awaited.
+                await holder.DisposeAsync();
+                await AwaitWithoutObservingAsync(grant, probe);
+            }
         }
+    }
+
+    /// <summary>
+    /// DMS-1493 D-11: a credential reset committed before the store took the lock. The grant
+    /// authenticated against <see cref="RegisteredSecret"/>, the stored secret is now another
+    /// value, and the store must refuse without inserting under either limit setting. The
+    /// case-only variant pins the ordinal comparison: the column has the database's
+    /// case-insensitive default collation, so a comparison in SQL would accept it.
+    /// </summary>
+    [TestFixture(EnforcementDisabled, "rotated-secret")]
+    [TestFixture(15, "rotated-secret")]
+    [TestFixture(EnforcementDisabled, "HASHED-SECRET")]
+    [TestFixture(15, "HASHED-SECRET")]
+    public class Given_A_Store_After_The_Secret_Changed(int maxActiveTokens, string currentSecret)
+        : OpenIddictDataRepositoryTests
+    {
+        private Guid _applicationId;
+        private TokenStoreOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            _applicationId = await RegisterApplicationAsync(repository, $"secret-changed-{Guid.NewGuid():N}");
+            (await ChangeStoredSecretAsync(repository, _applicationId, currentSecret)).Should().Be(1);
+
+            _outcome = await repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                _applicationId,
+                "subject-secret-changed",
+                FarFuture,
+                maxActiveTokens,
+                RegisteredSecret
+            );
+        }
+
+        [Test]
+        public void It_reports_the_client_as_changed() =>
+            _outcome.Should().Be(TokenStoreOutcome.ClientChanged);
+
+        [Test]
+        public async Task It_stores_nothing() => (await TokenRowCountAsync(_applicationId)).Should().Be(0);
+    }
+
+    /// <summary>
+    /// The re-validation runs before the count: a reset client at its limit is answered as
+    /// changed (<c>invalid_client</c>), not as over its limit (429). Counting first would report
+    /// <see cref="TokenStoreOutcome.LimitExceeded"/> here.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Store_At_The_Limit_After_The_Secret_Changed : OpenIddictDataRepositoryTests
+    {
+        private const int Limit = 2;
+
+        private Guid _applicationId;
+        private TokenStoreOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            _applicationId = await RegisterApplicationAsync(
+                repository,
+                $"limit-secret-changed-{Guid.NewGuid():N}"
+            );
+            await SeedActiveTokensAsync(repository, _applicationId, Limit);
+            await ChangeStoredSecretAsync(repository, _applicationId, "rotated-secret");
+
+            _outcome = await repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                _applicationId,
+                "subject-limit-secret-changed",
+                FarFuture,
+                Limit,
+                RegisteredSecret
+            );
+        }
+
+        [Test]
+        public void It_reports_the_client_as_changed_rather_than_over_its_limit() =>
+            _outcome.Should().Be(TokenStoreOutcome.ClientChanged);
+
+        [Test]
+        public async Task It_stores_no_further_token() =>
+            (await TokenRowCountAsync(_applicationId)).Should().Be(Limit);
+    }
+
+    /// <summary>
+    /// DMS-1493 D-11: an un-approval committed before the store took the lock. The approval is
+    /// re-read from <c>ApiClient</c> under the lock, so the store refuses under either limit
+    /// setting.
+    /// </summary>
+    [TestFixture(EnforcementDisabled)]
+    [TestFixture(15)]
+    public class Given_A_Store_After_Un_Approval(int maxActiveTokens) : OpenIddictDataRepositoryTests
+    {
+        private Guid _applicationId;
+        private TokenStoreOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            // ApiClient.ClientId is 36 characters wide.
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(repository, clientId);
+            await AddApiClientRowAsync(repository, clientId);
+            await SetApiClientApprovalAsync(clientId, isApproved: false);
+
+            _outcome = await repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                _applicationId,
+                "subject-un-approved",
+                FarFuture,
+                maxActiveTokens,
+                RegisteredSecret
+            );
+        }
+
+        [Test]
+        public void It_reports_the_client_as_changed() =>
+            _outcome.Should().Be(TokenStoreOutcome.ClientChanged);
+
+        [Test]
+        public async Task It_stores_nothing() => (await TokenRowCountAsync(_applicationId)).Should().Be(0);
+    }
+
+    /// <summary>
+    /// A deletion committed before the store took the lock. The limit-disabled path used to
+    /// insert for a deleted client; both settings now answer not found.
+    /// </summary>
+    [TestFixture(EnforcementDisabled)]
+    [TestFixture(15)]
+    public class Given_A_Store_After_Deletion(int maxActiveTokens) : OpenIddictDataRepositoryTests
+    {
+        private Guid _applicationId;
+        private TokenStoreOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            _applicationId = await RegisterApplicationAsync(repository, $"deleted-{Guid.NewGuid():N}");
+            await DeleteApplicationRowAsync(_applicationId);
+
+            _outcome = await repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                _applicationId,
+                "subject-deleted",
+                FarFuture,
+                maxActiveTokens,
+                RegisteredSecret
+            );
+        }
+
+        [Test]
+        public void It_reports_the_client_as_not_found() =>
+            _outcome.Should().Be(TokenStoreOutcome.ClientNotFound);
+
+        [Test]
+        public async Task It_stores_nothing() => (await TokenRowCountAsync(_applicationId)).Should().Be(0);
+    }
+
+    /// <summary>
+    /// The control for the refusals above: an approved API client row and the registered secret
+    /// pass the re-validation under either limit setting, so the refusals are caused by the change
+    /// each one makes and not by the re-validation itself.
+    /// </summary>
+    [TestFixture(EnforcementDisabled)]
+    [TestFixture(15)]
+    public class Given_A_Store_With_The_Current_Secret_And_Approval(int maxActiveTokens)
+        : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _applicationId;
+        private Guid _tokenId;
+        private TokenStoreOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(_repository, clientId);
+            await AddApiClientRowAsync(_repository, clientId);
+            _tokenId = Guid.NewGuid();
+
+            _outcome = await _repository.StoreTokenAsync(
+                _tokenId,
+                _applicationId,
+                "subject-current",
+                FarFuture,
+                maxActiveTokens,
+                RegisteredSecret
+            );
+        }
+
+        [Test]
+        public void It_stores_the_token() => _outcome.Should().Be(TokenStoreOutcome.Stored);
+
+        [Test]
+        public async Task It_stores_it_as_valid() =>
+            (await _repository.GetTokenStatusAsync(_tokenId)).Should().Be("valid");
     }
 
     /// <summary>
@@ -1974,7 +2378,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             _applicationId = await RegisterApplicationAsync(_repository, $"race-{Guid.NewGuid():N}");
             await SeedActiveTokensAsync(_repository, _applicationId, Limit - 1);
 
@@ -1988,7 +2395,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                                 _applicationId,
                                 $"race-subject-{i}",
                                 FarFuture,
-                                Limit
+                                Limit,
+                                RegisteredSecret
                             )
                         )
                     )
@@ -2033,7 +2441,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
         [SetUp]
         public void Setup() =>
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
 
         [Test]
         public async Task It_blocks_a_grant_for_that_client_until_the_lock_is_released()
@@ -2052,7 +2463,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         applicationId,
                         "subject-serialized",
                         FarFuture,
-                        5
+                        5,
+                        RegisteredSecret
                     )
                 );
 
@@ -2096,7 +2508,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         blockedApplicationId,
                         "subject-a",
                         FarFuture,
-                        5
+                        5,
+                        RegisteredSecret
                     )
                 );
 
@@ -2107,7 +2520,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     otherApplicationId,
                     "subject-b",
                     FarFuture,
-                    5
+                    5,
+                    RegisteredSecret
                 );
 
                 otherOutcome.Should().Be(TokenStoreOutcome.Stored);
@@ -2147,7 +2561,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     applicationId,
                     "subject-lock-timeout",
                     FarFuture,
-                    5
+                    5,
+                    RegisteredSecret
                 );
 
                 outcome.Should().Be(TokenStoreOutcome.LockTimeout);
@@ -2176,7 +2591,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
         [SetUp]
         public void Setup() =>
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
 
         [Test]
         public async Task It_reports_the_client_as_not_found_and_stores_nothing()
@@ -2192,7 +2610,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 applicationId,
                 "subject-deleted",
                 FarFuture,
-                5
+                5,
+                RegisteredSecret
             );
 
             outcome.Should().Be(TokenStoreOutcome.ClientNotFound);
@@ -2219,7 +2638,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                                 applicationId,
                                 $"deleted-race-subject-{i}",
                                 FarFuture,
-                                3
+                                3,
+                                RegisteredSecret
                             )
                         )
                     )
@@ -2248,7 +2668,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
         [SetUp]
         public void Setup() =>
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
 
         [Test]
         public async Task It_reports_the_retriable_outcome_and_stores_nothing()
@@ -2264,7 +2687,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     applicationId,
                     "subject-existing",
                     FarPast,
-                    EnforcementDisabled
+                    EnforcementDisabled,
+                    RegisteredSecret
                 )
             )
                 .Should()
@@ -2287,7 +2711,14 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             );
 
             Task<TokenStoreOutcome> grant = Task.Run(() =>
-                _repository.StoreTokenAsync(Guid.NewGuid(), applicationId, "subject-victim", FarFuture, 5)
+                _repository.StoreTokenAsync(
+                    Guid.NewGuid(),
+                    applicationId,
+                    "subject-victim",
+                    FarFuture,
+                    5,
+                    RegisteredSecret
+                )
             );
 
             // The grant now holds the application row and waits on the token row.
@@ -2323,7 +2754,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            var seeding = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            var seeding = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             Guid applicationId = await RegisterApplicationAsync(
                 seeding,
                 $"pool-exhaustion-client-{Guid.NewGuid():N}"
@@ -2335,7 +2769,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     applicationId,
                     "subject-pool",
                     FarFuture,
-                    EnforcementDisabled
+                    EnforcementDisabled,
+                    RegisteredSecret
                 )
             )
                 .Should()
@@ -2356,7 +2791,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         DatabaseConnection = _isolatedConnectionString,
                         EncryptionKey = "IntegrationTestEncryptionKey32Chars",
                     }
-                )
+                ),
+                NullLogger<OpenIddictDataRepository>.Instance
             );
 
             await using (var lease = new SqlConnection(_isolatedConnectionString))
@@ -2490,7 +2926,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             _clientId = $"repeat-key-{Guid.NewGuid():N}";
             _seededApplicationId = await RegisterApplicationAsync(
                 _repository,
@@ -2548,7 +2987,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             _seededApplicationId = await RegisterApplicationAsync(
                 _repository,
                 $"other-constraints-{Guid.NewGuid():N}"
@@ -2620,7 +3062,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _dataRepository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _dataRepository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             _clientId = $"provider-taken-key-{Guid.NewGuid():N}";
             _roleName = $"provider-taken-role-{Guid.NewGuid():N}";
             _scopeName = $"provider-taken-scope-{Guid.NewGuid():N}";
@@ -2761,7 +3206,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             string clientId = Guid.NewGuid().ToString();
             _applicationId = await RegisterApplicationAsync(
                 repository,
@@ -2835,7 +3283,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             await RegisterApplicationAsync(repository, Guid.NewGuid().ToString());
             string unregisteredClientId = Guid.NewGuid().ToString();
 
@@ -2866,7 +3317,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             string clientId = Guid.NewGuid().ToString();
             await RegisterApplicationAsync(repository, clientId);
             await Connection!.ExecuteAsync(
@@ -2906,7 +3360,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             _registeredClientId = $"Credential-Casing-{Guid.NewGuid():N}";
             await RegisterApplicationAsync(repository, _registeredClientId);
             string lowered = _registeredClientId.ToLowerInvariant();
@@ -2953,7 +3410,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             _clientId = Guid.NewGuid().ToString();
             if (outcome != "absent")
             {

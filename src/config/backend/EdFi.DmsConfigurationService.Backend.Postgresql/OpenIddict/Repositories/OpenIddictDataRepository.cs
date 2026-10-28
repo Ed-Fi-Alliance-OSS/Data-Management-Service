@@ -7,6 +7,7 @@ using System.Data;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
 
@@ -16,8 +17,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
     /// PostgreSQL implementation of IOpenIddictDataRepository.
     /// Handles all database operations for OpenIddict using PostgreSQL-specific connections and SQL.
     /// </summary>
-    public class OpenIddictDataRepository(IOptions<DatabaseOptions> databaseOptions)
-        : IOpenIddictDataRepository
+    public class OpenIddictDataRepository(
+        IOptions<DatabaseOptions> databaseOptions,
+        ILogger<OpenIddictDataRepository> logger
+    ) : IOpenIddictDataRepository
     {
         private readonly string _connectionString = databaseOptions.Value.DatabaseConnection;
 
@@ -54,6 +57,25 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
                       AND ""Status"" = 'valid'
                       AND ""ExpirationDate"" > @ActiveAsOf
                 ) < @MaxActiveTokens";
+
+        /// <summary>
+        /// What the grant authenticated against, read after the lock statement has returned
+        /// (DMS-1493 D-11). It has to be its own statement: under read committed each statement
+        /// takes a new snapshot, whereas a subquery inside the <c>FOR UPDATE</c> statement would
+        /// read the snapshot taken before that statement blocked, and miss a reset or un-approval
+        /// that committed while it waited. The approval has the semantics of
+        /// <see cref="GetClientCredentialAsync"/>: every API client registered under the client id
+        /// approved, and approved when there is none.
+        /// </summary>
+        private const string ReadStoredClientStateSql = """
+            SELECT COALESCE(a."ClientSecret", '') AS "StoredClientSecret",
+                   COALESCE(
+                       (SELECT BOOL_AND(ac."IsApproved") FROM "dmscs"."ApiClient" ac WHERE ac."ClientId" = a."ClientId"),
+                       true
+                   ) AS "IsApproved"
+            FROM "dmscs"."OpenIddictApplication" a
+            WHERE a."Id" = @ApplicationId
+            """;
 
         public async Task<T> ExecuteInTransactionAsync<T>(
             Func<IDbConnection, IDbTransaction, Task<T>> operation
@@ -479,7 +501,8 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             Guid applicationId,
             string subject,
             DateTimeOffset expiration,
-            int maxActiveTokens
+            int maxActiveTokens,
+            string expectedClientSecret
         )
         {
             await using var connection = new NpgsqlConnection(_connectionString);
@@ -510,22 +533,20 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             parameters.Add("Status", "valid");
             parameters.Add("ReferenceId", tokenId.ToString("N"));
 
-            // Enforcement disabled: the unconditional insert that ran before the limit existed,
-            // with no transaction and no lock.
-            if (maxActiveTokens < 1)
+            bool enforcesLimit = maxActiveTokens >= 1;
+            if (enforcesLimit)
             {
-                await connection.ExecuteAsync(insertSql, parameters);
-
-                return TokenStoreOutcome.Stored;
+                // Bound exactly as ExpirationDate is, so the count compares two instants.
+                parameters.Add("ActiveAsOf", DateTimeOffset.UtcNow, DbType.DateTimeOffset);
+                parameters.Add("MaxActiveTokens", maxActiveTokens);
             }
 
-            // Bound exactly as ExpirationDate is, so the count compares two instants.
-            parameters.Add("ActiveAsOf", DateTimeOffset.UtcNow, DbType.DateTimeOffset);
-            parameters.Add("MaxActiveTokens", maxActiveTokens);
-
-            // Grants for one client serialize on that client's OpenIddictApplication row, which
-            // makes the limit a strict ceiling rather than a best-effort one. The lock lives and
-            // dies with this transaction, so every path below releases it.
+            // Every store, enforcing or not, serializes on the client's OpenIddictApplication row.
+            // Against other grants that makes the limit a strict ceiling rather than a best-effort
+            // one; against credential reset, deletion and un-approval, which take the same lock
+            // first, it means a grant either stores before the change and is revoked by it, or
+            // re-validates after it and is refused (DMS-1493 I-1). The lock lives and dies with
+            // this transaction, so every path below releases it.
             await using var transaction = await connection.BeginTransactionAsync();
 
             try
@@ -548,17 +569,38 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                     return TokenStoreOutcome.ClientNotFound;
                 }
 
+                StoredClientState? storedState =
+                    await connection.QuerySingleOrDefaultAsync<StoredClientState>(
+                        ReadStoredClientStateSql,
+                        new { ApplicationId = applicationId },
+                        transaction
+                    );
+
+                if (RefusalReason(storedState, expectedClientSecret) is { } refusalReason)
+                {
+                    await transaction.RollbackAsync();
+                    logger.LogDebug(
+                        "Refused to store a token for application {ApplicationId}: re-validation under the application row lock failed ({RefusalReason})",
+                        applicationId,
+                        refusalReason
+                    );
+                    return storedState is null
+                        ? TokenStoreOutcome.ClientNotFound
+                        : TokenStoreOutcome.ClientChanged;
+                }
+
                 int rowsAffected = await connection.ExecuteAsync(
-                    ConditionalInsertSql,
+                    enforcesLimit ? ConditionalInsertSql : insertSql,
                     parameters,
                     transaction
                 );
 
                 await transaction.CommitAsync();
 
-                // Zero rows can only mean the count predicate was false. A deadlock victim, or any
-                // other fault, throws from the statements above and is never reported here as a
-                // limit rejection; only the lock-wait timeout below is an outcome.
+                // Zero rows can only mean the count predicate was false; the plain insert always
+                // writes its row. A deadlock victim, or any other fault, throws from the statements
+                // above and is never reported here as a limit rejection; only the lock-wait timeout
+                // below is an outcome.
                 return rowsAffected > 0 ? TokenStoreOutcome.Stored : TokenStoreOutcome.LimitExceeded;
             }
             catch (PostgresException exception)
@@ -571,6 +613,26 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                 return TokenStoreOutcome.LockTimeout;
             }
         }
+
+        /// <summary>
+        /// Why the state read under the lock refuses the store, or <c>null</c> when it allows it.
+        /// The secret is compared here, ordinally, rather than in SQL, so no collation can widen
+        /// what counts as equal. The category is logged; the secrets never are.
+        /// </summary>
+        private static string? RefusalReason(StoredClientState? storedState, string expectedClientSecret) =>
+            storedState switch
+            {
+                null => "missing",
+                _ when !string.Equals(
+                        storedState.StoredClientSecret,
+                        expectedClientSecret,
+                        StringComparison.Ordinal
+                    ) => "secret",
+                { IsApproved: false } => "approval",
+                _ => null,
+            };
+
+        private sealed record StoredClientState(string StoredClientSecret, bool IsApproved);
 
         public async Task<string?> GetTokenStatusAsync(Guid tokenId)
         {

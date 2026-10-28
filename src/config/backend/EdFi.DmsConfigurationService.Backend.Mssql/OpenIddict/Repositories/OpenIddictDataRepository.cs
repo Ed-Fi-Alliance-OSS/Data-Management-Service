@@ -9,6 +9,7 @@ using Dapper;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
@@ -17,8 +18,10 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
     /// SQL Server implementation of IOpenIddictDataRepository.
     /// Handles all database operations for OpenIddict using SQL Server-specific connections and SQL.
     /// </summary>
-    public class OpenIddictDataRepository(IOptions<DatabaseOptions> databaseOptions)
-        : IOpenIddictDataRepository
+    public class OpenIddictDataRepository(
+        IOptions<DatabaseOptions> databaseOptions,
+        ILogger<OpenIddictDataRepository> logger
+    ) : IOpenIddictDataRepository
     {
         private readonly string _connectionString = databaseOptions.Value.DatabaseConnection;
 
@@ -70,6 +73,23 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
                       AND Status = 'valid'
                       AND ExpirationDate > @ActiveAsOf
                 ) < @MaxActiveTokens";
+
+        /// <summary>
+        /// What the grant authenticated against, read after the lock statement has returned
+        /// (DMS-1493 D-11), in its own statement as on PostgreSQL, where that is what makes the
+        /// read current. The approval has the semantics of <see cref="GetClientCredentialAsync"/>:
+        /// every API client registered under the client id approved, and approved when there is
+        /// none. The secret is returned rather than compared here, so the database's
+        /// case-insensitive default collation cannot widen what counts as equal.
+        /// </summary>
+        private const string ReadStoredClientStateSql = """
+            SELECT COALESCE(a.ClientSecret, N'') AS StoredClientSecret,
+                   CAST(COALESCE((SELECT MIN(CAST(ac.IsApproved AS INT))
+                                  FROM dmscs.ApiClient ac
+                                  WHERE ac.ClientId = a.ClientId), 1) AS BIT) AS IsApproved
+            FROM dmscs.OpenIddictApplication a
+            WHERE a.Id = @ApplicationId
+            """;
 
         public async Task<T> ExecuteInTransactionAsync<T>(
             Func<IDbConnection, IDbTransaction, Task<T>> operation
@@ -520,7 +540,8 @@ UPDATE dmscs.OpenIddictApplication
             Guid applicationId,
             string subject,
             DateTimeOffset expiration,
-            int maxActiveTokens
+            int maxActiveTokens,
+            string expectedClientSecret
         )
         {
             await using var connection = new SqlConnection(_connectionString);
@@ -542,22 +563,21 @@ UPDATE dmscs.OpenIddictApplication
             parameters.Add("Status", "valid");
             parameters.Add("ReferenceId", tokenId.ToString("N"));
 
-            // Enforcement disabled: the unconditional insert that ran before the limit existed,
-            // with no transaction and no lock.
-            if (maxActiveTokens < 1)
+            bool enforcesLimit = maxActiveTokens >= 1;
+            if (enforcesLimit)
             {
-                await connection.ExecuteAsync(insertSql, parameters);
-                return TokenStoreOutcome.Stored;
+                // Bound the same way ExpirationDate already is, so the count compares two DATETIME2
+                // values that took the identical conversion path.
+                parameters.Add("ActiveAsOf", DateTime.UtcNow, DbType.DateTime2);
+                parameters.Add("MaxActiveTokens", maxActiveTokens);
             }
 
-            // Bound the same way ExpirationDate already is, so the count compares two DATETIME2
-            // values that took the identical conversion path.
-            parameters.Add("ActiveAsOf", DateTime.UtcNow, DbType.DateTime2);
-            parameters.Add("MaxActiveTokens", maxActiveTokens);
-
-            // Grants for one client serialize on that client's OpenIddictApplication row, which
-            // makes the limit a strict ceiling rather than a best-effort one. The lock lives and
-            // dies with this transaction, so every path below releases it.
+            // Every store, enforcing or not, serializes on the client's OpenIddictApplication row.
+            // Against other grants that makes the limit a strict ceiling rather than a best-effort
+            // one; against credential reset, deletion and un-approval, which take the same lock
+            // first, it means a grant either stores before the change and is revoked by it, or
+            // re-validates after it and is refused (DMS-1493 I-1). The lock lives and dies with
+            // this transaction, so every path below releases it.
             await using var transaction = await connection.BeginTransactionAsync();
 
             try
@@ -580,17 +600,38 @@ UPDATE dmscs.OpenIddictApplication
                     return TokenStoreOutcome.ClientNotFound;
                 }
 
+                StoredClientState? storedState =
+                    await connection.QuerySingleOrDefaultAsync<StoredClientState>(
+                        ReadStoredClientStateSql,
+                        new { ApplicationId = applicationId },
+                        transaction
+                    );
+
+                if (RefusalReason(storedState, expectedClientSecret) is { } refusalReason)
+                {
+                    await transaction.RollbackAsync();
+                    logger.LogDebug(
+                        "Refused to store a token for application {ApplicationId}: re-validation under the application row lock failed ({RefusalReason})",
+                        applicationId,
+                        refusalReason
+                    );
+                    return storedState is null
+                        ? TokenStoreOutcome.ClientNotFound
+                        : TokenStoreOutcome.ClientChanged;
+                }
+
                 int rowsAffected = await connection.ExecuteAsync(
-                    ConditionalInsertSql,
+                    enforcesLimit ? ConditionalInsertSql : insertSql,
                     parameters,
                     transaction
                 );
 
                 await transaction.CommitAsync();
 
-                // Zero rows can only mean the count predicate was false. Any fault throws from the
-                // statements above and is never reported here as a limit rejection; only the
-                // lock-wait timeout and the deadlock below are answered as an outcome.
+                // Zero rows can only mean the count predicate was false; the plain insert always
+                // writes its row. Any fault throws from the statements above and is never reported
+                // here as a limit rejection; only the lock-wait timeout and the deadlock below are
+                // answered as an outcome.
                 return rowsAffected > 0 ? TokenStoreOutcome.Stored : TokenStoreOutcome.LimitExceeded;
             }
             catch (SqlException exception)
@@ -604,6 +645,26 @@ UPDATE dmscs.OpenIddictApplication
                 return TokenStoreOutcome.LockTimeout;
             }
         }
+
+        /// <summary>
+        /// Why the state read under the lock refuses the store, or <c>null</c> when it allows it.
+        /// The secret is compared here, ordinally, rather than in SQL, so no collation can widen
+        /// what counts as equal. The category is logged; the secrets never are.
+        /// </summary>
+        private static string? RefusalReason(StoredClientState? storedState, string expectedClientSecret) =>
+            storedState switch
+            {
+                null => "missing",
+                _ when !string.Equals(
+                        storedState.StoredClientSecret,
+                        expectedClientSecret,
+                        StringComparison.Ordinal
+                    ) => "secret",
+                { IsApproved: false } => "approval",
+                _ => null,
+            };
+
+        private sealed record StoredClientState(string StoredClientSecret, bool IsApproved);
 
         public async Task<string?> GetTokenStatusAsync(Guid tokenId)
         {
