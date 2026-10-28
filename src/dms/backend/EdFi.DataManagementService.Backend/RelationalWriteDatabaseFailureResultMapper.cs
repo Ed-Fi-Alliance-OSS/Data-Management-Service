@@ -400,15 +400,37 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
         return true;
     }
 
+    /// <summary>
+    /// Names an identity element by its full property path without the leading <c>$.</c>, so a top-level
+    /// element keeps its bare name (<c>beginDate</c>) and a reference-backed element carries its reference
+    /// (<c>programReference.educationOrganizationId</c>). Two references that end in the same property
+    /// therefore stay distinguishable. A path that is not made only of property segments is reported as
+    /// written rather than shortened.
+    /// </summary>
     private static string GetIdentityElementName(string identityJsonPath)
     {
         var segments = RelationalJsonPathSupport.GetRestrictedSegments(
             new JsonPathExpression(identityJsonPath, [])
         );
 
-        return segments.Count > 0 && segments[^1] is JsonPathSegment.Property property
-            ? property.Name
-            : identityJsonPath;
+        if (segments.Count == 0)
+        {
+            return identityJsonPath;
+        }
+
+        var propertyNames = new string[segments.Count];
+
+        for (var index = 0; index < segments.Count; index++)
+        {
+            if (segments[index] is not JsonPathSegment.Property property)
+            {
+                return identityJsonPath;
+            }
+
+            propertyNames[index] = property.Name;
+        }
+
+        return string.Join('.', propertyNames);
     }
 
     private static bool MatchesRequestReference(JsonPath concretePath, JsonPathExpression referencePath)

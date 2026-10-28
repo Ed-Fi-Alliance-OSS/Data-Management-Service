@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using System.Net;
 using System.Text.Json;
 using System.Threading.RateLimiting;
 using EdFi.Api.Plugins.Hosting;
@@ -236,8 +237,9 @@ public static class WebApplicationBuilderExtensions
     /// <summary>
     /// Serves the rejection produced by <see cref="GlobalRateLimitingMiddleware"/>, which sets the
     /// 429 status code before invoking this. Rejected requests never reach the DMS
-    /// core pipeline, so the Retry-After header and the problem-details body are written at this
-    /// boundary. The Retry-After value is the limiter's recommended retry delay rounded up to
+    /// core pipeline, so the Retry-After header and body are written at this
+    /// boundary: OAuth JSON for selected token endpoints, problem details otherwise. The
+    /// Retry-After value is the limiter's recommended retry delay rounded up to
     /// whole seconds so a client never retries sooner than recommended, and the body stays
     /// constant whether or not the limiter supplies retry-after metadata.
     /// </summary>
@@ -259,6 +261,18 @@ public static class WebApplicationBuilderExtensions
             IOptions<Frontend.AspNetCore.Configuration.AppSettings>
         >();
         var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
+
+        if (httpContext.GetEndpoint()?.Metadata.GetMetadata<TokenEndpointMetadata>() is not null)
+        {
+            using var tokenError = OAuthErrorResponse.Create(
+                HttpStatusCode.TooManyRequests,
+                "temporarily_unavailable",
+                OAuthErrorResponse.RateLimitDescription,
+                traceId
+            );
+            await TokenErrorResponseWriter.WriteAsync(httpContext, tokenError, cancellationToken);
+            return;
+        }
 
         httpContext.Response.ContentType = "application/problem+json; charset=utf-8";
         await httpContext.Response.WriteAsync(

@@ -24,8 +24,8 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit;
 /// <c>Access-Control-Expose-Headers</c> including <c>Location</c> on the async 202 and on the
 /// incomplete results 200, exercised through the real <c>UseCors</c> pipeline rather than the
 /// policy object directly. A request without an <c>Origin</c> header carries no CORS headers. The
-/// ignored-query-parameter warning is exposed whatever the toggle, and with the toggle off it is the
-/// only header exposed.
+/// ignored-query-parameter warning, <c>X-Correlation-ID</c>, and <c>WWW-Authenticate</c> are exposed
+/// regardless of the toggle; <c>Location</c> is exposed only when the toggle is on.
 /// </summary>
 [TestFixture]
 [NonParallelizable]
@@ -135,6 +135,13 @@ public class IdentityCorsExposeHeadersTests
                 .Should()
                 .Contain(value => value.Contains(WarningHeaderName));
         }
+
+        [Test]
+        public void It_exposes_token_diagnostic_headers()
+        {
+            string exposed = string.Join(",", _response.Headers.GetValues("Access-Control-Expose-Headers"));
+            exposed.Should().Contain("X-Correlation-ID").And.Contain("WWW-Authenticate");
+        }
     }
 
     [TestFixture]
@@ -182,6 +189,13 @@ public class IdentityCorsExposeHeadersTests
                 .Headers.GetValues("Access-Control-Expose-Headers")
                 .Should()
                 .Contain(value => value.Contains("Location"));
+        }
+
+        [Test]
+        public void It_exposes_token_diagnostic_headers()
+        {
+            string exposed = string.Join(",", _response.Headers.GetValues("Access-Control-Expose-Headers"));
+            exposed.Should().Contain("X-Correlation-ID").And.Contain("WWW-Authenticate");
         }
     }
 
@@ -288,9 +302,14 @@ public class IdentityCorsExposeHeadersTests
         }
 
         [Test]
-        public void It_exposes_only_the_warning_header()
+        public void It_exposes_warning_and_token_diagnostic_headers()
         {
-            _response.Headers.GetValues("Access-Control-Expose-Headers").Should().Equal(WarningHeaderName);
+            string exposed = string.Join(",", _response.Headers.GetValues("Access-Control-Expose-Headers"));
+            exposed
+                .Should()
+                .Contain(WarningHeaderName)
+                .And.Contain("X-Correlation-ID")
+                .And.Contain("WWW-Authenticate");
         }
 
         [Test]

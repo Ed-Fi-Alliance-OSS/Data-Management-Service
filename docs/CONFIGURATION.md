@@ -1205,7 +1205,7 @@ The `RateLimit` object should have the following parameters.
 
 ### Rejection response
 
-A rejected request receives a `429 Too Many Requests` response with a
+A rejected non-token request receives a `429 Too Many Requests` response with a
 `Retry-After` header and an Ed-Fi problem-details body served as
 `application/problem+json`. `Retry-After` carries the limiter-supplied
 recommended retry delay, rounded up to whole seconds. It is a suggested
@@ -1219,6 +1219,15 @@ present, otherwise from the server-generated trace identifier — the same
 selection, and the same
 [normalization](./LOGGING.md#correlation-id-normalization), the API's other
 error responses use.
+
+For a supported-content-type `POST /oauth/token` endpoint, including qualified
+routes, the limiter instead returns `application/json` with
+`error: temporarily_unavailable` and a fixed `error_description`. The same
+limiter-supplied `Retry-After` rule applies. The normalized correlation ID is in
+`X-Correlation-ID`, percent-encoded with UTF-8; decode it once to find the log
+entry. See the [token error contract](../reference/adr-oauth-token-errors-DMS-1606.md).
+
+Example non-token rejection:
 
 ```json
 {
@@ -1446,12 +1455,16 @@ The Configuration Service's `/connect/token` rejects a grant beyond the limit wi
 `urn:ed-fi:management-api:security:authentication:too-many-tokens`; every Configuration Service
 problem type uses the Management API prefix.
 
-DMS `/oauth/token` retains its canonical HTTP 429 contract for limited clients: DMS's own type
-`urn:ed-fi:api:security:authentication:too-many-tokens`, title `Too Many Tokens`, and message
+DMS `/oauth/token` returns HTTP 429 as `application/json` with
+`error: temporarily_unavailable` and the following `error_description` for limited clients:
 `Too many access tokens have been requested (limit is {n}). Access tokens should be reused until they expire.`
 DMS parses the Configuration Service response, under either the `urn:ed-fi:management-api:` type
 or the `urn:ed-fi:api:` type an earlier Configuration Service returns, and rebuilds its external
-response as before. Upgrade DMS before, or together with, the Configuration Service: an earlier
+response using the positive integer limit alone. Token errors carry no problem-details `type`
+or `title`; their normalized correlation ID is UTF-8 percent-encoded in `X-Correlation-ID`.
+Decode that header once to find the matching log entry. See the
+[token error contract](../reference/adr-oauth-token-errors-DMS-1606.md).
+Upgrade DMS before, or together with, the Configuration Service: an earlier
 DMS does not recognize the new type and answers a generic 429 of type
 `urn:ed-fi:api:too-many-requests` without the limit message.
 

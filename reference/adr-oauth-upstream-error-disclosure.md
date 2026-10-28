@@ -269,3 +269,13 @@ first three was introduced by the fix for the one before it.
 - RFC 6749 §5.2 — OAuth 2.0 error response (`error`, `error_description`, `error_uri`)
 - `src/dms/core/EdFi.DataManagementService.Core/OAuth/OAuthManager.cs` — implementation
 - `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OAuth/OAuthManagerTests.cs` — coverage
+
+## DMS-1606 token error contract supersession
+
+**Added 2026-10-20:** [ADR DMS-1606](./adr-oauth-token-errors-DMS-1606.md) supersedes the old
+problem-details response fields and JSON `correlationId` channel for DMS token failures. DMS now
+returns the OAuth `error` / `error_description` object and the once-decodable
+`X-Correlation-ID` response header. The selected-summary Information policy for unusable provider
+401 details remains authoritative; DMS-1606 closes DMS-1549 by applying it to malformed and
+non-object 401 bodies. Existing bounded/sanitized 502 warning and transport error behavior remain
+unchanged and continue to be governed by DMS-1550.

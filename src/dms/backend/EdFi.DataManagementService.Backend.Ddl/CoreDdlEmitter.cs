@@ -801,7 +801,7 @@ public sealed class CoreDdlEmitter
                 // MSSQL: PK NONCLUSTERED + inline UNIQUE CLUSTERED
                 writer.AppendLine(
                     _dialect.RenderNamedPrimaryKeyClause(
-                        "PK_ReferentialIdentity",
+                        ReferentialIdentityTableDefinition.PrimaryKeyName,
                         [Col("ReferentialId")],
                         clustered: false
                     ) + ","
@@ -819,8 +819,10 @@ public sealed class CoreDdlEmitter
             else
             {
                 writer.AppendLine(
-                    _dialect.RenderNamedPrimaryKeyClause("PK_ReferentialIdentity", [Col("ReferentialId")])
-                        + ","
+                    _dialect.RenderNamedPrimaryKeyClause(
+                        ReferentialIdentityTableDefinition.PrimaryKeyName,
+                        [Col("ReferentialId")]
+                    ) + ","
                 );
                 var uniqueCols = string.Join(
                     ", ",

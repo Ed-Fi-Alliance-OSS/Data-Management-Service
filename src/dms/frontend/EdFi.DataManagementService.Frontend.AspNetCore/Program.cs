@@ -145,7 +145,7 @@ RunBootstrapPhase(
                     // Any query can be answered with the ignored-parameter warning, so it is always
                     // readable. The identity surface's async 202 and incomplete results 200 carry a
                     // Location the Swagger UI must read; with the surface off, Location is not exposed.
-                    List<string> exposedHeaders = ["X-EdFi-Warning"];
+                    List<string> exposedHeaders = ["X-EdFi-Warning", "X-Correlation-ID", "WWW-Authenticate"];
                     if (
                         builder.Configuration.GetValue<bool>(
                             $"{IdentityManagementOptions.SectionName}:Enabled"
