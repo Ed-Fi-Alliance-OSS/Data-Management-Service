@@ -5,9 +5,9 @@
 
 using System.Net;
 using System.Text.Json;
-using System.Text.Unicode;
 using EdFi.DmsConfigurationService.DataModel;
 using Microsoft.Extensions.Logging;
+using static EdFi.DmsConfigurationService.Backend.Keycloak.KeycloakProviderAnswer;
 
 namespace EdFi.DmsConfigurationService.Backend.Keycloak;
 
@@ -87,13 +87,6 @@ public sealed class KeycloakTokenIntrospectionManager(
         "sub",
         "aud",
         "iss",
-    };
-
-    /// <summary>The members read from an RFC 6749 §5.2 error answer.</summary>
-    private static readonly HashSet<string> _errorMembers = new(StringComparer.Ordinal)
-    {
-        "error",
-        "error_description",
     };
 
     public async Task<TokenIntrospectionResult> IntrospectTokenAsync(
@@ -212,11 +205,12 @@ public sealed class KeycloakTokenIntrospectionManager(
                 return IntrospectionFailed(UnexpectedReason, request.ClientId, ex);
             }
 
+            // Strings inside arrays are decoded too, because aud is read as an array of strings.
             return response.StatusCode == HttpStatusCode.OK
-                ? MapAnswer(ParseMembers(body, _answerMembers), request.ClientId)
+                ? MapAnswer(ParseMembers(body, _answerMembers, decodeArrayStrings: true), request.ClientId)
                 : MapErrorResponse(
                     (int)response.StatusCode,
-                    ParseMembers(body, _errorMembers),
+                    ParseMembers(body, ErrorMembers, decodeArrayStrings: true),
                     request.ClientId
                 );
         }
@@ -433,113 +427,6 @@ public sealed class KeycloakTokenIntrospectionManager(
                 return ProviderAnswerNotUsable(UnrecognizedResponseReason, clientId, statusCode, category);
         }
     }
-
-    /// <summary>
-    /// The <paramref name="read"/> members of a JSON object, each cloned so it outlives the parsed
-    /// document. Null (unparseable) when the body is empty, not UTF-8, not JSON or not an object, when
-    /// any member name cannot be decoded, when a read member is repeated, or when a string inside a
-    /// read member cannot be decoded: a repeated or undecodable member would make the ownership
-    /// comparison or the reported value ambiguous. Every name is decoded through
-    /// <see cref="JsonProperty.Name"/>, so an escaped name is recognized and an escaped, unpaired
-    /// surrogate such as <c>"\uD800"</c>, valid UTF-8 and valid JSON syntax, is rejected wherever it is.
-    /// </summary>
-    private static Dictionary<string, JsonElement>? ParseMembers(byte[] body, HashSet<string> read)
-    {
-        // Checked explicitly: JsonDocument accepts invalid UTF-8 inside a string and only fails
-        // when the value is read, which would surface as a fault rather than an unparseable body.
-        if (body.Length == 0 || !Utf8.IsValid(body))
-        {
-            return null;
-        }
-
-        try
-        {
-            using JsonDocument document = JsonDocument.Parse(body);
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                return null;
-            }
-
-            Dictionary<string, JsonElement> members = new(StringComparer.Ordinal);
-            foreach (JsonProperty property in document.RootElement.EnumerateObject())
-            {
-                if (!TryDecodeName(property, out string name))
-                {
-                    return null;
-                }
-
-                if (!read.Contains(name))
-                {
-                    continue;
-                }
-
-                if (!StringsDecode(property.Value) || !members.TryAdd(name, property.Value.Clone()))
-                {
-                    return null;
-                }
-            }
-
-            return members;
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// False when the name cannot be decoded: <see cref="JsonProperty.Name"/> rejects an escaped,
-    /// unpaired surrogate with <see cref="InvalidOperationException"/>. Only the decoding is guarded.
-    /// </summary>
-    private static bool TryDecodeName(JsonProperty property, out string name)
-    {
-        try
-        {
-            name = property.Name;
-            return true;
-        }
-        catch (InvalidOperationException)
-        {
-            name = string.Empty;
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// False when the value is a string, or an array holding a string, that cannot be decoded, so the
-    /// mapping can read every string it accepts without a fault. Only <c>GetString</c> is guarded.
-    /// </summary>
-    private static bool StringsDecode(JsonElement value)
-    {
-        IEnumerable<JsonElement> strings = value.ValueKind switch
-        {
-            JsonValueKind.String => [value],
-            JsonValueKind.Array => value
-                .EnumerateArray()
-                .Where(item => item.ValueKind == JsonValueKind.String),
-            _ => [],
-        };
-
-        foreach (JsonElement text in strings)
-        {
-            try
-            {
-                _ = text.GetString();
-            }
-            catch (InvalidOperationException)
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
-    /// <summary>The member as a string; null when it is absent or not a string.</summary>
-    private static string? StringMember(Dictionary<string, JsonElement> members, string name) =>
-        members.TryGetValue(name, out JsonElement value) && value.ValueKind == JsonValueKind.String
-            ? value.GetString()
-            : null;
 
     /// <summary>False when the member is present but not a string, <c>null</c> included: null is not absent.</summary>
     private static bool IsAbsentOrString(Dictionary<string, JsonElement> members, string name) =>

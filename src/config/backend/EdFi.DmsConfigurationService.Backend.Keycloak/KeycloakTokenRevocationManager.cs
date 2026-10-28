@@ -4,8 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Text.Json;
-using System.Text.Unicode;
 using EdFi.DmsConfigurationService.DataModel;
 using Flurl.Http;
 using Keycloak.Net.Models.Clients;
@@ -413,134 +411,28 @@ public sealed class KeycloakTokenRevocationManager(
     /// that is missing, oversized, not UTF-8, not JSON, not an object, has any member name that
     /// cannot be decoded, repeats either member, or holds either member as a string that cannot be
     /// decoded is unparseable: a duplicated or undecodable member would make the exact-match
-    /// normalization ambiguous. A member that is not a string is treated as absent.
+    /// normalization ambiguous. A member that is not a string, an array included, is treated as
+    /// absent, so the strings inside an array are not decoded.
     /// </summary>
     private static ProviderErrorBody ParseErrorBody(byte[]? body)
     {
-        // Checked explicitly: JsonDocument accepts invalid UTF-8 inside a string and only fails
-        // when the value is read, which would surface as a fault rather than an unparseable body.
-        if (body is null || body.Length == 0 || !Utf8.IsValid(body))
+        if (
+            KeycloakProviderAnswer.ParseMembers(
+                body,
+                KeycloakProviderAnswer.ErrorMembers,
+                decodeArrayStrings: false
+            )
+            is not { } members
+        )
         {
             return ProviderErrorBody.Unparseable;
         }
 
-        try
-        {
-            using JsonDocument document = JsonDocument.Parse(body);
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                return ProviderErrorBody.Unparseable;
-            }
-
-            string? error = null;
-            string? description = null;
-            bool errorSeen = false;
-            bool descriptionSeen = false;
-            foreach (JsonProperty property in document.RootElement.EnumerateObject())
-            {
-                if (!TryIdentifyMember(property, out ErrorBodyMember member))
-                {
-                    return ProviderErrorBody.Unparseable;
-                }
-
-                if (member == ErrorBodyMember.Error)
-                {
-                    if (errorSeen)
-                    {
-                        return ProviderErrorBody.Unparseable;
-                    }
-
-                    errorSeen = true;
-                    if (!TryReadString(property.Value, out error))
-                    {
-                        return ProviderErrorBody.Unparseable;
-                    }
-                }
-                else if (member == ErrorBodyMember.Description)
-                {
-                    if (descriptionSeen)
-                    {
-                        return ProviderErrorBody.Unparseable;
-                    }
-
-                    descriptionSeen = true;
-                    if (!TryReadString(property.Value, out description))
-                    {
-                        return ProviderErrorBody.Unparseable;
-                    }
-                }
-            }
-
-            return new ProviderErrorBody(true, error, description);
-        }
-        catch (JsonException)
-        {
-            return ProviderErrorBody.Unparseable;
-        }
-    }
-
-    /// <summary>
-    /// Which of the two members a property is. False when its name cannot be decoded: an escaped,
-    /// unpaired surrogate such as <c>"\uD800"</c> in a name is valid UTF-8 and valid JSON syntax,
-    /// and decoding the name rejects it with <see cref="InvalidOperationException"/>. Every name is
-    /// decoded through <see cref="JsonProperty.Name"/> rather than compared with <c>NameEquals</c>,
-    /// which can answer "not equal" without decoding, so the outcome never depends on which
-    /// comparison happened to run. Such a name could be either member, so the body is unparseable
-    /// even when the name sits beside well-formed members. Only the decoding is guarded.
-    /// </summary>
-    private static bool TryIdentifyMember(JsonProperty property, out ErrorBodyMember member)
-    {
-        string name;
-        try
-        {
-            name = property.Name;
-        }
-        catch (InvalidOperationException)
-        {
-            member = ErrorBodyMember.Other;
-            return false;
-        }
-
-        member = name switch
-        {
-            "error" => ErrorBodyMember.Error,
-            "error_description" => ErrorBodyMember.Description,
-            _ => ErrorBodyMember.Other,
-        };
-        return true;
-    }
-
-    private enum ErrorBodyMember
-    {
-        Other,
-        Error,
-        Description,
-    }
-
-    /// <summary>
-    /// Reads a member as a string; a non-string member reads as absent. False when the string
-    /// cannot be represented: an escaped, unpaired surrogate such as <c>"\uD800"</c> is valid
-    /// UTF-8 and valid JSON syntax, so it passes the checks above, and <c>GetString</c> rejects it
-    /// with <see cref="InvalidOperationException"/>. Only that call is guarded, and only for a
-    /// string element, so any other fault in the caller still escapes.
-    /// </summary>
-    private static bool TryReadString(JsonElement element, out string? value)
-    {
-        value = null;
-        if (element.ValueKind != JsonValueKind.String)
-        {
-            return true;
-        }
-
-        try
-        {
-            value = element.GetString();
-            return true;
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
+        return new ProviderErrorBody(
+            true,
+            KeycloakProviderAnswer.StringMember(members, "error"),
+            KeycloakProviderAnswer.StringMember(members, "error_description")
+        );
     }
 
     private void LogProviderRefusal(string clientId, int statusCode, string category) =>

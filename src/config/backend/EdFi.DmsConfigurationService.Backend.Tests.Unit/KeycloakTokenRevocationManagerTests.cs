@@ -924,6 +924,12 @@ public class KeycloakTokenRevocationManagerTests
             """{"error":"invalid_request","error_description":"x","error_description":"Unmatching clients"}""",
             Unavailable("unparseable")
         );
+        yield return Case(
+            "400 duplicated member that is never read",
+            400,
+            """{"error":"invalid_request","x":1,"x":2,"error_description":"Unmatching clients"}""",
+            new TokenRevocationResult.Completed()
+        );
 
         // Every other status.
         yield return Case(
@@ -1383,6 +1389,13 @@ public class KeycloakTokenRevocationManagerTests
             400,
             """{"error":"invalid_client","\u0065rror":"invalid_request","error_description":"Unmatching clients"}""",
             unparseable
+        );
+        // A member that is not a string reads as absent, so the strings inside an array are never decoded.
+        yield return Case(
+            "400 lone surrogate inside an array description",
+            400,
+            """{"error":"invalid_request","error_description":["\uD800"]}""",
+            new TokenRevocationResult.InvalidRequest()
         );
     }
 

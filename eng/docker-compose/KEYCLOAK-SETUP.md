@@ -146,7 +146,7 @@ Run again for a client that already exists, such as `DmsConfigurationService`, `
 The script reaches only the client it is run for, not the other clients the Configuration Service manages.
 Only tokens issued after the mapper is added carry the audience: on Keycloak 26.6.2 or later, a live token issued before then is still answered `active:false` to its owner, so request a new token.
 On Keycloak 26.6.2 or later, add the mapper yourself to a client that none of those updates or script runs will reach, or to one that kept such a mapper, with the steps below, using the client itself as both the observed and the introspecting client and, when `Client's own audience` is taken, another mapper name.
-For a client the Configuration Service manages, put the mapper in the client's own `<client>-dedicated` scope: its next `PUT /v3/apiClients/{id}` or `PUT /v3/applications/{id}` removes every default client scope other than its claim set's, the realm's default scopes and the service-account scope.
+For a client the Configuration Service manages, put the mapper in the client's own `<client>-dedicated` scope: its next `PUT /v3/apiClients/{id}`, or a `PUT /v3/applications/{id}` that synchronizes that client because the change affects it or it is already pending, removes every default client scope other than its claim set's, the realm's default scopes and the service-account scope.
 Otherwise confirm through Keycloak's introspection endpoint, `POST http://localhost:8045/realms/edfi/protocol/openid-connect/token/introspect`, with `token=<the token>` and the credentials of a **confidential** client:
 
 - Introspect access tokens with a client that is in the token's audience (`aud`).
