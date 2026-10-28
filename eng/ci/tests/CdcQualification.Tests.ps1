@@ -1896,8 +1896,10 @@ Describe 'CDC runbook failure diagnostics' {
             param($Repo, $Loop, $Operation, $State, $Category)
             Describe 'live status assertion' -ForEach @(@{ Repo = $Repo; Loop = $Loop; Operation = $Operation; State = $State; Category = $Category }) {
                 BeforeAll {
+                    Set-StrictMode -Version Latest
                     . (Join-Path $Repo 'eng/docker-compose/tests/cdc-runbook-snippets.ps1')
                     $script:repo = $Repo
+                    $script:fixture = $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY
                     $script:runbookProgress = @{}
                     $script:runbookCase = 'cdc-managed-start'
                     Mock Invoke-CdcRunbookScript {
