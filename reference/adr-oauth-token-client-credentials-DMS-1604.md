@@ -313,3 +313,13 @@ should carry, and whether it should match the ODS/API, is still open.
   with Basic request type, and a Basic header with empty body credential fields. It also runs the
   no-credentials, partial-credentials, `Bearer`, mixed-mechanism, and `null` grant type
   rejections, and the wrong-secret `401`, against a running stack.
+
+## DMS-1606 token error contract supersession
+
+**Added 2026-10-20:** [ADR DMS-1606](./adr-oauth-token-errors-DMS-1606.md) supersedes the
+problem-details envelope and the error statuses/codes documented for `POST /oauth/token`. It also
+defines the encoded `X-Correlation-ID` response header, the fixed Basic realm challenge,
+missing-versus-partial body credentials, and provider 400 `invalid_client` mapping based on the
+caller's authentication mechanism. Credential transport, percent encoding, successful response
+behavior, validation order, and disclosure decisions remain in force except where DMS-1606 states
+otherwise.

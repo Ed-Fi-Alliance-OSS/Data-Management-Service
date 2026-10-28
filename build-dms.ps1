@@ -338,6 +338,11 @@ function SetAuthenticationServiceURL {
         [string]
         $E2EDirectory
     )
+    if ($env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE -eq "1") {
+        # The launcher scopes AppSettings__AuthenticationService to the test process. Leave the
+        # compiled settings intact so later prebuilt runs cannot inherit the removed proxy URL.
+        return
+    }
     $appSettingsPath = Join-Path -Path $E2EDirectory -ChildPath "appsettings.json"
     $json = Get-Content $appSettingsPath -Raw | ConvertFrom-Json
     if ($IdentityProvider -eq  "self-contained") {
@@ -984,12 +989,26 @@ function RunE2E {
     # Run only the standard E2E tests, excluding instance management tests
     # Instance management tests require special setup (route qualifiers, additional databases)
     # and should be run separately using the instance management test scripts
+    # DMS-1606 provider fixtures need a dedicated proxy + endpoint overlay. Keep them out of ordinary
+    # local runs, including explicit full-suite filters. The launcher sets the marker only while
+    # the proxy and endpoint overlay are active, and selects root/qualified cases explicitly.
+    $effectiveTestFilter = $TestFilter
+    if ($env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE -ne '1') {
+        $fixtureExclusions = '(Category!=@TokenContractProxy)&(Category!=@TokenContractQualified)'
+        $effectiveTestFilter = if ([string]::IsNullOrWhiteSpace($TestFilter)) {
+            $fixtureExclusions
+        }
+        else {
+            "($TestFilter)&$fixtureExclusions"
+        }
+    }
+
     Invoke-WithE2EIdentityEnvironment -EnvironmentFile $E2ETestSettings.EnvironmentFile -IdentityProvider $IdentityProvider -Action {
         Invoke-WithE2ETestProcessContext -E2ETestSettings $E2ETestSettings -Action {
             Invoke-Execute {
                 RunTests `
                     -Filter "EdFi.DataManagementService.Tests.E2E" `
-                    -TestFilter $TestFilter `
+                    -TestFilter $effectiveTestFilter `
                     -ResultNameSuffix $E2ETestSettings.TestResultSuffix
             }
         }
