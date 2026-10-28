@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Diagnostics;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories;
@@ -1060,6 +1061,400 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             _foreignResult.Should().BeFalse();
             (await _dataRepository.GetTokenStatusAsync(_foreignTokenId)).Should().Be("valid");
         }
+    }
+
+    // DMS-1493 D-1: lifecycle revocation is one UPDATE constrained by the stored ApplicationId and an
+    // unrevoked status, run inside the caller's transaction. These fixtures pin each property against
+    // the real engine.
+
+    /// <summary>
+    /// A fixed, distinctive redemption date written over a revoked token, so a later revocation that
+    /// overwrote it with the current time is caught without depending on the clock advancing.
+    /// </summary>
+    protected static readonly DateTime SentinelRedemptionDate = new(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        DateTimeKind.Unspecified
+    );
+
+    protected static async Task<Guid> StoreValidTokenAsync(
+        OpenIddictDataRepository repository,
+        Guid applicationId,
+        DateTimeOffset expiration
+    )
+    {
+        Guid tokenId = Guid.NewGuid();
+        TokenStoreOutcome outcome = await repository.StoreTokenAsync(
+            tokenId,
+            applicationId,
+            $"subject-{tokenId:N}",
+            expiration,
+            EnforcementDisabled
+        );
+
+        outcome.Should().Be(TokenStoreOutcome.Stored);
+        return tokenId;
+    }
+
+    protected static Task<int> RevokeTokensForApplicationInTransactionAsync(
+        OpenIddictDataRepository repository,
+        Guid applicationId
+    ) =>
+        repository.ExecuteInTransactionAsync(
+            (connection, transaction) =>
+                repository.RevokeTokensForApplicationAsync(applicationId, connection, transaction)
+        );
+
+    protected static async Task<List<string?>> TokenStatusesAsync(
+        OpenIddictDataRepository repository,
+        IEnumerable<Guid> tokenIds
+    )
+    {
+        List<string?> statuses = [];
+        foreach (Guid tokenId in tokenIds)
+        {
+            statuses.Add(await repository.GetTokenStatusAsync(tokenId));
+        }
+        return statuses;
+    }
+
+    protected static async Task<List<DateTime?>> RedemptionDatesAsync(IEnumerable<Guid> tokenIds)
+    {
+        List<DateTime?> redemptionDates = [];
+        foreach (Guid tokenId in tokenIds)
+        {
+            redemptionDates.Add(await RedemptionDateAsync(tokenId));
+        }
+        return redemptionDates;
+    }
+
+    /// <summary>
+    /// One of the target's three unrevoked tokens is already expired: the UPDATE has no expiry or type
+    /// filter, so it counts. The pre-revoked token carries the sentinel date; without the status
+    /// predicate the result is 4 and the sentinel is overwritten. The bystander is a real registered
+    /// application, so only the ApplicationId predicate keeps its tokens valid.
+    /// </summary>
+    [TestFixture]
+    public class Given_RevokeTokensForApplicationAsync_For_An_Application_With_Outstanding_Tokens
+        : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid[] _unrevokedTokenIds = null!;
+        private Guid _preRevokedTokenId;
+        private Guid[] _bystanderTokenIds = null!;
+        private int _result;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"revoke-all-target-{Guid.NewGuid():N}"
+            );
+            Guid bystanderApplicationId = await RegisterApplicationAsync(
+                _repository,
+                $"revoke-all-bystander-{Guid.NewGuid():N}"
+            );
+
+            _unrevokedTokenIds =
+            [
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, applicationId, FarPast),
+            ];
+            _preRevokedTokenId = await StoreValidTokenAsync(_repository, applicationId, FarFuture);
+            (await _repository.RevokeTokenAsync(_preRevokedTokenId, applicationId)).Should().BeTrue();
+            await SetRedemptionDateAsync(_preRevokedTokenId, SentinelRedemptionDate);
+            _bystanderTokenIds =
+            [
+                await StoreValidTokenAsync(_repository, bystanderApplicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, bystanderApplicationId, FarFuture),
+            ];
+
+            _result = await RevokeTokensForApplicationInTransactionAsync(_repository, applicationId);
+        }
+
+        [Test]
+        public void It_reports_exactly_the_three_unrevoked_tokens_as_changed() => _result.Should().Be(3);
+
+        [Test]
+        public async Task It_revokes_every_unrevoked_token_including_the_expired_one() =>
+            (await TokenStatusesAsync(_repository, _unrevokedTokenIds))
+                .Should()
+                .Equal("revoked", "revoked", "revoked");
+
+        [Test]
+        public async Task It_sets_their_redemption_dates() =>
+            (await RedemptionDatesAsync(_unrevokedTokenIds))
+                .Should()
+                .HaveCount(3)
+                .And.AllSatisfy(redemptionDate =>
+                    redemptionDate.Should().NotBeNull().And.NotBe(SentinelRedemptionDate)
+                );
+
+        [Test]
+        public async Task It_preserves_the_already_revoked_tokens_redemption_date()
+        {
+            (await _repository.GetTokenStatusAsync(_preRevokedTokenId)).Should().Be("revoked");
+            (await RedemptionDateAsync(_preRevokedTokenId)).Should().Be(SentinelRedemptionDate);
+        }
+
+        [Test]
+        public async Task It_leaves_the_other_applications_tokens_valid()
+        {
+            (await TokenStatusesAsync(_repository, _bystanderTokenIds)).Should().Equal("valid", "valid");
+            (await RedemptionDatesAsync(_bystanderTokenIds))
+                .Should()
+                .HaveCount(2)
+                .And.AllSatisfy(redemptionDate => redemptionDate.Should().BeNull());
+        }
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokensForApplicationAsync_Repeated : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid[] _tokenIds = null!;
+        private int _firstResult;
+        private int _repeatResult;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"revoke-all-repeat-{Guid.NewGuid():N}"
+            );
+            _tokenIds =
+            [
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+            ];
+            _firstResult = await RevokeTokensForApplicationInTransactionAsync(_repository, applicationId);
+            foreach (Guid tokenId in _tokenIds)
+            {
+                await SetRedemptionDateAsync(tokenId, SentinelRedemptionDate);
+            }
+
+            _repeatResult = await RevokeTokensForApplicationInTransactionAsync(_repository, applicationId);
+        }
+
+        [Test]
+        public void It_revoked_both_tokens_the_first_time() => _firstResult.Should().Be(2);
+
+        [Test]
+        public void It_reports_that_the_repeat_changed_no_row() => _repeatResult.Should().Be(0);
+
+        [Test]
+        public async Task It_keeps_the_tokens_revoked() =>
+            (await TokenStatusesAsync(_repository, _tokenIds)).Should().Equal("revoked", "revoked");
+
+        [Test]
+        public async Task It_preserves_their_redemption_dates() =>
+            (await RedemptionDatesAsync(_tokenIds))
+                .Should()
+                .Equal(SentinelRedemptionDate, SentinelRedemptionDate);
+    }
+
+    /// <summary>
+    /// The count read inside the transaction shows the UPDATE ran there, so the assertions after the
+    /// rollback fail if the revocation is committed on any other connection or transaction.
+    /// </summary>
+    [TestFixture]
+    public class Given_RevokeTokensForApplicationAsync_Inside_A_Rolled_Back_Transaction
+        : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid[] _tokenIds = null!;
+        private int _changedInsideTheTransaction;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"revoke-all-rollback-{Guid.NewGuid():N}"
+            );
+            _tokenIds =
+            [
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+            ];
+
+            using var connection = await _repository.CreateConnectionAsync();
+            using var transaction = await _repository.BeginTransactionAsync(connection);
+            _changedInsideTheTransaction = await _repository.RevokeTokensForApplicationAsync(
+                applicationId,
+                connection,
+                transaction
+            );
+            transaction.Rollback();
+        }
+
+        [Test]
+        public void It_revoked_both_tokens_inside_the_transaction() =>
+            _changedInsideTheTransaction.Should().Be(2);
+
+        [Test]
+        public async Task It_leaves_every_token_valid_after_the_rollback() =>
+            (await TokenStatusesAsync(_repository, _tokenIds)).Should().Equal("valid", "valid");
+
+        [Test]
+        public async Task It_leaves_their_redemption_dates_unset() =>
+            (await RedemptionDatesAsync(_tokenIds))
+                .Should()
+                .HaveCount(2)
+                .And.AllSatisfy(redemptionDate => redemptionDate.Should().BeNull());
+    }
+
+    [TestFixture]
+    public class Given_RevokeTokensForApplicationAsync_For_An_Unknown_Application
+        : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid[] _registeredTokenIds = null!;
+        private int _result;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            Guid applicationId = await RegisterApplicationAsync(
+                _repository,
+                $"revoke-all-unknown-{Guid.NewGuid():N}"
+            );
+            _registeredTokenIds =
+            [
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+            ];
+
+            _result = await RevokeTokensForApplicationInTransactionAsync(_repository, Guid.NewGuid());
+        }
+
+        [Test]
+        public void It_reports_that_no_row_changed() => _result.Should().Be(0);
+
+        [Test]
+        public async Task It_leaves_the_registered_applications_tokens_valid() =>
+            (await TokenStatusesAsync(_repository, _registeredTokenIds)).Should().Equal("valid", "valid");
+    }
+
+    /// <summary>
+    /// DMS-1493 D-1/D-2: the lock every lifecycle transaction takes first. A second session asks for
+    /// the same row lock a grant takes, and <c>WaitUntilASessionIsBlockedBy</c> must see it
+    /// waiting on a lock the locking transaction's session owns, so an implementation that only
+    /// reads the row fails here.
+    /// </summary>
+    [TestFixture]
+    public class Given_LockApplicationAsync_For_An_Existing_Row : OpenIddictDataRepositoryTests
+    {
+        /// <summary>
+        /// The competing session has no lock timeout, so only its 30 s command timeout can end its
+        /// wait; the grant's 5 s lock timeout is not involved. This stays well under the former.
+        /// </summary>
+        private static readonly TimeSpan _blockedObservationTimeout = TimeSpan.FromSeconds(10);
+
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _applicationId;
+        private IDbConnection _connection = null!;
+        private IDbTransaction _transaction = null!;
+        private int _lockingSessionId;
+        private bool _result;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _applicationId = await RegisterApplicationAsync(_repository, $"lock-existing-{Guid.NewGuid():N}");
+            _connection = await _repository.CreateConnectionAsync();
+            _transaction = await _repository.BeginTransactionAsync(_connection);
+            try
+            {
+                _result = await _repository.LockApplicationAsync(_applicationId, _connection, _transaction);
+                _lockingSessionId = await _connection.ExecuteScalarAsync<int>(
+                    "SELECT @@SPID",
+                    transaction: _transaction
+                );
+            }
+            catch
+            {
+                // NUnit skips this fixture's teardown when its setup throws, but still runs the base
+                // reset, which would queue behind the lock this transaction holds.
+                _transaction.Dispose();
+                _connection.Dispose();
+                throw;
+            }
+        }
+
+        [TearDown]
+        public void Teardown()
+        {
+            // Before the base reset, which would otherwise queue behind the lock.
+            _transaction.Dispose();
+            _connection.Dispose();
+        }
+
+        [Test]
+        public void It_reports_that_the_row_exists() => _result.Should().BeTrue();
+
+        [Test]
+        public async Task It_holds_the_row_lock_until_the_transaction_ends()
+        {
+            Task<RowLockHolder> competingHolder = Task.Run(() => RowLockHolder.TakeAsync(_applicationId));
+            try
+            {
+                await WaitUntilASessionIsBlockedBy(_lockingSessionId, _blockedObservationTimeout);
+                competingHolder
+                    .IsCompleted.Should()
+                    .BeFalse("the competing session is waiting on the row lock the transaction holds");
+
+                _transaction.Rollback();
+
+                // Completes only once the competing session is granted the lock.
+                await competingHolder;
+            }
+            finally
+            {
+                // Ends the locking transaction first (a no-op after the rollback), so a competing
+                // session still waiting on it is granted and can be awaited and released.
+                _transaction.Dispose();
+                await using RowLockHolder holder = await competingHolder;
+                await holder.ReleaseAsync();
+            }
+        }
+    }
+
+    [TestFixture]
+    public class Given_LockApplicationAsync_For_A_Missing_Row : OpenIddictDataRepositoryTests
+    {
+        private bool _result;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions);
+            Guid applicationId = await RegisterApplicationAsync(
+                repository,
+                $"lock-missing-{Guid.NewGuid():N}"
+            );
+            await DeleteApplicationRowAsync(applicationId);
+
+            _result = await repository.ExecuteInTransactionAsync(
+                (connection, transaction) =>
+                    repository.LockApplicationAsync(applicationId, connection, transaction)
+            );
+        }
+
+        [Test]
+        public void It_reports_that_the_row_does_not_exist() => _result.Should().BeFalse();
     }
 
     // Introspection reads a token's status through the authenticated application: the status is returned only
