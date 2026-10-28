@@ -1,0 +1,29 @@
+{
+  "name": "Policy\nName",
+  "resourceClaims": [
+    {
+      "name": "edfi/domain",
+      "isParent": true
+    },
+    {
+      "name": "edfi/parent\u2028name",
+      "isParent": true,
+      "claimSets": [
+        {
+          "name": "Existing",
+          "actions": [
+            {
+              "name": "Read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "Base"
+                },
+                null
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

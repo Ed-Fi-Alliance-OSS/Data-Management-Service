@@ -83,25 +83,14 @@ public partial class StepDefinitions(
         _lastClientId = key;
         _lastClientSecret = secret;
 
-        var urlEncodedData = new Dictionary<string, string>
+        if (playwrightContext.ApiRequestContext is not null)
         {
-            { "client_id", key },
-            { "client_secret", secret },
-            { "grant_type", "client_credentials" },
-            { "scope", scope },
-        };
-        var content = new FormUrlEncodedContent(urlEncodedData);
-        APIRequestContextOptions? options = new()
-        {
-            Headers = new Dictionary<string, string>
-            {
-                { "Content-Type", "application/x-www-form-urlencoded" },
-            },
-            Data = await content.ReadAsStringAsync(),
-        };
-        if (playwrightContext.ApiRequestContext != null)
-        {
-            _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
+            _apiResponse = await CmsTestRequests.GetClientAccessTokenAsync(
+                playwrightContext.ApiRequestContext,
+                key,
+                secret,
+                scope
+            );
         }
     }
 
@@ -324,18 +313,22 @@ public partial class StepDefinitions(
     /// </summary>
     public async Task PostVerbatimBodyAsync(string url, string body)
     {
-        _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync(
+        _apiResponse = await CmsTestRequests.PostVerbatimBodyAsync(
+            playwrightContext.ApiRequestContext!,
             url,
-            new() { Headers = _authHeaders, Data = body }
-        )!;
+            _token,
+            body
+        );
     }
 
     /// <summary>POSTs file bytes without decoding, reserialization or placeholder substitution.</summary>
     public async Task PostVerbatimBodyAsync(string url, byte[] body)
     {
-        _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync(
+        _apiResponse = await CmsTestRequests.PostVerbatimBodyAsync(
+            playwrightContext.ApiRequestContext!,
             url,
-            new() { Headers = _authHeaders, DataByte = body }
+            _token,
+            body
         );
     }
 

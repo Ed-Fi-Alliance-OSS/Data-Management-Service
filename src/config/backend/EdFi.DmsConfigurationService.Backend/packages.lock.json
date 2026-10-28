@@ -2,15 +2,6 @@
   "version": 2,
   "dependencies": {
     "net10.0": {
-      "JsonSchema.Net": {
-        "type": "Direct",
-        "requested": "[7.2.2, )",
-        "resolved": "7.2.2",
-        "contentHash": "vDmn5svfDsgXc2bz9LWiTQoCaxb2VPG1XviL0CenohogBIMGuUH9XMGIZE6hA8IK8d6wru0nUlGX+5jpIgCFiQ==",
-        "dependencies": {
-          "JsonPointer.Net": "5.0.0"
-        }
-      },
       "Microsoft.AspNetCore.Http.Abstractions": {
         "type": "Direct",
         "requested": "[2.2.0, )",
@@ -118,6 +109,14 @@
       "EdFi.Api.Secrets": {
         "type": "Project"
       },
+      "edfi.dmsconfigurationservice.claims": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DmsConfigurationService.DataModel": "[1.0.0, )",
+          "JsonSchema.Net": "[7.2.2, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )"
+        }
+      },
       "edfi.dmsconfigurationservice.datamodel": {
         "type": "Project",
         "dependencies": {
@@ -130,6 +129,15 @@
         "requested": "[11.11.0, )",
         "resolved": "11.11.0",
         "contentHash": "cyIVdQBwSipxWG8MA3Rqox7iNbUNUTK5bfJi9tIdm4CAfH71Oo5ABLP4/QyrUwuakqpUEPGtE43BDddvEehuYw=="
+      },
+      "JsonSchema.Net": {
+        "type": "CentralTransitive",
+        "requested": "[7.2.2, )",
+        "resolved": "7.2.2",
+        "contentHash": "vDmn5svfDsgXc2bz9LWiTQoCaxb2VPG1XviL0CenohogBIMGuUH9XMGIZE6hA8IK8d6wru0nUlGX+5jpIgCFiQ==",
+        "dependencies": {
+          "JsonPointer.Net": "5.0.0"
+        }
       },
       "Microsoft.Extensions.Configuration.Abstractions": {
         "type": "CentralTransitive",

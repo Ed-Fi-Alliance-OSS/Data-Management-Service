@@ -23,6 +23,8 @@
         <Using Include="NUnit.Framework" />
     </ItemGroup>
     <ItemGroup>
+        <None Update="Fixtures/ClaimsComposition/**/*.json" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="Fixtures/AuthorizationMetadata/**/*.json" CopyToOutputDirectory="PreserveNewest" />
         <None
             Update="Fixtures/connection-string-encryption-vectors.json"
             CopyToOutputDirectory="PreserveNewest"

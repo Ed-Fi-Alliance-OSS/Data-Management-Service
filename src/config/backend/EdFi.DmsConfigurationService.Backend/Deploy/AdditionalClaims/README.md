@@ -81,11 +81,15 @@ Each fragment file must contain:
           ]
         }
       ],
-      "_defaultAuthorizationStrategiesForCRUD": []
+      "_defaultAuthorizationStrategiesForCrud": []
     }
   ]
 }
 ```
+
+Despite the four enabled actions, this example requests only a Create grant,
+subject to CMS matching and precedence; see
+[Fragment File Structure](../../../../../../docs/CLAIMS-LOADING-GUIDE.md#fragment-file-structure).
 
 ## Configuration Requirements
 

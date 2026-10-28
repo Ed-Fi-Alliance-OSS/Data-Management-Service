@@ -1,0 +1,25 @@
+{
+  "claimSets": [
+    { "claimSetName": "DriftEditable", "isSystemReserved": false }
+  ],
+  "claimsHierarchy": [
+    {
+      "name": "http://ed-fi.org/identity/claims/ed-fi/student",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [{ "name": "NoFurtherAuthorizationRequired" }]
+          },
+          {
+            "name": "Create",
+            "authorizationStrategies": [{ "name": "NoFurtherAuthorizationRequired" }]
+          }
+        ]
+      },
+      "claimSets": [
+        { "name": "DriftEditable", "actions": [{ "name": "Read" }] }
+      ]
+    }
+  ]
+}

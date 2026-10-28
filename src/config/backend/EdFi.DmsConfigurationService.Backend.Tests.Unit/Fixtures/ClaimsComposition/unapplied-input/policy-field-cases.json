@@ -1,0 +1,1749 @@
+[
+  {
+    "name": "matched-parent-claimSets-nonempty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true,
+          "claimSets": [
+            {
+              "name": "Existing",
+              "actions": [
+                {
+                  "name": "Read",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "Base"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].claimSets"
+      }
+    ]
+  },
+  {
+    "name": "matched-parent-claimSets-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true,
+          "claimSets": []
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": []
+  },
+  {
+    "name": "matched-parent-claimSets-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": []
+  },
+  {
+    "name": "matched-parent-claimSets-mixed-case",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true,
+          "CLAIMSETS": [
+            {
+              "name": "Existing",
+              "actions": [
+                {
+                  "name": "Read",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "Base"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].claimSets"
+      }
+    ]
+  },
+  {
+    "name": "matched-parent-defaults-nonempty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true,
+          "_defaultAuthorizationStrategiesForCrud": [
+            {
+              "actionName": "Read",
+              "authorizationStrategies": [
+                {
+                  "name": "Base"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0]._defaultAuthorizationStrategiesForCrud"
+      }
+    ]
+  },
+  {
+    "name": "matched-parent-defaults-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true,
+          "_defaultAuthorizationStrategiesForCrud": []
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": []
+  },
+  {
+    "name": "matched-parent-defaults-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": []
+  },
+  {
+    "name": "matched-parent-defaults-mixed-case",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true,
+          "_DEFAULTAUTHORIZATIONSTRATEGIESFORCRUD": [
+            {
+              "actionName": "Read",
+              "authorizationStrategies": [
+                {
+                  "name": "Base"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0]._defaultAuthorizationStrategiesForCrud"
+      }
+    ]
+  },
+  {
+    "name": "matched-parent-overrides-nonempty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true,
+          "authorizationStrategyOverridesForCRUD": [
+            {
+              "actionName": "Update",
+              "authorizationStrategies": [
+                {
+                  "name": "Ignored"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].authorizationStrategyOverridesForCRUD"
+      }
+    ]
+  },
+  {
+    "name": "matched-parent-overrides-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true,
+          "authorizationStrategyOverridesForCRUD": []
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": []
+  },
+  {
+    "name": "matched-parent-overrides-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": []
+  },
+  {
+    "name": "matched-parent-overrides-mixed-case",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true,
+          "AUTHORIZATIONSTRATEGYOVERRIDESFORCRUD": [
+            {
+              "actionName": "Update",
+              "authorizationStrategies": [
+                {
+                  "name": "Ignored"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].authorizationStrategyOverridesForCRUD"
+      }
+    ]
+  },
+  {
+    "name": "new-parent-overrides-nonempty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "authorizationStrategyOverridesForCRUD": [
+            {
+              "actionName": "Update",
+              "authorizationStrategies": [
+                {
+                  "name": "Ignored"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/new",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].authorizationStrategyOverridesForCRUD"
+      }
+    ]
+  },
+  {
+    "name": "new-parent-overrides-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "authorizationStrategyOverridesForCRUD": []
+        }
+      ]
+    },
+    "expected": "new-parent.json",
+    "diagnostics": []
+  },
+  {
+    "name": "new-parent-overrides-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true
+        }
+      ]
+    },
+    "expected": "new-parent.json",
+    "diagnostics": []
+  },
+  {
+    "name": "new-parent-overrides-mixed-case",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "AUTHORIZATIONSTRATEGYOVERRIDESFORCRUD": [
+            {
+              "actionName": "Update",
+              "authorizationStrategies": [
+                {
+                  "name": "Ignored"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/new",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].authorizationStrategyOverridesForCRUD"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-children-nonempty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false,
+          "children": [
+            {
+              "name": "edfi/grandchild"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children"
+      },
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-children-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false,
+          "children": []
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-children-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-children-mixed-case",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false,
+          "CHILDREN": [
+            {
+              "name": "edfi/grandchild"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children"
+      },
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-claimSets-nonempty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false,
+          "claimSets": [
+            {
+              "name": "Existing",
+              "actions": [
+                {
+                  "name": "Read",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "Base"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].claimSets"
+      },
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-claimSets-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false,
+          "claimSets": []
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-claimSets-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-claimSets-mixed-case",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false,
+          "CLAIMSETS": [
+            {
+              "name": "Existing",
+              "actions": [
+                {
+                  "name": "Read",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "Base"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].claimSets"
+      },
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-defaults-nonempty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false,
+          "_defaultAuthorizationStrategiesForCrud": [
+            {
+              "actionName": "Read",
+              "authorizationStrategies": [
+                {
+                  "name": "Base"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0]._defaultAuthorizationStrategiesForCrud"
+      },
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-defaults-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false,
+          "_defaultAuthorizationStrategiesForCrud": []
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-defaults-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-defaults-mixed-case",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false,
+          "_DEFAULTAUTHORIZATIONSTRATEGIESFORCRUD": [
+            {
+              "actionName": "Read",
+              "authorizationStrategies": [
+                {
+                  "name": "Base"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0]._defaultAuthorizationStrategiesForCrud"
+      },
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "existing-child-claimSets-nonempty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "claimSets": [
+                {
+                  "name": "Existing",
+                  "actions": [
+                    {
+                      "name": "Read",
+                      "authorizationStrategyOverrides": [
+                        {
+                          "name": "Base"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0].claimSets"
+      }
+    ]
+  },
+  {
+    "name": "existing-child-claimSets-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "claimSets": []
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": []
+  },
+  {
+    "name": "existing-child-claimSets-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": []
+  },
+  {
+    "name": "existing-child-claimSets-mixed-case",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "CLAIMSETS": [
+                {
+                  "name": "Existing",
+                  "actions": [
+                    {
+                      "name": "Read",
+                      "authorizationStrategyOverrides": [
+                        {
+                          "name": "Base"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0].claimSets"
+      }
+    ]
+  },
+  {
+    "name": "existing-child-defaults-nonempty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "_defaultAuthorizationStrategiesForCrud": [
+                {
+                  "actionName": "Read",
+                  "authorizationStrategies": [
+                    {
+                      "name": "Base"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0]._defaultAuthorizationStrategiesForCrud"
+      }
+    ]
+  },
+  {
+    "name": "existing-child-defaults-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "_defaultAuthorizationStrategiesForCrud": []
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": []
+  },
+  {
+    "name": "existing-child-defaults-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": []
+  },
+  {
+    "name": "existing-child-defaults-mixed-case",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "_DEFAULTAUTHORIZATIONSTRATEGIESFORCRUD": [
+                {
+                  "actionName": "Read",
+                  "authorizationStrategies": [
+                    {
+                      "name": "Base"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0]._defaultAuthorizationStrategiesForCrud"
+      }
+    ]
+  },
+  {
+    "name": "existing-child-overrides-nonempty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "authorizationStrategyOverridesForCRUD": [
+                {
+                  "actionName": "Update",
+                  "authorizationStrategies": [
+                    {
+                      "name": "Ignored"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0].authorizationStrategyOverridesForCRUD"
+      }
+    ]
+  },
+  {
+    "name": "existing-child-overrides-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "authorizationStrategyOverridesForCRUD": []
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": []
+  },
+  {
+    "name": "existing-child-overrides-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": []
+  },
+  {
+    "name": "existing-child-overrides-mixed-case",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "AUTHORIZATIONSTRATEGYOVERRIDESFORCRUD": [
+                {
+                  "actionName": "Update",
+                  "authorizationStrategies": [
+                    {
+                      "name": "Ignored"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0].authorizationStrategyOverridesForCRUD"
+      }
+    ]
+  },
+  {
+    "name": "existing-child-children-nonempty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "children": [
+                {
+                  "name": "edfi/grandchild"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0].children"
+      }
+    ]
+  },
+  {
+    "name": "existing-child-children-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": []
+  },
+  {
+    "name": "existing-child-children-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": []
+  },
+  {
+    "name": "existing-child-children-mixed-case",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "CHILDREN": [
+                {
+                  "name": "edfi/grandchild"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0].children"
+      }
+    ]
+  },
+  {
+    "name": "new-child-claimSets-nonempty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "claimSets": [
+                {
+                  "name": "Existing",
+                  "actions": [
+                    {
+                      "name": "Read",
+                      "authorizationStrategyOverrides": [
+                        {
+                          "name": "Base"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0].claimSets"
+      }
+    ]
+  },
+  {
+    "name": "new-child-claimSets-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "claimSets": []
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": []
+  },
+  {
+    "name": "new-child-claimSets-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": []
+  },
+  {
+    "name": "new-child-claimSets-mixed-case",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "CLAIMSETS": [
+                {
+                  "name": "Existing",
+                  "actions": [
+                    {
+                      "name": "Read",
+                      "authorizationStrategyOverrides": [
+                        {
+                          "name": "Base"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0].claimSets"
+      }
+    ]
+  },
+  {
+    "name": "new-child-defaults-nonempty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "_defaultAuthorizationStrategiesForCrud": [
+                {
+                  "actionName": "Read",
+                  "authorizationStrategies": [
+                    {
+                      "name": "Base"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0]._defaultAuthorizationStrategiesForCrud"
+      }
+    ]
+  },
+  {
+    "name": "new-child-defaults-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "_defaultAuthorizationStrategiesForCrud": []
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": []
+  },
+  {
+    "name": "new-child-defaults-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": []
+  },
+  {
+    "name": "new-child-defaults-mixed-case",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "_DEFAULTAUTHORIZATIONSTRATEGIESFORCRUD": [
+                {
+                  "actionName": "Read",
+                  "authorizationStrategies": [
+                    {
+                      "name": "Base"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0]._defaultAuthorizationStrategiesForCrud"
+      }
+    ]
+  },
+  {
+    "name": "new-child-overrides-nonempty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "authorizationStrategyOverridesForCRUD": [
+                {
+                  "actionName": "Update",
+                  "authorizationStrategies": [
+                    {
+                      "name": "Ignored"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0].authorizationStrategyOverridesForCRUD"
+      }
+    ]
+  },
+  {
+    "name": "new-child-overrides-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "authorizationStrategyOverridesForCRUD": []
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": []
+  },
+  {
+    "name": "new-child-overrides-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": []
+  },
+  {
+    "name": "new-child-overrides-mixed-case",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "AUTHORIZATIONSTRATEGYOVERRIDESFORCRUD": [
+                {
+                  "actionName": "Update",
+                  "authorizationStrategies": [
+                    {
+                      "name": "Ignored"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0].authorizationStrategyOverridesForCRUD"
+      }
+    ]
+  },
+  {
+    "name": "new-child-children-nonempty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "children": [
+                {
+                  "name": "edfi/grandchild"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0].children"
+      }
+    ]
+  },
+  {
+    "name": "new-child-children-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "children": []
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": []
+  },
+  {
+    "name": "new-child-children-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": []
+  },
+  {
+    "name": "new-child-children-mixed-case",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied",
+              "CHILDREN": [
+                {
+                  "name": "edfi/grandchild"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent-child.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/copied",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0].children"
+      }
+    ]
+  },
+  {
+    "name": "matched-parent-differing-claimSets",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true,
+          "claimSets": [
+            {
+              "name": "Existing",
+              "actions": [
+                {
+                  "name": "Delete"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].claimSets"
+      }
+    ]
+  },
+  {
+    "name": "matched-parent-default-Base",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true,
+          "_defaultAuthorizationStrategiesForCrud": [
+            {
+              "actionName": "Read",
+              "authorizationStrategies": [
+                {
+                  "name": "Base"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "base-with-default.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0]._defaultAuthorizationStrategiesForCrud"
+      }
+    ],
+    "base": "base-with-default.json"
+  },
+  {
+    "name": "matched-parent-default-Different",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true,
+          "_defaultAuthorizationStrategiesForCrud": [
+            {
+              "actionName": "Read",
+              "authorizationStrategies": [
+                {
+                  "name": "Different"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "base-with-default.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0]._defaultAuthorizationStrategiesForCrud"
+      }
+    ],
+    "base": "base-with-default.json"
+  },
+  {
+    "name": "new-parent-applied-policy",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "CLAIMSETS": [
+            {
+              "name": "Existing",
+              "actions": [
+                {
+                  "name": "Read",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "Base"
+                    }
+                  ]
+                }
+              ]
+            }
+          ],
+          "_DEFAULTAUTHORIZATIONSTRATEGIESFORCRUD": [
+            {
+              "actionName": "Read",
+              "authorizationStrategies": [
+                {
+                  "name": "Base"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "applied-parent.json",
+    "diagnostics": []
+  }
+]

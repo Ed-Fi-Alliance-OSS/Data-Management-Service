@@ -7,7 +7,7 @@ This directory contains reference data for E2E claims management tests.
 - [authoritative-composition.json](authoritative-composition.json) - Reference hierarchy
   snapshot loaded by the ClaimsManagement hybrid composition scenarios. It is a
   hierarchy array, not a complete upload document. The current hybrid inputs are the
-  [Data Standard 5.2 base claims](../../../../backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds52/Claims.json),
+  [Data Standard 5.2 base claims](../../../../backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds52/Claims.json),
   the test-owned fragments below, and the shipped
   [Sample and Homograph extension fragments](../../../../backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims/).
 
@@ -25,6 +25,12 @@ This directory contains reference data for E2E claims management tests.
   prepared `expected-claims.json` complete document. The E2E project links the same
   XML into `TestData/Claims/OdsSecurityMetadata/representative.xml` in its build output
   and stages the built CLI under `SecurityMetadataTools/`.
+
+The base policies and JSON schema are embedded once in
+`EdFi.DmsConfigurationService.Claims`, shared by CMS and the offline tool.
+The [isolated policy scenarios](SecurityMetadataTools/README.md) reuse reviewed
+Hybrid fragments for merge/resolve parity, unchanged Filesystem/upload deployment,
+and an independent editable baseline for installed-tool drift verification.
 
 ## Usage
 
