@@ -316,6 +316,7 @@ public partial class ApplicationModuleTests
 
         [TestCase("404")]
         [TestCase("409")]
+        [TestCase("502")]
         public void It_publishes_the_reset_failure_as_problem_json(string status) =>
             Operation("/v3/applications/{id}/reset-credential", "put")["responses"]![status]!["content"]!
                 ["application/problem+json"]
@@ -339,6 +340,30 @@ public partial class ApplicationModuleTests
                 .GetValue<string>()
                 .Should()
                 .Contain("PUT /v3/apiClients/{id}/reset-credential");
+        }
+
+        [TestCase("/v3/applications", "post", "nothing was saved")]
+        [TestCase("/v3/applications/{id}", "delete", "Retry the delete")]
+        [TestCase("/v3/applications/{id}/reset-credential", "put", "Retry the reset")]
+        public void It_publishes_the_identity_provider_failure_as_a_502(
+            string path,
+            string method,
+            string description
+        )
+        {
+            JsonNode response = Operation(path, method)["responses"]!["502"]!;
+
+            response["content"]!["application/problem+json"].Should().NotBeNull();
+            response["description"]!.GetValue<string>().Should().Contain(description);
+        }
+
+        [Test]
+        public void It_publishes_the_application_delete_success_as_no_content()
+        {
+            JsonObject responses = Operation("/v3/applications/{id}", "delete")["responses"]!.AsObject();
+
+            responses.Should().ContainKey("204");
+            responses.Should().NotContainKey("200");
         }
 
         [Test]

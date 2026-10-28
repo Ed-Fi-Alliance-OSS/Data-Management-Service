@@ -59,6 +59,7 @@ public class ApplicationModule : IEndpointModule
             .Produces<ApplicationInsertResponse>(201)
             .ProducesProblem(400)
             .ProducesProblem(409)
+            .ProducesProblem(502)
             .WithDescription(
                 "Creates an Application and, unless createDefaultCredentials is false, its default "
                     + "API client. With createDefaultCredentials false no API client is created, the "
@@ -74,6 +75,12 @@ public class ApplicationModule : IEndpointModule
                         "400",
                         "The request is invalid, including enabled or dataStoreIds sent with "
                             + "createDefaultCredentials false."
+                    );
+                    SetResponseDescription(
+                        operation,
+                        "502",
+                        "The identity provider reported a failure creating the default API client; "
+                            + "nothing was saved."
                     );
                     return Task.CompletedTask;
                 }
@@ -112,13 +119,39 @@ public class ApplicationModule : IEndpointModule
                     return Task.CompletedTask;
                 }
             );
-        endpoints.MapSecuredDelete($"/v3/applications/{{id}}", Delete);
+        endpoints
+            .MapSecuredDelete($"/v3/applications/{{id}}", Delete)
+            .Produces(204)
+            .ProducesProblem(404)
+            .ProducesProblem(409)
+            .ProducesProblem(502)
+            .AddOpenApiOperationTransformer(
+                (operation, context, ct) =>
+                {
+                    SetResponseDescription(operation, "404", "The Application does not exist.");
+                    SetResponseDescription(
+                        operation,
+                        "409",
+                        "A concurrent change to the Application held the request up; retry the request."
+                    );
+                    SetResponseDescription(
+                        operation,
+                        "502",
+                        "The identity provider reported a failure deleting one of the Application's API "
+                            + "clients; the Application and all of its API client records are kept. Retry "
+                            + "the delete: API clients already deleted in the identity provider count as "
+                            + "deleted."
+                    );
+                    return Task.CompletedTask;
+                }
+            );
 
         endpoints
             .MapSecuredPut($"/v3/applications/{{id}}/reset-credential", ResetCredential)
             .Produces<ApplicationCredentialsResponse>(200)
             .ProducesProblem(404)
             .ProducesProblem(409)
+            .ProducesProblem(502)
             .WithDescription(
                 "Rotates the secret of the Application's only API client. An Application with no "
                     + "API clients, or with more than one, has no single client to reset and returns "
@@ -133,6 +166,12 @@ public class ApplicationModule : IEndpointModule
                         "409",
                         "The Application has no API clients or more than one, or a concurrent change "
                             + "to it held the request up; retry in that last case."
+                    );
+                    SetResponseDescription(
+                        operation,
+                        "502",
+                        "The identity provider reported a failure, so no new secret is returned and "
+                            + "whether the previous secret still works is not confirmed. Retry the reset."
                     );
                     return Task.CompletedTask;
                 }
