@@ -441,8 +441,8 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
                 string sqlEdOrgs = $"""
                     SELECT
                         v.Id as VendorId, a.Id, a.ApplicationName, a.ClaimSetName,
-                        -- Enabled: application is enabled only if ALL its ApiClients are approved (application-wide)
-                        (SELECT CAST(COALESCE(MIN(CAST(ac.IsApproved AS INT)), 1) AS BIT) FROM dmscs.ApiClient ac WHERE ac.ApplicationId = a.Id) AS Enabled,
+                        -- Enabled: application is enabled only if it has ApiClients and ALL are approved (application-wide)
+                        (SELECT CAST(COALESCE(MIN(CAST(ac.IsApproved AS INT)), 0) AS BIT) FROM dmscs.ApiClient ac WHERE ac.ApplicationId = a.Id) AS Enabled,
                         eo.EducationOrganizationId
                     FROM dmscs.Vendor v
                     LEFT OUTER JOIN dmscs.Application a ON v.Id = a.VendorId

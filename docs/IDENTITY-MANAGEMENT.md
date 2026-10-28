@@ -231,6 +231,7 @@ An API client for identity operations is created, updated, and removed through t
 A client may be created with no data store assignment, read and updated, have its credential reset, acquire a token, and be deleted.
 An empty assignment grants no resource access.
 The full lifecycle, with the requests and the expected responses, is in [Clients With No Data Store Assignment](./API-CLIENT-AND-INSTANCE-CONFIGURATION.md#clients-with-no-data-store-assignment).
+A client's education organization scope, which DMS uses for resource authorization, and when a change to it reaches the client's tokens, are in [API Client Education Organization Scope](./API-CLIENT-AND-INSTANCE-CONFIGURATION.md#api-client-education-organization-scope).
 
 ## Cancellation, cache fills, and accepted jobs
 
