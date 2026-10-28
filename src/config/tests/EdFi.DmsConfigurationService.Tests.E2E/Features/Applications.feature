@@ -970,7 +970,9 @@ Feature: Applications endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -1042,7 +1044,9 @@ Feature: Applications endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{firstDataStoreId}]
+                    "dataStoreIds": [{firstDataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a GET request is made to "/v3/apiClients/{additionalKey}"
@@ -1058,7 +1062,9 @@ Feature: Applications endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{secondDataStoreId}]
+                    "dataStoreIds": [{secondDataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 

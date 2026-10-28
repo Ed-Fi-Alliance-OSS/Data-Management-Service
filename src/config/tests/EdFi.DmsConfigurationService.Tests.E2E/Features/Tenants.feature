@@ -259,7 +259,9 @@ Feature: Tenants endpoints
                         "isApproved": true,
                         "creatorOwnershipTokenId": null,
                         "ownershipTokenIds": [],
-                        "dataStoreIds": [{dataStoreIdB}]
+                        "dataStoreIds": [{dataStoreIdB}],
+                        "inheritsApplicationEducationOrganizations": true,
+                        "educationOrganizationIds": []
                     }
                   """
              When a PUT request is made to "/v3/apiClients/{tenantBClientId}" with header "Tenant" value "TenantB_{scenarioRunId}" and
@@ -286,7 +288,9 @@ Feature: Tenants endpoints
                         "isApproved": true,
                         "creatorOwnershipTokenId": null,
                         "ownershipTokenIds": [],
-                        "dataStoreIds": [{dataStoreIdB}]
+                        "dataStoreIds": [{dataStoreIdB}],
+                        "inheritsApplicationEducationOrganizations": true,
+                        "educationOrganizationIds": []
                     }
                   """
 
@@ -346,7 +350,9 @@ Feature: Tenants endpoints
                         "isApproved": true,
                         "creatorOwnershipTokenId": null,
                         "ownershipTokenIds": [],
-                        "dataStoreIds": []
+                        "dataStoreIds": [],
+                        "inheritsApplicationEducationOrganizations": true,
+                        "educationOrganizationIds": []
                     }
                   """
               # The same client is readable by its numeric id inside its own tenant, which is what
@@ -394,7 +400,9 @@ Feature: Tenants endpoints
                         "isApproved": true,
                         "creatorOwnershipTokenId": null,
                         "ownershipTokenIds": [],
-                        "dataStoreIds": []
+                        "dataStoreIds": [],
+                        "inheritsApplicationEducationOrganizations": true,
+                        "educationOrganizationIds": []
                     }
                   """
              When a token is requested with the credentials captured as "tenantAEmpty" and scope "TenantAClaimSet"

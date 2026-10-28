@@ -386,6 +386,111 @@ public class ClaimSetTests : DatabaseTest
     }
 
     [TestFixture]
+    public class Given_a_rename_of_a_claim_set_in_use : ClaimSetTests
+    {
+        private static readonly DateTime _earlierPendingSince = new(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+        private DateTime _renameStartedAt;
+        private DateTime _renameFinishedAt;
+        private Dictionary<string, DateTime?> _pendingSince = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await EnsureClaimsDataLoaded();
+
+            var vendorResult = await new VendorRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            ).InsertVendor(
+                new()
+                {
+                    Company = "Test Company",
+                    ContactEmailAddress = "test@test.com",
+                    ContactName = "Fake Name",
+                    NamespacePrefixes = "FakePrefix1",
+                }
+            );
+            int vendorId = vendorResult.Should().BeOfType<VendorInsertResult.Success>().Subject.Id;
+
+            IApplicationRepository applicationRepository = new ApplicationRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<ApplicationRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            foreach (
+                (string applicationName, string claimSetName) in new[]
+                {
+                    ("Renamed", "Renamed-ClaimSet"),
+                    ("Renamed-Already-Pending", "Renamed-ClaimSet"),
+                    ("Other", "Other-ClaimSet"),
+                }
+            )
+            {
+                (
+                    await applicationRepository.InsertApplication(
+                        new()
+                        {
+                            ApplicationName = applicationName,
+                            VendorId = vendorId,
+                            ClaimSetName = claimSetName,
+                            EducationOrganizationIds = [1],
+                        },
+                        new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+                    )
+                ).Should().BeOfType<ApplicationInsertResult.Success>();
+            }
+
+            await Connection!.ExecuteAsync(
+                """
+                UPDATE ac
+                SET IdentityProviderSyncPendingSince =
+                    CASE WHEN a.ApplicationName = 'Renamed-Already-Pending' THEN @PendingSince END
+                FROM dmscs.ApiClient ac
+                INNER JOIN dmscs.Application a ON ac.ApplicationId = a.Id;
+                """,
+                new { PendingSince = _earlierPendingSince }
+            );
+
+            var insertResult = await _repository.InsertClaimSet(new() { Name = "Renamed-ClaimSet" });
+            int claimSetId = insertResult.Should().BeOfType<ClaimSetInsertResult.Success>().Subject.Id;
+
+            _renameStartedAt = DateTime.UtcNow;
+            (await _repository.UpdateClaimSet(new() { Id = claimSetId, Name = "Renamed-ClaimSet-New" }))
+                .Should()
+                .BeOfType<ClaimSetUpdateResult.Success>();
+            _renameFinishedAt = DateTime.UtcNow;
+
+            _pendingSince = (
+                await Connection!.QueryAsync<(string ApplicationName, DateTime? PendingSince)>(
+                    """
+                    SELECT a.ApplicationName, ac.IdentityProviderSyncPendingSince
+                    FROM dmscs.ApiClient ac
+                    INNER JOIN dmscs.Application a ON ac.ApplicationId = a.Id;
+                    """
+                )
+            ).ToDictionary(row => row.ApplicationName, row => row.PendingSince);
+        }
+
+        [Test]
+        public void It_marks_the_client_of_an_Application_using_the_claim_set() =>
+            _pendingSince["Renamed"]
+                .Should()
+                .BeOnOrAfter(_renameStartedAt)
+                .And.BeOnOrBefore(_renameFinishedAt);
+
+        [Test]
+        public void It_keeps_the_original_time_of_an_already_pending_client() =>
+            _pendingSince["Renamed-Already-Pending"].Should().Be(_earlierPendingSince);
+
+        [Test]
+        public void It_leaves_the_client_of_an_Application_using_another_claim_set_unmarked() =>
+            _pendingSince["Other"].Should().BeNull();
+    }
+
+    [TestFixture]
     public class UpdateRetryPolicyTests : ClaimSetTests
     {
         private ClaimSetInsertCommand _insertClaimSet = null!;

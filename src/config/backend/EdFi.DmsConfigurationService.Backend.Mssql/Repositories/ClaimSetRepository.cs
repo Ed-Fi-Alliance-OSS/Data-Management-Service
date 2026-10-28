@@ -374,6 +374,30 @@ public class ClaimSetRepository(
                 transaction
             );
 
+            // The clients' identity provider claims still carry the old name. Marking them lets the
+            // Application's next PUT, even an unchanged one, send them the new one. It follows the
+            // Application update, the lock order an Application save takes.
+            string markClientsSql = $"""
+                UPDATE ac
+                SET IdentityProviderSyncPendingSince = COALESCE(ac.IdentityProviderSyncPendingSince, @PendingSince)
+                FROM dmscs.ApiClient ac
+                INNER JOIN dmscs.Application a ON ac.ApplicationId = a.Id
+                INNER JOIN dmscs.Vendor v ON a.VendorId = v.Id
+                WHERE a.ClaimSetName = @NewClaimSetName
+                  AND {TenantContext.TenantWhereClause("v")};
+                """;
+
+            await connection.ExecuteAsync(
+                markClientsSql,
+                new
+                {
+                    NewClaimSetName = newClaimSetName,
+                    PendingSince = auditContext.GetCurrentTimestamp(),
+                    TenantId,
+                },
+                transaction
+            );
+
             // Polly retry pipeline for handling multi-user conflicts
             ResiliencePipeline<ClaimsHierarchySaveResult> retryPipeline =
                 new ResiliencePipelineBuilder<ClaimsHierarchySaveResult>()

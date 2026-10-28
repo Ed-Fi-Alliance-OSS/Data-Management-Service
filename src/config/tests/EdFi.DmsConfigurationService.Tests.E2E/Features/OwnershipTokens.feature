@@ -94,7 +94,9 @@ Feature: OwnershipTokens endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": {creatorOwnershipTokenId},
                     "ownershipTokenIds": [{readOwnershipTokenId}],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a GET request is made to "/v3/apiClients?applicationid={applicationId}&offset=0&limit=25"
@@ -111,7 +113,9 @@ Feature: OwnershipTokens endpoints
                       "isApproved": true,
                       "creatorOwnershipTokenId": null,
                       "ownershipTokenIds": [],
-                      "dataStoreIds": [{dataStoreId}]
+                      "dataStoreIds": [{dataStoreId}],
+                      "inheritsApplicationEducationOrganizations": true,
+                      "educationOrganizationIds": []
                     },
                     {
                       "id": {apiClientId},
@@ -122,7 +126,9 @@ Feature: OwnershipTokens endpoints
                       "isApproved": true,
                       "creatorOwnershipTokenId": {creatorOwnershipTokenId},
                       "ownershipTokenIds": [{readOwnershipTokenId}],
-                      "dataStoreIds": [{dataStoreId}]
+                      "dataStoreIds": [{dataStoreId}],
+                      "inheritsApplicationEducationOrganizations": true,
+                      "educationOrganizationIds": []
                     }
                   ]
                   """
@@ -314,6 +320,8 @@ Feature: OwnershipTokens endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": {creatorOwnershipTokenId},
                     "ownershipTokenIds": [{readOwnershipTokenId}],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
