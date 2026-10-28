@@ -5,12 +5,17 @@
 
 BeforeAll {
     Import-Module (Join-Path $PSScriptRoot '../../database-safety.psm1') -Force
+    Import-Module (Join-Path $PSScriptRoot '../../dms-schema-environment.psm1') -Force
     $script:launcherPath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'Invoke-TokenContractE2E.ps1'))
     $script:launcherText = Get-Content $script:launcherPath -Raw
     $parseErrors = $null
     $tokens = $null
     $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:launcherPath, [ref]$tokens, [ref]$parseErrors)
     if ($parseErrors.Count -gt 0) { throw "Launcher parse failed: $($parseErrors[0].Message)" }
+    $restorationIf = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.IfStatementAst] -and $node.Extent.Text.Contains("-Operation 'DMS restoration'") }, $true)
+    if ($null -eq $restorationIf) { throw 'DMS restoration was not found in the launcher.' }
+    $restorationText = $restorationIf.Clauses[0].Item2.Extent.Text
+    $script:restorationAction = [scriptblock]::Create($restorationText.Substring(1, $restorationText.Length - 2))
 
     foreach ($functionName in @(
         'Open-TokenContractStackLock',
@@ -308,6 +313,50 @@ Describe 'DMS-1606 token contract E2E launcher' {
         }
         { Build-TokenContractE2ETestAssembly -ProjectPath '/repo/tests/E2E.csproj' -BuildConfiguration Release } |
             Should -Throw '*failed with exit code 9*'
+    }
+
+    It 'uses the tested image during cleanup and restores the caller environment' -TestCases @(
+        @{ PreviousImage = $null; SkipBuild = $false; ExpectedImage = 'local/ed-fi-api'; FailRestoration = $false },
+        @{ PreviousImage = 'older-image'; SkipBuild = $false; ExpectedImage = 'local/ed-fi-api'; FailRestoration = $false },
+        @{ PreviousImage = ''; SkipBuild = $false; ExpectedImage = 'local/ed-fi-api'; FailRestoration = $false },
+        @{ PreviousImage = 'ci-image'; SkipBuild = $true; ExpectedImage = 'ci-image'; FailRestoration = $false },
+        @{ PreviousImage = $null; SkipBuild = $true; ExpectedImage = $null; FailRestoration = $false },
+        @{ PreviousImage = $null; SkipBuild = $false; ExpectedImage = 'local/ed-fi-api'; FailRestoration = $true },
+        @{ PreviousImage = 'older-image'; SkipBuild = $false; ExpectedImage = 'local/ed-fi-api'; FailRestoration = $true }
+    ) {
+        param($PreviousImage, $SkipBuild, $ExpectedImage, $FailRestoration)
+        $hadImage = Test-Path Env:DMS_DOCKER_IMAGE
+        $savedImage = $env:DMS_DOCKER_IMAGE
+        try {
+            [Environment]::SetEnvironmentVariable('DMS_DOCKER_IMAGE', $PreviousImage)
+            $SkipDockerBuild = $SkipBuild
+            $schemaModule = 'unused-by-mock'
+            $environmentValues = @{}
+            $cleanupFailures = [Collections.Generic.List[string]]::new()
+            $script:restorationImage = $null
+            $script:failRestoration = $FailRestoration
+            Mock Import-Module {}
+            Mock Invoke-WithDmsEnvironmentFileSchemaAuthority {
+                $script:restorationImage = $env:DMS_DOCKER_IMAGE
+                if ($script:failRestoration) { throw 'restoration failure' }
+            }
+            Mock Assert-NativeCommandSucceeded {}
+            Mock Invoke-WebRequest { @{} }
+            Mock Stop-TokenContractDmsIfPresent { 'Stopped' }
+
+            Invoke-WithTokenContractProxyEnvironment -SkipBuild:$SkipBuild -Action {}
+            . $script:restorationAction
+
+            Should -Invoke Invoke-WithDmsEnvironmentFileSchemaAuthority -Times 1 -Exactly
+            $script:restorationImage | Should -BeExactly $ExpectedImage
+            $env:DMS_DOCKER_IMAGE | Should -BeExactly $PreviousImage
+            (Test-Path Env:DMS_DOCKER_IMAGE) | Should -Be ($null -ne $PreviousImage)
+            $cleanupFailures.Count | Should -Be ([int]$FailRestoration)
+        }
+        finally {
+            if ($hadImage) { $env:DMS_DOCKER_IMAGE = $savedImage }
+            else { Remove-Item Env:DMS_DOCKER_IMAGE -ErrorAction SilentlyContinue }
+        }
     }
 
     It 'restores the previous proxy environment after both success and failure' {

@@ -379,7 +379,11 @@ finally {
     # Invoke-WithTokenContractProxyEnvironment restores the marker before this cleanup path runs.
 
     if ($e2eAttempted -and $usableDmsWasStarted -and $null -ne $originalEnvironmentPath -and (Test-Path -LiteralPath $originalEnvironmentPath)) {
+        $hadPreviousDmsImage = Test-Path Env:DMS_DOCKER_IMAGE
+        $previousDmsImage = $env:DMS_DOCKER_IMAGE
         try {
+            # Restore the normal endpoint using the same source-built image that was tested.
+            if (-not $SkipDockerBuild) { $env:DMS_DOCKER_IMAGE = 'local/ed-fi-api' }
             Import-Module $schemaModule -Force
             Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
                 & (Join-Path $composeRoot 'start-local-dms.ps1') -DmsOnly -EnableConfig -EnvironmentFile $originalEnvironmentPath -IdentityProvider $IdentityProvider -DatabaseEngine $DatabaseEngine -AddExtensionSecurityMetadata
@@ -401,6 +405,10 @@ finally {
         catch {
             $stopResult = Stop-TokenContractDmsIfPresent
             $cleanupFailures.Add("DMS restoration failed: $($_.Exception.GetType().Name); fixture-dependent container stop result: $stopResult.")
+        }
+        finally {
+            if ($hadPreviousDmsImage) { $env:DMS_DOCKER_IMAGE = $previousDmsImage }
+            else { Remove-Item Env:DMS_DOCKER_IMAGE -ErrorAction SilentlyContinue }
         }
     }
     elseif ($e2eAttempted) {
