@@ -1438,14 +1438,13 @@ public class KeycloakIntrospectionCharacterizationSetup
 [Category(KeycloakCharacterizationEnvironment.Category)]
 public abstract class IntrospectionCharacterizationRow
 {
-    private IntrospectionObservation? _observation;
-    private IntrospectionPrediction? _prediction;
+    private IntrospectionObservation _observation = null!;
+    private IntrospectionPrediction _prediction = null!;
 
     protected static IntrospectionCharacterizationRealm Realm =>
         KeycloakIntrospectionCharacterizationSetup.Realm;
 
-    protected IntrospectionObservation Observation =>
-        _observation ?? throw new InvalidOperationException("The row has not been observed.");
+    protected IntrospectionObservation Observation => _observation;
 
     protected abstract string RowId { get; }
 
@@ -1454,8 +1453,7 @@ public abstract class IntrospectionCharacterizationRow
     /// <summary>Evaluated once, after provisioning, so it can depend on the server version and the run's clients.</summary>
     protected abstract IntrospectionPrediction Prediction { get; }
 
-    private IntrospectionPrediction Predicted =>
-        _prediction ?? throw new InvalidOperationException("The row has no prediction.");
+    private IntrospectionPrediction Predicted => _prediction;
 
     private IntrospectionOutcome Outcome => Observation.Outcome;
 
@@ -2037,7 +2035,7 @@ public class Given_a_garbage_token : IntrospectionCharacterizationRow
 [TestFixture]
 public class Given_an_owner_introspecting_its_revoked_token : IntrospectionCharacterizationRow
 {
-    private HttpOutcome? _revocation;
+    private HttpOutcome _revocation = null!;
 
     protected override string RowId => "I-14";
 
@@ -2067,7 +2065,7 @@ public class Given_an_owner_introspecting_its_revoked_token : IntrospectionChara
     public void It_had_revoked_the_token_with_an_empty_200()
     {
         _revocation.Should().NotBeNull();
-        _revocation!.Status.Should().Be(200);
+        _revocation.Status.Should().Be(200);
         _revocation.BodyLength.Should().Be(0);
     }
 }

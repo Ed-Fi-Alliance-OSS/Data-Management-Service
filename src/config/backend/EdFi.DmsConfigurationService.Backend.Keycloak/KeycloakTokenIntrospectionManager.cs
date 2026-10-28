@@ -59,12 +59,11 @@ public sealed class KeycloakTokenIntrospectionManager(
     /// The <c>typ</c> values of a Keycloak access token: <c>Bearer</c>, and <c>DPoP</c> for one bound to
     /// a DPoP key (Keycloak 26.7.5 <c>DPoPUtil</c>), which Keycloak introspects as active for its
     /// confidential client. A refresh token is <c>Refresh</c> (I-16) and an ID token <c>ID</c>.
+    /// Matched without regard to case, since a client with
+    /// <c>token.response.type.bearer.lower-case</c> gets access tokens typed <c>bearer</c>; the
+    /// canonical spelling stored here is the one reported.
     /// </summary>
-    private static readonly HashSet<string> _accessTokenTypes = new(StringComparer.Ordinal)
-    {
-        "Bearer",
-        "DPoP",
-    };
+    private static readonly string[] _accessTokenTypes = ["Bearer", "DPoP"];
 
     private const string TimeoutReason = "timeout";
     private const string UnreachableReason = "unreachable";
@@ -295,7 +294,13 @@ public sealed class KeycloakTokenIntrospectionManager(
             return AnswerNotUsable(UnrecognizedResponseReason, clientId, "typ is missing or not a string");
         }
 
-        if (!_accessTokenTypes.Contains(tokenType))
+        if (
+            Array.Find(
+                _accessTokenTypes,
+                type => string.Equals(type, tokenType, StringComparison.OrdinalIgnoreCase)
+            )
+            is not { } accessTokenType
+        )
         {
             logger.LogDebug(
                 "Introspection answered inactive: the supplied token is not an access token; calling client {ClientId}",
@@ -353,7 +358,7 @@ public sealed class KeycloakTokenIntrospectionManager(
                 StringMember(members, "sub"),
                 aud,
                 StringMember(members, "iss"),
-                tokenType
+                accessTokenType
             )
         );
     }

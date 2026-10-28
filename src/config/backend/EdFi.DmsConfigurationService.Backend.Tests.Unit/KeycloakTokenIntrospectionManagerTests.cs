@@ -613,9 +613,37 @@ public class KeycloakTokenIntrospectionManagerTests
         );
         yield return Case("200 client_id null", 200, Answer(body => body["client_id"] = null), unrecognized);
 
-        // Only access tokens are disclosed; ownership is decided before the token type.
+        // Only access tokens are disclosed; ownership is decided before the token type. An access
+        // token's type is recognized in any case and reported in its canonical spelling.
         yield return Case("200 typ ID", 200, Answer(body => body["typ"] = "ID"), inactive);
-        yield return Case("200 typ in another case", 200, Answer(body => body["typ"] = "bearer"), inactive);
+        yield return Case(
+            "200 owner, lower-case bearer access token",
+            200,
+            Answer(body =>
+            {
+                body["typ"] = "bearer";
+                body["token_type"] = "bearer";
+            }),
+            Active(OwnedToken(tokenType: "Bearer"))
+        );
+        yield return Case(
+            "200 another client's lower-case bearer access token",
+            200,
+            Answer(body =>
+            {
+                body["typ"] = "bearer";
+                body["token_type"] = "bearer";
+                body["azp"] = OtherClientId;
+                body["client_id"] = OtherClientId;
+            }),
+            inactive
+        );
+        yield return Case(
+            "200 typ refresh in another case",
+            200,
+            Answer(body => body["typ"] = "refresh"),
+            inactive
+        );
         yield return Case(
             "200 owner, DPoP-bound access token",
             200,
@@ -642,7 +670,7 @@ public class KeycloakTokenIntrospectionManagerTests
             "200 typ DPoP in another case",
             200,
             Answer(body => body["typ"] = "dpop"),
-            inactive
+            Active(OwnedToken(tokenType: "DPoP"))
         );
         yield return Case(
             "200 typ Bearer but token_type Refresh",
