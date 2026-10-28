@@ -312,12 +312,28 @@ UPDATE dmscs.OpenIddictApplication
             return await connection.QueryAsync<string>(sql);
         }
 
-        public async Task<int> DeleteApplicationByIdAsync(Guid id)
+        public async Task<int> DeleteApplicationByIdAsync(
+            Guid id,
+            IDbConnection connection,
+            IDbTransaction? transaction = null
+        )
         {
-            await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync();
             const string sql = "DELETE FROM dmscs.OpenIddictApplication WHERE Id = @Id";
-            return await connection.ExecuteAsync(sql, new { Id = id });
+            return await connection.ExecuteAsync(sql, new { Id = id }, transaction);
+        }
+
+        public async Task<bool> LockApplicationAsync(
+            Guid applicationId,
+            IDbConnection connection,
+            IDbTransaction transaction
+        )
+        {
+            Guid? lockedApplicationId = await connection.QuerySingleOrDefaultAsync<Guid?>(
+                LockApplicationSql,
+                new { ApplicationId = applicationId },
+                transaction
+            );
+            return lockedApplicationId is not null;
         }
 
         public async Task<int> UpdateClientSecretAsync(
@@ -645,6 +661,22 @@ UPDATE dmscs.OpenIddictApplication
                 new { Id = tokenId, ApplicationId = applicationId }
             );
             return result > 0;
+        }
+
+        public async Task<int> RevokeTokensForApplicationAsync(
+            Guid applicationId,
+            IDbConnection connection,
+            IDbTransaction? transaction = null
+        )
+        {
+            // The predicate shape of RevokeTokenAsync minus the token id: only unrevoked rows
+            // change, so a repeat changes nothing and keeps every original RedemptionDate, and the
+            // ApplicationId predicate keeps every other application's tokens out of reach.
+            return await connection.ExecuteAsync(
+                "UPDATE dmscs.OpenIddictToken SET Status = 'revoked', RedemptionDate = SYSUTCDATETIME() WHERE ApplicationId = @ApplicationId AND Status <> 'revoked'",
+                new { ApplicationId = applicationId },
+                transaction
+            );
         }
 
         public async Task<int> DeleteExpiredTokensAsync(DateTimeOffset expiredBefore)

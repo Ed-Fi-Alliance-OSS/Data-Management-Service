@@ -76,7 +76,30 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             IDbTransaction? transaction = null
         );
 
-        Task<int> DeleteApplicationByIdAsync(Guid id);
+        /// <summary>
+        /// Deletes the application row inside the caller's transaction. Application scopes and
+        /// client roles cascade; token rows do not (there is no foreign key) and are revoked
+        /// separately by <see cref="RevokeTokensForApplicationAsync"/>.
+        /// </summary>
+        /// <returns>The number of application rows deleted: 1, or 0 when none existed.</returns>
+        Task<int> DeleteApplicationByIdAsync(
+            Guid id,
+            IDbConnection connection,
+            IDbTransaction? transaction = null
+        );
+
+        /// <summary>
+        /// Locks the application row for the rest of the caller's transaction, with the same lock a
+        /// token grant takes while it stores a token, and reports whether the row exists. A caller
+        /// that then changes state a grant re-validates under that lock is serialized with every
+        /// grant for the application.
+        /// </summary>
+        /// <returns>True when the row exists and is now locked; false when there is no such row.</returns>
+        Task<bool> LockApplicationAsync(
+            Guid applicationId,
+            IDbConnection connection,
+            IDbTransaction transaction
+        );
 
         Task<int> UpdateClientSecretAsync(
             Guid id,
@@ -166,6 +189,19 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         /// </summary>
         /// <returns>True if a row changed; false for an unknown, already revoked, or foreign token.</returns>
         Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId);
+
+        /// <summary>
+        /// Marks every unrevoked token stored for <paramref name="applicationId"/> as revoked,
+        /// inside the caller's transaction. Status and ownership are predicates of the single
+        /// UPDATE, as in <see cref="RevokeTokenAsync"/>: rows already revoked are not touched, so
+        /// their original RedemptionDate survives, and no other application's token can change.
+        /// </summary>
+        /// <returns>The number of rows that changed; 0 when the application holds no unrevoked token.</returns>
+        Task<int> RevokeTokensForApplicationAsync(
+            Guid applicationId,
+            IDbConnection connection,
+            IDbTransaction? transaction = null
+        );
 
         Task<int> DeleteExpiredTokensAsync(DateTimeOffset expiredBefore);
 

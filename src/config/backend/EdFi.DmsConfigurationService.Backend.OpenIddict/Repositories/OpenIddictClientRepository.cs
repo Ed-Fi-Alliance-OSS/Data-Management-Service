@@ -447,7 +447,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         {
             try
             {
-                var rows = await dataRepository.DeleteApplicationByIdAsync(Guid.Parse(clientUuid));
+                using var connection = await dataRepository.CreateConnectionAsync();
+                var rows = await dataRepository.DeleteApplicationByIdAsync(
+                    Guid.Parse(clientUuid),
+                    connection
+                );
                 if (rows == 0)
                 {
                     return new ClientDeleteResult.FailureClientNotFound($"Client {clientUuid} not found");
