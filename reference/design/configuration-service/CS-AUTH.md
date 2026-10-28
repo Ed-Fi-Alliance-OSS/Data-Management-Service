@@ -88,6 +88,8 @@ Responses produced before the endpoint is selected, such as the `405` for anothe
 | --- | --- | --- |
 | Client authentication failed, or client id or secret missing or blank, HTTP Basic attempted | `401` with `WWW-Authenticate: Basic realm="EdFi.DmsConfigurationService"` | `invalid_client` |
 | Client authentication failed, or client id or secret missing or blank, no HTTP Basic attempt | `400` | `invalid_client` |
+| Body is not a form | `400` | `invalid_request` |
+| A parameter or the `Authorization` header sent more than once | `400` | `invalid_request` |
 | `grant_type` missing or empty | `400` | `invalid_request` |
 | Unsupported `grant_type` | `400` | `unsupported_grant_type` |
 | Keycloak rejected the requested scope | `400` | `invalid_scope` |
@@ -101,7 +103,8 @@ A caller that attempted HTTP Basic gets `401` with the `Basic` challenge that RF
 Any other caller, including one that sent form credentials, one that sent no credentials at all and one whose `Authorization` header is not `Basic`, gets `400` with no challenge, because a challenge would invite a scheme the caller did not choose.
 Before this rule a failed form credential answered `401` and a missing one answered a validation `400`.
 
-The handler checks the request without throwing, in this order: `grant_type` missing, then `grant_type` unsupported, then client id or secret missing or only whitespace (after the lenient Basic parsing and the form fallback), and only then the token manager.
+The handler checks the request without throwing, in this order: a body that is not a form, then a repeated `grant_type`, `client_id`, `client_secret` or `scope` or a repeated `Authorization` header, then `grant_type` missing, then `grant_type` unsupported, then client id or secret missing or only whitespace (after the lenient Basic parsing and the form fallback), and only then the token manager.
+A repeated parameter is rejected even when one copy is valid or empty, as at `/connect/revoke` and `/connect/introspect`.
 A request that is wrong in the request shape is therefore told so before its credentials are examined.
 
 The token limit and the lock timeout keep the statuses they always had, `429` and `409`, and take the OAuth body.
@@ -110,10 +113,14 @@ The `429` `error_description` is `Too many access tokens have been requested (li
 
 A failed client authentication is `invalid_client` whatever code the self-contained token manager or Keycloak reports.
 RFC 6749 section 5.2 defines no other code for it, and passing on a second code, such as the `unauthorized_client` both providers report for a wrong secret, would tell the caller whether the client id it sent exists.
-An identity provider's `error_description` is used only when the provider sent a complete structured body (an `error` string and an `error_description` string) and its `error` is one of the six codes RFC 6749 section 5.2 defines for a token endpoint: `invalid_request`, `invalid_client`, `invalid_grant`, `unauthorized_client`, `unsupported_grant_type` and `invalid_scope`.
-The comparison is ordinal, so `Invalid_Client` is not recognized.
-Otherwise a fixed, service-owned description applies, so provider text outside that contract never reaches the caller.
+For the same reason a Keycloak rejection always carries the fixed description `Invalid client or Invalid client credentials`: Keycloak tells a public client presenting any secret that it is a public client.
 The description a service-owned failure carries is used as it is.
+
+Keycloak's `invalid_scope` description, which names the rejected scopes, is the only provider text that reaches the caller.
+It is used only when the provider sent a complete structured body (an `error` string and an `error_description` string) whose `error` is one of the six codes RFC 6749 section 5.2 defines for a token endpoint: `invalid_request`, `invalid_client`, `invalid_grant`, `unauthorized_client`, `unsupported_grant_type` and `invalid_scope`.
+The comparison is ordinal, so `Invalid_Scope` is not recognized.
+Because Keycloak echoes the requested scope, the description is also used only when every character is one section 5.2 allows in `error_description`: printable ASCII other than `"` and `\`.
+Otherwise the fixed, service-owned description applies.
 
 A provider failure that is not the caller's to fix answers `502 server_error` with a fixed description and no provider text.
 That includes a Keycloak `403`, whose known cause is the provider's own configuration, such as a realm that requires HTTPS, so a `403` would wrongly blame the caller.

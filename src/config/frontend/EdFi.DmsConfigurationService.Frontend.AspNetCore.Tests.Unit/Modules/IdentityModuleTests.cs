@@ -971,82 +971,6 @@ public class TokenEndpointTests
         body["error_description"]!.GetValue<string>().Should().Be(errorDescription);
     }
 
-    [TestFixture]
-    public class Given_a_service_owned_authentication_failure
-    {
-        private ITokenManager _serviceTokenManager = null!;
-        private WebApplicationFactory<Program> _factory = null!;
-        private HttpClient _client = null!;
-        private HttpResponseMessage _response = null!;
-        private string _content = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            _serviceTokenManager = A.Fake<ITokenManager>();
-            A.CallTo(() =>
-                    _serviceTokenManager.GetAccessTokenAsync(
-                        A<IEnumerable<KeyValuePair<string, string>>>.Ignored
-                    )
-                )
-                .Returns(
-                    new TokenResult.FailureAuthentication(
-                        "invalid_client",
-                        "Invalid client or Invalid client credentials"
-                    )
-                );
-
-            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    collection.AddTransient(_ => _serviceTokenManager);
-                });
-            });
-            _client = _factory.CreateClient();
-
-            var requestContent = new FormUrlEncodedContent([
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            ]);
-            _response = await _client.PostAsync("/connect/token", requestContent);
-            _content = await _response.Content.ReadAsStringAsync();
-        }
-
-        [TearDown]
-        public void TearDown()
-        {
-            _client?.Dispose();
-            _factory?.Dispose();
-        }
-
-        [Test]
-        public void It_returns_400_for_form_credentials() =>
-            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-
-        [Test]
-        public void It_uses_the_json_content_type() =>
-            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-
-        [Test]
-        public void It_does_not_challenge() => _response.Headers.WwwAuthenticate.Should().BeEmpty();
-
-        [Test]
-        public void It_returns_the_manager_code_and_description_as_the_only_members()
-        {
-            JsonObject body = JsonNode.Parse(_content)!.AsObject();
-            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
-            body["error"]!.GetValue<string>().Should().Be("invalid_client");
-            body["error_description"]!
-                .GetValue<string>()
-                .Should()
-                .Be("Invalid client or Invalid client credentials");
-        }
-    }
-
     /// <summary>
     /// The token-limit rejection over the real HTTP pipeline. Driving it through
     /// <c>WebApplicationFactory</c> rather than calling the module directly is what proves the
@@ -1472,13 +1396,11 @@ public class TokenEndpointScopeForwardingTests
 }
 
 /// <summary>
-/// End-to-end verification that CMS-generated OAuth/OIDC error branches return the Ed-Fi bad-request
-/// contract (400 preserved) in place of the OAuth <c>{ error, error_description }</c> shape, while the
-/// protocol success responses stay untouched. <c>/connect/revoke</c> and <c>/connect/token</c> are the
-/// documented exceptions (DMS-1327 D-01, DMS-1491): every error on those routes, including a malformed
-/// form and a faulting manager, is in the OAuth format, pinned here and in
-/// <c>RevocationRequestContractTests</c>. Non-fixture container; the
-/// runnable fixtures are the nested <c>Given_…</c> classes.
+/// End-to-end verification that the OAuth endpoints, <c>/connect/token</c>, <c>/connect/revoke</c> and
+/// <c>/connect/introspect</c>, answer every error in the OAuth <c>{ error, error_description }</c>
+/// format (DMS-1327 D-01, DMS-1491), including a malformed form and a faulting manager, pinned here and
+/// in <c>RevocationRequestContractTests</c>. Non-fixture container; the runnable fixtures are the
+/// nested <c>Given_…</c> classes.
 /// </summary>
 public class OAuthEndpointErrorTests
 {
@@ -1687,7 +1609,71 @@ public class OAuthEndpointErrorTests
 
         [Test]
         public void It_returns_the_oauth_invalid_request_body() =>
-            AssertOAuthError("invalid_request", "The grant_type parameter is missing.");
+            AssertOAuthError(
+                "invalid_request",
+                "The request body must be application/x-www-form-urlencoded."
+            );
+
+        [Test]
+        public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
+    }
+
+    /// <summary>
+    /// RFC 6749 §5.2 makes a parameter sent more than once <c>invalid_request</c>. Every copy is
+    /// rejected, never resolved by picking one, including an empty copy beside a valid one.
+    /// </summary>
+    [TestFixture("grant_type", "client_credentials")]
+    [TestFixture("grant_type", "")]
+    [TestFixture("client_id", "CSClient1")]
+    [TestFixture("client_secret", "test123@Puiu")]
+    [TestFixture("scope", "edfi_admin_api/full_access")]
+    public class Given_a_token_request_with_a_repeated_parameter(string parameter, string secondValue)
+        : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest() =>
+            Post([
+                new("client_id", "CSClient1"),
+                new("client_secret", "test123@Puiu"),
+                new("grant_type", "client_credentials"),
+                new("scope", "edfi_admin_api/full_access"),
+                new(parameter, secondValue),
+            ]);
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_request_body() =>
+            AssertOAuthError("invalid_request", "A request parameter or header was included more than once.");
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
+    }
+
+    [TestFixture]
+    public class Given_a_token_request_with_two_authorization_headers : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest()
+        {
+            string basic =
+                "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("CSClient1:test123@Puiu"));
+            HttpRequestMessage request = Post([new("grant_type", "client_credentials")]);
+            request.Headers.TryAddWithoutValidation("Authorization", [basic, basic]);
+            return request;
+        }
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_request_body() =>
+            AssertOAuthError("invalid_request", "A request parameter or header was included more than once.");
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
 
         [Test]
         public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
@@ -1978,12 +1964,15 @@ public class OAuthEndpointErrorTests
 
     /// <summary>
     /// The token limit and a lock timeout are not client authentication failures, so a caller that
-    /// attempted Basic gets no challenge with them.
+    /// attempted Basic gets no challenge with them. The form-credential answers are pinned in
+    /// <c>TokenEndpointTests</c>.
     /// </summary>
-    [TestFixture(true)]
-    [TestFixture(false)]
-    public class Given_the_token_manager_reports_the_token_limit(bool basic) : ManagerOutcomeRequest(basic)
+    [TestFixture]
+    public class Given_the_token_manager_reports_the_token_limit_to_a_basic_caller : ManagerOutcomeRequest
     {
+        public Given_the_token_manager_reports_the_token_limit_to_a_basic_caller()
+            : base(true) { }
+
         protected override bool KeycloakMode => false;
 
         protected override void ArrangeManager() => Returns(new TokenResult.FailureTokenLimitExceeded(3));
@@ -2002,10 +1991,12 @@ public class OAuthEndpointErrorTests
         public void It_does_not_challenge() => AssertNoChallenge();
     }
 
-    [TestFixture(true)]
-    [TestFixture(false)]
-    public class Given_the_token_manager_reports_a_lock_timeout(bool basic) : ManagerOutcomeRequest(basic)
+    [TestFixture]
+    public class Given_the_token_manager_reports_a_lock_timeout_to_a_basic_caller : ManagerOutcomeRequest
     {
+        public Given_the_token_manager_reports_a_lock_timeout_to_a_basic_caller()
+            : base(true) { }
+
         protected override bool KeycloakMode => false;
 
         protected override void ArrangeManager() => Returns(new TokenResult.FailureLockTimeout());
@@ -2025,9 +2016,9 @@ public class OAuthEndpointErrorTests
     }
 
     /// <summary>
-    /// A Keycloak 401 or the provider's invalid_client answer, in both the Basic and the form shape.
-    /// The answer is always <c>invalid_client</c>; the provider's description passes through only
-    /// when it comes in a complete structured pair with a code RFC 6749 §5.2 defines.
+    /// A Keycloak 401 or the provider's invalid_client answer, in both the Basic and the form shape,
+    /// is always <c>invalid_client</c> with the fixed description: Keycloak words some rejections
+    /// differently, so its text could tell the caller that the client id exists.
     /// </summary>
     [TestFixture(true, "Unauthorized")]
     [TestFixture(false, "Unauthorized")]
@@ -2048,8 +2039,43 @@ public class OAuthEndpointErrorTests
             );
 
         [Test]
-        public void It_answers_invalid_client_with_the_provider_description() =>
-            AssertClientAuthenticationAnswer("invalid_client", "Invalid client secret");
+        public void It_answers_invalid_client_with_the_fixed_description() =>
+            AssertClientAuthenticationAnswer(
+                "invalid_client",
+                "Invalid client or Invalid client credentials"
+            );
+
+        [Test]
+        public void It_does_not_echo_the_provider_description() =>
+            Content.Should().NotContain("Invalid client secret");
+    }
+
+    /// <summary>
+    /// Keycloak answers a public client with any secret by saying it is a public client, which tells
+    /// the caller the client id exists; the caller gets the same answer as for an unknown client.
+    /// </summary>
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_the_identity_provider_rejects_a_public_client(bool basic)
+        : ManagerOutcomeRequest(basic)
+    {
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(
+                new IdentityProviderError.Unauthorized(
+                    """{"error":"unauthorized_client","error_description":"Public client not allowed to retrieve service account"}"""
+                )
+            );
+
+        [Test]
+        public void It_answers_as_for_an_unknown_client() =>
+            AssertClientAuthenticationAnswer(
+                "invalid_client",
+                "Invalid client or Invalid client credentials"
+            );
+
+        [Test]
+        public void It_does_not_echo_the_provider_description() =>
+            Content.Should().NotContain("Public client");
     }
 
     /// <summary>
@@ -2070,7 +2096,7 @@ public class OAuthEndpointErrorTests
             );
 
         [Test]
-        public void It_answers_invalid_client_with_the_provider_description() =>
+        public void It_answers_invalid_client_with_the_fixed_description() =>
             AssertClientAuthenticationAnswer(
                 "invalid_client",
                 "Invalid client or Invalid client credentials"
@@ -2129,14 +2155,17 @@ public class OAuthEndpointErrorTests
 
         protected override void ArrangeManager() =>
             ReturnsProviderFailure(
-                new IdentityProviderError.Unauthorized(
-                    """{"error":"Invalid_Client","error_description":"SENTINEL_CASE"}"""
+                new IdentityProviderError.InvalidScope(
+                    """{"error":"Invalid_Scope","error_description":"SENTINEL_CASE"}"""
                 )
             );
 
         [Test]
         public void It_replaces_the_description_of_a_code_that_differs_only_in_case() =>
-            AssertOAuthError("invalid_client", "Invalid client or Invalid client credentials");
+            AssertOAuthError(
+                "invalid_scope",
+                "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
+            );
 
         [Test]
         public void It_does_not_echo_the_provider_description() =>
@@ -2167,17 +2196,30 @@ public class OAuthEndpointErrorTests
         public void It_does_not_challenge() => AssertNoChallenge();
     }
 
-    [TestFixture]
-    public class Given_the_identity_provider_rejects_the_scope_without_a_description : ManagerOutcomeRequest
+    /// <summary>
+    /// Keycloak echoes the requested scope into its <c>invalid_scope</c> description, so the description
+    /// can carry characters RFC 6749 §5.2 does not allow in <c>error_description</c>: anything
+    /// outside printable ASCII, a double quote or a backslash. Such a description is replaced.
+    /// </summary>
+    [TestFixture("Invalid scopes: a\"b")]
+    [TestFixture("Invalid scopes: a\\b")]
+    [TestFixture("Invalid scopes: caf\u00e9")]
+    [TestFixture("Invalid scopes: a\tb")]
+    [TestFixture("Invalid scopes: a\nb")]
+    public class Given_the_identity_provider_rejects_the_scope_with_a_description_outside_the_oauth_character_set(
+        string description
+    ) : ManagerOutcomeRequest(false)
     {
-        public Given_the_identity_provider_rejects_the_scope_without_a_description()
-            : base(false) { }
-
         protected override void ArrangeManager() =>
-            ReturnsProviderFailure(new IdentityProviderError.InvalidScope("""{"error":"invalid_scope"}"""));
-
-        [Test]
-        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+            ReturnsProviderFailure(
+                new IdentityProviderError.InvalidScope(
+                    new JsonObject
+                    {
+                        ["error"] = "invalid_scope",
+                        ["error_description"] = description,
+                    }.ToJsonString()
+                )
+            );
 
         [Test]
         public void It_answers_with_the_fixed_invalid_scope_description() =>
@@ -2285,14 +2327,14 @@ public class OAuthEndpointErrorTests
 
         protected override void ArrangeManager() =>
             ReturnsProviderFailure(
-                new IdentityProviderError.Unauthorized(
-                    """{"error":"invalid_client","error_description":"Invalid client secret","stack":"SENTINEL_EXTRA_MEMBER"}"""
+                new IdentityProviderError.InvalidScope(
+                    """{"error":"invalid_scope","error_description":"Invalid scopes: edfi_admin_api/readonly_access","stack":"SENTINEL_EXTRA_MEMBER"}"""
                 )
             );
 
         [Test]
         public void It_answers_with_only_the_two_oauth_members() =>
-            AssertClientAuthenticationAnswer("invalid_client", "Invalid client secret");
+            AssertOAuthError("invalid_scope", "Invalid scopes: edfi_admin_api/readonly_access");
 
         [Test]
         public void It_does_not_echo_the_extra_member() =>
@@ -2307,16 +2349,16 @@ public class OAuthEndpointErrorTests
 
         protected override void ArrangeManager() =>
             ReturnsProviderFailure(
-                new IdentityProviderError.Unauthorized(
-                    """{"error":"invalid_client","error_description":{"detail":"SENTINEL_NON_STRING"}}"""
+                new IdentityProviderError.InvalidScope(
+                    """{"error":"invalid_scope","error_description":{"detail":"SENTINEL_NON_STRING"}}"""
                 )
             );
 
         [Test]
         public void It_answers_with_the_fixed_description() =>
-            AssertClientAuthenticationAnswer(
-                "invalid_client",
-                "Invalid client or Invalid client credentials"
+            AssertOAuthError(
+                "invalid_scope",
+                "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
             );
 
         [Test]

@@ -15,9 +15,9 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 /// <c>error_description</c> are top-level members, served as <c>application/json</c>. Endpoints return it
 /// through <see cref="Create"/>; <see cref="GlobalExceptionHandler"/>, which cannot return an
 /// <see cref="IResult"/>, writes the same bytes through <see cref="WriteAsync"/>. Descriptions are
-/// service-owned text, except that <c>/connect/token</c> passes through an identity provider's own
-/// <c>error_description</c> when the provider sent a complete structured body with a code RFC 6749
-/// §5.2 defines.
+/// service-owned text, except that <c>/connect/token</c> passes through an identity provider's
+/// <c>invalid_scope</c> description when it comes in a complete structured body and stays within the
+/// characters RFC 6749 §5.2 allows.
 /// </summary>
 internal static class OAuthErrorResponseWriter
 {

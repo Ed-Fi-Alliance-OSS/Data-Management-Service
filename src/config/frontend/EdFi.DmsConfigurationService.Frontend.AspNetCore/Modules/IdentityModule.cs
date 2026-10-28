@@ -22,7 +22,6 @@ using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Microsoft.Net.Http.Headers;
 using OpenIddict.Abstractions;
-using static EdFi.DmsConfigurationService.Backend.IdentityProviderError;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -258,9 +257,10 @@ public class IdentityModule : IEndpointModule
 
     /// <summary>
     /// RFC 6749 §4.4 client credentials grant. The request is checked without throwing, in the order
-    /// request shape before credentials (DMS-1327 D-03): a missing <c>grant_type</c> is
-    /// <c>invalid_request</c>, an unsupported one is <c>unsupported_grant_type</c>, and a missing or
-    /// blank client id or secret, after the lenient Basic parsing and the form fallback, is
+    /// request shape before credentials (DMS-1327 D-03): a body that is not a form, a repeated
+    /// parameter or <c>Authorization</c> header, or a missing <c>grant_type</c> is
+    /// <c>invalid_request</c>, an unsupported grant type is <c>unsupported_grant_type</c>, and a
+    /// missing or blank client id or secret, after the lenient Basic parsing and the form fallback, is
     /// <c>invalid_client</c>, with the Basic challenge only when the caller attempted Basic. Every
     /// failure is answered in the OAuth format.
     /// </summary>
@@ -271,40 +271,42 @@ public class IdentityModule : IEndpointModule
         HttpContext httpContext
     )
     {
+        if (!httpContext.Request.HasFormContentType)
+        {
+            return InvalidRequest(FormContentTypeRequiredDescription);
+        }
+
+        if (httpContext.Request.Headers.Authorization.Count > 1)
+        {
+            return InvalidRequest(RepeatedParameterDescription);
+        }
+
         // Manually read form data to handle empty form bodies in .NET 10
         // (Minimal API [FromForm] binding returns 400 with empty body before handler is invoked)
-        string clientId = string.Empty;
-        string clientSecret = string.Empty;
-        string grantType = string.Empty;
-        string scope = string.Empty;
+        var form = await httpContext.Request.ReadFormAsync();
+
+        // RFC 6749 §5.2: a repeated parameter is invalid_request. Every copy is rejected, never
+        // resolved by picking one, as at /connect/revoke and /connect/introspect.
+        if (Array.Exists(_tokenRequestParameters, name => form[name].Count > 1))
+        {
+            return InvalidRequest(RepeatedParameterDescription);
+        }
 
         // Support HTTP Basic authentication in every identity provider mode
-        TryParseBasicAuthCredentials(httpContext, logger, out clientId, out clientSecret);
+        TryParseBasicAuthCredentials(httpContext, logger, out string clientId, out string clientSecret);
 
-        // Read form data for all parameters (and for any credential the Basic header did not supply)
-        if (httpContext.Request.HasFormContentType)
+        // Use form credentials if Basic auth didn't provide them
+        if (string.IsNullOrEmpty(clientId))
         {
-            var form = await httpContext.Request.ReadFormAsync();
-
-            // Use form credentials if Basic auth didn't provide them
-            if (string.IsNullOrEmpty(clientId))
-            {
-                clientId = form["client_id"].ToString();
-            }
-            if (string.IsNullOrEmpty(clientSecret))
-            {
-                clientSecret = form["client_secret"].ToString();
-            }
-
-            if (string.IsNullOrEmpty(grantType))
-            {
-                grantType = form["grant_type"].ToString();
-            }
-            if (string.IsNullOrEmpty(scope))
-            {
-                scope = form["scope"].ToString();
-            }
+            clientId = form["client_id"].ToString();
         }
+        if (string.IsNullOrEmpty(clientSecret))
+        {
+            clientSecret = form["client_secret"].ToString();
+        }
+
+        string grantType = form["grant_type"].ToString();
+        string scope = form["scope"].ToString();
 
         if (string.IsNullOrEmpty(grantType))
         {
@@ -403,13 +405,16 @@ public class IdentityModule : IEndpointModule
     }
 
     /// <summary>
-    /// Answers an identity provider failure to a token request in the OAuth format. A provider's own
-    /// <c>error_description</c> is used only when the provider sent a complete structured body and
-    /// its <c>error</c> is one of the codes RFC 6749 §5.2 defines for a token endpoint; anything else
-    /// is replaced by the fixed description for that failure, so provider text outside that contract
-    /// never reaches the caller. The <c>error</c> is always the service's own. A failure that is not
-    /// the caller's to fix, a provider 403 included, is a 502 with no provider text at all; the log
-    /// records the failure kind and, from a usable body, the provider's code and description.
+    /// Answers an identity provider failure to a token request in the OAuth format, with the service's
+    /// own <c>error</c>. A client authentication failure always carries the fixed description, because
+    /// Keycloak words some rejections differently (a public client presenting any secret is told it is
+    /// a public client), which would tell the caller that the client id exists. An
+    /// <c>invalid_scope</c> answer keeps the provider's <c>error_description</c> only when the provider
+    /// sent a complete structured body whose <c>error</c> is one of the codes RFC 6749 §5.2 defines
+    /// for a token endpoint, and only when the description stays within the characters §5.2 allows;
+    /// otherwise the fixed description answers. A failure that is not the caller's to fix, a provider
+    /// 403 included, is a 502 with no provider text at all; the log records the failure kind and,
+    /// from a usable body, the provider's code and description.
     /// </summary>
     private static IResult IdentityProviderTokenFailure(
         ILogger<IdentityModule> logger,
@@ -427,16 +432,12 @@ public class IdentityModule : IEndpointModule
         switch (providerError)
         {
             case IdentityProviderError.InvalidClient or IdentityProviderError.Unauthorized:
-                return InvalidClient(
-                    httpContext,
-                    basicAttempted,
-                    usable ? description : InvalidClientCredentialsDescription
-                );
+                return InvalidClient(httpContext, basicAttempted, InvalidClientCredentialsDescription);
             case IdentityProviderError.InvalidScope:
                 return OAuthErrorResponseWriter.Create(
                     StatusCodes.Status400BadRequest,
                     "invalid_scope",
-                    usable ? description : InvalidScopeDescription
+                    usable && IsOAuthErrorDescriptionText(description) ? description : InvalidScopeDescription
                 );
             default:
                 logger.LogWarning(
@@ -470,6 +471,13 @@ public class IdentityModule : IEndpointModule
     private static bool TryReadProviderError(string detail, out string error, out string errorDescription) =>
         FailureResults.TryParseProviderError(detail, out error, out errorDescription)
         && _providerTokenErrorCodes.Contains(error);
+
+    /// <summary>
+    /// True when every character is one RFC 6749 §5.2 allows in an <c>error_description</c>: printable
+    /// ASCII other than <c>"</c> and <c>\</c>.
+    /// </summary>
+    private static bool IsOAuthErrorDescriptionText(string description) =>
+        description.All(character => character is >= ' ' and <= '~' and not '"' and not '\\');
 
     private static IResult ServerError(string errorDescription) =>
         OAuthErrorResponseWriter.Create(
@@ -578,9 +586,21 @@ public class IdentityModule : IEndpointModule
         "client_secret",
     ];
 
+    private static readonly string[] _tokenRequestParameters =
+    [
+        "grant_type",
+        "client_id",
+        "client_secret",
+        "scope",
+    ];
+
     /// <summary>Bounds credential processing before authentication, including rate-limit key generation.</summary>
     private const int MaxClientIdLength = 1024;
     private const string InvalidClientCredentialsDescription = "Invalid client or Invalid client credentials";
+    private const string FormContentTypeRequiredDescription =
+        "The request body must be application/x-www-form-urlencoded.";
+    private const string RepeatedParameterDescription =
+        "A request parameter or header was included more than once.";
     private const string ClientAuthenticationRequiredDescription = "Client authentication is required.";
     private const string TemporarilyUnavailableCode = "temporarily_unavailable";
 
@@ -731,9 +751,7 @@ public class IdentityModule : IEndpointModule
             is not true
         )
         {
-            return new ClientAuthenticatedForm.Rejected(
-                InvalidRequest("The request body must be application/x-www-form-urlencoded.")
-            );
+            return new ClientAuthenticatedForm.Rejected(InvalidRequest(FormContentTypeRequiredDescription));
         }
 
         if (!IsAbsentOrUtf8(contentType.Charset))
@@ -757,9 +775,7 @@ public class IdentityModule : IEndpointModule
             || Array.Exists(_clientAuthenticatedFormParameters, name => form[name].Count > 1)
         )
         {
-            return new ClientAuthenticatedForm.Rejected(
-                InvalidRequest("A request parameter or header was included more than once.")
-            );
+            return new ClientAuthenticatedForm.Rejected(InvalidRequest(RepeatedParameterDescription));
         }
 
         // RFC 6749 §2.3 allows one mechanism per request. Keyed on the presence of the form fields,
@@ -1289,8 +1305,8 @@ public class IdentityModule : IEndpointModule
     /// the Management API's own endpoints but the wrong one here: it emits
     /// <c>application/problem+json</c> and flattens the code into a sentence inside an
     /// <c>errors</c> array, where a conforming OAuth client, which reads <c>error</c> off the
-    /// root object, cannot find it. The <c>/connect</c> endpoints are OAuth endpoints and answer in
-    /// the OAuth error format.
+    /// root object, cannot find it. <c>/connect/token</c>, <c>/connect/revoke</c> and
+    /// <c>/connect/introspect</c> are OAuth endpoints and answer in the OAuth error format.
     /// </summary>
     private static IResult InvalidClient(
         HttpContext httpContext,
