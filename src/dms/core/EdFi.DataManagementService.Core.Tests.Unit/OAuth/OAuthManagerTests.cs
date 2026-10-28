@@ -1180,14 +1180,11 @@ public class OAuthManagerTests
                 ProviderFallback
             );
 
-            string limitBody = CmsFailureResponse
-                .ForTooManyTokens(7, "upstream-correlation-id")
-                .ToJsonString()
-                .Replace(
-                    "urn:ed-fi:api:security:authentication:too-many-tokens",
-                    "urn:ed-fi:management-api:security:authentication:too-many-tokens",
-                    StringComparison.Ordinal
-                );
+            string limitBody = new JsonObject
+            {
+                ["error"] = CmsFailureResponse.TooManyTokensError,
+                ["error_description"] = CmsFailureResponse.TooManyTokensMessage(7),
+            }.ToJsonString();
             yield return new(
                 HttpStatusCode.TooManyRequests,
                 limitBody,
