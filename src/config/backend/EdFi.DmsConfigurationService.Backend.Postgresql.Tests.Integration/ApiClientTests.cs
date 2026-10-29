@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -14,6 +16,7 @@ using EdFi.DmsConfigurationService.DataModel.Model.DataStore;
 using EdFi.DmsConfigurationService.DataModel.Model.OwnershipToken;
 using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -28,7 +31,8 @@ public class ApiClientTests : DatabaseTest
         Configuration.DatabaseOptions,
         NullLogger<ApiClientRepository>.Instance,
         new TestAuditContext(),
-        new TenantContextProvider()
+        new TenantContextProvider(),
+        new NoOpUnapprovalTokenRevocation()
     );
 
     private readonly IApplicationRepository _applicationRepository = new ApplicationRepository(
@@ -428,7 +432,8 @@ public class ApiClientTests : DatabaseTest
                 Configuration.DatabaseOptions,
                 NullLogger<ApiClientRepository>.Instance,
                 new TestAuditContext(),
-                tenantContextProvider
+                tenantContextProvider,
+                new NoOpUnapprovalTokenRevocation()
             );
 
         private static async Task<int> InsertVendorWithApplication(
@@ -1079,7 +1084,8 @@ public class ApiClientTests : DatabaseTest
                 Configuration.DatabaseOptions,
                 NullLogger<ApiClientRepository>.Instance,
                 new TestAuditContext(),
-                tenantProvider
+                tenantProvider,
+                new NoOpUnapprovalTokenRevocation()
             );
             return (apiClientRepository, applicationId);
         }
@@ -1317,7 +1323,8 @@ public class ApiClientTests : DatabaseTest
                 detailedOptions,
                 _apiClientLogger,
                 new TestAuditContext(),
-                new TenantContextProvider()
+                new TenantContextProvider(),
+                new NoOpUnapprovalTokenRevocation()
             );
             IApplicationRepository applicationRepository = new ApplicationRepository(
                 detailedOptions,
@@ -1541,5 +1548,321 @@ public class ApiClientTests : DatabaseTest
             messages.Count(message => message.Contains("UX_ApiClient_ClientUuid")).Should().Be(6);
             messages.Should().OnlyContain(message => message.Contains("23505"));
         }
+    }
+
+    /// <summary>
+    /// Shared arrangement for the un-approval participant call (DMS-1493 D-3). A recording fake
+    /// stands in for the participant, so these fixtures pin only what <see cref="ApiClientRepository"/>
+    /// owes it: whether it is called, with which identifier, and on which transaction. The fake reads
+    /// the stored approval and writes a marker through the connection and transaction it is handed;
+    /// whether that marker commits or rolls back with the update shows which transaction it ran in.
+    /// Revocation of real tokens by the real participant is covered by the lifecycle fixtures.
+    /// </summary>
+    public abstract class UnapprovalParticipantTestBase : ApiClientTests
+    {
+        protected const string ClientName = "DMS1493 Client";
+        protected const string ParticipantMarker = "dms1493-participant";
+
+        protected sealed record ParticipantCall(
+            Guid ClientUuid,
+            bool OnTheHandedConnection,
+            bool ApprovedWhenCalled
+        );
+
+        protected IUnapprovalTokenRevocation _participant = null!;
+        protected readonly List<ParticipantCall> _calls = [];
+        protected IApiClientRepository _repository = null!;
+        protected int _applicationId;
+        protected int _apiClientId;
+        protected Guid _storedClientUuid;
+        protected string _originalCreatedBy = null!;
+
+        protected virtual Exception? ParticipantFailure => null;
+
+        [SetUp]
+        public async Task SetUpApprovedClient()
+        {
+            // NUnit reuses the fixture instance for each test, so the fake and its record start
+            // fresh here.
+            _calls.Clear();
+            _participant = A.Fake<IUnapprovalTokenRevocation>();
+            _repository = new ApiClientRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<ApiClientRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider(),
+                _participant
+            );
+            A.CallTo(() =>
+                    _participant.RevokeOutstandingTokensAsync(
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .ReturnsLazily(
+                    (Guid clientUuid, IDbConnection connection, IDbTransaction transaction) =>
+                    {
+                        bool approved = connection.ExecuteScalar<bool>(
+                            """SELECT "IsApproved" FROM "dmscs"."ApiClient" WHERE "Id" = @Id;""",
+                            new { Id = _apiClientId },
+                            transaction
+                        );
+                        connection.Execute(
+                            """UPDATE "dmscs"."ApiClient" SET "CreatedBy" = @Marker WHERE "Id" = @Id;""",
+                            new { Marker = ParticipantMarker, Id = _apiClientId },
+                            transaction
+                        );
+                        _calls.Add(
+                            new(
+                                clientUuid,
+                                transaction is not null
+                                    && ReferenceEquals(transaction.Connection, connection),
+                                approved
+                            )
+                        );
+                        return ParticipantFailure is { } failure
+                            ? Task.FromException<int>(failure)
+                            : Task.FromResult(2);
+                    }
+                );
+
+            IVendorRepository vendorRepository = new VendorRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            var vendorResult = await vendorRepository.InsertVendor(
+                new VendorInsertCommand
+                {
+                    Company = "DMS1493 Vendor",
+                    ContactEmailAddress = "dms1493@test.com",
+                    ContactName = "DMS1493 Tester",
+                    NamespacePrefixes = "uri://dms1493.example",
+                }
+            );
+            vendorResult.Should().BeOfType<VendorInsertResult.Success>();
+
+            var applicationResult = await _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "DMS1493 Application",
+                    VendorId = ((VendorInsertResult.Success)vendorResult).Id,
+                    ClaimSetName = "TestClaimSet",
+                    EducationOrganizationIds = [],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+            applicationResult.Should().BeOfType<ApplicationInsertResult.Success>();
+            _applicationId = ((ApplicationInsertResult.Success)applicationResult).Id;
+
+            _storedClientUuid = Guid.NewGuid();
+            var insertResult = await _repository.InsertApiClient(
+                new ApiClientInsertCommand
+                {
+                    ApplicationId = _applicationId,
+                    Name = ClientName,
+                    IsApproved = true,
+                    DataStoreIds = [],
+                },
+                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = _storedClientUuid }
+            );
+            insertResult.Should().BeOfType<ApiClientInsertResult.Success>();
+            _apiClientId = ((ApiClientInsertResult.Success)insertResult).Id;
+            _originalCreatedBy = await StoredCreatedByAsync(_apiClientId);
+        }
+
+        protected Task<ApiClientUpdateResult> UpdateAsync(
+            bool isApproved,
+            Guid? replacementClientUuid = null,
+            int? id = null
+        ) =>
+            _repository.UpdateApiClient(
+                new ApiClientUpdateCommand
+                {
+                    Id = id ?? _apiClientId,
+                    ApplicationId = _applicationId,
+                    Name = "DMS1493 Renamed Client",
+                    IsApproved = isApproved,
+                    ClientUuid = replacementClientUuid,
+                    DataStoreIds = [],
+                }
+            );
+
+        protected async Task<ApiClientResponse> StoredClientAsync()
+        {
+            var result = await _repository.GetApiClientById(_apiClientId);
+            result.Should().BeOfType<ApiClientGetResult.Success>();
+            return ((ApiClientGetResult.Success)result).ApiClientResponse;
+        }
+
+        protected static async Task<string> StoredCreatedByAsync(int apiClientId)
+        {
+            await using var connection = new NpgsqlConnection(
+                Configuration.DatabaseOptions.Value.DatabaseConnection
+            );
+            return await connection.ExecuteScalarAsync<string>(
+                    """SELECT "CreatedBy" FROM "dmscs"."ApiClient" WHERE "Id" = @Id;""",
+                    new { Id = apiClientId }
+                ) ?? string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// An un-approving update that also replaces the client's identifier. The participant runs once,
+    /// with the identifier stored before the update, inside the update's transaction and before the
+    /// approval is written. Fails if the participant is skipped, receives the replacement identifier,
+    /// runs outside the update's transaction, or runs after the UPDATE.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_that_un_approves_it : UnapprovalParticipantTestBase
+    {
+        private readonly Guid _replacementClientUuid = Guid.NewGuid();
+        private ApiClientUpdateResult _result = null!;
+
+        [SetUp]
+        public async Task Act() => _result = await UpdateAsync(isApproved: false, _replacementClientUuid);
+
+        [Test]
+        public void It_succeeds() => _result.Should().BeOfType<ApiClientUpdateResult.Success>();
+
+        [Test]
+        public void It_calls_the_participant_once_with_the_stored_client_uuid() =>
+            _calls.Should().ContainSingle().Which.ClientUuid.Should().Be(_storedClientUuid);
+
+        [Test]
+        public void It_hands_the_participant_a_transaction_on_its_connection() =>
+            _calls.Should().ContainSingle().Which.OnTheHandedConnection.Should().BeTrue();
+
+        [Test]
+        public void It_calls_the_participant_before_the_un_approval_is_written() =>
+            _calls.Should().ContainSingle().Which.ApprovedWhenCalled.Should().BeTrue();
+
+        [Test]
+        public async Task It_commits_the_participants_write_with_the_update() =>
+            (await StoredCreatedByAsync(_apiClientId)).Should().Be(ParticipantMarker);
+
+        [Test]
+        public async Task It_persists_the_un_approval_and_the_replacement_uuid()
+        {
+            ApiClientResponse stored = await StoredClientAsync();
+            stored.IsApproved.Should().BeFalse();
+            stored.ClientUuid.Should().Be(_replacementClientUuid);
+        }
+    }
+
+    /// <summary>
+    /// The regression control: an update that keeps the client approved never calls the participant.
+    /// Fails if revocation runs on every update rather than on un-approval.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_api_client_update_that_keeps_it_approved : UnapprovalParticipantTestBase
+    {
+        private ApiClientUpdateResult _result = null!;
+
+        [SetUp]
+        public async Task Act() => _result = await UpdateAsync(isApproved: true);
+
+        [Test]
+        public void It_succeeds() => _result.Should().BeOfType<ApiClientUpdateResult.Success>();
+
+        [Test]
+        public void It_does_not_call_the_participant() => _calls.Should().BeEmpty();
+
+        [Test]
+        public async Task It_keeps_the_client_approved() =>
+            (await StoredClientAsync()).IsApproved.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// A second un-approving update of a client that is already unapproved calls the participant
+    /// again, so a repeat converges tokens stored since. Fails if the call is limited to the
+    /// approved-to-unapproved transition.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_un_approving_update_of_an_already_unapproved_api_client
+        : UnapprovalParticipantTestBase
+    {
+        private ApiClientUpdateResult _first = null!;
+        private ApiClientUpdateResult _repeat = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _first = await UpdateAsync(isApproved: false);
+            _repeat = await UpdateAsync(isApproved: false);
+        }
+
+        [Test]
+        public void It_succeeds_both_times()
+        {
+            _first.Should().BeOfType<ApiClientUpdateResult.Success>();
+            _repeat.Should().BeOfType<ApiClientUpdateResult.Success>();
+        }
+
+        [Test]
+        public void It_calls_the_participant_for_each_update_with_the_stored_client_uuid() =>
+            _calls.Select(call => call.ClientUuid).Should().Equal(_storedClientUuid, _storedClientUuid);
+
+        [Test]
+        public void It_calls_the_participant_the_second_time_although_the_client_is_already_unapproved() =>
+            _calls.Select(call => call.ApprovedWhenCalled).Should().Equal(true, false);
+    }
+
+    /// <summary>
+    /// The participant fails after writing through the update's transaction. The update answers an
+    /// unknown failure and the transaction rolls back the participant's write together with the
+    /// client update. Fails if the exception is swallowed or the update commits without it.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_un_approving_update_whose_participant_throws : UnapprovalParticipantTestBase
+    {
+        private ApiClientUpdateResult _result = null!;
+
+        protected override Exception? ParticipantFailure =>
+            new InvalidOperationException("revocation failed");
+
+        [SetUp]
+        public async Task Act() => _result = await UpdateAsync(isApproved: false);
+
+        [Test]
+        public void It_answers_an_unknown_failure() =>
+            _result.Should().BeOfType<ApiClientUpdateResult.FailureUnknown>();
+
+        [Test]
+        public void It_called_the_participant() => _calls.Should().ContainSingle();
+
+        [Test]
+        public async Task It_leaves_the_client_approved_and_unrenamed()
+        {
+            ApiClientResponse stored = await StoredClientAsync();
+            stored.IsApproved.Should().BeTrue();
+            stored.Name.Should().Be(ClientName);
+        }
+
+        [Test]
+        public async Task It_rolls_back_the_participants_write() =>
+            (await StoredCreatedByAsync(_apiClientId)).Should().Be(_originalCreatedBy);
+    }
+
+    /// <summary>
+    /// An un-approving update of an id the tenant does not hold answers not found without calling
+    /// the participant: there is no stored identifier to revoke for.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_un_approving_update_of_a_missing_api_client : UnapprovalParticipantTestBase
+    {
+        private ApiClientUpdateResult _result = null!;
+
+        [SetUp]
+        public async Task Act() => _result = await UpdateAsync(isApproved: false, id: int.MaxValue);
+
+        [Test]
+        public void It_answers_not_found() =>
+            _result.Should().BeOfType<ApiClientUpdateResult.FailureNotFound>();
+
+        [Test]
+        public void It_does_not_call_the_participant() => _calls.Should().BeEmpty();
     }
 }

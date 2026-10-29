@@ -20,7 +20,8 @@ public class ApiClientRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<ApiClientRepository> logger,
     IAuditContext auditContext,
-    ITenantContextProvider tenantContextProvider
+    ITenantContextProvider tenantContextProvider,
+    IUnapprovalTokenRevocation unapprovalTokenRevocation
 ) : IApiClientRepository
 {
     private TenantContext TenantContext => tenantContextProvider.Context;
@@ -412,18 +413,31 @@ public class ApiClientRepository(
         {
             // Check if ApiClient exists within the current tenant
             string checkSql = $"""
-                SELECT COUNT(1) FROM "dmscs"."ApiClient"
+                SELECT "ClientUuid" FROM "dmscs"."ApiClient"
                 WHERE "Id" = @Id AND {TenantScopedApplicationCondition()};
                 """;
-            int exists = await connection.ExecuteScalarAsync<int>(
+            Guid? storedClientUuid = await connection.QuerySingleOrDefaultAsync<Guid?>(
                 checkSql,
                 new { command.Id, TenantId },
                 transaction
             );
-            if (exists == 0)
+            if (storedClientUuid is null)
             {
                 await transaction.RollbackAsync();
                 return new ApiClientUpdateResult.FailureNotFound();
+            }
+
+            // An un-approving update revokes the client's outstanding tokens in this transaction,
+            // before IsApproved is written, so the two commit together or not at all. It runs on
+            // every un-approving update, a repeat included, and uses the stored identifier: the
+            // update below may replace it.
+            if (!command.IsApproved)
+            {
+                await unapprovalTokenRevocation.RevokeOutstandingTokensAsync(
+                    storedClientUuid.Value,
+                    connection,
+                    transaction
+                );
             }
 
             // Update ApiClient record; the target application must belong to the current tenant

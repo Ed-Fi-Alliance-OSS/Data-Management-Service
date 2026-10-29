@@ -16,6 +16,7 @@ using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
@@ -118,6 +119,35 @@ public class TokenRevocationStartupTests
                     : typeof(OpenIddictTokenManager);
 
             scope.ServiceProvider.GetRequiredService<ITokenRevocationManager>().Should().BeOfType(expected);
+        }
+
+        // DMS-1493 D-3: the API client repository requires an un-approval participant in every
+        // shape; self-contained ships the OpenIddict one and Keycloak the explicit no-op.
+        [Test]
+        public void It_resolves_the_providers_unapproval_token_revocation()
+        {
+            using IServiceScope scope = _boot.Factory.Services.CreateScope();
+            Type expected =
+                provider == "keycloak"
+                    ? typeof(NoOpUnapprovalTokenRevocation)
+                    : typeof(OpenIddictUnapprovalTokenRevocation);
+
+            scope
+                .ServiceProvider.GetRequiredService<IUnapprovalTokenRevocation>()
+                .Should()
+                .BeOfType(expected);
+        }
+
+        [Test]
+        public void It_resolves_the_datastores_api_client_repository()
+        {
+            using IServiceScope scope = _boot.Factory.Services.CreateScope();
+            Type expected =
+                datastore == "mssql"
+                    ? typeof(Backend.Mssql.Repositories.ApiClientRepository)
+                    : typeof(Backend.Postgresql.Repositories.ApiClientRepository);
+
+            scope.ServiceProvider.GetRequiredService<IApiClientRepository>().Should().BeOfType(expected);
         }
 
         [Test]

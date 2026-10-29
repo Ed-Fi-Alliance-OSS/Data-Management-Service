@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.Keycloak;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -59,5 +60,23 @@ public class KeycloakServiceExtensionsTests
                 .ContainSingle(descriptor => descriptor.ServiceType == typeof(ITokenRevocationManager))
                 .Which.Lifetime.Should()
                 .Be(ServiceLifetime.Transient);
+
+        // DMS-1493 D-3: the CMS API client repository requires an un-approval participant in every
+        // mode, so Keycloak mode registers the explicit no-op rather than leaving it unresolvable.
+        [Test]
+        public void It_resolves_the_no_op_unapproval_token_revocation()
+        {
+            using IServiceScope scope = _provider.CreateScope();
+            scope
+                .ServiceProvider.GetService<IUnapprovalTokenRevocation>()
+                .Should()
+                .BeOfType<NoOpUnapprovalTokenRevocation>();
+        }
+
+        [Test]
+        public void It_registers_one_unapproval_token_revocation() =>
+            _services
+                .Should()
+                .ContainSingle(descriptor => descriptor.ServiceType == typeof(IUnapprovalTokenRevocation));
     }
 }

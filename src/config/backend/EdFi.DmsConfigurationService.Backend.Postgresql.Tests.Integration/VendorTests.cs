@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -532,7 +533,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration
                 Configuration.DatabaseOptions,
                 NullLogger<ApiClientRepository>.Instance,
                 new TestAuditContext(),
-                new TenantContextProvider()
+                new TenantContextProvider(),
+                new NoOpUnapprovalTokenRevocation()
             );
 
             [SetUp]
