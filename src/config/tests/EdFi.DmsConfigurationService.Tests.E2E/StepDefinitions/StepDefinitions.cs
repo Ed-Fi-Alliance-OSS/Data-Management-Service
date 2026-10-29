@@ -875,6 +875,7 @@ public partial class StepDefinitions(
     // This step passes the client's own claim set name as the scope because the scope scenarios
     // assert on it: the token's scope claim and role are what they verify.
     [When("a token is requested with the credentials captured as {string} and scope {string}")]
+    [Given("a token is requested with the credentials captured as {string} and scope {string}")]
     public async Task WhenATokenIsRequestedWithTheCredentialsCapturedAs(string slot, string scope)
     {
         _credentialSlots.Should().ContainKey(slot, $"credentials should have been captured as '{slot}'");
