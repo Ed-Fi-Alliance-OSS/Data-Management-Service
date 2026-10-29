@@ -129,7 +129,7 @@ public class Given_Ds52_Identity_Conflicts_Without_Trigger_Metadata(SqlDialect d
             .DuplicateIdentityValues.Should()
             .Equal(
                 new KeyValuePair<string, string>("classPeriodName", "First"),
-                new KeyValuePair<string, string>("schoolId", "255901001")
+                new KeyValuePair<string, string>("schoolReference.schoolId", "255901001")
             );
     }
 
@@ -186,17 +186,35 @@ public class Given_Ds52_Identity_Conflicts_Without_Trigger_Metadata(SqlDialect d
             .DuplicateIdentityValues.Should()
             .Equal(
                 new KeyValuePair<string, string>("gradeTypeDescriptor", GradeTypeDescriptorUri),
-                new KeyValuePair<string, string>("gradingPeriodDescriptor", GradingPeriodDescriptorUri),
-                new KeyValuePair<string, string>("gradingPeriodName", "GP1"),
-                new KeyValuePair<string, string>("schoolId", "255901001"),
-                new KeyValuePair<string, string>("schoolYear", "2022"),
-                new KeyValuePair<string, string>("beginDate", "2021-08-23"),
-                new KeyValuePair<string, string>("localCourseCode", "ALG-1"),
-                new KeyValuePair<string, string>("schoolId", "255901001"),
-                new KeyValuePair<string, string>("schoolYear", "2022"),
-                new KeyValuePair<string, string>("sectionIdentifier", "ALG-1-01"),
-                new KeyValuePair<string, string>("sessionName", "2021-2022 Fall Semester"),
-                new KeyValuePair<string, string>("studentUniqueId", "604822")
+                new KeyValuePair<string, string>(
+                    "gradingPeriodReference.gradingPeriodDescriptor",
+                    GradingPeriodDescriptorUri
+                ),
+                new KeyValuePair<string, string>("gradingPeriodReference.gradingPeriodName", "GP1"),
+                new KeyValuePair<string, string>("gradingPeriodReference.schoolId", "255901001"),
+                new KeyValuePair<string, string>("gradingPeriodReference.schoolYear", "2022"),
+                new KeyValuePair<string, string>(
+                    "studentSectionAssociationReference.beginDate",
+                    "2021-08-23"
+                ),
+                new KeyValuePair<string, string>(
+                    "studentSectionAssociationReference.localCourseCode",
+                    "ALG-1"
+                ),
+                new KeyValuePair<string, string>("studentSectionAssociationReference.schoolId", "255901001"),
+                new KeyValuePair<string, string>("studentSectionAssociationReference.schoolYear", "2022"),
+                new KeyValuePair<string, string>(
+                    "studentSectionAssociationReference.sectionIdentifier",
+                    "ALG-1-01"
+                ),
+                new KeyValuePair<string, string>(
+                    "studentSectionAssociationReference.sessionName",
+                    "2021-2022 Fall Semester"
+                ),
+                new KeyValuePair<string, string>(
+                    "studentSectionAssociationReference.studentUniqueId",
+                    "604822"
+                )
             );
     }
 
