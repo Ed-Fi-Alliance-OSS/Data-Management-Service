@@ -47,11 +47,41 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
                 return;
             }
 
-            ClaimSet? claimSet = await GetClaimSetForClient(requestInfo);
-            if (claimSet is null)
+            ClaimSet claimSet;
+            switch (await GetClaimSetForClient(requestInfo))
             {
-                CreateMissingSecurityMetadataResponse(requestInfo);
-                return;
+                case ClaimSetResolution.Success success:
+                    // A request-local copy: the authenticated record may be shared through the JWT cache.
+                    requestInfo.ClientAuthorizations = requestInfo.ClientAuthorizations with
+                    {
+                        ClaimSetName = success.ClaimSetName,
+                    };
+                    claimSet = success.ClaimSet;
+                    break;
+                case ClaimSetResolution.Ambiguous:
+                    _logger.LogInformation(
+                        "ResourceActionAuthorizationMiddleware: The token identifies multiple claim sets - {TraceId}",
+                        requestInfo.FrontendRequest.TraceId.Value
+                    );
+                    requestInfo.FrontendResponse = ClaimSetResolutionResponses.Ambiguous(
+                        requestInfo.FrontendRequest.TraceId
+                    );
+                    return;
+                case ClaimSetResolution.InvalidMetadata:
+                    _logger.LogError(
+                        "ResourceActionAuthorizationMiddleware: The security metadata contains duplicate claim-set names. Tenant: {Tenant}; CorrelationId: {CorrelationId}",
+                        LoggingSanitizer.SanitizeInternalValueForLogging(requestInfo.FrontendRequest.Tenant),
+                        LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
+                    );
+                    requestInfo.FrontendResponse = ClaimSetResolutionResponses.InvalidMetadata(
+                        requestInfo.FrontendRequest.TraceId
+                    );
+                    return;
+                case ClaimSetResolution.NoMatch:
+                    CreateMissingSecurityMetadataResponse(requestInfo);
+                    return;
+                default:
+                    throw new UnreachableException("Unknown claim-set resolution result.");
             }
 
             Debug.Assert(
@@ -130,9 +160,10 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     }
 
     /// <summary>
-    /// Retrieves the claim set for the authenticated client.
+    /// Resolves the one claim set that applies to the authenticated client from the tenant's
+    /// claim-set metadata, fetched once.
     /// </summary>
-    private async Task<ClaimSet?> GetClaimSetForClient(RequestInfo requestInfo)
+    private async Task<ClaimSetResolution> GetClaimSetForClient(RequestInfo requestInfo)
     {
         string claimSetName = requestInfo.ClientAuthorizations.ClaimSetName;
         _logger.LogInformation(
@@ -146,9 +177,12 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             requestInfo.RequestCancellationToken
         );
 
-        ClaimSet? claimSet = claimsList.FindClaimSetByName(claimSetName);
+        ClaimSetResolution resolution = ClaimSetResolver.Resolve(
+            requestInfo.ClientAuthorizations,
+            claimsList
+        );
 
-        if (claimSet is null)
+        if (resolution is ClaimSetResolution.NoMatch)
         {
             _logger.LogInformation(
                 "ResourceActionAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
@@ -157,7 +191,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             );
         }
 
-        return claimSet;
+        return resolution;
     }
 
     /// <summary>

@@ -967,6 +967,50 @@ public class ClaimsFragmentComposerTests
         }
     }
 
+    [TestFixture("Alpha,Beta")]
+    [TestFixture(",Alpha")]
+    [TestFixture("Alpha,")]
+    [TestFixture(",")]
+    public class Given_a_non_parent_fragment_whose_name_contains_a_comma(string name)
+        : ClaimsFragmentComposerTests
+    {
+        private ClaimsLoadResult _result = null!;
+
+        [SetUp]
+        public void Arrange_and_act()
+        {
+            _result = ComposeWithFragments(
+                BaseDocument(),
+                ("comma-claims.json", NonParentFragment(name)),
+                ("valid-claims.json", NonParentFragment("Valid-Defined"))
+            );
+        }
+
+        [Test]
+        public void It_composes_without_failures()
+        {
+            _result.Failures.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_does_not_register_the_name_and_registers_only_the_valid_fragment()
+        {
+            ClaimSetNames(_result).Should().Equal("Base", "Valid-Defined");
+        }
+
+        [Test]
+        public void It_leaves_the_comma_named_grant_for_claims_validation_to_reject()
+        {
+            GrantOnAcademicWeek(_result, name).Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_still_composes_the_valid_fragment()
+        {
+            GrantOnAcademicWeek(_result, "Valid-Defined").Should().NotBeNull();
+        }
+    }
+
     [TestFixture]
     public class Given_a_fragment_defines_a_claim_set : ClaimsFragmentComposerTests
     {

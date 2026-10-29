@@ -35,8 +35,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
 
         /// <summary>
         /// The token could not be trusted on its own terms: unparseable, unknown or missing
-        /// <c>kid</c>, or a bad signature. No amount of misconfiguration produces a validly
-        /// signed token from a key this service does not hold, so treat as potential forgery.
+        /// <c>kid</c>, a bad signature, or a signing algorithm other than RS256. No amount of
+        /// misconfiguration produces a validly signed token from a key this service does not hold,
+        /// so treat as potential forgery.
         /// </summary>
         Untrusted,
     }
@@ -118,6 +119,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Token
                     ValidAudience = audience,
                     ValidateLifetime = true,
                     ClockSkew = TokenValidationClockSkew,
+                    // Matches issuance (JwtTokenGenerator signs RS256). Any other algorithm, even one
+                    // the trusted RSA key could verify, fails the signature check and lands in
+                    // Untrusted below.
+                    ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
                 };
                 tokenHandler.ValidateToken(token, validationParameters, out var validatedToken);
                 return new TokenVerification(

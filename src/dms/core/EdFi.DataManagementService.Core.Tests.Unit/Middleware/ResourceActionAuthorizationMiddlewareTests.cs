@@ -1745,6 +1745,396 @@ public class ResourceActionAuthorizationMiddlewareTests
         }
     }
 
+    private const string AmbiguousClaimSetsError = "The token identifies multiple claim sets.";
+
+    private const string DuplicateClaimSetNamesError =
+        "The security metadata contains duplicate claim-set names.";
+
+    /// <summary>
+    /// A school claim set granting one action with the given strategies.
+    /// </summary>
+    private static ClaimSet SchoolClaimSet(string name, string action, params string[] strategies) =>
+        new(
+            name,
+            [
+                new ResourceClaim(
+                    $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school",
+                    action,
+                    [.. strategies.Select(static strategy => new AuthorizationStrategy(strategy))]
+                ),
+            ]
+        );
+
+    private static IClaimSetProvider ClaimSetProvider(params ClaimSet[] claimSets)
+    {
+        var claimSetProvider = A.Fake<IClaimSetProvider>();
+        A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
+            .Returns(claimSets.ToList());
+        return claimSetProvider;
+    }
+
+    /// <summary>
+    /// A GET collection request whose authorizations carry the given scope values, shaped as JWT
+    /// extraction produces them: the claim-set name is set only for one distinct scope value.
+    /// </summary>
+    private static RequestInfo ScopedReadRequest(params string[] scopeValues)
+    {
+        RequestInfo requestInfo = CreateRequestInfo(RequestMethod.GET, "ed-fi/schools");
+        requestInfo.ClientAuthorizations = new ClientAuthorizations(
+            "token-id",
+            "client-id",
+            scopeValues.Length == 1 ? scopeValues[0] : "",
+            [],
+            [],
+            []
+        )
+        {
+            ScopeValues = scopeValues,
+        };
+        return requestInfo;
+    }
+
+    [TestFixture("Alpha|profile")]
+    [TestFixture("profile|Alpha")]
+    [Parallelizable]
+    public class Given_Scope_Values_That_Identify_One_Claim_Set(string scopeValueList)
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        private readonly string[] _scopeValues = scopeValueList.Split('|');
+        private IClaimSetProvider _claimSetProvider = null!;
+        private ClientAuthorizations _authenticatedAuthorizations = null!;
+        private int _continuations;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _claimSetProvider = ClaimSetProvider(
+                SchoolClaimSet(
+                    "Alpha",
+                    "Read",
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                ),
+                SchoolClaimSet("Beta", "Read", AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly)
+            );
+            _requestInfo = ScopedReadRequest(_scopeValues);
+            _authenticatedAuthorizations = _requestInfo.ClientAuthorizations;
+            _continuations = 0;
+
+            await new ResourceActionAuthorizationMiddleware(_claimSetProvider, NullLogger.Instance).Execute(
+                _requestInfo,
+                () =>
+                {
+                    _continuations++;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_continues_the_protected_work_once()
+        {
+            _continuations.Should().Be(1);
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_authorizes_with_only_the_selected_claim_set_strategies() =>
+            _requestInfo
+                .ResourceActionAuthStrategies.Should()
+                .Equal(AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired);
+
+        [Test]
+        public void It_puts_the_selected_name_on_a_request_local_copy()
+        {
+            _requestInfo.ClientAuthorizations.ClaimSetName.Should().Be("Alpha");
+            _requestInfo.ClientAuthorizations.ScopeValues.Should().Equal(_scopeValues);
+            _requestInfo.ClientAuthorizations.Should().NotBeSameAs(_authenticatedAuthorizations);
+        }
+
+        [Test]
+        public void It_does_not_mutate_the_authenticated_authorizations() =>
+            _authenticatedAuthorizations.ClaimSetName.Should().BeEmpty();
+
+        [Test]
+        public void It_reads_the_claim_set_metadata_once() =>
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Scope_Values_Whose_Selected_Claim_Set_Does_Not_Grant_The_Action
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        private int _continuations;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Only Alpha is recognized; Beta grants Read but is not in the token, so its grant never
+            // reaches this request.
+            IClaimSetProvider claimSetProvider = ClaimSetProvider(
+                SchoolClaimSet(
+                    "Alpha",
+                    "Delete",
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                ),
+                SchoolClaimSet(
+                    "Beta",
+                    "Read",
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                )
+            );
+            _requestInfo = ScopedReadRequest("profile", "Alpha");
+            _continuations = 0;
+
+            await new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance).Execute(
+                _requestInfo,
+                () =>
+                {
+                    _continuations++;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_denies_the_action_for_the_selected_claim_set()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo.FrontendResponse.Body!["errors"]!
+                .AsArray()
+                .Select(error => error!.GetValue<string>())
+                .Should()
+                .Equal(
+                    "The API client's assigned claim set (currently 'Alpha') must grant permission of the 'Read' action on one of the following resource claims: School"
+                );
+        }
+
+        [Test]
+        public void It_does_not_continue() => _continuations.Should().Be(0);
+    }
+
+    [TestFixture("Alpha|Beta")]
+    [TestFixture("Beta|Alpha")]
+    [TestFixture("profile|Beta|Alpha")]
+    [Parallelizable]
+    public class Given_Scope_Values_That_Identify_Two_Claim_Sets(string scopeValueList)
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        private readonly string[] _scopeValues = scopeValueList.Split('|');
+        private IClaimSetProvider _claimSetProvider = null!;
+        private RecordingLogger _logger = null!;
+        private int _continuations;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _claimSetProvider = ClaimSetProvider(
+                SchoolClaimSet(
+                    "Alpha",
+                    "Read",
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                ),
+                SchoolClaimSet(
+                    "Beta",
+                    "Read",
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                )
+            );
+            _logger = new RecordingLogger();
+            _requestInfo = ScopedReadRequest(_scopeValues);
+            _continuations = 0;
+
+            await new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger).Execute(
+                _requestInfo,
+                () =>
+                {
+                    _continuations++;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_returns_403_with_the_generic_ambiguity_error()
+        {
+            IFrontendResponse response = _requestInfo.FrontendResponse;
+
+            response.StatusCode.Should().Be(403);
+            response.ContentType.Should().Be("application/problem+json");
+            response.Headers.Should().BeEmpty();
+            response.Body!["status"]!.GetValue<int>().Should().Be(403);
+            response.Body!["errors"]!
+                .AsArray()
+                .Select(n => n!.GetValue<string>())
+                .Should()
+                .Equal(AmbiguousClaimSetsError);
+        }
+
+        [Test]
+        public void It_does_not_continue_or_authorize_any_strategy()
+        {
+            _continuations.Should().Be(0);
+            _requestInfo.ResourceActionAuthStrategies.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_selects_no_claim_set_name() =>
+            _requestInfo.ClientAuthorizations.ClaimSetName.Should().BeEmpty();
+
+        [Test]
+        public void It_reads_the_claim_set_metadata_once() =>
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_does_not_log_the_scope_values() =>
+            _logger
+                .Records.Should()
+                .NotContain(record =>
+                    record.Message.Contains("Alpha")
+                    || record.Message.Contains("Beta")
+                    || record.Message.Contains("profile")
+                );
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Scope_Values_That_Match_No_Claim_Set : ResourceActionAuthorizationMiddlewareTests
+    {
+        private int _continuations;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IClaimSetProvider claimSetProvider = ClaimSetProvider(
+                SchoolClaimSet(
+                    "Alpha",
+                    "Read",
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                )
+            );
+            _requestInfo = ScopedReadRequest("profile", "Gamma");
+            _continuations = 0;
+
+            await new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance).Execute(
+                _requestInfo,
+                () =>
+                {
+                    _continuations++;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_keeps_the_missing_security_metadata_response()
+        {
+            AssertExpectedSecurityConfigurationResponse(
+                _requestInfo.FrontendResponse,
+                SecurityConfigurationFailureMessages.MissingSecurityMetadata
+            );
+        }
+
+        [Test]
+        public void It_does_not_continue() => _continuations.Should().Be(0);
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Duplicate_Matching_Claim_Set_Metadata : ResourceActionAuthorizationMiddlewareTests
+    {
+        private RecordingLogger _logger = null!;
+        private int _continuations;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IClaimSetProvider claimSetProvider = ClaimSetProvider(
+                SchoolClaimSet(
+                    "Alpha",
+                    "Read",
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                ),
+                SchoolClaimSet(
+                    "ALPHA",
+                    "Read",
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                )
+            );
+            _logger = new RecordingLogger();
+            _requestInfo = ScopedReadRequest("Alpha");
+            _requestInfo.FrontendRequest = _requestInfo.FrontendRequest with { Tenant = "Tenant\r\nA" };
+            _continuations = 0;
+
+            await new ResourceActionAuthorizationMiddleware(claimSetProvider, _logger).Execute(
+                _requestInfo,
+                () =>
+                {
+                    _continuations++;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_returns_a_security_configuration_500()
+        {
+            AssertExpectedSecurityConfigurationResponse(
+                _requestInfo.FrontendResponse,
+                DuplicateClaimSetNamesError
+            );
+        }
+
+        [Test]
+        public void It_does_not_continue() => _continuations.Should().Be(0);
+
+        [Test]
+        public void It_logs_a_fixed_diagnostic_with_sanitized_request_context()
+        {
+            LogRecord record = _logger
+                .Records.Should()
+                .ContainSingle(record => record.Level == LogLevel.Error)
+                .Subject;
+
+            record.Message.Should().Contain("duplicate claim-set names");
+            record.Message.Should().NotContain("Alpha");
+            record.Properties["Tenant"].Should().Be("TenantA");
+            record.Properties["CorrelationId"].Should().Be("traceId");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Claim_Set_Provider_Throws_For_Multiple_Scope_Values
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            var claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored, A<CancellationToken>._))
+                .Throws(new InvalidOperationException("simulated failure"));
+            _requestInfo = ScopedReadRequest("Alpha", "Beta");
+
+            await new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance).Execute(
+                _requestInfo,
+                NullNext
+            );
+        }
+
+        [Test]
+        public void It_keeps_the_authorization_error_instead_of_no_match_or_ambiguity()
+        {
+            AssertExpectedServerErrorResponse(
+                _requestInfo.FrontendResponse,
+                "Error while authorizing the request.",
+                "traceId"
+            );
+        }
+    }
+
     private static void AssertExpectedReadChangesActionDeniedResponse(IFrontendResponse response)
     {
         response.ContentType.Should().Be("application/problem+json");

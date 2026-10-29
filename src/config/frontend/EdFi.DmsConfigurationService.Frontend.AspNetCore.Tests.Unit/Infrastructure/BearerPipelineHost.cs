@@ -5,6 +5,7 @@
 
 using System.Collections.Concurrent;
 using System.Net.Http.Headers;
+using System.Security.Claims;
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
@@ -126,6 +127,9 @@ internal sealed class PipelineTokenStore
     /// A token for the host's issuer and audience with the scope and role every profile endpoint requires, signed by
     /// <paramref name="signer"/> (by default the key named <paramref name="keyId"/>), whose <c>kid</c> header is
     /// <paramref name="keyId"/> (omitted when <see langword="null"/>), and stored with <paramref name="status"/>.
+    /// When <paramref name="authorizationClaims"/> is given, it replaces the default scope and role claims (the
+    /// generated <c>jti</c> stays, even over a <c>jti</c> among them); a value may be a string or a string array. The
+    /// token is signed with <paramref name="signingAlgorithm"/>, RS256 as issued unless a test names another.
     /// </summary>
     public (string Token, Guid TokenId) Mint(
         string? keyId,
@@ -133,11 +137,29 @@ internal sealed class PipelineTokenStore
         string issuer = BearerPipelineHost.Issuer,
         string audience = BearerPipelineHost.Audience,
         DateTime? expires = null,
-        string status = "valid"
+        string status = "valid",
+        IReadOnlyDictionary<string, object>? authorizationClaims = null,
+        string signingAlgorithm = SecurityAlgorithms.RsaSha256
     )
     {
         Guid tokenId = Guid.NewGuid();
         DateTime expiresAt = expires ?? DateTime.UtcNow.AddMinutes(10);
+        Dictionary<string, object> claims = [];
+        foreach (
+            (string type, object value) in authorizationClaims
+                ?? new Dictionary<string, object>
+                {
+                    ["scope"] = AuthorizationScopes.AdminScope.Name,
+                    [BearerPipelineHost.RoleClaimType] = BearerPipelineHost.ConfigServiceRole,
+                }
+        )
+        {
+            claims[type] = value;
+        }
+
+        // Seeded last, so the stored status always belongs to the token's own jti.
+        claims[JwtRegisteredClaimNames.Jti] = tokenId.ToString();
+
         string token = new JsonWebTokenHandler().CreateToken(
             new SecurityTokenDescriptor
             {
@@ -146,15 +168,10 @@ internal sealed class PipelineTokenStore
                 IssuedAt = expiresAt.AddMinutes(-30),
                 NotBefore = expiresAt.AddMinutes(-30),
                 Expires = expiresAt,
-                Claims = new Dictionary<string, object>
-                {
-                    [JwtRegisteredClaimNames.Jti] = tokenId.ToString(),
-                    ["scope"] = AuthorizationScopes.AdminScope.Name,
-                    [BearerPipelineHost.RoleClaimType] = BearerPipelineHost.ConfigServiceRole,
-                },
+                Claims = claims,
                 SigningCredentials = new SigningCredentials(
                     new RsaSecurityKey(signer ?? SigningKey(keyId!)) { KeyId = keyId },
-                    SecurityAlgorithms.RsaSha256
+                    signingAlgorithm
                 ),
             }
         );
@@ -483,6 +500,27 @@ internal sealed class BearerPipelineHost : IDisposable
                                 _schemesAuthenticating.Enqueue(context.Scheme.Name);
                                 return messageReceived(context);
                             };
+
+                            Func<TokenValidatedContext, Task> tokenValidated = options
+                                .Events
+                                .OnTokenValidated;
+                            options.Events.OnTokenValidated = async context =>
+                            {
+                                await tokenValidated(context);
+                                if (context.Result is null && context.Principal is not null)
+                                {
+                                    LastValidatedClaims =
+                                    [
+                                        .. context.Principal.Claims.Select(claim => new Claim(
+                                            claim.Type,
+                                            claim.Value,
+                                            claim.ValueType,
+                                            claim.Issuer,
+                                            claim.OriginalIssuer
+                                        )),
+                                    ];
+                                }
+                            };
                         }
                     );
                 }
@@ -522,6 +560,13 @@ internal sealed class BearerPipelineHost : IDisposable
 
     /// <summary>The scheme behind each message-received event, in order.</summary>
     public IReadOnlyCollection<string> SchemesAuthenticating => [.. _schemesAuthenticating];
+
+    /// <summary>
+    /// A detached copy of the claims of the principal the most recent request's successful token validation produced,
+    /// taken after the scheme's own token-validated checks passed. Cleared as each request is sent, so it is empty
+    /// after a request whose token did not validate.
+    /// </summary>
+    public IReadOnlyList<Claim> LastValidatedClaims { get; private set; } = [];
 
     /// <summary>How many requests reached the <c>DmsJwtBearer</c> probe endpoint.</summary>
     public int ProbeHits => Volatile.Read(ref _probeHits);
@@ -568,11 +613,13 @@ internal sealed class BearerPipelineHost : IDisposable
 
     public Task<HttpResponseMessage> SendAsync(
         AuthenticationHeaderValue? authorization,
-        string path = "/v3/profiles/7"
+        string path = "/v3/profiles/7",
+        HttpMethod? method = null
     )
     {
-        HttpRequestMessage request = new(HttpMethod.Get, path);
+        HttpRequestMessage request = new(method ?? HttpMethod.Get, path);
         request.Headers.Authorization = authorization;
+        LastValidatedClaims = [];
         return Client.SendAsync(request);
     }
 

@@ -752,6 +752,56 @@ be relied on for DoS or brute-force protection.
 
 See [Roles and Scopes](./ROLES-SCOPES.md)
 
+### Deployment preflight for claim-set names and scope shapes
+
+The Ed-Fi API resolves the one claim set a request uses from the token's scope
+values, the Configuration Service rejects commas in claim-set names, and the
+self-contained provider issues scopes separated by spaces. See
+[Roles and Scopes](./ROLES-SCOPES.md#claim-set-selection-from-token-scopes) for the
+rules. Complete the steps below **before** rolling out the release that contains
+them. This is a deployment prerequisite for operators, not a code migration, and
+nothing in the product performs it for you. No deployment inventory has been
+inspected for this documentation, so what your deployment holds is unknown until
+you run the inventory.
+
+1. **Inventory comma-containing claim-set names.** List every claim set in every
+   tenant whose name contains a comma. The new validation rejects such a name
+   wherever a name is introduced or replaced through the API, import, and application
+   paths (claim-set create, update, copy and import, application create and update),
+   so an existing one can no longer be re-saved unchanged. Fragment registration skips
+   registering an invalid name, logs it, and continues with the other claim sets, and
+   the XML conversion tool throws its established `InvalidOperationException`.
+2. **Inventory the references to those names.** List every application, and every
+   identity-provider client or client scope (the Keycloak realm, or the
+   `OpenIddictScope` and `OpenIddictApplicationScope` rows of the self-contained
+   provider), that refers to a comma-containing claim-set name. A token carries its
+   claim set as a scope, so a client's scope and the claim set's name must change
+   together.
+3. **Correct each name through the established management workflows.** Use the
+   Configuration Service claim-set and application endpoints, and the identity
+   provider's own administration, as for any other claim-set change. Do not
+   auto-rename names with scripts against stored data, and do not edit stored client
+   credentials: the key and secret of an existing application stay as they are.
+4. **Obtain fresh tokens where the old scope shape is incompatible.** An issued
+   token keeps the `scope` it was issued with until it expires. A token whose scope
+   joined several values with commas is read as one literal value, because DMS and
+   the Configuration Service do not split issued JWT claims on commas. Neither
+   product rewrites or splits such a token. Having clients request a new token is
+   what replaces it. The self-contained provider's change to space-separated output
+   applies only to tokens issued after the release and does not repair old ones.
+5. **Account for propagation.** Corrected claim sets reach the Ed-Fi API through its
+   cached claim sets, per tenant and per replica, and are eventually consistent
+   rather than an immediate revocation. Follow
+   [How long a change takes to apply](./IDENTITY-MANAGEMENT.md#how-long-a-change-takes-to-apply)
+   and [Reloading the claim-set cache](./IDENTITY-MANAGEMENT.md#reloading-the-claim-set-cache),
+   remembering that a reload clears one replica and one tenant spelling at a time.
+
+While a token's scopes recognize more than one claim set in a tenant, the Ed-Fi API
+answers `403` with `The token identifies multiple claim sets.`, and a tenant whose
+metadata holds two claim sets with names that differ only by case answers `500` for
+a token that names them. Correct such tenants by renaming or removing the duplicate
+through the same management workflows.
+
 ## Configuration Service database upgrades
 
 The Configuration Service upgrades its own database with DbUp. The embedded

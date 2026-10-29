@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Identity;
 using EdFi.DataManagementService.Core.Model;
@@ -44,17 +45,47 @@ internal sealed class ServiceClaimAuthorizationMiddleware(
         );
 
         string claimSetName = requestInfo.ClientAuthorizations.ClaimSetName;
-        ClaimSet? claimSet = claimSets.FindClaimSetByName(claimSetName);
+        ClaimSet claimSet;
 
-        if (claimSet is null)
+        switch (ClaimSetResolver.Resolve(requestInfo.ClientAuthorizations, claimSets))
         {
-            logger.LogInformation(
-                "ServiceClaimAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
-                LoggingSanitizer.SanitizeInternalValueForLogging(claimSetName),
-                LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
-            );
-            CreateForbiddenResponse(requestInfo);
-            return;
+            case ClaimSetResolution.Success success:
+                // A request-local copy: the authenticated record may be shared through the JWT cache.
+                requestInfo.ClientAuthorizations = requestInfo.ClientAuthorizations with
+                {
+                    ClaimSetName = success.ClaimSetName,
+                };
+                claimSet = success.ClaimSet;
+                break;
+            case ClaimSetResolution.Ambiguous:
+                logger.LogInformation(
+                    "ServiceClaimAuthorizationMiddleware: The token identifies multiple claim sets - {TraceId}",
+                    LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
+                );
+                requestInfo.FrontendResponse = ClaimSetResolutionResponses.Ambiguous(
+                    requestInfo.FrontendRequest.TraceId
+                );
+                return;
+            case ClaimSetResolution.InvalidMetadata:
+                logger.LogError(
+                    "ServiceClaimAuthorizationMiddleware: The security metadata contains duplicate claim-set names. Tenant: {Tenant}; CorrelationId: {CorrelationId}",
+                    LoggingSanitizer.SanitizeInternalValueForLogging(requestInfo.FrontendRequest.Tenant),
+                    LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
+                );
+                requestInfo.FrontendResponse = ClaimSetResolutionResponses.InvalidMetadata(
+                    requestInfo.FrontendRequest.TraceId
+                );
+                return;
+            case ClaimSetResolution.NoMatch:
+                logger.LogInformation(
+                    "ServiceClaimAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
+                    LoggingSanitizer.SanitizeInternalValueForLogging(claimSetName),
+                    LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
+                );
+                CreateForbiddenResponse(requestInfo);
+                return;
+            default:
+                throw new UnreachableException("Unknown claim-set resolution result.");
         }
 
         ResourceClaim[] matchingClaims = claimSet.FindMatchingResourceClaims(_identityServiceClaimUri);

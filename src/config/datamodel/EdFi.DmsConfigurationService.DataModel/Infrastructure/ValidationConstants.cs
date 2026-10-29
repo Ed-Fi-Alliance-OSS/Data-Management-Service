@@ -16,6 +16,7 @@ public static class ValidationConstants
     /// to an API client name's length, as the Ed-Fi Admin API holds it on create and update.
     /// </summary>
     public const int ApplicationNameMaxLength = ApiClientNameMaxLength;
-    public const string ClaimSetNameNoWhiteSpaceMessage = "Claim set name must not contain white spaces.";
-    public const string ClaimSetNameNoWhiteSpaceRegex = @"^[^\s]*$";
+    public const string ClaimSetNameNoWhiteSpaceMessage =
+        "Claim set name must not contain white spaces or commas.";
+    public const string ClaimSetNameNoWhiteSpaceRegex = @"^[^\s,]*$";
 }

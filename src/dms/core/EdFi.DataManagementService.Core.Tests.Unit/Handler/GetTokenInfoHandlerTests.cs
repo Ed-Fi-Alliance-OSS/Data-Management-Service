@@ -561,6 +561,169 @@ public class Given_GetTokenInfoHandler
         requestInfo.FrontendResponse.StatusCode.Should().Be(503);
     }
 
+    private static ClaimSet StudentClaimSet(string name, string action) =>
+        new(name, [new($"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/Student", action, [])]);
+
+    /// <summary>
+    /// Authorizations shaped as JWT extraction produces them for '|'-separated scope values: the
+    /// claim-set name is set only for one distinct scope value.
+    /// </summary>
+    private static ClientAuthorizations CreateScopedClientAuthorizations(string scopeValueList)
+    {
+        string[] scopeValues = scopeValueList.Split('|');
+        return CreateClientAuthorizations([]) with
+        {
+            ClaimSetName = scopeValues.Length == 1 ? scopeValues[0] : "",
+            ScopeValues = scopeValues,
+        };
+    }
+
+    private void ConfigureClaimSets(params ClaimSet[] claimSets) =>
+        A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+            .Returns(claimSets.ToList());
+
+    private static (
+        IServiceProvider ScopedServiceProvider,
+        IApplicationContextProvider Provider
+    ) CreateRecordingApplicationContext()
+    {
+        var applicationContextProvider = A.Fake<IApplicationContextProvider>();
+        var services = new ServiceCollection();
+        services.AddSingleton(applicationContextProvider);
+        return (services.BuildServiceProvider(), applicationContextProvider);
+    }
+
+    private static string[] Errors(RequestInfo requestInfo) =>
+        [.. requestInfo.FrontendResponse.Body!["errors"]!.AsArray().Select(node => node!.GetValue<string>())];
+
+    [TestCase("Alpha|profile")]
+    [TestCase("profile|Alpha")]
+    public async Task It_reports_only_the_one_recognized_claim_set_from_multiple_scope_values(
+        string scopeValueList
+    )
+    {
+        // Beta grants Create but is not in the token, so it contributes nothing.
+        ConfigureClaimSets(StudentClaimSet("Alpha", "Read"), StudentClaimSet("Beta", "Create"));
+        ClientAuthorizations clientAuthorizations = CreateScopedClientAuthorizations(scopeValueList);
+        ConfigureJwtValidation(clientAuthorizations);
+        RequestInfo requestInfo = CreateRequestInfo(
+            clientAuthorizations,
+            CreateScopedServiceProvider(relationalLookup: null)
+        );
+
+        await Execute(requestInfo);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+        JsonNode body = requestInfo.FrontendResponse.Body!;
+        body["claim_set"]!["name"]!.GetValue<string>().Should().Be("Alpha");
+        JsonNode resource = body["resources"]!.AsArray().Single()!;
+        resource["operations"]!
+            .AsArray()
+            .Select(operation => operation!.GetValue<string>())
+            .Should()
+            .Equal("Read");
+        requestInfo.ClientAuthorizations.ClaimSetName.Should().Be("Alpha");
+        clientAuthorizations.ClaimSetName.Should().BeEmpty();
+        A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_reports_the_metadata_spelling_when_case_variants_select_one_claim_set()
+    {
+        ConfigureClaimSets(StudentClaimSet("ALPHA", "Read"));
+        ClientAuthorizations clientAuthorizations = CreateScopedClientAuthorizations("alpha|Alpha");
+        ConfigureJwtValidation(clientAuthorizations);
+        RequestInfo requestInfo = CreateRequestInfo(
+            clientAuthorizations,
+            CreateScopedServiceProvider(relationalLookup: null)
+        );
+
+        await Execute(requestInfo);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+        requestInfo.FrontendResponse.Body!["claim_set"]!["name"]!.GetValue<string>().Should().Be("ALPHA");
+    }
+
+    [TestCase("Alpha|Beta")]
+    [TestCase("Beta|Alpha")]
+    [TestCase("profile|Beta|Alpha")]
+    public async Task It_returns_403_when_scope_values_identify_multiple_claim_sets(string scopeValueList)
+    {
+        ConfigureClaimSets(StudentClaimSet("Alpha", "Read"), StudentClaimSet("Beta", "Create"));
+        ClientAuthorizations clientAuthorizations = CreateScopedClientAuthorizations(scopeValueList);
+        ConfigureJwtValidation(clientAuthorizations);
+        var (scopedServiceProvider, applicationContextProvider) = CreateRecordingApplicationContext();
+        RequestInfo requestInfo = CreateRequestInfo(clientAuthorizations, scopedServiceProvider);
+
+        await Execute(requestInfo);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+        requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+        requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+        Errors(requestInfo).Should().Equal("The token identifies multiple claim sets.");
+        A.CallTo(applicationContextProvider).MustNotHaveHappened();
+        A.CallTo(_profileService).MustNotHaveHappened();
+        A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_keeps_401_when_no_scope_value_matches_a_claim_set()
+    {
+        ConfigureClaimSets(StudentClaimSet("Alpha", "Read"));
+        ClientAuthorizations clientAuthorizations = CreateScopedClientAuthorizations("profile|Gamma");
+        ConfigureJwtValidation(clientAuthorizations);
+        var (scopedServiceProvider, applicationContextProvider) = CreateRecordingApplicationContext();
+        RequestInfo requestInfo = CreateRequestInfo(clientAuthorizations, scopedServiceProvider);
+
+        await Execute(requestInfo);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(401);
+        requestInfo.FrontendResponse.Body!["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Be("The client's ClaimSet was not found.");
+        A.CallTo(applicationContextProvider).MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_a_security_configuration_500_for_duplicate_matching_claim_set_names()
+    {
+        ConfigureClaimSets(StudentClaimSet("Alpha", "Read"), StudentClaimSet("alpha", "Create"));
+        ClientAuthorizations clientAuthorizations = CreateScopedClientAuthorizations("Alpha");
+        ConfigureJwtValidation(clientAuthorizations);
+        var (scopedServiceProvider, applicationContextProvider) = CreateRecordingApplicationContext();
+        RequestInfo requestInfo = CreateRequestInfo(clientAuthorizations, scopedServiceProvider);
+
+        await Execute(requestInfo);
+
+        requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+        requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+        requestInfo.FrontendResponse.Body!["type"]!
+            .GetValue<string>()
+            .Should()
+            .Be("urn:ed-fi:api:system:configuration:security");
+        Errors(requestInfo).Should().Equal("The security metadata contains duplicate claim-set names.");
+        A.CallTo(applicationContextProvider).MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_lets_a_claim_set_provider_failure_propagate_for_multiple_scope_values()
+    {
+        A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+            .Throws(new InvalidOperationException("simulated failure"));
+        ClientAuthorizations clientAuthorizations = CreateScopedClientAuthorizations("Alpha|Beta");
+        ConfigureJwtValidation(clientAuthorizations);
+        var (scopedServiceProvider, _) = CreateRecordingApplicationContext();
+        RequestInfo requestInfo = CreateRequestInfo(clientAuthorizations, scopedServiceProvider);
+
+        Func<Task> act = () => Execute(requestInfo);
+
+        await act.Should().ThrowAsync<InvalidOperationException>();
+        requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+    }
+
     private void ConfigureJwtValidation(ClientAuthorizations clientAuthorizations)
     {
         A.CallTo(() =>

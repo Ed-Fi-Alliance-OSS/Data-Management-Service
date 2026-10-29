@@ -30,4 +30,13 @@ public record ClientAuthorizations(
     /// data store identifiers associated with vendor application key and secret
     /// </summary>
     IReadOnlyList<DataStoreId> DataStoreIds
-);
+)
+{
+    /// <summary>
+    /// Every distinct scope value from the validated token, in first-observed order. This is an
+    /// unresolved fact: the order never selects permissions, and the claim set that applies is
+    /// resolved per request against the tenant's claim-set metadata. Empty when the token had no
+    /// scope values or the caller supplied only the legacy <see cref="ClaimSetName"/>.
+    /// </summary>
+    public IReadOnlyList<string> ScopeValues { get; init; } = [];
+}

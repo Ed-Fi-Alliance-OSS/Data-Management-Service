@@ -438,7 +438,7 @@ Feature: Applications endpoints
                     "correlationId": "0HN8RI9E3O45G:00000004",
                     "validationErrors": {
                     "ClaimSetName": [
-                      "Claim set name must not contain white spaces."
+                      "Claim set name must not contain white spaces or commas."
                     ]
                   },
                   "errors": []
