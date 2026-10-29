@@ -850,6 +850,177 @@ public class ProfileModuleTests
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    private static StringContent JsonBody(object body) =>
+        new(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+
+    /// <summary>
+    /// A DTD is rejected by each predicate before any entity is processed, so the otherwise-acceptable
+    /// payload fails the name and resource rules as well as the XSD. HTTP 400 alone would not show that:
+    /// the XSD already rejects this payload, so the exact predicate messages carry the evidence.
+    /// </summary>
+    [TestFixture("POST")]
+    [TestFixture("PUT")]
+    public class Given_profile_submission_with_nested_entities(string method)
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private IProfileRepository _repository = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            // A fresh repository per fixture keeps recorded calls from leaking between requests.
+            _repository = A.Fake<IProfileRepository>();
+            _factory = ProfileMissingBodyTests.CreateFactory(_repository);
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+
+            using var content = JsonBody(
+                new
+                {
+                    id = 1,
+                    name = "PPPP",
+                    definition = DataModel.ProfileValidationUtilsTests.NestedEntityXml,
+                }
+            );
+            _response =
+                method == "POST"
+                    ? await _client.PostAsync("/v3/profiles", content)
+                    : await _client.PutAsync("/v3/profiles/1", content);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [OneTimeTearDown]
+        public void TearDown()
+        {
+            _response?.Dispose();
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_returns_a_bad_request_problem()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        }
+
+        [Test]
+        public void It_reports_every_definition_rule_in_order()
+        {
+            _body["validationErrors"]!.AsObject().Select(x => x.Key).Should().Equal("Definition");
+            _body["validationErrors"]!["Definition"]!
+                .AsArray()
+                .Select(x => x!.GetValue<string>())
+                .Should()
+                .Equal(
+                    "Name must match the name attribute in the XML definition.",
+                    "Profile definition XML is invalid or does not match the XSD.",
+                    "Profile XML must contain at least one <Resource> element.",
+                    "All <Resource> elements must have a name attribute."
+                );
+        }
+
+        [Test]
+        public void It_does_not_write_the_profile()
+        {
+            A.CallTo(() => _repository.InsertProfile(A<ProfileInsertCommand>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => _repository.UpdateProfile(A<ProfileUpdateCommand>.Ignored)).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture("POST", "A\tB")]
+    [TestFixture("POST", "A&#9;B")]
+    [TestFixture("PUT", "A\tB")]
+    [TestFixture("PUT", "A&#9;B")]
+    public class Given_valid_profile_submission_with_attribute_whitespace(string method, string attributeText)
+    {
+        private const string Name = "A\tB";
+
+        private readonly string _definition =
+            $"""<Profile name="{attributeText}"><Resource name="Resource1"><ReadContentType memberSelection="IncludeAll" /></Resource></Profile>""";
+
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private IProfileRepository _repository = null!;
+        private HttpResponseMessage _response = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            _repository = A.Fake<IProfileRepository>();
+            A.CallTo(() => _repository.InsertProfile(A<ProfileInsertCommand>.Ignored))
+                .Returns(new ProfileInsertResult.Success(1));
+            A.CallTo(() => _repository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
+                .Returns(new ProfileUpdateResult.Success());
+            _factory = ProfileMissingBodyTests.CreateFactory(_repository);
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+
+            using var content = JsonBody(
+                new
+                {
+                    id = 1,
+                    name = Name,
+                    definition = _definition,
+                }
+            );
+            _response =
+                method == "POST"
+                    ? await _client.PostAsync("/v3/profiles", content)
+                    : await _client.PutAsync("/v3/profiles/1", content);
+        }
+
+        [OneTimeTearDown]
+        public void TearDown()
+        {
+            _response?.Dispose();
+            _client?.Dispose();
+            _factory?.Dispose();
+        }
+
+        [Test]
+        public void It_preserves_the_success_status()
+        {
+            _response
+                .StatusCode.Should()
+                .Be(method == "POST" ? HttpStatusCode.Created : HttpStatusCode.NoContent);
+        }
+
+        [Test]
+        public void It_forwards_the_original_definition()
+        {
+            if (method == "POST")
+            {
+                A.CallTo(() =>
+                        _repository.InsertProfile(
+                            A<ProfileInsertCommand>.That.Matches(c =>
+                                c.Name == Name && c.Definition == _definition
+                            )
+                        )
+                    )
+                    .MustHaveHappenedOnceExactly();
+                A.CallTo(() => _repository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
+                    .MustNotHaveHappened();
+            }
+            else
+            {
+                A.CallTo(() =>
+                        _repository.UpdateProfile(
+                            A<ProfileUpdateCommand>.That.Matches(c =>
+                                c.Id == 1 && c.Name == Name && c.Definition == _definition
+                            )
+                        )
+                    )
+                    .MustHaveHappenedOnceExactly();
+                A.CallTo(() => _repository.InsertProfile(A<ProfileInsertCommand>.Ignored))
+                    .MustNotHaveHappened();
+            }
+        }
+    }
 }
 
 public class ProfileMissingBodyTests
@@ -874,7 +1045,7 @@ public class ProfileMissingBodyTests
             .Equal("A non-empty request body is required.");
     }
 
-    private static WebApplicationFactory<Program> CreateFactory(IProfileRepository? repository = null)
+    internal static WebApplicationFactory<Program> CreateFactory(IProfileRepository? repository = null)
     {
         var profileRepository = repository ?? A.Fake<IProfileRepository>();
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
