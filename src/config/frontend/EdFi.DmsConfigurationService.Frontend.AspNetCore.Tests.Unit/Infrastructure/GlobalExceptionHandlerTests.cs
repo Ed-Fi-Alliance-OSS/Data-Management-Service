@@ -641,18 +641,44 @@ public class GlobalExceptionHandlerTests
 
     public static IEnumerable<TestFixtureData> OAuthMappedExceptions()
     {
+        foreach ((string route, _, string serverErrorDescription) in OAuthRoutes)
+        {
+            foreach (TestFixtureData row in OAuthMappedExceptionsFor(route, serverErrorDescription))
+            {
+                yield return row;
+            }
+        }
+    }
+
+    private static readonly (
+        string Route,
+        OAuthErrorContractMetadata Marker,
+        string ServerErrorDescription
+    )[] OAuthRoutes =
+    [
+        ("revoke", OAuthErrorContractMetadata.Revocation, "The revocation request could not be processed."),
+        ("token", OAuthErrorContractMetadata.Token, "The token request could not be processed."),
+    ];
+
+    private static IEnumerable<TestFixtureData> OAuthMappedExceptionsFor(
+        string route,
+        string serverErrorDescription
+    )
+    {
         yield return new TestFixtureData(
             new InvalidDataException(OAuthSentinel),
             400,
             "invalid_request",
-            "The request form payload is malformed."
-        ).SetArgDisplayNames("InvalidDataException");
+            "The request form payload is malformed.",
+            route
+        ).SetArgDisplayNames($"InvalidDataException on {route}");
         yield return new TestFixtureData(
             new BadHttpRequestException(OAuthSentinel, StatusCodes.Status400BadRequest),
             400,
             "invalid_request",
-            "The request form payload is malformed."
-        ).SetArgDisplayNames("BadHttpRequestException 400");
+            "The request form payload is malformed.",
+            route
+        ).SetArgDisplayNames($"BadHttpRequestException 400 on {route}");
         yield return new TestFixtureData(
             new BadHttpRequestException(
                 OAuthSentinel,
@@ -661,38 +687,44 @@ public class GlobalExceptionHandlerTests
             ),
             400,
             "invalid_request",
-            "The request form payload is malformed."
-        ).SetArgDisplayNames("BadHttpRequestException 400 with a JSON inner exception");
+            "The request form payload is malformed.",
+            route
+        ).SetArgDisplayNames($"BadHttpRequestException 400 with a JSON inner exception on {route}");
         yield return new TestFixtureData(
             new BadHttpRequestException(OAuthSentinel, StatusCodes.Status413PayloadTooLarge),
             413,
             "invalid_request",
-            "The request body is too large."
-        ).SetArgDisplayNames("BadHttpRequestException 413");
+            "The request body is too large.",
+            route
+        ).SetArgDisplayNames($"BadHttpRequestException 413 on {route}");
         yield return new TestFixtureData(
             new BadHttpRequestException(OAuthSentinel, StatusCodes.Status415UnsupportedMediaType),
             415,
             "invalid_request",
-            "The request body must be application/x-www-form-urlencoded."
-        ).SetArgDisplayNames("BadHttpRequestException 415");
+            "The request body must be application/x-www-form-urlencoded.",
+            route
+        ).SetArgDisplayNames($"BadHttpRequestException 415 on {route}");
         yield return new TestFixtureData(
             new BadHttpRequestException(OAuthSentinel, StatusCodes.Status408RequestTimeout),
             408,
             "invalid_request",
-            "The request could not be read."
-        ).SetArgDisplayNames("BadHttpRequestException 408");
+            "The request could not be read.",
+            route
+        ).SetArgDisplayNames($"BadHttpRequestException 408 on {route}");
         yield return new TestFixtureData(
             new InvalidOperationException(OAuthSentinel),
             500,
             "server_error",
-            "The revocation request could not be processed."
-        ).SetArgDisplayNames("InvalidOperationException");
+            serverErrorDescription,
+            route
+        ).SetArgDisplayNames($"InvalidOperationException on {route}");
         yield return new TestFixtureData(
             new ValidationException(OAuthSentinel),
             500,
             "server_error",
-            "The revocation request could not be processed."
-        ).SetArgDisplayNames("ValidationException");
+            serverErrorDescription,
+            route
+        ).SetArgDisplayNames($"ValidationException on {route}");
     }
 
     /// <summary>
@@ -705,7 +737,8 @@ public class GlobalExceptionHandlerTests
         Exception exception,
         int status,
         string error,
-        string description
+        string description,
+        string route
     )
     {
         private bool _handled;
@@ -718,7 +751,7 @@ public class GlobalExceptionHandlerTests
             (_handled, _context, _content, _body) = await HandleAsync(
                 exception,
                 "trace-oauth",
-                CreateEndpoint(OAuthErrorContractMetadata.Revocation)
+                CreateEndpoint(OAuthRoutes.Single(r => r.Route == route).Marker)
             );
 
         [Test]

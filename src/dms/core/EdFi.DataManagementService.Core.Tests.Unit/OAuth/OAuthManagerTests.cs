@@ -1180,14 +1180,11 @@ public class OAuthManagerTests
                 ProviderFallback
             );
 
-            string limitBody = CmsFailureResponse
-                .ForTooManyTokens(7, "upstream-correlation-id")
-                .ToJsonString()
-                .Replace(
-                    "urn:ed-fi:api:security:authentication:too-many-tokens",
-                    "urn:ed-fi:management-api:security:authentication:too-many-tokens",
-                    StringComparison.Ordinal
-                );
+            string limitBody = new JsonObject
+            {
+                ["error"] = CmsFailureResponse.TooManyTokensError,
+                ["error_description"] = CmsFailureResponse.TooManyTokensMessage(7),
+            }.ToJsonString();
             yield return new(
                 HttpStatusCode.TooManyRequests,
                 limitBody,
@@ -3571,7 +3568,7 @@ public class OAuthManagerTests
     /// <remarks>
     /// Hand-built so the deviation fixtures can walk away from the canonical shape in ways CMS's
     /// formatter never would. Agreement with what CMS actually emits is proven separately, by
-    /// <see cref="Given_A_Token_Limit_Rejection_Built_By_The_Configuration_Service"/>.
+    /// <see cref="Given_A_Token_Limit_Rejection_In_The_OAuth_Envelope_Built_By_The_Configuration_Service"/>.
     /// </remarks>
     private static class TooManyTokensUpstream
     {
@@ -3715,36 +3712,29 @@ public class OAuthManagerTests
     }
 
     /// <summary>
-    /// The cross-service contract: the body comes from the Configuration Service's own formatter
-    /// rather than from <see cref="TooManyTokensUpstream"/>, so rewording either the CMS message or
-    /// the DMS parser without the other fails here. A limit other than the default shows the number
-    /// was read from the body.
+    /// A token-limit answer in the OAuth envelope the Configuration Service now returns:
+    /// <c>error</c> is <c>temporarily_unavailable</c> and <c>error_description</c> is the
+    /// canonical sentence. Both come from the CMS DataModel rather than from
+    /// <see cref="TooManyTokensUpstream"/>, so changing either the CMS code or sentence, or the DMS
+    /// parser, without the other fails here.
     /// </summary>
     [TestFixture]
     [Parallelizable]
-    public class Given_A_Token_Limit_Rejection_Built_By_The_Configuration_Service
+    public class Given_A_Token_Limit_Rejection_In_The_OAuth_Envelope_Built_By_The_Configuration_Service
     {
         private HttpStatusCode _status;
         private JsonNode _body = default!;
         private RecordingLogger<OAuthManager> _logger = default!;
-        private string _upstreamType = default!;
 
         [SetUp]
         public async Task Setup()
         {
-            string upstreamBody = CmsFailureResponse
-                .ForTooManyTokens(7, "upstream-correlation-id")
-                .ToJsonString();
-            _upstreamType = JsonNode.Parse(upstreamBody)!["type"]!.GetValue<string>();
+            string upstreamBody = new JsonObject
+            {
+                ["error"] = CmsFailureResponse.TooManyTokensError,
+                ["error_description"] = CmsFailureResponse.TooManyTokensMessage(7),
+            }.ToJsonString();
             (_status, _, _body, _logger) = await UpstreamRejectsWith(upstreamBody);
-        }
-
-        // Shows this fixture exercises the Management API type the Configuration Service emits,
-        // not the legacy one the hand-built fixtures also cover.
-        [Test]
-        public void It_is_fed_the_management_api_type()
-        {
-            _upstreamType.Should().Be(TooManyTokensUpstream.ManagementApiType);
         }
 
         [Test]
@@ -3760,7 +3750,7 @@ public class OAuthManagerTests
         }
 
         [Test]
-        public void It_reconstructs_the_message_with_the_configured_limit()
+        public void It_carries_the_configured_limit_in_the_first_error()
         {
             _body["error_description"]!
                 .GetValue<string>()
@@ -3772,6 +3762,51 @@ public class OAuthManagerTests
         public void It_does_not_log_the_unrecognized_body_warning()
         {
             _logger.Records.Should().NotContain(record => record.Level == LogLevel.Warning);
+        }
+    }
+
+    /// <summary>
+    /// The OAuth-envelope token-limit and rate-limit shapes are believed only whole: each deviation
+    /// falls back to the generic 429 and writes the warning.
+    /// </summary>
+    [TestFixture(
+        """{"error":"invalid_request","error_description":"Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."}"""
+    )]
+    [TestFixture(
+        """{"error":"invalid_request","error_description":"The number of allowed requests has been exceeded. Retry the request later."}"""
+    )]
+    [TestFixture(
+        """{"error":"temporarily_unavailable","error_description":"The number of allowed requests has been exceeded."}"""
+    )]
+    [TestFixture(
+        """{"error":"temporarily_unavailable","error_description":["Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."]}"""
+    )]
+    [TestFixture(
+        """{"error":"temporarily_unavailable","error_description":"Too many tokens were requested (limit is 5). Reuse them."}"""
+    )]
+    [TestFixture("""{"error":"temporarily_unavailable","error_description":"\uD800"}""")]
+    [Parallelizable]
+    public class Given_A_Deviating_OAuth_Envelope_429(string upstreamBody)
+    {
+        private JsonNode _body = default!;
+        private RecordingLogger<OAuthManager> _logger = default!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_, _, _body, _logger) = await UpstreamRejectsWith(upstreamBody);
+        }
+
+        [Test]
+        public void It_falls_back_to_the_generic_rate_limit_contract()
+        {
+            ShouldBeTheGenericRateLimitContract(_body);
+        }
+
+        [Test]
+        public void It_writes_the_unrecognized_body_warning()
+        {
+            Unrecognized429Record(_logger).Should().NotBeNull();
         }
     }
 
@@ -3936,6 +3971,39 @@ public class OAuthManagerTests
         public async Task Setup() =>
             (_status, _, _body, _logger) = await UpstreamRejectsWith(
                 CmsFailureResponse.ForTooManyRequests("upstream-correlation-id").ToJsonString()
+            );
+
+        [Test]
+        public void It_preserves_the_generic_rate_limit_contract()
+        {
+            _status.Should().Be(HttpStatusCode.TooManyRequests);
+            ShouldBeTheGenericRateLimitContract(_body);
+        }
+
+        [Test]
+        public void It_does_not_warn_about_an_expected_throttle() =>
+            _logger.Records.Should().NotContain(record => record.Level == LogLevel.Warning);
+    }
+
+    /// <summary>
+    /// The rate-limit answer of the Configuration Service's <c>/connect/token</c>, in the OAuth error
+    /// format, built from the Configuration Service's own constants so a reword there fails here.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Configuration_Service_Rate_Limit_Response_In_The_OAuth_Format
+    {
+        private RecordingLogger<OAuthManager> _logger = null!;
+        private JsonNode _body = null!;
+        private HttpStatusCode _status;
+
+        [SetUp]
+        public async Task Setup() =>
+            (_status, _, _body, _logger) = await UpstreamRejectsWith(
+                new JsonObject
+                {
+                    ["error"] = CmsFailureResponse.TooManyRequestsError,
+                    ["error_description"] = CmsFailureResponse.TooManyRequestsMessage,
+                }.ToJsonString()
             );
 
         [Test]

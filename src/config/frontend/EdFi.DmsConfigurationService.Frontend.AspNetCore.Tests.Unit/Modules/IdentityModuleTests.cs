@@ -21,7 +21,6 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
-using EdFi.DmsConfigurationService.DataModel.Model.Token;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
@@ -595,7 +594,6 @@ public class TokenEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
                     collection.AddTransient((_) => _tokenManager!);
                 }
             );
@@ -622,6 +620,49 @@ public class TokenEndpointTests
         content.Should().Contain("bearer");
     }
 
+    /// <summary>
+    /// Unlike revoke and introspect, the token endpoint accepts a multipart/form-data body, so a
+    /// client that posts "form-data" (Postman's default) still gets a token.
+    /// </summary>
+    [Test]
+    public async Task Given_valid_client_credentials_in_a_multipart_body()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => _tokenManager!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        using var requestContent = new MultipartFormDataContent
+        {
+            { new StringContent("CSClient1"), "client_id" },
+            { new StringContent("test123@Puiu"), "client_secret" },
+            { new StringContent("client_credentials"), "grant_type" },
+        };
+        var response = await client.PostAsync("/connect/token", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("input123token");
+        A.CallTo(() =>
+                _tokenManager!.GetAccessTokenAsync(
+                    A<IEnumerable<KeyValuePair<string, string>>>.That.Matches(credentials =>
+                        credentials.Any(pair => pair.Key == "client_id" && pair.Value == "CSClient1")
+                    )
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
     [Test]
     public async Task Given_basic_auth_credentials_with_reserved_characters()
     {
@@ -632,7 +673,6 @@ public class TokenEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
                     collection.AddTransient((_) => _tokenManager!);
                 }
             );
@@ -684,7 +724,6 @@ public class TokenEndpointTests
             builder.ConfigureServices(
                 (collection) =>
                 {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
                     collection.AddTransient((_) => _tokenManager!);
                 }
             );
@@ -703,376 +742,15 @@ public class TokenEndpointTests
         );
         var response = await client.PostAsync("/connect/token", requestContent);
         string content = await response.Content.ReadAsStringAsync();
-        content = System.Text.RegularExpressions.Regex.Unescape(content);
 
-        // Assert
+        // Assert: the request shape is judged before the credentials, so the empty grant_type is
+        // the first finding (DMS-1327 D-03)
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        content.Should().Contain("'client_id' must not be empty.");
-        content.Should().Contain("'client_secret' must not be empty.");
-    }
-
-    [Test]
-    public async Task When_error_from_backend()
-    {
-        // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            _tokenManager = A.Fake<ITokenManager>();
-            A.CallTo(() =>
-                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-                )
-                .Returns(
-                    new TokenResult.FailureUnknown(
-                        "No connection could be made because the target machine actively refused it."
-                    )
-                );
-
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        // Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
-        );
-        var response = await client.PostAsync("/connect/token", requestContent);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-    }
-
-    [Test]
-    public async Task When_provider_is_unreacheable()
-    {
-        //Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            _tokenManager = A.Fake<ITokenManager>();
-
-            A.CallTo(() =>
-                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-                )
-                .Returns(
-                    new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.Unreachable(
-                            "No connection could be made because the target machine actively refused it."
-                        )
-                    )
-                );
-
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        //Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
-        );
-        var response = await client.PostAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        var actualResponse = JsonNode.Parse(content);
-        var expectedResponse = JsonNode.Parse(
-            """
-            {
-              "detail": "The request could not be processed. See 'errors' for details.",
-              "type": "urn:ed-fi:management-api:bad-gateway",
-              "title": "Bad Gateway",
-              "status": 502,
-              "correlationId": "{correlationId}",
-              "validationErrors": {},
-              "errors": [
-                "The identity provider returned an unexpected response."
-            ]
-            }
-            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
-        );
-        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
-    }
-
-    [Test]
-    public async Task When_provider_has_invalid_realm()
-    {
-        //Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            _tokenManager = A.Fake<ITokenManager>();
-
-            A.CallTo(() =>
-                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-                )
-                .Returns(
-                    new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.NotFound(
-                            """
-                            { "error":"Realm does not exist","error_description":"For more on this error consult the server log at the debug level."}
-                            """
-                        )
-                    )
-                );
-
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        //Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
-        );
-        var response = await client.PostAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
-
-        var actualResponse = JsonNode.Parse(content);
-        var expectedResponse = JsonNode.Parse(
-            """
-            {
-              "detail": "The request could not be processed. See 'errors' for details.",
-              "type": "urn:ed-fi:management-api:bad-gateway",
-              "title": "Bad Gateway",
-              "status": 502,
-              "correlationId": "{correlationId}",
-              "validationErrors": {},
-              "errors": [
-               "Realm does not exist. For more on this error consult the server log at the debug level."
-            ]
-            }
-            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
-        );
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
-    }
-
-    [Test]
-    public async Task When_provider_has_not_realm_admin_role()
-    {
-        //Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            _tokenManager = A.Fake<ITokenManager>();
-
-            A.CallTo(() =>
-                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-                )
-                .Returns(
-                    new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.Unauthorized("Insufficient Permissions")
-                    )
-                );
-
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        //Act
-        var requestContent = new FormUrlEncodedContent([
-            new KeyValuePair<string, string>("client_id", "CSClient1"),
-            new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-            new KeyValuePair<string, string>("grant_type", "client_credentials"),
-            new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-        ]);
-        var response = await client.PostAsync("/connect/token", requestContent);
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-    }
-
-    [Test]
-    public async Task When_provider_has_bad_credetials()
-    {
-        //Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            _tokenManager = A.Fake<ITokenManager>();
-
-            A.CallTo(() =>
-                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-                )
-                .Returns(
-                    new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.Unauthorized(
-                            """
-                            {"error":"invalid_client","error_description":"Invalid client or Invalid client credentials"}
-                            """
-                        )
-                    )
-                );
-
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        //Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
-        );
-        var response = await client.PostAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
-
-        var actualResponse = JsonNode.Parse(content);
-        var expectedResponse = JsonNode.Parse(
-            """
-            {
-              "detail": "The request could not be processed. See 'errors' for details.",
-              "type": "urn:ed-fi:management-api:security:authentication",
-              "title": "Authentication Failed",
-              "status": 401,
-              "correlationId": "{correlationId}",
-              "validationErrors": {},
-              "errors": [
-               "invalid_client. Invalid client or Invalid client credentials"
-            ]
-            }
-            """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
-        );
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-        JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
-    }
-
-    [TestFixture]
-    public class Given_a_service_owned_authentication_failure
-    {
-        private ITokenManager _serviceTokenManager = null!;
-        private WebApplicationFactory<Program> _factory = null!;
-        private HttpClient _client = null!;
-        private HttpResponseMessage _response = null!;
-        private string _content = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            _serviceTokenManager = A.Fake<ITokenManager>();
-            A.CallTo(() =>
-                    _serviceTokenManager.GetAccessTokenAsync(
-                        A<IEnumerable<KeyValuePair<string, string>>>.Ignored
-                    )
-                )
-                .Returns(
-                    new TokenResult.FailureAuthentication(
-                        "invalid_client",
-                        "Invalid client or Invalid client credentials"
-                    )
-                );
-
-            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    collection.AddTransient(_ => new TokenRequest.Validator());
-                    collection.AddTransient(_ => _serviceTokenManager);
-                });
-            });
-            _client = _factory.CreateClient();
-
-            var requestContent = new FormUrlEncodedContent([
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            ]);
-            _response = await _client.PostAsync("/connect/token", requestContent);
-            _content = await _response.Content.ReadAsStringAsync();
-        }
-
-        [TearDown]
-        public void TearDown()
-        {
-            _client?.Dispose();
-            _factory?.Dispose();
-        }
-
-        [Test]
-        public void It_returns_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-
-        [Test]
-        public void It_uses_the_problem_details_content_type() =>
-            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-
-        [Test]
-        public void It_returns_the_authentication_contract_with_the_composed_error()
-        {
-            JsonNode actualResponse = JsonNode.Parse(_content)!;
-            JsonNode expectedResponse = JsonNode.Parse(
-                """
-                {
-                  "detail": "The request could not be processed. See 'errors' for details.",
-                  "type": "urn:ed-fi:management-api:security:authentication",
-                  "title": "Authentication Failed",
-                  "status": 401,
-                  "correlationId": "{correlationId}",
-                  "validationErrors": {},
-                  "errors": [
-                    "invalid_client. Invalid client or Invalid client credentials"
-                  ]
-                }
-                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
-            )!;
-            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
-        }
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+        JsonObject body = JsonNode.Parse(content)!.AsObject();
+        body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+        body["error"]!.GetValue<string>().Should().Be("invalid_request");
+        body["error_description"]!.GetValue<string>().Should().Be("The grant_type parameter is missing.");
     }
 
     /// <summary>
@@ -1107,7 +785,6 @@ public class TokenEndpointTests
                 builder.UseEnvironment("Test");
                 builder.ConfigureServices(collection =>
                 {
-                    collection.AddTransient(_ => new TokenRequest.Validator());
                     collection.AddTransient(_ => _serviceTokenManager);
                 });
             });
@@ -1134,33 +811,24 @@ public class TokenEndpointTests
         public void It_returns_429() => _response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
 
         [Test]
-        public void It_uses_the_problem_details_content_type() =>
-            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        public void It_uses_the_json_content_type() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
         [Test]
-        public void It_carries_a_correlation_id() =>
-            JsonNode.Parse(_content)!["correlationId"]!.GetValue<string>().Should().NotBeEmpty();
+        public void It_does_not_challenge() => _response.Headers.WwwAuthenticate.Should().BeEmpty();
 
         [Test]
-        public void It_returns_the_tickets_too_many_tokens_contract()
+        public void It_returns_the_temporarily_unavailable_body_naming_the_limit()
         {
-            JsonNode actualResponse = JsonNode.Parse(_content)!;
-            JsonNode expectedResponse = JsonNode.Parse(
-                $$"""
-                {
-                  "detail": "The caller has authenticated too many times in too short of a time period.",
-                  "type": "urn:ed-fi:management-api:security:authentication:too-many-tokens",
-                  "title": "Too Many Tokens",
-                  "status": 429,
-                  "correlationId": "{correlationId}",
-                  "validationErrors": {},
-                  "errors": [
-                    "Too many access tokens have been requested (limit is {{configuredLimit}}). Access tokens should be reused until they expire."
-                  ]
-                }
-                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
-            )!;
-            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+            JsonObject body = JsonNode.Parse(_content)!.AsObject();
+            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+            body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    $"Too many access tokens have been requested (limit is {configuredLimit}). Access tokens should be reused until they expire."
+                );
         }
     }
 
@@ -1195,7 +863,6 @@ public class TokenEndpointTests
                 builder.UseEnvironment("Test");
                 builder.ConfigureServices(collection =>
                 {
-                    collection.AddTransient(_ => new TokenRequest.Validator());
                     collection.AddTransient(_ => _serviceTokenManager);
                 });
             });
@@ -1223,27 +890,24 @@ public class TokenEndpointTests
             _response.StatusCode.Should().Be(HttpStatusCode.Conflict);
 
         [Test]
-        public void It_uses_the_problem_details_content_type() =>
-            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        public void It_uses_the_json_content_type() =>
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+
+        [Test]
+        public void It_does_not_challenge() => _response.Headers.WwwAuthenticate.Should().BeEmpty();
 
         [Test]
         public void It_tells_the_caller_to_retry()
         {
-            JsonNode actualResponse = JsonNode.Parse(_content)!;
-            JsonNode expectedResponse = JsonNode.Parse(
-                """
-                {
-                  "detail": "Unable to process the request due to a concurrent modification. Retry the request.",
-                  "type": "urn:ed-fi:management-api:conflict",
-                  "title": "Conflict",
-                  "status": 409,
-                  "correlationId": "{correlationId}",
-                  "validationErrors": {},
-                  "errors": []
-                }
-                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
-            )!;
-            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+            JsonObject body = JsonNode.Parse(_content)!.AsObject();
+            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+            body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "The token request could not be completed because of concurrent requests for the same client. Retry the request."
+                );
         }
     }
 }
@@ -1295,7 +959,6 @@ public class TokenEndpointBasicAuthTests
                 builder.UseSetting("DatabaseSettings:DatabaseConnection", UnreachableDatabase);
                 builder.ConfigureServices(collection =>
                 {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
                     collection.AddTransient((_) => tokenManager);
                 });
             });
@@ -1515,20 +1178,43 @@ public class TokenEndpointScopeForwardingTests
 }
 
 /// <summary>
-/// End-to-end verification that CMS-generated OAuth/OIDC error branches return the Ed-Fi bad-request
-/// contract (400 preserved) in place of the OAuth <c>{ error, error_description }</c> shape, while the
-/// protocol success responses stay untouched. <c>/connect/revoke</c> is the documented exception
-/// (DMS-1327 D-01): every revocation error is in the OAuth format, pinned here and in
-/// <c>RevocationRequestContractTests</c>. Non-fixture container; the
-/// runnable fixtures are the nested <c>Given_…</c> classes.
+/// End-to-end verification that the OAuth endpoints, <c>/connect/token</c>, <c>/connect/revoke</c> and
+/// <c>/connect/introspect</c>, answer every error in the OAuth <c>{ error, error_description }</c>
+/// format (DMS-1327 D-01, DMS-1491), including a malformed form and a faulting manager, pinned here and
+/// in <c>RevocationRequestContractTests</c>. Non-fixture container; the runnable fixtures are the
+/// nested <c>Given_…</c> classes.
 /// </summary>
 public class OAuthEndpointErrorTests
 {
-    private static WebApplicationFactory<Program> CreateFactory(Action<IServiceCollection>? configureServices)
+    // Provider failure texts for the 502 fixtures, declared here so the fixture attributes can name them.
+    private const string UnreachableMessage =
+        "No connection could be made because SENTINEL_PROVIDER_TEXT refused it.";
+    private const string NotFoundBody =
+        """{"error":"invalid_grant","error_description":"Realm does not exist SENTINEL_PROVIDER_TEXT"}""";
+    private const string ForbiddenBody =
+        """{"error":"invalid_request","error_description":"HTTPS required SENTINEL_PROVIDER_TEXT"}""";
+    private const string GenericBody =
+        """{"error":"invalid_request","error_description":"Missing form parameter SENTINEL_PROVIDER_TEXT"}""";
+
+    private static WebApplicationFactory<Program> CreateFactory(
+        Action<IServiceCollection>? configureServices,
+        bool keycloak = false
+    )
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
+            if (keycloak)
+            {
+                // The identity provider is read while services are registered, so it is set with
+                // UseSetting; the unreachable connection string only lets the host boot, since the
+                // token manager is faked.
+                builder.UseSetting("AppSettings:IdentityProvider", "keycloak");
+                builder.UseSetting(
+                    "DatabaseSettings:DatabaseConnection",
+                    "host=127.0.0.1;port=1;database=unreachable;username=none;timeout=1"
+                );
+            }
             if (configureServices is not null)
             {
                 builder.ConfigureServices(configureServices);
@@ -1536,203 +1222,1001 @@ public class OAuthEndpointErrorTests
         });
     }
 
-    [TestFixture]
-    public class Given_a_token_request_with_an_unsupported_grant_type
+    /// <summary>
+    /// A token request answered in the RFC 6749 §5.2 format (DMS-1491): the body's only root members are
+    /// <c>error</c> and <c>error_description</c>, and <c>WWW-Authenticate</c> is present only when the
+    /// caller attempted Basic client authentication and failed it.
+    /// </summary>
+    public abstract class TokenErrorRequest
     {
-        private static void AssertBadRequestContract(
-            HttpResponseMessage response,
-            string content,
-            string expectedDetail
-        )
-        {
-            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        protected const string BasicChallenge = "Basic realm=\"EdFi.DmsConfigurationService\"";
 
-            JsonObject body = JsonNode.Parse(content)!.AsObject();
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request");
-            body["title"]!.GetValue<string>().Should().Be("Bad Request");
-            body["detail"]!.GetValue<string>().Should().Be(expectedDetail);
-            body["status"]!.GetValue<int>().Should().Be(400);
-            body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
-            body["validationErrors"]!.AsObject().Count.Should().Be(0);
-            body["errors"]!.AsArray().Count.Should().Be(0);
-
-            // The OAuth { error, error_description } shape must be gone from the parsed body.
-            body.ContainsKey("error").Should().BeFalse();
-            body.ContainsKey("error_description").Should().BeFalse();
-        }
-
-        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
+        protected readonly ITokenManager TokenManager = A.Fake<ITokenManager>();
+        private protected RevocationLogCapture Logs { get; } = new();
         private WebApplicationFactory<Program> _factory = null!;
         private HttpClient _client = null!;
-        private HttpResponseMessage _response = null!;
-        private string _content = null!;
+        protected HttpResponseMessage Response = null!;
+        protected string Content = null!;
+
+        protected virtual void ArrangeManager() { }
+
+        protected virtual bool KeycloakMode => false;
+
+        protected abstract HttpRequestMessage BuildRequest();
 
         [SetUp]
         public async Task Setup()
         {
-            _factory = CreateFactory(collection =>
-            {
-                collection.AddTransient(_ => new TokenRequest.Validator());
-                collection.AddTransient(_ => _tokenManager);
-            });
-            _client = _factory.CreateClient();
-
-            // Passes validation (all fields present) but uses an unsupported grant type.
-            var requestContent = new FormUrlEncodedContent(
-                new[]
+            ArrangeManager();
+            _factory = CreateFactory(
+                collection =>
                 {
-                    new KeyValuePair<string, string>("client_id", "CSClient1"),
-                    new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                    new KeyValuePair<string, string>("grant_type", "password"),
-                    new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-                }
+                    collection.AddTransient(_ => TokenManager);
+                    collection.AddSingleton<ILoggerProvider>(Logs);
+                },
+                KeycloakMode
             );
-            _response = await _client.PostAsync("/connect/token", requestContent);
-            _content = await _response.Content.ReadAsStringAsync();
+            _client = _factory.CreateClient();
+            Response = await _client.SendAsync(BuildRequest());
+            Content = await Response.Content.ReadAsStringAsync();
         }
 
         [TearDown]
         public void TearDown()
         {
+            Response?.Dispose();
             _client?.Dispose();
             _factory?.Dispose();
         }
 
-        [Test]
-        public void It_returns_the_ed_fi_bad_request_contract() =>
-            AssertBadRequestContract(_response, _content, "The specified grant type is not supported.");
+        protected static HttpRequestMessage Post(
+            IEnumerable<KeyValuePair<string, string>> form,
+            string? authorization = null
+        )
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, "/connect/token")
+            {
+                Content = new FormUrlEncodedContent(form),
+            };
+            if (authorization is not null)
+            {
+                request.Headers.TryAddWithoutValidation("Authorization", authorization);
+            }
+            return request;
+        }
+
+        protected void AssertStatus(HttpStatusCode expected) => Response.StatusCode.Should().Be(expected);
+
+        protected void AssertOAuthError(string error, string description)
+        {
+            Response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            JsonObject body = JsonNode.Parse(Content)!.AsObject();
+            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            body["error"]!.GetValue<string>().Should().Be(error);
+            body["error_description"]!.GetValue<string>().Should().Be(description);
+        }
+
+        protected void AssertBasicChallenge() =>
+            Response.Headers.GetValues("WWW-Authenticate").Should().Equal(BasicChallenge);
+
+        protected void AssertNoChallenge() => Response.Headers.WwwAuthenticate.Should().BeEmpty();
+
+        protected void AssertManagerNotCalled() =>
+            A.CallTo(() => TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>._))
+                .MustNotHaveHappened();
     }
 
     [TestFixture]
-    public class Given_a_token_request_with_a_malformed_form_payload
+    public class Given_a_token_request_with_an_unsupported_grant_type : TokenErrorRequest
     {
-        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
-        private WebApplicationFactory<Program> _factory = null!;
-        private HttpClient _client = null!;
-        private HttpResponseMessage _response = null!;
-        private string _content = null!;
-        private JsonObject _body = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            _factory = CreateFactory(collection =>
-            {
-                collection.AddTransient(_ => new TokenRequest.Validator());
-                collection.AddTransient(_ => _tokenManager);
-            });
-            _client = _factory.CreateClient();
-
-            // multipart/form-data without a boundary makes form reading throw InvalidDataException.
-            var requestContent = new StringContent("client_id=x");
-            requestContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
-                "multipart/form-data"
-            );
-            _response = await _client.PostAsync("/connect/token", requestContent);
-            _content = await _response.Content.ReadAsStringAsync();
-            _body = JsonNode.Parse(_content)!.AsObject();
-        }
-
-        [TearDown]
-        public void TearDown()
-        {
-            _client?.Dispose();
-            _factory?.Dispose();
-        }
+        protected override HttpRequestMessage BuildRequest() =>
+            Post([
+                new("client_id", "CSClient1"),
+                new("client_secret", "test123@Puiu"),
+                new("grant_type", "password"),
+                new("scope", "edfi_admin_api/full_access"),
+            ]);
 
         [Test]
-        public void It_returns_400() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
 
         [Test]
-        public void It_uses_the_problem_details_content_type() =>
-            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        public void It_returns_the_oauth_unsupported_grant_type_body() =>
+            AssertOAuthError("unsupported_grant_type", "The specified grant type is not supported.");
 
         [Test]
-        public void It_returns_the_generic_bad_request_contract_with_the_fixed_form_message()
-        {
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request");
-            _body["title"]!.GetValue<string>().Should().Be("Bad Request");
-            _body["detail"]!
-                .GetValue<string>()
-                .Should()
-                .Be("The request could not be processed. See 'errors' for details.");
-            _body["status"]!.GetValue<int>().Should().Be(400);
-            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
-            _body["validationErrors"]!.AsObject().Count.Should().Be(0);
-            _body["errors"]!
-                .AsArray()
-                .Select(node => node!.GetValue<string>())
-                .Should()
-                .Equal("The request form payload is malformed.");
-        }
+        public void It_does_not_challenge() => AssertNoChallenge();
 
         [Test]
-        public void It_does_not_leak_the_framework_parsing_message() =>
-            _content.Should().NotContain("boundary");
+        public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
     }
 
     /// <summary>
-    /// DMS-1327 D-17 keeps the OAuth exception format on <c>/connect/revoke</c> only: a fault
-    /// escaping the token endpoint is still the Ed-Fi internal-server-error contract.
+    /// The grant type is judged before the credentials: a request with an unsupported grant type and
+    /// no credentials gets the grant type finding, not <c>invalid_client</c>.
     /// </summary>
     [TestFixture]
-    public class Given_a_token_request_whose_token_manager_faults
+    public class Given_a_token_request_with_an_unsupported_grant_type_and_no_credentials : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest() => Post([new("grant_type", "password")]);
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_unsupported_grant_type_body() =>
+            AssertOAuthError("unsupported_grant_type", "The specified grant type is not supported.");
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
+    }
+
+    [TestFixture]
+    public class Given_a_token_request_without_a_grant_type_but_with_valid_credentials : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest() =>
+            Post([new("client_id", "CSClient1"), new("client_secret", "test123@Puiu")]);
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_request_body() =>
+            AssertOAuthError("invalid_request", "The grant_type parameter is missing.");
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
+    }
+
+    /// <summary>
+    /// The request shape is judged before the credentials (DMS-1327 D-03): a Basic attempt that cannot
+    /// be decoded still gets the grant_type finding, and no challenge, when grant_type is absent.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_token_request_without_a_grant_type_and_with_an_undecodable_basic_header
+        : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest() =>
+            Post(Array.Empty<KeyValuePair<string, string>>(), "Basic !!!not-base64!!!");
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_request_body() =>
+            AssertOAuthError("invalid_request", "The grant_type parameter is missing.");
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+    }
+
+    [TestFixture]
+    public class Given_a_json_token_request : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest() =>
+            new(HttpMethod.Post, "/connect/token")
+            {
+                Content = new StringContent(
+                    """{"client_id":"CSClient1","client_secret":"test123@Puiu","grant_type":"client_credentials"}""",
+                    Encoding.UTF8,
+                    "application/json"
+                ),
+            };
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_request_body() =>
+            AssertOAuthError(
+                "invalid_request",
+                "The request body must be application/x-www-form-urlencoded."
+            );
+
+        [Test]
+        public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
+    }
+
+    /// <summary>
+    /// RFC 6749 §5.2 makes a parameter sent more than once <c>invalid_request</c>. Every copy is
+    /// rejected, never resolved by picking one, including an empty copy beside a valid one.
+    /// </summary>
+    [TestFixture("grant_type", "client_credentials")]
+    [TestFixture("grant_type", "")]
+    [TestFixture("client_id", "CSClient1")]
+    [TestFixture("client_secret", "test123@Puiu")]
+    [TestFixture("scope", "edfi_admin_api/full_access")]
+    public class Given_a_token_request_with_a_repeated_parameter(string parameter, string secondValue)
+        : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest() =>
+            Post([
+                new("client_id", "CSClient1"),
+                new("client_secret", "test123@Puiu"),
+                new("grant_type", "client_credentials"),
+                new("scope", "edfi_admin_api/full_access"),
+                new(parameter, secondValue),
+            ]);
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_request_body() =>
+            AssertOAuthError("invalid_request", "A request parameter or header was included more than once.");
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
+    }
+
+    [TestFixture]
+    public class Given_a_token_request_with_two_authorization_headers : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest()
+        {
+            string basic =
+                "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("CSClient1:test123@Puiu"));
+            HttpRequestMessage request = Post([new("grant_type", "client_credentials")]);
+            request.Headers.TryAddWithoutValidation("Authorization", [basic, basic]);
+            return request;
+        }
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_request_body() =>
+            AssertOAuthError("invalid_request", "A request parameter or header was included more than once.");
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
+    }
+
+    [TestFixture]
+    public class Given_a_token_request_without_credentials_or_basic_header : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest() =>
+            Post([new("grant_type", "client_credentials")]);
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_client_body() =>
+            AssertOAuthError("invalid_client", "Client authentication is required.");
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
+    }
+
+    [TestFixture]
+    public class Given_a_token_request_with_an_empty_client_secret : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest() =>
+            Post([
+                new("client_id", "CSClient1"),
+                new("client_secret", ""),
+                new("grant_type", "client_credentials"),
+            ]);
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_client_body() =>
+            AssertOAuthError("invalid_client", "Client authentication is required.");
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+    }
+
+    /// <summary>
+    /// A client id or secret of only whitespace is as missing as an empty one: it is answered before
+    /// the token manager, which would report it as a failure the service cannot classify.
+    /// </summary>
+    [TestFixture("client_id")]
+    [TestFixture("client_secret")]
+    public class Given_a_token_request_with_a_whitespace_credential(string parameter) : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest() =>
+            Post([
+                new("client_id", parameter == "client_id" ? " " : "CSClient1"),
+                new("client_secret", parameter == "client_secret" ? "\t" : "test123@Puiu"),
+                new("grant_type", "client_credentials"),
+            ]);
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_client_body() =>
+            AssertOAuthError("invalid_client", "Client authentication is required.");
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
+    }
+
+    [TestFixture]
+    public class Given_a_token_request_with_whitespace_basic_credentials : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest() =>
+            Post(
+                [new("grant_type", "client_credentials")],
+                "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes(" : "))
+            );
+
+        [Test]
+        public void It_returns_401() => AssertStatus(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_client_body() =>
+            AssertOAuthError("invalid_client", "Client authentication is required.");
+
+        [Test]
+        public void It_challenges_for_basic_authentication() => AssertBasicChallenge();
+
+        [Test]
+        public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
+    }
+
+    [TestFixture]
+    public class Given_a_token_request_with_an_undecodable_basic_header_and_no_form_credentials
+        : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest() =>
+            Post([new("grant_type", "client_credentials")], "Basic !!!not-base64!!!");
+
+        [Test]
+        public void It_returns_401() => AssertStatus(HttpStatusCode.Unauthorized);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_client_body() =>
+            AssertOAuthError("invalid_client", "Client authentication is required.");
+
+        [Test]
+        public void It_challenges_for_basic_authentication() => AssertBasicChallenge();
+
+        [Test]
+        public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
+    }
+
+    [TestFixture]
+    public class Given_a_token_request_with_a_bearer_header_and_no_form_credentials : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest() =>
+            Post([new("grant_type", "client_credentials")], "Bearer x");
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_client_body() =>
+            AssertOAuthError("invalid_client", "Client authentication is required.");
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+    }
+
+    [TestFixture]
+    public class Given_a_token_request_with_a_malformed_form_payload : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest()
+        {
+            // multipart/form-data without a boundary makes form reading throw InvalidDataException.
+            var content = new StringContent("client_id=x");
+            content.Headers.ContentType = new MediaTypeHeaderValue("multipart/form-data");
+            return new HttpRequestMessage(HttpMethod.Post, "/connect/token") { Content = content };
+        }
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_invalid_request_body_with_the_fixed_form_message() =>
+            AssertOAuthError("invalid_request", "The request form payload is malformed.");
+
+        [Test]
+        public void It_does_not_leak_the_framework_parsing_message() =>
+            Content.Should().NotContain("boundary");
+    }
+
+    /// <summary>
+    /// A fault escaping the token endpoint is answered in the OAuth format with a fixed description
+    /// (DMS-1491), as on <c>/connect/revoke</c> (DMS-1327 D-17).
+    /// </summary>
+    [TestFixture]
+    public class Given_a_token_request_whose_token_manager_faults : TokenErrorRequest
     {
         private const string Sentinel = "SENTINEL_TOKEN_MANAGER_FAULT_must_not_leak";
 
-        private readonly ITokenManager _tokenManager = A.Fake<ITokenManager>();
-        private WebApplicationFactory<Program> _factory = null!;
-        private HttpClient _client = null!;
-        private HttpResponseMessage _response = null!;
-        private string _content = null!;
-
-        [SetUp]
-        public async Task Setup()
-        {
-            A.CallTo(() => _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>._))
+        protected override void ArrangeManager() =>
+            A.CallTo(() => TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>._))
                 .Throws(new InvalidOperationException(Sentinel));
-            _factory = CreateFactory(collection =>
-            {
-                collection.AddTransient(_ => new TokenRequest.Validator());
-                collection.AddTransient(_ => _tokenManager);
-            });
-            _client = _factory.CreateClient();
 
-            _response = await _client.PostAsync(
-                "/connect/token",
-                new FormUrlEncodedContent(
-                    new[]
-                    {
-                        new KeyValuePair<string, string>("client_id", "CSClient1"),
-                        new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                        new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                        new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-                    }
+        protected override HttpRequestMessage BuildRequest() =>
+            Post([
+                new("client_id", "CSClient1"),
+                new("client_secret", "test123@Puiu"),
+                new("grant_type", "client_credentials"),
+                new("scope", "edfi_admin_api/full_access"),
+            ]);
+
+        [Test]
+        public void It_returns_500() => AssertStatus(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_returns_the_oauth_server_error_body() =>
+            AssertOAuthError("server_error", "The token request could not be processed.");
+
+        [Test]
+        public void It_does_not_leak_the_exception_text() => Content.Should().NotContain(Sentinel);
+    }
+
+    /// <summary>
+    /// A token request that reaches the token manager, with the client credentials sent either in an
+    /// HTTP Basic header or in the form. Which one decides whether a client authentication failure is
+    /// answered with 401 and a challenge or with 400.
+    /// </summary>
+    public abstract class ManagerOutcomeRequest(bool basic) : TokenErrorRequest
+    {
+        protected bool Basic { get; } = basic;
+
+        protected void Returns(TokenResult result) =>
+            A.CallTo(() => TokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>._))
+                .Returns(result);
+
+        protected void ReturnsProviderFailure(IdentityProviderError error) =>
+            Returns(new TokenResult.FailureIdentityProvider(error));
+
+        protected override bool KeycloakMode => true;
+
+        protected override HttpRequestMessage BuildRequest() =>
+            Basic
+                ? Post(
+                    [new("grant_type", "client_credentials")],
+                    "Basic " + Convert.ToBase64String(Encoding.UTF8.GetBytes("CSClient1:test123@Puiu"))
+                )
+                : Post([
+                    new("client_id", "CSClient1"),
+                    new("client_secret", "test123@Puiu"),
+                    new("grant_type", "client_credentials"),
+                    new("scope", "edfi_admin_api/full_access"),
+                ]);
+
+        protected void AssertClientAuthenticationAnswer(string error, string description)
+        {
+            AssertStatus(Basic ? HttpStatusCode.Unauthorized : HttpStatusCode.BadRequest);
+            AssertOAuthError(error, description);
+            if (Basic)
+            {
+                AssertBasicChallenge();
+            }
+            else
+            {
+                AssertNoChallenge();
+            }
+        }
+    }
+
+    /// <summary>
+    /// A failed client authentication is <c>invalid_client</c> whatever code the token manager
+    /// reports: RFC 6749 §5.2 defines no other code for it, and a second code would tell the caller
+    /// whether the client id it sent exists.
+    /// </summary>
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_a_service_owned_authentication_failure(bool basic) : ManagerOutcomeRequest(basic)
+    {
+        protected override bool KeycloakMode => false;
+
+        protected override void ArrangeManager() =>
+            Returns(
+                new TokenResult.FailureAuthentication(
+                    "unauthorized_client",
+                    "Service-owned failure description"
                 )
             );
-            _content = await _response.Content.ReadAsStringAsync();
-        }
 
-        [TearDown]
-        public void TearDown()
-        {
-            _client?.Dispose();
-            _factory?.Dispose();
-        }
+        // The description differs from the handler's fixed one, so this fails if the manager's is dropped.
+        [Test]
+        public void It_answers_invalid_client_with_the_manager_description() =>
+            AssertClientAuthenticationAnswer("invalid_client", "Service-owned failure description");
+    }
+
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_the_token_manager_reports_an_unknown_failure(bool basic) : ManagerOutcomeRequest(basic)
+    {
+        private const string Sentinel = "SENTINEL_UNKNOWN_FAILURE_must_not_leak";
+
+        protected override bool KeycloakMode => false;
+
+        protected override void ArrangeManager() => Returns(new TokenResult.FailureUnknown(Sentinel));
 
         [Test]
-        public void It_returns_the_ed_fi_internal_server_error_contract()
-        {
-            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-            JsonObject body = JsonNode.Parse(_content)!.AsObject();
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:internal-server-error");
-            body.ContainsKey("error").Should().BeFalse();
-        }
+        public void It_returns_500() => AssertStatus(HttpStatusCode.InternalServerError);
 
         [Test]
-        public void It_does_not_leak_the_exception_text() => _content.Should().NotContain(Sentinel);
+        public void It_returns_the_server_error_body() =>
+            AssertOAuthError("server_error", "The token request could not be processed.");
+
+        [Test]
+        public void It_does_not_leak_the_failure_text() => Content.Should().NotContain(Sentinel);
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+    }
+
+    /// <summary>
+    /// The token limit and a lock timeout are not client authentication failures, so a caller that
+    /// attempted Basic gets no challenge with them. The form-credential answers are pinned in
+    /// <c>TokenEndpointTests</c>.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_token_manager_reports_the_token_limit_to_a_basic_caller : ManagerOutcomeRequest
+    {
+        public Given_the_token_manager_reports_the_token_limit_to_a_basic_caller()
+            : base(true) { }
+
+        protected override bool KeycloakMode => false;
+
+        protected override void ArrangeManager() => Returns(new TokenResult.FailureTokenLimitExceeded(3));
+
+        [Test]
+        public void It_returns_429() => AssertStatus(HttpStatusCode.TooManyRequests);
+
+        [Test]
+        public void It_answers_temporarily_unavailable_with_the_limit() =>
+            AssertOAuthError(
+                "temporarily_unavailable",
+                "Too many access tokens have been requested (limit is 3). Access tokens should be reused until they expire."
+            );
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+    }
+
+    [TestFixture]
+    public class Given_the_token_manager_reports_a_lock_timeout_to_a_basic_caller : ManagerOutcomeRequest
+    {
+        public Given_the_token_manager_reports_a_lock_timeout_to_a_basic_caller()
+            : base(true) { }
+
+        protected override bool KeycloakMode => false;
+
+        protected override void ArrangeManager() => Returns(new TokenResult.FailureLockTimeout());
+
+        [Test]
+        public void It_returns_409() => AssertStatus(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_answers_temporarily_unavailable() =>
+            AssertOAuthError(
+                "temporarily_unavailable",
+                "The token request could not be completed because of concurrent requests for the same client. Retry the request."
+            );
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+    }
+
+    /// <summary>
+    /// A Keycloak 401 or the provider's invalid_client answer, in both the Basic and the form shape,
+    /// is always <c>invalid_client</c> with the fixed description: Keycloak words some rejections
+    /// differently, so its text could tell the caller that the client id exists.
+    /// </summary>
+    [TestFixture(true, "Unauthorized")]
+    [TestFixture(false, "Unauthorized")]
+    [TestFixture(true, "InvalidClient")]
+    [TestFixture(false, "InvalidClient")]
+    public class Given_the_identity_provider_rejects_the_client_credentials(bool basic, string kind)
+        : ManagerOutcomeRequest(basic)
+    {
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(
+                kind == "Unauthorized"
+                    ? new IdentityProviderError.Unauthorized(
+                        """{"error":"invalid_client","error_description":"Invalid client secret"}"""
+                    )
+                    : new IdentityProviderError.InvalidClient(
+                        """{"error":"invalid_client","error_description":"Invalid client secret"}"""
+                    )
+            );
+
+        [Test]
+        public void It_answers_invalid_client_with_the_fixed_description() =>
+            AssertClientAuthenticationAnswer(
+                "invalid_client",
+                "Invalid client or Invalid client credentials"
+            );
+
+        [Test]
+        public void It_does_not_echo_the_provider_description() =>
+            Content.Should().NotContain("Invalid client secret");
+    }
+
+    /// <summary>
+    /// Keycloak answers a public client with any secret by saying it is a public client, which tells
+    /// the caller the client id exists; the caller gets the same answer as for an unknown client.
+    /// </summary>
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_the_identity_provider_rejects_a_public_client(bool basic)
+        : ManagerOutcomeRequest(basic)
+    {
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(
+                new IdentityProviderError.Unauthorized(
+                    """{"error":"unauthorized_client","error_description":"Public client not allowed to retrieve service account"}"""
+                )
+            );
+
+        [Test]
+        public void It_answers_as_for_an_unknown_client() =>
+            AssertClientAuthenticationAnswer(
+                "invalid_client",
+                "Invalid client or Invalid client credentials"
+            );
+
+        [Test]
+        public void It_does_not_echo_the_provider_description() =>
+            Content.Should().NotContain("Public client");
+    }
+
+    /// <summary>
+    /// Keycloak answers a wrong secret with a 401 carrying <c>unauthorized_client</c>; the caller still
+    /// gets <c>invalid_client</c>.
+    /// </summary>
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_the_identity_provider_rejects_the_client_credentials_with_another_defined_code(
+        bool basic
+    ) : ManagerOutcomeRequest(basic)
+    {
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(
+                new IdentityProviderError.Unauthorized(
+                    """{"error":"unauthorized_client","error_description":"Invalid client or Invalid client credentials"}"""
+                )
+            );
+
+        [Test]
+        public void It_answers_invalid_client_with_the_fixed_description() =>
+            AssertClientAuthenticationAnswer(
+                "invalid_client",
+                "Invalid client or Invalid client credentials"
+            );
+    }
+
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_the_identity_provider_rejects_the_client_credentials_without_a_structured_body(
+        bool basic
+    ) : ManagerOutcomeRequest(basic)
+    {
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(new IdentityProviderError.Unauthorized("Insufficient Permissions"));
+
+        [Test]
+        public void It_answers_with_the_fixed_invalid_client_description() =>
+            AssertClientAuthenticationAnswer(
+                "invalid_client",
+                "Invalid client or Invalid client credentials"
+            );
+
+        [Test]
+        public void It_does_not_echo_the_provider_text() => Content.Should().NotContain("Insufficient");
+    }
+
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_the_identity_provider_rejects_the_client_credentials_with_an_undefined_code(bool basic)
+        : ManagerOutcomeRequest(basic)
+    {
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(
+                new IdentityProviderError.Unauthorized(
+                    """{"error":"access_denied","error_description":"SENTINEL_PROVIDER_DESCRIPTION"}"""
+                )
+            );
+
+        [Test]
+        public void It_replaces_the_provider_code_and_description_with_the_fixed_ones() =>
+            AssertClientAuthenticationAnswer(
+                "invalid_client",
+                "Invalid client or Invalid client credentials"
+            );
+
+        [Test]
+        public void It_does_not_echo_the_provider_text() =>
+            Content.Should().NotContain("access_denied").And.NotContain("SENTINEL_PROVIDER_DESCRIPTION");
+    }
+
+    [TestFixture]
+    public class Given_the_identity_provider_matches_error_codes_case_sensitively : ManagerOutcomeRequest
+    {
+        public Given_the_identity_provider_matches_error_codes_case_sensitively()
+            : base(false) { }
+
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(
+                new IdentityProviderError.InvalidScope(
+                    """{"error":"Invalid_Scope","error_description":"SENTINEL_CASE"}"""
+                )
+            );
+
+        [Test]
+        public void It_replaces_the_description_of_a_code_that_differs_only_in_case() =>
+            AssertOAuthError(
+                "invalid_scope",
+                "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
+            );
+
+        [Test]
+        public void It_does_not_echo_the_provider_description() =>
+            Content.Should().NotContain("SENTINEL_CASE");
+    }
+
+    [TestFixture]
+    public class Given_the_identity_provider_rejects_the_scope : ManagerOutcomeRequest
+    {
+        public Given_the_identity_provider_rejects_the_scope()
+            : base(true) { }
+
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(
+                new IdentityProviderError.InvalidScope(
+                    """{"error":"invalid_scope","error_description":"Invalid scopes: edfi_admin_api/readonly_access"}"""
+                )
+            );
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_answers_with_the_provider_description() =>
+            AssertOAuthError("invalid_scope", "Invalid scopes: edfi_admin_api/readonly_access");
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+    }
+
+    /// <summary>
+    /// Keycloak echoes the requested scope into its <c>invalid_scope</c> description, so the description
+    /// can carry characters RFC 6749 §5.2 does not allow in <c>error_description</c>: anything
+    /// outside printable ASCII, a double quote or a backslash. Such a description is replaced.
+    /// </summary>
+    [TestFixture("Invalid scopes: a\"b")]
+    [TestFixture("Invalid scopes: a\\b")]
+    [TestFixture("Invalid scopes: caf\u00e9")]
+    [TestFixture("Invalid scopes: a\tb")]
+    [TestFixture("Invalid scopes: a\nb")]
+    public class Given_the_identity_provider_rejects_the_scope_with_a_description_outside_the_oauth_character_set(
+        string description
+    ) : ManagerOutcomeRequest(false)
+    {
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(
+                new IdentityProviderError.InvalidScope(
+                    new JsonObject
+                    {
+                        ["error"] = "invalid_scope",
+                        ["error_description"] = description,
+                    }.ToJsonString()
+                )
+            );
+
+        [Test]
+        public void It_answers_with_the_fixed_invalid_scope_description() =>
+            AssertOAuthError(
+                "invalid_scope",
+                "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
+            );
+    }
+
+    [TestFixture]
+    public class Given_the_identity_provider_rejects_the_scope_with_an_undefined_code : ManagerOutcomeRequest
+    {
+        public Given_the_identity_provider_rejects_the_scope_with_an_undefined_code()
+            : base(false) { }
+
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(
+                new IdentityProviderError.InvalidScope(
+                    """{"error":"access_denied","error_description":"SENTINEL_PROVIDER_DESCRIPTION"}"""
+                )
+            );
+
+        [Test]
+        public void It_answers_with_the_fixed_invalid_scope_description() =>
+            AssertOAuthError(
+                "invalid_scope",
+                "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
+            );
+
+        [Test]
+        public void It_does_not_echo_the_provider_text() =>
+            Content.Should().NotContain("SENTINEL_PROVIDER_DESCRIPTION");
+    }
+
+    /// <summary>
+    /// Every provider failure that is not the caller's to fix, whatever its text, is the same 502 with
+    /// a fixed description: provider text, structured or not, never reaches the body. A provider 403
+    /// is one of them, since the one Keycloak's token endpoint sends reports the provider's own
+    /// configuration, such as a realm that requires HTTPS. The log records the failure kind and, from a
+    /// structured body with a code RFC 6749 §5.2 defines, its code and description, never the body.
+    /// </summary>
+    [TestFixture("Unreachable", UnreachableMessage, false)]
+    [TestFixture("Unreachable", UnreachableMessage, true)]
+    [TestFixture("NotFound", NotFoundBody, false)]
+    [TestFixture("NotFound", NotFoundBody, true)]
+    [TestFixture("Forbidden", ForbiddenBody, false)]
+    [TestFixture("Forbidden", ForbiddenBody, true)]
+    [TestFixture("Generic", GenericBody, false)]
+    [TestFixture("Generic", GenericBody, true)]
+    public class Given_the_identity_provider_fails_in_a_way_the_caller_cannot_fix(
+        string kind,
+        string message,
+        bool basic
+    ) : ManagerOutcomeRequest(basic)
+    {
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(
+                kind switch
+                {
+                    "Unreachable" => new IdentityProviderError.Unreachable(message),
+                    "NotFound" => new IdentityProviderError.NotFound(message),
+                    "Forbidden" => new IdentityProviderError.Forbidden(message),
+                    _ => new IdentityProviderError(message),
+                }
+            );
+
+        [Test]
+        public void It_logs_the_failure_kind_at_warning() =>
+            Logs
+                .Records.Should()
+                .Contain(record =>
+                    record.Level == LogLevel.Warning
+                    && record.Message.Contains(kind == "Generic" ? nameof(IdentityProviderError) : kind)
+                );
+
+        [Test]
+        public void It_logs_the_provider_description_only_from_a_structured_body() =>
+            Logs.AllCapturedText().Contains("SENTINEL_PROVIDER_TEXT").Should().Be(kind != "Unreachable");
+
+        [Test]
+        public void It_returns_502() => AssertStatus(HttpStatusCode.BadGateway);
+
+        [Test]
+        public void It_answers_with_the_fixed_server_error_body() =>
+            AssertOAuthError("server_error", "The identity provider returned an unexpected response.");
+
+        [Test]
+        public void It_does_not_echo_the_provider_text() =>
+            Content.Should().NotContain("SENTINEL_PROVIDER_TEXT");
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+    }
+
+    /// <summary>
+    /// A structured provider body is read for its <c>error</c> and <c>error_description</c> only: a
+    /// further member never reaches the response, and a description that is not a string is not
+    /// structured, so the fixed description answers.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_provider_body_with_an_extra_member : ManagerOutcomeRequest
+    {
+        public Given_a_provider_body_with_an_extra_member()
+            : base(false) { }
+
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(
+                new IdentityProviderError.InvalidScope(
+                    """{"error":"invalid_scope","error_description":"Invalid scopes: edfi_admin_api/readonly_access","stack":"SENTINEL_EXTRA_MEMBER"}"""
+                )
+            );
+
+        [Test]
+        public void It_answers_with_only_the_two_oauth_members() =>
+            AssertOAuthError("invalid_scope", "Invalid scopes: edfi_admin_api/readonly_access");
+
+        [Test]
+        public void It_does_not_echo_the_extra_member() =>
+            Content.Should().NotContain("SENTINEL_EXTRA_MEMBER");
+    }
+
+    [TestFixture]
+    public class Given_a_provider_body_whose_description_is_not_a_string : ManagerOutcomeRequest
+    {
+        public Given_a_provider_body_whose_description_is_not_a_string()
+            : base(false) { }
+
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(
+                new IdentityProviderError.InvalidScope(
+                    """{"error":"invalid_scope","error_description":{"detail":"SENTINEL_NON_STRING"}}"""
+                )
+            );
+
+        [Test]
+        public void It_answers_with_the_fixed_description() =>
+            AssertOAuthError(
+                "invalid_scope",
+                "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
+            );
+
+        [Test]
+        public void It_does_not_echo_the_provider_value() =>
+            Content.Should().NotContain("SENTINEL_NON_STRING");
+    }
+
+    /// <summary>
+    /// A provider body whose string escape does not decode, such as an unpaired surrogate, is not a
+    /// structured body: each failure kind gets its fixed answer rather than a 500.
+    /// </summary>
+    [TestFixture("InvalidScope")]
+    [TestFixture("Unauthorized")]
+    [TestFixture("Forbidden")]
+    public class Given_a_provider_body_with_an_undecodable_escape(string kind) : ManagerOutcomeRequest(false)
+    {
+        private const string Body = """{"error":"invalid_scope","error_description":"\uD800"}""";
+
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(
+                kind switch
+                {
+                    "InvalidScope" => new IdentityProviderError.InvalidScope(Body),
+                    "Unauthorized" => new IdentityProviderError.Unauthorized(Body),
+                    _ => new IdentityProviderError.Forbidden(Body),
+                }
+            );
+
+        [Test]
+        public void It_answers_with_the_fixed_answer_for_the_failure_kind()
+        {
+            switch (kind)
+            {
+                case "InvalidScope":
+                    AssertStatus(HttpStatusCode.BadRequest);
+                    AssertOAuthError(
+                        "invalid_scope",
+                        "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
+                    );
+                    break;
+                case "Unauthorized":
+                    AssertClientAuthenticationAnswer(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    );
+                    break;
+                default:
+                    AssertStatus(HttpStatusCode.BadGateway);
+                    AssertOAuthError(
+                        "server_error",
+                        "The identity provider returned an unexpected response."
+                    );
+                    break;
+            }
+        }
     }
 
     [TestFixture]
@@ -3927,7 +4411,6 @@ public class IdentityProviderErrorParsingTests
                 builder.UseEnvironment("Test");
                 builder.ConfigureServices(collection =>
                 {
-                    collection.AddTransient(_ => new TokenRequest.Validator());
                     collection.AddTransient(_ => _tokenManager);
                 });
             });
@@ -3955,11 +4438,16 @@ public class IdentityProviderErrorParsingTests
         public void It_returns_502() => _response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
 
         [Test]
-        public void It_returns_the_fixed_fallback_message_instead_of_the_partial_payload() =>
-            _body["errors"]![0]!
+        public void It_returns_the_fixed_server_error_instead_of_the_partial_payload()
+        {
+            _response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+            _body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            _body["error"]!.GetValue<string>().Should().Be("server_error");
+            _body["error_description"]!
                 .GetValue<string>()
                 .Should()
                 .Be("The identity provider returned an unexpected response.");
+        }
 
         [Test]
         public void It_does_not_leak_the_partial_error_description() =>
@@ -6390,10 +6878,11 @@ internal sealed class RevocationLogCapture : ILoggerProvider, ISupportExternalSc
 }
 
 /// <summary>
-/// An identity-provider rejection of the request itself (<c>invalid_scope</c>) is answered with a 400 carrying the
-/// provider's <c>error</c> and <c>error_description</c>, or a fixed <c>invalid_scope</c> description when the
-/// provider sends none; any other provider failure keeps the 502. Non-fixture
-/// container; the runnable fixtures are the nested <c>Given_…</c> classes.
+/// An identity-provider rejection of the request itself (<c>invalid_scope</c>) is answered with a 400
+/// <c>invalid_scope</c> carrying the provider's <c>error_description</c>, or a fixed description when the
+/// provider sends none, through form credentials. The other provider failures are pinned by
+/// <see cref="OAuthEndpointErrorTests"/>. Non-fixture container; the runnable fixtures are the nested
+/// <c>Given_…</c> classes.
 /// </summary>
 public class TokenEndpointInvalidScopeTests
 {
@@ -6425,7 +6914,6 @@ public class TokenEndpointInvalidScopeTests
                 builder.UseSetting("DatabaseSettings:DatabaseConnection", UnreachableDatabase);
                 builder.ConfigureServices(collection =>
                 {
-                    collection.AddTransient((_) => new TokenRequest.Validator());
                     collection.AddTransient((_) => tokenManager);
                 });
             });
@@ -6463,28 +6951,19 @@ public class TokenEndpointInvalidScopeTests
         public void It_returns_400() => Response.StatusCode.Should().Be(HttpStatusCode.BadRequest, Body);
 
         [Test]
-        public void It_returns_problem_json() =>
-            (Response.Content.Headers.ContentType?.MediaType).Should().Be("application/problem+json");
+        public void It_returns_json() =>
+            (Response.Content.Headers.ContentType?.MediaType).Should().Be("application/json");
 
         [Test]
-        public void It_returns_the_bad_request_body_with_the_provider_error()
+        public void It_returns_the_oauth_body_with_the_provider_description()
         {
-            var actual = JsonNode.Parse(Body)!;
-            actual["correlationId"]!.GetValue<string>().Should().NotBeNullOrWhiteSpace();
-            var expected = JsonNode.Parse(
-                """
-                {
-                  "detail": "The request could not be processed. See 'errors' for details.",
-                  "type": "urn:ed-fi:management-api:bad-request",
-                  "title": "Bad Request",
-                  "status": 400,
-                  "correlationId": "{correlationId}",
-                  "validationErrors": {},
-                  "errors": ["invalid_scope. Invalid scopes: edfi_admin_api/readonly_access"]
-                }
-                """.Replace("{correlationId}", actual["correlationId"]!.GetValue<string>())
-            );
-            JsonNode.DeepEquals(actual, expected).Should().BeTrue(Body);
+            JsonObject body = JsonNode.Parse(Body)!.AsObject();
+            body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            body["error"]!.GetValue<string>().Should().Be("invalid_scope");
+            body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Invalid scopes: edfi_admin_api/readonly_access");
         }
     }
 
@@ -6499,12 +6978,11 @@ public class TokenEndpointInvalidScopeTests
 
         [Test]
         public void It_names_invalid_scope_with_a_fixed_description() =>
-            JsonNode.Parse(Body)!["errors"]!
-                .AsArray()
-                .Select(error => error!.GetValue<string>())
+            JsonNode.Parse(Body)!["error_description"]!
+                .GetValue<string>()
                 .Should()
-                .Equal(
-                    "invalid_scope. The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
+                .Be(
+                    "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
                 );
     }
 
@@ -6517,53 +6995,21 @@ public class TokenEndpointInvalidScopeTests
 
         [Test]
         public void It_names_invalid_scope_with_a_fixed_description() =>
-            JsonNode.Parse(Body)!["errors"]!
-                .AsArray()
-                .Select(error => error!.GetValue<string>())
-                .Should()
-                .Equal(
-                    "invalid_scope. The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
-                );
-    }
-
-    [TestFixture]
-    public class Given_the_identity_provider_rejects_the_request_with_invalid_request : ProviderFailureRequest
-    {
-        protected override IdentityProviderError ProviderError =>
-            new IdentityProviderError(
-                """{"error":"invalid_request","error_description":"Missing form parameter: grant_type"}"""
-            );
-
-        [Test]
-        public void It_still_returns_502() =>
-            Response.StatusCode.Should().Be(HttpStatusCode.BadGateway, Body);
-
-        [Test]
-        public void It_returns_the_bad_gateway_type() =>
-            JsonNode.Parse(Body)!["type"]!
+            JsonNode.Parse(Body)!["error_description"]!
                 .GetValue<string>()
                 .Should()
-                .Be("urn:ed-fi:management-api:bad-gateway");
-    }
-
-    [TestFixture]
-    public class Given_the_identity_provider_is_unreachable : ProviderFailureRequest
-    {
-        protected override IdentityProviderError ProviderError =>
-            new IdentityProviderError.Unreachable("No connection could be made.");
-
-        [Test]
-        public void It_still_returns_502() =>
-            Response.StatusCode.Should().Be(HttpStatusCode.BadGateway, Body);
+                .Be(
+                    "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
+                );
     }
 }
 
 /// <summary>
 /// The token endpoint served by the real self-contained token manager and the real client secret
 /// hasher at a non-default iteration count. An unknown client, a wrong secret and an unapproved
-/// client, with credentials in the form or in HTTP Basic, all receive the same 401 body apart from
-/// the request's own correlation id. The requests share one host, because each host start is
-/// costly and every request is independent of the others.
+/// client all receive the same invalid_client body: 401 with the Basic challenge through HTTP Basic,
+/// 400 through the form. The requests share one host, because each host start is costly and every
+/// request is independent of the others.
 /// </summary>
 [TestFixture]
 public class Given_TokenEndpoint_requests_that_fail_client_authentication
@@ -6578,15 +7024,8 @@ public class Given_TokenEndpoint_requests_that_fail_client_authentication
 
     private const string ExpectedBody = """
         {
-          "detail": "The request could not be processed. See 'errors' for details.",
-          "type": "urn:ed-fi:management-api:security:authentication",
-          "title": "Authentication Failed",
-          "status": 401,
-          "correlationId": "{correlationId}",
-          "validationErrors": {},
-          "errors": [
-            "invalid_client. Invalid client or Invalid client credentials"
-          ]
+          "error": "invalid_client",
+          "error_description": "Invalid client or Invalid client credentials"
         }
         """;
 
@@ -6605,7 +7044,7 @@ public class Given_TokenEndpoint_requests_that_fail_client_authentication
         from path in _credentialPaths
         select new TestCaseData(failureCase.Failure, path);
 
-    private sealed record Observed(HttpStatusCode Status, string? MediaType, JsonNode Body);
+    private sealed record Observed(HttpStatusCode Status, string? MediaType, string Challenge, JsonNode Body);
 
     /// <summary>Every failure case through both credential paths, and the one successful grant.</summary>
     private static readonly int _requestCount = (_failureCases.Length * _credentialPaths.Length) + 1;
@@ -6680,15 +7119,9 @@ public class Given_TokenEndpoint_requests_that_fail_client_authentication
         return new Observed(
             response.StatusCode,
             response.Content.Headers.ContentType?.MediaType,
+            response.Headers.WwwAuthenticate.ToString(),
             JsonNode.Parse(content)!
         );
-    }
-
-    private static string WithoutCorrelationId(JsonNode body)
-    {
-        JsonObject copy = body.DeepClone().AsObject();
-        copy.Remove("correlationId");
-        return copy.ToJsonString();
     }
 
     [OneTimeSetUp]
@@ -6747,40 +7180,32 @@ public class Given_TokenEndpoint_requests_that_fail_client_authentication
     }
 
     [TestCaseSource(nameof(FailureRequests))]
-    public void It_answers_401(string failure, string path) =>
-        _failures[(failure, path)].Status.Should().Be(HttpStatusCode.Unauthorized);
+    public void It_answers_401_through_basic_and_400_through_the_form(string failure, string path) =>
+        _failures[(failure, path)]
+            .Status.Should()
+            .Be(path == "basic" ? HttpStatusCode.Unauthorized : HttpStatusCode.BadRequest);
 
     [TestCaseSource(nameof(FailureRequests))]
-    public void It_answers_with_problem_details(string failure, string path) =>
-        _failures[(failure, path)].MediaType.Should().Be("application/problem+json");
+    public void It_challenges_only_the_basic_attempt(string failure, string path) =>
+        _failures[(failure, path)]
+            .Challenge.Should()
+            .Be(path == "basic" ? "Basic realm=\"EdFi.DmsConfigurationService\"" : string.Empty);
+
+    [TestCaseSource(nameof(FailureRequests))]
+    public void It_answers_in_the_oauth_error_format(string failure, string path) =>
+        _failures[(failure, path)].MediaType.Should().Be("application/json");
 
     [TestCaseSource(nameof(FailureRequests))]
     public void It_returns_the_exact_invalid_client_body(string failure, string path)
     {
         JsonNode actual = _failures[(failure, path)].Body;
-        JsonNode expected = JsonNode.Parse(
-            ExpectedBody.Replace("{correlationId}", actual["correlationId"]!.GetValue<string>())
-        )!;
 
-        JsonNode.DeepEquals(actual, expected).Should().BeTrue(actual.ToJsonString());
+        JsonNode.DeepEquals(actual, JsonNode.Parse(ExpectedBody)).Should().BeTrue(actual.ToJsonString());
     }
 
     [Test]
-    public void It_gives_every_failure_its_own_correlation_id() =>
-        _failures
-            .Values.Select(observed => observed.Body["correlationId"]!.GetValue<string>())
-            .Should()
-            .HaveCount(_failureCases.Length * _credentialPaths.Length)
-            .And.OnlyHaveUniqueItems()
-            .And.NotContain(string.Empty);
-
-    [Test]
-    public void It_returns_one_body_for_every_failure_apart_from_the_correlation_id() =>
-        _failures
-            .Values.Select(observed => WithoutCorrelationId(observed.Body))
-            .Distinct()
-            .Should()
-            .ContainSingle();
+    public void It_returns_one_body_for_every_failure() =>
+        _failures.Values.Select(observed => observed.Body.ToJsonString()).Distinct().Should().ContainSingle();
 
     [Test]
     public void It_still_issues_a_token_to_an_approved_client_presenting_its_secret() =>
@@ -6883,15 +7308,18 @@ public class Given_TokenEndpoint_requests_with_a_replacement_client_secret_hashe
     }
 
     [Test]
-    public void It_answers_401() => _response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    public void It_answers_400_to_form_credentials() =>
+        _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
     [Test]
-    public void It_reports_invalid_client() =>
-        _body["errors"]!
-            .AsArray()
-            .Select(error => error!.GetValue<string>())
+    public void It_reports_invalid_client()
+    {
+        _body["error"]!.GetValue<string>().Should().Be("invalid_client");
+        _body["error_description"]!
+            .GetValue<string>()
             .Should()
-            .Equal("invalid_client. Invalid client or Invalid client credentials");
+            .Be("Invalid client or Invalid client credentials");
+    }
 
     [Test]
     public void It_generates_the_placeholder_through_the_replacement_at_startup() =>

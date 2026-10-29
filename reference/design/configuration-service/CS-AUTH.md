@@ -48,9 +48,10 @@ All four `/connect/*` endpoints are rate limited per source address. `/connect/t
 and authenticated `/connect/introspect` are also limited per source address and `client_id` pair,
 under either identity provider, immediately before the client secret is verified (DMS-1482). Different sources cannot
 spend one another's client allowance.
-A refusal is `429` with `Retry-After`: an Ed-Fi problem-details body of type
-`urn:ed-fi:management-api:too-many-requests` on all four routes. Other revocation errors retain their
-OAuth format, as do other introspection errors. Limits, defaults and sizing are in
+A refusal is `429` with `Retry-After`, in the route's own error contract.
+`/connect/token`, `/connect/revoke` and `/connect/introspect` answer the OAuth error `temporarily_unavailable` with the `error_description` `The number of allowed requests has been exceeded. Retry the request later.`
+`/connect/register` answers Ed-Fi problem details of type `urn:ed-fi:management-api:too-many-requests`.
+Limits, defaults and sizing are in
 [CONFIGURATION.md](../../../docs/CONFIGURATION.md#connectratelimit); the design is
 [DMS-1482](./DMS-1482-cms-connect-rate-limiting.md).
 
@@ -63,10 +64,10 @@ An omitted or empty `scope` is treated as absent, as RFC 6749 section 3.2 requir
 Keycloak then issues the client's default client scopes.
 The `self-contained` provider issues the scopes registered for the client.
 
-Under Keycloak, a requested scope that Keycloak rejects answers `400` with `type` `urn:ed-fi:management-api:bad-request` and `errors` of `["invalid_scope. <description>"]`, for example `invalid_scope. Invalid scopes: edfi_admin_api/readonly_access`.
-It used to answer `502`.
-Other Keycloak failures keep their previous answers: a failed connection, a 5xx or any other `400` error code answers `502`, and a name-resolution failure or a timeout answers `500`.
-A `client_secret` or `scope` longer than Keycloak's form attribute limit (128 KiB by default) also answers `502`: CMS accepts form values up to 4 MiB, and Keycloak rejects the request with `413`.
+Under Keycloak, a requested scope that Keycloak rejects answers `400 invalid_scope` in the OAuth error format, for example with the `error_description` `Invalid scopes: edfi_admin_api/readonly_access`.
+It used to answer `502`, and then `400` in problem details.
+Other Keycloak failures keep their status: a failed connection, a 5xx or any other `400` error code answers `502`, now as `server_error`, and a name-resolution failure or a timeout answers `500`.
+A `client_secret` or `scope` longer than Keycloak's form attribute limit (128 KiB by default) also answers `502` `server_error`: CMS accepts form values up to 4 MiB, and Keycloak rejects the request with `413`.
 Each token request to Keycloak closes its connection after the answer, as revocation and introspection requests do (see [Responses](#responses)), so such a request does not stall the next one.
 The `self-contained` provider does not reject an ungranted scope: it issues the requested scopes the client holds, and the client's registered scopes when it holds none of them.
 
@@ -76,6 +77,64 @@ The scheme lists the scopes `edfi_admin_api/full_access`, `edfi_admin_api/readon
 Operations that need no token (`/connect/register`, `/connect/token`, `GET /`, `GET /tenancy`, `GET /health` and discovery) declare an empty `security` array.
 `/connect/revoke` and `/connect/introspect` instead require a `client_secret_basic` HTTP Basic scheme, whose description notes that the credentials may be sent as form fields instead.
 A stock Swagger UI can therefore authorize against the Configuration Service in both modes.
+
+### `/connect/token` failures
+
+`/connect/token` answers every failure in the OAuth error format of RFC 6749 section 5.2.
+The body is `application/json` with exactly the root members `error` and `error_description`, written by the same writer as `/connect/revoke` and `/connect/introspect`.
+It covers every error the handler produces and every exception that escapes it.
+Responses produced before the endpoint is selected, such as the `405` for another HTTP method, keep their framework form.
+
+| Condition | Status | `error` |
+| --- | --- | --- |
+| Client authentication failed, client id or secret missing or blank, or client id longer than 1024 UTF-16 code units, HTTP Basic attempted | `401` with `WWW-Authenticate: Basic realm="EdFi.DmsConfigurationService"` | `invalid_client` |
+| The same, no HTTP Basic attempt | `400` | `invalid_client` |
+| Body is not a form | `400` | `invalid_request` |
+| A parameter or the `Authorization` header sent more than once | `400` | `invalid_request` |
+| `grant_type` missing or empty | `400` | `invalid_request` |
+| Unsupported `grant_type` | `400` | `unsupported_grant_type` |
+| Keycloak rejected the requested scope | `400` | `invalid_scope` |
+| Source or source-plus-client rate limit exceeded | `429` with `Retry-After` | `temporarily_unavailable`, with the fixed rate-limit description (see [Token Endpoints](#token-endpoints)) |
+| Token limit reached | `429` | `temporarily_unavailable`, with the canonical limit sentence as `error_description` |
+| Concurrent token requests for the same client (lock timeout) | `409` | `temporarily_unavailable` |
+| Identity provider failure that is not the caller's to fix, a provider `403` included | `502` | `server_error` |
+| Unexpected fault in CMS | `500` | `server_error` |
+
+The `invalid_client` house rule is the one `/connect/revoke` and `/connect/introspect` follow.
+A caller that attempted HTTP Basic gets `401` with the `Basic` challenge that RFC 6749 section 5.2 requires.
+Any other caller, including one that sent form credentials, one that sent no credentials at all and one whose `Authorization` header is not `Basic`, gets `400` with no challenge, because a challenge would invite a scheme the caller did not choose.
+Before this rule a failed form credential answered `401` and a missing one answered a validation `400`.
+
+The handler checks the request without throwing, in this order: a body that is not a form, then a repeated `grant_type`, `client_id`, `client_secret` or `scope` or a repeated `Authorization` header, then `grant_type` missing, then `grant_type` unsupported, then client id or secret missing or only whitespace (after the lenient Basic parsing and the form fallback), then a client id longer than 1024 UTF-16 code units, then the source-plus-client rate limit, and only then the token manager.
+A repeated parameter is rejected even when one copy is valid or empty, as at `/connect/revoke` and `/connect/introspect`.
+A request that is wrong in the request shape is therefore told so before its credentials are examined.
+
+The token limit and the lock timeout keep the statuses they always had, `429` and `409`, and take the OAuth body.
+The `409` keeps its status rather than the `503` RFC 6749 suggests for `temporarily_unavailable`, because the DMS `/oauth/token` proxy recognizes the condition by status.
+The `429` `error_description` is `Too many access tokens have been requested (limit is N). Access tokens should be reused until they expire.`, which the DMS proxy parses to rebuild its own answer.
+The rate-limit `429` shares the `temporarily_unavailable` code, and the DMS proxy tells the two apart by their descriptions.
+
+A failed client authentication is `invalid_client` whatever code the self-contained token manager or Keycloak reports.
+RFC 6749 section 5.2 defines no other code for it, and passing on a second code, such as the `unauthorized_client` Keycloak reports for a wrong secret, would tell the caller whether the client id it sent exists.
+For the same reason a Keycloak rejection always carries the fixed description `Invalid client or Invalid client credentials`: Keycloak tells a public client presenting any secret that it is a public client.
+The description a service-owned failure carries is used as it is.
+
+Keycloak's `invalid_scope` description, which names the rejected scopes, is the only provider text that reaches the caller.
+It is used only when the provider sent a complete structured body (an `error` string and an `error_description` string) whose `error` is one of the six codes RFC 6749 section 5.2 defines for a token endpoint: `invalid_request`, `invalid_client`, `invalid_grant`, `unauthorized_client`, `unsupported_grant_type` and `invalid_scope`.
+The comparison is ordinal, so `Invalid_Scope` is not recognized.
+Because Keycloak echoes the requested scope, the description is also used only when every character is one section 5.2 allows in `error_description`: printable ASCII other than `"` and `\`.
+Otherwise the fixed, service-owned description applies.
+
+A provider failure that is not the caller's to fix answers `502 server_error` with a fixed description and no provider text.
+That includes a Keycloak `403`, whose known cause is the provider's own configuration, such as a realm that requires HTTPS, so a `403` would wrongly blame the caller.
+The `502` is logged at Warning with the failure kind and, from a structured body with one of the six codes, the provider's `error` and `error_description`, sanitized; the provider body itself is never logged.
+
+`/connect/register` keeps the Ed-Fi problem-details contract of [DMS-1218](./DMS-1218-cms-error-response-compliance.md).
+It is a CMS bootstrap endpoint and not an RFC 6749 or RFC 7591 endpoint: it takes PascalCase form fields, answers with a `{title, status}` success body and reports field-level `validationErrors`.
+Its `403` when registration is disabled is fixed by the bootstrap rules above, and RFC 6749 section 5.2 defines no codes for it.
+
+As at `/connect/revoke` and `/connect/introspect`, an OAuth answer carries no `correlationId` member and no correlation header.
+Only an exception that the exception handler answers carries the `TraceId` response header.
 
 ## Token revocation
 
@@ -168,8 +227,8 @@ values (Keycloak's endpoint does not read it either).
 
 ### Responses
 
-`200 OK` with an empty body is the only success. Rate-limit rejections use the Ed-Fi `429` contract
-described above. Every other error status is an RFC 6749 §5.2 JSON object served as
+`200 OK` with an empty body is the only success. Every error status, the rate-limit `429` described
+above included, is an RFC 6749 §5.2 JSON object served as
 `application/json`, with a **fixed** CMS `error_description` that
 never echoes provider text:
 
@@ -181,7 +240,7 @@ never echoes provider text:
 | --- | --- |
 | Authenticated owner, supported live token | `200`, empty; token revoked |
 | Authenticated caller; unknown, invalid, expired, already revoked, or another client's token | `200`, empty; nothing changes |
-| Source or source-plus-client rate limit exceeded | `429`, Ed-Fi problem details with `Retry-After` |
+| Source or source-plus-client rate limit exceeded | `429 temporarily_unavailable` with `Retry-After` |
 | Not a form body, malformed form, duplicated parameter or `Authorization` header, mixed mechanisms, missing or empty `token` | `400 invalid_request` |
 | Missing, incomplete or invalid credentials **without** an HTTP Basic attempt | `400 invalid_client` |
 | Malformed or invalid HTTP Basic credentials | `401 invalid_client` with `WWW-Authenticate: Basic realm="EdFi.DmsConfigurationService"` |
@@ -210,10 +269,10 @@ It is therefore not `invalid_client`, and it is not `503`, because Keycloak is n
 `/connect/introspect` maps Keycloak's `413` the same way. Introspection has no client-type gate; requests that pass its other validation and admission checks are delegated to Keycloak (see [Token introspection](#token-introspection)).
 Each request to Keycloak's token, revocation and introspection endpoints closes its connection after the answer: Keycloak 26.1.4 answers a form value over its limit with `413` without reading the rest of the request and keeps the connection open, so a reused connection would leave the next caller, possibly another client, without an answer until the timeout.
 
-Except for rate-limit rejections introduced by DMS-1482, this endpoint and `/connect/introspect` do not answer in the `application/problem+json`
-contract of [DMS-1218](./DMS-1218-cms-error-response-compliance.md), and the departure is
-deliberate: both are OAuth endpoints, and an OAuth client reads `error` off the
-root of the body. It covers the other errors the endpoint produces, including the missing-token
+This endpoint, `/connect/introspect` and `/connect/token` are the three CMS endpoints that do not answer in the
+`application/problem+json` contract of [DMS-1218](./DMS-1218-cms-error-response-compliance.md), and the departure is
+deliberate: all three are OAuth endpoints, and an OAuth client reads `error` off the
+root of the body. It covers every error the endpoint produces, including the missing-token
 `400` (which DMS-1218 had converted to problem details) and the `500` for an unexpected
 fault. Responses produced before the endpoint is selected (Kestrel request-line and header
 limits, TLS failures) are transport failures and keep their framework form.
@@ -524,8 +583,7 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
 - **The request rules and their order are those of `/connect/revoke`.**
   See [Request rules](#request-rules).
   The client's credentials are checked after them.
-  Errors are RFC 6749 JSON (`{"error", "error_description"}`), except rate-limit rejections, which
-  use the Ed-Fi `429` problem-details contract described in [Token endpoints](#token-endpoints).
+  Errors, the rate-limit `429` described in [Token endpoints](#token-endpoints) included, are RFC 6749 JSON (`{"error", "error_description"}`).
   A missing `token` is `400 invalid_request`.
   This is an exception to the problem-details format DMS-1218 gave that response, as it is for revoke.
   Failed credentials answer `invalid_client`: `401` with a `WWW-Authenticate: Basic` challenge when HTTP Basic was attempted, `400` otherwise.

@@ -950,7 +950,7 @@ public partial class StepDefinitions(
     [When("a token is requested by the system client with a {int}-character client secret")]
     public async Task WhenATokenIsRequestedByTheSystemClientWithAClientSecretOfALength(int length)
     {
-        var content = new FormUrlEncodedContent(
+        await PostSystemFormTokenRequest(
             new Dictionary<string, string>
             {
                 { "client_id", SystemClientId },
@@ -959,6 +959,55 @@ public partial class StepDefinitions(
                 { "scope", "edfi_admin_api/full_access" },
             }
         );
+    }
+
+    [When("a token is requested using HTTP Basic auth with client {string} and secret {string}")]
+    public async Task WhenATokenIsRequestedUsingHttpBasicAuthWithClientAndSecret(
+        string clientId,
+        string secret
+    )
+    {
+        await PostBasicTokenRequest(
+            clientId.Replace("{scenarioRunId}", scenarioContext["ScenarioRunId"].ToString()),
+            secret,
+            new Dictionary<string, string>
+            {
+                { "grant_type", "client_credentials" },
+                { "scope", "edfi_admin_api/full_access" },
+            }
+        );
+    }
+
+    [When("a token is requested with grant_type {string} using the system credentials")]
+    public async Task WhenATokenIsRequestedWithGrantTypeUsingTheSystemCredentials(string grantType)
+    {
+        await PostSystemFormTokenRequest(
+            new Dictionary<string, string>
+            {
+                { "client_id", SystemClientId },
+                { "client_secret", SystemClientSecret },
+                { "grant_type", grantType },
+                { "scope", "edfi_admin_api/full_access" },
+            }
+        );
+    }
+
+    [When("a token is requested without a grant_type using the system credentials")]
+    public async Task WhenATokenIsRequestedWithoutAGrantTypeUsingTheSystemCredentials()
+    {
+        await PostSystemFormTokenRequest(
+            new Dictionary<string, string>
+            {
+                { "client_id", SystemClientId },
+                { "client_secret", SystemClientSecret },
+                { "scope", "edfi_admin_api/full_access" },
+            }
+        );
+    }
+
+    private async Task PostSystemFormTokenRequest(Dictionary<string, string> form)
+    {
+        var content = new FormUrlEncodedContent(form);
         APIRequestContextOptions options = new()
         {
             Headers = new Dictionary<string, string>

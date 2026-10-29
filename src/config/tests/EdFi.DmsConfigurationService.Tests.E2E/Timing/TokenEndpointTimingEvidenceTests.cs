@@ -25,9 +25,9 @@ namespace EdFi.DmsConfigurationService.Tests.E2E.Timing;
 /// deployment.
 /// <para>
 /// Arms: an absent client id; a client registered for the run, presented with a wrong secret; and
-/// an unapproved API client created for the run, presented with its own secret. Every arm must
-/// receive the <c>invalid_client</c> 401 (<see cref="TokenEndpointTimingContract"/>); anything else
-/// aborts the run. Each request's time covers building the form, sending it, reading the whole
+/// an unapproved API client created for the run, presented with its own secret. Every arm sends form
+/// credentials and must receive the <c>invalid_client</c> 400 (<see cref="TokenEndpointTimingContract"/>);
+/// anything else aborts the run. Each request's time covers building the form, sending it, reading the whole
 /// response body and disposing the response. The clients the run creates are left in place.
 /// </para>
 /// </summary>

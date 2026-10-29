@@ -10,7 +10,6 @@ using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
-using EdFi.DmsConfigurationService.DataModel.Model.Token;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
@@ -115,7 +114,6 @@ public class Given_The_Cms_Pipeline_Response_Cache_Policy
                         .AddTransient(_ => vendorRepository)
                         .AddTransient(_ => clientRepository)
                         .AddTransient(_ => tokenManager)
-                        .AddTransient(_ => new TokenRequest.Validator())
                         .AddTransient(_ => new RegisterRequest.Validator(
                             Options.Create(
                                 new ClientSecretValidationOptions { MinimumLength = 8, MaximumLength = 12 }
@@ -229,7 +227,7 @@ public class Given_The_Cms_Pipeline_Response_Cache_Policy
     [Test]
     public void It_marks_an_invalid_client_token_response_no_store_with_pragma()
     {
-        _tokenInvalidClient.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        _tokenInvalidClient.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         ShouldHaveNoStoreAndPragma(_tokenInvalidClient);
     }
 

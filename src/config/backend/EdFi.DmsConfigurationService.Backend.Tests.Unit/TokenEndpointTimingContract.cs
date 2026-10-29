@@ -10,32 +10,35 @@ using System.Text.Json.Nodes;
 namespace EdFi.DmsConfigurationService.Tests.TimingEvidence;
 
 /// <summary>
-/// The response every endpoint timing arm must receive: a 401 whose problem-details <c>errors</c>
-/// array holds exactly the <c>invalid_client</c> message. Every failed client authentication answers
-/// it, so a run can never accept a build that answers one arm differently.
+/// The response every endpoint timing arm must receive. The arms send form credentials, so it is the
+/// <c>400</c> OAuth <c>invalid_client</c> error (RFC 6749 §5.2) with the fixed description and nothing
+/// else. Every failed client authentication answers it, so a run can never accept a build that
+/// answers one arm differently.
 /// </summary>
 internal static class TokenEndpointTimingContract
 {
-    public const string InvalidClientError = "invalid_client. Invalid client or Invalid client credentials";
+    public const string InvalidClientError = "invalid_client";
+    public const string InvalidClientDescription = "Invalid client or Invalid client credentials";
 
     public static bool IsExpected(HttpStatusCode status, string body) =>
-        status == HttpStatusCode.Unauthorized && SingleError(body) == InvalidClientError;
+        status == HttpStatusCode.BadRequest && IsInvalidClientBody(body);
 
-    private static string? SingleError(string body)
+    private static bool IsInvalidClientBody(string body)
     {
         try
         {
-            return
-                JsonNode.Parse(body) is JsonObject root
-                && root["errors"] is JsonArray { Count: 1 } errors
-                && errors[0] is JsonValue error
-                && error.GetValueKind() == JsonValueKind.String
-                ? error.GetValue<string>()
-                : null;
+            return JsonNode.Parse(body) is JsonObject { Count: 2 } root
+                && StringMember(root, "error") == InvalidClientError
+                && StringMember(root, "error_description") == InvalidClientDescription;
         }
         catch (JsonException)
         {
-            return null;
+            return false;
         }
     }
+
+    private static string? StringMember(JsonObject root, string name) =>
+        root[name] is JsonValue value && value.GetValueKind() == JsonValueKind.String
+            ? value.GetValue<string>()
+            : null;
 }

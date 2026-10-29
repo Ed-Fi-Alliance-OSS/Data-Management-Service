@@ -876,20 +876,9 @@ Feature: Applications endpoints
                   }
                   """
              When a token request is attempted with the captured application credentials
-             Then it should respond with 401
-              And the response body is
-                  """
-                  {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type":"urn:ed-fi:management-api:security:authentication",
-                    "title":"Authentication Failed",
-                    "status":401,
-                    "validationErrors":{},
-                     "errors": [
-                        "invalid_client. Invalid client or Invalid client credentials"
-                        ]
-                  }
-                  """
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
+              And the response header "WWW-Authenticate" is not present
 
         Scenario: 28 Verify PUT request with mismatched IDs
              When a POST request is made to "/v3/applications" with
