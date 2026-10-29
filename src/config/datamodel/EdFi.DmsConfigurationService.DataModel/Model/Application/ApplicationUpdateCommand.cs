@@ -23,7 +23,9 @@ public class ApplicationUpdateCommand
         public Validator()
         {
             RuleFor(a => a.Id).GreaterThan(0);
-            RuleFor(a => a.ApplicationName).NotEmpty().MaximumLength(256);
+            RuleFor(a => a.ApplicationName)
+                .NotEmpty()
+                .MaximumLength(ValidationConstants.ApplicationNameMaxLength);
             RuleFor(a => a.ClaimSetName).NotEmpty().MaximumLength(256);
             RuleFor(m => m.ClaimSetName)
                 .Matches(new Regex(ValidationConstants.ClaimSetNameNoWhiteSpaceRegex))

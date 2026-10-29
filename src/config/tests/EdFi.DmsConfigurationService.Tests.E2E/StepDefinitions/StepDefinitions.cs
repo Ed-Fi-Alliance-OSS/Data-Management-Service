@@ -839,6 +839,20 @@ public partial class StepDefinitions(
         _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
     }
 
+    /// <summary>
+    /// Unlike the step above, the captured client becomes the scenario's current client: its key and
+    /// secret are what the "current client" and "its owner" steps authenticate with, and the token
+    /// issued to it is the current token.
+    /// </summary>
+    [When("the credentials captured as {string} obtain the current token with scope {string}")]
+    public async Task WhenTheCredentialsCapturedAsObtainTheCurrentToken(string slot, string scope)
+    {
+        _credentialSlots.Should().ContainKey(slot, $"credentials should have been captured as '{slot}'");
+        (string key, string secret) = _credentialSlots[slot];
+        await GetClientAccessToken(key, secret, scope);
+        await TokenReceived();
+    }
+
     [Then("the token has an empty dataStoreIds claim")]
     public async Task ThenTheTokenHasAnEmptyDataStoreIdsClaim()
     {
@@ -918,6 +932,31 @@ public partial class StepDefinitions(
                 { "client_id", SystemClientId },
                 { "client_secret", SystemClientSecret },
                 { "grant_type", "client_credentials" },
+            }
+        );
+        APIRequestContextOptions options = new()
+        {
+            Headers = new Dictionary<string, string>
+            {
+                { "Content-Type", "application/x-www-form-urlencoded" },
+            },
+            Data = await content.ReadAsStringAsync(),
+        };
+        _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
+    }
+
+    // A secret over Keycloak's form attribute limit, so Keycloak refuses the request with 413 before it
+    // authenticates anyone. The current client and token are left as they were.
+    [When("a token is requested by the system client with a {int}-character client secret")]
+    public async Task WhenATokenIsRequestedByTheSystemClientWithAClientSecretOfALength(int length)
+    {
+        var content = new FormUrlEncodedContent(
+            new Dictionary<string, string>
+            {
+                { "client_id", SystemClientId },
+                { "client_secret", new string('A', length) },
+                { "grant_type", "client_credentials" },
+                { "scope", "edfi_admin_api/full_access" },
             }
         );
         APIRequestContextOptions options = new()

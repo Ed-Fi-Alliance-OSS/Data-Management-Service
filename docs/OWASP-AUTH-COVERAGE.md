@@ -125,8 +125,8 @@ ownership, but it also means the status code carries no confirmation. **Incident
 must not treat `200 OK` as proof that a leaked credential was contained** — confirm with
 `POST /connect/introspect` (self-contained) authenticated as the token's owner, which reports `{"active": false}` once
 revocation has taken effect (or when it could not decide the token because a key or token-status store failed, which it
-logs as the Error `Token validation could not reach a decision`), or with Keycloak's own introspection endpoint in
-`keycloak` mode (see the Keycloak section below). A `503` is not a "not revoked" answer
+logs as the Error `Token validation could not reach a decision`), or in `keycloak` mode as the Keycloak section below
+describes. A `503` is not a "not revoked" answer
 either: it means the outcome could not be confirmed, and the caller should retry (which is
 safe) and confirm the same way.
 
@@ -177,10 +177,12 @@ then:
 
 Revocation at Keycloak does not change the stateless posture above: Configuration Service and DMS validate
 Keycloak tokens locally and keep accepting a revoked token until it expires (plus their
-clock skew). Confirm a revocation through Keycloak's introspection endpoint with a
-confidential client that is in the token's audience (from Keycloak 26.4.12, per Red Hat's
-migration guide, and observed on 26.7.5, any other client is answered `active:false`) —
-Configuration Service `/connect/introspect` cannot observe Keycloak tokens (it makes no credential checks in that mode and answers `{"active": false}`). Details: [CS-AUTH.md § Token revocation](../reference/design/configuration-service/CS-AUTH.md#token-revocation).
+clock skew).
+Confirm a revocation through Keycloak's introspection endpoint with a confidential client that is in the token's audience (from Keycloak 26.6.2, the Red Hat build of Keycloak 26.4.12, and observed on 26.7.5, any other client is answered `active:false`).
+Configuration Service `/connect/introspect`, authenticated as the token's owner, passes the owner's credentials to that same endpoint and describes only the owner's access tokens.
+Every Keycloak client the Configuration Service creates is in its own tokens' audience, so such a client can confirm the revocation of its own token there too.
+On Keycloak 26.6.2 or later, a token whose `aud` lacks the owner's client id, such as one issued to a client created by an earlier version before the client was updated through the Configuration Service or given the same audience mapper, is answered `{"active": false}` even while live, so check the token's `aud` before relying on that answer.
+Details: [CS-AUTH.md § Token revocation](../reference/design/configuration-service/CS-AUTH.md#token-revocation).
 
 ## `jti` handling matrix
 

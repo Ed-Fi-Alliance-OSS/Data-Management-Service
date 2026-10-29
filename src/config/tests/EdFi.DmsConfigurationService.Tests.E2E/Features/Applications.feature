@@ -1117,3 +1117,68 @@ Feature: Applications endpoints
              When a token is requested with the credentials captured as "additional" and scope "ClaimScenario31"
              Then it should respond with 200
               And the response body has a non-empty access_token
+
+        # An application's first API client takes the application's name, and an API client name holds
+        # 50 characters, so the application name is held to 50 as well, as the Ed-Fi Admin API does.
+        Scenario: 32 Verify an application name longer than 50 characters is rejected on POST and PUT
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "{scenarioRunId}-fifty-one-char",
+                   "claimSetName": "ClaimScenario32",
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                      "ApplicationName": [
+                        "The length of 'Application Name' must be 50 characters or fewer. You entered 51 characters."
+                      ]
+                    },
+                    "errors": []
+                  }
+                  """
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "{scenarioRunId}-fifty-chars-x",
+                   "claimSetName": "ClaimScenario32",
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v3/applications/{applicationId}" with
+                  """
+                  {
+                      "id": {applicationId},
+                      "vendorId": {vendorId},
+                      "applicationName": "{scenarioRunId}-fifty-one-char",
+                      "claimSetName": "ClaimScenario32",
+                      "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                      "ApplicationName": [
+                        "The length of 'Application Name' must be 50 characters or fewer. You entered 51 characters."
+                      ]
+                    },
+                    "errors": []
+                  }
+                  """

@@ -41,7 +41,14 @@ public class KeycloakTokenManager(
             var content = new FormUrlEncodedContent(contentList);
             string path =
                 $"{keycloakContext.Url}/realms/{keycloakContext.Realm}/protocol/openid-connect/token";
-            using var response = await client.PostAsync(path, content);
+            using var request = new HttpRequestMessage(HttpMethod.Post, path) { Content = content };
+
+            // Keycloak 26.1.4 answers a form value over its form attribute limit with 413 without reading
+            // the rest of the request and keeps the connection open, so the next request on that
+            // connection gets no answer; closing the connection after each answer keeps a caller's
+            // oversized secret or scope from stalling another caller's token request.
+            request.Headers.ConnectionClose = true;
+            using var response = await client.SendAsync(request);
             string responseString = await response.Content.ReadAsStringAsync();
 
             return response.StatusCode switch

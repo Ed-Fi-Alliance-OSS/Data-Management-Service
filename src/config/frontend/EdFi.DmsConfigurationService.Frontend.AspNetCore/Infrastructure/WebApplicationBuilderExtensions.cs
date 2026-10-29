@@ -122,7 +122,7 @@ public static class WebApplicationBuilderExtensions
 
         var settingsSection = webApplicationBuilder.Configuration.GetSection("AppSettings");
         var appSettings = settingsSection.Get<AppSettings>();
-        if (appSettings == null)
+        if (appSettings is null)
         {
             logger.Error("Error reading appSettings");
             throw new InvalidOperationException("Unable to read appSettings");
@@ -141,6 +141,16 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder
             .Services.AddHttpClient(
                 KeycloakTokenRevocationManager.HttpClientName,
+                client =>
+                {
+                    client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
+                }
+            )
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
+        webApplicationBuilder
+            .Services.AddHttpClient(
+                KeycloakTokenIntrospectionManager.HttpClientName,
                 client =>
                 {
                     client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
@@ -368,7 +378,7 @@ public static class WebApplicationBuilderExtensions
     {
         IConfiguration config = webApplicationBuilder.Configuration;
         var identitySettings = config.GetSection("IdentitySettings").Get<IdentitySettings>();
-        if (identitySettings == null)
+        if (identitySettings is null)
         {
             logger.Error("Error reading IdentitySettings");
             throw new InvalidOperationException("Unable to read IdentitySettings from appsettings");

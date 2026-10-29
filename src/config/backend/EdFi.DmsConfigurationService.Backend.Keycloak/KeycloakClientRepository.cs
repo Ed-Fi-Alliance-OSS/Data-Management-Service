@@ -51,6 +51,28 @@ public class KeycloakClientRepository(
 
     private const string RoleAssignmentPhase = "role-assignment";
 
+    /// <summary>
+    /// From Keycloak 26.6.2, introspection reports a token inactive unless the introspecting client
+    /// is in the token's <c>aud</c>; <c>azp</c> alone does not count. The claim-set scope's
+    /// audience-resolve mapper yields only "account", so every client carries a mapper naming
+    /// itself as an audience, which lets it introspect its own tokens. "account" stays in
+    /// <c>aud</c> alongside it. The name is fixed because Keycloak requires protocol mapper names
+    /// to be unique per client and protocol.
+    /// </summary>
+    private const string SelfAudienceMapperName = "Client's own audience";
+
+    /// <summary>
+    /// The protocol of every client this service manages. Keycloak runs only the mappers of a
+    /// client's own protocol, so a mapper of another protocol on the client has no effect on its
+    /// tokens.
+    /// </summary>
+    private const string OpenIdConnectProtocol = "openid-connect";
+
+    private const string AudienceMapperType = "oidc-audience-mapper";
+
+    private const string IncludedClientAudienceKey = "included.client.audience";
+    private const string IncludedCustomAudienceKey = "included.custom.audience";
+
     public async Task<ClientCreateResult> CreateClientAsync(
         string clientId,
         string clientSecret,
@@ -73,9 +95,10 @@ public class KeycloakClientRepository(
             var protocolMappers = ConfigServiceRoleProtocolMapper();
             protocolMappers.Add(NamespacePrefixProtocolMapper(namespacePrefixes));
             protocolMappers.Add(EducationOrganizationProtocolMapper(educationOrganizationIds));
+            protocolMappers.Add(SelfAudienceProtocolMapper(clientId));
 
             // Add data store IDs as sorted comma-separated string
-            if (dataStoreIds != null && dataStoreIds.Length > 0)
+            if (dataStoreIds is { Length: > 0 })
             {
                 var sortedDataStoreIds = string.Join(",", dataStoreIds.OrderBy(id => id));
                 protocolMappers.Add(DataStoreIdsProtocolMapper(sortedDataStoreIds));
@@ -433,6 +456,7 @@ public class KeycloakClientRepository(
 
         List<ClientProtocolMapper> protocolMappers = [.. client.ProtocolMappers ?? []];
         UpsertNamespacePrefixesClaim(protocolMappers, namespacePrefixes);
+        UpsertSelfAudience(protocolMappers, client.ClientId);
         client.ProtocolMappers = protocolMappers;
         // The secret is never written back. Keycloak leaves a client's secret untouched when the
         // representation omits it or carries null, so the fetched value — which a provider is
@@ -497,6 +521,42 @@ public class KeycloakClientRepository(
         protocolMappers.RemoveAll(mapper =>
             !ReferenceEquals(mapper, namespaceClaim) && HasClaimName(mapper, "namespacePrefixes")
         );
+    }
+
+    /// <summary>
+    /// Gives a client created before clients were put into their own audience the mapper that
+    /// does so. An OpenID Connect audience mapper already putting the client into its access tokens
+    /// satisfies it, whatever that mapper is called, so no duplicate is ever added; every other
+    /// mapper, a mapper of another protocol included, is left untouched.
+    /// </summary>
+    private void UpsertSelfAudience(List<ClientProtocolMapper> protocolMappers, string clientId)
+    {
+        if (protocolMappers.Exists(mapper => GivesOwnAudience(mapper, clientId)))
+        {
+            return;
+        }
+
+        // An OpenID Connect mapper holding the reserved name without putting this client into its
+        // access tokens was changed outside this service. Overwriting it could remove an audience
+        // something else relies on, and Keycloak allows no second mapper under the same name and
+        // protocol, so it is kept as it is and the update goes ahead without the client's own
+        // audience. A mapper of another protocol under that name does not stand in the way.
+        if (
+            protocolMappers.Exists(mapper =>
+                OpenIdConnectProtocol.Equals(mapper.Protocol, StringComparison.Ordinal)
+                && SelfAudienceMapperName.Equals(mapper.Name, StringComparison.Ordinal)
+            )
+        )
+        {
+            logger.LogWarning(
+                "Client {ClientId} already has an OpenID Connect protocol mapper named {MapperName} that does not put the client into its own access tokens' audience; it is left unchanged, so introspecting the client's own tokens may report them inactive",
+                SanitizeForLog(clientId),
+                SelfAudienceMapperName
+            );
+            return;
+        }
+
+        protocolMappers.Add(SelfAudienceProtocolMapper(clientId));
     }
 
     public async Task<ClientDeleteResult> DeleteClientAsync(string clientUuid)
@@ -609,7 +669,7 @@ public class KeycloakClientRepository(
     }
 
     private async Task<bool> ClientScopeExistsAsync(string scope) =>
-        await FindClientScopeAsync(scope) != null;
+        await FindClientScopeAsync(scope) is not null;
 
     private async Task<ClientScope?> FindClientScopeAsync(string scope)
     {
@@ -731,6 +791,7 @@ public class KeycloakClientRepository(
         List<ClientProtocolMapper> protocolMappers = [.. client.ProtocolMappers ?? []];
         UpsertEducationOrganizationIdsClaim(protocolMappers);
         ReplaceDataStoreIdsClaim(protocolMappers, dataStoreIds);
+        UpsertSelfAudience(protocolMappers, client.ClientId);
 
         client.Name = displayName;
         client.Enabled = isApproved;
@@ -907,6 +968,29 @@ public class KeycloakClientRepository(
         && claimName.Equals(configuredClaimName, StringComparison.Ordinal);
 
     /// <summary>
+    /// An audience mapper that puts the client into its own access tokens' <c>aud</c>. Keycloak's
+    /// audience mapper adds its included client audience when it has one, and its included custom
+    /// audience otherwise. Keycloak runs only the mappers of the client's protocol, and adds a mapper
+    /// to access tokens only when <c>access.token.claim</c> is <c>"true"</c>
+    /// (<c>OIDCAttributeMapperHelper.includeInAccessToken</c> on 26.1.4 and 26.7.5); its
+    /// introspection audience check reads the access token's <c>aud</c> whenever the token has one,
+    /// as every token of a client the Configuration Service creates does, so a mapper of another
+    /// protocol or left out of access tokens does not count. Whether it is also added to
+    /// introspection answers does not matter: an answer's <c>aud</c> starts from the token's.
+    /// </summary>
+    private static bool GivesOwnAudience(ClientProtocolMapper mapper, string clientId) =>
+        OpenIdConnectProtocol.Equals(mapper.Protocol, StringComparison.Ordinal)
+        && AudienceMapperType.Equals(mapper.ProtocolMapper, StringComparison.Ordinal)
+        && mapper.Config is not null
+        && string.Equals(
+            clientId,
+            mapper.Config.GetValueOrDefault(IncludedClientAudienceKey)
+                ?? mapper.Config.GetValueOrDefault(IncludedCustomAudienceKey),
+            StringComparison.Ordinal
+        )
+        && "true".Equals(mapper.Config.GetValueOrDefault("access.token.claim"), StringComparison.Ordinal);
+
+    /// <summary>
     /// A default client scope is the client's own claim-set assignment — and therefore removable
     /// when the claim set changes — only when it is neither the requested target, nor a
     /// realm-managed default, nor the Keycloak-managed service account scope.
@@ -951,6 +1035,24 @@ public class KeycloakClientRepository(
     private ClientProtocolMapper DataStoreIdsProtocolMapper(string value)
     {
         return ProtocolMapper("Data Store IDs", "dataStoreIds", value);
+    }
+
+    private static ClientProtocolMapper SelfAudienceProtocolMapper(string clientId)
+    {
+        return new()
+        {
+            Name = SelfAudienceMapperName,
+            Protocol = OpenIdConnectProtocol,
+            ProtocolMapper = AudienceMapperType,
+            Config = new Dictionary<string, string>
+            {
+                { IncludedClientAudienceKey, clientId },
+                { "id.token.claim", "false" },
+                { "access.token.claim", "true" },
+                { "introspection.token.claim", "true" },
+                { "lightweight.claim", "false" },
+            },
+        };
     }
 
     private ClientProtocolMapper ProtocolMapper(string name, string claimName, string value)

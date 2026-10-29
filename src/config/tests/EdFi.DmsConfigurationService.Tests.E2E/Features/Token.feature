@@ -210,3 +210,14 @@ Feature: Token validation
             Given token received
              When a GET request is made to "/v3/vendors"
              Then it should respond with 200
+
+        # Keycloak 26.1.4 answers a form value over its limit with 413 without reading the rest of the
+        # request and keeps the connection open, so the next request on that connection gets no answer;
+        # the Configuration Service closes each connection to Keycloak after its answer.
+        @KeycloakOnly
+        Scenario: 09 A token request after one Keycloak refused as too large is answered as usual
+             When a token is requested by the system client with a 400000-character client secret
+             Then it should respond with 502
+             When a token is requested without a scope using the system credentials
+             Then it should respond with 200
+              And the response body has a non-empty access_token

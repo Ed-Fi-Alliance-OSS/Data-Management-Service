@@ -4459,22 +4459,25 @@ public class OpenIddictTokenManagerTests
                 .IntrospectTokenAsync(IntrospectionRequestFor(OwnerClientId, token), CancellationToken.None);
         }
 
+        /// <summary>The token's single audience is a one-element list; the record compares lists by reference.</summary>
         [Test]
         public void It_reports_the_token_active_with_every_field() =>
             _result
                 .Should()
                 .BeOfType<TokenIntrospectionResult.Active>()
                 .Which.Token.Should()
-                .Be(
+                .BeEquivalentTo(
                     new IntrospectedToken(
                         OwnerClientId,
                         "edfi_admin_api/full_access",
                         _mintedExp,
                         IntrospectionIssuedAt,
                         OwnerClientId,
-                        TestAudience,
-                        TestIssuer
-                    )
+                        [TestAudience],
+                        TestIssuer,
+                        "Bearer"
+                    ),
+                    options => options.ComparingByMembers<IntrospectedToken>().WithStrictOrdering()
                 );
     }
 

@@ -542,7 +542,7 @@ public abstract class ApplicationUpdateSyncApiTests : DatabaseTestBase
         [SetUp]
         public async Task Setup()
         {
-            string otherName = $"Other Sync Application {Guid.NewGuid():N}";
+            string otherName = $"Other Sync Application {Guid.NewGuid().ToString("N")[..12]}";
             await CreateApplicationAsync(otherName, [A1]);
             _response = await PutApplicationAsync([A1], otherName);
         }
@@ -568,7 +568,7 @@ public abstract class ApplicationUpdateSyncApiTests : DatabaseTestBase
     public class Given_an_application_update_with_a_taken_name_and_a_missing_profile
         : ApplicationUpdateSyncApiTests
     {
-        private readonly string _otherName = $"Other Sync Application {Guid.NewGuid():N}";
+        private readonly string _otherName = $"Other Sync Application {Guid.NewGuid().ToString("N")[..12]}";
         private (HttpStatusCode Status, JsonNode Body) _response;
 
         [SetUp]
@@ -843,7 +843,7 @@ public abstract class ApplicationUpdateSyncApiTests : DatabaseTestBase
             _clientless = await CreateApplicationAsync($"Clientless {Guid.NewGuid():N}", [A1]);
             _response = await PutApplicationAsync(
                 [A2],
-                $"Renamed Clientless {Guid.NewGuid():N}",
+                $"Renamed Clientless {Guid.NewGuid().ToString("N")[..12]}",
                 "OtherClaimSet",
                 _clientless
             );

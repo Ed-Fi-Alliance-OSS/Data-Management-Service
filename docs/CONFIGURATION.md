@@ -325,7 +325,7 @@ The following parameters apply to the Configuration Service (`appsettings.json`)
 | IdentityProvider             | Specifies the authentication provider. Valid values are `keycloak` and `self-contained`. Default: `self-contained`                                                                                        |
 | MultiTenancy                 | When `true`, enables multi-tenancy support in the Configuration Service. Default: `false`                                                                                                                 |
 | PathBase                     | Segment of the URL to use as base for all requests.                                                                                                                                                       |
-| TokenRequestTimeoutSeconds   | Timeout in seconds for token requests. Default: `30`                                                                                                                                                      |
+| TokenRequestTimeoutSeconds   | Timeout budget in seconds for calls to Keycloak in `keycloak` mode. `/connect/token` gets one budget for the whole Keycloak call. `/connect/introspect` gets one budget for Keycloak's response headers and another for reading the body, so it can wait up to twice the value. `/connect/revoke` gets the same two plus one for the admin-API client-type lookup that precedes the revocation call, so it can wait up to three times the value. Default: `30` |
 | ReverseProxy:UseForwardedHeaders | When `true`, the application respects reverse proxy `X-Forwarded-*` headers for URL generation, but only from trusted sources configured in `ReverseProxy`. Default: `false`. See [Reverse Proxy and Forwarded Headers](#reverse-proxy-and-forwarded-headers). |
 | ReverseProxy:KnownProxies    | Comma-separated list of exact trusted reverse-proxy IP addresses (IPv4 or IPv6) whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.5,10.0.0.6`                                                  |
 | ReverseProxy:KnownNetworks   | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.0/8,172.16.0.0/12`                                                  |
@@ -805,7 +805,8 @@ budgets apply, and a request must fit both:
   [forwarded headers](#reverse-proxy-and-forwarded-headers) from trusted proxies are applied. A native
   IPv6 address counts against its /64. Requests whose address is unknown share one budget.
 - **Per source address and `client_id` pair**, for `/connect/token`, `/connect/revoke` and authenticated
-  `/connect/introspect` requests (self-contained mode), spent just before the client secret is verified.
+  `/connect/introspect` requests, under either identity provider, spent just before the client secret is
+  verified (by Keycloak under `keycloak`).
   A request rejected earlier (malformed form, unsupported grant type, missing token) does not spend it.
   For counting, case, accents, character width, kana type and
   trailing padding are ignored. This conservatively merges common SQL Server lookup aliases on every

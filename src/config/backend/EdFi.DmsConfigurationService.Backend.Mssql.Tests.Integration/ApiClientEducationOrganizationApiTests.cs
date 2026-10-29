@@ -206,7 +206,7 @@ public abstract class ApiClientEducationOrganizationApiTests : DatabaseTestBase
             "/v3/applications/",
             $$"""
             {
-              "applicationName": "{{name}} {{Guid.NewGuid():N}}",
+              "applicationName": "{{name}} {{Guid.NewGuid().ToString("N")[..12]}}",
               "vendorId": {{VendorId}},
               "claimSetName": "ClientScopeClaimSet",
               "educationOrganizationIds": [{{string.Join(", ", educationOrganizationIds)}}],

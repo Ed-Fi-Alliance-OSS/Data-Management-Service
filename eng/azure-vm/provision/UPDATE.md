@@ -194,6 +194,127 @@ Deleting the volume does not keep the keys.
 See [Database versions](../../../docs/OPERATIONS.md#database-versions) for the PostgreSQL requirements.
 Only `update.sh` makes this check: running `up.sh` or `docker compose up` directly against an old volume skips it.
 
+Keycloak clients created before the Configuration Service gave each client its own audience need that audience added once.
+On Keycloak 26.6.2 or later, which the `26.7` pin runs, `/connect/introspect` answers `{"active": false}` to a client introspecting its own token unless the client is in the token's `aud` (see [Token introspection](../../../reference/design/configuration-service/CS-AUTH.md#token-introspection)).
+`update.sh` keeps existing clients as they are, `bootstrap.ps1` refuses to run again once complete, and `add-review-variants.ps1` skips applications that exist, so none of them adds it.
+Run steps 1 to 4 after updating such a deployment, without rerunning `bootstrap.ps1` or deleting its `.bootstrap` markers.
+Both repairs are idempotent: they add the own-audience mapper only where it is missing and keep every client id, secret, role, scope and other mapper.
+
+1. The three clients `bootstrap.ps1` creates in Keycloak **[pwsh]**.
+   This reruns `setup-keycloak.ps1` for each with the `.env` values and `-SkipRealmAdmin` choices `bootstrap.ps1` uses; for a client that exists it changes only the own-audience mapper, and never reads or writes the secret.
+   `AdminPassword` must be Keycloak's current `admin` password, which is the `.env` value unless it was changed in Keycloak.
+
+   ```powershell
+   cd ~/dms-src/eng/azure-vm/compose
+   $ErrorActionPreference = 'Stop'
+   $envValues = @{}
+   foreach ($line in Get-Content .env) {
+       $t = $line.Trim()
+       if ($t -eq '' -or $t.StartsWith('#') -or $t.IndexOf('=') -lt 1) { continue }
+       $v = $t.Substring($t.IndexOf('=') + 1).Trim()
+       if ($v.Length -ge 2 -and $v[0] -eq $v[-1] -and ($v[0] -eq '"' -or $v[0] -eq "'")) { $v = $v.Substring(1, $v.Length - 2) }
+       $envValues[$t.Substring(0, $t.IndexOf('=')).Trim()] = $v
+   }
+   function EnvVal([string]$key, [string]$default = '') { if ($envValues[$key]) { $envValues[$key] } else { $default } }
+   $PSDefaultParameterValues['Invoke-RestMethod:SkipCertificateCheck'] = $true
+   $PSDefaultParameterValues['Invoke-WebRequest:SkipCertificateCheck'] = $true
+   $kc = @{ KeycloakServer = 'https://localhost/auth'; Realm = (EnvVal KEYCLOAK_REALM edfi)
+       AdminUsername = (EnvVal KEYCLOAK_ADMIN admin); AdminPassword = (EnvVal KEYCLOAK_ADMIN_PASSWORD) }
+   $setup = '../../docker-compose/setup-keycloak.ps1'
+   & $setup @kc -NewClientId (EnvVal CONFIGURATION_SERVICE_IDENTITY_CLIENT_ID DmsConfigurationService) -NewClientName 'DMS Configuration Service' `
+       -ClientScopeName 'edfi_admin_api/full_access' -NewClientSecret (EnvVal CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET)
+   & $setup @kc -NewClientId (EnvVal DMS_CONFIGURATION_SERVICE_CLIENT_ID CMSReadOnlyAccess) -NewClientName 'CMS ReadOnly Access' `
+       -ClientScopeName (EnvVal DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE 'edfi_admin_api/readonly_access') `
+       -NewClientSecret (EnvVal DMS_CONFIGURATION_SERVICE_CLIENT_SECRET) -SkipRealmAdmin
+   & $setup @kc -NewClientId (EnvVal BOOTSTRAP_ADMIN_CLIENT_ID dms-bootstrap-admin) -NewClientName 'DMS Bootstrap Admin' `
+       -ClientScopeName 'edfi_admin_api/full_access' -NewClientSecret (EnvVal BOOTSTRAP_ADMIN_CLIENT_SECRET) -SkipRealmAdmin
+   ```
+
+   Each client prints `already exists; checking its own audience`, then either `Own audience added` or `already puts itself into its access tokens' audience`.
+   A `WARNING: ... was NOT repaired` names a client with a conflicting mapper; see step 3.
+
+2. The API clients the Configuration Service manages **[bash]**.
+   An unchanged `PUT /v3/vendors/{id}` adds the mapper to every API client of every application of that vendor.
+   An unchanged `PUT /v3/applications/{id}` schedules no new client synchronization: it only retries clients already pending, so it is not a repair; a credential reset changes only the secret.
+   The block sends every vendor back exactly as `GET` returned it, a page at a time, on `st-config` and in every tenant `mt-config` lists:
+
+   ```bash
+   cd ~/dms-src/eng/azure-vm/compose
+   until [ "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/st-config/health)" = 200 ] &&
+     [ "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/mt-config/health)" = 200 ]; do sleep 5; done
+   ADMIN_ID=$(grep -E '^BOOTSTRAP_ADMIN_CLIENT_ID=' .env | cut -d= -f2-)
+   ADMIN_SECRET=$(grep -E '^BOOTSTRAP_ADMIN_CLIENT_SECRET=' .env | cut -d= -f2-)
+   cms_token() {
+     curl -sk "https://localhost/$1/connect/token" -d grant_type=client_credentials -d scope=edfi_admin_api/full_access \
+       --data-urlencode "client_id=$ADMIN_ID" --data-urlencode "client_secret=$ADMIN_SECRET" \
+       | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])'
+   }
+   failed=0; LIMIT=50
+   for cms in st-config mt-config; do
+     TENANTS=('')
+     if [ "$cms" = mt-config ]; then
+       list=$(curl -skf "https://localhost/$cms/v3/tenants/" -H "Authorization: Bearer $(cms_token "$cms")") ||
+         { echo "FAILED $cms: tenant list"; failed=1; continue; }
+       mapfile -t TENANTS < <(python3 -c 'import json,sys; [print(t["name"]) for t in json.load(sys.stdin)]' <<< "$list")
+       [ "${#TENANTS[@]}" -gt 0 ] || { echo "FAILED $cms: no tenants"; failed=1; continue; }
+     fi
+     for tenant in "${TENANTS[@]}"; do
+       HDR=(); [ -n "$tenant" ] && HDR=(-H "Tenant: $tenant")
+       offset=0
+       while :; do
+         TOKEN=$(cms_token "$cms")
+         page=$(curl -skf "https://localhost/$cms/v3/vendors/?orderBy=id&offset=$offset&limit=$LIMIT" \
+           -H "Authorization: Bearer $TOKEN" "${HDR[@]}") ||
+           { echo "FAILED $cms ${tenant:-(single)}: vendor list at offset $offset"; failed=1; break; }
+         count=0
+         while IFS=$'\t' read -r id body; do
+           count=$((count + 1))
+           code=$(curl -sk -o /dev/null -w '%{http_code}' -X PUT "https://localhost/$cms/v3/vendors/$id" \
+             -H "Authorization: Bearer $TOKEN" "${HDR[@]}" -H 'Content-Type: application/json' --data-binary "$body")
+           if [ "$code" = 204 ]; then echo "ok     $cms ${tenant:-(single)} vendor $id"
+           else echo "FAILED $cms ${tenant:-(single)} vendor $id: HTTP $code"; failed=1; fi
+         done < <(python3 -c 'import json,sys; [print(v["id"], json.dumps(v, separators=(",", ":")), sep="\t") for v in json.load(sys.stdin)]' <<< "$page")
+         [ "$count" -lt "$LIMIT" ] && break
+         offset=$((offset + LIMIT))
+       done
+     done
+   done
+   [ "$failed" = 0 ] && echo "All vendors updated." || echo "Some vendor updates FAILED; see above."
+   ```
+
+   The block must end with `All vendors updated.`
+   A `FAILED` vendor was not updated: the Configuration Service restores the clients that request changed, so rerun the block, which is safe; `./logs.sh st-config` (or `mt-config`) names the cause.
+
+3. Conflicting mappers **[bash]**.
+   A client that already has an OpenID Connect mapper named `Client's own audience` that does not give it its own audience, for example one edited in Keycloak, is left as it is: step 1 prints the `NOT repaired` warning for it, and the vendor update in step 2 still answers `204` and only logs a Warning.
+   A `204` therefore does not prove the client was repaired. This must print nothing:
+
+   ```bash
+   for c in dms-sec-st-config dms-sec-mt-config; do
+     docker logs --since 1h "$c" 2>&1 | grep -F "does not put the client into its own access tokens' audience"
+   done
+   ```
+
+   For each client either step names, follow the operator remedy in [Token introspection](../../../reference/design/configuration-service/CS-AUTH.md#token-introspection): add an *Audience* mapper under another name in the client's dedicated scope, with *Included Client Audience* set to the client itself and *Add to access token* and *Add to token introspection* on.
+
+4. Owner introspection with fresh tokens **[bash]**, in the shell from step 2.
+   Tokens issued before the repair keep their old audience and stay `{"active": false}` to their owner until they expire, so request new ones:
+
+   ```bash
+   REALM=$(grep -E '^KEYCLOAK_REALM=' .env | cut -d= -f2-); REALM=${REALM:-edfi}
+   own() {   # $1 = key, $2 = secret: that client introspects a fresh token of its own
+     T=$(curl -sk "https://localhost/auth/realms/$REALM/protocol/openid-connect/token" -d grant_type=client_credentials \
+       --data-urlencode "client_id=$1" --data-urlencode "client_secret=$2" \
+       | python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')
+     curl -sk https://localhost/st-config/connect/introspect \
+       --data-urlencode "client_id=$1" --data-urlencode "client_secret=$2" --data-urlencode "token=$T"; echo
+   }
+   own "$ADMIN_ID" "$ADMIN_SECRET"
+   own '<key>' '<secret>'   # each API key in the private credentials doc
+   ```
+
+   Each answer must be `"active":true` with the client's `client_id`, `scope`, `exp`, `iat`, `sub`, `aud` and `iss`; `{"active":false}` for a fresh token means that client still lacks its own audience.
+
 Verify with the existing keys once the DMS services report healthy (`update.sh` returns while they are still starting):
 
 ```bash

@@ -20,7 +20,7 @@ Feature: API client education organizations
                   """
                   {
                    "vendorId": {vendorId},
-                   "applicationName": "EdOrg Application A {scenarioRunId}",
+                   "applicationName": "EdOrg App A {scenarioRunId}",
                    "claimSetName": "EdOrgScopeClaimSet",
                    "educationOrganizationIds": [255901, 255902, 255903],
                    "createDefaultCredentials": false
@@ -110,7 +110,7 @@ Feature: API client education organizations
                   """
                   {
                    "vendorId": {vendorId},
-                   "applicationName": "EdOrg Application B {scenarioRunId}",
+                   "applicationName": "EdOrg App B {scenarioRunId}",
                    "claimSetName": "EdOrgScopeClaimSet",
                    "educationOrganizationIds": [255901, 255902],
                    "createDefaultCredentials": false
@@ -140,7 +140,7 @@ Feature: API client education organizations
                   {
                    "id": {appB},
                    "vendorId": {vendorId},
-                   "applicationName": "EdOrg Application B {scenarioRunId}",
+                   "applicationName": "EdOrg App B {scenarioRunId}",
                    "claimSetName": "EdOrgScopeClaimSet",
                    "educationOrganizationIds": [255901, 255902, 255904]
                   }
@@ -159,7 +159,7 @@ Feature: API client education organizations
                   """
                   {
                    "vendorId": {vendorId},
-                   "applicationName": "EdOrg Application C {scenarioRunId}",
+                   "applicationName": "EdOrg App C {scenarioRunId}",
                    "claimSetName": "EdOrgScopeClaimSet",
                    "educationOrganizationIds": [255901, 255904],
                    "createDefaultCredentials": false
@@ -340,7 +340,7 @@ Feature: API client education organizations
                   """
                   {
                    "vendorId": {vendorId},
-                   "applicationName": "EdOrg Application D {scenarioRunId}",
+                   "applicationName": "EdOrg App D {scenarioRunId}",
                    "claimSetName": "EdOrgScopeClaimSet",
                    "educationOrganizationIds": [255905, 255906],
                    "createDefaultCredentials": false
@@ -367,7 +367,7 @@ Feature: API client education organizations
                   {
                    "id": {appD},
                    "vendorId": {vendorId},
-                   "applicationName": "EdOrg Application D {scenarioRunId}",
+                   "applicationName": "EdOrg App D {scenarioRunId}",
                    "claimSetName": "EdOrgScopeClaimSet",
                    "educationOrganizationIds": [255906]
                   }
