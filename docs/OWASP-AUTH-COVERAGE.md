@@ -160,19 +160,26 @@ client `revoked`, in the same database transaction that makes the change (DMS-14
 
 Once the operation has answered success, the next Configuration Service request that presents one
 of those tokens is rejected with `401`, because the per-request status check no longer finds it
-`valid`. Tokens of other clients, including other clients of the same application, do not change.
+`valid`. Tokens of clients the operation does not target do not change: a client-level operation
+leaves the application's other clients alone, while deleting an application targets every client
+it has.
 
 - **A grant racing the operation is revoked or refused.** Every token grant for a client takes the
   same database row lock as these operations and, while holding it, re-checks that the client
   still exists, still has the secret the grant authenticated with, and is still approved. A grant
   that stored its token before the operation has that token revoked by it. A grant that reaches
-  the store after the operation is answered `invalid_client`, exactly as a wrong secret is, and
-  stores nothing.
+  the store after the operation and is stale — it authenticated with the secret the reset
+  replaced, its client was deleted, or its client is still un-approved — is answered
+  `invalid_client`, exactly as a wrong secret is, and stores nothing. A new grant with the new
+  secret after a reset, or after the client is approved again, is not stale and succeeds.
 - **Re-approval does not revive tokens.** Approving the client again lets it obtain new tokens;
   the tokens revoked by the un-approval stay revoked.
-- **All or nothing.** If the revocation fails, the operation rolls back: the new secret, the
-  deletion or the approval change is not persisted either, and the request fails. Retrying is
-  safe.
+- **All or nothing.** The change and the revocation commit together or not at all. If the
+  revocation fails before the commit, the operation rolls back: the new secret, the deletion or
+  the approval change is not persisted either, and the request fails. A success answer confirms
+  the commit. An error or a response that never arrives does not establish the outcome, because
+  the transaction may have committed before the failure was reported. Confirm the client's token
+  state, or retry: retrying is safe, and a retried reset issues another new secret.
 
 **Residual DMS window.** DMS does not consult token status (see
 [DMS resource API](#dms-resource-api--stateless-bearer-validation-no-app-side-replay-cache)), so it
@@ -203,8 +210,9 @@ plus 5 minutes and by DMS until `exp` plus `ClockSkewSeconds`.
 concurrent grants for the same client queue behind one another. This holds also when the per-client
 token limit is disabled (`IdentitySettings:BearerTokenPerClientLimit` below 1) and for clients
 exempt from the limit, which previously stored tokens without the lock. A grant that cannot obtain
-the lock within 5 seconds is answered `409` and can be retried. Grants for different clients do
-not wait for each other.
+the lock within 5 seconds is answered `409` and can be retried, on both engines. A grant chosen as
+a deadlock victim is answered `409` on SQL Server, and `500` on PostgreSQL. Different clients do
+not share this per-client lock.
 
 The transaction order of each operation, the logging and the confirmation procedure are in
 [CS-AUTH.md § Lifecycle revocation](../reference/design/configuration-service/CS-AUTH.md#lifecycle-revocation).
@@ -266,10 +274,11 @@ token is otherwise validly signed and unexpired.
 | Manipulated signature | Rejected | Rejected |
 | Revoked token reused | Not detected app-side (see compensating controls) | Rejected |
 | Externally-issued token, revocation unverifiable | Not detected app-side (see compensating controls) | Not detected app-side (Keycloak scheme) |
-| Token of a client reset, deleted or un-approved after DMS-1493 was deployed | Accepted until `exp` + `ClockSkewSeconds` (residual DMS window) | **Rejected** (`401`) on the next request |
-| Token of a client reset, deleted or un-approved before DMS-1493 was deployed | Accepted until `exp` + `ClockSkewSeconds` | Accepted until `exp` + 5 minutes (never marked revoked) |
-| Token grant racing a reset, deletion or un-approval | Not applicable (DMS issues no tokens) | Stored before the operation and revoked by it, or refused with `invalid_client` |
-| Earlier token after the client is re-approved | Accepted until `exp` + `ClockSkewSeconds` | **Rejected** (stays `revoked`) |
+| Self-contained token issued before its client was reset, deleted or un-approved, operation after DMS-1493 was deployed | Accepted until `exp` + `ClockSkewSeconds` (residual DMS window) | **Rejected** (`401`) on the next request |
+| Self-contained token issued before its client was reset, deleted or un-approved, operation before DMS-1493 was deployed | Accepted until `exp` + `ClockSkewSeconds` | Accepted until `exp` + 5 minutes (never marked revoked) |
+| Self-contained token grant racing a reset, deletion or un-approval | Not applicable (DMS issues no tokens) | Stored before the operation and revoked by it; after it, refused with `invalid_client` when stale (old secret, deleted client, client still un-approved) |
+| Self-contained token granted with the new secret after a reset, or after re-approval | Accepted until it expires | Accepted until revoked or expired (a new token, not a revived one) |
+| Earlier self-contained token after the client is re-approved | Accepted until `exp` + `ClockSkewSeconds` | **Rejected** (stays `revoked`) |
 
 ## Compensating controls for IdP-dependent gaps
 
@@ -483,7 +492,7 @@ The behaviors above are exercised by automated tests:
   untouched, an update that keeps the client approved and a repeated un-approval changing nothing,
   re-approval reviving nothing); concurrency fixtures in which a grant that commits while the
   operation waits for the lock has its token revoked, a grant with the old state after the
-  operation is refused, and a grant blocked behind the open operation is refused once it commits;
+  operation is refused, and a stale grant blocked behind the open operation is refused once it commits;
   and rollback fixtures in which a failing revocation or a failing `ApiClient` update leaves the
   secret, the application rows, the approval and the tokens unchanged.
 

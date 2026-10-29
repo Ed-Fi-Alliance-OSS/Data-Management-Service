@@ -339,7 +339,9 @@ operation has answered success, CMS rejects those tokens with `401` on the next 
 accepting them until they expire (see [Propagation and clock skew](#propagation-and-clock-skew)).
 Revocation marks the token rows `revoked` and sets `RedemptionDate`, as `/connect/revoke` does.
 Rows already revoked keep their first `RedemptionDate`, and the expired-token sweep removes rows
-later. Tokens of other clients, including other clients of the same application, do not change.
+later. Tokens of clients the operation does not target do not change: a client-level operation
+leaves the application's other clients alone, while deleting an application targets every client
+it has.
 
 `keycloak` mode is unchanged. CMS stores no Keycloak tokens, so these operations revoke nothing:
 they regenerate the secret, delete the client, or disable it at Keycloak, and Keycloak tokens
@@ -351,8 +353,10 @@ Every token grant and every lifecycle operation takes the same lock, the client'
 `dmscs.OpenIddictApplication` row (`FOR UPDATE` on PostgreSQL, `UPDLOCK, HOLDLOCK` on SQL Server),
 and holds it until its transaction ends:
 
-- A **grant** locks the row first and waits for it at most 5 seconds; a timeout or deadlock
-  answers `409` (concurrent modification, retriable). In a separate statement after the lock is
+- A **grant** locks the row first and waits for it at most 5 seconds. A lock-wait timeout
+  answers `409` (concurrent modification, retriable) on both engines. A grant chosen as a
+  deadlock victim answers `409` on SQL Server only; on PostgreSQL the deadlock reaches the token
+  endpoint's generic failure path and answers `500`. In a separate statement after the lock is
   granted, it reads the stored client secret and the client's approval: approved when every
   `dmscs.ApiClient` row under the client's `ClientId` is approved, or when there is none. It stores
   the token only when the row exists, the stored secret equals the hash the grant authenticated
@@ -365,7 +369,8 @@ and holds it until its transaction ends:
 
 The grant applies the lock and the re-validation whatever `IdentitySettings:BearerTokenPerClientLimit`
 is, including the disabled setting (below 1) and clients exempt from the limit, which previously
-inserted their tokens without a transaction or a lock. Grants for one client therefore serialize.
+inserted their tokens without a transaction or a lock. Grants for one client therefore serialize;
+grants for different clients do not share this per-client lock.
 
 The re-validation is a separate statement because on PostgreSQL a statement that waits for a row
 lock sees the locked row as committed by the transaction it waited for, but reads everything else
@@ -373,8 +378,12 @@ from the snapshot it took before waiting. A new statement takes a new snapshot.
 
 Two transactions holding the same row lock cannot overlap. A grant either stored its token before
 the operation took the lock, and the operation's revocation catches the token, or it re-validates
-after the operation committed and is refused. The number of concurrent grants and how long they
-take do not matter, and the grant's credential check before the lock may be arbitrarily stale.
+after the operation committed and sees the committed state. A grant that authenticated with the
+secret the reset replaced, or whose client was deleted or is still un-approved, is refused. A grant
+that authenticated with the new secret after a reset, or that runs after the client is approved
+again, passes the same checks and stores a new token; no token issued before the operation stays
+`valid`. The number of concurrent grants and how long they take do not matter, and the grant's
+credential check before the lock may be arbitrarily stale.
 
 #### Transaction order per operation
 
@@ -405,10 +414,16 @@ complete grant run between the provider commit and the CMS commit.
 
 #### Failures, retries and lost acknowledgements
 
-An exception inside one of these transactions rolls back the change and the revocation together,
-and the request fails. No operation can leave a client reset, deleted or un-approved while the
-revocation it attempted is undone. A lost commit acknowledgement is atomic in the same way: both
-are durable or neither is. The revocation is idempotent, so a retry is safe and converges.
+The change and the revocation are durable together or not at all: no operation commits a reset,
+deletion or un-approval without its revocation. An exception before the commit rolls both back,
+and the request fails.
+
+A success answer confirms the commit. An error or a response that never arrives does not: the
+transaction may have committed before its acknowledgement was lost or the failure was reported, so
+the outcome is unknown until it is confirmed (see
+[Confirming a lifecycle revocation](#confirming-a-lifecycle-revocation)) or the request is
+retried. The revocation is idempotent, so a retry is safe and converges. A retried reset issues
+another new secret, since the secret of a lost response never reached the caller.
 
 #### Orphaned tokens
 
@@ -431,21 +446,29 @@ logs that at Information. A credential reset of a missing application row change
 | Un-approval participant ran | Information | `Marked {Count} outstanding tokens for client {ClientUuid} revoked in the pending un-approval transaction; a rollback preserves their previous state` |
 | Un-approval with no application row | Information | `No identity provider application exists for client {ClientUuid}; its stored tokens are marked revoked in the pending un-approval transaction regardless` |
 | Grant refused on re-validation | Debug | `Refused to store a token for application {ApplicationId}: re-validation under the application row lock failed ({RefusalReason})`, where the reason is `missing`, `secret` or `approval` |
-| Grant lock wait timed out or deadlocked | Warning | `Timed out waiting for, or deadlocked on, a database lock while storing a token grant for client {ClientId}` |
+| Grant lock wait timed out (both engines), or grant chosen as a deadlock victim (SQL Server); answered `409` | Warning | `Timed out waiting for, or deadlocked on, a database lock while storing a token grant for client {ClientId}` |
+| Grant chosen as a deadlock victim (PostgreSQL); answered `500` | Error | `Unknown error while retrieving access token`, with the exception |
 
 The un-approval messages are written inside the CMS transaction, before it commits: they record a
-pending change, and a rollback undoes it. The HTTP answer tells whether the un-approval committed.
+pending change, and a rollback undoes it. A success answer confirms that the un-approval
+committed. After an error or a lost response the outcome is unknown, and these messages cannot
+settle it either way: confirm the outcome or retry (see
+[Failures, retries and lost acknowledgements](#failures-retries-and-lost-acknowledgements)).
 Client identifiers are sanitized, and no secret, secret hash or token is logged.
 
 #### Confirming a lifecycle revocation
 
-The operation answers success only after its transaction commits. To observe a token's state:
+The operation answers success only after its transaction commits. After an error or a lost
+response, or whenever a token's state must be observed:
 
 - A protected CMS request with one of the client's earlier tokens answers `401`.
 - After a credential reset, `POST /connect/introspect` authenticated with the **new** credentials
   reports an earlier token `{"active": false}`. The old credentials no longer authenticate.
 - After a deletion or an un-approval, the client can no longer authenticate to
   `/connect/introspect` (`invalid_client`), so use the protected request.
+- For an un-approval, `GET /v3/apiClients/{id}` also shows whether the client is un-approved.
+  An un-approval and its revocation commit together, so `isApproved: false` there means the
+  revocation committed too.
 
 ### Propagation and clock skew
 
@@ -464,7 +487,7 @@ the window.
 
 [Lifecycle revocation](#lifecycle-revocation) propagates the same way:
 
-| Token of a client that was reset, deleted or un-approved | CMS protected endpoints | DMS resource API |
+| Token issued before its client was reset, deleted or un-approved | CMS protected endpoints | DMS resource API |
 | --- | --- | --- |
 | `self-contained`, operation performed after DMS-1493 was deployed | Rejected on the next request | **Accepted until `exp` + `JwtAuthentication:ClockSkewSeconds`** (default 30 s) |
 | `self-contained`, operation performed before DMS-1493 was deployed (never marked revoked) | **Accepted until `exp` + 5 minutes** | Accepted until `exp` + `ClockSkewSeconds` |
@@ -584,8 +607,9 @@ using `VerifySecretAsync`.
   them stay usable until they expire.
 - **Grants for one client serialize.** Every grant takes the client's application row lock,
   including with the token limit disabled and for limit-exempt clients, so heavy same-client
-  contention can answer `409` after the 5-second lock wait. Grants for different clients do not
-  contend.
+  contention can answer `409` after the 5-second lock wait. A deadlock victim answers `409` on
+  SQL Server and `500` on PostgreSQL. Grants for different clients do not share this per-client
+  lock.
 - **Untested token types.** Offline tokens and Keycloak refresh-token revocation through CMS
   end to end are not exercised by the CMS test suites (see
   [Supported token types](#supported-token-types-and-their-effects)).
