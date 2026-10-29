@@ -3784,6 +3784,7 @@ public class OAuthManagerTests
     [TestFixture(
         """{"error":"temporarily_unavailable","error_description":"Too many tokens were requested (limit is 5). Reuse them."}"""
     )]
+    [TestFixture("""{"error":"temporarily_unavailable","error_description":"\uD800"}""")]
     [Parallelizable]
     public class Given_A_Deviating_OAuth_Envelope_429(string upstreamBody)
     {

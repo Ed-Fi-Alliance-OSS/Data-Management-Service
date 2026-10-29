@@ -115,7 +115,7 @@ The `429` `error_description` is `Too many access tokens have been requested (li
 The rate-limit `429` shares the `temporarily_unavailable` code, and the DMS proxy tells the two apart by their descriptions.
 
 A failed client authentication is `invalid_client` whatever code the self-contained token manager or Keycloak reports.
-RFC 6749 section 5.2 defines no other code for it, and passing on a second code, such as the `unauthorized_client` both providers report for a wrong secret, would tell the caller whether the client id it sent exists.
+RFC 6749 section 5.2 defines no other code for it, and passing on a second code, such as the `unauthorized_client` Keycloak reports for a wrong secret, would tell the caller whether the client id it sent exists.
 For the same reason a Keycloak rejection always carries the fixed description `Invalid client or Invalid client credentials`: Keycloak tells a public client presenting any secret that it is a public client.
 The description a service-owned failure carries is used as it is.
 

@@ -404,7 +404,11 @@ public class IdentityModule : IEndpointModule
                 basicAttempted,
                 failureIdentityProvider.IdentityProviderError
             ),
-            _ => ServerError(TokenRequestNotProcessedDescription),
+            _ => OAuthErrorResponseWriter.Create(
+                StatusCodes.Status500InternalServerError,
+                "server_error",
+                OAuthErrorContractMetadata.Token.ServerErrorDescription
+            ),
         };
     }
 
@@ -482,13 +486,6 @@ public class IdentityModule : IEndpointModule
     /// </summary>
     private static bool IsOAuthErrorDescriptionText(string description) =>
         description.All(character => character is >= ' ' and <= '~' and not '"' and not '\\');
-
-    private static IResult ServerError(string errorDescription) =>
-        OAuthErrorResponseWriter.Create(
-            StatusCodes.Status500InternalServerError,
-            "server_error",
-            errorDescription
-        );
 
     /// <summary>
     /// RFC 7662 token introspection, under either identity provider. The request shape and client
@@ -614,7 +611,6 @@ public class IdentityModule : IEndpointModule
         "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client.";
     private const string UnexpectedProviderResponseDescription =
         "The identity provider returned an unexpected response.";
-    private const string TokenRequestNotProcessedDescription = "The token request could not be processed.";
     private const string MalformedFormDescription = "The request form payload is malformed.";
     private const string UnsupportedCharsetDescription = "The request form payload must be encoded as UTF-8.";
 

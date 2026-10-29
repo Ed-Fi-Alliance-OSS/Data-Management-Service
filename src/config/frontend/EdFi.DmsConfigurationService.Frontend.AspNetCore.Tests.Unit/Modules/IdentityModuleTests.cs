@@ -620,6 +620,49 @@ public class TokenEndpointTests
         content.Should().Contain("bearer");
     }
 
+    /// <summary>
+    /// Unlike revoke and introspect, the token endpoint accepts a multipart/form-data body, so a
+    /// client that posts "form-data" (Postman's default) still gets a token.
+    /// </summary>
+    [Test]
+    public async Task Given_valid_client_credentials_in_a_multipart_body()
+    {
+        // Arrange
+        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(
+                (collection) =>
+                {
+                    collection.AddTransient((_) => _tokenManager!);
+                }
+            );
+        });
+        using var client = factory.CreateClient();
+
+        // Act
+        using var requestContent = new MultipartFormDataContent
+        {
+            { new StringContent("CSClient1"), "client_id" },
+            { new StringContent("test123@Puiu"), "client_secret" },
+            { new StringContent("client_credentials"), "grant_type" },
+        };
+        var response = await client.PostAsync("/connect/token", requestContent);
+        string content = await response.Content.ReadAsStringAsync();
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+        content.Should().Contain("input123token");
+        A.CallTo(() =>
+                _tokenManager!.GetAccessTokenAsync(
+                    A<IEnumerable<KeyValuePair<string, string>>>.That.Matches(credentials =>
+                        credentials.Any(pair => pair.Key == "client_id" && pair.Value == "CSClient1")
+                    )
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
     [Test]
     public async Task Given_basic_auth_credentials_with_reserved_characters()
     {
@@ -1534,6 +1577,29 @@ public class OAuthEndpointErrorTests
                 new("grant_type", "password"),
                 new("scope", "edfi_admin_api/full_access"),
             ]);
+
+        [Test]
+        public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_the_oauth_unsupported_grant_type_body() =>
+            AssertOAuthError("unsupported_grant_type", "The specified grant type is not supported.");
+
+        [Test]
+        public void It_does_not_challenge() => AssertNoChallenge();
+
+        [Test]
+        public void It_does_not_call_the_token_manager() => AssertManagerNotCalled();
+    }
+
+    /// <summary>
+    /// The grant type is judged before the credentials: a request with an unsupported grant type and
+    /// no credentials gets the grant type finding, not <c>invalid_client</c>.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_token_request_with_an_unsupported_grant_type_and_no_credentials : TokenErrorRequest
+    {
+        protected override HttpRequestMessage BuildRequest() => Post([new("grant_type", "password")]);
 
         [Test]
         public void It_returns_400() => AssertStatus(HttpStatusCode.BadRequest);

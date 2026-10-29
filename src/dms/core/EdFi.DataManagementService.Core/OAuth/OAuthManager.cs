@@ -690,12 +690,9 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                 return null;
             }
 
-            // TryGetValue<string> succeeds only for a JSON string, so an array or a nested object
-            // is rejected rather than stringified.
-            if (
-                obj["error_description"] is not JsonValue description
-                || !description.TryGetValue(out string? message)
-            )
+            // Only a JSON string that decodes is accepted, so an array, a nested object or an
+            // undecodable escape is rejected rather than stringified or thrown.
+            if (GetStringOrNull(obj["error_description"]) is not string message)
             {
                 return null;
             }
