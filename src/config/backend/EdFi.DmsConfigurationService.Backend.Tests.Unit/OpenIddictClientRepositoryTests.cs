@@ -782,6 +782,215 @@ public class OpenIddictClientRepositoryTests
     }
 
     /// <summary>
+    /// Shared arrangement for the client deletion (DMS-1493 §6.3). The deletion removes the
+    /// application row and revokes the client's tokens in one transaction, so every fixture keeps
+    /// the connection and the transaction it hands out and checks that both calls ran on them.
+    /// </summary>
+    public abstract class DeleteClientTestBase : OpenIddictClientRepositoryTests
+    {
+        protected const string RevocationLog = "outstanding tokens for client";
+
+        protected Guid _clientUuid;
+        protected IDbConnection _connection = null!;
+        protected IDbTransaction _transaction = null!;
+        protected ClientDeleteResult _result = null!;
+
+        [SetUp]
+        public void SetUpDeleteDefaults()
+        {
+            _clientUuid = Guid.NewGuid();
+            _connection = A.Fake<IDbConnection>();
+            _transaction = A.Fake<IDbTransaction>();
+            A.CallTo(() => _dataRepository.CreateConnectionAsync()).Returns(_connection);
+            A.CallTo(() => _dataRepository.BeginTransactionAsync(_connection)).Returns(_transaction);
+        }
+
+        [TearDown]
+        public void DisposeDeleteFakes()
+        {
+            _transaction.Dispose();
+            _connection.Dispose();
+        }
+
+        protected void ArrangeDelete(int rows) =>
+            A.CallTo(() =>
+                    _dataRepository.DeleteApplicationByIdAsync(
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .Returns(rows);
+
+        protected void ArrangeRevocation(int revokedCount) =>
+            A.CallTo(() =>
+                    _dataRepository.RevokeTokensForApplicationAsync(
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .Returns(revokedCount);
+
+        // The canonical form of the identifier differs from what is passed in, so the log shows
+        // whether the deletion logs the parsed identifier rather than the caller's string.
+        protected async Task ActDeleteAsync() =>
+            _result = await _repository.DeleteClientAsync(_clientUuid.ToString("B").ToUpperInvariant());
+
+        protected void AssertDeleteThenRevokeThenCommit() =>
+            A.CallTo(() => _dataRepository.DeleteApplicationByIdAsync(_clientUuid, _connection, _transaction))
+                .MustHaveHappenedOnceExactly()
+                .Then(
+                    A.CallTo(() =>
+                            _dataRepository.RevokeTokensForApplicationAsync(
+                                _clientUuid,
+                                _connection,
+                                _transaction
+                            )
+                        )
+                        .MustHaveHappenedOnceExactly()
+                )
+                .Then(A.CallTo(() => _transaction.Commit()).MustHaveHappenedOnceExactly());
+
+        protected void AssertRevocationLogged(int revokedCount) =>
+            _logger
+                .LoggedEntries()
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Level == LogLevel.Information
+                    && entry.Message == $"Revoked {revokedCount} outstanding tokens for client {_clientUuid}"
+                );
+    }
+
+    /// <summary>
+    /// The deletion removes the application row first, which takes the application row lock that
+    /// token stores wait on, then revokes the client's tokens on the same connection and transaction,
+    /// and commits once before answering success. Fails if the revocation is missing, runs outside
+    /// the deletion's transaction, or runs before the delete.
+    /// </summary>
+    [TestFixture]
+    public class Given_DeleteClientAsync_For_An_Existing_Client : DeleteClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDelete(1);
+            ArrangeRevocation(3);
+
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public void It_returns_success() => _result.Should().BeOfType<ClientDeleteResult.Success>();
+
+        [Test]
+        public void It_deletes_the_application_inside_the_deletion_transaction() =>
+            A.CallTo(() => _dataRepository.DeleteApplicationByIdAsync(_clientUuid, _connection, _transaction))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_revokes_the_client_tokens_inside_the_same_transaction() =>
+            A.CallTo(() =>
+                    _dataRepository.RevokeTokensForApplicationAsync(_clientUuid, _connection, _transaction)
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_deletes_then_revokes_then_commits() => AssertDeleteThenRevokeThenCommit();
+
+        [Test]
+        public void It_does_not_roll_back() => A.CallTo(() => _transaction.Rollback()).MustNotHaveHappened();
+
+        [Test]
+        public void It_logs_the_revocation_count_with_the_normalized_client_uuid() =>
+            AssertRevocationLogged(3);
+    }
+
+    /// <summary>
+    /// No application row matched, but tokens stored for the identifier remain, for example from a
+    /// deletion before revocation existed. The deletion still revokes them and commits before it
+    /// answers not found (D-6), which the module treats as an already completed deletion. Fails if a
+    /// missing row skips the revocation, rolls it back, or answers anything but not found.
+    /// </summary>
+    [TestFixture]
+    public class Given_DeleteClientAsync_For_A_Missing_Client : DeleteClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDelete(0);
+            ArrangeRevocation(2);
+
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_client_not_found() =>
+            _result.Should().BeOfType<ClientDeleteResult.FailureClientNotFound>();
+
+        [Test]
+        public void It_revokes_the_orphaned_tokens_inside_the_same_transaction() =>
+            A.CallTo(() =>
+                    _dataRepository.RevokeTokensForApplicationAsync(_clientUuid, _connection, _transaction)
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_deletes_then_revokes_then_commits() => AssertDeleteThenRevokeThenCommit();
+
+        [Test]
+        public void It_does_not_roll_back() => A.CallTo(() => _transaction.Rollback()).MustNotHaveHappened();
+
+        [Test]
+        public void It_logs_the_revocation_count_with_the_normalized_client_uuid() =>
+            AssertRevocationLogged(2);
+    }
+
+    /// <summary>
+    /// The revocation fails after the application row was deleted in the same transaction. The
+    /// deletion answers an unknown failure and never commits, so disposing the transaction restores
+    /// the application row together with the revocation. Fails if the deletion is committed before
+    /// the revocation succeeds.
+    /// </summary>
+    [TestFixture]
+    public class Given_DeleteClientAsync_Whose_Revocation_Throws : DeleteClientTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDelete(1);
+            A.CallTo(() =>
+                    _dataRepository.RevokeTokensForApplicationAsync(
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .ThrowsAsync(new InvalidOperationException("revocation failed"));
+
+            await ActDeleteAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientDeleteResult.FailureUnknown>();
+
+        [Test]
+        public void It_does_not_commit() => A.CallTo(() => _transaction.Commit()).MustNotHaveHappened();
+
+        [Test]
+        public void It_disposes_the_uncommitted_transaction() =>
+            A.CallTo(() => _transaction.Dispose()).MustHaveHappened();
+
+        [Test]
+        public void It_logs_the_failure_as_an_error() =>
+            _logger.VerifyLogError("Failed to delete OpenIddict client");
+
+        [Test]
+        public void It_logs_no_revocation() => _logger.VerifyNoLog(LogLevel.Information, RevocationLog);
+    }
+
+    /// <summary>
     /// Regression cover for the OpenIddict namespace-claim update, which DMS-1356 leaves
     /// unchanged. Its in-place behavior is the contract the Vendor workflow relies on for the
     /// self-contained provider: the stored application row is updated under its existing

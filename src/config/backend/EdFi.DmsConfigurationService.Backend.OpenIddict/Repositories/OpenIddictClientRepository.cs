@@ -447,11 +447,32 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         {
             try
             {
+                var applicationId = Guid.Parse(clientUuid);
                 using var connection = await dataRepository.CreateConnectionAsync();
+                using var transaction = await dataRepository.BeginTransactionAsync(connection);
+
+                // The delete is the first statement so that it takes the application row lock every
+                // token store waits on before the tokens are revoked. Token rows have no foreign key to
+                // the application, so the revocation runs even when no row was deleted: tokens left by
+                // an earlier deletion converge to revoked, and the module treats not found as done.
                 var rows = await dataRepository.DeleteApplicationByIdAsync(
-                    Guid.Parse(clientUuid),
-                    connection
+                    applicationId,
+                    connection,
+                    transaction
                 );
+                var revokedCount = await dataRepository.RevokeTokensForApplicationAsync(
+                    applicationId,
+                    connection,
+                    transaction
+                );
+
+                transaction.Commit();
+                logger.LogInformation(
+                    "Revoked {Count} outstanding tokens for client {ClientUuid}",
+                    revokedCount,
+                    SanitizeForLog(applicationId.ToString())
+                );
+
                 if (rows == 0)
                 {
                     return new ClientDeleteResult.FailureClientNotFound($"Client {clientUuid} not found");
