@@ -180,9 +180,8 @@ It then restarts the gateway and Swagger UI, because both read their mounted fil
 The Configuration Service applies its database migrations at startup.
 If a Configuration Service stays unhealthy, `./logs.sh st-config` (or `mt-config`) names the migration that failed.
 
-Keycloak: `keycloak.yml` pins the floating minor tag `26.7`.
-`update.sh` refuses a changed pin, because the H2 realm volume cannot cross minor versions, but it does apply a patch release published under the same tag.
-The 26.7.4 to 26.7.5 move has been rehearsed; Keycloak migrated the realm and every key kept working.
+Keycloak: `keycloak.yml` pins one image by tag and digest (`26.8.1@sha256:…`), the same image as `eng/docker-compose/keycloak.yml`.
+To protect the persisted H2 realm volume, `update.sh` refuses any change to that reference, including a new digest under the same tag; such an update follows [`REDEPLOY.md`](REDEPLOY.md), which issues new API keys.
 
 PostgreSQL: builds from October 2026 run PostgreSQL 18, which keeps its cluster in a versioned directory inside the `dms-security-review_dms-sec-postgres` volume.
 A deployment created before that holds a PostgreSQL 16 cluster at the volume root, which PostgreSQL 18 does not read: it would start an empty cluster beside it, and the databases and API keys would not carry over.
@@ -195,7 +194,7 @@ See [Database versions](../../../docs/OPERATIONS.md#database-versions) for the P
 Only `update.sh` makes this check: running `up.sh` or `docker compose up` directly against an old volume skips it.
 
 Keycloak clients created before the Configuration Service gave each client its own audience need that audience added once.
-On Keycloak 26.6.2 or later, which the `26.7` pin runs, `/connect/introspect` answers `{"active": false}` to a client introspecting its own token unless the client is in the token's `aud` (see [Token introspection](../../../reference/design/configuration-service/CS-AUTH.md#token-introspection)).
+On Keycloak 26.6.2 or later, which the `26.8.1` pin runs, `/connect/introspect` answers `{"active": false}` to a client introspecting its own token unless the client is in the token's `aud` (see [Token introspection](../../../reference/design/configuration-service/CS-AUTH.md#token-introspection)).
 `update.sh` keeps existing clients as they are, `bootstrap.ps1` refuses to run again once complete, and `add-review-variants.ps1` skips applications that exist, so none of them adds it.
 Run steps 1 to 4 after updating such a deployment, without rerunning `bootstrap.ps1` or deleting its `.bootstrap` markers.
 Both repairs are idempotent: they add the own-audience mapper only where it is missing and keep every client id, secret, role, scope and other mapper.

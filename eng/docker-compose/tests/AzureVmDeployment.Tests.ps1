@@ -14,6 +14,9 @@ Describe "Azure VM lifecycle safety" {
         $script:updateSource = Join-Path $script:azureVmRoot "compose/update.sh"
         $script:recordKeycloakImageSource = Join-Path $script:azureVmRoot "compose/record-keycloak-image.sh"
         $script:legacyEnvWarningSource = Join-Path $script:azureVmRoot "compose/legacy-env-warning.sh"
+        # Matches the pin in compose/keycloak.yml, as `docker compose config --images` and
+        # `docker inspect --format {{.Config.Image}}` both report a tag@digest reference.
+        $script:keycloakImage = "quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b"
     }
 
     BeforeEach {
@@ -50,8 +53,8 @@ Describe "Azure VM lifecycle safety" {
 printf '%s\n' "$*" >> "$DOCKER_LOG"
 
 state="${DOCKER_STATE_DIR:?}"
-configured="${DOCKER_CONFIGURED_KEYCLOAK:-quay.io/keycloak/keycloak:26.7}"
-deployed="${DOCKER_DEPLOYED_KEYCLOAK:-quay.io/keycloak/keycloak:26.7}"
+configured="${DOCKER_CONFIGURED_KEYCLOAK:-quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b}"
+deployed="${DOCKER_DEPLOYED_KEYCLOAK:-quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b}"
 
 if [ "${1:-}" = "compose" ] && [[ "$*" == *" config --images"* ]]; then
   printf '%s\n' "$configured" "${DOCKER_CONFIGURED_POSTGRES-postgres:18.6-alpine}"
@@ -121,8 +124,8 @@ esac
         $env:DOCKER_LOG = $script:dockerLog
         $env:CURL_LOG = $script:curlLog
         $env:DOCKER_STATE_DIR = $script:dockerState
-        $env:DOCKER_CONFIGURED_KEYCLOAK = "quay.io/keycloak/keycloak:26.7"
-        $env:DOCKER_DEPLOYED_KEYCLOAK = "quay.io/keycloak/keycloak:26.7"
+        $env:DOCKER_CONFIGURED_KEYCLOAK = $script:keycloakImage
+        $env:DOCKER_DEPLOYED_KEYCLOAK = $script:keycloakImage
         $env:DMS_STARTUP_TIMEOUT_SECONDS = "2"
         $env:DMS_STARTUP_POLL_SECONDS = "0"
     }
@@ -268,7 +271,7 @@ exit 17
         $infra.LineNumber | Should -BeLessThan $dms.LineNumber
 
         $keycloakRef = Join-Path $script:composeRoot ".bootstrap/keycloak-image"
-        Get-Content -LiteralPath $keycloakRef -Raw | Should -Be "quay.io/keycloak/keycloak:26.7`n"
+        Get-Content -LiteralPath $keycloakRef -Raw | Should -Be "$script:keycloakImage`n"
         @(Get-ChildItem -LiteralPath (Join-Path $script:composeRoot ".bootstrap") -Filter "keycloak-image.tmp.*").Count | Should -Be 0
     }
 
@@ -316,7 +319,7 @@ exit 17
         $LASTEXITCODE | Should -Be 0
 
         $keycloakRef = Join-Path $script:composeRoot ".bootstrap/keycloak-image"
-        Get-Content -LiteralPath $keycloakRef -Raw | Should -Be "quay.io/keycloak/keycloak:26.7`n"
+        Get-Content -LiteralPath $keycloakRef -Raw | Should -Be "$script:keycloakImage`n"
         $env:SKIP_GIT = "1"
 
         $output = & bash (Join-Path $script:composeRoot "update.sh") 2>&1
@@ -358,6 +361,30 @@ exit 17
         $LASTEXITCODE | Should -Be 1
         $output | Out-String | Should -Match "changes the Keycloak image"
         Get-Content -LiteralPath $script:dockerLog -Raw | Should -Not -Match "compose .* pull"
+    }
+
+    It "rejects a Keycloak digest change under the same tag before pulling images" {
+        & bash (Join-Path $script:composeRoot "up.sh") 2>&1 | Out-Null
+        $LASTEXITCODE | Should -Be 0
+
+        $env:DOCKER_CONFIGURED_KEYCLOAK = "quay.io/keycloak/keycloak:26.8.1@sha256:$('0' * 64)"
+        $env:SKIP_GIT = "1"
+        Set-Content -LiteralPath $script:dockerLog -Value "" -NoNewline
+
+        $output = & bash (Join-Path $script:composeRoot "update.sh") 2>&1
+
+        $LASTEXITCODE | Should -Be 1
+        $output | Out-String | Should -Match "changes the Keycloak image"
+        Get-Content -LiteralPath $script:dockerLog -Raw | Should -Not -Match "compose .* pull"
+    }
+
+    It "pins the same Keycloak image by tag and digest in both compose files" {
+        $repoRoot = Join-Path $script:azureVmRoot "../.."
+        foreach ($file in @("eng/azure-vm/compose/keycloak.yml", "eng/docker-compose/keycloak.yml")) {
+            $images = @(Select-String -LiteralPath (Join-Path $repoRoot $file) -Pattern '^\s*image:\s*(\S+)\s*$' |
+                    ForEach-Object { $_.Matches[0].Groups[1].Value })
+            $images | Should -Be @($script:keycloakImage) -Because $file
+        }
     }
 
     Context "PostgreSQL volume layout" {
@@ -486,7 +513,7 @@ exit 17
         Test-Path -LiteralPath (Join-Path $script:composeRoot ".bootstrap/reset-pending") | Should -BeFalse
         # The old volume/reference is gone, and the freshly recreated Keycloak container records
         # the actual image associated with its new H2 volume.
-        Get-Content -LiteralPath $keycloakRef -Raw | Should -Be "quay.io/keycloak/keycloak:26.7`n"
+        Get-Content -LiteralPath $keycloakRef -Raw | Should -Be "$script:keycloakImage`n"
     }
 
     It "retains the reset sentinel when the destructive reset fails" {
