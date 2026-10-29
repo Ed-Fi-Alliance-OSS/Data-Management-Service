@@ -466,9 +466,11 @@ response, or whenever a token's state must be observed:
   reports an earlier token `{"active": false}`. The old credentials no longer authenticate.
 - After a deletion or an un-approval, the client can no longer authenticate to
   `/connect/introspect` (`invalid_client`), so use the protected request.
-- For an un-approval, `GET /v3/apiClients/{id}` also shows whether the client is un-approved.
-  An un-approval and its revocation commit together, so `isApproved: false` there means the
-  revocation committed too.
+- `GET /v3/apiClients/{id}` shows only the client's current approval setting. It cannot settle
+  whether an un-approval's revocation committed: `isApproved` may already have been `false`, for
+  example after an un-approval made before DMS-1493 was deployed, whose tokens were never revoked,
+  and it stays `false` when a repeated un-approval fails and rolls back. Confirm the cutoff with
+  the protected request above, or retry the un-approval until it answers success.
 
 ### Propagation and clock skew
 
