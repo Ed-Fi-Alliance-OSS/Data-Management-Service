@@ -606,6 +606,35 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     ) => (await repository.GetClientCredentialAsync(clientId))?.StoredClientSecret;
 
     /// <summary>
+    /// Grants <paramref name="roleName"/> to the application through the production role writes,
+    /// creating the role on first use, so a deletion has a real client-role row to remove.
+    /// </summary>
+    protected static Task AddClientRoleAsync(
+        OpenIddictDataRepository repository,
+        Guid applicationId,
+        string roleName
+    ) =>
+        repository.ExecuteInTransactionAsync(
+            async (connection, transaction) =>
+            {
+                Guid roleId;
+                if (
+                    await repository.FindRoleIdByNameAsync(roleName, connection, transaction) is
+                    { } existingId
+                )
+                {
+                    roleId = existingId;
+                }
+                else
+                {
+                    roleId = Guid.NewGuid();
+                    await repository.InsertRoleAsync(roleId, roleName, connection, transaction);
+                }
+                await repository.InsertClientRoleAsync(applicationId, roleId, connection, transaction);
+            }
+        );
+
+    /// <summary>
     /// Waits for every started task without letting its outcome replace the test's own: used in
     /// <c>finally</c> blocks, after the lock a task may be waiting on has been released, so no
     /// task outlives its test against the shared database.
@@ -2925,6 +2954,454 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             (await TokenStatusesAsync(_repository, _tokenIds)).Should().Equal("valid", "valid");
     }
 
+    // DMS-1493 Step 3.5: client deletion through its production caller,
+    // OpenIddictClientRepository.DeleteClientAsync, against the real engine repository.
+
+    /// <summary>
+    /// AC-2 through the engine: the deletion removes the application row with its scope and
+    /// client-role rows and revokes every token of the client in one transaction. Another client
+    /// sharing a scope and the role keeps its row, its associations and its token, and the scope
+    /// and role themselves remain. A repeated deletion answers not found and changes nothing: the
+    /// revocation dates written over the first deletion's are still there afterwards.
+    /// </summary>
+    [TestFixture]
+    public class Given_DeleteClientAsync_Through_The_Engine : OpenIddictDataRepositoryTests
+    {
+        private readonly string _sharedScope = $"delete-shared-{Guid.NewGuid():N}";
+        private readonly string _ownScope = $"delete-own-{Guid.NewGuid():N}";
+        private readonly string _roleName = $"delete-role-{Guid.NewGuid():N}";
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _applicationId;
+        private Guid _bystanderApplicationId;
+        private string? _bystanderRowBefore;
+        private Guid[] _tokenIds = null!;
+        private Guid _bystanderTokenId;
+        private ClientDeleteResult _result = null!;
+        private List<string?> _statusesAfterDeletion = null!;
+        private ClientDeleteResult _repeatResult = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            _applicationId = await RegisterApplicationAsync(
+                _repository,
+                Guid.NewGuid().ToString(),
+                _sharedScope,
+                _ownScope
+            );
+            _bystanderApplicationId = await RegisterApplicationAsync(
+                _repository,
+                Guid.NewGuid().ToString(),
+                _sharedScope
+            );
+            await AddClientRoleAsync(_repository, _applicationId, _roleName);
+            await AddClientRoleAsync(_repository, _bystanderApplicationId, _roleName);
+            _tokenIds =
+            [
+                await StoreValidTokenAsync(_repository, _applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, _applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, _applicationId, FarFuture),
+            ];
+            _bystanderTokenId = await StoreValidTokenAsync(_repository, _bystanderApplicationId, FarFuture);
+            _bystanderRowBefore = await ApplicationRowJsonAsync(_bystanderApplicationId);
+
+            (await ApplicationScopeRowCountAsync(_applicationId))
+                .Should()
+                .Be(2, "the deletion must have scope rows to remove");
+            (await ClientRoleRowCountAsync(_applicationId))
+                .Should()
+                .Be(1, "the deletion must have a client-role row to remove");
+
+            OpenIddictClientRepository clientRepository = CreateClientRepository(_repository);
+            _result = await clientRepository.DeleteClientAsync(_applicationId.ToString());
+            _statusesAfterDeletion = await TokenStatusesAsync(_repository, _tokenIds);
+
+            // Fixed dates a repeated revocation would overwrite with the current time.
+            foreach (Guid tokenId in _tokenIds)
+            {
+                await SetRedemptionDateAsync(tokenId, SentinelRedemptionDate);
+            }
+            _repeatResult = await clientRepository.DeleteClientAsync(_applicationId.ToString());
+        }
+
+        [Test]
+        public void It_deletes_the_client() => _result.Should().BeOfType<ClientDeleteResult.Success>();
+
+        [Test]
+        public async Task It_removes_the_application_row() =>
+            (await ApplicationRowJsonAsync(_applicationId)).Should().BeNull();
+
+        [Test]
+        public async Task It_removes_the_clients_scope_rows() =>
+            (await ApplicationScopeRowCountAsync(_applicationId)).Should().Be(0);
+
+        [Test]
+        public async Task It_removes_the_clients_role_row() =>
+            (await ClientRoleRowCountAsync(_applicationId)).Should().Be(0);
+
+        [Test]
+        public async Task It_keeps_the_scopes_and_the_role_themselves()
+        {
+            (await ScopeRowCountsAsync(_sharedScope)).Should().Be((1, 1));
+            (await ScopeRowCountsAsync(_ownScope)).Should().Be((1, 0));
+            (await RoleRowCountsAsync(_roleName)).Should().Be((1, 1));
+        }
+
+        [Test]
+        public void It_revokes_every_token_of_the_client() =>
+            _statusesAfterDeletion.Should().Equal("revoked", "revoked", "revoked");
+
+        [Test]
+        public async Task It_leaves_the_other_client_unchanged()
+        {
+            (await ApplicationRowJsonAsync(_bystanderApplicationId))
+                .Should()
+                .NotBeNull()
+                .And.Be(_bystanderRowBefore);
+            (await ApplicationScopeRowCountAsync(_bystanderApplicationId)).Should().Be(1);
+            (await ClientRoleRowCountAsync(_bystanderApplicationId)).Should().Be(1);
+            (await _repository.GetTokenStatusAsync(_bystanderTokenId)).Should().Be("valid");
+        }
+
+        [Test]
+        public void It_answers_a_repeated_deletion_with_client_not_found() =>
+            _repeatResult.Should().BeOfType<ClientDeleteResult.FailureClientNotFound>();
+
+        [Test]
+        public async Task It_keeps_the_earlier_revocations_unchanged_on_the_repeat()
+        {
+            (await TokenStatusesAsync(_repository, _tokenIds))
+                .Should()
+                .Equal("revoked", "revoked", "revoked");
+            (await RedemptionDatesAsync(_tokenIds))
+                .Should()
+                .Equal(SentinelRedemptionDate, SentinelRedemptionDate, SentinelRedemptionDate);
+        }
+    }
+
+    /// <summary>
+    /// DMS-1493 D-6: an application row already deleted without revoking its tokens, as every
+    /// deletion did before this change, leaves valid orphan tokens. Deleting the client again
+    /// answers not found and still commits the revocation, so the orphans converge to revoked.
+    /// </summary>
+    [TestFixture]
+    public class Given_DeleteClientAsync_For_An_Application_Deleted_Without_Revocation
+        : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid[] _orphanTokenIds = null!;
+        private Guid _bystanderTokenId;
+        private ClientDeleteResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            Guid applicationId = await RegisterApplicationAsync(_repository, Guid.NewGuid().ToString());
+            Guid bystanderApplicationId = await RegisterApplicationAsync(
+                _repository,
+                Guid.NewGuid().ToString()
+            );
+            _orphanTokenIds =
+            [
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+            ];
+            _bystanderTokenId = await StoreValidTokenAsync(_repository, bystanderApplicationId, FarFuture);
+            await DeleteApplicationRowAsync(applicationId);
+
+            (await ApplicationRowJsonAsync(applicationId)).Should().BeNull("the application is already gone");
+            (await TokenStatusesAsync(_repository, _orphanTokenIds))
+                .Should()
+                .Equal(["valid", "valid"], "its tokens outlived it");
+
+            _result = await CreateClientRepository(_repository).DeleteClientAsync(applicationId.ToString());
+        }
+
+        [Test]
+        public void It_answers_client_not_found() =>
+            _result.Should().BeOfType<ClientDeleteResult.FailureClientNotFound>();
+
+        [Test]
+        public async Task It_revokes_the_orphaned_tokens() =>
+            (await TokenStatusesAsync(_repository, _orphanTokenIds)).Should().Equal("revoked", "revoked");
+
+        [Test]
+        public async Task It_leaves_the_other_clients_token_valid() =>
+            (await _repository.GetTokenStatusAsync(_bystanderTokenId)).Should().Be("valid");
+    }
+
+    /// <summary>
+    /// DMS-1493 fixture C-1 for a deletion, §8.1 case (i): a grant that already holds the client's
+    /// application row lock when the deletion starts. The lock manager must show the deletion
+    /// waiting on the holder's session; the holder then inserts a token and commits, so the
+    /// deletion has to revoke it. A deletion that does not delete the application row first
+    /// finishes before the probe sees it waiting, and one that revokes before that delete never
+    /// sees the holder's token.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Grant_Committed_While_The_Deletion_Waits : OpenIddictDataRepositoryTests
+    {
+        private readonly Guid _committedWhileWaitingTokenId = Guid.NewGuid();
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _applicationId;
+        private Guid[] _earlierTokenIds = null!;
+        private Guid _bystanderTokenId;
+        private ClientDeleteResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            _applicationId = await RegisterApplicationAsync(_repository, Guid.NewGuid().ToString());
+            Guid bystanderApplicationId = await RegisterApplicationAsync(
+                _repository,
+                Guid.NewGuid().ToString()
+            );
+            _earlierTokenIds =
+            [
+                await StoreValidTokenAsync(_repository, _applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, _applicationId, FarFuture),
+            ];
+            _bystanderTokenId = await StoreValidTokenAsync(_repository, bystanderApplicationId, FarFuture);
+            OpenIddictClientRepository clientRepository = CreateClientRepository(_repository);
+
+            RowLockHolder holder = await RowLockHolder.TakeAsync(_applicationId);
+            Task<ClientDeleteResult>? deletion = null;
+            Task? probe = null;
+            try
+            {
+                deletion = Task.Run(() => clientRepository.DeleteClientAsync(_applicationId.ToString()));
+                probe = WaitUntilASessionIsBlockedBy(holder.SessionId, GrantBlockedObservationTimeout);
+
+                if (await Task.WhenAny(probe, deletion) == deletion)
+                {
+                    Assert.Fail(
+                        $"The deletion completed with {(await deletion).GetType().Name} before it was observed waiting on the held row lock."
+                    );
+                }
+
+                await probe;
+                deletion
+                    .IsCompleted.Should()
+                    .BeFalse("the deletion is waiting on the row lock the holder owns");
+
+                await holder.InsertTokenAsync(_committedWhileWaitingTokenId);
+                await holder.CommitAsync();
+
+                _result = await deletion;
+            }
+            finally
+            {
+                // Ends the holder's transaction first (a no-op after the commit), so a deletion
+                // still waiting on it can finish before it is awaited.
+                await holder.DisposeAsync();
+                await AwaitWithoutObservingAsync(deletion, probe);
+            }
+        }
+
+        [Test]
+        public void It_deletes_the_client() => _result.Should().BeOfType<ClientDeleteResult.Success>();
+
+        [Test]
+        public async Task It_revokes_the_token_committed_while_it_waited() =>
+            (await _repository.GetTokenStatusAsync(_committedWhileWaitingTokenId)).Should().Be("revoked");
+
+        [Test]
+        public async Task It_revokes_the_earlier_tokens() =>
+            (await TokenStatusesAsync(_repository, _earlierTokenIds)).Should().Equal("revoked", "revoked");
+
+        [Test]
+        public async Task It_removes_the_application_row() =>
+            (await ApplicationRowJsonAsync(_applicationId)).Should().BeNull();
+
+        [Test]
+        public async Task It_leaves_the_other_clients_token_valid() =>
+            (await _repository.GetTokenStatusAsync(_bystanderTokenId)).Should().Be("valid");
+    }
+
+    /// <summary>
+    /// DMS-1493 fixture C-2 for a deletion, §8.1 case (ii): a grant that reaches the store after
+    /// the deletion committed is refused as not found under either limit setting and writes no
+    /// row. The same client's grant before the deletion was stored, so the refusal comes from the
+    /// deletion alone, and the deletion revoked that earlier token.
+    /// </summary>
+    [TestFixture(EnforcementDisabled)]
+    [TestFixture(15)]
+    public class Given_A_Grant_After_The_Deletion(int maxActiveTokens) : OpenIddictDataRepositoryTests
+    {
+        private readonly Guid _beforeDeletionTokenId = Guid.NewGuid();
+        private readonly Guid _afterDeletionTokenId = Guid.NewGuid();
+        private OpenIddictDataRepository _repository = null!;
+        private TokenStoreOutcome _beforeDeletionOutcome;
+        private ClientDeleteResult _deleteResult = null!;
+        private TokenStoreOutcome _afterDeletionOutcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            // ApiClient.ClientId is 36 characters wide.
+            string clientId = Guid.NewGuid().ToString();
+            Guid applicationId = await RegisterApplicationAsync(_repository, clientId);
+            await AddApiClientRowAsync(_repository, clientId);
+
+            _beforeDeletionOutcome = await _repository.StoreTokenAsync(
+                _beforeDeletionTokenId,
+                applicationId,
+                "subject-before-deletion",
+                FarFuture,
+                maxActiveTokens,
+                RegisteredSecret
+            );
+            _deleteResult = await CreateClientRepository(_repository)
+                .DeleteClientAsync(applicationId.ToString());
+            _afterDeletionOutcome = await _repository.StoreTokenAsync(
+                _afterDeletionTokenId,
+                applicationId,
+                "subject-after-deletion",
+                FarFuture,
+                maxActiveTokens,
+                RegisteredSecret
+            );
+        }
+
+        [Test]
+        public void It_deletes_the_client() => _deleteResult.Should().BeOfType<ClientDeleteResult.Success>();
+
+        [Test]
+        public async Task It_stored_the_grant_before_the_deletion_and_revoked_it()
+        {
+            _beforeDeletionOutcome.Should().Be(TokenStoreOutcome.Stored);
+            (await _repository.GetTokenStatusAsync(_beforeDeletionTokenId)).Should().Be("revoked");
+        }
+
+        [Test]
+        public void It_refuses_the_grant_after_the_deletion() =>
+            _afterDeletionOutcome.Should().Be(TokenStoreOutcome.ClientNotFound);
+
+        [Test]
+        public async Task It_stores_no_token_for_that_grant() =>
+            (await _repository.GetTokenStatusAsync(_afterDeletionTokenId)).Should().BeNull();
+    }
+
+    /// <summary>
+    /// DMS-1493 whole-lifecycle rollback for a deletion (D-7): the revocation fails after the
+    /// application row, and with it its scope and client-role rows, was deleted in the same
+    /// transaction. The deletion reports an unknown failure, and the engine keeps neither change:
+    /// the application row, its scope and client-role rows and every token are as they were.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Deletion_Whose_Revocation_Fails : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private IOpenIddictDataRepository _failingRepository = null!;
+        private Guid _applicationId;
+        private string? _applicationRowBefore;
+        private Guid[] _tokenIds = null!;
+        private ClientDeleteResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            _applicationId = await RegisterApplicationAsync(
+                _repository,
+                Guid.NewGuid().ToString(),
+                $"rollback-scope-{Guid.NewGuid():N}"
+            );
+            await AddClientRoleAsync(_repository, _applicationId, $"rollback-role-{Guid.NewGuid():N}");
+            _tokenIds =
+            [
+                await StoreValidTokenAsync(_repository, _applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, _applicationId, FarFuture),
+            ];
+            _applicationRowBefore = await ApplicationRowJsonAsync(_applicationId);
+
+            (await ApplicationScopeRowCountAsync(_applicationId))
+                .Should()
+                .Be(1, "the rollback must have a scope row to restore");
+            (await ClientRoleRowCountAsync(_applicationId))
+                .Should()
+                .Be(1, "the rollback must have a client-role row to restore");
+
+            _failingRepository = A.Fake<IOpenIddictDataRepository>(configuration =>
+                configuration.Wrapping(_repository)
+            );
+            A.CallTo(() =>
+                    _failingRepository.RevokeTokensForApplicationAsync(
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction?>._
+                    )
+                )
+                .ThrowsAsync(new InvalidOperationException("Injected revocation failure"));
+
+            _result = await CreateClientRepository(_failingRepository)
+                .DeleteClientAsync(_applicationId.ToString());
+        }
+
+        [Test]
+        public void It_reports_an_unknown_failure() =>
+            _result.Should().BeOfType<ClientDeleteResult.FailureUnknown>();
+
+        [Test]
+        public void It_deleted_the_application_in_a_transaction_before_the_revocation_failed() =>
+            A.CallTo(() =>
+                    _failingRepository.DeleteApplicationByIdAsync(
+                        _applicationId,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>.That.IsNotNull()
+                    )
+                )
+                .MustHaveHappenedOnceExactly()
+                .Then(
+                    A.CallTo(() =>
+                            _failingRepository.RevokeTokensForApplicationAsync(
+                                _applicationId,
+                                A<IDbConnection>._,
+                                A<IDbTransaction?>._
+                            )
+                        )
+                        .MustHaveHappenedOnceExactly()
+                );
+
+        [Test]
+        public async Task It_keeps_the_application_row() =>
+            (await ApplicationRowJsonAsync(_applicationId))
+                .Should()
+                .NotBeNull()
+                .And.Be(_applicationRowBefore);
+
+        [Test]
+        public async Task It_keeps_the_scope_row() =>
+            (await ApplicationScopeRowCountAsync(_applicationId)).Should().Be(1);
+
+        [Test]
+        public async Task It_keeps_the_client_role_row() =>
+            (await ClientRoleRowCountAsync(_applicationId)).Should().Be(1);
+
+        [Test]
+        public async Task It_leaves_every_token_valid() =>
+            (await TokenStatusesAsync(_repository, _tokenIds)).Should().Equal("valid", "valid");
+    }
+
     /// <summary>
     /// Tier 1 of the concurrency coverage: cheap, and loud when enforcement is badly broken. It is
     /// NOT proof of serialization - the thread pool can serialize these calls on its own - which is
@@ -3433,6 +3910,15 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         return await connection.ExecuteScalarAsync<int>(
             "SELECT COUNT(*) FROM dmscs.OpenIddictApplicationScope WHERE ApplicationId = @ApplicationId",
             new { ApplicationId = applicationId }
+        );
+    }
+
+    protected static async Task<int> ClientRoleRowCountAsync(Guid applicationId)
+    {
+        await using SqlConnection connection = await OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM dmscs.OpenIddictClientRole WHERE ClientId = @ClientId",
+            new { ClientId = applicationId }
         );
     }
 
