@@ -483,7 +483,12 @@ public class OpenIddictClientRepositoryTests
         {
             // Arrange
             A.CallTo(() =>
-                    _dataRepository.UpdateClientSecretAsync(A<Guid>._, A<string>._, A<IDbConnection>._)
+                    _dataRepository.UpdateClientSecretAsync(
+                        A<Guid>._,
+                        A<string>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
                 )
                 .Returns(1);
 
@@ -511,7 +516,12 @@ public class OpenIddictClientRepositoryTests
         {
             // Arrange
             A.CallTo(() =>
-                    _dataRepository.UpdateClientSecretAsync(A<Guid>._, A<string>._, A<IDbConnection>._)
+                    _dataRepository.UpdateClientSecretAsync(
+                        A<Guid>._,
+                        A<string>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
                 )
                 .Returns(1);
 
@@ -523,6 +533,252 @@ public class OpenIddictClientRepositoryTests
             var success = (ClientResetResult.Success)result;
             success.ClientSecret.Should().NotContainAny("+", "%", "=", "&", " ");
         }
+    }
+
+    /// <summary>
+    /// Shared arrangement for the credential reset (DMS-1493 §6.2). The reset writes the new hash
+    /// and revokes the client's tokens in one transaction, so every fixture keeps the connection and
+    /// the transaction it hands out and checks that both calls ran on them.
+    /// </summary>
+    public abstract class ResetCredentialsTestBase : OpenIddictClientRepositoryTests
+    {
+        protected const string HashedNewSecret = "hashed_secret";
+        protected const string RevocationLog = "outstanding tokens for client";
+
+        protected Guid _clientUuid;
+        protected IDbConnection _connection = null!;
+        protected IDbTransaction _transaction = null!;
+        protected ClientResetResult _result = null!;
+
+        [SetUp]
+        public void SetUpResetDefaults()
+        {
+            _clientUuid = Guid.NewGuid();
+            _connection = A.Fake<IDbConnection>();
+            _transaction = A.Fake<IDbTransaction>();
+            A.CallTo(() => _dataRepository.CreateConnectionAsync()).Returns(_connection);
+            A.CallTo(() => _dataRepository.BeginTransactionAsync(_connection)).Returns(_transaction);
+        }
+
+        [TearDown]
+        public void DisposeResetFakes()
+        {
+            _transaction.Dispose();
+            _connection.Dispose();
+        }
+
+        protected void ArrangeSecretUpdate(int rows) =>
+            A.CallTo(() =>
+                    _dataRepository.UpdateClientSecretAsync(
+                        A<Guid>._,
+                        A<string>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .Returns(rows);
+
+        protected async Task ActResetAsync(string? clientUuid = null) =>
+            _result = await _repository.ResetCredentialsAsync(clientUuid ?? _clientUuid.ToString());
+
+        protected void AssertNoRevocation() =>
+            A.CallTo(() =>
+                    _dataRepository.RevokeTokensForApplicationAsync(
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .MustNotHaveHappened();
+
+        protected void AssertNoRevocationLogged() => _logger.VerifyNoLog(LogLevel.Information, RevocationLog);
+    }
+
+    /// <summary>
+    /// The reset writes the new hash first, which takes the application row lock that token stores
+    /// wait on, then revokes the client's tokens on the same connection and transaction, and commits
+    /// once before returning the new secret. Fails if the revocation is missing, runs outside the
+    /// reset's transaction, or runs before the secret write.
+    /// </summary>
+    [TestFixture]
+    public class Given_ResetCredentialsAsync_For_An_Existing_Client : ResetCredentialsTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeSecretUpdate(1);
+            A.CallTo(() =>
+                    _dataRepository.RevokeTokensForApplicationAsync(
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .Returns(3);
+
+            // The canonical form of the identifier differs from what is passed in, so the log shows
+            // whether the reset logs the parsed identifier rather than the caller's string.
+            await ActResetAsync(_clientUuid.ToString("B").ToUpperInvariant());
+        }
+
+        [Test]
+        public void It_returns_success_carrying_the_secret_it_hashed()
+        {
+            _result.Should().BeOfType<ClientResetResult.Success>();
+            var newSecret = ((ClientResetResult.Success)_result).ClientSecret;
+            A.CallTo(() => _secretHasher.HashSecretAsync(newSecret)).MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_writes_the_new_hash_inside_the_reset_transaction() =>
+            A.CallTo(() =>
+                    _dataRepository.UpdateClientSecretAsync(
+                        _clientUuid,
+                        HashedNewSecret,
+                        _connection,
+                        _transaction
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_revokes_the_client_tokens_inside_the_same_transaction() =>
+            A.CallTo(() =>
+                    _dataRepository.RevokeTokensForApplicationAsync(_clientUuid, _connection, _transaction)
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_hashes_the_secret_before_it_opens_the_transaction() =>
+            A.CallTo(() => _secretHasher.HashSecretAsync(A<string>._))
+                .MustHaveHappenedOnceExactly()
+                .Then(
+                    A.CallTo(() => _dataRepository.BeginTransactionAsync(_connection))
+                        .MustHaveHappenedOnceExactly()
+                );
+
+        [Test]
+        public void It_writes_the_secret_then_revokes_then_commits() =>
+            A.CallTo(() =>
+                    _dataRepository.UpdateClientSecretAsync(
+                        _clientUuid,
+                        HashedNewSecret,
+                        _connection,
+                        _transaction
+                    )
+                )
+                .MustHaveHappenedOnceExactly()
+                .Then(
+                    A.CallTo(() =>
+                            _dataRepository.RevokeTokensForApplicationAsync(
+                                _clientUuid,
+                                _connection,
+                                _transaction
+                            )
+                        )
+                        .MustHaveHappenedOnceExactly()
+                )
+                .Then(A.CallTo(() => _transaction.Commit()).MustHaveHappenedOnceExactly());
+
+        [Test]
+        public void It_does_not_roll_back() => A.CallTo(() => _transaction.Rollback()).MustNotHaveHappened();
+
+        [Test]
+        public void It_logs_the_revocation_count_with_the_normalized_client_uuid() =>
+            _logger
+                .LoggedEntries()
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Level == LogLevel.Information
+                    && entry.Message == $"Revoked 3 outstanding tokens for client {_clientUuid}"
+                );
+
+        [Test]
+        public void It_logs_no_secret()
+        {
+            var newSecret = ((ClientResetResult.Success)_result).ClientSecret;
+            _logger
+                .LoggedEntryTexts()
+                .Should()
+                .NotContain(text => text.Contains(newSecret) || text.Contains(HashedNewSecret));
+        }
+    }
+
+    /// <summary>
+    /// No application row matched, so nothing changed: the reset rolls back without revoking and
+    /// answers not found. Fails if a missing client still revokes or commits.
+    /// </summary>
+    [TestFixture]
+    public class Given_ResetCredentialsAsync_For_A_Missing_Client : ResetCredentialsTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeSecretUpdate(0);
+
+            await ActResetAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_client_not_found() =>
+            _result.Should().BeOfType<ClientResetResult.FailureClientNotFound>();
+
+        [Test]
+        public void It_revokes_nothing() => AssertNoRevocation();
+
+        [Test]
+        public void It_rolls_back_without_committing()
+        {
+            A.CallTo(() => _transaction.Rollback()).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _transaction.Commit()).MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_logs_no_revocation() => AssertNoRevocationLogged();
+    }
+
+    /// <summary>
+    /// The revocation fails after the new hash was written in the same transaction. The reset
+    /// answers an unknown failure and never commits, so disposing the transaction discards the
+    /// secret change together with the revocation. Fails if the secret change is committed before
+    /// the revocation succeeds.
+    /// </summary>
+    [TestFixture]
+    public class Given_ResetCredentialsAsync_Whose_Revocation_Throws : ResetCredentialsTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeSecretUpdate(1);
+            A.CallTo(() =>
+                    _dataRepository.RevokeTokensForApplicationAsync(
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .ThrowsAsync(new InvalidOperationException("revocation failed"));
+
+            await ActResetAsync();
+        }
+
+        [Test]
+        public void It_returns_failure_unknown() =>
+            _result.Should().BeOfType<ClientResetResult.FailureUnknown>();
+
+        [Test]
+        public void It_does_not_commit() => A.CallTo(() => _transaction.Commit()).MustNotHaveHappened();
+
+        [Test]
+        public void It_disposes_the_uncommitted_transaction() =>
+            A.CallTo(() => _transaction.Dispose()).MustHaveHappened();
+
+        [Test]
+        public void It_logs_the_failure_as_an_error() =>
+            _logger.VerifyLogError("Failed to reset OpenIddict client credentials");
+
+        [Test]
+        public void It_logs_no_revocation() => AssertNoRevocationLogged();
     }
 
     /// <summary>

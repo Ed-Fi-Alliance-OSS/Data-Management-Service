@@ -474,19 +474,39 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                     clientSecretValidationOptionsAccessor.Value
                 );
                 var hashedNewSecret = await secretHasher.HashSecretAsync(newSecret);
+                var applicationId = Guid.Parse(clientUuid);
                 using var connection = await dataRepository.CreateConnectionAsync();
+                using var transaction = await dataRepository.BeginTransactionAsync(connection);
 
+                // The secret write is the first statement so that it takes the application row lock
+                // every token store waits on before the tokens are revoked. A grant that stored a token
+                // before it is caught by the revocation below; a grant blocked behind it re-validates
+                // the secret once this transaction commits and is refused.
                 var rows = await dataRepository.UpdateClientSecretAsync(
-                    Guid.Parse(clientUuid),
+                    applicationId,
                     hashedNewSecret,
-                    connection
+                    connection,
+                    transaction
                 );
 
                 if (rows == 0)
                 {
+                    transaction.Rollback();
                     return new ClientResetResult.FailureClientNotFound($"Client {clientUuid} not found");
                 }
 
+                var revokedCount = await dataRepository.RevokeTokensForApplicationAsync(
+                    applicationId,
+                    connection,
+                    transaction
+                );
+
+                transaction.Commit();
+                logger.LogInformation(
+                    "Revoked {Count} outstanding tokens for client {ClientUuid}",
+                    revokedCount,
+                    SanitizeForLog(applicationId.ToString())
+                );
                 return new ClientResetResult.Success(newSecret);
             }
             catch (Exception ex)
