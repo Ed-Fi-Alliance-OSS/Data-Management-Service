@@ -47,6 +47,13 @@ public partial class StepDefinitions(
     /// </summary>
     private readonly Dictionary<string, (string Key, string Secret)> _credentialSlots = new();
 
+    /// <summary>
+    /// Access tokens captured under caller-chosen names, so a scenario can keep using a client's
+    /// earlier token after the administrator acts on that client. Kept apart from the id pool
+    /// because a token is never substituted into a URL or body.
+    /// </summary>
+    private readonly Dictionary<string, string> _capturedTokens = new();
+
     private IDictionary<string, string> _authHeaders =>
         new Dictionary<string, string>
         {
@@ -200,6 +207,29 @@ public partial class StepDefinitions(
     [When("a security GET request is made to {string} with header {string} value {string}")]
     public async Task WhenASecurityGetRequestIsMadeToWithHeader(string url, string header, string value) =>
         await WhenAGETRequestIsMadeToWithHeader(url, header, value);
+
+    /// <summary>
+    /// Sends the request with a captured token as its bearer instead of the administrator's
+    /// token, which stays the current token for the steps that follow.
+    /// </summary>
+    [When("a GET request is made to {string} with the token captured as {string}")]
+    public async Task WhenAGETRequestIsMadeToWithTheTokenCapturedAs(string url, string name)
+    {
+        url = await ReplaceIdsAsync(url);
+        string capturedToken = CapturedToken(name);
+
+        _apiResponse = await playwrightContext.ApiRequestContext!.GetAsync(
+            url,
+            new()
+            {
+                Headers = new Dictionary<string, string>
+                {
+                    { "Content-Type", "application/json" },
+                    { "Authorization", $"Bearer {capturedToken}" },
+                },
+            }
+        );
+    }
 
     [When("an unauthenticated GET request is made to {string}")]
     public async Task WhenAnUnauthenticatedGetRequestIsMadeTo(string url)
@@ -814,6 +844,32 @@ public partial class StepDefinitions(
         // The key is also the client's addressable clientId, so record it for URL substitution.
         // A later capture into the same slot keeps this in step with the slot's current pair.
         _ids[$"{slot}Key"] = key;
+    }
+
+    /// <summary>
+    /// Captures the access token of the current token response under a caller-chosen name. The
+    /// administrator's token is left as the current token.
+    /// </summary>
+    [Then("the access token in the response is captured as {string}")]
+    [Given("the access token in the response is captured as {string}")]
+    public async Task ThenTheAccessTokenInTheResponseIsCapturedAs(string name)
+    {
+        string content = await _apiResponse.TextAsync();
+        JsonNode? accessToken = JsonNode.Parse(content)?["access_token"];
+        accessToken.Should().NotBeNull($"the previous response should include an access_token: {content}");
+        accessToken!
+            .GetValueKind()
+            .Should()
+            .Be(JsonValueKind.String, $"the access_token should be a string: {content}");
+        string token = accessToken.GetValue<string>();
+        token.Should().NotBeNullOrWhiteSpace("the access_token should be non-empty");
+        _capturedTokens[name] = token;
+    }
+
+    private string CapturedToken(string name)
+    {
+        _capturedTokens.Should().ContainKey(name, $"an access token should have been captured as '{name}'");
+        return _capturedTokens[name];
     }
 
     // This step passes the client's own claim set name as the scope because the scope scenarios
