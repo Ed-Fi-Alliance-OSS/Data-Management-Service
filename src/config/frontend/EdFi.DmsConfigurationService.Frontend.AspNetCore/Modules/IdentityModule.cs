@@ -476,9 +476,22 @@ public class IdentityModule : IEndpointModule
         "invalid_scope",
     };
 
-    private static bool TryReadProviderError(string detail, out string error, out string errorDescription) =>
-        FailureResults.TryParseProviderError(detail, out error, out errorDescription)
-        && _providerTokenErrorCodes.Contains(error);
+    private static bool TryReadProviderError(string detail, out string error, out string errorDescription)
+    {
+        try
+        {
+            return FailureResults.TryParseProviderError(detail, out error, out errorDescription)
+                && _providerTokenErrorCodes.Contains(error);
+        }
+        catch (InvalidOperationException)
+        {
+            // A string member whose escapes do not decode, such as an unpaired surrogate, is not a
+            // usable structured body; the arm's fixed answer applies.
+            error = string.Empty;
+            errorDescription = string.Empty;
+            return false;
+        }
+    }
 
     /// <summary>
     /// True when every character is one RFC 6749 §5.2 allows in an <c>error_description</c>: printable

@@ -753,267 +753,6 @@ public class TokenEndpointTests
         body["error_description"]!.GetValue<string>().Should().Be("The grant_type parameter is missing.");
     }
 
-    [Test]
-    public async Task When_error_from_backend()
-    {
-        // Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            _tokenManager = A.Fake<ITokenManager>();
-            A.CallTo(() =>
-                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-                )
-                .Returns(
-                    new TokenResult.FailureUnknown(
-                        "No connection could be made because the target machine actively refused it."
-                    )
-                );
-
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        // Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
-        );
-        var response = await client.PostAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-        AssertOAuthBody(response, content, "server_error", "The token request could not be processed.");
-        content.Should().NotContain("actively refused");
-    }
-
-    [Test]
-    public async Task When_provider_is_unreacheable()
-    {
-        //Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            _tokenManager = A.Fake<ITokenManager>();
-
-            A.CallTo(() =>
-                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-                )
-                .Returns(
-                    new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.Unreachable(
-                            "No connection could be made because the target machine actively refused it."
-                        )
-                    )
-                );
-
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        //Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
-        );
-        var response = await client.PostAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        AssertOAuthBody(
-            response,
-            content,
-            "server_error",
-            "The identity provider returned an unexpected response."
-        );
-        content.Should().NotContain("actively refused");
-    }
-
-    [Test]
-    public async Task When_provider_has_invalid_realm()
-    {
-        //Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            _tokenManager = A.Fake<ITokenManager>();
-
-            A.CallTo(() =>
-                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-                )
-                .Returns(
-                    new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.NotFound(
-                            """
-                            { "error":"Realm does not exist","error_description":"For more on this error consult the server log at the debug level."}
-                            """
-                        )
-                    )
-                );
-
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        //Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
-        );
-        var response = await client.PostAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
-
-        // Assert: the provider's text is not the caller's to read, structured or not
-        response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
-        AssertOAuthBody(
-            response,
-            content,
-            "server_error",
-            "The identity provider returned an unexpected response."
-        );
-        content.Should().NotContain("Realm does not exist");
-    }
-
-    [Test]
-    public async Task When_provider_has_not_realm_admin_role()
-    {
-        //Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            _tokenManager = A.Fake<ITokenManager>();
-
-            A.CallTo(() =>
-                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-                )
-                .Returns(
-                    new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.Unauthorized("Insufficient Permissions")
-                    )
-                );
-
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        //Act
-        var requestContent = new FormUrlEncodedContent([
-            new KeyValuePair<string, string>("client_id", "CSClient1"),
-            new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-            new KeyValuePair<string, string>("grant_type", "client_credentials"),
-            new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-        ]);
-        var response = await client.PostAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
-
-        // Assert: form credentials, so no Basic challenge and the 400 the house rule gives them
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        AssertOAuthBody(response, content, "invalid_client", "Invalid client or Invalid client credentials");
-        response.Headers.WwwAuthenticate.Should().BeEmpty();
-        content.Should().NotContain("Insufficient Permissions");
-    }
-
-    [Test]
-    public async Task When_provider_has_bad_credetials()
-    {
-        //Arrange
-        await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            _tokenManager = A.Fake<ITokenManager>();
-
-            A.CallTo(() =>
-                    _tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
-                )
-                .Returns(
-                    new TokenResult.FailureIdentityProvider(
-                        new IdentityProviderError.Unauthorized(
-                            """
-                            {"error":"invalid_client","error_description":"Invalid client or Invalid client credentials"}
-                            """
-                        )
-                    )
-                );
-
-            builder.UseEnvironment("Test");
-            builder.ConfigureServices(
-                (collection) =>
-                {
-                    collection.AddTransient((_) => _tokenManager!);
-                }
-            );
-        });
-        using var client = factory.CreateClient();
-
-        //Act
-        var requestContent = new FormUrlEncodedContent(
-            new[]
-            {
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            }
-        );
-        var response = await client.PostAsync("/connect/token", requestContent);
-        string content = await response.Content.ReadAsStringAsync();
-
-        // Assert
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        AssertOAuthBody(response, content, "invalid_client", "Invalid client or Invalid client credentials");
-        response.Headers.WwwAuthenticate.Should().BeEmpty();
-    }
-
-    private static void AssertOAuthBody(
-        HttpResponseMessage response,
-        string content,
-        string error,
-        string errorDescription
-    )
-    {
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-        JsonObject body = JsonNode.Parse(content)!.AsObject();
-        body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
-        body["error"]!.GetValue<string>().Should().Be(error);
-        body["error_description"]!.GetValue<string>().Should().Be(errorDescription);
-    }
-
     /// <summary>
     /// The token-limit rejection over the real HTTP pipeline. Driving it through
     /// <c>WebApplicationFactory</c> rather than calling the module directly is what proves the
@@ -1992,16 +1731,14 @@ public class OAuthEndpointErrorTests
             Returns(
                 new TokenResult.FailureAuthentication(
                     "unauthorized_client",
-                    "Invalid client or Invalid client credentials"
+                    "Service-owned failure description"
                 )
             );
 
+        // The description differs from the handler's fixed one, so this fails if the manager's is dropped.
         [Test]
         public void It_answers_invalid_client_with_the_manager_description() =>
-            AssertClientAuthenticationAnswer(
-                "invalid_client",
-                "Invalid client or Invalid client credentials"
-            );
+            AssertClientAuthenticationAnswer("invalid_client", "Service-owned failure description");
     }
 
     [TestFixture(true)]
@@ -2430,6 +2167,56 @@ public class OAuthEndpointErrorTests
         [Test]
         public void It_does_not_echo_the_provider_value() =>
             Content.Should().NotContain("SENTINEL_NON_STRING");
+    }
+
+    /// <summary>
+    /// A provider body whose string escape does not decode, such as an unpaired surrogate, is not a
+    /// structured body: each failure kind gets its fixed answer rather than a 500.
+    /// </summary>
+    [TestFixture("InvalidScope")]
+    [TestFixture("Unauthorized")]
+    [TestFixture("Forbidden")]
+    public class Given_a_provider_body_with_an_undecodable_escape(string kind) : ManagerOutcomeRequest(false)
+    {
+        private const string Body = """{"error":"invalid_scope","error_description":"\uD800"}""";
+
+        protected override void ArrangeManager() =>
+            ReturnsProviderFailure(
+                kind switch
+                {
+                    "InvalidScope" => new IdentityProviderError.InvalidScope(Body),
+                    "Unauthorized" => new IdentityProviderError.Unauthorized(Body),
+                    _ => new IdentityProviderError.Forbidden(Body),
+                }
+            );
+
+        [Test]
+        public void It_answers_with_the_fixed_answer_for_the_failure_kind()
+        {
+            switch (kind)
+            {
+                case "InvalidScope":
+                    AssertStatus(HttpStatusCode.BadRequest);
+                    AssertOAuthError(
+                        "invalid_scope",
+                        "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
+                    );
+                    break;
+                case "Unauthorized":
+                    AssertClientAuthenticationAnswer(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    );
+                    break;
+                default:
+                    AssertStatus(HttpStatusCode.BadGateway);
+                    AssertOAuthError(
+                        "server_error",
+                        "The identity provider returned an unexpected response."
+                    );
+                    break;
+            }
+        }
     }
 
     [TestFixture]
@@ -7093,8 +6880,9 @@ internal sealed class RevocationLogCapture : ILoggerProvider, ISupportExternalSc
 /// <summary>
 /// An identity-provider rejection of the request itself (<c>invalid_scope</c>) is answered with a 400
 /// <c>invalid_scope</c> carrying the provider's <c>error_description</c>, or a fixed description when the
-/// provider sends none; any other provider failure keeps the 502 as a <c>server_error</c>. Non-fixture
-/// container; the runnable fixtures are the nested <c>Given_…</c> classes.
+/// provider sends none, through form credentials. The other provider failures are pinned by
+/// <see cref="OAuthEndpointErrorTests"/>. Non-fixture container; the runnable fixtures are the nested
+/// <c>Given_…</c> classes.
 /// </summary>
 public class TokenEndpointInvalidScopeTests
 {
@@ -7213,38 +7001,6 @@ public class TokenEndpointInvalidScopeTests
                 .Be(
                     "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
                 );
-    }
-
-    [TestFixture]
-    public class Given_the_identity_provider_rejects_the_request_with_invalid_request : ProviderFailureRequest
-    {
-        protected override IdentityProviderError ProviderError =>
-            new IdentityProviderError(
-                """{"error":"invalid_request","error_description":"Missing form parameter: grant_type"}"""
-            );
-
-        [Test]
-        public void It_still_returns_502() =>
-            Response.StatusCode.Should().Be(HttpStatusCode.BadGateway, Body);
-
-        [Test]
-        public void It_returns_the_server_error_code_without_the_provider_text()
-        {
-            JsonObject body = JsonNode.Parse(Body)!.AsObject();
-            body["error"]!.GetValue<string>().Should().Be("server_error");
-            Body.Should().NotContain("Missing form parameter");
-        }
-    }
-
-    [TestFixture]
-    public class Given_the_identity_provider_is_unreachable : ProviderFailureRequest
-    {
-        protected override IdentityProviderError ProviderError =>
-            new IdentityProviderError.Unreachable("No connection could be made.");
-
-        [Test]
-        public void It_still_returns_502() =>
-            Response.StatusCode.Should().Be(HttpStatusCode.BadGateway, Body);
     }
 }
 
