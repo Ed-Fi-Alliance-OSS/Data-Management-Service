@@ -542,6 +542,36 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         );
 
     /// <summary>
+    /// The hash the <see cref="CreateClientRepository"/> hasher returns for every new secret, so a
+    /// reset's write is told apart from <see cref="RegisteredSecret"/>.
+    /// </summary>
+    protected const string ResetSecretHash = "reset-secret-hash";
+
+    /// <summary>
+    /// The production lifecycle caller, <see cref="OpenIddictClientRepository"/>, over
+    /// <paramref name="dataRepository"/>: the real engine repository, or a fake wrapping it to
+    /// inject a failure. Only the secret hashing is faked.
+    /// </summary>
+    protected static OpenIddictClientRepository CreateClientRepository(
+        IOpenIddictDataRepository dataRepository
+    )
+    {
+        IClientSecretHasher secretHasher = A.Fake<IClientSecretHasher>();
+        A.CallTo(() => secretHasher.HashSecretAsync(A<string>._)).Returns(ResetSecretHash);
+        return new OpenIddictClientRepository(
+            NullLogger<OpenIddictClientRepository>.Instance,
+            secretHasher,
+            dataRepository,
+            Options.Create(new ClientSecretValidationOptions())
+        );
+    }
+
+    protected static async Task<string?> StoredSecretAsync(
+        OpenIddictDataRepository repository,
+        string clientId
+    ) => (await repository.GetClientCredentialAsync(clientId))?.StoredClientSecret;
+
+    /// <summary>
     /// Waits for every started task without letting its outcome replace the test's own: used in
     /// <c>finally</c> blocks, after the lock a task may be waiting on has been released, so no
     /// task outlives its test against the shared database.
@@ -573,11 +603,18 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     {
         private readonly NpgsqlConnection _connection;
         private readonly NpgsqlTransaction _transaction;
+        private readonly Guid _applicationId;
 
-        private RowLockHolder(NpgsqlConnection connection, NpgsqlTransaction transaction, int backendPid)
+        private RowLockHolder(
+            NpgsqlConnection connection,
+            NpgsqlTransaction transaction,
+            Guid applicationId,
+            int backendPid
+        )
         {
             _connection = connection;
             _transaction = transaction;
+            _applicationId = applicationId;
             BackendPid = backendPid;
         }
 
@@ -599,9 +636,39 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 transaction: transaction
             );
 
-            return new RowLockHolder(connection, transaction, backendPid);
+            return new RowLockHolder(connection, transaction, applicationId, backendPid);
         }
 
+        /// <summary>
+        /// Inserts a valid token for the locked application inside the holder's transaction, as a
+        /// grant that holds the row lock does; it becomes visible only on <see cref="CommitAsync"/>.
+        /// </summary>
+        public async Task InsertTokenAsync(Guid tokenId) =>
+            await _connection.ExecuteAsync(
+                @"INSERT INTO ""dmscs"".""OpenIddictToken""
+                  (""Id"", ""ApplicationId"", ""Subject"", ""Type"", ""CreationDate"", ""ExpirationDate"", ""Status"", ""ReferenceId"")
+                  VALUES (@Id, @ApplicationId, @Subject, 'access_token', @CreationDate, @ExpirationDate, 'valid', @ReferenceId)",
+                new
+                {
+                    Id = tokenId,
+                    ApplicationId = _applicationId,
+                    Subject = $"holder-{tokenId:N}",
+                    CreationDate = DateTimeOffset.UtcNow,
+                    ExpirationDate = FarFuture,
+                    ReferenceId = tokenId.ToString("N"),
+                },
+                _transaction
+            );
+
+        /// <summary>
+        /// Ends the holder's transaction by committing what it wrote, unlike
+        /// <see cref="ReleaseAsync"/>.
+        /// </summary>
+        public async Task CommitAsync() => await _transaction.CommitAsync();
+
+        /// <summary>
+        /// Ends the holder's transaction by rolling it back: nothing it wrote survives.
+        /// </summary>
         public async Task ReleaseAsync() => await _transaction.RollbackAsync();
 
         public async ValueTask DisposeAsync()
@@ -2457,6 +2524,297 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [Test]
         public async Task It_commits_the_revocation_of_the_earlier_token() =>
             (await _repository.GetTokenStatusAsync(_earlierTokenId)).Should().Be("revoked");
+    }
+
+    // DMS-1493 Step 3.4: credential reset through its production caller,
+    // OpenIddictClientRepository.ResetCredentialsAsync, against the real engine repository.
+
+    /// <summary>
+    /// AC-1 through the engine: the reset stores the new hash and revokes every token of the client
+    /// in its own transaction, and leaves another client's secret and token alone.
+    /// </summary>
+    [TestFixture]
+    public class Given_ResetCredentialsAsync_Through_The_Engine : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private string _clientId = null!;
+        private string _bystanderClientId = null!;
+        private Guid[] _tokenIds = null!;
+        private Guid _bystanderTokenId;
+        private ClientResetResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(Configuration.DatabaseOptions, NullLogger<OpenIddictDataRepository>.Instance);
+            _clientId = Guid.NewGuid().ToString();
+            _bystanderClientId = Guid.NewGuid().ToString();
+            Guid applicationId = await RegisterApplicationAsync(_repository, _clientId);
+            Guid bystanderApplicationId = await RegisterApplicationAsync(_repository, _bystanderClientId);
+            _tokenIds =
+            [
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+            ];
+            _bystanderTokenId = await StoreValidTokenAsync(_repository, bystanderApplicationId, FarFuture);
+
+            _result = await CreateClientRepository(_repository)
+                .ResetCredentialsAsync(applicationId.ToString());
+        }
+
+        [Test]
+        public void It_resets_the_credentials() => _result.Should().BeOfType<ClientResetResult.Success>();
+
+        [Test]
+        public async Task It_stores_the_new_secret_hash() =>
+            (await StoredSecretAsync(_repository, _clientId)).Should().Be(ResetSecretHash);
+
+        [Test]
+        public async Task It_revokes_every_token_of_the_client() =>
+            (await TokenStatusesAsync(_repository, _tokenIds))
+                .Should()
+                .Equal("revoked", "revoked", "revoked");
+
+        [Test]
+        public async Task It_leaves_the_other_client_unchanged()
+        {
+            (await _repository.GetTokenStatusAsync(_bystanderTokenId)).Should().Be("valid");
+            (await StoredSecretAsync(_repository, _bystanderClientId)).Should().Be(RegisteredSecret);
+        }
+    }
+
+    /// <summary>
+    /// DMS-1493 fixture C-1 for a reset, §8.1 case (i): a grant that already holds the client's
+    /// application row lock when the reset starts. <c>pg_locks</c> must show the reset waiting on
+    /// the holder's backend; the holder then inserts a token and commits, so the reset has to
+    /// revoke it. A reset that does not write the application row first finishes before the probe
+    /// sees it waiting, and one that revokes before that write never sees the holder's token.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Grant_Committed_While_The_Reset_Waits : OpenIddictDataRepositoryTests
+    {
+        private readonly Guid _committedWhileWaitingTokenId = Guid.NewGuid();
+        private OpenIddictDataRepository _repository = null!;
+        private string _clientId = null!;
+        private Guid[] _earlierTokenIds = null!;
+        private Guid _bystanderTokenId;
+        private ClientResetResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(Configuration.DatabaseOptions, NullLogger<OpenIddictDataRepository>.Instance);
+            _clientId = Guid.NewGuid().ToString();
+            Guid applicationId = await RegisterApplicationAsync(_repository, _clientId);
+            Guid bystanderApplicationId = await RegisterApplicationAsync(
+                _repository,
+                Guid.NewGuid().ToString()
+            );
+            _earlierTokenIds =
+            [
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+            ];
+            _bystanderTokenId = await StoreValidTokenAsync(_repository, bystanderApplicationId, FarFuture);
+            OpenIddictClientRepository clientRepository = CreateClientRepository(_repository);
+
+            RowLockHolder holder = await RowLockHolder.TakeAsync(DataSource!, applicationId);
+            Task<ClientResetResult>? reset = null;
+            Task? probe = null;
+            try
+            {
+                reset = Task.Run(() => clientRepository.ResetCredentialsAsync(applicationId.ToString()));
+                probe = WaitUntilABackendIsBlockedBy(holder.BackendPid, GrantBlockedObservationTimeout);
+
+                if (await Task.WhenAny(probe, reset) == reset)
+                {
+                    Assert.Fail(
+                        $"The reset completed with {(await reset).GetType().Name} before it was observed waiting on the held row lock."
+                    );
+                }
+
+                await probe;
+                reset.IsCompleted.Should().BeFalse("the reset is waiting on the row lock the holder owns");
+
+                await holder.InsertTokenAsync(_committedWhileWaitingTokenId);
+                await holder.CommitAsync();
+
+                _result = await reset;
+            }
+            finally
+            {
+                // Ends the holder's transaction first (a no-op after the commit), so a reset still
+                // waiting on it can finish before it is awaited.
+                await holder.DisposeAsync();
+                await AwaitWithoutObservingAsync(reset, probe);
+            }
+        }
+
+        [Test]
+        public void It_resets_the_credentials() => _result.Should().BeOfType<ClientResetResult.Success>();
+
+        [Test]
+        public async Task It_revokes_the_token_committed_while_it_waited() =>
+            (await _repository.GetTokenStatusAsync(_committedWhileWaitingTokenId)).Should().Be("revoked");
+
+        [Test]
+        public async Task It_revokes_the_earlier_tokens() =>
+            (await TokenStatusesAsync(_repository, _earlierTokenIds)).Should().Equal("revoked", "revoked");
+
+        [Test]
+        public async Task It_stores_the_new_secret_hash() =>
+            (await StoredSecretAsync(_repository, _clientId)).Should().Be(ResetSecretHash);
+
+        [Test]
+        public async Task It_leaves_the_other_clients_token_valid() =>
+            (await _repository.GetTokenStatusAsync(_bystanderTokenId)).Should().Be("valid");
+    }
+
+    /// <summary>
+    /// DMS-1493 fixture C-2 for a reset, §8.1 case (ii): a grant that authenticated against the old
+    /// secret and reaches the store after the reset committed is refused under either limit
+    /// setting. A grant carrying the new hash is stored, so the refusal comes from the changed
+    /// secret alone and not from the client being otherwise unusable.
+    /// </summary>
+    [TestFixture(EnforcementDisabled)]
+    [TestFixture(15)]
+    public class Given_A_Grant_With_The_Old_Secret_After_The_Reset(int maxActiveTokens)
+        : OpenIddictDataRepositoryTests
+    {
+        private readonly Guid _oldSecretTokenId = Guid.NewGuid();
+        private readonly Guid _newSecretTokenId = Guid.NewGuid();
+        private OpenIddictDataRepository _repository = null!;
+        private ClientResetResult _resetResult = null!;
+        private TokenStoreOutcome _oldSecretOutcome;
+        private TokenStoreOutcome _newSecretOutcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(Configuration.DatabaseOptions, NullLogger<OpenIddictDataRepository>.Instance);
+            // ApiClient.ClientId is 36 characters wide.
+            string clientId = Guid.NewGuid().ToString();
+            Guid applicationId = await RegisterApplicationAsync(_repository, clientId);
+            await AddApiClientRowAsync(_repository, clientId);
+
+            _resetResult = await CreateClientRepository(_repository)
+                .ResetCredentialsAsync(applicationId.ToString());
+
+            _oldSecretOutcome = await _repository.StoreTokenAsync(
+                _oldSecretTokenId,
+                applicationId,
+                "subject-old-secret",
+                FarFuture,
+                maxActiveTokens,
+                RegisteredSecret
+            );
+            _newSecretOutcome = await _repository.StoreTokenAsync(
+                _newSecretTokenId,
+                applicationId,
+                "subject-new-secret",
+                FarFuture,
+                maxActiveTokens,
+                ResetSecretHash
+            );
+        }
+
+        [Test]
+        public void It_resets_the_credentials() =>
+            _resetResult.Should().BeOfType<ClientResetResult.Success>();
+
+        [Test]
+        public void It_refuses_the_grant_with_the_old_secret() =>
+            _oldSecretOutcome.Should().Be(TokenStoreOutcome.ClientChanged);
+
+        [Test]
+        public async Task It_stores_no_token_for_that_grant() =>
+            (await _repository.GetTokenStatusAsync(_oldSecretTokenId)).Should().BeNull();
+
+        [Test]
+        public async Task It_stores_a_grant_with_the_new_secret()
+        {
+            _newSecretOutcome.Should().Be(TokenStoreOutcome.Stored);
+            (await _repository.GetTokenStatusAsync(_newSecretTokenId)).Should().Be("valid");
+        }
+    }
+
+    /// <summary>
+    /// DMS-1493 whole-lifecycle rollback for a reset (D-7): the revocation fails after the secret
+    /// write succeeded in the same transaction. The reset reports an unknown failure, and the
+    /// engine keeps neither change: the stored hash is still the registered one and every token
+    /// is still valid.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Reset_Whose_Revocation_Fails : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private IOpenIddictDataRepository _failingRepository = null!;
+        private string _clientId = null!;
+        private Guid _applicationId;
+        private Guid[] _tokenIds = null!;
+        private ClientResetResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(Configuration.DatabaseOptions, NullLogger<OpenIddictDataRepository>.Instance);
+            _clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(_repository, _clientId);
+            _tokenIds =
+            [
+                await StoreValidTokenAsync(_repository, _applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, _applicationId, FarFuture),
+            ];
+            _failingRepository = A.Fake<IOpenIddictDataRepository>(configuration =>
+                configuration.Wrapping(_repository)
+            );
+            A.CallTo(() =>
+                    _failingRepository.RevokeTokensForApplicationAsync(
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction?>._
+                    )
+                )
+                .ThrowsAsync(new InvalidOperationException("Injected revocation failure"));
+
+            _result = await CreateClientRepository(_failingRepository)
+                .ResetCredentialsAsync(_applicationId.ToString());
+        }
+
+        [Test]
+        public void It_reports_an_unknown_failure() =>
+            _result.Should().BeOfType<ClientResetResult.FailureUnknown>();
+
+        [Test]
+        public void It_wrote_the_new_secret_in_a_transaction_before_the_revocation_failed() =>
+            A.CallTo(() =>
+                    _failingRepository.UpdateClientSecretAsync(
+                        _applicationId,
+                        ResetSecretHash,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>.That.IsNotNull()
+                    )
+                )
+                .MustHaveHappenedOnceExactly()
+                .Then(
+                    A.CallTo(() =>
+                            _failingRepository.RevokeTokensForApplicationAsync(
+                                _applicationId,
+                                A<IDbConnection>._,
+                                A<IDbTransaction?>._
+                            )
+                        )
+                        .MustHaveHappenedOnceExactly()
+                );
+
+        [Test]
+        public async Task It_keeps_the_registered_secret_hash() =>
+            (await StoredSecretAsync(_repository, _clientId)).Should().Be(RegisteredSecret);
+
+        [Test]
+        public async Task It_leaves_every_token_valid() =>
+            (await TokenStatusesAsync(_repository, _tokenIds)).Should().Equal("valid", "valid");
     }
 
     /// <summary>
