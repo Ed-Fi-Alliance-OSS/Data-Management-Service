@@ -281,6 +281,7 @@ jobs:
             "eng/ci/tests/KeycloakNightlyNotifications.Tests.ps1",
             "eng/ci/tests/TemplateWorkflowAttestation.Tests.ps1",
             "eng/ci/tests/IdentityContractPublication.Tests.ps1",
+            "eng/ci/tests/DockerAnalysisWorkflowCredentials.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-RestoreCore.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-RestoreTrust.Tests.ps1",
