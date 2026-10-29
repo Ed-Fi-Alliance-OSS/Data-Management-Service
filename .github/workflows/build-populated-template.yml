@@ -55,11 +55,16 @@ on:
         type: string
         default: "postgresql"
     secrets:
+      # The Azure Artifacts publishing credentials. Only publish-template-package and
+      # promote-azure-package read them, in the push and promote steps alone, after entering
+      # the 'publishing' environment. Callers pass them by name only from their trusted publishing
+      # job, never from a pull request or other non-publishing call, which passes no Azure secret
+      # at all; builds restore from the feed anonymously. They must exist ONLY as secrets of the
+      # 'publishing' environment, never as repository or organization secrets.
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN:
-        required: true
+        required: false
       AZURE_ARTIFACTS_USER_NAME:
-        # Consumed only on the release-promotion path (env.ARTIFACTS_USERNAME); restore uses the PAT
-        # alone. Optional so non-publishing callers and forks without the secret do not hard-fail.
+        # Consumed only on the release-promotion path.
         required: false
       TEMPLATE_ATTESTATION_PRIVATE_KEY:
         # PKCS#8 ECDSA P-256 private key (PEM) for the 'edfi-alliance-ci' trust-policy
@@ -94,9 +99,6 @@ on:
 env:
   ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
   ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
-  ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
-  ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
-  VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
 
 permissions:
   contents: write
@@ -752,14 +754,18 @@ jobs:
     # A signed run publishes only after signing and its companion succeed, so the template
     # never reaches the feed without the matching companion. An intentionally unsigned run
     # (sign-template-package skipped by its gate) publishes unattested as before. A failed or
-    # cancelled signing or companion job publishes nothing.
-    if: ${{ !cancelled() && inputs.publish_package && needs.build-template.result == 'success' && needs.generate-package-sbom.result == 'success' && needs.generate-package-provenance.result == 'success' && ((needs.sign-template-package.result == 'skipped' && needs.build-attestation-companion.result == 'skipped') || (needs.sign-template-package.result == 'success' && needs.build-attestation-companion.result == 'success')) }}
+    # cancelled signing or companion job publishes nothing. Publication also requires a main or
+    # v* tag run that is not a pull request, and the 'publishing' environment, whose protection
+    # rules (required reviewers without self-review, deployment refs limited to main and the
+    # release tags) GitHub checks before it releases the publishing token.
+    if: ${{ !cancelled() && inputs.publish_package && github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && needs.build-template.result == 'success' && needs.generate-package-sbom.result == 'success' && needs.generate-package-provenance.result == 'success' && ((needs.sign-template-package.result == 'skipped' && needs.build-attestation-companion.result == 'skipped') || (needs.sign-template-package.result == 'success' && needs.build-attestation-companion.result == 'success')) }}
     needs:
       - build-template
       - generate-package-sbom
       - generate-package-provenance
       - sign-template-package
       - build-attestation-companion
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -785,6 +791,9 @@ jobs:
           InstallCredentialHandler
 
       - name: Push Populated Template Package to Azure
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
           $allPackages = @(Get-ChildItem -Name -Include *.nupkg)
           $companionPackages = @($allPackages | Where-Object { $_ -like "*.Attestation.*" })
@@ -853,7 +862,10 @@ jobs:
 
   promote-azure-package:
     name: Promote Azure Package
-    if: ${{ github.event_name == 'release' && github.event.action == 'released' }}
+    # Only a publishing call promotes, and only a release event on its v* tag; the 'publishing'
+    # environment releases the token only after its protection rules pass.
+    if: ${{ inputs.publish_package && github.event_name == 'release' && github.event.action == 'released' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v') }}
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -863,6 +875,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Promote Populated Template Azure Package
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           Import-Module ./package-helpers.psm1
 

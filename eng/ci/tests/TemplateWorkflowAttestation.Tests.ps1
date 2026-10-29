@@ -44,15 +44,30 @@ BeforeAll {
     }
 
     function script:Test-PublishCondition {
-        # Evaluates the publish job's condition for one set of upstream job results, the same
-        # way: needs.<job>.result becomes that job's result string, and anything unrecognized
-        # fails to parse.
-        param([string]$Expression, [bool]$PublishPackage, [hashtable]$Results)
+        # Evaluates the publish job's condition for one set of upstream job results and one
+        # event and ref, the same way: needs.<job>.result becomes that job's result string, and
+        # anything unrecognized fails to parse. The defaults are a push to main.
+        param(
+            [string]$Expression,
+            [bool]$PublishPackage,
+            [hashtable]$Results,
+            [string]$EventName = "push",
+            [string]$Ref = "refs/heads/main",
+            [string]$RefType = "branch"
+        )
 
         $translated = $Expression.Replace("!cancelled()", '$true').Replace("inputs.publish_package", '$PublishPackage')
         $translated = [regex]::Replace($translated, "needs\.([a-z-]+)\.result", { param($match) "'" + $Results[$match.Groups[1].Value] + "'" })
-        $translated = $translated.Replace("==", "-ieq").Replace("&&", "-and").Replace("||", "-or")
-        return [bool](& ([scriptblock]::Create("param(`$PublishPackage) $translated")) $PublishPackage)
+        $translated = $translated.
+            Replace("github.event_name", '$EventName').
+            Replace("github.ref_type", '$RefType').
+            Replace("github.ref", '$Ref').
+            Replace("!=", "-ine").
+            Replace("==", "-ieq").
+            Replace("&&", "-and").
+            Replace("||", "-or")
+        $translated = [regex]::Replace($translated, "startsWith\(\`$Ref, '([^']*)'\)", '$Ref.StartsWith(''$1'', [StringComparison]::OrdinalIgnoreCase)')
+        return [bool](& ([scriptblock]::Create("param(`$PublishPackage, `$EventName, `$Ref, `$RefType) $translated")) $PublishPackage $EventName $Ref $RefType)
     }
 
     function script:Get-WorkflowJobBlock {
@@ -241,7 +256,9 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
 
     It "binds only sign-template-package, gated on eligibility and the signing-enabled variable, to the protected environment" {
         $environmentLines = @($script:content -split "`n" | Where-Object { $_ -match '^\s*environment:' })
-        $environmentLines | Should -Be @("    environment: template-attestation-signing")
+        # The other two are the publishing environment of the publish and promote jobs, pinned by
+        # the publishing-token test below.
+        $environmentLines | Should -Be @("    environment: template-attestation-signing", "    environment: publishing", "    environment: publishing")
         $script:signJob.Contains($environmentLines[0]) | Should -BeTrue
 
         $script:signJob.Contains("`n    needs: build-template`n") | Should -BeTrue
@@ -431,6 +448,60 @@ Describe "template build workflow attestation wiring (<WorkflowFile>)" -ForEach 
         } | Should -Be $Publishes
     }
 
+    It "publishes a successful build only from <Case>: <Publishes>" -ForEach @(
+        @{ Case = "a push to main"; EventName = "push"; Ref = "refs/heads/main"; RefType = "branch"; Publishes = $true }
+        @{ Case = "a version tag push"; EventName = "push"; Ref = "refs/tags/v8.1.0"; RefType = "tag"; Publishes = $true }
+        @{ Case = "a manual run on main"; EventName = "workflow_dispatch"; Ref = "refs/heads/main"; RefType = "branch"; Publishes = $true }
+        @{ Case = "a manual run on a feature branch, never"; EventName = "workflow_dispatch"; Ref = "refs/heads/DMS-1647-1649"; RefType = "branch"; Publishes = $false }
+        @{ Case = "a pull request, never"; EventName = "pull_request"; Ref = "refs/pull/1185/merge"; RefType = "branch"; Publishes = $false }
+        @{ Case = "a pull request whose ref reads as main, never"; EventName = "pull_request"; Ref = "refs/heads/main"; RefType = "branch"; Publishes = $false }
+        @{ Case = "a branch named like main, never"; EventName = "push"; Ref = "refs/heads/main-backport"; RefType = "branch"; Publishes = $false }
+        @{ Case = "a branch whose ref reads as a version tag, never"; EventName = "workflow_dispatch"; Ref = "refs/tags/v8.1.0"; RefType = "branch"; Publishes = $false }
+        @{ Case = "a non-version tag, never"; EventName = "push"; Ref = "refs/tags/dms-pre-1.0"; RefType = "tag"; Publishes = $false }
+    ) {
+        # The caller passes publish_package and the publishing secrets only from a trusted run;
+        # this gate holds even if a caller did not.
+        $publishCondition = [regex]::Match($script:publishJob, '(?m)^    if: \$\{\{ (?<expression>.+) \}\}$').Groups["expression"].Value
+        Test-PublishCondition -Expression $publishCondition -PublishPackage $true -EventName $EventName -Ref $Ref -RefType $RefType -Results @{
+            "build-template"              = "success"
+            "generate-package-sbom"       = "success"
+            "generate-package-provenance" = "success"
+            "sign-template-package"       = "skipped"
+            "build-attestation-companion" = "skipped"
+        } | Should -Be $Publishes
+    }
+
+    It "gives the Azure publishing token only to the push and promote steps, inside the publishing environment" {
+        $script:content | Should -Not -Match '(?m)^  (ARTIFACTS_API_KEY|ARTIFACTS_USERNAME|VSS_NUGET_EXTERNAL_FEED_ENDPOINTS):' -Because "no workflow-wide env may carry a publishing credential"
+        $declaration = [regex]::Match($script:content, '(?m)^      AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN:\r?\n        required: (?<required>\w+)$')
+        $declaration.Groups["required"].Value | Should -Be "false" -Because "non-publishing callers pass no Azure secret"
+
+        $promoteJob = Get-WorkflowJobBlock -Content $script:content -JobName "promote-azure-package"
+        $pushStep = Get-WorkflowStepBlock -Content $script:content -StepName $PushStepName
+        $promoteStep = Get-WorkflowStepBlock -Content $script:content -StepName "Promote $Kind Template Azure Package"
+        $script:publishJob.Contains("`n    environment: publishing`n") | Should -BeTrue
+        $promoteJob.Contains("`n    environment: publishing`n") | Should -BeTrue
+        $script:publishJob.Contains($pushStep) | Should -BeTrue
+        $promoteJob.Contains($promoteStep) | Should -BeTrue
+
+        $references = [regex]::Matches($script:content, 'secrets\.AZURE_ARTIFACTS_(PERSONAL_ACCESS_TOKEN|USER_NAME)')
+        $references.Count | Should -Be 4
+        foreach ($reference in $references) {
+            $inPush = $script:content.IndexOf($pushStep) -le $reference.Index -and $reference.Index -lt $script:content.IndexOf($pushStep) + $pushStep.Length
+            $inPromote = $script:content.IndexOf($promoteStep) -le $reference.Index -and $reference.Index -lt $script:content.IndexOf($promoteStep) + $promoteStep.Length
+            ($inPush -or $inPromote) | Should -BeTrue -Because "$($reference.Value) belongs only to the push or promote step"
+        }
+        $pushStep.Contains("ARTIFACTS_API_KEY: `${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}") | Should -BeTrue
+        $pushStep.Contains("VSS_NUGET_EXTERNAL_FEED_ENDPOINTS:") | Should -BeTrue
+        $promoteStep.Contains("ARTIFACTS_USERNAME: `${{ secrets.AZURE_ARTIFACTS_USER_NAME }}") | Should -BeTrue
+        $promoteStep.Contains("ARTIFACTS_API_KEY: `${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}") | Should -BeTrue
+    }
+
+    It "promotes only a released version tag" {
+        $promoteJob = Get-WorkflowJobBlock -Content $script:content -JobName "promote-azure-package"
+        $promoteJob.Contains("`n    if: `${{ inputs.publish_package && github.event_name == 'release' && github.event.action == 'released' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v') }}`n") | Should -BeTrue
+    }
+
     It "couples publication: refuses inconsistent artifacts and publishes companions before templates with failure-visible pushes" {
         $pushIndex = $script:content.IndexOf("- name: $PushStepName")
         $pushIndex | Should -BeGreaterThan 0
@@ -487,9 +558,10 @@ Describe "template publication keeps each template with its own attestation on d
                     (Join-Path $PSScriptRoot "../../../.github/workflows/$WorkflowFile"))))
         $stepIndex = [array]::IndexOf($workflowLines, "      - name: $PushStepName")
         $stepIndex | Should -BeGreaterThan 0
-        $workflowLines[$stepIndex + 1] | Should -Be "        run: |"
+        $runIndex = [array]::IndexOf($workflowLines, "        run: |", $stepIndex)
+        $runIndex | Should -BeGreaterThan $stepIndex
         $bodyLines = [System.Collections.Generic.List[string]]::new()
-        foreach ($line in $workflowLines[($stepIndex + 2)..($workflowLines.Count - 1)]) {
+        foreach ($line in $workflowLines[($runIndex + 1)..($workflowLines.Count - 1)]) {
             if ($line.Trim().Length -gt 0 -and -not $line.StartsWith("          ")) {
                 break
             }
@@ -660,22 +732,49 @@ Describe "template publication keeps each template with its own attestation on d
 }
 
 Describe "template caller workflows pass the attestation secret through (<CallerFile>)" -ForEach @(
-    @{ CallerFile = "EdFi.Api.Minimal.Template.PostgreSQL.yml" }
-    @{ CallerFile = "EdFi.Api.Minimal.Template.MsSql.yml" }
-    @{ CallerFile = "EdFi.Api.Populated.Template.PostgreSQL.yml" }
-    @{ CallerFile = "EdFi.Api.Populated.Template.MsSql.yml" }
+    @{ CallerFile = "EdFi.Api.Minimal.Template.PostgreSQL.yml"; Kind = "minimal" }
+    @{ CallerFile = "EdFi.Api.Minimal.Template.MsSql.yml"; Kind = "minimal" }
+    @{ CallerFile = "EdFi.Api.Populated.Template.PostgreSQL.yml"; Kind = "populated" }
+    @{ CallerFile = "EdFi.Api.Populated.Template.MsSql.yml"; Kind = "populated" }
 ) {
     BeforeAll {
         $script:callerContent = Get-Content -LiteralPath ([System.IO.Path]::GetFullPath(
                 (Join-Path $PSScriptRoot "../../../.github/workflows/$CallerFile"))) -Raw
+        $script:buildCall = Get-WorkflowJobBlock -Content $script:callerContent -JobName "build-$Kind-template"
+        $script:publishCall = Get-WorkflowJobBlock -Content $script:callerContent -JobName "publish-$Kind-template"
+
+        function script:Test-CallerCondition {
+            # Evaluates a caller job's condition for one run. Every github.* and inputs.* name
+            # becomes that run's value, and the few operators become PowerShell with GitHub's
+            # case-insensitive comparison; anything else fails to parse.
+            param([string]$Expression, [hashtable]$Run)
+
+            $translated = [regex]::Replace($Expression, "startsWith\(([a-z_.]+), '([^']*)'\)", '([string]$1).StartsWith(''$2'', [StringComparison]::OrdinalIgnoreCase)')
+            $translated = [regex]::Replace($translated, "\b(?:github|inputs)\.[a-z_.]+", { param($match) "`$Run['$($match.Value)']" })
+            $translated = $translated.
+                Replace("!=", "-ine").
+                Replace("==", "-ieq").
+                Replace("&&", "-and").
+                Replace("||", "-or").
+                Replace("!(", "-not (")
+            $translated = [regex]::Replace($translated, "\b(true|false)\b", '$$$1')
+            return [bool](& ([scriptblock]::Create("param(`$Run) $translated")) $Run)
+        }
+
+        function script:Get-CallerCondition([string]$Job) {
+            $condition = [regex]::Match($Job, '(?m)^    if: \$\{\{ (?<expression>.+) \}\}$').Groups["expression"].Value
+            $condition | Should -Not -BeNullOrEmpty
+            return $condition
+        }
     }
 
     It "forwards TEMPLATE_ATTESTATION_PRIVATE_KEY to the reusable workflow" {
         # Passing it by name is what lets the called job receive the ENVIRONMENT secret: the
         # called job's environment takes precedence, and a secret that exists only in the
         # environment can still be passed by name.
-        $script:callerContent.Contains(
-            'TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY }}') | Should -BeTrue
+        foreach ($call in @($script:buildCall, $script:publishCall)) {
+            $call.Contains('TEMPLATE_ATTESTATION_PRIVATE_KEY: ${{ secrets.TEMPLATE_ATTESTATION_PRIVATE_KEY }}') | Should -BeTrue
+        }
     }
 
     It "leaves the environment to the reusable workflow and still builds pull requests, unsigned" {
@@ -683,9 +782,55 @@ Describe "template caller workflows pass the attestation secret through (<Caller
         # sign-template-package job does, and only on an eligible run with signing enabled.
         @($script:callerContent -split "`n" | Where-Object { $_ -match '^\s*environment:' }) | Should -BeNullOrEmpty
         $script:callerContent | Should -Match '(?m)^  pull_request:$'
-        $script:callerContent.Contains("uses: ./.github/workflows/build-") | Should -BeTrue
-        # Pull request builds stay unpublished; that they are also unsigned is the reusable
-        # workflow's eligibility rule, pinned in the wiring Describe above.
-        $script:callerContent.Contains("publish_package: `${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) }}") | Should -BeTrue
+        $script:buildCall.Contains("uses: ./.github/workflows/build-$Kind-template.yml") | Should -BeTrue
+        $script:publishCall.Contains("uses: ./.github/workflows/build-$Kind-template.yml") | Should -BeTrue
+        $script:callerContent | Should -Not -Match 'secrets: inherit'
+    }
+
+    It "passes the Azure publishing secrets only from the publishing call" {
+        $script:buildCall.Contains("`n      publish_package: false`n") | Should -BeTrue
+        $script:buildCall | Should -Not -BeLike "*AZURE_ARTIFACTS*"
+        $script:publishCall.Contains("`n      publish_package: true`n") | Should -BeTrue
+        $script:publishCall.Contains('AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}') | Should -BeTrue
+        $script:publishCall.Contains('AZURE_ARTIFACTS_USER_NAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}') | Should -BeTrue
+        ([regex]::Matches($script:callerContent, 'secrets\.AZURE_ARTIFACTS_')).Count | Should -Be 2
+    }
+
+    It "runs exactly the <Expected> call for <Case>" -ForEach @(
+        @{ Case = "a pull request"; Expected = "build"; Run = @{ "github.event_name" = "pull_request"; "github.ref" = "refs/pull/1185/merge"; "github.ref_type" = "branch" } }
+        @{ Case = "a pull request whose ref reads as main"; Expected = "build"; Run = @{ "github.event_name" = "pull_request"; "github.ref" = "refs/heads/main"; "github.ref_type" = "branch" } }
+        @{ Case = "a manual run on a feature branch asking to publish"; Expected = "build"; Run = @{ "github.event_name" = "workflow_dispatch"; "github.ref" = "refs/heads/DMS-1647-1649"; "github.ref_type" = "branch"; "inputs.publish_package" = $true } }
+        @{ Case = "a manual run on a branch whose ref reads as a version tag"; Expected = "build"; Run = @{ "github.event_name" = "workflow_dispatch"; "github.ref" = "refs/tags/v8.1.0"; "github.ref_type" = "branch"; "inputs.publish_package" = $true } }
+        @{ Case = "a manual run on main with publishing off"; Expected = "build"; Run = @{ "github.event_name" = "workflow_dispatch"; "github.ref" = "refs/heads/main"; "github.ref_type" = "branch"; "inputs.publish_package" = $false } }
+        @{ Case = "a manual run on main asking to publish"; Expected = "publish"; Run = @{ "github.event_name" = "workflow_dispatch"; "github.ref" = "refs/heads/main"; "github.ref_type" = "branch"; "inputs.publish_package" = $true } }
+        @{ Case = "a push to main"; Expected = "publish"; Run = @{ "github.event_name" = "push"; "github.ref" = "refs/heads/main"; "github.ref_type" = "branch" } }
+        @{ Case = "a version tag push"; Expected = "publish"; Run = @{ "github.event_name" = "push"; "github.ref" = "refs/tags/v8.1.0"; "github.ref_type" = "tag" } }
+        @{ Case = "a stable release (promotion)"; Expected = "publish"; Run = @{ "github.event_name" = "release"; "github.ref" = "refs/tags/v8.1.0"; "github.ref_type" = "tag" } }
+    ) {
+        $Run["github.event.pull_request.head.repo.fork"] = $(if ($Run["github.event_name"] -eq "pull_request") { $false } else { $null })
+        $Run["github.event.pull_request.draft"] = $(if ($Run["github.event_name"] -eq "pull_request") { $false } else { $null })
+        $Run["github.repository_owner"] = "Ed-Fi-Alliance-OSS"
+
+        Test-CallerCondition -Expression (Get-CallerCondition $script:buildCall) -Run $Run | Should -Be ($Expected -eq "build")
+        Test-CallerCondition -Expression (Get-CallerCondition $script:publishCall) -Run $Run | Should -Be ($Expected -eq "publish")
+    }
+
+    It "runs neither call for <Case>" -ForEach @(
+        @{ Case = "a draft pull request"; Run = @{ "github.event_name" = "pull_request"; "github.ref" = "refs/pull/1185/merge"; "github.ref_type" = "branch"; "github.event.pull_request.head.repo.fork" = $false; "github.event.pull_request.draft" = $true; "github.repository_owner" = "Ed-Fi-Alliance-OSS" } }
+        @{ Case = "a fork pull request"; Run = @{ "github.event_name" = "pull_request"; "github.ref" = "refs/pull/1185/merge"; "github.ref_type" = "branch"; "github.event.pull_request.head.repo.fork" = $true; "github.event.pull_request.draft" = $false; "github.repository_owner" = "Ed-Fi-Alliance-OSS" } }
+        @{ Case = "a fork syncing main"; Run = @{ "github.event_name" = "push"; "github.ref" = "refs/heads/main"; "github.ref_type" = "branch"; "github.repository_owner" = "someone-else" } }
+    ) {
+        Test-CallerCondition -Expression (Get-CallerCondition $script:buildCall) -Run $Run | Should -BeFalse
+        Test-CallerCondition -Expression (Get-CallerCondition $script:publishCall) -Run $Run | Should -BeFalse
+    }
+}
+
+Describe "the smoke test builds populated templates without the Azure publishing secrets" {
+    It "passes no Azure Artifacts secret and never publishes" {
+        $smokeContent = Get-Content -LiteralPath ([System.IO.Path]::GetFullPath(
+                (Join-Path $PSScriptRoot "../../../.github/workflows/scheduled-smoke-test.yml"))) -Raw
+        $smokeContent | Should -Not -BeLike "*AZURE_ARTIFACTS*"
+        $smokeContent | Should -Not -Match 'secrets: inherit'
+        $smokeContent | Should -Match '(?m)^      publish_package: false$'
     }
 }

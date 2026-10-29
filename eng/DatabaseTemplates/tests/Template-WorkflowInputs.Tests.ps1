@@ -18,7 +18,7 @@ Describe "Assert-TemplateWorkflowInputs" {
                 BackendPath     = "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/**"
                 ComposePath     = "eng/docker-compose/postgresql.yml"
                 ExtraPaths      = @("eng/docker-compose/postgresql-init.sh")
-                ForkGuardCount  = 1
+                ForkGuardCount  = 2
                 PackageNames    = @(
                     "EdFi.Api.Minimal.Template.PostgreSql.5.2.0",
                     "EdFi.Api.Minimal.Template.PostgreSql.6.1.0"
@@ -30,7 +30,7 @@ Describe "Assert-TemplateWorkflowInputs" {
                 BackendPath     = "src/dms/backend/EdFi.DataManagementService.Backend.Mssql/**"
                 ComposePath     = "eng/docker-compose/mssql.yml"
                 ExtraPaths      = @("eng/docker-compose/.env.mssql")
-                ForkGuardCount  = 1
+                ForkGuardCount  = 2
                 PackageNames    = @(
                     "EdFi.Api.Minimal.Template.MsSql.5.2.0",
                     "EdFi.Api.Minimal.Template.MsSql.6.1.0"
@@ -42,7 +42,7 @@ Describe "Assert-TemplateWorkflowInputs" {
                 BackendPath     = "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/**"
                 ComposePath     = "eng/docker-compose/postgresql.yml"
                 ExtraPaths      = @("eng/docker-compose/postgresql-init.sh")
-                ForkGuardCount  = 2
+                ForkGuardCount  = 3
                 PackageNames    = @(
                     "EdFi.Api.Populated.Template.PostgreSql.5.2.0",
                     "EdFi.Api.Populated.Template.PostgreSql.6.1.0"
@@ -54,7 +54,7 @@ Describe "Assert-TemplateWorkflowInputs" {
                 BackendPath     = "src/dms/backend/EdFi.DataManagementService.Backend.Mssql/**"
                 ComposePath     = "eng/docker-compose/mssql.yml"
                 ExtraPaths      = @("eng/docker-compose/.env.mssql")
-                ForkGuardCount  = 2
+                ForkGuardCount  = 3
                 PackageNames    = @(
                     "EdFi.Api.Populated.Template.MsSql.5.2.0",
                     "EdFi.Api.Populated.Template.MsSql.6.1.0"
@@ -278,8 +278,11 @@ Describe "Assert-TemplateWorkflowInputs" {
             "src/dms/clis/EdFi.DataManagementService.SchemaTools/**",
             "src/dms/run.sh"
         )
-        $publishGate = "publish_package: `${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) }}"
-        $forkGate = "if: `${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false)) && ((github.event_name != 'push' && github.event_name != 'release') || github.repository_owner == 'Ed-Fi-Alliance-OSS') }}"
+        # Only the publishing call passes publish_package: true, and only from a run that is not a
+        # pull request; the build call takes every other run. TemplateWorkflowAttestation.Tests.ps1
+        # evaluates both conditions per event.
+        $publishCall = "github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true)"
+        $forkGate = "(github.event_name != 'pull_request' || (github.event.pull_request.head.repo.fork == false && github.event.pull_request.draft == false)) && ((github.event_name != 'push' && github.event_name != 'release') || github.repository_owner == 'Ed-Fi-Alliance-OSS')"
         $concurrencyGroup = "group: `${{ github.workflow }}-`${{ github.event.pull_request.number || github.run_id }}"
         $cancelInProgress = "cancel-in-progress: `${{ github.event_name == 'pull_request' }}"
 
@@ -307,8 +310,12 @@ Describe "Assert-TemplateWorkflowInputs" {
             $actualPaths.Count | Should -Be $expectedPaths.Count
             @(Compare-Object -ReferenceObject $expectedPaths -DifferenceObject $actualPaths) |
                 Should -BeNullOrEmpty -Because "$($case.FileName) must run only for its own kind/engine plus shared template dependencies"
-            @([regex]::Matches($workflowContent, [regex]::Escape($publishGate))).Count |
+            @([regex]::Matches($workflowContent, '(?m)^      publish_package: true$')).Count |
+                Should -Be 1 -Because "$($case.FileName) must publish from one call only"
+            @([regex]::Matches($workflowContent, [regex]::Escape("$forkGate && $publishCall }}"))).Count |
                 Should -Be 1 -Because "$($case.FileName) must never publish from a PR"
+            @([regex]::Matches($workflowContent, [regex]::Escape("$forkGate && !($publishCall) }}"))).Count |
+                Should -Be 1 -Because "$($case.FileName) must build every run the publishing call skips"
             @([regex]::Matches($workflowContent, [regex]::Escape($forkGate))).Count |
                 Should -Be $case.ForkGuardCount -Because "secret-consuming PR jobs must skip fork and draft pull requests"
             @([regex]::Matches($workflowContent, [regex]::Escape($concurrencyGroup))).Count | Should -Be 1
@@ -331,7 +338,7 @@ Describe "Assert-TemplateWorkflowInputs" {
 
         foreach ($reusableWorkflow in @("build-minimal-template.yml", "build-populated-template.yml")) {
             $workflowContent = Get-Content -LiteralPath (Join-Path $script:workflowRoot $reusableWorkflow) -Raw
-            $workflowContent | Should -Match "if: \`$\{\{ github\.event_name == 'release' && github\.event\.action == 'released' \}\}"
+            $workflowContent | Should -Match "if: \`$\{\{ inputs\.publish_package && github\.event_name == 'release' && github\.event\.action == 'released' && github\.ref_type == 'tag' && startsWith\(github\.ref, 'refs/tags/v'\) \}\}"
             $workflowContent | Should -Not -Match "(?m)^\s*if: \`$\{\{ github\.event_name == 'release'\s*\}\}\s*$"
         }
     }
@@ -343,7 +350,7 @@ Describe "Assert-TemplateWorkflowInputs" {
             $workflowContent | Should -Match '(?ms)^  push:\r?\n    branches:\r?\n      - main\r?\n    tags:\r?\n      - "v\*\.\*\.\*"$'
             $workflowContent | Should -Match '(?ms)^  workflow_dispatch:\r?\n    inputs:\r?\n      publish_package:.*?^        default: true$'
             $workflowContent | Should -Match ([regex]::Escape(
-                "publish_package: `${{ github.event_name != 'pull_request' && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) }}"
+                "&& github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) && (github.event_name != 'workflow_dispatch' || inputs.publish_package == true) }}"
             ))
         }
     }
