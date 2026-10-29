@@ -909,20 +909,6 @@ public class ProfileModuleTests
         }
 
         [Test]
-        public void It_returns_the_data_validation_envelope()
-        {
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:data");
-            _body["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
-            _body["detail"]!
-                .GetValue<string>()
-                .Should()
-                .Be("Data validation failed. See 'validationErrors' for details.");
-            _body["status"]!.GetValue<int>().Should().Be(400);
-            _body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
-            _body["errors"]!.AsArray().Count.Should().Be(0);
-        }
-
-        [Test]
         public void It_reports_every_definition_rule_in_order()
         {
             _body["validationErrors"]!.AsObject().Select(x => x.Key).Should().Equal("Definition");

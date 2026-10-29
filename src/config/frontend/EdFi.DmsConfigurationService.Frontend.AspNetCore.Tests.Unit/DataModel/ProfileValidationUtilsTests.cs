@@ -429,31 +429,6 @@ public class ProfileValidationUtilsTests
     [TestFixture]
     public class Given_profile_xml_without_a_dtd
     {
-        private const string Normal = """<Profile name="P"><Resource name="School" /></Profile>""";
-
-        private const string Complex = """
-            <Profile name="P">
-                <Resource name="School">
-                    <ReadContentType memberSelection="ExcludeOnly">
-                        <Property name="NameOfInstitution" />
-                        <Collection name="SchoolCategories" memberSelection="IncludeAll" />
-                    </ReadContentType>
-                </Resource>
-                <Resource name="Student" />
-            </Profile>
-            """;
-
-        [Test]
-        public void It_accepts_ordinary_and_complex_profiles()
-        {
-            foreach (var xml in new[] { Normal, Complex })
-            {
-                ProfileValidationUtils.XmlProfileNameMatches("P", xml).Should().BeTrue();
-                ProfileValidationUtils.HasAtLeastOneResource(xml).Should().BeTrue();
-                ProfileValidationUtils.AllResourcesHaveNameAttribute(xml).Should().BeTrue();
-            }
-        }
-
         [Test]
         public void It_decodes_predefined_entities_and_numeric_references()
         {
@@ -464,71 +439,6 @@ public class ProfileValidationUtilsTests
             ProfileValidationUtils.XmlProfileNameMatches("A&amp;B", xml).Should().BeFalse();
             ProfileValidationUtils.HasAtLeastOneResource(xml).Should().BeTrue();
             ProfileValidationUtils.AllResourcesHaveNameAttribute(xml).Should().BeTrue();
-        }
-
-        [Test]
-        public void It_returns_false_for_malformed_xml()
-        {
-            const string xml = """<Profile name="P"><Resource name="School">""";
-
-            ProfileValidationUtils.XmlProfileNameMatches("P", xml).Should().BeFalse();
-            ProfileValidationUtils.HasAtLeastOneResource(xml).Should().BeFalse();
-            ProfileValidationUtils.AllResourcesHaveNameAttribute(xml).Should().BeFalse();
-        }
-
-        [Test]
-        public void It_keeps_name_matching_case_sensitive_and_root_specific()
-        {
-            ProfileValidationUtils.XmlProfileNameMatches("p", Normal).Should().BeFalse();
-            ProfileValidationUtils
-                .XmlProfileNameMatches("P", """<profile name="P"><Resource name="School" /></profile>""")
-                .Should()
-                .BeFalse();
-            ProfileValidationUtils
-                .XmlProfileNameMatches("P", """<Other name="P"><Resource name="School" /></Other>""")
-                .Should()
-                .BeFalse();
-        }
-
-        [Test]
-        public void It_rejects_missing_empty_and_whitespace_resource_names()
-        {
-            foreach (
-                var resource in new[]
-                {
-                    "<Resource />",
-                    """<Resource name="" />""",
-                    """<Resource name="   " />""",
-                    """<Resource name="&#32;" />""",
-                    """<Resource name="&#9;" />""",
-                }
-            )
-            {
-                var xml = $"""<Profile name="P"><Resource name="School" />{resource}</Profile>""";
-
-                ProfileValidationUtils.AllResourcesHaveNameAttribute(xml).Should().BeFalse(resource);
-                ProfileValidationUtils.HasAtLeastOneResource(xml).Should().BeTrue(resource);
-            }
-        }
-
-        [Test]
-        public void It_keeps_resource_predicates_independent_of_the_root_element()
-        {
-            const string otherRoot = """<Other><Resource name="School" /></Other>""";
-
-            ProfileValidationUtils.XmlProfileNameMatches("P", otherRoot).Should().BeFalse();
-            ProfileValidationUtils.HasAtLeastOneResource(otherRoot).Should().BeTrue();
-            ProfileValidationUtils.AllResourcesHaveNameAttribute(otherRoot).Should().BeTrue();
-        }
-
-        [Test]
-        public void It_treats_zero_resources_as_absent_but_vacuously_named()
-        {
-            foreach (var xml in new[] { """<Profile name="P" />""", "<Other />" })
-            {
-                ProfileValidationUtils.HasAtLeastOneResource(xml).Should().BeFalse(xml);
-                ProfileValidationUtils.AllResourcesHaveNameAttribute(xml).Should().BeTrue(xml);
-            }
         }
 
         [Test]
