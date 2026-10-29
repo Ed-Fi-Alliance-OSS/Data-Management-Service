@@ -24,12 +24,12 @@ on:
   # v* tag, which is the deliberately wrong release version the contract assertions prove is ignored.
   workflow_dispatch:
 
+# No publishing credential lives here. The feed is public, so the contract checks and rechecks read
+# it anonymously; only the push steps and the Docker Hub logins of the publishing jobs, which run in
+# the 'publishing' environment, read the publishing tokens.
 env:
-  ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
   ARTIFACTS_FEED_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
   ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
-  ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
-  VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
   MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
   DMS_PACKAGE_NAME: "EdFi.Api"
   SCHEMA_TOOLS_PACKAGE_NAME: "EdFi.Api.SchemaTools"
@@ -42,7 +42,6 @@ env:
   IMAGE_NAME: ${{ vars.IMAGE_NAME }}
   CONFIG_IMAGE_NAME: "edfialliance/ed-fi-api-configuration-service"
   DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
-  DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
   REF: ${{ github.ref_name }}
 
 permissions: read-all
@@ -378,6 +377,8 @@ jobs:
       - publish-package-plugins
       - publish-package-custom-validation
       - publish-package-identity
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/dms-pre-') }}
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -396,6 +397,9 @@ jobs:
             InstallCredentialHandler
 
       - name: Push DMS Package to Azure Artifacts
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
           $packageFile = "${{ env.DMS_PACKAGE_NAME }}.${{ needs.pack-dms.outputs.dms-version }}.nupkg"
           if (-not (Test-Path $packageFile)) {
@@ -419,6 +423,8 @@ jobs:
       - publish-package-plugins
       - publish-package-custom-validation
       - publish-package-identity
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/dms-pre-') }}
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -437,6 +443,9 @@ jobs:
           InstallCredentialHandler
 
       - name: Push SchemaTools Package to Azure Artifacts
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
           $packageFile = "${{ env.SCHEMA_TOOLS_PACKAGE_NAME }}.${{ needs.pack-schema-tools.outputs.dms-version }}.nupkg"
           if (-not (Test-Path $packageFile)) {
@@ -1011,8 +1020,7 @@ jobs:
             -PackageId "${{ env.PLUGINS_PACKAGE_NAME }}" `
             -PackageVersion "${{ needs.pack-plugins.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "plugins-check-$([guid]::NewGuid().ToString('N'))") `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1050,8 +1058,7 @@ jobs:
             -PackageId "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}" `
             -PackageVersion "${{ needs.pack-custom-validation.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "custom-validation-check-$([guid]::NewGuid().ToString('N'))") `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1099,8 +1106,7 @@ jobs:
             -PackageId "${{ env.IDENTITY_PACKAGE_NAME }}" `
             -PackageVersion "${{ needs.pack-identity.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "identity-check-$([guid]::NewGuid().ToString('N'))") `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1173,8 +1179,7 @@ jobs:
             -ServedDocumentPath "${{ steps.served-document.outputs.served-document-path }}" `
             -ContractVersion "${{ needs.pack-identity.outputs.contract-version }}" `
             -PackedPackageFile (Resolve-Path "${{ env.IDENTITY_PACKAGE_NAME }}.${{ needs.pack-identity.outputs.contract-version }}.nupkg").Path `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}"
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}"
 
           $line = "Identity wire gate: outcome=$($decision.Outcome) published=$($decision.PublishedVersion) anchor=$($decision.AnchorCommit) contract=${{ needs.pack-identity.outputs.contract-version }}"
           Write-Host $line
@@ -1187,8 +1192,10 @@ jobs:
       - check-plugins-contract
     # Not on a dispatch. The pack and check jobs above do run on one, so without this the dry run
     # would push the package; the push lives in this job and nowhere else, so skipping it is what
-    # makes the dispatch a dry run.
-    if: ${{ github.event_name != 'workflow_dispatch' }}
+    # makes the dispatch a dry run. Every publishing job here also requires the release's own
+    # dms-pre-* or cs-pre-* tag (ref_type, so a branch named like one cannot pass) and runs in the
+    # 'publishing' environment, which holds the publishing tokens behind its protection rules.
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/dms-pre-') }}
     # Serialized across workflow runs, because the decision is check-then-push and a contract's
     # version is the same in every run. Two prereleases created minutes apart would otherwise both
     # find 1.0.0 absent and both push it, and the loser fails on a version the feed will not let it
@@ -1198,6 +1205,7 @@ jobs:
     concurrency:
       group: publish-package-plugins
       cancel-in-progress: false
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -1227,8 +1235,7 @@ jobs:
             -PackageId "${{ env.PLUGINS_PACKAGE_NAME }}" `
             -PackageVersion "${{ needs.pack-plugins.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "plugins-publish-decide-$([guid]::NewGuid().ToString('N'))") `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1240,6 +1247,9 @@ jobs:
 
       - name: Push Plugins Package to Azure Artifacts
         if: steps.decide.outputs.should-push == 'true'
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
           $packageFile = "${{ env.PLUGINS_PACKAGE_NAME }}.${{ needs.pack-plugins.outputs.contract-version }}.nupkg"
           if (-not (Test-Path $packageFile)) {
@@ -1261,11 +1271,12 @@ jobs:
       - check-custom-validation-contract
     # Not on a dispatch, for the reason publish-package-plugins records: the push is here, and a
     # dry run must not push.
-    if: ${{ github.event_name != 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/dms-pre-') }}
     # Serialized across runs, for the reason publish-package-plugins records.
     concurrency:
       group: publish-package-custom-validation
       cancel-in-progress: false
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -1293,8 +1304,7 @@ jobs:
             -PackageId "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}" `
             -PackageVersion "${{ needs.pack-custom-validation.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "custom-validation-publish-decide-$([guid]::NewGuid().ToString('N'))") `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1306,6 +1316,9 @@ jobs:
 
       - name: Push Custom Validation Package to Azure Artifacts
         if: steps.decide.outputs.should-push == 'true'
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
           $packageFile = "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}.${{ needs.pack-custom-validation.outputs.contract-version }}.nupkg"
           if (-not (Test-Path $packageFile)) {
@@ -1327,11 +1340,12 @@ jobs:
       - check-identity-contract
     # Not on a dispatch, for the reason publish-package-plugins records: the push is here, and a
     # dry run must not push.
-    if: ${{ github.event_name != 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/dms-pre-') }}
     # Serialized across runs, for the reason publish-package-plugins records.
     concurrency:
       group: publish-package-identity
       cancel-in-progress: false
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -1367,8 +1381,7 @@ jobs:
             -PackageId "${{ env.IDENTITY_PACKAGE_NAME }}" `
             -PackageVersion "${{ needs.pack-identity.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "identity-publish-decide-$([guid]::NewGuid().ToString('N'))") `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1391,8 +1404,7 @@ jobs:
             -ServedDocumentPath $served[0].FullName `
             -ContractVersion "${{ needs.pack-identity.outputs.contract-version }}" `
             -PackedPackageFile (Resolve-Path "${{ env.IDENTITY_PACKAGE_NAME }}.${{ needs.pack-identity.outputs.contract-version }}.nupkg").Path `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}"
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}"
 
           $line = "Identity wire gate before push: outcome=$($decision.Outcome) published=$($decision.PublishedVersion) anchor=$($decision.AnchorCommit) contract=${{ needs.pack-identity.outputs.contract-version }}"
           Write-Host $line
@@ -1406,6 +1418,9 @@ jobs:
 
       - name: Push Identity Package to Azure Artifacts
         if: steps.decide.outputs.should-push == 'true'
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
           $packageFile = "${{ env.IDENTITY_PACKAGE_NAME }}.${{ needs.pack-identity.outputs.contract-version }}.nupkg"
           if (-not (Test-Path $packageFile)) {
@@ -1539,6 +1554,8 @@ jobs:
 
   docker-publish-dms:
     name: Publish DMS to Docker Hub
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/dms-pre-') }}
+    environment: publishing
     runs-on: ubuntu-latest
     needs:
       - classify-release
@@ -1572,7 +1589,7 @@ jobs:
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ env.DOCKER_USERNAME }}
-          password: ${{ env.DOCKER_HUB_TOKEN }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Extract metadata (tags, labels) for Data Management Service image
         id: metadatamanagementservice
@@ -1920,8 +1937,7 @@ jobs:
             -PackageId "${{ env.SECRETS_PACKAGE_NAME }}" `
             -PackageVersion "${{ needs.pack-secrets.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "secrets-check-$([guid]::NewGuid().ToString('N'))") `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1932,11 +1948,12 @@ jobs:
       - check-secrets-contract
     # Not on a dispatch, for the reason publish-package-plugins records: the push is here, and a
     # dry run must not push.
-    if: ${{ github.event_name != 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/cs-pre-') }}
     # Serialized across runs, for the reason publish-package-plugins records.
     concurrency:
       group: publish-package-secrets
       cancel-in-progress: false
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -1964,8 +1981,7 @@ jobs:
             -PackageId "${{ env.SECRETS_PACKAGE_NAME }}" `
             -PackageVersion "${{ needs.pack-secrets.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "secrets-publish-decide-$([guid]::NewGuid().ToString('N'))") `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1977,6 +1993,9 @@ jobs:
 
       - name: Push Secrets Package to Azure Artifacts
         if: steps.decide.outputs.should-push == 'true'
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
           $packageFile = "${{ env.SECRETS_PACKAGE_NAME }}.${{ needs.pack-secrets.outputs.contract-version }}.nupkg"
           if (-not (Test-Path $packageFile)) {
@@ -2218,6 +2237,8 @@ jobs:
     needs:
       - pack-cs
       - publish-package-secrets
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/cs-pre-') }}
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -2236,6 +2257,9 @@ jobs:
             InstallCredentialHandler
 
       - name: Push Config Package to Azure Artifacts
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
          $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
          $arguments = @{
@@ -2327,6 +2351,8 @@ jobs:
 
   docker-publish-cs:
     name: Publish Config to Docker Hub
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/cs-pre-') }}
+    environment: publishing
     runs-on: ubuntu-latest
     needs:
       - classify-release
@@ -2374,7 +2400,7 @@ jobs:
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ env.DOCKER_USERNAME }}
-          password: ${{ env.DOCKER_HUB_TOKEN }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Extract metadata (tags, labels) for Configuration Service image
         id: metadatamanagementservice
@@ -2522,6 +2548,8 @@ jobs:
     needs:
       - pack-security-metadata-tools
       - publish-package-secrets
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/cs-pre-') }}
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -2545,6 +2573,9 @@ jobs:
           InstallCredentialHandler
 
       - name: Push SecurityMetadataTools Package to Azure Artifacts
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
           Import-Module ./package-helpers.psm1
           $packageFile = "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}.${{ needs.pack-security-metadata-tools.outputs.tool-version }}.nupkg"

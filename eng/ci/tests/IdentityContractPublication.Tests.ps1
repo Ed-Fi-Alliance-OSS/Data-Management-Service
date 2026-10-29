@@ -126,9 +126,9 @@ Describe "EdFi.Api.Identity publication wiring" {
             $actual | Sort-Object | Should -Be ($expected | Sort-Object)
         }
 
-        It "skips the publish job on a dispatch" {
+        It "skips the publish job on a dispatch, publishing only from a dms- prerelease's own tag" {
             (& $script:If -Job $script:jobs["publish-package-identity"]) |
-                Should -BeExactly "`${{ github.event_name != 'workflow_dispatch' }}"
+                Should -BeExactly "`${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/dms-pre-') }}"
         }
 
         It "keeps the publish job in its own queued concurrency group" {
