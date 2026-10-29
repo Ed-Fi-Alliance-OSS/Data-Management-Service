@@ -579,7 +579,6 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             );
     }
 
-    [TestFixture("PK_ReferentialIdentity")]
     [TestFixture("PK_EducationOrganizationIdToEducationOrganizationId")]
     public class Given_A_School_Identity_Conflict_Reported_By_An_Identity_Maintenance_Primary_Key(
         string constraintName
@@ -591,9 +590,9 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
         public void Setup()
         {
             // On SQL Server the School AFTER triggers fire in an undefined order, so a duplicate education
-            // organization id can be reported by the referential identity or auth hierarchy primary key instead
-            // of UX_EducationOrganizationIdentity_NK. Drive the real resolver so the client still gets the
-            // identity conflict for the concrete School body.
+            // organization id can be reported by the auth hierarchy primary key instead of
+            // UX_EducationOrganizationIdentity_NK. Drive the real resolver so the client still gets the identity
+            // conflict for the concrete School body.
             var classifier = new RecordingRelationalWriteExceptionClassifier
             {
                 ClassificationToReturn = new RelationalWriteExceptionClassification.UniqueConstraintViolation(

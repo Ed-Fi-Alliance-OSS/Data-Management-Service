@@ -865,13 +865,11 @@ public class Given_Relational_Write_Constraint_Resolver
 }
 
 /// <summary>
-/// A School written with an existing education organization id can report the duplicate from any of its
-/// AFTER triggers, because SQL Server leaves their relative order undefined: the abstract natural key, the
-/// referential identity primary key, or the auth hierarchy primary key. The cases use the literal names the DDL
-/// emits. The resolver and the DDL read both names from shared Backend.External definitions, so renaming one
-/// fails here.
+/// A School written with an existing education organization id can report the duplicate from either of its
+/// AFTER triggers, because SQL Server leaves their relative order undefined: the abstract natural key or the
+/// auth hierarchy primary key. The case uses the literal name the DDL emits. The resolver and the DDL read the
+/// name from a shared Backend.External definition, so renaming it fails here.
 /// </summary>
-[TestFixture("PK_ReferentialIdentity")]
 [TestFixture("PK_EducationOrganizationIdToEducationOrganizationId")]
 [Parallelizable]
 public class Given_An_Identity_Maintenance_Primary_Key_Violation(string constraintName)
