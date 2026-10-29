@@ -7,16 +7,20 @@ using System.Data;
 using System.Diagnostics;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories;
+using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
+using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
 using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -90,10 +94,26 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         return applicationId;
     }
 
-    protected static Task AddApiClientRowAsync(
+    /// <summary>
+    /// The name every <see cref="AddApiClientRowAsync"/> row starts with.
+    /// </summary>
+    protected const string ApiClientRowName = "Token limit test";
+
+    /// <summary>
+    /// An API client row and the CMS application it belongs to.
+    /// </summary>
+    protected sealed record ApiClientRow(int ApiClientId, int ApplicationId);
+
+    /// <summary>
+    /// Adds a vendor, a CMS application and an API client row for <paramref name="clientId"/>. A
+    /// fixture that updates the row through the CMS repository passes the OpenIddict application id
+    /// as <paramref name="clientUuid"/>, linking the two as the module does.
+    /// </summary>
+    protected static Task<ApiClientRow> AddApiClientRowAsync(
         OpenIddictDataRepository repository,
         string clientId,
-        bool isApproved = true
+        bool isApproved = true,
+        Guid? clientUuid = null
     ) =>
         repository.ExecuteInTransactionAsync(
             async (connection, transaction) =>
@@ -111,20 +131,22 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     new { VendorId = vendorId },
                     transaction
                 );
-                await connection.ExecuteAsync(
+                int apiClientId = await connection.ExecuteScalarAsync<int>(
                     """
                     INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid, Name, IsApproved)
-                    VALUES (@ApplicationId, @ClientId, @ClientUuid, 'Token limit test', @IsApproved)
+                    OUTPUT INSERTED.Id VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved)
                     """,
                     new
                     {
                         ApplicationId = applicationId,
                         ClientId = clientId,
-                        ClientUuid = Guid.NewGuid(),
+                        ClientUuid = clientUuid ?? Guid.NewGuid(),
+                        Name = ApiClientRowName,
                         IsApproved = isApproved,
                     },
                     transaction
                 );
+                return new ApiClientRow(apiClientId, applicationId);
             }
         );
 
@@ -633,6 +655,62 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 await repository.InsertClientRoleAsync(applicationId, roleId, connection, transaction);
             }
         );
+
+    /// <summary>
+    /// The name the un-approval fixtures' updates give the client, so a committed update is told
+    /// apart from one that rolled back.
+    /// </summary>
+    protected const string RenamedApiClientName = "Renamed token limit test";
+
+    /// <summary>
+    /// The production un-approval caller, the CMS <see cref="ApiClientRepository"/>, with the audit
+    /// and tenant fakes <c>ApiClientTests</c> uses, over <paramref name="participant"/>: the real
+    /// OpenIddict participant, or a fake wrapping it to pause or fail inside the update's
+    /// transaction.
+    /// </summary>
+    protected static ApiClientRepository CreateApiClientRepository(IUnapprovalTokenRevocation participant) =>
+        new(
+            MssqlTestConfiguration.DatabaseOptions,
+            NullLogger<ApiClientRepository>.Instance,
+            new TestAuditContext(),
+            new TenantContextProvider(),
+            participant
+        );
+
+    protected static OpenIddictUnapprovalTokenRevocation CreateUnapprovalParticipant(
+        OpenIddictDataRepository repository,
+        ILogger<OpenIddictUnapprovalTokenRevocation>? logger = null
+    ) => new(repository, logger ?? NullLogger<OpenIddictUnapprovalTokenRevocation>.Instance);
+
+    /// <summary>
+    /// The update the module sends for <paramref name="apiClient"/>, setting the approval and, when
+    /// given, a new name or target application; nothing else changes.
+    /// </summary>
+    protected static ApiClientUpdateCommand UpdateCommandFor(
+        ApiClientRow apiClient,
+        bool isApproved,
+        string name = ApiClientRowName,
+        int? applicationId = null
+    ) =>
+        new()
+        {
+            Id = apiClient.ApiClientId,
+            ApplicationId = applicationId ?? apiClient.ApplicationId,
+            Name = name,
+            IsApproved = isApproved,
+            DataStoreIds = [],
+        };
+
+    protected static async Task<(bool IsApproved, string Name, int ApplicationId)> ApiClientStateAsync(
+        int apiClientId
+    )
+    {
+        await using SqlConnection connection = await OpenConnectionAsync();
+        return await connection.QuerySingleAsync<(bool, string, int)>(
+            "SELECT IsApproved, Name, ApplicationId FROM dmscs.ApiClient WHERE Id = @Id",
+            new { Id = apiClientId }
+        );
+    }
 
     /// <summary>
     /// Waits for every started task without letting its outcome replace the test's own: used in
@@ -3400,6 +3478,746 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [Test]
         public async Task It_leaves_every_token_valid() =>
             (await TokenStatusesAsync(_repository, _tokenIds)).Should().Equal("valid", "valid");
+    }
+
+    // DMS-1493 Step 3.6: un-approval through its production caller, the CMS
+    // ApiClientRepository.UpdateApiClient, with the real OpenIddict participant against the real
+    // engine repository. Each API client row carries its OpenIddict application id as ClientUuid.
+
+    /// <summary>
+    /// AC-3 through the engine: the CMS update that un-approves an API client revokes every token
+    /// of its identity-provider client in the update's transaction and commits that together with
+    /// the un-approval and the new name. Another client keeps its approval and its token.
+    /// </summary>
+    [TestFixture]
+    public class Given_UpdateApiClient_Un_Approving_Through_The_Engine : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private ApiClientRow _apiClient = null!;
+        private ApiClientRow _bystanderApiClient = null!;
+        private Guid[] _tokenIds = null!;
+        private Guid _bystanderTokenId;
+        private ApiClientUpdateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            // ApiClient.ClientId is 36 characters wide.
+            string clientId = Guid.NewGuid().ToString();
+            Guid applicationId = await RegisterApplicationAsync(_repository, clientId);
+            _apiClient = await AddApiClientRowAsync(_repository, clientId, clientUuid: applicationId);
+            string bystanderClientId = Guid.NewGuid().ToString();
+            Guid bystanderApplicationId = await RegisterApplicationAsync(_repository, bystanderClientId);
+            _bystanderApiClient = await AddApiClientRowAsync(
+                _repository,
+                bystanderClientId,
+                clientUuid: bystanderApplicationId
+            );
+            _tokenIds =
+            [
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+            ];
+            _bystanderTokenId = await StoreValidTokenAsync(_repository, bystanderApplicationId, FarFuture);
+
+            _result = await CreateApiClientRepository(CreateUnapprovalParticipant(_repository))
+                .UpdateApiClient(UpdateCommandFor(_apiClient, isApproved: false, RenamedApiClientName));
+        }
+
+        [Test]
+        public void It_updates_the_api_client() => _result.Should().BeOfType<ApiClientUpdateResult.Success>();
+
+        [Test]
+        public async Task It_commits_the_un_approval_and_the_new_name() =>
+            (await ApiClientStateAsync(_apiClient.ApiClientId))
+                .Should()
+                .Be((false, RenamedApiClientName, _apiClient.ApplicationId));
+
+        [Test]
+        public async Task It_revokes_every_token_of_the_client() =>
+            (await TokenStatusesAsync(_repository, _tokenIds))
+                .Should()
+                .Equal("revoked", "revoked", "revoked");
+
+        [Test]
+        public async Task It_leaves_the_other_client_approved_with_its_token_valid()
+        {
+            (await ApiClientStateAsync(_bystanderApiClient.ApiClientId))
+                .Should()
+                .Be((true, ApiClientRowName, _bystanderApiClient.ApplicationId));
+            (await _repository.GetTokenStatusAsync(_bystanderTokenId)).Should().Be("valid");
+        }
+    }
+
+    /// <summary>
+    /// The regression control (R2-F3): the same update with the client kept approved, renamed only,
+    /// commits the new name and leaves every token valid with no redemption date. Fails if the
+    /// revocation runs on every update instead of on un-approval.
+    /// </summary>
+    [TestFixture]
+    public class Given_UpdateApiClient_Keeping_The_Client_Approved : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private ApiClientRow _apiClient = null!;
+        private Guid[] _tokenIds = null!;
+        private ApiClientUpdateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string clientId = Guid.NewGuid().ToString();
+            Guid applicationId = await RegisterApplicationAsync(_repository, clientId);
+            _apiClient = await AddApiClientRowAsync(_repository, clientId, clientUuid: applicationId);
+            _tokenIds =
+            [
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+            ];
+
+            _result = await CreateApiClientRepository(CreateUnapprovalParticipant(_repository))
+                .UpdateApiClient(UpdateCommandFor(_apiClient, isApproved: true, RenamedApiClientName));
+        }
+
+        [Test]
+        public void It_updates_the_api_client() => _result.Should().BeOfType<ApiClientUpdateResult.Success>();
+
+        [Test]
+        public async Task It_commits_the_new_name_with_the_client_still_approved() =>
+            (await ApiClientStateAsync(_apiClient.ApiClientId))
+                .Should()
+                .Be((true, RenamedApiClientName, _apiClient.ApplicationId));
+
+        [Test]
+        public async Task It_leaves_every_token_valid() =>
+            (await TokenStatusesAsync(_repository, _tokenIds)).Should().Equal("valid", "valid");
+
+        [Test]
+        public async Task It_writes_no_redemption_date() =>
+            (await RedemptionDatesAsync(_tokenIds))
+                .Should()
+                .HaveCount(2)
+                .And.OnlyContain(date => date == null);
+    }
+
+    /// <summary>
+    /// A repeated un-approval is idempotent: it succeeds, the client stays unapproved, and the
+    /// participant's second revocation changes no token, so the revocation dates written over the
+    /// first one's are still there afterwards.
+    /// </summary>
+    [TestFixture]
+    public class Given_UpdateApiClient_Un_Approving_An_Already_Unapproved_Client
+        : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private ApiClientRow _apiClient = null!;
+        private Guid[] _tokenIds = null!;
+        private ApiClientUpdateResult _firstResult = null!;
+        private List<string?> _statusesAfterFirst = null!;
+        private ApiClientUpdateResult _repeatResult = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string clientId = Guid.NewGuid().ToString();
+            Guid applicationId = await RegisterApplicationAsync(_repository, clientId);
+            _apiClient = await AddApiClientRowAsync(_repository, clientId, clientUuid: applicationId);
+            _tokenIds =
+            [
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+            ];
+            ApiClientRepository apiClientRepository = CreateApiClientRepository(
+                CreateUnapprovalParticipant(_repository)
+            );
+
+            _firstResult = await apiClientRepository.UpdateApiClient(
+                UpdateCommandFor(_apiClient, isApproved: false)
+            );
+            _statusesAfterFirst = await TokenStatusesAsync(_repository, _tokenIds);
+
+            // Fixed dates a repeated revocation would overwrite with the current time.
+            foreach (Guid tokenId in _tokenIds)
+            {
+                await SetRedemptionDateAsync(tokenId, SentinelRedemptionDate);
+            }
+            _repeatResult = await apiClientRepository.UpdateApiClient(
+                UpdateCommandFor(_apiClient, isApproved: false)
+            );
+        }
+
+        [Test]
+        public void It_un_approves_the_client() =>
+            _firstResult.Should().BeOfType<ApiClientUpdateResult.Success>();
+
+        [Test]
+        public void It_revokes_the_tokens_on_the_first_un_approval() =>
+            _statusesAfterFirst.Should().Equal("revoked", "revoked");
+
+        [Test]
+        public void It_accepts_the_repeat() =>
+            _repeatResult.Should().BeOfType<ApiClientUpdateResult.Success>();
+
+        [Test]
+        public async Task It_keeps_the_client_unapproved() =>
+            (await ApiClientStateAsync(_apiClient.ApiClientId)).IsApproved.Should().BeFalse();
+
+        [Test]
+        public async Task It_keeps_the_earlier_revocations_unchanged_on_the_repeat()
+        {
+            (await TokenStatusesAsync(_repository, _tokenIds)).Should().Equal("revoked", "revoked");
+            (await RedemptionDatesAsync(_tokenIds))
+                .Should()
+                .Equal(SentinelRedemptionDate, SentinelRedemptionDate);
+        }
+    }
+
+    /// <summary>
+    /// Re-approving a client after an un-approval does not bring its old tokens back: they stay
+    /// revoked. A new grant through the real token manager succeeds, and its token is the client's
+    /// only valid one.
+    /// </summary>
+    [TestFixture]
+    public class Given_Re_Approval_After_Un_Approval : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _applicationId;
+        private ApiClientRow _apiClient = null!;
+        private Guid[] _oldTokenIds = null!;
+        private ApiClientUpdateResult _unApprovalResult = null!;
+        private ApiClientUpdateResult _reApprovalResult = null!;
+        private TokenResult _grant = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(_repository, clientId);
+            _apiClient = await AddApiClientRowAsync(_repository, clientId, clientUuid: _applicationId);
+            _oldTokenIds =
+            [
+                await StoreValidTokenAsync(_repository, _applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, _applicationId, FarFuture),
+            ];
+            ApiClientRepository apiClientRepository = CreateApiClientRepository(
+                CreateUnapprovalParticipant(_repository)
+            );
+
+            _unApprovalResult = await apiClientRepository.UpdateApiClient(
+                UpdateCommandFor(_apiClient, isApproved: false)
+            );
+            _reApprovalResult = await apiClientRepository.UpdateApiClient(
+                UpdateCommandFor(_apiClient, isApproved: true)
+            );
+            _grant = await RequestGrantAsync(
+                CreateTokenManager(_repository, new IdentityOptions()),
+                clientId
+            );
+        }
+
+        [Test]
+        public async Task It_un_approves_then_re_approves_the_client()
+        {
+            _unApprovalResult.Should().BeOfType<ApiClientUpdateResult.Success>();
+            _reApprovalResult.Should().BeOfType<ApiClientUpdateResult.Success>();
+            (await ApiClientStateAsync(_apiClient.ApiClientId)).IsApproved.Should().BeTrue();
+        }
+
+        [Test]
+        public async Task It_keeps_the_old_tokens_revoked() =>
+            (await TokenStatusesAsync(_repository, _oldTokenIds)).Should().Equal("revoked", "revoked");
+
+        [Test]
+        public void It_issues_a_new_token() => _grant.Should().BeOfType<TokenResult.Success>();
+
+        [Test]
+        public async Task It_stores_the_new_token_as_the_only_valid_one()
+        {
+            (await TokenRowCountAsync(_applicationId)).Should().Be(3);
+            (await ActiveTokenCountAsync(_applicationId)).Should().Be(1);
+        }
+    }
+
+    /// <summary>
+    /// DMS-1493 fixture C-1 for an un-approval, §8.1 case (i): a grant that already holds the
+    /// client's application row lock when the CMS update starts. The lock manager must show the
+    /// update waiting on the holder's session, at its participant's lock; the holder then inserts
+    /// a token and commits, so the update has to revoke it. An update whose participant takes no
+    /// lock finishes before the probe sees it waiting, and one that revokes before locking never
+    /// sees the holder's token.
+    /// </summary>
+    [TestFixture]
+    public class Given_A_Grant_Committed_While_The_Un_Approval_Waits : OpenIddictDataRepositoryTests
+    {
+        private readonly Guid _committedWhileWaitingTokenId = Guid.NewGuid();
+        private OpenIddictDataRepository _repository = null!;
+        private ApiClientRow _apiClient = null!;
+        private Guid[] _earlierTokenIds = null!;
+        private Guid _bystanderTokenId;
+        private ApiClientUpdateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string clientId = Guid.NewGuid().ToString();
+            Guid applicationId = await RegisterApplicationAsync(_repository, clientId);
+            _apiClient = await AddApiClientRowAsync(_repository, clientId, clientUuid: applicationId);
+            Guid bystanderApplicationId = await RegisterApplicationAsync(
+                _repository,
+                Guid.NewGuid().ToString()
+            );
+            _earlierTokenIds =
+            [
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+            ];
+            _bystanderTokenId = await StoreValidTokenAsync(_repository, bystanderApplicationId, FarFuture);
+            ApiClientRepository apiClientRepository = CreateApiClientRepository(
+                CreateUnapprovalParticipant(_repository)
+            );
+
+            RowLockHolder holder = await RowLockHolder.TakeAsync(applicationId);
+            Task<ApiClientUpdateResult>? update = null;
+            Task? probe = null;
+            try
+            {
+                update = Task.Run(() =>
+                    apiClientRepository.UpdateApiClient(UpdateCommandFor(_apiClient, isApproved: false))
+                );
+                probe = WaitUntilASessionIsBlockedBy(holder.SessionId, GrantBlockedObservationTimeout);
+
+                if (await Task.WhenAny(probe, update) == update)
+                {
+                    Assert.Fail(
+                        $"The un-approval completed with {(await update).GetType().Name} before it was observed waiting on the held row lock."
+                    );
+                }
+
+                await probe;
+                update
+                    .IsCompleted.Should()
+                    .BeFalse("the un-approval is waiting on the row lock the holder owns");
+
+                await holder.InsertTokenAsync(_committedWhileWaitingTokenId);
+                await holder.CommitAsync();
+
+                _result = await update;
+            }
+            finally
+            {
+                // Ends the holder's transaction first (a no-op after the commit), so an update still
+                // waiting on it can finish before it is awaited.
+                await holder.DisposeAsync();
+                await AwaitWithoutObservingAsync(update, probe);
+            }
+        }
+
+        [Test]
+        public async Task It_un_approves_the_client()
+        {
+            _result.Should().BeOfType<ApiClientUpdateResult.Success>();
+            (await ApiClientStateAsync(_apiClient.ApiClientId)).IsApproved.Should().BeFalse();
+        }
+
+        [Test]
+        public async Task It_revokes_the_token_committed_while_it_waited() =>
+            (await _repository.GetTokenStatusAsync(_committedWhileWaitingTokenId)).Should().Be("revoked");
+
+        [Test]
+        public async Task It_revokes_the_earlier_tokens() =>
+            (await TokenStatusesAsync(_repository, _earlierTokenIds)).Should().Equal("revoked", "revoked");
+
+        [Test]
+        public async Task It_leaves_the_other_clients_token_valid() =>
+            (await _repository.GetTokenStatusAsync(_bystanderTokenId)).Should().Be("valid");
+    }
+
+    /// <summary>
+    /// DMS-1493 fixture C-2 for an un-approval, §8.1 case (ii): a grant that authenticated while
+    /// the client was approved and reaches the store after the un-approval committed is refused
+    /// under either limit setting and writes no row. The same client's grant before the
+    /// un-approval was stored, so the refusal comes from the un-approval alone, and the
+    /// un-approval revoked that earlier token.
+    /// </summary>
+    [TestFixture(EnforcementDisabled)]
+    [TestFixture(15)]
+    public class Given_A_Grant_After_The_Un_Approval(int maxActiveTokens) : OpenIddictDataRepositoryTests
+    {
+        private readonly Guid _beforeUnApprovalTokenId = Guid.NewGuid();
+        private readonly Guid _afterUnApprovalTokenId = Guid.NewGuid();
+        private OpenIddictDataRepository _repository = null!;
+        private TokenStoreOutcome _beforeUnApprovalOutcome;
+        private ApiClientUpdateResult _updateResult = null!;
+        private TokenStoreOutcome _afterUnApprovalOutcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string clientId = Guid.NewGuid().ToString();
+            Guid applicationId = await RegisterApplicationAsync(_repository, clientId);
+            ApiClientRow apiClient = await AddApiClientRowAsync(
+                _repository,
+                clientId,
+                clientUuid: applicationId
+            );
+
+            _beforeUnApprovalOutcome = await _repository.StoreTokenAsync(
+                _beforeUnApprovalTokenId,
+                applicationId,
+                "subject-before-un-approval",
+                FarFuture,
+                maxActiveTokens,
+                RegisteredSecret
+            );
+            _updateResult = await CreateApiClientRepository(CreateUnapprovalParticipant(_repository))
+                .UpdateApiClient(UpdateCommandFor(apiClient, isApproved: false));
+            _afterUnApprovalOutcome = await _repository.StoreTokenAsync(
+                _afterUnApprovalTokenId,
+                applicationId,
+                "subject-after-un-approval",
+                FarFuture,
+                maxActiveTokens,
+                RegisteredSecret
+            );
+        }
+
+        [Test]
+        public void It_un_approves_the_client() =>
+            _updateResult.Should().BeOfType<ApiClientUpdateResult.Success>();
+
+        [Test]
+        public async Task It_stored_the_grant_before_the_un_approval_and_revoked_it()
+        {
+            _beforeUnApprovalOutcome.Should().Be(TokenStoreOutcome.Stored);
+            (await _repository.GetTokenStatusAsync(_beforeUnApprovalTokenId)).Should().Be("revoked");
+        }
+
+        [Test]
+        public void It_refuses_the_grant_after_the_un_approval() =>
+            _afterUnApprovalOutcome.Should().Be(TokenStoreOutcome.ClientChanged);
+
+        [Test]
+        public async Task It_stores_no_token_for_that_grant() =>
+            (await _repository.GetTokenStatusAsync(_afterUnApprovalTokenId)).Should().BeNull();
+    }
+
+    /// <summary>
+    /// DMS-1493 fixture C-3 for an un-approval, §8.1 case (ii), with the CMS update's own
+    /// transaction as the blocker. A participant wrapping the real one lets it lock and revoke,
+    /// records the transaction's session and holds at a gate before returning, so the update has
+    /// not yet written <c>IsApproved</c>. The lock manager must show a grant waiting on that
+    /// session; once the gate opens the update writes the un-approval and commits, and the grant
+    /// must refuse without storing. A store that takes no lock finishes before the probe sees it
+    /// waiting. Under locking read committed, a plain read of the changed rows also waits on this
+    /// transaction, so on SQL Server this fixture guards the refusal after the wait; the
+    /// stale-snapshot hazard (A-3) is PostgreSQL's.
+    /// </summary>
+    [TestFixture(EnforcementDisabled)]
+    [TestFixture(15)]
+    public class Given_A_Grant_Blocked_By_The_Un_Approval_Transaction(int maxActiveTokens)
+        : OpenIddictDataRepositoryTests
+    {
+        private readonly Guid _grantTokenId = Guid.NewGuid();
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _applicationId;
+        private ApiClientRow _apiClient = null!;
+        private Guid _earlierTokenId;
+        private ApiClientUpdateResult _updateResult = null!;
+        private TokenStoreOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(_repository, clientId);
+            _apiClient = await AddApiClientRowAsync(_repository, clientId, clientUuid: _applicationId);
+            _earlierTokenId = await StoreValidTokenAsync(_repository, _applicationId, FarFuture);
+
+            OpenIddictUnapprovalTokenRevocation participant = CreateUnapprovalParticipant(_repository);
+            TaskCompletionSource<int> revocationHeld = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            TaskCompletionSource commitGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            IUnapprovalTokenRevocation gatedParticipant = A.Fake<IUnapprovalTokenRevocation>(configuration =>
+                configuration.Wrapping(participant)
+            );
+            A.CallTo(() =>
+                    gatedParticipant.RevokeOutstandingTokensAsync(
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .ReturnsLazily(
+                    async Task<int> (Guid clientUuid, IDbConnection connection, IDbTransaction transaction) =>
+                    {
+                        int revokedCount = await participant.RevokeOutstandingTokensAsync(
+                            clientUuid,
+                            connection,
+                            transaction
+                        );
+                        revocationHeld.SetResult(
+                            await connection.ExecuteScalarAsync<int>(
+                                "SELECT @@SPID",
+                                transaction: transaction
+                            )
+                        );
+                        await commitGate.Task;
+                        return revokedCount;
+                    }
+                );
+            ApiClientRepository apiClientRepository = CreateApiClientRepository(gatedParticipant);
+
+            Task<ApiClientUpdateResult>? update = null;
+            Task<TokenStoreOutcome>? grant = null;
+            Task? probe = null;
+            try
+            {
+                update = Task.Run(() =>
+                    apiClientRepository.UpdateApiClient(UpdateCommandFor(_apiClient, isApproved: false))
+                );
+                if (await Task.WhenAny(revocationHeld.Task, update) == update)
+                {
+                    Assert.Fail(
+                        $"The un-approval completed with {(await update).GetType().Name} before its participant held the transaction open."
+                    );
+                }
+                int updateSessionId = await revocationHeld.Task;
+
+                grant = Task.Run(() =>
+                    _repository.StoreTokenAsync(
+                        _grantTokenId,
+                        _applicationId,
+                        "subject-blocked-grant",
+                        FarFuture,
+                        maxActiveTokens,
+                        RegisteredSecret
+                    )
+                );
+                probe = WaitUntilASessionIsBlockedBy(updateSessionId, GrantBlockedObservationTimeout);
+
+                if (await Task.WhenAny(probe, grant) == grant)
+                {
+                    Assert.Fail(
+                        $"The grant completed with {await grant} before it was observed waiting on the un-approval transaction."
+                    );
+                }
+
+                await probe;
+                grant
+                    .IsCompleted.Should()
+                    .BeFalse("the grant is waiting on the un-approval transaction's lock");
+
+                commitGate.SetResult();
+                _updateResult = await update;
+                _outcome = await grant;
+            }
+            finally
+            {
+                // Lets the update commit (a no-op after the release), so a grant still waiting on it
+                // can finish before it is awaited.
+                commitGate.TrySetResult();
+                await AwaitWithoutObservingAsync(update, grant, probe);
+            }
+        }
+
+        [Test]
+        public async Task It_un_approves_the_client()
+        {
+            _updateResult.Should().BeOfType<ApiClientUpdateResult.Success>();
+            (await ApiClientStateAsync(_apiClient.ApiClientId)).IsApproved.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_refuses_the_grant() => _outcome.Should().Be(TokenStoreOutcome.ClientChanged);
+
+        [Test]
+        public async Task It_stores_no_token_for_the_grant() =>
+            (await _repository.GetTokenStatusAsync(_grantTokenId)).Should().BeNull();
+
+        [Test]
+        public async Task It_commits_the_revocation_of_the_earlier_token() =>
+            (await _repository.GetTokenStatusAsync(_earlierTokenId)).Should().Be("revoked");
+    }
+
+    /// <summary>
+    /// DMS-1493 whole-lifecycle rollback for an un-approval (D-7), participant side: a participant
+    /// wrapping the real one lets it lock and revoke inside the CMS update's transaction, then
+    /// fails. The update reports an unknown failure and rolls back both changes: the client keeps
+    /// its approval and name, and the tokens the real participant had revoked are valid again.
+    /// </summary>
+    [TestFixture]
+    public class Given_An_Un_Approval_Whose_Participant_Fails_After_Revoking : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private ApiClientRow _apiClient = null!;
+        private Guid[] _tokenIds = null!;
+        private int _revokedInsideTheTransaction;
+        private ApiClientUpdateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string clientId = Guid.NewGuid().ToString();
+            Guid applicationId = await RegisterApplicationAsync(_repository, clientId);
+            _apiClient = await AddApiClientRowAsync(_repository, clientId, clientUuid: applicationId);
+            _tokenIds =
+            [
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, applicationId, FarFuture),
+            ];
+
+            OpenIddictUnapprovalTokenRevocation participant = CreateUnapprovalParticipant(_repository);
+            IUnapprovalTokenRevocation failingParticipant = A.Fake<IUnapprovalTokenRevocation>(
+                configuration => configuration.Wrapping(participant)
+            );
+            A.CallTo(() =>
+                    failingParticipant.RevokeOutstandingTokensAsync(
+                        A<Guid>._,
+                        A<IDbConnection>._,
+                        A<IDbTransaction>._
+                    )
+                )
+                .ReturnsLazily(
+                    async Task<int> (Guid clientUuid, IDbConnection connection, IDbTransaction transaction) =>
+                    {
+                        _revokedInsideTheTransaction = await participant.RevokeOutstandingTokensAsync(
+                            clientUuid,
+                            connection,
+                            transaction
+                        );
+                        throw new InvalidOperationException("Injected failure after the revocation");
+                    }
+                );
+
+            _result = await CreateApiClientRepository(failingParticipant)
+                .UpdateApiClient(UpdateCommandFor(_apiClient, isApproved: false, RenamedApiClientName));
+        }
+
+        [Test]
+        public void It_reports_an_unknown_failure() =>
+            _result.Should().BeOfType<ApiClientUpdateResult.FailureUnknown>();
+
+        [Test]
+        public void It_revoked_the_tokens_inside_the_transaction_before_failing() =>
+            _revokedInsideTheTransaction.Should().Be(2);
+
+        [Test]
+        public async Task It_keeps_the_client_approved_with_its_name() =>
+            (await ApiClientStateAsync(_apiClient.ApiClientId))
+                .Should()
+                .Be((true, ApiClientRowName, _apiClient.ApplicationId));
+
+        [Test]
+        public async Task It_leaves_every_token_valid() =>
+            (await TokenStatusesAsync(_repository, _tokenIds)).Should().Equal("valid", "valid");
+    }
+
+    /// <summary>
+    /// DMS-1493 whole-lifecycle rollback for an un-approval (D-7), CMS side: the real participant
+    /// locks and revokes, then the <c>ApiClient</c> UPDATE matches no row because the target
+    /// application does not exist. The update reports the missing application and rolls the
+    /// revocation back with it: the client keeps its approval, name and application, and every
+    /// token is valid. The participant logged the revocation as pending in that transaction, not
+    /// as done (S3.3-F1).
+    /// </summary>
+    [TestFixture]
+    public class Given_An_Un_Approval_Whose_Client_Update_Fails : OpenIddictDataRepositoryTests
+    {
+        private OpenIddictDataRepository _repository = null!;
+        private Guid _applicationId;
+        private ApiClientRow _apiClient = null!;
+        private Guid[] _tokenIds = null!;
+        private ILogger<OpenIddictUnapprovalTokenRevocation> _participantLogger = null!;
+        private ApiClientUpdateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(_repository, clientId);
+            _apiClient = await AddApiClientRowAsync(_repository, clientId, clientUuid: _applicationId);
+            _tokenIds =
+            [
+                await StoreValidTokenAsync(_repository, _applicationId, FarFuture),
+                await StoreValidTokenAsync(_repository, _applicationId, FarFuture),
+            ];
+            _participantLogger = A.Fake<ILogger<OpenIddictUnapprovalTokenRevocation>>();
+
+            _result = await CreateApiClientRepository(
+                    CreateUnapprovalParticipant(_repository, _participantLogger)
+                )
+                .UpdateApiClient(
+                    UpdateCommandFor(
+                        _apiClient,
+                        isApproved: false,
+                        RenamedApiClientName,
+                        applicationId: int.MaxValue
+                    )
+                );
+        }
+
+        [Test]
+        public void It_reports_the_application_as_not_found() =>
+            _result.Should().BeOfType<ApiClientUpdateResult.FailureApplicationNotFound>();
+
+        [Test]
+        public async Task It_keeps_the_client_approved_on_its_application() =>
+            (await ApiClientStateAsync(_apiClient.ApiClientId))
+                .Should()
+                .Be((true, ApiClientRowName, _apiClient.ApplicationId));
+
+        [Test]
+        public async Task It_leaves_every_token_valid() =>
+            (await TokenStatusesAsync(_repository, _tokenIds)).Should().Equal("valid", "valid");
+
+        [Test]
+        public void It_logged_the_revocation_as_pending_in_the_rolled_back_transaction() =>
+            Fake.GetCalls(_participantLogger)
+                .Where(call =>
+                    call.Method.Name == "Log" && call.Arguments.Get<LogLevel>(0) == LogLevel.Information
+                )
+                .Select(call => call.Arguments.Get<object>(2)?.ToString())
+                .Should()
+                .Equal(
+                    $"Marked 2 outstanding tokens for client {_applicationId} revoked in the pending un-approval transaction; they stay valid if it rolls back"
+                );
     }
 
     /// <summary>

@@ -84,6 +84,10 @@ public class OpenIddictUnapprovalTokenRevocationTests
             A.CallTo(() => _transaction.Dispose()).MustNotHaveHappened();
         }
 
+        /// <summary>
+        /// The count message says the revocation is pending in the caller's transaction, not done:
+        /// the caller may still roll it back (DMS-1493 S3.3-F1).
+        /// </summary>
         protected void AssertRevocationLogged(int revokedCount) =>
             _logger
                 .LoggedEntries()
@@ -92,7 +96,8 @@ public class OpenIddictUnapprovalTokenRevocationTests
                 .Which.Should()
                 .Match<(LogLevel Level, string Message, Exception? Exception)>(entry =>
                     entry.Level == LogLevel.Information
-                    && entry.Message == $"Revoked {revokedCount} outstanding tokens for client {_clientUuid}"
+                    && entry.Message
+                        == $"Marked {revokedCount} outstanding tokens for client {_clientUuid} revoked in the pending un-approval transaction; they stay valid if it rolls back"
                 );
     }
 
@@ -168,8 +173,8 @@ public class OpenIddictUnapprovalTokenRevocationTests
                 .Should()
                 .ContainSingle(entry =>
                     entry.Level == LogLevel.Information
-                    && entry.Message.Contains(AbsentApplicationLog)
-                    && entry.Message.Contains(_clientUuid.ToString())
+                    && entry.Message
+                        == $"{AbsentApplicationLog} {_clientUuid}; its stored tokens are marked revoked in the pending un-approval transaction regardless"
                 );
 
         [Test]

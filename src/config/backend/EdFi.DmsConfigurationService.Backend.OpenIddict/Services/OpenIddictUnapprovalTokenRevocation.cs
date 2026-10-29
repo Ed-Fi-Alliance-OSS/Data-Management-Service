@@ -42,16 +42,18 @@ public sealed class OpenIddictUnapprovalTokenRevocation(
             transaction
         );
 
+        // Both messages describe changes still pending in the caller's transaction: the caller
+        // commits or rolls back after this returns, and a rollback leaves every token valid.
         if (!applicationExists)
         {
             logger.LogInformation(
-                "No identity provider application exists for client {ClientUuid}; its stored tokens are revoked regardless",
+                "No identity provider application exists for client {ClientUuid}; its stored tokens are marked revoked in the pending un-approval transaction regardless",
                 SanitizeForLog(clientUuid.ToString())
             );
         }
 
         logger.LogInformation(
-            "Revoked {Count} outstanding tokens for client {ClientUuid}",
+            "Marked {Count} outstanding tokens for client {ClientUuid} revoked in the pending un-approval transaction; they stay valid if it rolls back",
             revokedCount,
             SanitizeForLog(clientUuid.ToString())
         );
