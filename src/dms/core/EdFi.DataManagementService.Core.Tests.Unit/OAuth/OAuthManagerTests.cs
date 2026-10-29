@@ -2573,8 +2573,11 @@ public class OAuthManagerTests
     /// <summary>
     /// The client gets the same generic 502 whichever failure status the upstream answered with,
     /// so the original status survives only on the log entry, where an operator can tell a 500
-    /// from a 503. Include non-JSON text to guard against parsing gateway diagnostics as JSON.
+    /// from a 503 or an unrecognized 400. Include non-JSON text to guard against parsing gateway
+    /// diagnostics as JSON.
     /// </summary>
+    [TestFixture(HttpStatusCode.BadRequest, false)]
+    [TestFixture(HttpStatusCode.BadRequest, true)]
     [TestFixture(HttpStatusCode.InternalServerError, false)]
     [TestFixture(HttpStatusCode.ServiceUnavailable, false)]
     [TestFixture(HttpStatusCode.ServiceUnavailable, true)]

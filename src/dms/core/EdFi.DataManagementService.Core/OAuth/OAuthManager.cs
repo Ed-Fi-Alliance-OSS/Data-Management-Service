@@ -528,8 +528,9 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             )
             {
                 logger.LogWarning(
-                    "Error from upstream identity service - {TraceId} - {Content}",
+                    "Error from upstream identity service - {TraceId} - {UpstreamStatusCode} - {Content}",
                     traceId.Value,
+                    (int)response.StatusCode,
                     LoggingSanitizer.SanitizeFreeTextForLogging(body, MaxLoggedUpstreamContentLength)
                 );
                 return OAuthErrorResponse.Create(
