@@ -2,6 +2,13 @@
 
 Date: 2026-10-20. Status: **accepted design**. The [contract ADR](../adr-oauth-token-errors-DMS-1606.md) records the implemented behavior and client migration; this document preserves the detailed design rationale and verification requirements.
 
+**DMS-1495 amendment (2026-10-29):** Exact Basic scheme recognition supersedes this design's
+original retention of substring recognition and the malformed Basic-like classification. A
+non-Basic scheme, including `Basicxyz:secret`, takes row 3 before body-credential and grant
+validation. A genuine Basic scheme with an unparseable parameter still takes row 5 after grant
+validation. See the [client-credentials ADR amendment](../adr-oauth-token-client-credentials-DMS-1604.md#amendment-exact-basic-scheme-dms-1495).
+The OAuth response format, challenge, correlation transport and other classifications remain unchanged.
+
 ## 1. Intent, authority and scope
 
 Make DMS token failures consumable by OAuth clients through root `error` / `error_description` strings, JSON media type, appropriate statuses, and a usable Basic challenge, while preserving successful requests and safe response-to-log diagnostics.
@@ -20,7 +27,7 @@ Also excluded: CMS implementation changes, token issuance, new grants or scope f
 |---|---|
 | D1: infrastructure | Preserve 429/502/503. Use `temporarily_unavailable` for 429/503 and `server_error` for 502. These are documented DMS token extensions, not RFC 6749 section 5.2 token codes. Writable selected-endpoint 500 also uses `server_error`; 413 uses `invalid_request`. |
 | D2: format / diagnostics | Strict OAuth body; preserve normalized correlation through one reversible ASCII-encoded response header. Do not retain problem-details body members. |
-| D3: parity / local classification | Use the row matrix below: no credentials and partial credentials are disjoint normalized-value cases. Retain malformed Basic-like 400 and existing parsing/check order. Explicitly document departures from DMS-1604/ODS. |
+| D3: parity / local classification | Use the row matrix below: no credentials and partial credentials are disjoint normalized-value cases. Retain 400 for unparseable genuine Basic headers after grant validation; DMS-1495 supersedes the original Basic-like classification as described above. Explicitly document departures from DMS-1604/ODS. |
 | D4: provider fallbacks | Every upstream 401 remains 401 invalid_client despite malformed bodies. Recognized provider 400 codes remain 400, except invalid_client after caller Authorization authentication becomes 401. Unclassifiable provider 400 becomes safe 502. Unusable descriptions use fixed DMS text. |
 | D5: ownership / verification | DMS-1606 owns row 13's single parsing fix and coverage; cross-reference DMS-1549 and reconcile its old envelope/log wording explicitly. Preserve unit and real-stack E2E coverage for every inventory row. Jira workflow changes remain with ticket owners. |
 
@@ -42,9 +49,9 @@ Rows assume earlier validation has passed. C = the fixed Basic challenge above; 
 |---|---|---|---|
 | 1: no header, neither body field nonblank | 401 / invalid_client | C | Manager splits the existing missing-pair branch using normalized values. Unit + E2E cover absent/null/empty/both-blank equivalence. |
 | 2: no header, exactly one body field nonblank | 400 / invalid_request | None | Manager classifies a partial pair. Cover each side missing/null/empty/blank, form and JSON, with no outbound send. |
-| 3: non-Basic header rejected locally | 401 / invalid_client | C | Keep existing Basic recognition and body-cannot-rescue rule. Cover with and without body credentials; retain known substring-recognition limitation. |
+| 3: non-Basic header rejected locally | 401 / invalid_client | C | Compare the whole leading scheme token with Basic, ordinally ignoring case (DMS-1495). Reject before body-credential and grant validation. Cover with and without body credentials, including Bearer xbasicx and Basicxyz:secret. |
 | 4: present empty/whitespace header | 400 / invalid_request | None | Preserve distinction from absent header and precedence over body credentials. |
-| 5: malformed Basic-like header rejected by header addition | 400 / invalid_request | None | Preserve rejection location after grant validation; do not expose/log the header or FormatException message. Test malformed header with valid and invalid grant. |
+| 5: genuine Basic scheme with an unparseable header value rejected by header addition | 400 / invalid_request | None | Preserve rejection location after grant validation; do not expose/log the header or FormatException message. Test Basic abc,Basic def with valid and invalid grant. |
 | 6: Basic plus any nonblank body credential | 400 / invalid_request | None | Preserve mixed-mechanism rule; test partial mixed pair and blank/empty fields that still count as omitted. |
 | 7: repeated form grant_type/client_id/client_secret | 400 / invalid_request | None | Frontend rejects before manager. Cover mixed-case names, duplicate empty values and duplicate plus Bearer. |
 | 8: complete body pair with a field over 2048 UTF-16 units | 400 / invalid_request | None | Preserve cap and earlier partial/mixed checks. Cover both fields at 2048/2049 and no outbound send. |
