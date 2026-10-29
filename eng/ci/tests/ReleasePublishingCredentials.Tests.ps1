@@ -194,3 +194,68 @@ Describe 'on-release.yml publishing credentials' {
         }
     }
 }
+
+Describe 'build-sdk-package.yml publishing credentials' {
+    BeforeAll {
+        $script:content = Get-Content (Join-Path $script:workflowRoot 'build-sdk-package.yml') -Raw
+        $script:jobs = Get-WorkflowJobTable $script:content
+    }
+
+    It 'keeps every secret out of the workflow-wide env and declares the Azure secrets optional' {
+        Get-WorkflowEnv $script:content | Should -Not -Match 'secrets\.'
+        $script:content | Should -Match '(?m)^      AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN:\r?\n        required: false\r?$'
+    }
+
+    It 'binds only the push and promote jobs to the publishing environment, and reads the token only in their steps' {
+        $bound = @($script:jobs.Keys | Where-Object { $script:jobs[$_] -match '(?m)^    environment: publishing\r?$' })
+        $bound | Sort-Object | Should -Be @('promote-azure-package', 'publish-sdk-package')
+        Assert-SecretReferenceInStep -Jobs $script:jobs -Secret 'AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN' -StepPattern '^(Push SDK Package to Azure Artifacts|Promote SDK Azure Package)$' -ExpectedCount 3
+        Assert-SecretReferenceInStep -Jobs $script:jobs -Secret 'AZURE_ARTIFACTS_USER_NAME' -StepPattern '^Promote SDK Azure Package$' -ExpectedCount 1
+    }
+
+    It 'pushes only from <Case>: <Publishes>' -ForEach @(
+        @{ Case = 'a version tag push'; EventName = 'push'; Ref = 'refs/tags/v8.1.0'; RefType = 'tag'; Publishes = $true }
+        @{ Case = 'a manual run on main'; EventName = 'workflow_dispatch'; Ref = 'refs/heads/main'; RefType = 'branch'; Publishes = $true }
+        @{ Case = 'a manual run on a feature branch, never'; EventName = 'workflow_dispatch'; Ref = 'refs/heads/DMS-1647-1649'; RefType = 'branch'; Publishes = $false }
+        @{ Case = 'a manual run on a branch named like a v tag, never'; EventName = 'workflow_dispatch'; Ref = 'refs/heads/v8.1.0'; RefType = 'branch'; Publishes = $false }
+    ) {
+        # inputs.publish_package is the caller's opt-in, held true here; the ref gate is what is tested.
+        $condition = (Get-JobCondition $script:jobs['publish-sdk-package']).Replace('inputs.publish_package && ', '')
+        Test-RefCondition -Expression $condition -EventName $EventName -Ref $Ref -RefType $RefType | Should -Be $Publishes
+    }
+}
+
+Describe 'every workflow keeps the publishing tokens behind the publishing environment' {
+    # The repository-wide rule the per-workflow tests above apply in detail. A publishing token is
+    # read either by a step of a job bound to the 'publishing' environment, or passed by name from a
+    # caller job to a reusable workflow, which GitHub requires for an environment secret and which
+    # resolves to nothing outside that environment.
+    BeforeDiscovery {
+        $script:workflowFiles = @(Get-ChildItem -LiteralPath ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../.github/workflows'))) -Filter '*.yml' |
+                ForEach-Object { @{ File = $_.Name } })
+    }
+
+    It '<File>' -ForEach $script:workflowFiles {
+        $content = Get-Content (Join-Path $script:workflowRoot $File) -Raw
+        $content | Should -Not -Match 'secrets: inherit'
+        if ($content -notmatch "`njobs:`n") { return }
+        Get-WorkflowEnv $content | Should -Not -Match 'secrets\.(AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN|AZURE_ARTIFACTS_USER_NAME|DOCKER_HUB_TOKEN)\b'
+
+        $jobs = Get-WorkflowJobTable $content
+        foreach ($id in $jobs.Keys) {
+            $job = $jobs[$id]
+            foreach ($match in [regex]::Matches($job, 'secrets\.(AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN|AZURE_ARTIFACTS_USER_NAME|DOCKER_HUB_TOKEN)\b')) {
+                $line = ($job.Substring(0, $match.Index) -split "`n")[-1]
+                if ($job -match '(?m)^    uses: ') {
+                    $callerSecrets = [regex]::Match($job, '(?ms)^    secrets:\r?\n(?:      .*\r?\n?)+')
+                    ($callerSecrets.Success -and $match.Index -ge $callerSecrets.Index -and $match.Index -lt $callerSecrets.Index + $callerSecrets.Length) |
+                        Should -BeTrue -Because "$id passes $($match.Value) only through its reusable-workflow secrets"
+                    continue
+                }
+                $job | Should -Match '(?m)^    environment: publishing\r?$' -Because "$id reads $($match.Value)"
+                $line | Should -Match '^ {10}\S' -Because "$id reads $($match.Value) only at step level, never in job env"
+                $job.IndexOf("`n    steps:") | Should -BeLessThan $match.Index -Because "$id reads $($match.Value) inside a step"
+            }
+        }
+    }
+}
