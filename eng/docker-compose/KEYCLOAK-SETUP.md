@@ -150,7 +150,7 @@ For a client the Configuration Service manages, put the mapper in the client's o
 Otherwise confirm through Keycloak's introspection endpoint, `POST http://localhost:8045/realms/edfi/protocol/openid-connect/token/introspect`, with `token=<the token>` and the credentials of a **confidential** client:
 
 - Introspect access tokens with a client that is in the token's audience (`aud`).
-  From Keycloak 26.6.2 (the Red Hat build of Keycloak 26.4.12, per its 26.4 migration guide; observed on 26.7.5, not on the pinned 26.1.4), any other client is answered `active:false` for a live token.
+  From Keycloak 26.6.2 (the Red Hat build of Keycloak 26.4.12, per its 26.4 migration guide; observed on 26.7.5, not on 26.1.4), any other client is answered `active:false` for a live token.
   Keycloak's opt-outs from this check (the server option `allow-token-introspection-without-audience-check` and the client setting *Allow token introspection without audience check*) are deprecated and not recommended ([Migrating to 26.6.2](https://www.keycloak.org/docs/latest/upgrading/index.html#migrating-to-26-6-2)).
   The mapper goes on the clients whose tokens you observe, not on the introspecting client:
 
