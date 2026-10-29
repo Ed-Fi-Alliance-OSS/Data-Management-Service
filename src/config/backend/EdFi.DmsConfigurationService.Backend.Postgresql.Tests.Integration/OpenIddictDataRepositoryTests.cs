@@ -3476,7 +3476,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             (await RedemptionDatesAsync(_tokenIds))
                 .Should()
                 .HaveCount(2)
-                .And.OnlyContain(date => date == null);
+                .And.AllSatisfy(redemptionDate => redemptionDate.Should().BeNull());
     }
 
     /// <summary>
@@ -4065,7 +4065,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 .Select(call => call.Arguments.Get<object>(2)?.ToString())
                 .Should()
                 .Equal(
-                    $"Marked 2 outstanding tokens for client {_applicationId} revoked in the pending un-approval transaction; they stay valid if it rolls back"
+                    $"Marked 2 outstanding tokens for client {_applicationId} revoked in the pending un-approval transaction; a rollback preserves their previous state"
                 );
     }
 

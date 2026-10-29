@@ -97,7 +97,7 @@ public class OpenIddictUnapprovalTokenRevocationTests
                 .Match<(LogLevel Level, string Message, Exception? Exception)>(entry =>
                     entry.Level == LogLevel.Information
                     && entry.Message
-                        == $"Marked {revokedCount} outstanding tokens for client {_clientUuid} revoked in the pending un-approval transaction; they stay valid if it rolls back"
+                        == $"Marked {revokedCount} outstanding tokens for client {_clientUuid} revoked in the pending un-approval transaction; a rollback preserves their previous state"
                 );
     }
 

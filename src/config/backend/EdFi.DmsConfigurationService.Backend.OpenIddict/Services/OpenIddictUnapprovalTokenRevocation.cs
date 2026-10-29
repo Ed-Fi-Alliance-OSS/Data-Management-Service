@@ -43,7 +43,8 @@ public sealed class OpenIddictUnapprovalTokenRevocation(
         );
 
         // Both messages describe changes still pending in the caller's transaction: the caller
-        // commits or rolls back after this returns, and a rollback leaves every token valid.
+        // commits or rolls back after this returns, and a rollback preserves each token's previous
+        // state (an expired token stays unusable).
         if (!applicationExists)
         {
             logger.LogInformation(
@@ -53,7 +54,7 @@ public sealed class OpenIddictUnapprovalTokenRevocation(
         }
 
         logger.LogInformation(
-            "Marked {Count} outstanding tokens for client {ClientUuid} revoked in the pending un-approval transaction; they stay valid if it rolls back",
+            "Marked {Count} outstanding tokens for client {ClientUuid} revoked in the pending un-approval transaction; a rollback preserves their previous state",
             revokedCount,
             SanitizeForLog(clientUuid.ToString())
         );
