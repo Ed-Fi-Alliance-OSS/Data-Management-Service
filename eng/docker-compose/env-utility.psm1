@@ -722,6 +722,12 @@ function Resolve-PluginComposeFile {
             }
 
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            # The image-bearing overlays were renamed to *.compose.yml; name the replacement
+            # for an entry an older .env still carries.
+            $renamed = [System.IO.Path]::ChangeExtension($path, ".compose.yml")
+            if ($path.EndsWith(".yml") -and -not $path.EndsWith(".compose.yml") -and (Test-Path -LiteralPath $renamed -PathType Leaf)) {
+                throw "DMS_PLUGINS_COMPOSE_FILES does not identify a compose file: $path (renamed to $([System.IO.Path]::GetFileName($renamed)))"
+            }
             throw "DMS_PLUGINS_COMPOSE_FILES does not identify a compose file: $path"
         }
 

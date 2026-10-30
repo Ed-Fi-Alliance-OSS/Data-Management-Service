@@ -155,6 +155,13 @@ Describe 'Plugin compose file resolution' {
                 Should -Throw 'DMS_PLUGINS_COMPOSE_FILES does not identify a compose file: *does-not-exist.yml'
         }
 
+        It 'names the renamed overlay for an entry that predates the .compose.yml names' {
+            { Resolve-PluginComposeFile `
+                    -EnvValues @{ DMS_PLUGINS_COMPOSE_FILES = 'plugins-fetch-dms.yml' } `
+                    -ScriptRoot $script:composeRoot } |
+                Should -Throw 'DMS_PLUGINS_COMPOSE_FILES does not identify a compose file: *plugins-fetch-dms.yml (renamed to plugins-fetch-dms.compose.yml)'
+        }
+
         It 'refuses a directory, because a compose file is a leaf' {
             { Resolve-PluginComposeFile `
                     -EnvValues @{ DMS_PLUGINS_COMPOSE_FILES = 'tests' } `

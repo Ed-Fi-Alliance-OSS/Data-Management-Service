@@ -378,13 +378,34 @@ exit 17
         Get-Content -LiteralPath $script:dockerLog -Raw | Should -Not -Match "compose .* pull"
     }
 
+    It "runs the pulled update.sh rather than the copy it started from" {
+        $git = @("-c", "user.name=test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false")
+        & git init --quiet $script:composeRoot
+        & git -C $script:composeRoot add --all
+        & git -C $script:composeRoot @git commit --quiet -m "deployed"
+        $clone = Join-Path $script:work "clone"
+        & git clone --quiet $script:composeRoot $clone
+        Set-Content -LiteralPath (Join-Path $script:composeRoot "update.sh") -Value "#!/usr/bin/env bash`necho `"pulled update.sh SKIP_GIT=`$SKIP_GIT`"`n" -NoNewline
+        & git -C $script:composeRoot @git commit --quiet -am "upstream"
+
+        $output = & bash (Join-Path $clone "update.sh") 2>&1
+
+        $LASTEXITCODE | Should -Be 0 -Because ($output | Out-String)
+        $output | Out-String | Should -Match "pulled update.sh SKIP_GIT=1"
+        Get-Content -LiteralPath $script:dockerLog -Raw -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+    }
+
     It "pins the same Keycloak image by tag and digest in both compose files" {
         $repoRoot = Join-Path $script:azureVmRoot "../.."
-        foreach ($file in @("eng/azure-vm/compose/keycloak.compose.yml", "eng/docker-compose/keycloak.compose.yml")) {
+        $pinned = foreach ($file in @("eng/azure-vm/compose/keycloak.compose.yml", "eng/docker-compose/keycloak.compose.yml")) {
             $images = @(Select-String -LiteralPath (Join-Path $repoRoot $file) -Pattern '^\s*image:\s*(\S+)\s*$' |
                     ForEach-Object { $_.Matches[0].Groups[1].Value })
-            $images | Should -Be @($script:keycloakImage) -Because $file
+            $images.Count | Should -Be 1 -Because $file
+            $images[0] | Should -Match '^quay\.io/keycloak/keycloak:\d+\.\d+\.\d+@sha256:[0-9a-f]{64}$' -Because $file
+            [version]($images[0] -replace '^[^:]+:([^@]+)@.*$', '$1') | Should -BeGreaterOrEqual ([version]"26.7.0") -Because $file
+            $images[0]
         }
+        $pinned[0] | Should -Be $pinned[1]
     }
 
     Context "PostgreSQL volume layout" {

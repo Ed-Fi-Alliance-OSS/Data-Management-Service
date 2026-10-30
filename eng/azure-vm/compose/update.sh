@@ -17,6 +17,9 @@ if [ "${SKIP_GIT:-0}" != "1" ] && git -C . rev-parse --git-dir >/dev/null 2>&1; 
     echo "       re-run with SKIP_GIT=1 to pull images against the current checkout." >&2
     exit 1
   fi
+  # Bash keeps reading the script it started with, which the pull may have replaced; run the pulled
+  # copy so its checks match the pulled compose files (e.g. a renamed overlay).
+  exec env SKIP_GIT=1 bash "./$(basename "${BASH_SOURCE[0]}")" "$@"
 fi
 
 # Name any retired variable before Compose fails on its missing replacement.

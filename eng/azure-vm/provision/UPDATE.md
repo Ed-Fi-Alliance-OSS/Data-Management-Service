@@ -182,6 +182,9 @@ If a Configuration Service stays unhealthy, `./logs.sh st-config` (or `mt-config
 
 Keycloak: `keycloak.compose.yml` pins one image by tag and digest (`26.8.1@sha256:…`), the same image as `eng/docker-compose/keycloak.compose.yml`.
 To protect the persisted H2 realm volume, `update.sh` refuses any change to that reference, including a new digest under the same tag; such an update follows [`REDEPLOY.md`](REDEPLOY.md), which issues new API keys.
+An `update.sh` from before `keycloak.yml` was renamed to `keycloak.compose.yml` keeps running after its own `git pull`, cannot find `keycloak.yml`, and stops with `cannot read the layout of the PostgreSQL volume`; nothing is changed.
+Run it again: the pulled `update.sh` then reports the Keycloak image change, and the deployment follows [`REDEPLOY.md`](REDEPLOY.md).
+Later versions of `update.sh` rerun the pulled copy of themselves after `git pull`.
 
 PostgreSQL: builds from October 2026 run PostgreSQL 18, which keeps its cluster in a versioned directory inside the `dms-security-review_dms-sec-postgres` volume.
 A deployment created before that holds a PostgreSQL 16 cluster at the volume root, which PostgreSQL 18 does not read: it would start an empty cluster beside it, and the databases and API keys would not carry over.

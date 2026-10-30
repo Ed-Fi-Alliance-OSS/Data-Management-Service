@@ -19,6 +19,21 @@
 > setup scripts warn about each one. Rename them as described in
 > [Migrating from the earlier variable names](../../docs/CONFIGURATION.md#migrating-from-the-earlier-variable-names).
 
+> [!IMPORTANT]
+> The image-bearing Compose files are named `*.compose.yml` (for example `keycloak.compose.yml`,
+> `postgresql.compose.yml` and `plugins-fetch-dms.compose.yml`), so Dependabot can track their
+> images. Before switching an existing checkout to these names:
+>
+> - Tear down any managed CDC deployment with the
+>   [governed teardown](../../reference/cdc-documentation/operations-runbook.md#stack-teardown)
+>   from the **current** checkout. Its inventory records each selected Compose file's path and
+>   hash, and refuses lifecycle operations, teardown included, once a file is missing or changed.
+>   If the checkout already moved, switch back to the deployed commit to tear down.
+> - Rename the entries in a `.env` `DMS_PLUGINS_COMPOSE_FILES` value, for example
+>   `plugins-fetch-dms.yml` to `plugins-fetch-dms.compose.yml`. The launchers name the new file
+>   when an old entry is found.
+> - Use the new names in your own `docker compose -f` commands and scripts.
+
 > [!NOTE]
 > `provision-dms-schema.ps1` and `configure-local-data-store.ps1` decrypt the connection strings
 > the Configuration Service stores with AES-GCM, which requires PowerShell 7.4 or later, for them
