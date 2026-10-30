@@ -1441,7 +1441,7 @@ Describe 'SchemaTools lifecycle result boundary' {
         $script:root = Join-Path $TestDrive 'native'
         New-Item -ItemType Directory $script:root | Out-Null
         Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') $script:root
-        foreach ($name in @('bootstrap-schema-tool.psm1', 'bootstrap-manifest.psm1')) {
+        foreach ($name in @('bootstrap-schema-tool.psm1', 'bootstrap-manifest.psm1', 'cdc-cleanup-diagnostics.psm1')) {
             Copy-Item (Join-Path $PSScriptRoot "../$name") $script:root
         }
         @'
@@ -1874,7 +1874,9 @@ if (-not (Test-CdcInfrastructureInvocation)) { throw 'Lost lifecycle ownership' 
 if ($Fail) { throw 'Child failure' }
 $global:LASTEXITCODE = 0
 '@ | Set-Content $script:child
-        Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') (Join-Path $TestDrive 'cdc-lifecycle.psm1')
+        foreach ($name in @('cdc-lifecycle.psm1', 'cdc-cleanup-diagnostics.psm1')) {
+            Copy-Item (Join-Path $PSScriptRoot "../$name") (Join-Path $TestDrive $name)
+        }
         # Use the same module path in the child as the owning invocation, just like real primitives.
         Import-Module (Join-Path $TestDrive 'cdc-lifecycle.psm1') -Force
     }
