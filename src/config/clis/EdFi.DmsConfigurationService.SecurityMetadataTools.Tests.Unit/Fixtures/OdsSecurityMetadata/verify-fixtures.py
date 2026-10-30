@@ -229,7 +229,7 @@ def review():
     # of the converter and the mapping used by the three-way policy audit above.
     standard_path = (
         DIRECTORY.parents[3]
-        / "backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds52/Claims.json"
+        / "backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds52/Claims.json"
     )
     standard = json.loads(standard_path.read_text())
 

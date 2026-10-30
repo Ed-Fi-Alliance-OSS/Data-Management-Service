@@ -56,6 +56,9 @@ public static class SetupHooks
     private static string MssqlConnectionString =>
         $"Server=localhost,{MssqlDbPortExternal};User Id={MssqlSaUser};Password={MssqlSaPassword};TrustServerCertificate=true;Database={DatabaseName};";
 
+    internal static string DatabaseConnectionString =>
+        UseMssql ? MssqlConnectionString : PostgresqlConnectionString;
+
     internal static DbConnection CreateDatabaseConnection() =>
         UseMssql
             ? new SqlConnection(MssqlConnectionString)
@@ -178,6 +181,8 @@ public static class SetupHooks
                 await DeleteData(@"""dmscs"".""DataStoreContext""");
                 await DeleteData(@"""dmscs"".""ApiClientOwnershipToken""");
                 await DeleteData(@"""dmscs"".""ApiClientDataStore""");
+                // A client's education organization rows reference it without cascading
+                await DeleteData(@"""dmscs"".""ApiClientEducationOrganization""");
                 await DeleteData(@"""dmscs"".""ApiClient""");
                 await DeleteData(@"""dmscs"".""OwnershipToken""");
                 await DeleteData(@"""dmscs"".""DataStore""");
@@ -217,6 +222,8 @@ public static class SetupHooks
                 await DeleteData("dmscs.DataStoreContext");
                 await DeleteData("dmscs.ApiClientOwnershipToken");
                 await DeleteData("dmscs.ApiClientDataStore");
+                // A client's education organization rows reference it without cascading
+                await DeleteData("dmscs.ApiClientEducationOrganization");
                 await DeleteData("dmscs.ApiClient");
                 await DeleteData("dmscs.OwnershipToken");
                 await DeleteData("dmscs.DataStore");

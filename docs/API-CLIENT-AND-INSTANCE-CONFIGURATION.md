@@ -149,8 +149,7 @@ initial client's. To act on that client, read it with
    the client receives its default scopes (its default client scopes under
    Keycloak, its registered scopes under the self-contained provider). Under
    both providers, a scope the client is not granted answers `400` with
-   `invalid_scope`; the self-contained provider sends an RFC 6749
-   `error`/`error_description` body and Keycloak a problem details body.
+   `invalid_scope` in the RFC 6749 `error`/`error_description` body.
    Under the self-contained provider, a scope the client holds only in part
    succeeds with the part it holds. The token response's `scope` member lists
    the granted scopes separated by spaces; under Keycloak it is omitted when
@@ -165,6 +164,381 @@ With the surface enabled, the token reaches the identity operations its claim se
 Those operations run only when an identity provider plugin is registered; without one, an otherwise authorized request answers `404` with `urn:ed-fi:api:identities:operation-not-supported`.
 This section documents only how to provision such a client in the Configuration Service and confirm its credentials work.
 How quickly a deletion, a credential reset or a claim set change reaches the identity operations is in [How long a change takes to apply](./IDENTITY-MANAGEMENT.md#how-long-a-change-takes-to-apply), and the rest of the operator's side is in [Identity Management](./IDENTITY-MANAGEMENT.md).
+
+### Applications Without API Clients
+
+`POST /v3/applications` accepts an optional `createDefaultCredentials` flag. It
+defaults to `true`, which keeps the existing flow: the Configuration Service
+creates the application's initial API client, assigns it the request's
+`dataStoreIds`, and returns its `key` and `secret`.
+
+With `"createDefaultCredentials": false`, the Configuration Service creates the
+application, its education organizations and its profiles, and creates no API
+client and no identity provider client. The request must omit `enabled` and
+`dataStoreIds`, which describe the initial client:
+
+```json
+{
+  "applicationName": "District SIS",
+  "vendorId": 1,
+  "claimSetName": "SIS-Vendor",
+  "educationOrganizationIds": [255901],
+  "profileIds": [],
+  "createDefaultCredentials": false
+}
+```
+
+The response is `201 Created` with explicit null credentials:
+
+```json
+{
+  "id": 7,
+  "key": null,
+  "secret": null
+}
+```
+
+Sending `enabled` or `dataStoreIds` together with `false` returns `400` with an
+`Enabled` or `DataStoreIds` validation error, whatever the value, so `false`,
+`null` and `[]` are rejected too. When the flag is omitted or `true`, `enabled`
+is ignored, as before. Add clients afterwards with `POST /v3/apiClients`.
+
+An application can also reach zero clients when its last client is deleted with
+`DELETE /v3/apiClients/{id}`. That leaves the application in place, and it
+behaves the same as one created without clients:
+
+- `GET /v3/applications`, `GET /v3/applications/{id}` and
+  `GET /v3/vendors/{id}/applications` report `"enabled": false` and
+  `"dataStoreIds": []`. `enabled` is `true` only when the application has at
+  least one client and every client is approved, and `dataStoreIds` is the
+  union of its clients' data store assignments.
+- `PUT /v3/applications/{id}/reset-credential` returns `409 Conflict`, as it
+  does for an application with more than one client, and resets nothing. A
+  missing application still returns `404`. Reset a specific client with
+  `PUT /v3/apiClients/{id}/reset-credential`.
+- `POST /v3/apiClients` adds a client to it, and
+  `DELETE /v3/applications/{id}` deletes it.
+
+`PUT /v3/applications/{id}` updates an application with no clients like any
+other and returns `204` without calling the identity provider.
+
+### API Client Education Organization Scope
+
+Every API client carries its own education organization scope. A client either
+**inherits** its Application's education organizations or is **narrowed** to a
+subset of them, requested as a non-empty list. The scope becomes the client's
+`educationOrganizationIds` token claim, which DMS uses for relationship-based
+authorization. An SEA can keep one Application per vendor product and give each
+LEA its own credentials, limited to that LEA's education organizations.
+
+#### What a client reports
+
+`GET /v3/apiClients`, `GET /v3/apiClients?applicationId={id}` and
+`GET /v3/apiClients/{key or numeric id}` return two fields for every client:
+
+- `inheritsApplicationEducationOrganizations` is the stored flag: `true` for an
+  inheriting client, `false` for a narrowed one.
+- `educationOrganizationIds` is the client's **effective** list, in ascending
+  order. For an inheriting client it is the Application's current list; for a
+  narrowed client it is the client's own list. It is always present and never
+  `null`.
+
+A client narrowed to a list equal to its Application's whole list stays
+narrowed: it reports `false` and does not pick up education organizations added
+to the Application later.
+
+A narrowed client whose education organizations are all removed from its
+Application reports `"educationOrganizationIds": []`. That effective scope grants
+no education organization access; the client stays approved and still
+authenticates. Its token claims can lag the saved scope: tokens already issued
+keep their claims until they expire, and a client the identity provider could
+not update stays pending until it is updated (see
+[Application changes](#application-changes)). Namespace-based
+permissions are a separate claim and are not affected. To withdraw a client's
+access on purpose, disable it (`"isApproved": false`) or delete it; a request
+cannot set an empty list. An inheriting client of an Application with no
+education organizations also reports `[]`.
+
+The item route resolves its segment key-first, as described in
+[Provisioning a Client With No Data Store Assignment](#provisioning-a-client-with-no-data-store-assignment).
+`PUT`, `DELETE` and `reset-credential` take only the numeric `id`.
+
+#### Request rules
+
+`POST /v3/apiClients` and `PUT /v3/apiClients/{id}` accept two optional fields,
+`educationOrganizationIds` and `inheritsApplicationEducationOrganizations`:
+
+| Request | Result |
+| --- | --- |
+| Neither field, on `POST` | The client inherits. |
+| Neither field, on `PUT` | The client keeps its flag and list. |
+| `"educationOrganizationIds": [...]` without the flag, or with `false` | The client is narrowed to the list, even when it equals the Application's list. Duplicates are removed. |
+| `"inheritsApplicationEducationOrganizations": true` without a list | The client inherits. |
+| `true` with a list equal to the Application's non-empty list, in any order | The client inherits. An inheriting client read with `GET` can be sent back unchanged when its list is not empty. |
+| `true` with any other list | `400` on `EducationOrganizationIds`. |
+| `false` without a list | `400` on `InheritsApplicationEducationOrganizations`. |
+| `"educationOrganizationIds": []` or `null` | `400` on `EducationOrganizationIds`. |
+| `"inheritsApplicationEducationOrganizations": null` | `400` on `InheritsApplicationEducationOrganizations`. |
+| A list with an id that is not on the client's Application (the new Application on a move) | `400` on `EducationOrganizationIds`, naming the missing ids. |
+
+These `400` responses use type `urn:ed-fi:management-api:bad-request:data` and
+change nothing.
+
+An empty list is never accepted, even when the Application has no education
+organizations. When `GET` reports `"educationOrganizationIds": []`, omit both
+scope fields on `PUT` to keep the client's scope, or send
+`"inheritsApplicationEducationOrganizations": true` without a list to make it
+inherit.
+
+`PUT /v3/apiClients/{id}` replaces the whole client. It requires `id` (equal to
+the route id), `applicationId`, `name` and `isApproved`. `dataStoreIds` is a
+full replacement that is independent of the scope: omitting it removes every
+data store assignment, as described in
+[Clients With No Data Store Assignment](#clients-with-no-data-store-assignment).
+Send the client's current `dataStoreIds` with every scope change that is meant
+to keep them.
+
+Narrow a new client:
+
+```json
+{
+  "applicationId": 7,
+  "name": "LEA 255901",
+  "isApproved": true,
+  "dataStoreIds": [1],
+  "educationOrganizationIds": [255901]
+}
+```
+
+Narrow an existing client (numeric id 12), keeping its data store assignment:
+
+```json
+{
+  "id": 12,
+  "applicationId": 7,
+  "name": "LEA 255901",
+  "isApproved": true,
+  "dataStoreIds": [1],
+  "educationOrganizationIds": [255901, 255950]
+}
+```
+
+Make it inherit again:
+
+```json
+{
+  "id": 12,
+  "applicationId": 7,
+  "name": "LEA 255901",
+  "isApproved": true,
+  "dataStoreIds": [1],
+  "inheritsApplicationEducationOrganizations": true
+}
+```
+
+#### Moving a client to another Application
+
+A `PUT` with a different `applicationId` moves the client. The move, the
+client's new scope and its data store assignment are saved together, or not at
+all.
+
+- An **inheriting** client sent with neither scope field adopts the new
+  Application's list.
+- A **narrowed** client sent with neither scope field keeps its list when every
+  id in it is on the new Application. Otherwise the request returns `409` with
+  type `urn:ed-fi:management-api:conflict:education-organization-scope`, the
+  detail names the missing ids, and nothing changes.
+- To move a client whose list does not fit, send `educationOrganizationIds`
+  that are on the new Application, or `"inheritsApplicationEducationOrganizations": true`.
+
+The `409` is specific to an omitted scope on a move. A list that the request
+itself sends and that is not on the new Application is a `400`, like any other
+scope validation error.
+
+#### When changes reach a token
+
+A successful `POST` or `PUT` on `/v3/apiClients` sends the client's effective
+list to the identity provider, under both the self-contained provider and
+Keycloak. Tokens requested after that carry the new list. Tokens already issued
+keep their claims until they expire; this change does not revoke them.
+
+An empty effective list appears in the token as one empty
+`educationOrganizationIds` claim under the self-contained provider, and as no
+claim under Keycloak. DMS treats both as no education organization access.
+
+`PUT /v3/apiClients/{id}/reset-credential` changes only the secret. The new
+secret works and the old one stops working. The stored flag, the stored list
+and the claims held by the identity provider are kept as they are. A reset does
+not refresh claims and does not complete a pending synchronization.
+`PUT /v3/applications/{id}/reset-credential` still returns `409` for an
+Application with zero or several clients; reset a specific client instead.
+
+#### Application changes
+
+`PUT /v3/applications/{id}` saves the change first. One transaction saves the
+Application and marks every client the change affects as pending an identity
+provider update:
+
+- A name or claim set change affects every client.
+- An added or removed education organization affects every inheriting client.
+- A removed education organization also affects each narrowed client that held
+  it. A narrowed client keeps its narrowing: it loses removed ids and never gains
+  added ones, even when its list equals the Application's whole list.
+
+A change to profiles or the vendor alone affects no client. The database follows
+for every client right away: removed ids leave every client's stored list, and
+`GET` reports each client's effective list.
+
+The Configuration Service then updates each pending client of the Application in
+the identity provider, one after another in id order, and clears a client's
+pending marker once the provider confirms its update. Each client receives the
+Application's name and claim set with its own effective list, data stores and
+approval. Clients left pending by an earlier request are included. Tokens
+requested afterwards carry the change; tokens already issued keep their claims
+until they expire.
+
+- `204`: no client of the Application is pending.
+- `502` with type `urn:ed-fi:management-api:bad-gateway:partial-sync`: the
+  Application change is saved, but some clients are still pending. `detail`
+  counts them and `apiClientIds` lists their numeric ids, for example
+  `"apiClientIds": [12, 15]`. Their tokens can keep their earlier claims until
+  they are updated.
+
+A pending client is updated by any of these:
+
+- Sending the same `PUT /v3/applications/{id}` again. Only the pending clients
+  are sent to the identity provider.
+- A later Application update that affects the client, or any later Application
+  update while it is still pending.
+- A successful `PUT /v3/apiClients/{id}` of the client, even one that changes
+  nothing. A failed client update keeps the client pending.
+
+There is no scheduled retry. An unchanged Application update does not refresh
+clients that are not pending, and a credential reset neither refreshes claims
+nor completes a pending update. The Application update never changes client
+keys, secrets, names, approval, data stores or scope choices.
+
+Renaming a claim set (`PUT /v3/claimSets/{id}`) also renames it on every
+Application that uses it and marks every client of those Applications pending,
+but it does not update the identity provider itself. Until a client is updated
+by one of the ways above, its tokens carry the old claim set name, which DMS no
+longer recognizes, so its requests are refused. After a rename, send each
+affected Application's `PUT /v3/applications/{id}` again, unchanged.
+
+An Application or client update that was already sending the old name when the
+rename committed does not complete the client: the client stays or becomes
+pending, including a client update that moves the client into a renamed
+Application, and an Application update reports it in its `502` response. Sending
+that Application's `PUT /v3/applications/{id}` again, unchanged, sends the new
+name.
+
+#### Upgrading from 8.0
+
+Before 8.1, an Application update refreshed only the Application's first client,
+so another client's identity provider claims can still hold education
+organizations, a name or a claim set the Application no longer has. The upgrade
+cannot read the identity provider, so it makes every existing client inherit its
+Application's current list and marks every existing client pending. Until a
+client is updated, `GET /v3/apiClients` reports the Application's list while the
+client's tokens can still carry its earlier claims.
+
+To bring every client in line, send each Application's current definition with
+`PUT /v3/applications/{id}`, unchanged if nothing needs to change. That request
+updates every client of the Application, as described above. A
+`PUT /v3/apiClients/{id}` updates a single client. A client whose identity
+provider client no longer exists cannot be updated and stays pending, and every
+update of its Application returns `502` naming it; delete that client with
+`DELETE /v3/apiClients/{id}`.
+
+#### SEA workflow: one Application, a client per LEA
+
+1. **Create the Application without credentials.** Use the vendor product's
+   claim set and the full list of education organizations any LEA may need.
+   Omit `enabled` and `dataStoreIds`, which describe a default client:
+
+   ```json
+   {
+     "vendorId": 3,
+     "applicationName": "Vendor SIS",
+     "claimSetName": "SIS-Vendor",
+     "educationOrganizationIds": [255901, 255950, 255902],
+     "profileIds": [],
+     "createDefaultCredentials": false
+   }
+   ```
+
+   The response is `201` with `"key": null` and `"secret": null`; see
+   [Applications Without API Clients](#applications-without-api-clients).
+
+2. **Create one client per LEA** with `POST /v3/apiClients`. Give each its own
+   non-empty list and explicit `dataStoreIds` and `isApproved`:
+
+   ```json
+   {
+     "applicationId": 7,
+     "name": "LEA 255902",
+     "isApproved": true,
+     "dataStoreIds": [1],
+     "educationOrganizationIds": [255902]
+   }
+   ```
+
+   The `201` response carries that client's `id`, `key` and `secret`. Each LEA
+   receives only its own key and secret, for example through its security
+   administrator.
+
+3. **Check the result** with `GET /v3/apiClients?applicationId=7`:
+
+   ```json
+   [
+     {
+       "id": 12,
+       "applicationId": 7,
+       "clientId": "<key>",
+       "clientUuid": "<uuid>",
+       "name": "LEA 255901",
+       "isApproved": true,
+       "creatorOwnershipTokenId": null,
+       "ownershipTokenIds": [],
+       "dataStoreIds": [1],
+       "inheritsApplicationEducationOrganizations": false,
+       "educationOrganizationIds": [255901, 255950]
+     },
+     {
+       "id": 13,
+       "applicationId": 7,
+       "clientId": "<key>",
+       "clientUuid": "<uuid>",
+       "name": "LEA 255902",
+       "isApproved": true,
+       "creatorOwnershipTokenId": null,
+       "ownershipTokenIds": [],
+       "dataStoreIds": [1],
+       "inheritsApplicationEducationOrganizations": false,
+       "educationOrganizationIds": [255902]
+     }
+   ]
+   ```
+
+4. **Change an LEA's list** with `PUT /v3/apiClients/{id}`, sending all
+   required fields as shown under [Request rules](#request-rules). The LEA's next
+   token carries the new list.
+
+5. **Replace an LEA's secret** with
+   `PUT /v3/apiClients/{id}/reset-credential` and an empty body `{}`. The
+   response carries the client's unchanged `key` and new `secret`.
+
+The education organization list limits a client only where its claim set uses
+education-organization relationship authorization. The claim set still
+decides which resources and actions the client has, and the client reaches data
+only in its assigned data stores. With a claim set using relationship-based
+authorization, an LEA client narrowed to its own school reads that school's
+records, and a read of another LEA's school's record is denied with `403`
+(`urn:ed-fi:api:security:authorization`). Any client of the Application whose
+list lost an education organization, or became empty, through an Application
+change is denied that organization's records the same way with a token
+requested after that client's identity provider update succeeds. A client still
+pending after a `502` can keep its earlier claims until then.
 
 ### Context-Based Routing
 
@@ -302,8 +676,9 @@ Stores OAuth client credentials for applications.
 
 **Constraint:** `UNIQUE (ApplicationId, Name)` ensures API client names are
 unique within an application; clients of different applications may share a
-name. A duplicate name is rejected with `400`, on `POST` and on a `PUT` that
-renames a client or moves it to another application.
+name. A duplicate name is rejected with `409` (type
+`urn:ed-fi:management-api:conflict`), on `POST` and on a `PUT` that renames a
+client or moves it to another application.
 
 #### ApiClientDataStore
 

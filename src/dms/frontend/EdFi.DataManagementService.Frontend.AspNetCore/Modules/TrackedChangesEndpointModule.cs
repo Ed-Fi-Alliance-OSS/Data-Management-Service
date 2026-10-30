@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
+using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using Microsoft.Extensions.Options;
 using static EdFi.DataManagementService.Frontend.AspNetCore.AspNetCoreFrontend;
 
@@ -19,11 +20,12 @@ public class TrackedChangesEndpointModule(IOptions<AppSettings> appSettings) : I
 
         // GET alone, for the reason given in CoreEndpointModule: ODS/API answers HEAD with a 405,
         // so HEAD falls through to the terminals below rather than being mapped here.
-        endpoints.MapGet(BuildRoutePattern(routeQualifierSegments, multiTenancy, "deletes"), GetDeletes);
-        endpoints.MapGet(
-            BuildRoutePattern(routeQualifierSegments, multiTenancy, "keyChanges"),
-            GetKeyChanges
-        );
+        endpoints
+            .MapGet(BuildRoutePattern(routeQualifierSegments, multiTenancy, "deletes"), GetDeletes)
+            .WithMetadata(DataEndpointMetadata.Instance);
+        endpoints
+            .MapGet(BuildRoutePattern(routeQualifierSegments, multiTenancy, "keyChanges"), GetKeyChanges)
+            .WithMetadata(DataEndpointMetadata.Instance);
 
         // Terminals for tracked-change routes reached with an unsupported method. They hand the
         // request to Core rather than answering here, so that authentication, tenant validation and

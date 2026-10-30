@@ -4,8 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Text.Json;
-using System.Text.Unicode;
 using EdFi.DmsConfigurationService.DataModel;
 using Flurl.Http;
 using Keycloak.Net.Models.Clients;
@@ -63,18 +61,6 @@ public sealed class KeycloakTokenRevocationManager(
     private const string ProviderStatusReason = "provider-status";
     private const string UnrecognizedResponseReason = "unrecognized-response";
 
-    /// <summary>The provider <c>error</c> values that may be logged verbatim; every other value is <c>unrecognized</c> (D-15).</summary>
-    private static readonly HashSet<string> _loggableProviderErrors = new(StringComparer.Ordinal)
-    {
-        "invalid_request",
-        "invalid_client",
-        "unauthorized_client",
-        "unsupported_token_type",
-        "invalid_token",
-        "server_error",
-        "temporarily_unavailable",
-    };
-
     public async Task<TokenRevocationResult> RevokeTokenAsync(
         TokenRevocationRequest request,
         CancellationToken cancellationToken
@@ -84,6 +70,15 @@ public sealed class KeycloakTokenRevocationManager(
         // so that no caller of this manager can reach the provider with a secretless request.
         if (string.IsNullOrWhiteSpace(request.ClientId) || string.IsNullOrWhiteSpace(request.ClientSecret))
         {
+            return new TokenRevocationResult.InvalidClient();
+        }
+
+        // Decided here: a longer id can name no Keycloak client, the admin API's client-type lookup
+        // fails on the URL length once the id is long enough, and the caller-sized id is kept out of
+        // every log.
+        if (KeycloakProviderAnswer.IsLongerThanAnyClientId(request.ClientId))
+        {
+            logger.LogInformation("Revocation refused: the client id is longer than any Keycloak client id");
             return new TokenRevocationResult.InvalidClient();
         }
 
@@ -242,6 +237,12 @@ public sealed class KeycloakTokenRevocationManager(
         );
         message.Content = new FormUrlEncodedContent(form);
 
+        // Keycloak 26.1.4 answers a form value over its form attribute limit with 413 without reading
+        // the rest of the request and keeps the connection open, so the next request on that
+        // connection gets no answer; closing the connection after each answer keeps a caller's
+        // oversized request from stalling another caller's.
+        message.Headers.ConnectionClose = true;
+
         HttpResponseMessage response;
         try
         {
@@ -264,7 +265,9 @@ public sealed class KeycloakTokenRevocationManager(
         catch (HttpRequestException ex)
         {
             return RevocationFailed(
-                IsUndelivered(ex.HttpRequestError) ? UnreachableReason : ResponseLostReason,
+                KeycloakProviderAnswer.IsUndelivered(ex.HttpRequestError)
+                    ? UnreachableReason
+                    : ResponseLostReason,
                 request.ClientId,
                 ex
             );
@@ -286,6 +289,17 @@ public sealed class KeycloakTokenRevocationManager(
                     LoggingUtility.SanitizeForLog(request.ClientId)
                 );
                 return new TokenRevocationResult.Completed();
+            }
+
+            if (response.StatusCode == HttpStatusCode.RequestEntityTooLarge)
+            {
+                // Decided on the status alone, so the body is never read. Information, not Error: a
+                // request any caller can repeat at will, not an outage. No client id: no one was
+                // authenticated.
+                logger.LogInformation(
+                    "Keycloak rejected a revocation request as too large (HTTP 413) before authenticating the caller"
+                );
+                return new TokenRevocationResult.InvalidRequest();
             }
 
             byte[]? body;
@@ -315,11 +329,13 @@ public sealed class KeycloakTokenRevocationManager(
 
     /// <summary>
     /// D-10, restricted to the characterized answers. Keycloak's status never decides between 400
-    /// and 401 for the caller; the endpoint does that (D-03).
+    /// and 401 for the caller; the endpoint does that (D-03). A 413, for a form value over Keycloak's
+    /// form attribute limit (128 KiB by default), is decided before the body is read: Keycloak answers
+    /// it on 26.1.4 and 26.7.5 before the caller is authenticated, and the caller chose that value.
     /// </summary>
     private TokenRevocationResult MapErrorResponse(int statusCode, ProviderErrorBody body, string clientId)
     {
-        string category = ProviderErrorCategory(body);
+        string category = KeycloakProviderAnswer.ProviderErrorCategory(body.Error);
 
         if (statusCode is not (400 or 401))
         {
@@ -395,146 +411,29 @@ public sealed class KeycloakTokenRevocationManager(
     /// that is missing, oversized, not UTF-8, not JSON, not an object, has any member name that
     /// cannot be decoded, repeats either member, or holds either member as a string that cannot be
     /// decoded is unparseable: a duplicated or undecodable member would make the exact-match
-    /// normalization ambiguous. A member that is not a string is treated as absent.
+    /// normalization ambiguous. A member that is not a string, an array included, is treated as
+    /// absent, so the strings inside an array are not decoded.
     /// </summary>
     private static ProviderErrorBody ParseErrorBody(byte[]? body)
     {
-        // Checked explicitly: JsonDocument accepts invalid UTF-8 inside a string and only fails
-        // when the value is read, which would surface as a fault rather than an unparseable body.
-        if (body is null || body.Length == 0 || !Utf8.IsValid(body))
+        if (
+            KeycloakProviderAnswer.ParseMembers(
+                body,
+                KeycloakProviderAnswer.ErrorMembers,
+                decodeArrayStrings: false
+            )
+            is not { } members
+        )
         {
             return ProviderErrorBody.Unparseable;
         }
 
-        try
-        {
-            using JsonDocument document = JsonDocument.Parse(body);
-            if (document.RootElement.ValueKind != JsonValueKind.Object)
-            {
-                return ProviderErrorBody.Unparseable;
-            }
-
-            string? error = null;
-            string? description = null;
-            bool errorSeen = false;
-            bool descriptionSeen = false;
-            foreach (JsonProperty property in document.RootElement.EnumerateObject())
-            {
-                if (!TryIdentifyMember(property, out ErrorBodyMember member))
-                {
-                    return ProviderErrorBody.Unparseable;
-                }
-
-                if (member == ErrorBodyMember.Error)
-                {
-                    if (errorSeen)
-                    {
-                        return ProviderErrorBody.Unparseable;
-                    }
-
-                    errorSeen = true;
-                    if (!TryReadString(property.Value, out error))
-                    {
-                        return ProviderErrorBody.Unparseable;
-                    }
-                }
-                else if (member == ErrorBodyMember.Description)
-                {
-                    if (descriptionSeen)
-                    {
-                        return ProviderErrorBody.Unparseable;
-                    }
-
-                    descriptionSeen = true;
-                    if (!TryReadString(property.Value, out description))
-                    {
-                        return ProviderErrorBody.Unparseable;
-                    }
-                }
-            }
-
-            return new ProviderErrorBody(true, error, description);
-        }
-        catch (JsonException)
-        {
-            return ProviderErrorBody.Unparseable;
-        }
+        return new ProviderErrorBody(
+            true,
+            KeycloakProviderAnswer.StringMember(members, "error"),
+            KeycloakProviderAnswer.StringMember(members, "error_description")
+        );
     }
-
-    /// <summary>
-    /// Which of the two members a property is. False when its name cannot be decoded: an escaped,
-    /// unpaired surrogate such as <c>"\uD800"</c> in a name is valid UTF-8 and valid JSON syntax,
-    /// and decoding the name rejects it with <see cref="InvalidOperationException"/>. Every name is
-    /// decoded through <see cref="JsonProperty.Name"/> rather than compared with <c>NameEquals</c>,
-    /// which can answer "not equal" without decoding, so the outcome never depends on which
-    /// comparison happened to run. Such a name could be either member, so the body is unparseable
-    /// even when the name sits beside well-formed members. Only the decoding is guarded.
-    /// </summary>
-    private static bool TryIdentifyMember(JsonProperty property, out ErrorBodyMember member)
-    {
-        string name;
-        try
-        {
-            name = property.Name;
-        }
-        catch (InvalidOperationException)
-        {
-            member = ErrorBodyMember.Other;
-            return false;
-        }
-
-        member = name switch
-        {
-            "error" => ErrorBodyMember.Error,
-            "error_description" => ErrorBodyMember.Description,
-            _ => ErrorBodyMember.Other,
-        };
-        return true;
-    }
-
-    private enum ErrorBodyMember
-    {
-        Other,
-        Error,
-        Description,
-    }
-
-    /// <summary>
-    /// Reads a member as a string; a non-string member reads as absent. False when the string
-    /// cannot be represented: an escaped, unpaired surrogate such as <c>"\uD800"</c> is valid
-    /// UTF-8 and valid JSON syntax, so it passes the checks above, and <c>GetString</c> rejects it
-    /// with <see cref="InvalidOperationException"/>. Only that call is guarded, and only for a
-    /// string element, so any other fault in the caller still escapes.
-    /// </summary>
-    private static bool TryReadString(JsonElement element, out string? value)
-    {
-        value = null;
-        if (element.ValueKind != JsonValueKind.String)
-        {
-            return true;
-        }
-
-        try
-        {
-            value = element.GetString();
-            return true;
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
-    }
-
-    private static string ProviderErrorCategory(ProviderErrorBody body) =>
-        body.Error is not null && _loggableProviderErrors.Contains(body.Error) ? body.Error : "unrecognized";
-
-    /// <summary>Connection, name resolution, TLS or proxy failures: the request never reached Keycloak.</summary>
-    private static bool IsUndelivered(HttpRequestError error) =>
-        error
-            is HttpRequestError.ConnectionError
-                or HttpRequestError.NameResolutionError
-                or HttpRequestError.SecureConnectionError
-                or HttpRequestError.ProxyTunnelError;
 
     private void LogProviderRefusal(string clientId, int statusCode, string category) =>
         logger.LogInformation(
@@ -589,7 +488,7 @@ public sealed class KeycloakTokenRevocationManager(
             "Revocation for client {ClientId} could not establish the client type: the Keycloak admin read failed (HTTP {StatusCode}, {ExceptionTypes})",
             LoggingUtility.SanitizeForLog(clientId),
             (exception as FlurlHttpException)?.StatusCode,
-            ExceptionTypeChain(exception)
+            KeycloakProviderAnswer.ExceptionTypeChain(exception)
         );
         return new TokenRevocationResult.TemporarilyUnavailable(reason);
     }
@@ -603,7 +502,7 @@ public sealed class KeycloakTokenRevocationManager(
             "Revocation for client {ClientId} could not establish the client type: the Keycloak admin API refused the read (HTTP {StatusCode}). The Configuration Service client lacks permission to read clients in the realm, or its own credentials were rejected ({ExceptionTypes})",
             LoggingUtility.SanitizeForLog(clientId),
             exception.StatusCode,
-            ExceptionTypeChain(exception)
+            KeycloakProviderAnswer.ExceptionTypeChain(exception)
         );
         return new TokenRevocationResult.TemporarilyUnavailable(ClientTypeReadRefusedReason);
     }
@@ -618,20 +517,9 @@ public sealed class KeycloakTokenRevocationManager(
             "Revocation for client {ClientId} could not be confirmed: the Keycloak revoke request failed ({Reason}, {ExceptionTypes})",
             LoggingUtility.SanitizeForLog(clientId),
             reason,
-            ExceptionTypeChain(exception)
+            KeycloakProviderAnswer.ExceptionTypeChain(exception)
         );
         return new TokenRevocationResult.TemporarilyUnavailable(reason);
-    }
-
-    private static string ExceptionTypeChain(Exception exception)
-    {
-        var names = new List<string>();
-        for (Exception? current = exception; current is not null; current = current.InnerException)
-        {
-            names.Add(current.GetType().FullName ?? current.GetType().Name);
-        }
-
-        return string.Join(" -> ", names);
     }
 
     private sealed record ProviderErrorBody(bool Parsed, string? Error, string? Description)

@@ -36,10 +36,10 @@ internal static class FailureResults
 
     /// <summary>
     /// Structured 403 authorization failure with an explicit, caller-supplied <paramref name="errors"/>
-    /// array. Unlike <see cref="Forbidden"/>, this does NOT parse the input as an identity-provider
-    /// payload; it is intended for endpoint-owned authorization messages (for example, a disabled
-    /// feature such as client registration). Emits the documented
-    /// <c>urn:ed-fi:management-api:security:authorization</c> contract.
+    /// array. It does NOT parse the input as an identity-provider payload; it is intended for
+    /// endpoint-owned authorization messages (for example, a disabled feature such as client
+    /// registration). Emits the documented <c>urn:ed-fi:management-api:security:authorization</c>
+    /// contract.
     /// </summary>
     public static IResult Authorization(string correlationId, string[] errors)
     {
@@ -89,98 +89,18 @@ internal static class FailureResults
         );
     }
 
-    public static IResult Authentication(string error, string errorDescription, string correlationId)
-    {
-        return Results.Json(
-            FailureResponse.ForUnauthorized(
-                "Authentication Failed",
-                _errorDetail,
-                correlationId,
-                [$"{error}. {errorDescription}"]
-            ),
-            contentType: _errorContentType,
-            statusCode: 401
-        );
-    }
-
     /// <summary>
-    /// Structured 429 <c>urn:ed-fi:management-api:security:authentication:too-many-tokens</c> response for a
-    /// client that already holds <paramref name="limit"/> active access tokens.
+    /// Structured 429 <c>urn:ed-fi:management-api:too-many-requests</c> response for a <c>/connect/*</c>
+    /// request refused by the rate limiter (DMS-1482).
     /// </summary>
-    public static IResult TooManyTokens(int limit, string correlationId)
+    public static IResult TooManyRequests(string correlationId)
     {
         return Results.Json(
-            FailureResponse.ForTooManyTokens(limit, correlationId),
+            FailureResponse.ForTooManyRequests(correlationId),
             contentType: _errorContentType,
             statusCode: 429
         );
     }
-
-    /// <summary>
-    /// Structured 409 for a request that could not be serialized against the other requests in
-    /// flight for the same resource before the contention budget ran out. Same status and same
-    /// wording the application-lock paths use for their own acquisition timeouts, because it is
-    /// the same condition: nothing is wrong with the request and retrying is the answer.
-    /// </summary>
-    public static IResult ConcurrentModification(string correlationId)
-    {
-        return Results.Json(
-            FailureResponse.ForConflict(
-                "Unable to process the request due to a concurrent modification. Retry the request.",
-                correlationId
-            ),
-            contentType: _errorContentType,
-            statusCode: 409
-        );
-    }
-
-    // invalid_client and unauthorized_client both map to the same 401 contract.
-    public static IResult InvalidClient(string detail, string correlationId) =>
-        Unauthorized(detail, correlationId);
-
-    public static IResult Unauthorized(string detail, string correlationId)
-    {
-        var errors = GetIdentityErrorDetails(detail);
-        return Results.Json(
-            FailureResponse.ForUnauthorized("Authentication Failed", _errorDetail, correlationId, errors),
-            contentType: _errorContentType,
-            statusCode: 401
-        );
-    }
-
-    public static IResult Forbidden(string detail, string correlationId)
-    {
-        var errors = GetIdentityErrorDetails(detail);
-        return Results.Json(
-            FailureResponse.ForForbidden("Authorization Failed", _errorDetail, correlationId, errors),
-            contentType: _errorContentType,
-            statusCode: 403
-        );
-    }
-
-    /// <summary>
-    /// Structured 400 <c>urn:ed-fi:management-api:bad-request</c> response for an identity provider that
-    /// rejected the requested scope. Only the provider's <c>error</c> and <c>error_description</c>
-    /// reach the client, in the same convention the 401 and 502 use. Without a usable
-    /// <c>error_description</c>, a fixed <c>invalid_scope</c> message does.
-    /// </summary>
-    public static IResult InvalidScope(string detail, string correlationId)
-    {
-        string[] errors = TryParseProviderError(detail, out string error, out string errorDescription)
-            ? [$"{error}. {errorDescription}"]
-            : [InvalidScopeFallbackMessage];
-
-        return Results.Json(
-            FailureResponse.ForBadRequest(_errorDetail, correlationId, errors),
-            contentType: _errorContentType,
-            statusCode: 400
-        );
-    }
-
-    // Only bodies whose error is invalid_scope reach InvalidScope, and error_description is optional
-    // under RFC 6749 section 5.2, so a body without one still names the code.
-    private const string InvalidScopeFallbackMessage =
-        "invalid_scope. The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client.";
 
     private const string UnexpectedProviderResponseMessage =
         "The identity provider returned an unexpected response.";
@@ -201,7 +121,7 @@ internal static class FailureResults
         return [$"{error}. {errorDescription}"];
     }
 
-    private static bool TryParseProviderError(string detail, out string error, out string errorDescription)
+    internal static bool TryParseProviderError(string detail, out string error, out string errorDescription)
     {
         error = "";
         errorDescription = "";

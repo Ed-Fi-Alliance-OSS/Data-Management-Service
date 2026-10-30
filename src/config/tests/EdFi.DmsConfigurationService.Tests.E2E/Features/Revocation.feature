@@ -136,3 +136,31 @@ Feature: Token revocation endpoint
                   }
                   """
               And the public client's token is active at the identity provider
+
+        # Keycloak refuses any form value over 131072 characters with 413 before it authenticates the
+        # caller; the Configuration Service answers that as the caller's own invalid request.
+        @KeycloakOnly
+        Scenario: 11 A token over Keycloak's form attribute limit is rejected as invalid_request
+             When a revocation of a 131073-character token is attempted with the current client's Basic credentials
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_request" with description "The identity provider rejected the revocation request."
+              And the response header "WWW-Authenticate" is not present
+
+        # Keycloak answers this garbage token with 200 and an invalid_token body. The Configuration
+        # Service reads only the status and, as RFC 7009 has it for any invalid token, answers an empty 200.
+        @KeycloakOnly
+        Scenario: 12 A token at Keycloak's form attribute limit is answered as revoked
+             When a revocation of a 131072-character token is attempted with the current client's Basic credentials
+             Then it should respond with 200
+              And the response body is empty
+
+        # Keycloak 26.1.4 answers a form value over its limit with 413 without reading the rest of the
+        # request and keeps the connection open, so the next request on that connection gets no answer;
+        # the Configuration Service closes each connection to Keycloak after its answer.
+        @KeycloakOnly
+        Scenario: 13 A revocation after one Keycloak refused as too large revokes the token
+             When a revocation of a 400000-character token is attempted with the current client's Basic credentials
+             Then it should respond with 400
+             When the current token is revoked
+             Then it should respond with 200
+              And the current token is inactive at the identity provider

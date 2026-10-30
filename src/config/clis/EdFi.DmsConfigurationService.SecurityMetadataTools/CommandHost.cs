@@ -5,15 +5,26 @@
 
 using System.CommandLine;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace EdFi.DmsConfigurationService.SecurityMetadataTools;
 
 internal static class CommandHost
 {
-    internal static RootCommand CreateCommand(TextWriter error)
+    internal static RootCommand CreateCommand(TextWriter error) =>
+        CreateCommand(TextWriter.Null, error, CreateHttpClient);
+
+    internal static RootCommand CreateCommand(
+        TextWriter output,
+        TextWriter error,
+        Func<HttpClient> createHttpClient
+    )
     {
-        var root = new RootCommand("Ed-Fi API Security Metadata Tools");
+        var root = new RootCommand(
+            "Ed-Fi API Security Metadata Tools. Prepare with merge, inspect with resolve, deploy through CMS, "
+                + "then compare with verify. Use the corresponding CMS release/build and Data Standard; "
+                + "--version identifies this tool build. File outputs require an existing parent directory; "
+                + "--force permits atomic replacement only after successful processing and validation."
+        );
         var convert = new Command(
             "convert-ods-xml",
             "Convert an ODS security metadata XML export to a Configuration Service claims document."
@@ -47,73 +58,49 @@ internal static class CommandHost
             )
         );
         root.Subcommands.Add(convert);
+        root.Subcommands.Add(MergeCommand.Create(error));
+        root.Subcommands.Add(ResolveCommand.Create(error));
+        root.Subcommands.Add(VerifyCommand.Create(output, error, createHttpClient));
         return root;
     }
 
-    private static int Convert(string inputPath, string outputPath, bool force, TextWriter error)
-    {
-        try
-        {
-            // Complete conversion, CMS validation, and serialization before touching the destination.
-            string json;
-            using (FileStream input = File.OpenRead(inputPath))
+    private static int Convert(string inputPath, string outputPath, bool force, TextWriter error) =>
+        CommandDiagnostics.Execute(
+            error,
+            "Conversion",
+            () =>
             {
-                json = OdsXmlToClaimsConverter
-                    .Convert(input)
-                    .ToJsonString(new JsonSerializerOptions { WriteIndented = true });
-            }
-            string destination = Path.GetFullPath(outputPath);
-            if (File.Exists(destination) && !force)
-            {
-                throw new IOException("Output file already exists. Use --force to replace it.");
-            }
-
-            // Stage beside the destination so a failed write cannot truncate an existing file.
-            // Move also enforces no-overwrite if a destination appears after the existence check.
-            string temporaryPath = Path.Combine(
-                Path.GetDirectoryName(destination)!,
-                $".security-metadata-tools-{Guid.NewGuid():N}.tmp"
-            );
-            var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write);
-            try
-            {
-                using (stream)
-                using (var writer = new StreamWriter(stream))
+                // Complete conversion, CMS validation, and serialization before touching the destination.
+                string json;
+                using (FileStream input = File.OpenRead(inputPath))
                 {
-                    writer.Write(json);
+                    json = OdsXmlToClaimsConverter
+                        .Convert(input)
+                        .ToJsonString(new JsonSerializerOptions { WriteIndented = true });
                 }
 
-                File.Move(temporaryPath, destination, overwrite: force);
+                ProtectedFileOutput.Write(outputPath, json, force);
             }
-            finally
-            {
-                File.Delete(temporaryPath);
-            }
-
-            return 0;
-        }
-        catch (Exception exception)
-            when (exception
-                    is IOException
-                        or UnauthorizedAccessException
-                        or ArgumentException
-                        or NotSupportedException
-                        or InvalidOperationException
-            )
-        {
-            // Escape controls, format characters, and line separators once, preserving readable Unicode.
-            string message = Regex.Replace(
-                exception.Message,
-                @"[\p{Cc}\p{Cf}\u2028\u2029]",
-                match => $"\\u{(int)match.Value[0]:X4}"
-            );
-            error.WriteLine($"Conversion failed: {message}");
-            return 1;
-        }
-    }
+        );
 
     internal static Task<int> InvokeAsync(string[] args, TextWriter output, TextWriter error) =>
-        CreateCommand(error)
-            .Parse(args)
-            .InvokeAsync(new InvocationConfiguration { Output = output, Error = error });
+        InvokeAsync(args, output, error, CreateHttpClient);
+
+    internal static Task<int> InvokeAsync(
+        string[] args,
+        TextWriter output,
+        TextWriter error,
+        Func<HttpClient> createHttpClient
+    )
+    {
+        var result = CreateCommand(output, error, createHttpClient).Parse(args);
+        // Keep command results separate from argument-error help.
+        bool argumentFailure =
+            result.CommandResult.Command.Name is "verify" or "resolve" or "merge" && result.Errors.Count > 0;
+        return result.InvokeAsync(
+            new InvocationConfiguration { Output = argumentFailure ? error : output, Error = error }
+        );
+    }
+
+    private static HttpClient CreateHttpClient() => new(new HttpClientHandler { AllowAutoRedirect = false });
 }

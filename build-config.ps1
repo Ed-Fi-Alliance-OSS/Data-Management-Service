@@ -117,7 +117,11 @@ param(
 
     # Optional dotnet test --filter expression applied to E2E test runs
     [string]
-    $E2ETestFilter = ""
+    $E2ETestFilter = "",
+
+    # An explicit fixture bypasses default E2E claims staging.
+    [string]
+    $ClaimsFixtureDirectory = ""
 )
 
 $solutionRoot = "$PSScriptRoot/src/config"
@@ -310,14 +314,35 @@ function E2ETests {
         [string]
         $IdentityProvider
     )
+    if (-not [string]::IsNullOrWhiteSpace($ClaimsFixtureDirectory)) {
+        $ClaimsFixtureDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ClaimsFixtureDirectory)
+    }
     Invoke-Execute {
         try {
             Push-Location eng/docker-compose/
-            if ($SkipDockerBuild) {
-                ./start-local-config.ps1 -EnvironmentFile $EnvironmentFile -IdentityProvider $IdentityProvider -AddE2EClaimSets
+            $startupArguments = @{
+                EnvironmentFile = $EnvironmentFile
+                IdentityProvider = $IdentityProvider
+                AddE2EClaimSets = [string]::IsNullOrWhiteSpace($ClaimsFixtureDirectory)
+                r = -not $SkipDockerBuild
             }
-            else {
-                ./start-local-config.ps1 -EnvironmentFile $EnvironmentFile -r -IdentityProvider $IdentityProvider -AddE2EClaimSets
+            $priorClaimsMount = [Environment]::GetEnvironmentVariable("CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE")
+            try {
+                if (-not $startupArguments.AddE2EClaimSets) {
+                    if (-not (Test-Path -LiteralPath $ClaimsFixtureDirectory -PathType Container)) {
+                        throw "ClaimsFixtureDirectory must be an existing directory."
+                    }
+                    $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = (Resolve-Path -LiteralPath $ClaimsFixtureDirectory).Path
+                }
+                ./start-local-config.ps1 @startupArguments
+            }
+            finally {
+                if ($null -eq $priorClaimsMount) {
+                    Remove-Item Env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE -ErrorAction SilentlyContinue
+                }
+                else {
+                    $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = $priorClaimsMount
+                }
             }
 
             Import-Module ./env-utility.psm1 -Force

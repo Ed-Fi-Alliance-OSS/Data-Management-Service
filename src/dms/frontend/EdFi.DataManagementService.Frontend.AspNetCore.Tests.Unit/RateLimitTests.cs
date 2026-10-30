@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
@@ -13,6 +14,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -144,8 +146,8 @@ public class Given_Requests_That_Exceed_The_Configured_Rate_Limit
         // The other half of the rule, through the same real pipeline: a 2xx keeps no Cache-Control
         // from this middleware. HealthCheckEndpointModule's own /health handler sets none either,
         // so a no-store appearing here could only have come from the security headers middleware
-        // over-reaching onto success responses - which is what would break etag revalidation on
-        // resource GETs.
+        // over-reaching onto success responses - which would stop public documents such as
+        // discovery and metadata from being cached.
         _permittedResponse.Headers.CacheControl.Should().BeNull();
     }
 
@@ -222,6 +224,115 @@ public class Given_A_Rate_Limit_Rejection_Without_Retry_After_Metadata
         _body["type"]!.ToString().Should().Be("urn:ed-fi:api:too-many-requests");
         _body["status"]!.GetValue<int>().Should().Be(429);
         _body["correlationId"]!.ToString().Should().Be(SuppliedTraceIdentifier);
+    }
+}
+
+[TestFixture]
+public class Given_A_Selected_Token_Endpoint_Rejected_By_The_Limiter
+{
+    [Test]
+    public async Task It_writes_the_oauth_error_contract_and_preserves_rounded_retry_after()
+    {
+        DefaultHttpContext context = RateLimitRejectionTestContext.CreateHttpContext();
+        context.SetEndpoint(
+            new Endpoint(null, new EndpointMetadataCollection(TokenEndpointMetadata.Instance), "token")
+        );
+
+        await WebApplicationBuilderExtensions.WriteRateLimitRejectionAsync(
+            new OnRejectedContext
+            {
+                HttpContext = context,
+                Lease = new RateLimitRejectionTestContext.StubLease(TimeSpan.FromMilliseconds(1100)),
+            },
+            CancellationToken.None
+        );
+
+        JsonNode body = await RateLimitRejectionTestContext.ReadBody(context);
+        context.Response.StatusCode.Should().Be(StatusCodes.Status429TooManyRequests);
+        context.Response.Headers.RetryAfter.ToString().Should().Be("2");
+        body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+    }
+}
+
+[TestFixture("application/json", "{}")]
+[TestFixture("application/x-www-form-urlencoded", "grant_type=client_credentials")]
+[NonParallelizable]
+public class Given_A_Routed_Token_Request_Rejected_By_The_Limiter(string contentType, string content)
+{
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+    private RateLimitLease _heldLease = null!;
+    private HttpResponseMessage _response = null!;
+
+    [SetUp]
+    public async Task SetUp()
+    {
+        // Hold the sole permit until teardown: rejection never depends on a window or a timer.
+        var limiter = PartitionedRateLimiter.Create<HttpContext, string>(_ =>
+            RateLimitPartition.GetConcurrencyLimiter(
+                "all",
+                _ => new ConcurrencyLimiterOptions { PermitLimit = 1, QueueLimit = 0 }
+            )
+        );
+        _heldLease = limiter.AttemptAcquire(new DefaultHttpContext());
+        _heldLease.IsAcquired.Should().BeTrue();
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureAppConfiguration(
+                (_, configuration) =>
+                    configuration.AddInMemoryCollection(
+                        new Dictionary<string, string?>
+                        {
+                            ["AppSettings:CorrelationIdHeader"] = "x-token-trace",
+                        }
+                    )
+            );
+            builder.ConfigureServices(collection =>
+            {
+                TestMockHelper.AddEssentialMocks(collection);
+                collection.AddSingleton(_ => limiter);
+            });
+        });
+        _client = _factory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "/oauth/token")
+        {
+            Content = new StringContent(content, Encoding.UTF8, contentType),
+        };
+        request.Headers.Add("x-token-trace", "limiter%trace+id/1");
+        _response = await _client.SendAsync(request);
+    }
+
+    [TearDown]
+    public async Task TearDown()
+    {
+        _response.Dispose();
+        _heldLease.Dispose();
+        _client.Dispose();
+        await _factory.DisposeAsync();
+    }
+
+    [Test]
+    public async Task It_delivers_the_token_contract_from_the_selected_route()
+    {
+        _response.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+        _response.Content.Headers.ContentType!.ToString().Should().Be("application/json; charset=utf-8");
+        JsonObject body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+        body["error"]!.GetValue<string>().Should().Be("temporarily_unavailable");
+        body["error_description"]!
+            .GetValue<string>()
+            .Should()
+            .Be("The number of allowed requests has been exceeded. Retry the request later.");
+        _response.Headers.WwwAuthenticate.Should().BeEmpty();
+        _response.Headers.RetryAfter.Should().BeNull();
+        _response
+            .Headers.GetValues("X-Correlation-ID")
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be("limiter%25trace%2Bid%2F1");
+        _response.Headers.CacheControl!.NoStore.Should().BeTrue();
     }
 }
 

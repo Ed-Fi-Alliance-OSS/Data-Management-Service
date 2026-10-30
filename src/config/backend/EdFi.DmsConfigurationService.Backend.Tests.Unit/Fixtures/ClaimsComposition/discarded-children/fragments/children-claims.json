@@ -1,0 +1,26 @@
+{
+  "resourceClaims": [
+    {
+      "name": "edfi/leaf",
+      "isParent": true,
+      "children": [
+        {
+          "name": "edfi/discarded"
+        }
+      ]
+    },
+    {
+      "name": "edfi/domain",
+      "isParent": true,
+      "children": [
+        {},
+        {
+          "name": ""
+        },
+        {
+          "name": "edfi/appended"
+        }
+      ]
+    }
+  ]
+}

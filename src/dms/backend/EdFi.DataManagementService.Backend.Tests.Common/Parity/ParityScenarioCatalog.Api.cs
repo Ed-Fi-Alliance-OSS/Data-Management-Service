@@ -72,6 +72,20 @@ public static partial class ParityScenarioCatalog
             "It_rejects_delete_when_referenced"
         ),
         Api(
+            "Api/IdentityConflict/PostOnSharedAbstractIdentity",
+            "A POST whose identity collides with another subclass on a shared abstract identity is rejected as 409 urn:ed-fi:api:data-conflict:non-unique-identity, naming each duplicate value by its full property path so the two educationOrganizationId values stay distinct.",
+            "IdentityConflictScenario.It_reports_non_unique_identity_with_qualified_names_for_a_post_on_a_shared_abstract_identity",
+            "It_reports_non_unique_identity_with_qualified_names_for_a_post_on_a_shared_abstract_identity",
+            fixtureSuffix: "IdentityConflict"
+        ),
+        Api(
+            "Api/IdentityConflict/PutOnNaturalKey",
+            "A PUT that renames a resource onto another resource's natural key is rejected as 409 urn:ed-fi:api:data-conflict:non-unique-identity, naming each duplicate value by its full property path.",
+            "IdentityConflictScenario.It_reports_non_unique_identity_with_qualified_names_for_a_put_that_collides_on_a_natural_key",
+            "It_reports_non_unique_identity_with_qualified_names_for_a_put_that_collides_on_a_natural_key",
+            fixtureSuffix: "IdentityConflict"
+        ),
+        Api(
             "Api/ProfileRootOnlyMerge/CreatesAndReadsViaVisibleProfile",
             "Profiled POST+GET via visible content types persists visible columns and never returns the hidden column.",
             "ProfileRootOnlyMergeProfileScenario.It_creates_and_reads_via_visible_profile",

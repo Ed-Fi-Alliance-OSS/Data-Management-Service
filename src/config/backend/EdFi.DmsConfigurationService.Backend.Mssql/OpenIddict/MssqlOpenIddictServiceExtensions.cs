@@ -12,6 +12,7 @@ using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Secrets;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict
 {
@@ -37,6 +38,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict
             services.AddSingleton<ITokenRevocationManager, OpenIddictTokenManager>();
             services.AddSingleton<ITokenIntrospectionManager, OpenIddictTokenManager>();
             services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
+            services.TryAddSingleton<ClientSecretPlaceholderHash>();
 
             // Add OpenIddict-compatible services
             services.AddScoped<IOpenIdConnectConfigurationProvider, OpenIdConnectConfigurationProvider>();

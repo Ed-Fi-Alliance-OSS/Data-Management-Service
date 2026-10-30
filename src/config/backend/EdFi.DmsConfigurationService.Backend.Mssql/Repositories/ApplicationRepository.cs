@@ -3,10 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Data.Common;
+using System.Text.Json;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
@@ -162,48 +165,71 @@ public class ApplicationRepository(
 
             await connection.ExecuteAsync(sql, educationOrganizations, transaction);
 
-            sql = """
-                INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid, Name, IsApproved, CreatedBy)
-                OUTPUT INSERTED.Id
-                VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved, @CreatedBy);
-                """;
-
-            int apiClientId = await connection.ExecuteScalarAsync<int>(
-                sql,
-                new
-                {
-                    ApplicationId = id,
-                    clientCommand.ClientId,
-                    clientCommand.ClientUuid,
-                    Name = command.ApplicationName,
-                    IsApproved = true,
-                    CreatedBy = currentUser,
-                },
-                transaction
-            );
-
-            if (command.DataStoreIds.Length > 0)
+            // Without default credentials the Application is created with no API client, so
+            // there is no client row for data store assignments to attach to.
+            if (command.CreateDefaultCredentials)
             {
-                if (!await AllDataStoresInTenant(connection, transaction, command.DataStoreIds))
-                {
-                    logger.LogWarning("Data store not found");
-                    await transaction.RollbackAsync();
-                    return new ApplicationInsertResult.FailureDataStoreNotFound();
-                }
-
                 sql = """
-                    INSERT INTO dmscs.ApiClientDataStore (ApiClientId, DataStoreId, CreatedBy)
-                    VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
+                    INSERT INTO dmscs.ApiClient (ApplicationId, ClientId, ClientUuid, Name, IsApproved, CreatedBy)
+                    OUTPUT INSERTED.Id
+                    VALUES (@ApplicationId, @ClientId, @ClientUuid, @Name, @IsApproved, @CreatedBy);
                     """;
 
-                var dataStoreMappings = command.DataStoreIds.Select(dataStoreId => new
-                {
-                    ApiClientId = apiClientId,
-                    DataStoreId = dataStoreId,
-                    CreatedBy = currentUser,
-                });
+                int apiClientId = await connection.ExecuteScalarAsync<int>(
+                    sql,
+                    new
+                    {
+                        ApplicationId = id,
+                        clientCommand.ClientId,
+                        clientCommand.ClientUuid,
+                        Name = command.ApplicationName,
+                        IsApproved = true,
+                        CreatedBy = currentUser,
+                    },
+                    transaction
+                );
 
-                await connection.ExecuteAsync(sql, dataStoreMappings, transaction);
+                // The default client inherits, so its rows are the Application's list
+                sql = """
+                    INSERT INTO dmscs.ApiClientEducationOrganization (ApiClientId, ApplicationId, EducationOrganizationId, CreatedBy)
+                    SELECT @ApiClientId, ApplicationId, EducationOrganizationId, @CreatedBy
+                    FROM dmscs.ApplicationEducationOrganization
+                    WHERE ApplicationId = @ApplicationId;
+                    """;
+                await connection.ExecuteAsync(
+                    sql,
+                    new
+                    {
+                        ApiClientId = apiClientId,
+                        ApplicationId = id,
+                        CreatedBy = currentUser,
+                    },
+                    transaction
+                );
+
+                if (command.DataStoreIds.Length > 0)
+                {
+                    if (!await AllDataStoresInTenant(connection, transaction, command.DataStoreIds))
+                    {
+                        logger.LogWarning("Data store not found");
+                        await transaction.RollbackAsync();
+                        return new ApplicationInsertResult.FailureDataStoreNotFound();
+                    }
+
+                    sql = """
+                        INSERT INTO dmscs.ApiClientDataStore (ApiClientId, DataStoreId, CreatedBy)
+                        VALUES (@ApiClientId, @DataStoreId, @CreatedBy);
+                        """;
+
+                    var dataStoreMappings = command.DataStoreIds.Select(dataStoreId => new
+                    {
+                        ApiClientId = apiClientId,
+                        DataStoreId = dataStoreId,
+                        CreatedBy = currentUser,
+                    });
+
+                    await connection.ExecuteAsync(sql, dataStoreMappings, transaction);
+                }
             }
 
             if (command.ProfileIds.Length > 0)
@@ -365,7 +391,7 @@ public class ApplicationRepository(
             string direction = query.IsDescending ? "DESC" : "ASC";
             string sql = $"""
                 SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
-                       (SELECT CAST(COALESCE(MIN(CAST(ac2.IsApproved AS INT)), 1) AS BIT)
+                       (SELECT CAST(COALESCE(MIN(CAST(ac2.IsApproved AS INT)), 0) AS BIT)
                         FROM dmscs.ApiClient ac2
                         WHERE ac2.ApplicationId = a.Id) AS Enabled,
                        e.EducationOrganizationId, acd.DataStoreId, ap.ProfileId
@@ -444,7 +470,7 @@ public class ApplicationRepository(
         {
             string sql = $"""
                 SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
-                       (SELECT CAST(COALESCE(MIN(CAST(ac2.IsApproved AS INT)), 1) AS BIT)
+                       (SELECT CAST(COALESCE(MIN(CAST(ac2.IsApproved AS INT)), 0) AS BIT)
                         FROM dmscs.ApiClient ac2
                         WHERE ac2.ApplicationId = a.Id) AS Enabled,
                        e.EducationOrganizationId, acd.DataStoreId, ap.ProfileId
@@ -508,14 +534,190 @@ public class ApplicationRepository(
         }
     }
 
-    public async Task<ApplicationUpdateResult> UpdateApplication(
-        ApplicationUpdateCommand command,
-        ApiClientCommand clientCommand
-    )
+    public async Task<ApplicationSaveResult> SaveApplication(ApplicationUpdateCommand command)
     {
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         await connection.OpenAsync();
         await using var transaction = await connection.BeginTransactionAsync();
+        bool committing = false;
+        try
+        {
+            // An update lock, compatible with the shared lock an API client write takes on its
+            // Application, so a client write already holding its client row can finish while the
+            // affected clients are marked below; the Application update then waits for it.
+            string applicationSql = $"""
+                SELECT ApplicationName, ClaimSetName
+                FROM dmscs.Application WITH (UPDLOCK, HOLDLOCK)
+                WHERE Id = @Id AND {TenantScopedVendorCondition()};
+                """;
+            var current = await connection.QuerySingleOrDefaultAsync<(
+                string ApplicationName,
+                string ClaimSetName
+            )?>(applicationSql, new { command.Id, TenantId }, transaction);
+
+            if (current is null)
+            {
+                await RollbackSafelyAsync(transaction);
+                return new ApplicationSaveResult.FailureNotExists();
+            }
+
+            long[] currentEducationOrganizationIds = await ApplicationEducationOrganizationIdsAsync(
+                connection,
+                transaction,
+                command.Id
+            );
+            long[] requestedEducationOrganizationIds = command.EducationOrganizationIds.Distinct().ToArray();
+            long[] removedEducationOrganizationIds = currentEducationOrganizationIds
+                .Except(requestedEducationOrganizationIds)
+                .ToArray();
+
+            // Marking precedes the removal: once a removed row cascades from a narrowed client's
+            // rows, nothing shows that the client held it. The statement also returns, and locks,
+            // every client already pending, so the result names all of them. Once the Application
+            // update below holds its exclusive lock, a client write can be waiting for it while
+            // holding its own client rows, so nothing after that point reads other clients' rows.
+            string markSql = """
+                UPDATE ac
+                SET IdentityProviderSyncPendingSince = COALESCE(ac.IdentityProviderSyncPendingSince, @PendingSince)
+                OUTPUT inserted.Id, inserted.ClientId, inserted.ClientUuid, inserted.IsApproved,
+                    inserted.InheritsApplicationEducationOrganizations, inserted.IdentityProviderSyncPendingSince
+                FROM dmscs.ApiClient ac
+                WHERE ac.ApplicationId = @ApplicationId
+                  AND (
+                      ac.IdentityProviderSyncPendingSince IS NOT NULL
+                      OR @AllClientsAffected = 1
+                      OR (@EducationOrganizationsChanged = 1 AND ac.InheritsApplicationEducationOrganizations = 1)
+                      OR EXISTS (
+                          SELECT 1 FROM dmscs.ApiClientEducationOrganization ace
+                          JOIN OPENJSON(@RemovedEducationOrganizationIdsJson) removed
+                              ON ace.EducationOrganizationId = CAST(removed.[value] AS BIGINT)
+                          WHERE ace.ApiClientId = ac.Id
+                      )
+                  );
+                """;
+            var markParameters = new DynamicParameters(
+                new
+                {
+                    ApplicationId = command.Id,
+                    AllClientsAffected = current.Value.ApplicationName != command.ApplicationName
+                        || current.Value.ClaimSetName != command.ClaimSetName,
+                    EducationOrganizationsChanged = removedEducationOrganizationIds.Length > 0
+                        || requestedEducationOrganizationIds.Except(currentEducationOrganizationIds).Any(),
+                    RemovedEducationOrganizationIdsJson = JsonSerializer.Serialize(
+                        removedEducationOrganizationIds
+                    ),
+                }
+            );
+            // Dapper would send the time as datetime, which rounds it to 1/300 second
+            markParameters.Add("PendingSince", auditContext.GetCurrentTimestamp(), DbType.DateTime2);
+            PendingClientRow[] pendingClients =
+            [
+                .. (
+                    await connection.QueryAsync<PendingClientRow>(markSql, markParameters, transaction)
+                ).Select(AsUtc),
+            ];
+
+            if (await ApplyApplicationChangesAsync(connection, transaction, command) is { } failure)
+            {
+                await RollbackSafelyAsync(transaction);
+                return failure;
+            }
+
+            ApplicationSyncState state = await ReadSyncStateAsync(
+                connection,
+                transaction,
+                command.Id,
+                pendingClients
+            );
+
+            committing = true;
+            await transaction.CommitAsync();
+            return new ApplicationSaveResult.Success(state);
+        }
+        catch (Exception ex) when (committing)
+        {
+            logger.LogError(ex, "Save application commit failure; the outcome is unknown");
+            return new ApplicationSaveResult.FailureCommitOutcomeUnknown(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Save application failure");
+            await RollbackSafelyAsync(transaction);
+            return new ApplicationSaveResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    public async Task<ApplicationSyncStateResult> GetApplicationSyncState(int applicationId)
+    {
+        await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
+        await connection.OpenAsync();
+        await using var transaction = await connection.BeginTransactionAsync();
+        try
+        {
+            // Locking the Application row waits out any in-flight save, so the reads below observe
+            // that save's final outcome.
+            string lockSql = $"""
+                SELECT 1 FROM dmscs.Application WITH (UPDLOCK, HOLDLOCK)
+                WHERE Id = @Id AND {TenantScopedVendorCondition()};
+                """;
+            if (
+                await connection.ExecuteScalarAsync<int?>(
+                    lockSql,
+                    new { Id = applicationId, TenantId },
+                    transaction
+                )
+                is null
+            )
+            {
+                await RollbackSafelyAsync(transaction);
+                return new ApplicationSyncStateResult.FailureNotExists();
+            }
+
+            PendingClientRow[] pendingClients =
+            [
+                .. (
+                    await connection.QueryAsync<PendingClientRow>(
+                        """
+                        SELECT Id, ClientId, ClientUuid, IsApproved,
+                            InheritsApplicationEducationOrganizations, IdentityProviderSyncPendingSince
+                        FROM dmscs.ApiClient
+                        WHERE ApplicationId = @ApplicationId AND IdentityProviderSyncPendingSince IS NOT NULL;
+                        """,
+                        new { ApplicationId = applicationId },
+                        transaction
+                    )
+                ).Select(AsUtc),
+            ];
+            ApplicationSyncState state = await ReadSyncStateAsync(
+                connection,
+                transaction,
+                applicationId,
+                pendingClients
+            );
+            await transaction.CommitAsync();
+            return new ApplicationSyncStateResult.Success(state);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Get application sync state failure");
+            await RollbackSafelyAsync(transaction);
+            return new ApplicationSyncStateResult.FailureUnknown(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Saves the Application's scalars, education organizations and profiles, returning the failure
+    /// that leaves the transaction to be rolled back, or null. The Application UPDATE comes first and
+    /// its row lock covers the list read that follows. Only the education organization
+    /// differences are applied: deleting a row cascades to every API client's copy of it, so a
+    /// surviving education organization must keep its row.
+    /// </summary>
+    private async Task<ApplicationSaveResult?> ApplyApplicationChangesAsync(
+        SqlConnection connection,
+        DbTransaction transaction,
+        ApplicationUpdateCommand command
+    )
+    {
         try
         {
             string sql = $"""
@@ -548,12 +750,11 @@ public class ApplicationRepository(
             {
                 if (!await ApplicationExistsForTenant(connection, transaction, command.Id))
                 {
-                    return new ApplicationUpdateResult.FailureNotExists();
+                    return new ApplicationSaveResult.FailureNotExists();
                 }
 
                 logger.LogWarning("Update application failure: Vendor not found");
-                await transaction.RollbackAsync();
-                return new ApplicationUpdateResult.FailureVendorNotFound();
+                return new ApplicationSaveResult.FailureVendorNotFound();
             }
 
             if (
@@ -562,12 +763,27 @@ public class ApplicationRepository(
             )
             {
                 logger.LogWarning("Update application failure: Profile not found");
-                await transaction.RollbackAsync();
-                return new ApplicationUpdateResult.FailureProfileNotFound();
+                return new ApplicationSaveResult.FailureProfileNotFound();
             }
 
-            sql = "DELETE FROM dmscs.ApplicationEducationOrganization WHERE ApplicationId = @ApplicationId";
-            await connection.ExecuteAsync(sql, new { ApplicationId = command.Id }, transaction);
+            // Read under the Application row lock the UPDATE above holds, so a concurrent change to the
+            // list committed while this transaction waited is already visible
+            long[] currentEducationOrganizationIds = await ApplicationEducationOrganizationIdsAsync(
+                connection,
+                transaction,
+                command.Id
+            );
+            long[] requestedEducationOrganizationIds = command.EducationOrganizationIds.Distinct().ToArray();
+
+            sql = """
+                DELETE FROM dmscs.ApplicationEducationOrganization
+                WHERE ApplicationId = @ApplicationId AND EducationOrganizationId = @EducationOrganizationId;
+                """;
+            var removedEducationOrganizations = currentEducationOrganizationIds
+                .Except(requestedEducationOrganizationIds)
+                .Select(e => new { ApplicationId = command.Id, EducationOrganizationId = e });
+
+            await connection.ExecuteAsync(sql, removedEducationOrganizations, transaction);
 
             sql = """
                 INSERT INTO dmscs.ApplicationEducationOrganization (ApplicationId, EducationOrganizationId, CreatedBy)
@@ -575,33 +791,16 @@ public class ApplicationRepository(
                 """;
 
             var currentUser = auditContext.GetCurrentUser();
-            var educationOrganizations = command.EducationOrganizationIds.Select(e => new
-            {
-                ApplicationId = command.Id,
-                EducationOrganizationId = e,
-                CreatedBy = currentUser,
-            });
-
-            await connection.ExecuteAsync(sql, educationOrganizations, transaction);
-
-            string updateApiClientsql = """
-                UPDATE dmscs.ApiClient
-                SET ClientUuid=@ClientUuid, LastModifiedAt=@LastModifiedAt, ModifiedBy=@ModifiedBy
-                WHERE ClientId = @ClientId AND ApplicationId = @ApplicationId;
-                """;
-
-            await connection.ExecuteAsync(
-                updateApiClientsql,
-                new
+            var addedEducationOrganizations = requestedEducationOrganizationIds
+                .Except(currentEducationOrganizationIds)
+                .Select(e => new
                 {
-                    clientCommand.ClientUuid,
-                    clientCommand.ClientId,
                     ApplicationId = command.Id,
-                    LastModifiedAt = auditContext.GetCurrentTimestamp(),
-                    ModifiedBy = currentUser,
-                },
-                transaction
-            );
+                    EducationOrganizationId = e,
+                    CreatedBy = currentUser,
+                });
+
+            await connection.ExecuteAsync(sql, addedEducationOrganizations, transaction);
 
             // Delete existing Profile relationships
             sql = "DELETE FROM dmscs.ApplicationProfile WHERE ApplicationId = @ApplicationId";
@@ -627,53 +826,147 @@ public class ApplicationRepository(
                 await connection.ExecuteAsync(sql, profileMappings, transaction);
             }
 
-            await transaction.CommitAsync();
-
-            return new ApplicationUpdateResult.Success();
+            return null;
         }
         catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_Application_Vendor"))
         {
             logger.LogWarning(ex, "Update application failure: Vendor not found");
-            await RollbackSafelyAsync(transaction);
-            return new ApplicationUpdateResult.FailureVendorNotFound();
+            return new ApplicationSaveResult.FailureVendorNotFound();
         }
         catch (SqlException ex) when (ex.IsForeignKeyViolation("FK_ApplicationProfile_Profile"))
         {
             logger.LogWarning(ex, "Update application failure: Profile not found");
-            await RollbackSafelyAsync(transaction);
-            return new ApplicationUpdateResult.FailureProfileNotFound();
+            return new ApplicationSaveResult.FailureProfileNotFound();
         }
         catch (SqlException ex) when (ex.IsUniqueViolation("UX_Application_VendorId_ApplicationName"))
         {
-            logger.LogWarning(
-                ex,
-                "Application '{ApplicationName}' already exists for vendor",
-                command.ApplicationName
-            );
-            await RollbackSafelyAsync(transaction);
-            return new ApplicationUpdateResult.FailureDuplicateApplication(command.ApplicationName);
-        }
-        catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateClientUuidConstraint))
-        {
-            // The SQL Server message names the conflicting UUID ("The duplicate key value is ..."),
-            // so only fixed text, the error number and the matched constraint are logged, never the
-            // exception or its message.
+            // The SQL Server message names the duplicate key value, so only the sanitized name, the
+            // error number and the matched constraint are logged, never the exception or its message.
 #pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
             logger.LogWarning(
-                "Identity provider client is already associated with another API client ({ErrorNumber}, {ConstraintName})",
+                "Application '{ApplicationName}' already exists for vendor ({ErrorNumber}, {ConstraintName})",
+                LoggingUtility.SanitizeForLog(command.ApplicationName),
                 ex.Number,
-                DuplicateClientUuidConstraint
+                "UX_Application_VendorId_ApplicationName"
             );
 #pragma warning restore S6667
-            await RollbackSafelyAsync(transaction);
-            return new ApplicationUpdateResult.FailureDuplicateClientUuid();
+            return new ApplicationSaveResult.FailureDuplicateApplication(command.ApplicationName);
         }
-        catch (Exception ex)
+    }
+
+    private static async Task<long[]> ApplicationEducationOrganizationIdsAsync(
+        SqlConnection connection,
+        DbTransaction transaction,
+        int applicationId
+    ) =>
+        [
+            .. await connection.QueryAsync<long>(
+                """
+                SELECT EducationOrganizationId FROM dmscs.ApplicationEducationOrganization
+                WHERE ApplicationId = @ApplicationId;
+                """,
+                new { ApplicationId = applicationId },
+                transaction
+            ),
+        ];
+
+    private sealed record PendingClientRow(
+        int Id,
+        string ClientId,
+        Guid ClientUuid,
+        bool IsApproved,
+        bool InheritsApplicationEducationOrganizations,
+        DateTime IdentityProviderSyncPendingSince
+    );
+
+    private static PendingClientRow AsUtc(PendingClientRow client) =>
+        client with
         {
-            logger.LogError(ex, "Update application failure");
-            await RollbackSafelyAsync(transaction);
-            return new ApplicationUpdateResult.FailureUnknown(ex.Message);
-        }
+            IdentityProviderSyncPendingSince = DateTime.SpecifyKind(
+                client.IdentityProviderSyncPendingSince,
+                DateTimeKind.Utc
+            ),
+        };
+
+    /// <summary>
+    /// Reads the Application and completes the given pending clients with their data stores and
+    /// effective education organizations, each list read for all of the clients at once. The client
+    /// lists are read by seeking each pending client's key, never by a scan that could wait on
+    /// another client's write.
+    /// </summary>
+    private static async Task<ApplicationSyncState> ReadSyncStateAsync(
+        SqlConnection connection,
+        DbTransaction transaction,
+        int applicationId,
+        PendingClientRow[] pendingClients
+    )
+    {
+        string pendingClientIdsJson = JsonSerializer.Serialize(pendingClients.Select(client => client.Id));
+
+        await using var reader = await connection.QueryMultipleAsync(
+            """
+            SELECT ApplicationName, VendorId, ClaimSetName FROM dmscs.Application WHERE Id = @ApplicationId;
+
+            SELECT EducationOrganizationId FROM dmscs.ApplicationEducationOrganization
+            WHERE ApplicationId = @ApplicationId
+            ORDER BY EducationOrganizationId;
+
+            SELECT ProfileId FROM dmscs.ApplicationProfile
+            WHERE ApplicationId = @ApplicationId
+            ORDER BY ProfileId;
+
+            SELECT acd.ApiClientId, acd.DataStoreId
+            FROM OPENJSON(@PendingClientIdsJson) pending
+            INNER LOOP JOIN dmscs.ApiClientDataStore acd WITH (FORCESEEK)
+                ON acd.ApiClientId = CAST(pending.[value] AS INT)
+            ORDER BY acd.ApiClientId, acd.DataStoreId;
+
+            SELECT ace.ApiClientId, ace.EducationOrganizationId
+            FROM OPENJSON(@PendingClientIdsJson) pending
+            INNER LOOP JOIN dmscs.ApiClientEducationOrganization ace WITH (FORCESEEK)
+                ON ace.ApiClientId = CAST(pending.[value] AS INT)
+            ORDER BY ace.ApiClientId, ace.EducationOrganizationId;
+            """,
+            new { ApplicationId = applicationId, PendingClientIdsJson = pendingClientIdsJson },
+            transaction
+        );
+
+        var application = await reader.ReadSingleAsync<(
+            string ApplicationName,
+            int VendorId,
+            string ClaimSetName
+        )>();
+        long[] educationOrganizationIds = [.. await reader.ReadAsync<long>()];
+        int[] profileIds = [.. await reader.ReadAsync<int>()];
+        ILookup<int, int> dataStoreIds = (
+            await reader.ReadAsync<(int ApiClientId, int DataStoreId)>()
+        ).ToLookup(row => row.ApiClientId, row => row.DataStoreId);
+        ILookup<int, long> storedEducationOrganizationIds = (
+            await reader.ReadAsync<(int ApiClientId, long EducationOrganizationId)>()
+        ).ToLookup(row => row.ApiClientId, row => row.EducationOrganizationId);
+
+        return new ApplicationSyncState(
+            application.ApplicationName,
+            application.VendorId,
+            application.ClaimSetName,
+            educationOrganizationIds,
+            profileIds,
+            [
+                .. pendingClients
+                    .OrderBy(client => client.Id)
+                    .Select(client => new ApplicationSyncPendingClient(
+                        client.Id,
+                        client.ClientId,
+                        client.ClientUuid,
+                        client.IsApproved,
+                        [.. dataStoreIds[client.Id]],
+                        client.InheritsApplicationEducationOrganizations
+                            ? educationOrganizationIds
+                            : [.. storedEducationOrganizationIds[client.Id]],
+                        client.IdentityProviderSyncPendingSince
+                    )),
+            ]
+        );
     }
 
     public async Task<ApplicationDeleteResult> DeleteApplication(int id)
@@ -718,215 +1011,6 @@ public class ApplicationRepository(
         {
             logger.LogError(ex, "Get application clients failure");
             return new ApplicationApiClientsResult.FailureUnknown(ex.Message);
-        }
-    }
-
-    public async Task<ApplicationUpdateStateResult> GetApplicationUpdateState(
-        int applicationId,
-        string clientId
-    )
-    {
-        await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
-        await connection.OpenAsync();
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
-        try
-        {
-            // Locking the Application row waits out any in-flight update transaction, so the
-            // reads below observe that transaction's final outcome.
-            string applicationSql = $"""
-                SELECT ApplicationName, VendorId, ClaimSetName
-                FROM dmscs.Application WITH (UPDLOCK, HOLDLOCK)
-                WHERE Id = @Id AND {TenantScopedVendorCondition()};
-                """;
-            var application = await connection.QuerySingleOrDefaultAsync<(
-                string ApplicationName,
-                int VendorId,
-                string ClaimSetName
-            )?>(applicationSql, new { Id = applicationId, TenantId }, transaction);
-
-            if (application is null)
-            {
-                return new ApplicationUpdateStateResult.FailureNotExists();
-            }
-
-            string clientSql = """
-                SELECT Id, ClientUuid, IsApproved
-                FROM dmscs.ApiClient WITH (UPDLOCK, HOLDLOCK)
-                WHERE ClientId = @ClientId AND ApplicationId = @ApplicationId;
-                """;
-            var client = await connection.QuerySingleOrDefaultAsync<(
-                int Id,
-                Guid ClientUuid,
-                bool IsApproved
-            )?>(clientSql, new { ClientId = clientId, ApplicationId = applicationId }, transaction);
-
-            if (client is null)
-            {
-                return new ApplicationUpdateStateResult.FailureNotExists();
-            }
-
-            long[] educationOrganizationIds =
-            [
-                .. await connection.QueryAsync<long>(
-                    """
-                    SELECT EducationOrganizationId FROM dmscs.ApplicationEducationOrganization
-                    WHERE ApplicationId = @ApplicationId;
-                    """,
-                    new { ApplicationId = applicationId },
-                    transaction
-                ),
-            ];
-
-            int[] profileIds =
-            [
-                .. await connection.QueryAsync<int>(
-                    """
-                    SELECT ProfileId FROM dmscs.ApplicationProfile
-                    WHERE ApplicationId = @ApplicationId;
-                    """,
-                    new { ApplicationId = applicationId },
-                    transaction
-                ),
-            ];
-
-            int[] clientDataStoreIds =
-            [
-                .. await connection.QueryAsync<int>(
-                    """
-                    SELECT DataStoreId FROM dmscs.ApiClientDataStore
-                    WHERE ApiClientId = @ApiClientId;
-                    """,
-                    new { ApiClientId = client.Value.Id },
-                    transaction
-                ),
-            ];
-
-            await transaction.CommitAsync();
-
-            return new ApplicationUpdateStateResult.Success(
-                new ApplicationUpdateState(
-                    application.Value.ApplicationName,
-                    application.Value.VendorId,
-                    application.Value.ClaimSetName,
-                    educationOrganizationIds,
-                    profileIds,
-                    clientId,
-                    client.Value.ClientUuid,
-                    client.Value.IsApproved,
-                    clientDataStoreIds
-                )
-            );
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Get application update state failure");
-            await RollbackSafelyAsync(transaction);
-            return new ApplicationUpdateStateResult.FailureUnknown(ex.Message);
-        }
-    }
-
-    public async Task<ApiClientUuidSyncResult> SyncApplicationApiClientUuid(
-        int applicationId,
-        string clientId,
-        Guid expectedClientUuid,
-        Guid newClientUuid
-    )
-    {
-        await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
-        await connection.OpenAsync();
-        await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
-        try
-        {
-            string selectSql = $"""
-                SELECT ac.ClientUuid
-                FROM dmscs.ApiClient ac WITH (UPDLOCK, HOLDLOCK)
-                JOIN dmscs.Application a ON ac.ApplicationId = a.Id
-                WHERE ac.ClientId = @ClientId AND ac.ApplicationId = @ApplicationId
-                  AND {TenantScopedVendorCondition("a")};
-                """;
-            Guid? storedUuid = await connection.QuerySingleOrDefaultAsync<Guid?>(
-                selectSql,
-                new
-                {
-                    ClientId = clientId,
-                    ApplicationId = applicationId,
-                    TenantId,
-                },
-                transaction
-            );
-
-            if (storedUuid is null)
-            {
-                // The caller's deletion decision needs to know whether any row still references
-                // the new UUID; the check is deliberately cross-tenant because it protects a
-                // provider-level object and exposes no tenant data.
-                int referenced = await connection.ExecuteScalarAsync<int>(
-                    """
-                    SELECT CASE WHEN EXISTS (
-                        SELECT 1 FROM dmscs.ApiClient WHERE ClientUuid = @NewClientUuid
-                    ) THEN 1 ELSE 0 END;
-                    """,
-                    new { NewClientUuid = newClientUuid },
-                    transaction
-                );
-                await transaction.CommitAsync();
-                return referenced == 1
-                    ? new ApiClientUuidSyncResult.FailureNotExists()
-                    : new ApiClientUuidSyncResult.FailureNotExistsSafeToDelete();
-            }
-
-            if (storedUuid == newClientUuid)
-            {
-                await transaction.CommitAsync();
-                return new ApiClientUuidSyncResult.AlreadyApplied();
-            }
-
-            if (storedUuid != expectedClientUuid)
-            {
-                await transaction.RollbackAsync();
-                return new ApiClientUuidSyncResult.FailureStaleState();
-            }
-
-            await connection.ExecuteAsync(
-                """
-                UPDATE dmscs.ApiClient
-                SET ClientUuid = @NewClientUuid, LastModifiedAt = @LastModifiedAt, ModifiedBy = @ModifiedBy
-                WHERE ClientId = @ClientId AND ApplicationId = @ApplicationId;
-                """,
-                new
-                {
-                    NewClientUuid = newClientUuid,
-                    ClientId = clientId,
-                    ApplicationId = applicationId,
-                    LastModifiedAt = auditContext.GetCurrentTimestamp(),
-                    ModifiedBy = auditContext.GetCurrentUser(),
-                },
-                transaction
-            );
-
-            await transaction.CommitAsync();
-            return new ApiClientUuidSyncResult.Success();
-        }
-        catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateClientUuidConstraint))
-        {
-            // The SQL Server message names the conflicting UUID ("The duplicate key value is ..."),
-            // so only fixed text, the error number and the matched constraint are logged, never the
-            // exception or its message.
-#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - deliberately omitted, see comment above
-            logger.LogWarning(
-                "The new identity provider client UUID is already referenced by another API client; nothing was written ({ErrorNumber}, {ConstraintName})",
-                ex.Number,
-                DuplicateClientUuidConstraint
-            );
-#pragma warning restore S6667
-            await RollbackSafelyAsync(transaction);
-            return new ApiClientUuidSyncResult.FailureNewUuidInUse();
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Sync application client uuid failure");
-            await RollbackSafelyAsync(transaction);
-            return new ApiClientUuidSyncResult.FailureUnknown(ex.Message);
         }
     }
 

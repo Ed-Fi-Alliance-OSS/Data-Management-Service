@@ -194,6 +194,53 @@ public class FailureResponseTests
         }
     }
 
+    [TestFixture]
+    public class Given_a_partial_sync_failure
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForPartialSync([4, 9, 12], CorrelationId);
+
+        [Test]
+        public void It_says_the_change_is_saved_and_counts_the_pending_clients() =>
+            _result["detail"]
+                ?.GetValue<string>()
+                .Should()
+                .Be(
+                    "The Application change is saved, but 3 API clients are still pending synchronization with the identity provider. Send the same request again to retry them."
+                );
+
+        [Test]
+        public void It_lists_the_pending_client_ids_as_numbers_in_order() =>
+            _result["apiClientIds"]!.AsArray().Select(id => id!.GetValue<int>()).Should().Equal(4, 9, 12);
+
+        [Test]
+        public void It_has_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_extension_members()
+        {
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+            _result["errors"]?.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_partial_sync_failure_for_one_client
+    {
+        [Test]
+        public void It_counts_one_pending_client() =>
+            FailureResponse
+                .ForPartialSync([5], CorrelationId)["detail"]
+                ?.GetValue<string>()
+                .Should()
+                .Be(
+                    "The Application change is saved, but 1 API client is still pending synchronization with the identity provider. Send the same request again to retry it."
+                );
+    }
+
     [Test]
     public void ForDataValidation_ShouldReturnCorrectJsonNode()
     {
@@ -424,85 +471,58 @@ public class FailureResponseTests
     }
 
     [TestFixture]
-    public class Given_a_too_many_tokens_failure
+    public class Given_the_too_many_tokens_message_for_a_limit
     {
-        private const int Limit = 5;
-
-        private JsonNode _result = null!;
+        private string _message = null!;
 
         [SetUp]
-        public void Setup() => _result = FailureResponse.ForTooManyTokens(Limit, CorrelationId);
+        public void Setup() => _message = FailureResponse.TooManyTokensMessage(1234);
 
         [Test]
-        public void It_is_a_json_object() => _result.Should().BeOfType<JsonObject>();
-
-        [Test]
-        public void It_uses_the_too_many_tokens_type() =>
-            _result["type"]
-                ?.GetValue<string>()
-                .Should()
-                .Be("urn:ed-fi:management-api:security:authentication:too-many-tokens");
-
-        [Test]
-        public void It_has_the_too_many_tokens_title() =>
-            _result["title"]?.GetValue<string>().Should().Be("Too Many Tokens");
-
-        [Test]
-        public void It_has_status_429() => _result["status"]?.GetValue<int>().Should().Be(429);
-
-        [Test]
-        public void It_has_a_detail() =>
-            _result["detail"]
-                ?.GetValue<string>()
-                .Should()
-                .Be("The caller has authenticated too many times in too short of a time period.");
-
-        [Test]
-        public void It_carries_the_correlation_id() =>
-            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
-
-        [Test]
-        public void It_has_an_empty_validation_errors_object() =>
-            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
-
-        // This exact sentence is also a parsing contract: the DMS /oauth/token proxy's 429
-        // handler (OAuthManager in src/dms) reads the limit back out of it. Reword it here and
-        // that parser must be reworded in the same change, or DMS silently degrades every
-        // token-limit rejection to a generic rate-limit 429.
-        [Test]
-        public void It_has_a_single_error_naming_the_limit()
-        {
-            _result["errors"]?.AsArray().Count.Should().Be(1);
-            _result["errors"]
-                ?[0]?.GetValue<string>()
+        public void It_is_the_canonical_sentence_with_the_limit_formatted_invariantly() =>
+            _message
                 .Should()
                 .Be(
-                    "Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."
+                    "Too many access tokens have been requested (limit is 1234). Access tokens should be reused until they expire."
                 );
-        }
     }
 
     [TestFixture]
-    public class Given_a_too_many_tokens_failure_with_a_different_limit
+    public class Given_a_too_many_requests_failure
     {
-        // A second limit, so the message is proven to vary with its input rather than matching a
-        // constant that a hardcoded 5 would also satisfy.
         private JsonNode _result = null!;
 
         [SetUp]
-        public void Setup() => _result = FailureResponse.ForTooManyTokens(12, CorrelationId);
+        public void Setup() => _result = FailureResponse.ForTooManyRequests(CorrelationId);
 
         [Test]
-        public void It_names_the_supplied_limit() =>
-            _result["errors"]
-                ?[0]?.GetValue<string>()
+        public void It_uses_the_too_many_requests_type() =>
+            _result["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:too-many-requests");
+
+        [Test]
+        public void It_has_the_too_many_requests_title() =>
+            _result["title"]!.GetValue<string>().Should().Be("Too Many Requests");
+
+        [Test]
+        public void It_has_status_429() => _result["status"]!.GetValue<int>().Should().Be(429);
+
+        [Test]
+        public void It_has_the_retry_detail() =>
+            _result["detail"]!
+                .GetValue<string>()
                 .Should()
-                .Be(
-                    "Too many access tokens have been requested (limit is 12). Access tokens should be reused until they expire."
-                );
+                .Be("The number of allowed requests has been exceeded. Retry the request later.");
 
         [Test]
-        public void It_still_has_status_429() => _result["status"]?.GetValue<int>().Should().Be(429);
+        public void It_carries_the_correlation_id() =>
+            _result["correlationId"]!.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_extension_members()
+        {
+            _result["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _result["errors"]!.AsArray().Count.Should().Be(0);
+        }
     }
 
     [TestFixture]
@@ -529,11 +549,11 @@ public class FailureResponseTests
                 "Unauthorized"
             ),
             new(
-                nameof(FailureResponse.ForTooManyTokens),
-                () => FailureResponse.ForTooManyTokens(5, CorrelationId),
-                "urn:ed-fi:management-api:security:authentication:too-many-tokens",
+                nameof(FailureResponse.ForTooManyRequests),
+                () => FailureResponse.ForTooManyRequests(CorrelationId),
+                "urn:ed-fi:management-api:too-many-requests",
                 429,
-                "Too Many Tokens"
+                "Too Many Requests"
             ),
             new(
                 nameof(FailureResponse.ForForbidden),
@@ -592,6 +612,17 @@ public class FailureResponseTests
                 "Dependent Item Exists"
             ),
             new(
+                nameof(FailureResponse.ForEducationOrganizationScopeConflict),
+                () =>
+                    FailureResponse.ForEducationOrganizationScopeConflict(
+                        "Education organization scope conflict",
+                        CorrelationId
+                    ),
+                "urn:ed-fi:management-api:conflict:education-organization-scope",
+                409,
+                "Education Organization Scope Conflict"
+            ),
+            new(
                 nameof(FailureResponse.ForUnresolvedReference),
                 () => FailureResponse.ForUnresolvedReference("Unresolved reference", CorrelationId),
                 "urn:ed-fi:management-api:conflict:unresolved-reference",
@@ -620,6 +651,13 @@ public class FailureResponseTests
                 nameof(FailureResponse.ForBadGateway),
                 () => FailureResponse.ForBadGateway("Bad gateway", CorrelationId),
                 "urn:ed-fi:management-api:bad-gateway",
+                502,
+                "Bad Gateway"
+            ),
+            new(
+                nameof(FailureResponse.ForPartialSync),
+                () => FailureResponse.ForPartialSync([7], CorrelationId),
+                "urn:ed-fi:management-api:bad-gateway:partial-sync",
                 502,
                 "Bad Gateway"
             ),

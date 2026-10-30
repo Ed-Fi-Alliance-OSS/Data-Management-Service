@@ -43,9 +43,11 @@ Early draft of potential 8.2 requirements.
 
 ## 4. Open Questions and Decision Log
 
-- **Error conformance scope**: Decide whether `/connect/token` errors should
-  stay in the Ed-Fi error contract or move to the RFC 6749 OAuth error shape
-  used by `/connect/revoke`.
+- **Error conformance scope (decided 2026-10-26, DMS-1491)**: `/connect/token`
+  errors move to the RFC 6749 OAuth error shape used by `/connect/revoke` and
+  `/connect/introspect`. `/connect/register` stays in the Ed-Fi error contract,
+  as the Management API 3.0 specification defines its `400` and `500` responses
+  as problem details (product decision recorded on DMS-1491, 2026-10-29).
 - **OpenAPI disablement**: Decide whether API metadata exposure should be
   controlled by configuration, environment, or deployment topology.
 - **Dependency-aware health reporting**: Decide which dependencies (database,

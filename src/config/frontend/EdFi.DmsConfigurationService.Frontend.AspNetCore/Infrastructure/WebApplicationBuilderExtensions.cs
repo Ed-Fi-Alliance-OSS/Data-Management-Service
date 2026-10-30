@@ -80,6 +80,14 @@ public static class WebApplicationBuilderExtensions
                 webApplicationBuilder.Configuration.GetSection("AppSettings:ReverseProxy")
             )
             .AddSingleton<IValidateOptions<ReverseProxySettings>, ReverseProxySettingsValidator>()
+            .Configure<ConnectRateLimitSettings>(
+                webApplicationBuilder.Configuration.GetSection(ConnectRateLimitSettings.SectionName)
+            )
+            .AddSingleton<IValidateOptions<ConnectRateLimitSettings>, ConnectRateLimitSettingsValidator>()
+            .AddSingleton<
+                IValidateOptions<ConnectRateLimitSettings>,
+                ConnectRateLimitProxySettingsValidator
+            >()
             .Configure<DatabaseOptions>(webApplicationBuilder.Configuration.GetSection("DatabaseSettings"))
             .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>()
             .Configure<ClientSecretValidationOptions>(
@@ -105,6 +113,8 @@ public static class WebApplicationBuilderExtensions
         // The cache is a singleton taking the tenant as an argument, so it holds no scoped
         // dependency; the read seam that consults it is transient like the repositories calling it.
         webApplicationBuilder.Services.AddSingleton<SecretValueCache>();
+        // Holds the /connect/* budgets for the life of the process; disposed by the container (DMS-1482).
+        webApplicationBuilder.Services.AddSingleton<ConnectRateLimiter>();
         webApplicationBuilder.Services.AddTransient<IConnectionStringReader, ConnectionStringReader>();
         ConfigureJobOptions(webApplicationBuilder.Services, webApplicationBuilder.Configuration);
         ConfigureDatastore(webApplicationBuilder, logger);
@@ -112,7 +122,7 @@ public static class WebApplicationBuilderExtensions
 
         var settingsSection = webApplicationBuilder.Configuration.GetSection("AppSettings");
         var appSettings = settingsSection.Get<AppSettings>();
-        if (appSettings == null)
+        if (appSettings is null)
         {
             logger.Error("Error reading appSettings");
             throw new InvalidOperationException("Unable to read appSettings");
@@ -131,6 +141,16 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder
             .Services.AddHttpClient(
                 KeycloakTokenRevocationManager.HttpClientName,
+                client =>
+                {
+                    client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
+                }
+            )
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
+        webApplicationBuilder
+            .Services.AddHttpClient(
+                KeycloakTokenIntrospectionManager.HttpClientName,
                 client =>
                 {
                     client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
@@ -358,7 +378,7 @@ public static class WebApplicationBuilderExtensions
     {
         IConfiguration config = webApplicationBuilder.Configuration;
         var identitySettings = config.GetSection("IdentitySettings").Get<IdentitySettings>();
-        if (identitySettings == null)
+        if (identitySettings is null)
         {
             logger.Error("Error reading IdentitySettings");
             throw new InvalidOperationException("Unable to read IdentitySettings from appsettings");

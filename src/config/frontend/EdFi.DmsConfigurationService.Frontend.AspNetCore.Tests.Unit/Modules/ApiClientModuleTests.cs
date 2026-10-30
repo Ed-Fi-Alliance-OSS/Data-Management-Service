@@ -31,7 +31,7 @@ using NUnit.Framework;
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 [TestFixture]
-public class ApiClientModuleTests
+public partial class ApiClientModuleTests
 {
     private readonly IApiClientRepository _apiClientRepository = A.Fake<IApiClientRepository>();
     private IApplicationLockManager _lockManager = A.Fake<IApplicationLockManager>();
@@ -70,6 +70,15 @@ public class ApiClientModuleTests
 
         A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
             .Returns(new ApiClientUuidReferenceResult.None());
+
+        // By default the client inherits the education organization [1] that the fixtures'
+        // Applications hold; fixtures that test a narrowed client override this.
+        A.CallTo(() => _apiClientRepository.GetApiClientEducationOrganizationState(A<int>.Ignored))
+            .ReturnsLazily(() =>
+                new ApiClientEducationOrganizationStateResult.Success(
+                    new ApiClientEducationOrganizationState(1, true, [1], [1], null)
+                )
+            );
 
         // By default no other client of the application holds the requested name, so the insert
         // and update name checks pass; fixtures that test a taken name override this.
@@ -583,7 +592,7 @@ public class ApiClientModuleTests
             A.CallTo(() =>
                     _identityProviderRepository.UpdateClientAsync(
                         A<string>.Ignored,
-                        "Updated API Client",
+                        "Test Application",
                         "TestClaimSet",
                         "1,2",
                         A<int[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 1),
@@ -1234,7 +1243,16 @@ public class ApiClientModuleTests
             A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
                 .Returns(
                     new ApiClientResolutionResult.Success(
-                        new ApiClientResolutionState(1, "Test", true, "test-client", existingUuid, [1])
+                        new ApiClientResolutionState(
+                            1,
+                            "Test",
+                            true,
+                            "test-client",
+                            existingUuid,
+                            [1],
+                            true,
+                            [1]
+                        )
                     )
                 );
 
@@ -2681,7 +2699,7 @@ public class ApiClientModuleTests
         }
 
         protected ApiClientResolutionState SurvivingRowState() =>
-            new(1, "Test", true, "test-client", _providerClientUuid, [1]);
+            new(1, "Test", true, "test-client", _providerClientUuid, [1], true, [1]);
 
         protected async Task ActDeleteAsync()
         {
@@ -3324,7 +3342,9 @@ public class ApiClientModuleTests
 
         protected async Task ActUpdateAsync(
             int applicationId = 1,
-            Action<IServiceCollection>? configureServices = null
+            Action<IServiceCollection>? configureServices = null,
+            string name = "Updated",
+            string extraProperties = ""
         )
         {
             using var client = SetUpClient(configureServices: configureServices);
@@ -3335,9 +3355,9 @@ public class ApiClientModuleTests
                     {
                       "id": 1,
                       "applicationId": {{applicationId}},
-                      "name": "Updated",
+                      "name": "{{name}}",
                       "isApproved": true,
-                      "dataStoreIds": [1]
+                      "dataStoreIds": [1]{{extraProperties}}
                     }
                     """,
                     Encoding.UTF8,
@@ -3693,10 +3713,10 @@ public class ApiClientModuleTests
         }
 
         protected ApiClientResolutionState CommandMatchingState() =>
-            new(1, "Updated", true, "test-client", _updatedUuid, [1]);
+            new(1, "Updated", true, "test-client", _updatedUuid, [1], true, [1]);
 
         protected ApiClientResolutionState OriginalState() =>
-            new(1, "Test", true, "test-client", _existingUuid, [1]);
+            new(1, "Test", true, "test-client", _existingUuid, [1], true, [1]);
     }
 
     [TestFixture]
@@ -3814,6 +3834,212 @@ public class ApiClientModuleTests
             _syncCalls.Should().BeEmpty();
             _deletedClientIds.Should().BeEmpty();
         }
+    }
+
+    /// <summary>
+    /// An update that changes nothing but the education organization scope: a client narrowed to
+    /// {2} on an Application holding {1, 2} is sent inheritsApplicationEducationOrganizations true,
+    /// with its name, approval and data stores unchanged, and the provider updates it in place. The
+    /// command and the original state then differ only in their scope, so only the scope can tell
+    /// a committed write from a rolled-back one.
+    /// </summary>
+    public abstract class ScopeOnlyAmbiguousUpdateTestBase : ThrownApiClientRepositoryExceptionTestBase
+    {
+        protected List<string> _sentClaims = null!;
+
+        [SetUp]
+        public void SetUpScopeOnlyDefaults()
+        {
+            _sentClaims = [];
+
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [2, 1],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() => _apiClientRepository.GetApiClientEducationOrganizationState(A<int>.Ignored))
+                .Returns(
+                    new ApiClientEducationOrganizationStateResult.Success(
+                        new ApiClientEducationOrganizationState(1, false, [2], [2], null)
+                    )
+                );
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call =>
+                {
+                    _updatedClientUuids.Add(call.GetArgument<string>(0)!);
+                    _sentClaims.Add(call.GetArgument<string>(3)!);
+                })
+                .Returns(new ClientUpdateResult.Success(_existingUuid));
+        }
+
+        protected Task ActScopeOnlyUpdateAsync() =>
+            ActUpdateAsync(
+                name: "Test",
+                extraProperties: ", \"inheritsApplicationEducationOrganizations\": true"
+            );
+
+        protected ApiClientResolutionState InheritingState() =>
+            new(1, "Test", true, "test-client", _existingUuid, [1], true, [1, 2]);
+
+        protected ApiClientResolutionState NarrowedState() =>
+            new(1, "Test", true, "test-client", _existingUuid, [1], false, [2]);
+    }
+
+    [TestFixture]
+    public class Given_a_scope_only_update_whose_ambiguous_write_committed : ScopeOnlyAmbiguousUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .Returns(new ApiClientResolutionResult.Success(InheritingState()));
+
+            await ActScopeOnlyUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_the_recovered_success() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_sends_only_the_inherited_claim() => _sentClaims.Should().Equal("1,2");
+    }
+
+    [TestFixture]
+    public class Given_a_scope_only_update_whose_ambiguous_write_did_not_commit
+        : ScopeOnlyAmbiguousUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .Returns(new ApiClientResolutionResult.Success(NarrowedState()));
+
+            await ActScopeOnlyUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_restores_the_original_narrowed_claim() => _sentClaims.Should().Equal("1,2", "2");
+    }
+
+    [TestFixture]
+    public class Given_a_scope_only_update_whose_ambiguous_write_left_a_partial_scope
+        : ScopeOnlyAmbiguousUpdateTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            // The flag matches the command and the rows match the original
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .Returns(
+                    new ApiClientResolutionResult.Success(
+                        NarrowedState() with
+                        {
+                            InheritsApplicationEducationOrganizations = true,
+                        }
+                    )
+                );
+
+            await ActScopeOnlyUpdateAsync();
+        }
+
+        [Test]
+        public async Task It_returns_a_sanitized_internal_server_error() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_performs_no_compensation() => _sentClaims.Should().Equal("1,2");
+    }
+
+    [TestFixture]
+    public class Given_an_ambiguous_update_that_committed_for_an_inheriting_client_whose_rows_lag_its_Application
+        : ThrownApiClientRepositoryExceptionTestBase
+    {
+        private List<string> _sentClaims = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _sentClaims = [];
+
+            // The Application gained 2 after the client's rows were stored, which an Application
+            // save does not copy to an inheriting client's rows
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1, 2],
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+            A.CallTo(() => _apiClientRepository.GetApiClientEducationOrganizationState(A<int>.Ignored))
+                .Returns(
+                    new ApiClientEducationOrganizationStateResult.Success(
+                        new ApiClientEducationOrganizationState(1, true, [1], [1, 2], null)
+                    )
+                );
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _sentClaims.Add(call.GetArgument<string>(3)!))
+                .ReturnsNextFromSequence(
+                    new ClientUpdateResult.Success(_updatedUuid),
+                    new ClientUpdateResult.Success(_rollbackUuid)
+                );
+
+            // The rename committed and left the client's rows as they were
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .Returns(new ApiClientResolutionResult.Success(CommandMatchingState()));
+
+            await ActUpdateAsync();
+        }
+
+        [Test]
+        public void It_returns_the_recovered_success() =>
+            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_sends_the_effective_list_once_without_compensation() =>
+            _sentClaims.Should().Equal("1,2");
     }
 
     [TestFixture]
@@ -4626,6 +4852,134 @@ public class ApiClientModuleTests
 
         protected static Task<HttpResponseMessage> PutApiClientAsync(HttpClient client, string body) =>
             client.PutAsync("/v3/apiClients/1", new StringContent(body, Encoding.UTF8, "application/json"));
+    }
+
+    /// <summary>
+    /// A create reads its Application, provisions the provider client from that read and inserts
+    /// the row, all under the Application's aggregate lock, so an Application save cannot commit
+    /// and sync its existing clients in between and leave this one with stale claims.
+    /// </summary>
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_insert_under_the_application_lock : DataStoreAssignmentTestBase
+    {
+        private readonly List<string> _calls = [];
+        private RecordingLockManager _recordingLockManager = null!;
+        private HttpResponseMessage _response = new();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeStoredClient([]);
+            _recordingLockManager = new RecordingLockManager();
+            _lockManager = _recordingLockManager;
+
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
+                .Invokes(() => _calls.Add($"GetApplication:{OpenLockCount()}"))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 7,
+                            ApplicationName = "Test Application",
+                            ClaimSetName = "TestClaimSet",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                            DataStoreIds = [],
+                        }
+                    )
+                );
+            A.CallTo(() =>
+                    _identityProviderRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .Invokes(() => _calls.Add($"CreateClientAsync:{OpenLockCount()}"))
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
+            A.CallTo(() =>
+                    _apiClientRepository.InsertApiClient(
+                        A<ApiClientInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Invokes(() => _calls.Add($"InsertApiClient:{OpenLockCount()}"))
+                .Returns(new ApiClientInsertResult.Success(1));
+
+            using var client = SetUpClient();
+            _response = await PostApiClientAsync(
+                client,
+                """
+                {
+                  "applicationId": 7,
+                  "name": "Locked Client",
+                  "isApproved": true
+                }
+                """
+            );
+        }
+
+        private int OpenLockCount() => _recordingLockManager.Handles.Count(handle => !handle.Disposed);
+
+        [Test]
+        public void It_creates_the_api_client() => _response.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        [Test]
+        public void It_locks_the_requested_application_once() =>
+            _recordingLockManager.Acquisitions.Should().BeEquivalentTo([new[] { 7 }]);
+
+        [Test]
+        public void It_reads_provisions_and_inserts_while_the_lock_is_held() =>
+            _calls.Should().Equal("GetApplication:1", "CreateClientAsync:1", "InsertApiClient:1");
+
+        [Test]
+        public void It_releases_the_lock() =>
+            _recordingLockManager.Handles.Should().ContainSingle().Which.Disposed.Should().BeTrue();
+    }
+
+    [TestFixture]
+    [FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
+    public class Given_an_api_client_insert_when_the_application_lock_times_out : DataStoreAssignmentTestBase
+    {
+        private readonly List<string> _dependencyCalls = [];
+        private HttpResponseMessage _response = new();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeStoredClient([]);
+            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
+                .Returns(new ApplicationLockResult.FailureTimeout());
+            A.CallTo(_identityProviderRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_apiClientRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+
+            using var client = SetUpClient();
+            _response = await PostApiClientAsync(
+                client,
+                """
+                {
+                  "applicationId": 1,
+                  "name": "Locked Out Client",
+                  "isApproved": true
+                }
+                """
+            );
+        }
+
+        [Test]
+        public async Task It_returns_the_retriable_conflict_contract() =>
+            await AssertLockConflictContract(_response);
+
+        [Test]
+        public void It_reads_and_provisions_nothing() => _dependencyCalls.Should().BeEmpty();
     }
 
     // Instance per test case so each test gets its own fakes: NUnit otherwise shares one fixture
@@ -5880,26 +6234,22 @@ public class ApiClientModuleTests
     }
 
     /// <summary>
-    /// The complete 400 body a duplicate API client name answers, on both create and update.
+    /// The complete 409 body a duplicate API client name answers, on both create and update.
     /// </summary>
     protected static async Task AssertDuplicateApiClientNameContract(HttpResponseMessage response)
     {
-        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        response.StatusCode.Should().Be(HttpStatusCode.Conflict);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
         JsonNode actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
         JsonNode expectedResponse = JsonNode.Parse(
             """
             {
-              "detail": "Data validation failed. See 'validationErrors' for details.",
-              "type": "urn:ed-fi:management-api:bad-request:data",
-              "title": "Data Validation Failed",
-              "status": 400,
+              "detail": "An API client with this name already exists for the application.",
+              "type": "urn:ed-fi:management-api:conflict",
+              "title": "Conflict",
+              "status": 409,
               "correlationId": "{correlationId}",
-              "validationErrors": {
-                "Name": [
-                  "An API client with this name already exists for the application."
-                ]
-              },
+              "validationErrors": {},
               "errors": []
             }
             """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
@@ -5984,7 +6334,7 @@ public class ApiClientModuleTests
         public void TearDownInsertResponse() => _insertResponse?.Dispose();
 
         [Test]
-        public async Task It_returns_the_data_validation_contract() =>
+        public async Task It_returns_the_duplicate_name_conflict() =>
             await AssertDuplicateApiClientNameContract(_insertResponse);
 
         [Test]
@@ -6040,7 +6390,7 @@ public class ApiClientModuleTests
         }
 
         [Test]
-        public async Task It_returns_the_data_validation_contract() =>
+        public async Task It_returns_the_duplicate_name_conflict() =>
             await AssertDuplicateApiClientNameContract(_insertResponse);
 
         [Test]
@@ -6357,7 +6707,7 @@ public class ApiClientModuleTests
         }
 
         [Test]
-        public async Task It_returns_the_data_validation_contract() =>
+        public async Task It_returns_the_duplicate_name_conflict() =>
             await AssertDuplicateApiClientNameContract(_insertResponse);
 
         [Test]
@@ -6568,7 +6918,7 @@ public class ApiClientModuleTests
         }
 
         [Test]
-        public async Task It_returns_the_data_validation_contract() =>
+        public async Task It_returns_the_duplicate_name_conflict() =>
             await AssertDuplicateApiClientNameContract(_updateResponse);
 
         [Test]
@@ -6702,15 +7052,15 @@ public class ApiClientModuleTests
         }
 
         [Test]
-        public async Task It_returns_the_data_validation_contract() =>
+        public async Task It_returns_the_duplicate_name_conflict() =>
             await AssertDuplicateApiClientNameContract(_updateResponse);
 
         [Test]
-        public void It_applies_the_requested_name_to_the_provider_first()
+        public void It_updates_the_provider_first_with_the_Application_name()
         {
             _providerUpdates.Should().HaveCount(2);
             _providerUpdates[0].ClientUuid.Should().Be(_existingUuid.ToString());
-            _providerUpdates[0].DisplayName.Should().Be("Updated");
+            _providerUpdates[0].DisplayName.Should().Be("Test Application");
         }
 
         [Test]
@@ -6718,7 +7068,7 @@ public class ApiClientModuleTests
         {
             _providerUpdates.Should().HaveCount(2);
             _providerUpdates[1].ClientUuid.Should().Be(_updatedUuid.ToString());
-            _providerUpdates[1].DisplayName.Should().Be("Test");
+            _providerUpdates[1].DisplayName.Should().Be("Test Application");
             _providerUpdates[1].DataStoreIds.Should().Equal(1);
             _providerUpdates[1].IsApproved.Should().BeTrue();
         }

@@ -47,7 +47,11 @@ Describe "Story 00 bootstrap" {
         $claimsSourceRoot = Join-Path $script:sourceRepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend"
         $claimsTargetRoot = Join-Path $repoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend"
         New-Item -ItemType Directory -Path $claimsTargetRoot -Force | Out-Null
-        Copy-Item -LiteralPath (Join-Path $claimsSourceRoot "Claims") -Destination $claimsTargetRoot -Recurse
+        $bundledClaimsRelativePath = "src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/Standards"
+        $bundledClaimsTargetRoot = Join-Path $repoRoot $bundledClaimsRelativePath
+        New-Item -ItemType Directory -Path $bundledClaimsTargetRoot -Force | Out-Null
+        Get-ChildItem -LiteralPath (Join-Path $script:sourceRepoRoot $bundledClaimsRelativePath) -Directory |
+            Copy-Item -Destination $bundledClaimsTargetRoot -Recurse
         Copy-Item -LiteralPath (Join-Path $claimsSourceRoot "Deploy") -Destination $claimsTargetRoot -Recurse
 
         # Copy the test-owned E2E claims fragments that Initialize-E2EClaimsWorkspace stages.
@@ -928,7 +932,7 @@ exit $ExitCode
             # failure at bootstrap. The runtime claims-ready gate stays authoritative for full composition.
             Import-Module (Join-Path $script:sourceDockerComposeRoot "bootstrap-schema-catalog.psm1") -Force
             $tpdm = Get-StandardKnownExtensionInfo -ProjectName "TPDM"
-            $claimsPath = Join-Path $script:sourceRepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds52/Claims.json"
+            $claimsPath = Join-Path $script:sourceRepoRoot "src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds52/Claims.json"
             $hierarchy = @((Get-Content -LiteralPath $claimsPath -Raw | ConvertFrom-Json).claimsHierarchy)
 
             @($tpdm.VerificationChecks).Count | Should -BeGreaterThan 0

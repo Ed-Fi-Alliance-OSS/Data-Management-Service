@@ -175,6 +175,42 @@ function Invoke-CdcRunbookScript {
     return $result
 }
 
+# Persist before assertions: even a well-formed status response can be unhealthy.
+# CLI status does not expose raw connector/task/snapshot states; its combined
+# runtime component and fixed diagnostic codes are the available evidence.
+function Save-CdcRunbookStatusObservation {
+    param([Collections.IDictionary] $Output)
+    if (-not (Get-Variable runbookOperation -Scope Script -ErrorAction SilentlyContinue)) { return }
+    try {
+        . (Join-Path $PSScriptRoot '../../ci/cdc-runbook-diagnostics.ps1')
+        $value = [ordered]@{ Operation = $Output['operation']; DiagnosticCodes = @(); ControllerFailureCodes = @() }
+        $data = $Output['data']
+        if ($data -is [Collections.IDictionary] -and $data['targets'] -is [array] -and $data['targets'].Count -gt 0) {
+            $target = $data['targets'][0]
+            if ($target -is [Collections.IDictionary] -and $target['status'] -is [Collections.IDictionary]) {
+                $status = $target['status']
+                if ($status['connectorRuntime'] -is [Collections.IDictionary]) {
+                    $value.ConnectorRuntimeState = $status['connectorRuntime']['state']
+                    $value.ConnectorRuntimeCategory = $status['connectorRuntime']['category']
+                }
+                $value.DiagnosticCodes = @($status['diagnostics'] | Where-Object {
+                    $_ -is [Collections.IDictionary] -and $_['code'] -is [string]
+                } | ForEach-Object { $_['code'] })
+            }
+        }
+        # The command result aggregates the target's deployment failures.
+        $value.ControllerFailureCodes = @($Output['diagnostics'] | Where-Object {
+            $_ -is [Collections.IDictionary] -and $_['component'] -is [string] -and $_['failure'] -is [string]
+        } | ForEach-Object { $_['component'] + '/' + $_['failure'] })
+        $script:runbookOperation.StatusObservation = ConvertTo-CdcRunbookStatusDiagnostic $value
+        Save-CdcRunbookProgress
+    } catch {
+        # Collection errors must not replace the original status assertion.
+        $script:runbookProgress.CollectionFailed = $true
+        Save-CdcRunbookProgress
+    }
+}
+
 # Live fixture progress is private input to the allowlisted qualification exporter.
 # Persist before invoking work so a killed child still has an attributable operation.
 function Save-CdcRunbookProgress {

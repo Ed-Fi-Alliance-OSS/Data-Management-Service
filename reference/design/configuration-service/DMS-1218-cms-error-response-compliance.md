@@ -185,7 +185,9 @@ Classifications: **True contradiction**, **Ambiguity**, **Stale baseline**, **In
 
 **ApiClient deletion (fifth review, INV-64).** A provider client this workflow deletes stays deleted: the original secret is unrecoverable (OpenIddict stores only a hash; a Keycloak secret dies with its client), so a substitute client could never restore service and would only mint an active orphaned credential whose placeholder secret is public source code. The provider delete result is handled exhaustively exactly as in Application deletion, and on any provider failure the database is untouched. The database delete's `FailureNotFound` is authoritative absence — both relational repositories return it from a tenant-scoped existence precheck inside their delete transaction — and keeps the 404 contract with no provider-side reconciliation. A `FailureUnknown` or thrown database outcome is resolved under the held aggregate lock with the row-locking `GetApiClientResolutionState`: proven row absence means the ambiguous delete committed (**204**); a surviving row is kept as the durable retry marker behind a sanitized **500** (the retried delete treats the already-removed provider client as idempotent cleanup and converges); an unresolvable or thrown resolution is a sanitized **500** with the lock still released. `SyncApiClientUuid` and `HasApiClientUuidReference` no longer participate in deletion; they remain the update workflows' guarded reconciliation facilities.
 
-**OAuth.** Self-contained (OpenIddict) authentication failures use the distinct, service-owned `TokenResult.FailureAuthentication(Error, ErrorDescription)` → `FailureResults.Authentication` path (`invalid_client` for unknown or disabled clients, `unauthorized_client` for an invalid secret); untrusted Keycloak/provider/transport content still goes through the strict parser above (INV-46).
+**OAuth.** Self-contained (OpenIddict) authentication failures use the distinct, service-owned `TokenResult.FailureAuthentication(Error, ErrorDescription)` → `FailureResults.Authentication` path, which answers `invalid_client` with the shared description for an unknown client, a wrong secret and an unapproved client alike; untrusted Keycloak/provider/transport content still goes through the strict parser above (INV-46). **[Corrected 2026-10-26, DMS-1490]** — INV-46 below records the contract as it was then, with `unauthorized_client` for an invalid secret. DMS-1490 replaced that with `invalid_client` (RFC 6749 §5.2), so the error code no longer tells an existing client id from an absent one. Under Keycloak, a `401` whose `error` is `invalid_client` or `unauthorized_client` gets that same service-owned answer instead of being parsed; every other Keycloak answer keeps the parser.
+
+> **Superseded by [DMS-1491](https://edfi.atlassian.net/browse/DMS-1491):** `/connect/token` answers every failure in the RFC 6749 section 5.2 OAuth error format, `FailureResults.Authentication` and the other token-only `FailureResults` helpers are removed, and a failed client authentication is `invalid_client` whatever code the token manager reports. See `reference/design/configuration-service/CS-AUTH.md` (`/connect/token` failures).
 
 ---
 
@@ -497,6 +499,8 @@ Existing method signatures preserved (additive overloads only).
 ---
 
 ## 16. OAuth/OIDC error strategy and interoperability risk
+
+> **Superseded by [DMS-1491](https://edfi.atlassian.net/browse/DMS-1491):** INV-16 is reversed: `/connect/token` answers in the `{error,error_description}` format of RFC 6749 section 5.2, as `/connect/revoke` and `/connect/introspect` do. See `reference/design/configuration-service/CS-AUTH.md` (`/connect/token` failures).
 
 **[ARCH/D-04] Decision: convert all CMS-generated OAuth/OIDC non-success responses to the Ed-Fi contract.** No product exception exists, so the ticket's "or documented exception" branch does not apply.
 

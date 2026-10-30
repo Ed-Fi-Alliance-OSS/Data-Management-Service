@@ -14,6 +14,7 @@ using EdFi.DmsConfigurationService.Backend.Mssql.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.Claims;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -45,7 +46,7 @@ public class ClaimsDataLoaderTests : DatabaseTestBase
 
     private static int LoadEmbeddedClaimSetCount()
     {
-        var assembly = typeof(ClaimsProvider).Assembly;
+        var assembly = typeof(BundledClaimsProvider).Assembly;
         var resourceName = $"{assembly.GetName().Name}.Claims.Standards.ds52.Claims.json";
         using var stream =
             assembly.GetManifestResourceStream(resourceName)

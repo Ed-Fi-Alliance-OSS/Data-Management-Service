@@ -117,7 +117,11 @@ function Get-EnvironmentValueMap {
             continue
         }
 
-        $key = $line.Substring(0, $separatorIndex).Trim()
+        # Compose accepts an optional `export ` prefix, so the key is stored without it, as
+        # ReadValuesFromEnvFile stores it; a later declaration of the same key still wins.
+        # Assert-UnambiguousProtectedDeclaration refuses a file where that collapse could change a
+        # protected value.
+        $key = [regex]::Replace($line.Substring(0, $separatorIndex).Trim(), '^export[ \t]+', '')
         $environmentValues[$key] = $line.Substring($separatorIndex + 1).Trim()
     }
 
@@ -325,6 +329,7 @@ $environmentFilePath = Resolve-DatabaseEngineEnvironmentFile `
     -DockerComposeRoot $PSScriptRoot
 
 $environmentValues = Get-EnvironmentValueMap $environmentFilePath
+Assert-UnambiguousProtectedDeclaration -EnvironmentFilePath $environmentFilePath -EnvironmentValues $environmentValues
 # Fixed container name for the single-engine MSSQL stack (mirrors the "dms-mssql" literal used
 # by start-local-dms.ps1's Wait-MssqlReady call site); -PostgresContainerName stays parameterized
 # for backward compatibility with existing callers.

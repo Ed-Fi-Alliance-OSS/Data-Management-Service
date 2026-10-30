@@ -1030,6 +1030,9 @@ hardened **before** Keycloak delegation exists (so Keycloak lands behind D-05, n
   form credentials) → form rules; hint `bogus`/empty → `None`; D-17 pipeline fixtures (manager
   throws → 500 OAuth JSON and logged as failed; malformed multipart → 400 OAuth JSON;
   `/connect/token` still Ed-Fi for both).
+
+  > **Superseded by [DMS-1491](https://edfi.atlassian.net/browse/DMS-1491):** `/connect/token` now answers both in the OAuth format as well. See `CS-AUTH.md` (`/connect/token` failures).
+
 - E2E, new `Revocation.feature` (Q-05, resolved), untagged so it runs on **both** providers:
   missing token → 400 OAuth; mixed → 400; no credentials → 400 `invalid_client`; wrong Basic
   secret → 401 with `WWW-Authenticate`; owner revoke authenticated with **Basic** → 200 and
@@ -1565,6 +1568,8 @@ it, with `DMS_CONFIG_DATASTORE=mssql`.
 | AC6 Keycloak mapping | §9.1 evidence on 26.1.4 and 26.7.5 (P1.1); the characterization re-ran green on 26.1.4 in this run; manager tests keyed on `OwnershipMismatchDescription = "Unmatching clients"` and the observed codes, including a fixture pinning the production constant; E2E keycloak lanes: owner revoke (observer `active:false`), cross-client and public clients (observer `active:true`) |
 | AC7 startup and runtime | `TokenRevocationStartupTests` in the frontend suite: all three provider/engine shapes boot; removed registration and throwing factory refuse startup with the D-12 messages, no inner exception, no exception attached to the critical log, no provider connection; a `503` leaves the host serving; a late construction failure is a `500` without the factory's text. Release note amended in P4.1 (`docs/changelog/8.1.0.md`) |
 | AC8 verification and docs | Disclosure fixtures (D-15 table) in both unit suites and the characterization diagnostics; both databases (integration, MSSQL lanes) and both identity providers (all four E2E lanes); `CS-AUTH.md`, `OWASP-AUTH-COVERAGE.md`, `KEYCLOAK-SETUP.md`, the design index and the changelog updated; the token-type matrix in `CS-AUTH.md` marks offline tokens untested and Keycloak refresh-token revocation as characterized directly, not through CMS (L-08); image ids and SHAs above |
+
+> **Superseded by [DMS-1491](https://edfi.atlassian.net/browse/DMS-1491):** the AC4 row's "`/connect/token` keeps the Ed-Fi contract" no longer holds: `/connect/token` answers every failure in the OAuth format. See `CS-AUTH.md` (`/connect/token` failures).
 
 #### 9.2.6 Cleanup
 

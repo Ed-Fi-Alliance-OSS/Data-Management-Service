@@ -3,15 +3,17 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net;
+using System.Text;
 using System.Text.Json;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.OAuth;
-using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
+using Microsoft.Net.Http.Headers;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
@@ -39,10 +41,12 @@ public class TokenEndpointModule : IEndpointModule
         endpoints
             .MapPost($"{routePattern}/oauth/token", HandleFormData)
             .Accepts<TokenRequest>(contentType: "application/x-www-form-urlencoded")
+            .WithMetadata(TokenEndpointMetadata.Instance)
             .DisableAntiforgery();
         endpoints
             .MapPost($"{routePattern}/oauth/token", HandleJsonData)
             .Accepts<TokenRequest>(contentType: "application/json")
+            .WithMetadata(TokenEndpointMetadata.Instance)
             .DisableAntiforgery();
         endpoints.MapMethodNotAllowed($"{routePattern}/oauth/token", HttpMethods.Post);
     }
@@ -60,7 +64,22 @@ public class TokenEndpointModule : IEndpointModule
         TokenRequest tokenRequest = new();
         if (httpContext.Request.HasFormContentType)
         {
-            var form = await httpContext.Request.ReadFormAsync();
+            IFormCollection form;
+            try
+            {
+                form = await httpContext.Request.ReadFormAsync();
+            }
+            catch (InvalidDataException)
+            {
+                // Invalid decoding and form limits are request errors. The parser's exception
+                // can contain caller input, so neither return nor log its message.
+                await WriteBadRequest(
+                    httpContext,
+                    appSettings,
+                    "The token request body must be valid form data"
+                );
+                return;
+            }
 
             // RFC 6749 section 3.2: request parameters must not be included more than once.
             if (Array.Exists(_singleValuedFormParameters, name => form[name].Count > 1))
@@ -68,7 +87,7 @@ public class TokenEndpointModule : IEndpointModule
                 await WriteBadRequest(
                     httpContext,
                     appSettings,
-                    "A request parameter was included more than once"
+                    OAuthErrorResponse.DuplicateParameterDescription
                 );
                 return;
             }
@@ -100,13 +119,17 @@ public class TokenEndpointModule : IEndpointModule
     )
     {
         var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
-        httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
-        // Matches the media type of the manager's problem responses, which are UTF-8 StringContent.
-        httpContext.Response.ContentType = "application/problem+json; charset=utf-8";
-        await httpContext.Response.WriteAsync(
-            FailureResponse.ForBadRequest(detail, traceId, [], []).ToString()
+        using var response = OAuthErrorResponse.Create(
+            System.Net.HttpStatusCode.BadRequest,
+            "invalid_request",
+            detail,
+            traceId
         );
+        await TokenErrorResponseWriter.WriteAsync(httpContext, response);
     }
+
+    private const string MalformedJsonDescription =
+        "The token request body must be a valid JSON object with string-valued fields";
 
     internal static async Task HandleJsonData(
         HttpContext httpContext,
@@ -117,29 +140,59 @@ public class TokenEndpointModule : IEndpointModule
         IHttpClientFactory httpClientFactory
     )
     {
+        // Validate only charset resolution here. ReadFromJsonAsync wraps an unsupported encoding
+        // in InvalidOperationException, which must not turn ordinary input errors into server failures.
+        // Keep body reads outside this guard so I/O, cancellation, size limits and server faults propagate.
+        if (
+            MediaTypeHeaderValue.TryParse(httpContext.Request.ContentType, out var contentType)
+            && contentType.Charset.HasValue
+        )
+        {
+            try
+            {
+                _ = Encoding.GetEncoding(contentType.Charset.Value);
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+            {
+                await WriteBadRequest(
+                    httpContext,
+                    appSettings,
+                    "The token request body declares an unsupported JSON charset"
+                );
+                return;
+            }
+        }
+
         // Manually read the JSON body so the framework's binder never sees it: its parse errors
         // quote the body, and the framework logs them (or throws them into the error log).
-        TokenRequest? tokenRequest = null;
+        TokenRequest tokenRequest;
         try
         {
-            tokenRequest = await httpContext.Request.ReadFromJsonAsync<TokenRequest>(
-                jsonOptions.Value.SerializerOptions
-            );
+            if (
+                await httpContext.Request.ReadFromJsonAsync<TokenRequest>(jsonOptions.Value.SerializerOptions)
+                is not TokenRequest parsedRequest
+            )
+            {
+                await WriteMalformedJson();
+                return;
+            }
+            tokenRequest = parsedRequest;
         }
         catch (JsonException)
         {
             // Deliberately not logged or passed on: the exception message can contain body content.
-        }
-
-        if (tokenRequest is null)
-        {
-            var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
-            logger.LogDebug("Token request body is not valid JSON - {TraceId}", traceId.Value);
-            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
+            await WriteMalformedJson();
             return;
         }
 
         await GenerateToken(httpContext, tokenRequest, appSettings, oAuthManager, logger, httpClientFactory);
+
+        async Task WriteMalformedJson()
+        {
+            var traceId = AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings);
+            logger.LogDebug("Token request body is not valid JSON - {TraceId}", traceId.Value);
+            await WriteBadRequest(httpContext, appSettings, MalformedJsonDescription);
+        }
     }
 
     private static async Task GenerateToken(
@@ -157,21 +210,29 @@ public class TokenEndpointModule : IEndpointModule
             traceId.Value
         );
 
-        var client = new HttpClientWrapper(httpClientFactory.CreateClient());
+        using HttpClient upstreamClient = httpClientFactory.CreateClient();
+        // RemoteIpAddress has already passed through trusted forwarded-header processing. Replace,
+        // never append or relay, caller-supplied forwarding values so CMS can isolate source budgets.
+        // CMS must explicitly trust this DMS proxy via its ReverseProxy settings. System-token refresh
+        // uses a separate client and sends no forwarded source, retaining the DMS transport budget.
+        // Unknown public sources share a fixed address instead of spending the private refresh budget.
+        // Clear factory-configured defaults too.
+        upstreamClient.DefaultRequestHeaders.Remove("X-Forwarded-For");
+        IPAddress source = httpContext.Connection.RemoteIpAddress ?? IPAddress.Any;
+        upstreamClient.DefaultRequestHeaders.Add(
+            "X-Forwarded-For",
+            (source.IsIPv4MappedToIPv6 ? source.MapToIPv4() : source).ToString()
+        );
+        var client = new HttpClientWrapper(upstreamClient);
 
         // null when the request carried no Authorization header at all, which the manager must
         // tell apart from a header that is present but empty.
-        string? authHeader = httpContext.Request.Headers.TryGetValue(
-            "Authorization",
-            out var authHeaderValues
-        )
-            ? authHeaderValues.ToString()
-            : null;
-
-        var response = await oAuthManager.GetAccessTokenAsync(
+        using var response = await oAuthManager.GetAccessTokenAsync(
             client,
             tokenRequest.grant_type ?? string.Empty,
-            authHeader,
+            httpContext.Request.Headers.TryGetValue("Authorization", out var authHeaderValues)
+                ? authHeaderValues.ToString()
+                : null,
             new TokenRequestCredentials(tokenRequest.client_id, tokenRequest.client_secret),
             appSettings.Value.AuthenticationService,
             traceId
@@ -185,12 +246,7 @@ public class TokenEndpointModule : IEndpointModule
                 traceId.Value
             );
         }
-        httpContext.Response.StatusCode = (int)response.StatusCode;
-        // The manager labels its own problem responses application/problem+json, and a relayed
-        // upstream success carries the identity provider's JSON media type; both are kept.
-        httpContext.Response.ContentType =
-            response.Content.Headers.ContentType?.ToString() ?? "application/json; charset=utf-8";
-        await response.Content.CopyToAsync(httpContext.Response.Body);
+        await TokenErrorResponseWriter.WriteAsync(httpContext, response);
     }
 }
 

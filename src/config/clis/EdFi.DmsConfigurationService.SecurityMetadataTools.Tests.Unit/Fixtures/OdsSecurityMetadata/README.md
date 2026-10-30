@@ -96,7 +96,9 @@ This matches `ProjectEndpointNameExtensions.GetResourceClaimUri` in
 `src/dms/core/EdFi.DataManagementService.Core/Utilities/`: base URI, project
 endpoint name, then resource name. `ClaimSetExtensions.FindMatchingResourceClaims`
 in the same directory compares the complete URI. The independent standard-name
-check uses `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds52/Claims.json`;
+check uses `src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds52/Claims.json`;
+this is the shared assembly's authoritative base consumed by CMS and the tool. The
+shared schema lives alongside `Standards` at `Claims/JsonSchemaForClaims.json`;
 these are review inputs, not new runtime dependencies or a compatibility catalog.
 Only literal spaces and hyphens are removed from source set names. Remaining
 whitespace (including nonbreaking spaces), controls, empty normalized names, and

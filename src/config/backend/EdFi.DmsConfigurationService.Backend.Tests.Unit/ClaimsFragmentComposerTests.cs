@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.TestHelpers;
+using EdFi.DmsConfigurationService.Claims;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -533,7 +534,7 @@ public class ClaimsFragmentComposerTests
     // The shipped claims for a standard, loaded from the embedded Claims.json resource
     private static ClaimsDocument EmbeddedBaseDocument(string standardFolder)
     {
-        Assembly assembly = typeof(ClaimsProvider).Assembly;
+        Assembly assembly = typeof(BundledClaimsProvider).Assembly;
         string resourceName = $"{assembly.GetName().Name}.Claims.Standards.{standardFolder}.Claims.json";
 
         using Stream stream =

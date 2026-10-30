@@ -27,6 +27,55 @@ function ConvertTo-CdcRunbookWorkerDiagnostic {
     return $safe
 }
 
+# Status output contains identities and prose as well as enum evidence. Retain only
+# fixed classifications, and apply the same allowlist again at artifact export.
+function ConvertTo-CdcRunbookStatusDiagnostic {
+    param([Collections.IDictionary] $Value)
+    $safe = [ordered]@{}
+    # CLI enum values are PascalCase; diagnostic codes are lower-camel strings.
+    $blockingCategories = @(
+        'None', 'BindingMissing', 'BindingMismatch', 'SourceMismatch', 'SourceHistoryLost',
+        'ProjectionNonOperational', 'ProviderSetupInvalid', 'KafkaPolicyInvalid',
+        'ConnectOffsetStoreInvalid', 'ConnectorConfigInvalid', 'ConnectorNotRunning',
+        'SnapshotIncomplete', 'ProjectionBacklog', 'ProviderHistoryUnknown',
+        'ProviderBarrierNotReached', 'LagExceeded', 'StatusObservationUnavailable'
+    )
+    if ($Value['Operation'] -is [string] -and $Value['Operation'] -cin @('status', 'watch')) {
+        $safe.Operation = $Value.Operation
+    }
+    if ($Value['ConnectorRuntimeState'] -is [string] -and
+        $Value['ConnectorRuntimeState'] -cin @('Satisfied', 'NotSatisfied', 'Unknown', 'NotApplicable')) {
+        $safe.ConnectorRuntimeState = $Value.ConnectorRuntimeState
+    }
+    if ($Value['ConnectorRuntimeCategory'] -is [string] -and $Value['ConnectorRuntimeCategory'] -cin $blockingCategories) {
+        $safe.ConnectorRuntimeCategory = $Value.ConnectorRuntimeCategory
+    }
+    $diagnosticCodes = @(
+        'none', 'bindingMissing', 'bindingMismatch', 'sourceMismatch', 'sourceHistoryLost',
+        'projectionNonOperational', 'providerSetupInvalid', 'kafkaPolicyInvalid',
+        'connectOffsetStoreInvalid', 'connectorConfigInvalid', 'connectorNotRunning',
+        'snapshotIncomplete', 'projectionBacklog', 'providerHistoryUnknown',
+        'providerBarrierNotReached', 'lagExceeded', 'statusObservationUnavailable',
+        'missingRequiredField', 'invalidEnumValue', 'malformedPayload', 'invalidContractVersion',
+        'futureUtcTimestamp', 'localStateUnavailable', 'malformedProof', 'invalidOperationId',
+        'invalidTimestamp', 'bindingIdentityMismatch', 'verificationIncomplete', 'inventoryIncomplete',
+        'unexpectedArtifact', 'duplicateArtifact', 'artifactNameMismatch', 'artifactNotRemoved',
+        'unsafeEvidence', 'operationMismatch', 'targetMismatch', 'providerMismatch', 'invalidOrdering',
+        'invalidObservation', 'malformedObservation', 'staleObservation', 'futureObservedAt', 'diagnosticsTruncated'
+    )
+    if ($Value['DiagnosticCodes'] -is [array]) {
+        $safe.DiagnosticCodes = @($Value.DiagnosticCodes | Where-Object {
+            $_ -is [string] -and $_ -cin $diagnosticCodes
+        } | Select-Object -Unique -First 16)
+    }
+    if ($Value['ControllerFailureCodes'] -is [array]) {
+        $safe.ControllerFailureCodes = @($Value.ControllerFailureCodes | Where-Object {
+            $_ -is [string] -and $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed)\z'
+        } | Select-Object -Unique -First 16)
+    }
+    return $safe
+}
+
 function ConvertTo-CdcRunbookDiagnostic {
     param([Collections.IDictionary] $Value, [switch] $Child)
     $safe = [ordered]@{}
@@ -83,6 +132,9 @@ function ConvertTo-CdcRunbookDiagnostic {
             $_ -is [string] -and $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed)\z'
         } | Select-Object -Unique -First 16)
         if ($codes.Count -gt 0) { $safe.ControllerFailureCodes = $codes }
+    }
+    if ($Value['StatusObservation'] -is [Collections.IDictionary]) {
+        $safe.StatusObservation = ConvertTo-CdcRunbookStatusDiagnostic $Value.StatusObservation
     }
     if (-not $Child -and $Value.Contains('ChildFailures')) {
         $safe.ChildFailures = @($Value.ChildFailures | Select-Object -First 8 | Where-Object {

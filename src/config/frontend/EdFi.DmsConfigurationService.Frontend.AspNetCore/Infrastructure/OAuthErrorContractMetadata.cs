@@ -6,12 +6,14 @@
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 /// <summary>
-/// Endpoint metadata marking a route whose exception responses follow the RFC 6749 §5.2 error format
-/// instead of the Ed-Fi problem-details contract. <see cref="GlobalExceptionHandler"/> reads it from the
-/// original endpoint and writes the response with <see cref="OAuthErrorResponseWriter"/>. Only
-/// <c>/connect/revoke</c> and <c>/connect/introspect</c> carry it (DMS-1327 D-17); every other route keeps
-/// the Ed-Fi contract. Each route has its own instance, which names the operation in the fixed
-/// <c>server_error</c> description an unexpected fault is answered with.
+/// Endpoint metadata marking a route whose exception responses and rate-limit rejections follow the
+/// RFC 6749 §5.2 error format instead of the Ed-Fi problem-details contract.
+/// <see cref="GlobalExceptionHandler"/> reads it from the original endpoint and
+/// <see cref="ConnectRateLimitRejection"/> from the matched endpoint, and both write the response with
+/// <see cref="OAuthErrorResponseWriter"/>. Only <c>/connect/token</c>, <c>/connect/revoke</c> and
+/// <c>/connect/introspect</c> carry it (DMS-1327 D-17); every other route keeps the Ed-Fi contract.
+/// Each route has its own instance, which names the operation in the fixed <c>server_error</c>
+/// description an unexpected fault is answered with.
 /// </summary>
 internal sealed class OAuthErrorContractMetadata
 {
@@ -21,6 +23,10 @@ internal sealed class OAuthErrorContractMetadata
 
     public static readonly OAuthErrorContractMetadata Introspection = new(
         "The introspection request could not be processed."
+    );
+
+    public static readonly OAuthErrorContractMetadata Token = new(
+        "The token request could not be processed."
     );
 
     private OAuthErrorContractMetadata(string serverErrorDescription) =>

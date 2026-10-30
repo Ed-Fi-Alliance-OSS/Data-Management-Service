@@ -1,0 +1,9 @@
+{
+  "name": "HybridEmpty",
+  "resourceClaims": [
+    {
+      "name": "ed-fi/students",
+      "authorizationStrategyOverridesForCRUD": []
+    }
+  ]
+}

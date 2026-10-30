@@ -325,7 +325,7 @@ The following parameters apply to the Configuration Service (`appsettings.json`)
 | IdentityProvider             | Specifies the authentication provider. Valid values are `keycloak` and `self-contained`. Default: `self-contained`                                                                                        |
 | MultiTenancy                 | When `true`, enables multi-tenancy support in the Configuration Service. Default: `false`                                                                                                                 |
 | PathBase                     | Segment of the URL to use as base for all requests.                                                                                                                                                       |
-| TokenRequestTimeoutSeconds   | Timeout in seconds for token requests. Default: `30`                                                                                                                                                      |
+| TokenRequestTimeoutSeconds   | Timeout budget in seconds for calls to Keycloak in `keycloak` mode. `/connect/token` gets one budget for the whole Keycloak call. `/connect/introspect` gets one budget for Keycloak's response headers and another for reading the body, so it can wait up to twice the value. `/connect/revoke` gets the same two plus one for the admin-API client-type lookup that precedes the revocation call, so it can wait up to three times the value. Default: `30` |
 | ReverseProxy:UseForwardedHeaders | When `true`, the application respects reverse proxy `X-Forwarded-*` headers for URL generation, but only from trusted sources configured in `ReverseProxy`. Default: `false`. See [Reverse Proxy and Forwarded Headers](#reverse-proxy-and-forwarded-headers). |
 | ReverseProxy:KnownProxies    | Comma-separated list of exact trusted reverse-proxy IP addresses (IPv4 or IPv6) whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.5,10.0.0.6`                                                  |
 | ReverseProxy:KnownNetworks   | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.0/8,172.16.0.0/12`                                                  |
@@ -399,8 +399,8 @@ Behavior:
   are trusted (the ASP.NET Core default). This is safe, but a proxy container running on
   another host is not trusted unless you configure its address explicitly.
 - `ReverseProxy:UseForwardedHeaders=true` with trusted sources: forwarded headers are honored only
-  when the connecting proxy matches `KnownProxies` or `KnownNetworks`; otherwise they are
-  ignored.
+  when the connecting proxy is a loopback address or matches `KnownProxies` or `KnownNetworks`;
+  otherwise they are ignored.
 
 Invalid IP or CIDR values cause the service to fail startup with a configuration error.
 
@@ -433,6 +433,56 @@ REVERSE_PROXY_KNOWN_NETWORKS=10.20.30.0/24
 For the Configuration Service, use the `CONFIGURATION_SERVICE_`-prefixed variables
 (`CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS`, `CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_PROXIES`,
 `CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_NETWORKS`).
+Standalone CMS keeps the default `false` and honors these variables as before. The DMS launchers
+add `dms-cms-proxy.yml` when their Compose set includes both DMS and CMS. That overlay enables
+forwarding and adds an exactly trusted DMS peer independently of the standalone flag. See
+[ConnectRateLimit](#connectratelimit) for the paired topology.
+
+### Security response headers
+
+Both services send these headers on every response.
+The values are fixed and are not configurable.
+
+| Header | Value |
+| --- | --- |
+| `X-Content-Type-Options` | `nosniff` |
+| `Referrer-Policy` | `no-referrer` |
+| `X-Frame-Options` | `DENY` |
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'` |
+
+`Strict-Transport-Security: max-age=31536000` is sent only when the request is HTTPS as the application sees it.
+That means TLS terminated by Kestrel, or `X-Forwarded-Proto: https` from a proxy the application trusts once `ReverseProxy:UseForwardedHeaders` is `true`: a loopback proxy, or one listed in `KnownProxies` or `KnownNetworks`.
+It is never sent for `localhost`, `127.0.0.1` or `[::1]`, or when the hosting environment is `Development` (`ASPNETCORE_ENVIRONMENT=Development`).
+A browser keeps the policy for a year and applies it to every port on the hostname, so on a developer machine it would force HTTPS onto unrelated local services.
+It carries no `includeSubDomains` or `preload`, because those are decisions for whoever owns the domain, so they belong at the edge.
+When TLS terminates at a proxy and forwarded headers are not enabled, the application does not send HSTS and the proxy should.
+
+`Cache-Control: no-store` is sent on:
+
+- Non-2xx responses, except 304, in both services.
+- Every DMS data API response, whatever its status: the resource and descriptor endpoints with their `deletes` and `keyChanges` routes, and Change Queries `availableChangeVersions`.
+- The token endpoints, together with `Pragma: no-cache`: DMS `/oauth/token` and every Configuration Service `/connect/*` endpoint.
+- Authenticated Configuration Service endpoints.
+- The Configuration Service discovery document, `/.well-known/openid-configuration`.
+- DMS `/oauth/token_info`.
+- DMS claimset management endpoints (`view-claimsets` and `reload-claimsets`).
+- The DMS DocumentCache status endpoint, `/health/document-cache`, when `DataManagement:DocumentCache:Status:RequiredRole` maps it.
+- DMS identity operations, as described in [IDENTITY-MANAGEMENT.md](IDENTITY-MANAGEMENT.md).
+
+DMS data API responses still carry their `ETag`, so a client that keeps it can revalidate with `If-None-Match` and receive `304 Not Modified`, but no browser or other HTTP cache stores the records.
+Public documents, such as the DMS discovery and metadata endpoints and `/health` in both services, carry no `Cache-Control`.
+
+The application cannot see headers a proxy adds.
+A proxy that appends headers, as nginx `add_header` does, sends its fields after the application's instead of replacing them.
+Duplicate `X-Frame-Options`, `Content-Security-Policy` and `Cache-Control` fields resolve to the stricter value.
+For `Strict-Transport-Security`, browsers use only the first field, so behind an appending proxy the application's value wins.
+To apply a different value at the edge, remove the application's header first.
+With nginx, use `proxy_hide_header`, as the review gateway does for HSTS:
+
+```nginx
+proxy_hide_header Strict-Transport-Security;
+add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+```
 
 ## DatabaseOptions
 
@@ -744,6 +794,145 @@ These settings configure the allowed client-secret length range used by Configur
 > run `teardown-local-dms.ps1` and set up again, or drop the Keycloak realm / `dmscs` OpenIddict
 > tables — then start with the new secret.
 
+## ConnectRateLimit
+
+The Configuration Service rate limits its four OAuth endpoints, `POST /connect/token`,
+`/connect/revoke`, `/connect/register` and `/connect/introspect` (route-context suffixes included),
+to slow client-secret guessing and client enumeration. No other endpoint is limited. Two independent
+budgets apply, and a request must fit both:
+
+- **Per source address**, across all four routes. The address is the connection's remote address after
+  [forwarded headers](#reverse-proxy-and-forwarded-headers) from trusted proxies are applied. A native
+  IPv6 address counts against its /64. Requests whose address is unknown share one budget.
+- **Per source address and `client_id` pair**, for `/connect/token`, `/connect/revoke` and authenticated
+  `/connect/introspect` requests, under either identity provider, spent just before the client secret is
+  verified (by Keycloak under `keycloak`).
+  A request rejected earlier (malformed form, unsupported grant type, missing token) does not spend it.
+  For counting, case, accents, character width, kana type and
+  trailing padding are ignored. This conservatively merges common SQL Server lookup aliases on every
+  provider, so distinct PostgreSQL or Keycloak clients with these spellings also share a budget. Authentication receives the
+  original client ID. This comparison does not reproduce every locale-specific SQL Server collation;
+  deployments using other linguistic equivalences must assess those against their client IDs.
+  The budget is spent whether or not the client exists, so a `429` reveals nothing about which clients
+  exist.
+
+Token, revocation and authenticated introspection credentials accept a `client_id` of at most
+1024 UTF-16 code units, including padding, with either Basic or form authentication. Longer IDs
+receive OAuth `invalid_client` on all three routes: `401` with a Basic challenge for Basic
+authentication, `400` otherwise.
+These checks precede client-budget processing or authentication. This bounds client-key processing and
+prevents oversized aliases from obtaining a separate budget. The validation limit also applies when
+rate limiting is disabled.
+
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `Enabled` | `true` | `false` turns all `/connect/*` limiting off. |
+| `SourcePermitLimit` | `120` | Requests per source address in each window. Must be > 0 when enabled. |
+| `ClientPermitLimit` | `30` | Token, revocation and authenticated introspection requests per source address and `client_id` pair in each window. Must be > 0 when enabled. |
+| `WindowSeconds` | `60` | Fixed-window length in seconds. Must be > 0 when enabled. |
+| `RequiredProxyAddress` | empty | When set and limiting is enabled, requires forwarded-header processing and this exact IP in `AppSettings:ReverseProxy:KnownProxies`. Compose sets this to its reserved DMS peer. Leave empty for direct deployments. |
+
+The Docker Compose stacks set these from `CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED`,
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_SOURCE_PERMIT_LIMIT`,
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_CLIENT_PERMIT_LIMIT` and
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_WINDOW_SECONDS`. An invalid value is reported at startup and
+the service answers every request with `500` until it is corrected.
+
+Sizing notes:
+
+- Limits are enforced **per Configuration Service process**. With several replicas behind a load
+  balancer, a caller can reach up to replicas × limit requests per window.
+- Callers behind one NAT still share **one source budget**. A higher `SourcePermitLimit` increases
+  capacity but does not isolate those callers.
+- The Ed-Fi API's `/oauth/token` proxy sends one `X-Forwarded-For` value derived from its trusted
+  connection address, replacing any caller-supplied value. If the connection has no remote address,
+  it sends `0.0.0.0` so those callers share a public budget separate from private system-token refresh.
+  **Before using this proxy with enabled
+  Configuration Service rate limiting**, enable `AppSettings:ReverseProxy:UseForwardedHeaders` on
+  the Configuration Service and set `KnownProxies` to the actual Ed-Fi API proxy addresses (or a network
+  containing only trusted proxies). If the Ed-Fi API itself sits behind an ingress, configure its own
+  [reverse proxy settings](#reverse-proxy-and-forwarded-headers) to trust only that ingress too.
+  System-token refresh sends no forwarded source, so it uses the Ed-Fi API's transport-address budget.
+  Do not allow external peers to originate connections from a trusted proxy's address.
+  Without this configuration, all proxied token requests and system refresh still share one budget:
+  an unauthenticated caller can exhaust the default with 120 requests per minute and block other
+  vendors. Raising that limit alone does not resolve the availability risk. The shipped Compose
+  stacks configure the dedicated link described below. Other deployments must configure their own
+  trusted proxy addresses and should set `RequiredProxyAddress` to detect missing trust at startup.
+  Self-contained CMS logs a startup warning when limiting is enabled, `RequiredProxyAddress` is empty,
+  and forwarding is disabled or no explicit trusted proxy or network is configured. This warning
+  cannot verify that a configured proxy address matches the actual DMS peer.
+- Partitions are held in memory per process. The source budget limits new client keys from each source
+  per window; it does not impose a global memory cap across sources. Idle enabled partitions are
+  removed by the framework. Disabled limiting uses one shared partition per budget.
+- Anyone who knows a client ID can consume its allowance at their source address without knowing the
+  secret. Callers sharing that source (including a NAT or an IPv6 /64) share the client allowance too.
+  Different sources have independent client allowances; public attempts against the Ed-Fi API's
+  Configuration Service client do not consume its private refresh allowance when trusted forwarding
+  is configured as above. No client ID is exempt. Distributed attempts from different sources are
+  limited independently; there is no cross-source client lockout.
+- The defaults come from expected traffic shape, not measured load. Real clients are already capped at
+  15 active tokens (`IdentitySettings:BearerTokenPerClientLimit`) and should reuse them.
+
+The local and published paired stacks use `dms-cms-proxy.yml` to give DMS a dedicated, exactly trusted
+CMS connection. Include it after both service files for manual paired Compose invocations; retain it
+across infrastructure, DMS-only and teardown phases. Defaults:
+
+```dotenv
+DMS_CMS_PROXY_SUBNET=172.30.148.0/29
+DMS_CMS_PROXY_IP=172.30.148.2
+CMS_PROXY_IP=172.30.148.3
+```
+
+Change all three values together if the subnet overlaps an existing network or another running stack.
+Both addresses must be distinct, usable IPv4 addresses in the subnet. Recreate both services and the
+`cms-proxy` network after changing them.
+Additional trusted ingress proxies can be listed in `CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_PROXIES`;
+the reserved DMS peer is always added independently. Keep untrusted workloads off this link.
+
+Standalone CMS omits the overlay and requires no forwarding for direct requests. Keep
+`CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS=false` unless it uses a trusted proxy. The paired
+overlay enables forwarding independently of that flag. A conflicting override fails configuration
+validation when `RequiredProxyAddress` remains set and limiting is enabled. This checks configured
+trust, not reachability. Update routing and the required peer together when changing topology.
+
+An IDE-hosted DMS connecting through a published CMS port bypasses this container link. In that
+workflow, add the actual host/gateway address CMS sees to its exact trusted proxies; the reserved
+container address alone does not attribute those requests. Do not trust the entire bridge network.
+
+### Rejection response
+
+A refused request receives `429 Too Many Requests` with a `Retry-After` header: the limiter's recommended delay rounded up to whole seconds, omitted if the limiter supplies none.
+The body follows the route's own error contract.
+`/connect/token`, `/connect/revoke` and `/connect/introspect` answer in the OAuth error format of RFC 6749 §5.2, served as `application/json`:
+
+```json
+{
+  "error": "temporarily_unavailable",
+  "error_description": "The number of allowed requests has been exceeded. Retry the request later."
+}
+```
+
+`/connect/register` answers with an Ed-Fi problem-details body served as `application/problem+json`, whose `correlationId` is the request's trace identifier:
+
+```json
+{
+  "detail": "The number of allowed requests has been exceeded. Retry the request later.",
+  "type": "urn:ed-fi:management-api:too-many-requests",
+  "title": "Too Many Requests",
+  "status": 429,
+  "correlationId": "0HNCTN1IRQMDG:00000001",
+  "validationErrors": {},
+  "errors": []
+}
+```
+
+[CS-AUTH](../reference/design/configuration-service/CS-AUTH.md#token-endpoints) describes every route's other errors.
+
+The rate-limit `429` of `/connect/token` is distinct from its active-token limit `429`.
+Both carry `temporarily_unavailable`, but the active-token limit's `error_description` is `Too many access tokens have been requested (limit is N). Access tokens should be reused until they expire.`
+The DMS `/oauth/token` proxy tells the two apart by that description.
+
 ## Plugins
 
 Plugins are directories of already-published assemblies that DMS loads at startup and
@@ -1024,7 +1213,7 @@ The `RateLimit` object should have the following parameters.
 
 ### Rejection response
 
-A rejected request receives a `429 Too Many Requests` response with a
+A rejected non-token request receives a `429 Too Many Requests` response with a
 `Retry-After` header and an Ed-Fi problem-details body served as
 `application/problem+json`. `Retry-After` carries the limiter-supplied
 recommended retry delay, rounded up to whole seconds. It is a suggested
@@ -1038,6 +1227,15 @@ present, otherwise from the server-generated trace identifier — the same
 selection, and the same
 [normalization](./LOGGING.md#correlation-id-normalization), the API's other
 error responses use.
+
+For a supported-content-type `POST /oauth/token` endpoint, including qualified
+routes, the limiter instead returns `application/json` with
+`error: temporarily_unavailable` and a fixed `error_description`. The same
+limiter-supplied `Retry-After` rule applies. The normalized correlation ID is in
+`X-Correlation-ID`, percent-encoded with UTF-8; decode it once to find the log
+entry. See the [token error contract](../reference/adr-oauth-token-errors-DMS-1606.md).
+
+Example non-token rejection:
 
 ```json
 {
@@ -1216,10 +1414,11 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 |------------------|------------------------------------------------------------------|------------------------------------------------------|-----------------------------------------------|
 | `AppSettings.IdentityProvider` | Selects the identity provider                                    | `keycloak`                                           | `self-contained`                              |
 | `IdentitySettings.Authority`        | Identity provider issuer. In self-contained mode, also the base URL for every advertised discovery endpoint: omit `AppSettings.PathBase` from this value, and keep DMS `JwtAuthentication.MetadataAddress` on the same origin (scheme, host, and port). DMS `JwtAuthentication.Authority` must exactly match the issuer. | `http://dms-keycloak:8080/realms/edfi` | `http://ed-fi-api-config:8081` |
+| `IdentitySettings.RequireHttpsMetadata` | Default `true`: OIDC discovery and signing-key documents must be fetched over https. Set `false` only when the identity provider is not reachable over an untrusted network, for example a container on the same private Compose network. A Configuration Service whose hosting environment is not `Development` logs a startup warning while the value is `false`. In self-contained mode the Configuration Service validates tokens from its own signing-key snapshot and performs no metadata retrieval, so the setting has no retrieval effect there; it still governs Keycloak mode and still triggers the warning. The Compose files under `eng/docker-compose` (test and demonstration configurations, not for production use) deliberately override this default to `false` for their private-network identity providers through `CONFIGURATION_SERVICE_IDENTITY_REQUIRE_HTTPS`, and the `eng/azure-vm` review stack sets `false` directly; copy that override only where the same condition holds. | `false` (local http Keycloak) | `false` (local http Configuration Service) |
 | `IdentitySettings.EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
 | `IdentitySettings.TokenCleanup.Enabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
 | `IdentitySettings.TokenCleanup.IntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
-| `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of recognized Configuration Service admin scopes. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:management-api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |
+| `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of recognized Configuration Service admin scopes. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and the OAuth error `temporarily_unavailable` (see below); the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |
 | `IdentitySettings.ClientSecretHashingIterations` | Number of PBKDF2-SHA256 iterations used to hash and verify client secrets (self-contained only). Must be greater than zero; startup fails otherwise. Default: `210000`. Set in Docker Compose through `CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS`, which also sets the count `setup-openiddict.ps1` hashes bootstrap client secrets with. | _(not used)_ | `210000` |
 
 > **Before upgrading an existing deployment:** a positive limit takes effect immediately, so an Ed-Fi API client
@@ -1242,9 +1441,15 @@ operator values override the default; a value below 1 disables enforcement for e
 For self-contained deployments running the Ed-Fi Smoke Test Utility, temporarily set
 `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` in the stack's `.env` before
 starting or recreating it: the utility requests a new token for each resource GET and
-exceeds the default limit of 15. Restore the configured limit and recreate the stack
-after the smoke run. The tracked `.env.smoke` and `.env.smoke.ds61` profiles show 15;
-the smoke workflow supplies the `-1` override through the stack-start step's environment.
+exceeds the default limit of 15. A self-contained DMS proxies each of those token requests to
+the Configuration Service's `/connect/token`, so also raise
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_SOURCE_PERMIT_LIMIT` and
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_CLIENT_PERMIT_LIMIT` for the run, or set
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED=false` (see [ConnectRateLimit](#connectratelimit)).
+Restore the configured values and recreate the stack after the smoke run. The tracked
+`.env.smoke` and `.env.smoke.ds61` profiles show the token override of 15 and `/connect/*` rate limits raised to 1000000; the smoke
+workflow supplies the `-1` override and disables the `/connect/*` rate limit through the
+stack-start step's environment.
 
 Waiting for a token to expire is not the only remedy. A caller that still holds a token it no
 longer needs can revoke it at `POST /connect/revoke`, the `revocation_endpoint` advertised in the
@@ -1254,18 +1459,25 @@ tokens should revoke each one as it finishes with it rather than letting it sit 
 This only helps a caller that still has the token string — one that has lost track of its tokens,
 after a crash loop for instance, has to wait for them to expire.
 
-The Configuration Service's `/connect/token` rejects a grant beyond the limit with type
-`urn:ed-fi:management-api:security:authentication:too-many-tokens`; every Configuration Service
-problem type uses the Management API prefix.
+The Configuration Service's `/connect/token` rejects a grant beyond the limit with HTTP 429 in the
+OAuth error format of RFC 6749 section 5.2:
+`{"error":"temporarily_unavailable","error_description":"Too many access tokens have been requested (limit is N). Access tokens should be reused until they expire."}`.
+It no longer answers in problem details, as the rest of the Configuration Service's Management API
+does, because `/connect/token` is an OAuth endpoint.
 
-DMS `/oauth/token` retains its canonical HTTP 429 contract for limited clients: DMS's own type
-`urn:ed-fi:api:security:authentication:too-many-tokens`, title `Too Many Tokens`, and message
+DMS `/oauth/token` returns HTTP 429 as `application/json` with
+`error: temporarily_unavailable` and the following `error_description` for limited clients:
 `Too many access tokens have been requested (limit is {n}). Access tokens should be reused until they expire.`
-DMS parses the Configuration Service response, under either the `urn:ed-fi:management-api:` type
-or the `urn:ed-fi:api:` type an earlier Configuration Service returns, and rebuilds its external
-response as before. Upgrade DMS before, or together with, the Configuration Service: an earlier
-DMS does not recognize the new type and answers a generic 429 of type
-`urn:ed-fi:api:too-many-requests` without the limit message.
+DMS parses the Configuration Service response, under the OAuth body above or under either problem
+type an earlier Configuration Service returns, `urn:ed-fi:management-api:` or `urn:ed-fi:api:`, and
+rebuilds its external response using the positive integer limit alone. Token errors carry no
+problem-details `type` or `title`; their normalized correlation ID is UTF-8 percent-encoded in
+`X-Correlation-ID`. Decode that header once to find the matching log entry. See the
+[token error contract](../reference/adr-oauth-token-errors-DMS-1606.md).
+Upgrade DMS before, or together with, the Configuration Service: an 8.1 pre-release DMS does not
+recognize the OAuth body and answers a generic 429 of type `urn:ed-fi:api:too-many-requests`
+without the limit message, and DMS 8.0.0 answers any upstream 429 with a 502 whose `detail`
+carries the Configuration Service's body.
 
 > **Changing `ClientSecretHashingIterations` invalidates existing client secrets.** The iteration
 > count is not stored with a hashed secret, so verification always derives at the currently
@@ -1350,6 +1562,7 @@ it covers verifying the change on every instance and refreshing each consumer.
 | `AppSettings.AuthenticationService`       | URL of the identity provider's authority (issuer)   | `http://dms-keycloak:8080/realms/edfi/protocol/openid-connect/token`              | `http://ed-fi-api-config:8081/connect/token`              |
 | `JwtAuthentication.Authority`       | URL of the identity provider's authority (issuer). It must equal the `issuer` in the metadata document exactly; DMS will not start otherwise, and a mismatch that appears later makes DMS reject tokens (401) until it re-fetches metadata that matches. DMS retries at most once per `RefreshIntervalMinutes` (default 60), so recovery can lag the fix by up to that long; restarting DMS recovers immediately. The first rejected request is logged as an error and repeats at debug level | `http://localhost:8045/realms/edfi`              | `http://ed-fi-api-config:8081`              |
 | `JwtAuthentication.MetadataAddress` | OpenID Connect metadata endpoint. DMS fetches signing keys only from this address's origin (scheme, host and port): a metadata document whose `jwks_uri` names another origin is refused, which stops DMS from starting, or keeps the last good metadata on a later refresh. DMS then retries until a fetch succeeds (once the automatic refresh is due, on every request), logging the first refusal as an error and repeats at debug level. DMS does not follow redirects for these fetches. For Keycloak reached over an internal hostname, set `KC_HOSTNAME_BACKCHANNEL_DYNAMIC=true`; Keycloak's default makes `jwks_uri` name the public host | `http://dms-keycloak:8080/realms/edfi/.well-known/openid-configuration` | `http://ed-fi-api-config:8081/.well-known/openid-configuration` |
+| `JwtAuthentication.RequireHttpsMetadata` | Default `true`: OIDC discovery and signing-key documents must be fetched over https. Set `false` only when the identity provider is not reachable over an untrusted network, for example a container on the same private Compose network. A DMS instance whose hosting environment is not `Development` logs a startup warning while the value is `false`. The Compose files under `eng/docker-compose` (test and demonstration configurations, not for production use) deliberately override this default to `false` for their private-network identity providers through `DMS_JWT_REQUIRE_HTTPS_METADATA`, and the `eng/azure-vm` review stack sets `false` directly; copy that override only where the same condition holds. | `false` (local http Keycloak) | `false` (local http Configuration Service) |
 | `JwtAuthentication.RoleClaimType` | Exact inbound claim type used by endpoints that require a specifically configured role | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
 | `JwtAuthentication.ClockSkewSeconds` | Clock skew tolerance in seconds applied to a token's `nbf` and `exp` checks, so a token is still accepted for this long after it expires. Environment override: `JwtAuthentication__ClockSkewSeconds`; the shipped Docker Compose files map it from `DMS_JWT_CLOCK_SKEW_SECONDS`. Default: `30` | `30` | `30` |
 | `JwtAuthentication.ValidatedTokenCacheEntryMaxLifetimeSeconds` | The longest DMS reuses a successful token validation, in process, before it validates the same token again. An entry never outlives the token's expiry less `ClockSkewSeconds`, and `0` means a validation is never reused. Environment override: `JwtAuthentication__ValidatedTokenCacheEntryMaxLifetimeSeconds`. Default: `300` | `300` | `300` |

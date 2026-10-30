@@ -25,7 +25,7 @@ The CMS exposes standard OAuth 2.0 endpoints:
 | Endpoint | Purpose | Caller authentication |
 | --- | --- | --- |
 | `POST /connect/token` | Issue an access token (client credentials grant only) | Anonymous (client credentials in the request) |
-| `POST /connect/introspect` | Introspect a token (RFC 7662) | `self-contained`: client credentials (HTTP Basic or form body, exactly one of them); `keycloak`: none, and every token is reported inactive [^introspect] |
+| `POST /connect/introspect` | Introspect a token (RFC 7662) | Client credentials (HTTP Basic or form body, exactly one of them) [^introspect] |
 | `POST /connect/revoke` | Revoke a token (RFC 7009) | Client credentials (HTTP Basic or form body, exactly one of them) [^revoke] |
 
 [^revoke]: RFC 7009 §2.1 requires the revocation caller to authenticate the same
@@ -36,13 +36,24 @@ and not a bearer access token. Both identity provider modes enforce it and both 
 
 [^introspect]: RFC 7662 §2.1 requires some form of authorization to call the introspection endpoint, such as client
 authentication or a bearer access token, so that it cannot be used to scan for valid tokens.
-In `self-contained` mode the Configuration Service uses client credentials, as at `/connect/revoke`; a bearer access
-token is not accepted. In `keycloak` mode it makes no credential check (see [Token introspection](#token-introspection)).
+The Configuration Service uses client credentials in both identity provider modes, as at `/connect/revoke`; a bearer
+access token is not accepted. In `keycloak` mode Keycloak checks them (see [Token introspection](#token-introspection)).
 RFC 7662 §2.3 answers invalid client credentials with `401`, "as described in Section 5.2" of RFC 6749.
 The endpoint sends that `401`, with a `WWW-Authenticate: Basic` challenge, when HTTP Basic was attempted.
 Failed form credentials get `400 invalid_client`, as at `/connect/revoke`: RFC 6749 §5.2 requires the `401` only for
 `Authorization` header authentication, and a challenge would invite a scheme the caller did not use.
 See [Token introspection](#token-introspection).
+
+All four `/connect/*` endpoints are rate limited per source address. `/connect/token`, `/connect/revoke`
+and authenticated `/connect/introspect` are also limited per source address and `client_id` pair,
+under either identity provider, immediately before the client secret is verified (DMS-1482). Different sources cannot
+spend one another's client allowance.
+A refusal is `429` with `Retry-After`, in the route's own error contract.
+`/connect/token`, `/connect/revoke` and `/connect/introspect` answer the OAuth error `temporarily_unavailable` with the `error_description` `The number of allowed requests has been exceeded. Retry the request later.`
+`/connect/register` answers Ed-Fi problem details of type `urn:ed-fi:management-api:too-many-requests`.
+Limits, defaults and sizing are in
+[CONFIGURATION.md](../../../docs/CONFIGURATION.md#connectratelimit); the design is
+[DMS-1482](./DMS-1482-cms-connect-rate-limiting.md).
 
 `/connect/token` accepts client credentials as HTTP Basic or as form fields in both identity provider modes, with Basic taking precedence.
 Each value a parsed Basic header supplies wins, and a form field only fills a value Basic left empty, such as the empty secret in `Basic base64("id:")`.
@@ -61,7 +72,7 @@ A `scope` that names none of them answers `400` with the RFC 6749 section 5.2 er
 ```
 
 This includes a value made only of spaces or commas, which is supplied and therefore not absent, and any `scope` sent by a client with no registered scopes.
-The client credentials are checked first, so a wrong secret still answers `401` whatever the `scope`.
+The client credentials are checked first, so a wrong secret still answers `invalid_client` whatever the `scope`.
 The answer carries no `correlationId` and no `WWW-Authenticate` header.
 It used to succeed with every scope registered for the client.
 
@@ -76,20 +87,77 @@ The `scope` claim in a `self-contained` access token is unchanged: it lists the 
 Read the granted scopes from the response member with a space as the separator, and from the claim with a comma.
 The claim's representation is tracked by [DMS-1486](https://edfi.atlassian.net/browse/DMS-1486).
 
-Under Keycloak, a requested scope that Keycloak rejects answers `400` with `type` `urn:ed-fi:management-api:bad-request` and `errors` of `["invalid_scope. <description>"]`, for example `invalid_scope. Invalid scopes: edfi_admin_api/readonly_access`.
-It used to answer `502`.
-Other Keycloak failures keep their previous answers: a failed connection, a 5xx or any other `400` error code answers `502`, and a name-resolution failure or a timeout answers `500`.
-The two modes therefore answer `invalid_scope` in different formats: `self-contained` with the RFC 6749 `error` and `error_description` body above, Keycloak with this problem details body.
-Every other `/connect/token` error, in both modes, is still a problem details body.
-[DMS-1491](https://edfi.atlassian.net/browse/DMS-1491) tracks moving them to the RFC 6749 format; until then, a client that handles `/connect/token` errors must accept both.
+Under Keycloak, a requested scope that Keycloak rejects answers `400 invalid_scope` in the OAuth error format, for example with the `error_description` `Invalid scopes: edfi_admin_api/readonly_access`.
+It used to answer `502`, and then `400` in problem details.
+Other Keycloak failures keep their status: a failed connection, a 5xx or any other `400` error code answers `502`, now as `server_error`, and a name-resolution failure or a timeout answers `500`.
+A `client_secret` or `scope` longer than Keycloak's form attribute limit (128 KiB by default) also answers `502` `server_error`: CMS accepts form values up to 4 MiB, and Keycloak rejects the request with `413`.
+Each token request to Keycloak closes its connection after the answer, as revocation and introspection requests do (see [Responses](#responses)), so such a request does not stall the next one.
 
 Both `/openapi/v1.json` and `/metadata/specifications` declare an `oauth2_client_credentials` scheme whose `tokenUrl` is the document's own server URL (request scheme, host and path base) followed by `/connect/token`.
 The token URL follows the address the document was requested on, as the server URL and the DMS OpenAPI token URL do; the discovery document instead builds its endpoints from `IdentitySettings:Authority`, because services fetch it to validate tokens.
 The scheme lists the scopes `edfi_admin_api/full_access`, `edfi_admin_api/readonly_access` and `edfi_admin_api/authMetadata_readonly_access`.
 Operations that need no token (`/connect/register`, `/connect/token`, `GET /`, `GET /tenancy`, `GET /health` and discovery) declare an empty `security` array.
-`/connect/revoke`, and `/connect/introspect` in `self-contained` mode, instead require a `client_secret_basic` HTTP Basic scheme, whose description notes that the credentials may be sent as form fields instead.
-In `keycloak` mode `/connect/introspect` makes no credential check and declares an empty `security` array.
+`/connect/revoke` and `/connect/introspect` instead require a `client_secret_basic` HTTP Basic scheme, whose description notes that the credentials may be sent as form fields instead.
 A stock Swagger UI can therefore authorize against the Configuration Service in both modes.
+
+### `/connect/token` failures
+
+`/connect/token` answers every failure in the OAuth error format of RFC 6749 section 5.2.
+The body is `application/json` with exactly the root members `error` and `error_description`, written by the same writer as `/connect/revoke` and `/connect/introspect`.
+It covers every error the handler produces and every exception that escapes it.
+Responses produced before the endpoint is selected, such as the `405` for another HTTP method, keep their framework form.
+
+| Condition | Status | `error` |
+| --- | --- | --- |
+| Client authentication failed, client id or secret missing or blank, or client id longer than 1024 UTF-16 code units, HTTP Basic attempted | `401` with `WWW-Authenticate: Basic realm="EdFi.DmsConfigurationService"` | `invalid_client` |
+| The same, no HTTP Basic attempt | `400` | `invalid_client` |
+| Body is not a form | `400` | `invalid_request` |
+| A parameter or the `Authorization` header sent more than once | `400` | `invalid_request` |
+| `grant_type` missing or empty | `400` | `invalid_request` |
+| Unsupported `grant_type` | `400` | `unsupported_grant_type` |
+| `self-contained`: a `scope` naming none of the client's registered scopes (see [Token Endpoints](#token-endpoints)) | `400` | `invalid_scope` |
+| Keycloak rejected the requested scope | `400` | `invalid_scope` |
+| Source or source-plus-client rate limit exceeded | `429` with `Retry-After` | `temporarily_unavailable`, with the fixed rate-limit description (see [Token Endpoints](#token-endpoints)) |
+| Token limit reached | `429` | `temporarily_unavailable`, with the canonical limit sentence as `error_description` |
+| Concurrent token requests for the same client (lock timeout) | `409` | `temporarily_unavailable` |
+| Identity provider failure that is not the caller's to fix, a provider `403` included | `502` | `server_error` |
+| Unexpected fault in CMS | `500` | `server_error` |
+
+The `invalid_client` house rule is the one `/connect/revoke` and `/connect/introspect` follow.
+A caller that attempted HTTP Basic gets `401` with the `Basic` challenge that RFC 6749 section 5.2 requires.
+Any other caller, including one that sent form credentials, one that sent no credentials at all and one whose `Authorization` header is not `Basic`, gets `400` with no challenge, because a challenge would invite a scheme the caller did not choose.
+Before this rule a failed form credential answered `401` and a missing one answered a validation `400`.
+
+The handler checks the request without throwing, in this order: a body that is not a form, then a repeated `grant_type`, `client_id`, `client_secret` or `scope` or a repeated `Authorization` header, then `grant_type` missing, then `grant_type` unsupported, then client id or secret missing or only whitespace (after the lenient Basic parsing and the form fallback), then a client id longer than 1024 UTF-16 code units, then the source-plus-client rate limit, and only then the token manager.
+A repeated parameter is rejected even when one copy is valid or empty, as at `/connect/revoke` and `/connect/introspect`.
+A request that is wrong in the request shape is therefore told so before its credentials are examined.
+
+The token limit and the lock timeout keep the statuses they always had, `429` and `409`, and take the OAuth body.
+The `409` keeps its status rather than the `503` RFC 6749 suggests for `temporarily_unavailable`, because the DMS `/oauth/token` proxy recognizes the condition by status.
+The `429` `error_description` is `Too many access tokens have been requested (limit is N). Access tokens should be reused until they expire.`, which the DMS proxy parses to rebuild its own answer.
+The rate-limit `429` shares the `temporarily_unavailable` code, and the DMS proxy tells the two apart by their descriptions.
+
+A failed client authentication is `invalid_client` whatever code the self-contained token manager or Keycloak reports.
+RFC 6749 section 5.2 defines no other code for it, and passing on a second code, such as the `unauthorized_client` Keycloak reports for a wrong secret, would tell the caller whether the client id it sent exists.
+For the same reason a Keycloak rejection always carries the fixed description `Invalid client or Invalid client credentials`: Keycloak tells a public client presenting any secret that it is a public client.
+The description a service-owned failure carries is used as it is.
+
+Keycloak's `invalid_scope` description, which names the rejected scopes, is the only provider text that reaches the caller.
+It is used only when the provider sent a complete structured body (an `error` string and an `error_description` string) whose `error` is one of the six codes RFC 6749 section 5.2 defines for a token endpoint: `invalid_request`, `invalid_client`, `invalid_grant`, `unauthorized_client`, `unsupported_grant_type` and `invalid_scope`.
+The comparison is ordinal, so `Invalid_Scope` is not recognized.
+Because Keycloak echoes the requested scope, the description is also used only when every character is one section 5.2 allows in `error_description`: printable ASCII other than `"` and `\`.
+Otherwise the fixed, service-owned description applies.
+
+A provider failure that is not the caller's to fix answers `502 server_error` with a fixed description and no provider text.
+That includes a Keycloak `403`, whose known cause is the provider's own configuration, such as a realm that requires HTTPS, so a `403` would wrongly blame the caller.
+The `502` is logged at Warning with the failure kind and, from a structured body with one of the six codes, the provider's `error` and `error_description`, sanitized; the provider body itself is never logged.
+
+`/connect/register` keeps the Ed-Fi problem-details contract of [DMS-1218](./DMS-1218-cms-error-response-compliance.md).
+It is a CMS bootstrap endpoint and not an RFC 6749 or RFC 7591 endpoint: it takes PascalCase form fields, answers with a `{title, status}` success body and reports field-level `validationErrors`.
+Its `403` when registration is disabled is fixed by the bootstrap rules above, and RFC 6749 section 5.2 defines no codes for it.
+
+As at `/connect/revoke` and `/connect/introspect`, an OAuth answer carries no `correlationId` member and no correlation header.
+Only an exception that the exception handler answers carries the `TraceId` response header.
 
 ## Token revocation
 
@@ -140,7 +208,10 @@ authentication failure is never hidden behind a token outcome:
    override the Basic header, so CMS never forwards a choice of identities.
 4. `token` must be present and non-empty.
 5. Client authentication: a malformed Basic value, or incomplete form credentials, fails
-   before any database or identity provider contact.
+   before any database or identity provider contact. Parsed `client_id` values longer than
+   1024 UTF-16 code units (including padding) also fail here with `invalid_client`: `401`
+   with the Basic challenge for an HTTP Basic attempt, `400` otherwise. This bound applies
+   even when rate limiting is disabled and precedes client-budget processing.
 
 **HTTP Basic decoding differs from `/connect/token`.** On `/connect/revoke` the Basic value
 is decoded per RFC 6749 §2.3.1, which has the client form-encode `client_id` and
@@ -179,8 +250,9 @@ values (Keycloak's endpoint does not read it either).
 
 ### Responses
 
-`200 OK` with an empty body is the only success. Every other status is an RFC 6749 §5.2
-JSON object served as `application/json`, with a **fixed** CMS `error_description` that
+`200 OK` with an empty body is the only success. Every error status, the rate-limit `429` described
+above included, is an RFC 6749 §5.2 JSON object served as
+`application/json`, with a **fixed** CMS `error_description` that
 never echoes provider text:
 
 ```json
@@ -191,23 +263,38 @@ never echoes provider text:
 | --- | --- |
 | Authenticated owner, supported live token | `200`, empty; token revoked |
 | Authenticated caller; unknown, invalid, expired, already revoked, or another client's token | `200`, empty; nothing changes |
+| Source or source-plus-client rate limit exceeded | `429 temporarily_unavailable` with `Retry-After` |
 | Not a form body, malformed form, duplicated parameter or `Authorization` header, mixed mechanisms, missing or empty `token` | `400 invalid_request` |
 | Missing, incomplete or invalid credentials **without** an HTTP Basic attempt | `400 invalid_client` |
 | Malformed or invalid HTTP Basic credentials | `401 invalid_client` with `WWW-Authenticate: Basic realm="EdFi.DmsConfigurationService"` |
 | A Keycloak public or bearer-only client | `invalid_client` by the same rule: `401` with the challenge when it attempted HTTP Basic, `400` otherwise |
 | A token type the identity provider does not revoke (Keycloak: an ID token) | `400 unsupported_token_type`; reveals nothing about the token's owner |
-| Keycloak rejected the request shape for a reason CMS could not anticipate | `400 invalid_request` ("The identity provider rejected the revocation request.") |
+| Keycloak rejected the request shape for a reason CMS could not anticipate, or rejected a value over its form attribute limit (see below) | `400 invalid_request` ("The identity provider rejected the revocation request.") |
 | Database or identity provider failure, timeout, or an unusable provider answer | `503 temporarily_unavailable` |
 | An unexpected fault in CMS | `500 server_error` |
 
 A request without credentials and without `token` gets `400 invalid_request`, not an
 authentication error, because request shape is checked first. A public client is answered
-with the same `invalid_client` description as a wrong secret, so the response does not
-reveal the client's type.
+with the same `invalid_client` description as a wrong secret, so that answer does not
+reveal the client's type. The exception is an oversized `client_secret` or `token` in
+`keycloak` mode (below): the client-type gate answers an unknown, public or bearer-only
+client `invalid_client`, while a confidential client's request goes on to Keycloak and is
+answered `400 invalid_request`, so the two answers tell a confidential client from the
+others without a correct secret.
 
-This endpoint and `/connect/introspect` are the two CMS endpoints that do not answer in the
+In `keycloak` mode, a `client_id` of more than 255 Unicode code points is answered `invalid_client` without calling Keycloak.
+Keycloak keeps client ids in a 255-character column, and PostgreSQL measures it in code points, so 255 characters outside the Basic Multilingual Plane are a valid client id.
+
+In `keycloak` mode, the client-type gate comes first: an unknown, public or bearer-only `client_id` is answered `invalid_client` there, whatever the size of `client_secret` or `token`, and nothing is sent to Keycloak's revocation endpoint.
+Only a request that passes the gate is delegated to Keycloak.
+CMS accepts form values up to 4 MiB, so a delegated request whose `client_secret` or `token` is longer than Keycloak's form attribute limit (128 KiB by default) reaches Keycloak, which rejects it with `413` before it authenticates the caller; that answer is `400 invalid_request` and logged at Information.
+It is therefore not `invalid_client`, and it is not `503`, because Keycloak is not failing.
+`/connect/introspect` maps Keycloak's `413` the same way. Introspection has no client-type gate; requests that pass its other validation and admission checks are delegated to Keycloak (see [Token introspection](#token-introspection)).
+Each request to Keycloak's token, revocation and introspection endpoints closes its connection after the answer: Keycloak 26.1.4 answers a form value over its limit with `413` without reading the rest of the request and keeps the connection open, so a reused connection would leave the next caller, possibly another client, without an answer until the timeout.
+
+This endpoint, `/connect/introspect` and `/connect/token` are the three CMS endpoints that do not answer in the
 `application/problem+json` contract of [DMS-1218](./DMS-1218-cms-error-response-compliance.md), and the departure is
-deliberate: both are OAuth endpoints, and an OAuth client reads `error` off the
+deliberate: all three are OAuth endpoints, and an OAuth client reads `error` off the
 root of the body. It covers every error the endpoint produces, including the missing-token
 `400` (which DMS-1218 had converted to problem details) and the `500` for an unexpected
 fault. Responses produced before the endpoint is selected (Kestrel request-line and header
@@ -318,12 +405,15 @@ path:
   before treating the answer as confirmation.
   A protected CMS request with the token
   answers `401`.
-- **`keycloak`**: CMS `/connect/introspect` cannot observe Keycloak tokens (it always
-  answers `{"active": false}` in this mode). Use Keycloak's own endpoint,
+- **`keycloak`**: CMS `/connect/introspect` with `token=<target>`, authenticated with the token owner's client credentials, passes them to Keycloak's introspection and reports `{"active": false}` once an access token is revoked (see [Token introspection](#token-introspection)).
+  It cannot observe a refresh token, which it never describes, or a public client's token, because Keycloak refuses a public client at introspection.
+  From Keycloak 26.6.2 it confirms only a token whose `aud` contains the owner's client id: Keycloak answers `active:false` to an introspecting client outside the token's `aud`, live token or not.
+  Every client CMS creates is in its own tokens' audience, but a token issued before its client gained that audience is not, so decode the token and check its `aud` before treating the answer as confirmation.
+  Otherwise use Keycloak's own endpoint,
   `POST {Keycloak base URL}/realms/{realm}/protocol/openid-connect/token/introspect`,
   authenticated as a **confidential** client:
-  - Access tokens. From Keycloak 26.4.12 (Red Hat's statement; observed on 26.7.5, not on
-    26.1.4), the introspecting client must be in the token's `aud`, or the answer is
+  - Access tokens. From Keycloak 26.6.2 (the Red Hat build of Keycloak 26.4.12; observed on
+    26.7.5, not on 26.1.4), the introspecting client must be in the token's `aud`, or the answer is
     `active:false` for a live token, which proves nothing. Put the introspecting client into
     the audience of the tokens you observe: an `Audience` mapper whose included client
     audience is the introspecting client, added to the clients that **receive** those tokens
@@ -444,8 +534,9 @@ using `VerifySecretAsync`.
   request without credentials is refused before any admin call, and an unknown client id never
   reaches the revoke request. The endpoint's request volume, not its authenticated volume,
   therefore sets the admin load, and a slow Keycloak lets such requests hold pool threads as
-  described above. Bounding this (admin-token caching, rate limiting) is deferred availability
-  work; token caching would also have to handle concurrent cache misses and refresh failures.
+  described above. Source and client rate limits now bound admission before those admin calls.
+  Admin-token caching remains deferred availability work; it would also have to handle concurrent
+  cache misses and refresh failures.
 - **Separate timeout windows.** The admin read, the revoke request (until its response
   headers) and the reading of an error body each get their own window of
   `AppSettings:TokenRequestTimeoutSeconds`. A Keycloak revocation can therefore take up to
@@ -515,28 +606,70 @@ ordinally, so a case variant is an unknown client (`invalid_client`).
 - **The request rules and their order are those of `/connect/revoke`.**
   See [Request rules](#request-rules).
   The client's credentials are checked after them.
-  Errors are RFC 6749 JSON (`{"error", "error_description"}`).
+  Errors, the rate-limit `429` described in [Token endpoints](#token-endpoints) included, are RFC 6749 JSON (`{"error", "error_description"}`).
   A missing `token` is `400 invalid_request`.
   This is an exception to the problem-details format DMS-1218 gave that response, as it is for revoke.
   Failed credentials answer `invalid_client`: `401` with a `WWW-Authenticate: Basic` challenge when HTTP Basic was attempted, `400` otherwise.
 - **Only the token's own client receives metadata.**
-  Ownership compares the token's `client_id` claim with the caller's stored client id, ordinally, and the token's status
-  is read only from a row stored for the calling application, as revocation's update is.
-  For the owner's valid token the answer is `200` with `active` true, `client_id`, `scope`, `exp`, `iat`, `sub`, `aud`, `iss` and `token_type` `Bearer`.
+  For the owner's valid token the answer is `200` with `active` true, `client_id`, `scope`, `exp`, `iat`, `sub`, `aud`, `iss` and `token_type` `Bearer`, or `DPoP` for a Keycloak DPoP-bound access token (RFC 9449 §6.2).
+  `scope` is space-delimited, and empty for a token without scopes.
   `exp` and `iat` are JSON integers.
+  `aud` is a string for one audience and an array for several, as RFC 7662 §2.2 allows.
 - **Every other outcome is exactly `{"active": false}`.**
   That covers another client's token and an unknown, malformed, unverifiable, expired or revoked token.
-  A token the service could not decide because the signing-key store or the token-status store failed is also `{"active": false}`, and logs the Error in [Log signals](#log-signals).
-- **A client-store failure while authenticating the caller is `503 temporarily_unavailable`.**
-  The request was not judged, so an outage cannot read as rejected credentials.
-  Retrying is safe.
-- **A `self-contained` host refuses to start without an introspection implementation.**
-  Without one, the endpoint would make no credential checks, which is right only in `keycloak` mode.
+  In `keycloak` mode the one exception is a token Keycloak fails while checking, described below.
+- **A host refuses to start without an introspection implementation.**
+  Without one, the endpoint could not authenticate its callers.
   As for revocation, the startup error names only the exception types.
-- **`keycloak` mode is unchanged.**
-  The Configuration Service cannot observe Keycloak tokens.
-  In this mode the endpoint makes no credential checks and answers `{"active": false}` for any request that carries a token.
-  A request without a token receives the OAuth `400 invalid_request`, as in `self-contained` mode.
+- **`self-contained` mode.**
+  Ownership compares the token's `client_id` claim with the caller's stored client id, ordinally, and the token's status
+  is read only from a row stored for the calling application, as revocation's update is.
+  A token the service could not decide because the signing-key store or the token-status store failed is `{"active": false}`, and logs the Error in [Log signals](#log-signals).
+  A client-store failure while authenticating the caller is `503 temporarily_unavailable`: the request was not judged, so an outage cannot read as rejected credentials.
+  Retrying is safe.
+- **`keycloak` mode.**
+  The Configuration Service forwards the caller's credentials, as form fields, and the token to
+  `POST {Keycloak base URL}/realms/{realm}/protocol/openid-connect/token/introspect`, so Keycloak authenticates the caller and decides the token's state.
+  `token_type_hint` is not forwarded: the token is always looked up as an access token, and Keycloak's other token types (refresh, ID) are never described.
+  Keycloak does not check ownership: from 26.6.2 it describes a token to any confidential client in the token's `aud`, and before 26.6.2 to any confidential client it authenticates.
+  The Configuration Service therefore describes a token only when Keycloak reports it active and its `azp` equals the caller's client id, ordinally, and copies only the members listed above, never Keycloak's other claims.
+  Keycloak leaves `scope` out of its answer for a token without scopes, as RFC 7662 §2.2 allows; the owner then receives an empty `scope`.
+  Credentials Keycloak rejects, and a public client (which Keycloak refuses at introspection), answer `invalid_client` by the same rules as `self-contained` mode.
+  Keycloak 26.1.4 also refuses a bearer-only client that sends its secret (`invalid_client`), while 26.7.5 authenticates it; a bearer-only client obtains no tokens, so it is never told about one.
+  Keycloak 26.7.5 answers an unexpected failure while it authenticates the caller as 26.1.4 answers wrong credentials (`401 invalid_request` "Authentication failed."), so that failure is answered `invalid_client` too, not `503`.
+  A `client_id` of more than 255 Unicode code points, the most Keycloak's client id column holds, is answered `invalid_client` without calling Keycloak.
+  A `client_secret` or `token` longer than Keycloak's form attribute limit (128 KiB by default) is answered `400 invalid_request` ("The identity provider rejected the introspection request.") and logged at Information, as a delegated request is at `/connect/revoke`, where an unknown, public or bearer-only client id is answered `invalid_client` before any delegation.
+  The Configuration Service accepts form values up to 4 MiB, and Keycloak rejects such a request with `413` before it authenticates the caller, so the answer is neither `invalid_client` nor `503`.
+  Once it has authenticated the caller, Keycloak answers any failure while it checks the token or builds its answer with `400 invalid_request` "Failed to introspect token.": a JWT whose header has no `alg` as much as a failure of its own stores or mappers.
+  The two cannot be told apart, so that answer is `503 temporarily_unavailable`, not `{"active": false}`, which could tell an owner its live token is not active; it is logged at Warning, not Error, because any caller can cause it with a malformed token.
+  Any other Keycloak answer, a timeout or an unreachable Keycloak is `503 temporarily_unavailable`.
+  Keycloak's answer is read whole, because its size does not follow the token's: Keycloak rebuilds an answer's claims from the client's protocol mappers as they are when it answers.
+  A short token issued before its application gained 14,000 education organizations is answered with all of them, in more characters than any token Keycloak's form attribute limit lets through.
+  No caller can enlarge an answer: only an active token is answered with claims, and they come from the token and from what administrators configured for its client; `/connect/token` reads Keycloak's answer whole too.
+  The timeout is one `AppSettings:TokenRequestTimeoutSeconds` budget for Keycloak's response headers and another for reading its body, so a request can wait up to twice that setting.
+  Unlike an undecided token in `self-contained` mode, a `503` here is not `{"active": false}`, because the same Keycloak call authenticates the caller: without a usable answer the caller is not authenticated either.
+  Retrying is safe.
+- **Each Keycloak client the Configuration Service creates is in its own tokens' audience.**
+  From Keycloak 26.6.2 (the Red Hat build of Keycloak 26.4.12; see [Migrating to 26.6.2](https://www.keycloak.org/docs/latest/upgrading/index.html#migrating-to-26-6-2); observed on 26.7.5, not on 26.1.4) Keycloak answers `active:false` to an introspecting client that is not in the token's `aud`; `azp` alone does not count.
+  The Configuration Service therefore adds an audience mapper (`oidc-audience-mapper`, with the client's own client id as its included client audience) to every Keycloak client it creates.
+  `eng/docker-compose/setup-keycloak.ps1` adds the same mapper to the clients it creates, such as `DmsConfigurationService`.
+  Run again for a client that already exists, it adds the mapper to that client only when no audience mapper counting by the rules below gives the client its own audience, and changes nothing else: credentials, roles, scopes and other mappers stay as they are, and a second run adds nothing.
+  A conflicting `Client's own audience` mapper (below) is left as it is, and the script warns that the client was not repaired and needs an operator.
+  It reaches only the client it is run for, not the other clients the Configuration Service manages.
+  The client's access tokens carry `aud` `["<client id>", "account"]`, and its owner receives its own token's metadata on Keycloak 26.1.x and on 26.6.2 or later.
+  DMS and the Configuration Service validate `aud` against their configured audience (`account` by default), which the array still contains.
+  A client created by an earlier version gains the mapper from the next of these updates, even with unchanged values: `PUT /v3/apiClients/{id}` for that API client, and `PUT /v3/vendors/{id}` for every API client of the vendor's applications.
+  `PUT /v3/applications/{id}` updates only the clients its change affects and those already pending, so an unchanged one reaches no client when none is already pending; it only retries the pending ones.
+  A credential reset (`PUT /v3/apiClients/{id}/reset-credential` or `PUT /v3/applications/{id}/reset-credential`) changes only the secret and does not add the mapper.
+  An audience mapper counts only when it is an OpenID Connect mapper that names the client (as its included client audience, or, without one, its included custom audience) and has *Add to access token* on, because Keycloak runs only the mappers of the client's protocol and checks the access token's `aud`, which every token of these clients has; the mapper is added beside one that is left out of access tokens, such as one added only to ID tokens, or one of another protocol, which stays as it is.
+  The exception is a client that already has an OpenID Connect mapper named `Client's own audience` that does not put the client into its access tokens, for example one edited in Keycloak.
+  Keycloak requires mapper names to be unique only within a protocol, so a mapper of another protocol under that name, such as a SAML one, is no exception.
+  The update leaves that mapper as it is, so as not to remove an audience something else may rely on, still succeeds, and logs the Warning in [Log signals](#log-signals).
+  On Keycloak 26.6.2 or later, an earlier client that is never updated that way, or that kept such a mapper, is answered `{"active": false}` for its own live token until an operator adds the same mapper in Keycloak: in the client's `<client id>-dedicated` scope, an *Audience* mapper with *Included Client Audience* set to the client itself and *Add to access token* and *Add to token introspection* on.
+  When `Client's own audience` is taken, the operator gives the new mapper another name; any OpenID Connect audience mapper of the client itself (its dedicated scope) that names the client with *Add to access token* on satisfies later updates, which then add no other; one in a shared client scope does not.
+  Only tokens issued after the mapper is added carry the audience, whichever way it is added: on Keycloak 26.6.2 or later, a live token issued before then is answered `{"active": false}` to its owner until it expires, so the owner requests a new token to be described.
+  Keycloak also has opt-outs, the server option `allow-token-introspection-without-audience-check` and the client setting *Allow token introspection without audience check*, but its migration guide deprecates both, and they are not recommended.
+  The compose files pin Keycloak 26.1.4; the Azure VM reference deployment runs 26.7.
 - **Discovery.**
   `introspection_endpoint_auth_methods_supported` and `revocation_endpoint_auth_methods_supported` are both `["client_secret_basic", "client_secret_post"]`.
 
@@ -992,6 +1125,15 @@ Clients holding tokens signed with the old certificate must obtain new ones.
 | Revocation could not decide (answers `503`) | Error | `Revocation could not be completed: …` |
 | Introspection could not authenticate the caller (answers `503`) | Error | `Introspection could not be completed: {Boundary} failed ({ExceptionTypes})`, followed by the Warning `Introspection for client {ClientId} could not be completed ({Reason}); answering 503` |
 | Introspection answered inactive for another client's token | Debug | `Introspection answered inactive: the supplied token does not belong to the calling client {CallerClientId}` |
+| Keycloak introspection could not be completed (`keycloak`, answers `503`) | Error | `Introspection for client {ClientId} could not be completed: Keycloak answered HTTP {StatusCode} …` or `…: the Keycloak introspection request failed ({Reason}, {ExceptionTypes})`, followed by the same Warning as above |
+| Keycloak failed while checking the token (`keycloak`, answers `503`) | Warning | `Introspection for client {ClientId} could not be completed: Keycloak failed while checking the token (HTTP 400), which a malformed token or a Keycloak failure causes alike (undecided-token)`, followed by the same Warning as above |
+| Keycloak refused the caller's credentials (`keycloak`) | Information | `Keycloak refused the introspection request for client {ClientId} (HTTP {StatusCode}, {ProviderError})` |
+| Keycloak rejected an introspection form value over its form attribute limit (`keycloak`, answers `400 invalid_request`) | Information | `Keycloak rejected an introspection request as too large (HTTP 413) before authenticating the caller` |
+| Keycloak rejected a revocation form value over its form attribute limit (`keycloak`, answers `400 invalid_request`) | Information | `Keycloak rejected a revocation request as too large (HTTP 413) before authenticating the caller` |
+| Introspection client id longer than any Keycloak client id (`keycloak`, answers `invalid_client`) | Information | `Introspection refused: the client id is longer than any Keycloak client id` |
+| Revocation client id longer than any Keycloak client id (`keycloak`, answers `invalid_client`) | Information | `Revocation refused: the client id is longer than any Keycloak client id` |
+| Keycloak reported another client's token (`keycloak`, answers `{"active": false}`) | Debug | `Introspection answered inactive: the supplied token was not issued to the calling client {ClientId}` |
+| A client update kept an OpenID Connect `Client's own audience` mapper that does not put the client into its access tokens (`keycloak`, the update succeeds without the client's own audience) | Warning | `Client {ClientId} already has an OpenID Connect protocol mapper named {MapperName} that does not put the client into its own access tokens' audience; it is left unchanged, …` |
 | Introspection Basic credentials malformed | Information | `Introspection Basic credentials were malformed at the {Stage} stage` |
 
 A snapshot publication labelled `Request` is a normal background reload started by a

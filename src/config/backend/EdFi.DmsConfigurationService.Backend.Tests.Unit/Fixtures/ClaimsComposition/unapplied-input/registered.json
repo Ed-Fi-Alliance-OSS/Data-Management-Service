@@ -1,0 +1,46 @@
+{
+  "claimSets": [
+    {
+      "claimSetName": "Existing",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "Isolated",
+      "isSystemReserved": true
+    }
+  ],
+  "claimsHierarchy": [
+    {
+      "name": "edfi/domain",
+      "claims": [
+        {
+          "name": "edfi/student",
+          "claimSets": [
+            {
+              "name": "Existing",
+              "actions": [
+                {
+                  "name": "Read",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "Base"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "edfi/students"
+        },
+        {
+          "name": "edfi/category"
+        }
+      ]
+    },
+    {
+      "name": "edfi/leaf"
+    }
+  ]
+}

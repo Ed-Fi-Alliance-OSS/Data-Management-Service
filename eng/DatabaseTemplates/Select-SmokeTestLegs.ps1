@@ -121,6 +121,7 @@ $pathPatternMap = [ordered]@{
     "eng/docker-compose/start-local-dms.ps1"         = $allLegIndices
     "eng/docker-compose/local-dms.yml"               = $allLegIndices
     "eng/docker-compose/local-config.yml"            = $allLegIndices
+    "eng/docker-compose/dms-cms-proxy.yml"           = $allLegIndices
     "eng/docker-compose/env-utility.psm1"            = $allLegIndices
     "eng/Dms-Management.psm1"                        = $allLegIndices
     "src/Directory.Packages.props"                   = $allLegIndices

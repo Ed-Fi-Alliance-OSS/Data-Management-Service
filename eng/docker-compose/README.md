@@ -71,6 +71,17 @@ owns the opt-in boundary.
 Convenience PowerShell scripts have been included in the directory, which start
 the appropriate services.
 
+The local and published DMS launchers add `dms-cms-proxy.yml` when their Compose set includes
+both DMS and CMS, including the infrastructure and DMS-only phases. This overlay creates an internal
+`cms-proxy` network and explicitly enables forwarding with exact DMS peer trust, keeping public token
+callers separate from system-token refresh. Include it after both service files when composing a
+paired stack manually. The CMS-only launcher omits it, preserving
+`CONFIGURATION_SERVICE_USE_REVERSE_PROXY_HEADERS=false` and existing standalone proxy settings.
+If `172.30.148.0/29` overlaps
+another network, change `DMS_CMS_PROXY_SUBNET`, `DMS_CMS_PROXY_IP` and `CMS_PROXY_IP` together before
+starting. Parallel paired stacks need different subnets. See
+[ConnectRateLimit](../../docs/CONFIGURATION.md#connectratelimit) for defaults and custom topologies.
+
 * `start-all-services.ps1` launches `postgresql.yml`, without starting the DMS.
   Useful for running DMS in a local debugger.
 * `start-local-dms.ps1` launches the DMS local build along with all necessary
@@ -146,6 +157,37 @@ already brought up infra and the Configuration Service:
 
 The same E2E provisioning requirement is handled by the `E2ETests` build target
 (`build-dms.ps1` -> `Initialize-E2EDatabase`).
+
+Before any reset, provisioning refuses an E2E database that is not dedicated. It compares the E2E
+name with each protected name: `POSTGRES_DB_NAME`, `MSSQL_DB_NAME`, and every `Database`, `DB` or
+`Initial Catalog` value it reads from `DATABASE_CONNECTION_STRING_ADMIN` and
+`CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING`. The comparison ignores case and trailing spaces,
+ideographic spaces (U+3000), tabs, line feeds, carriage returns and form feeds, so a protected
+`'edfi_dms '` blocks an E2E database named `edfi_dms`. Once that trailing whitespace is removed,
+an E2E or protected name must be 1 to 63 ASCII letters, digits or underscores; any other name stops
+provisioning, on either engine, because the check cannot compare it reliably. The length limit
+exists because PostgreSQL keeps only the first 63 bytes of a database name, so two longer names
+that share their first 63 characters are one PostgreSQL database. Connection-string values are
+checked as the connection-string parser reads them, without env-file rules applied a second time.
+Provisioning also refuses an environment file that declares a protected key, or a name one of
+them references, more than once or in more than one letter case, because Compose could then use a
+different value than the one checked. It likewise refuses a file where Compose, which resolves the
+file line by line with case-sensitive names, would give a protected key a different value or
+presence than the check reads: for example a reference to a name declared on a later line, a
+reference spelled in another letter case than its declaration, or a protected key declared only in
+lowercase. The Instance Management route of `build-dms.ps1`, the Instance Management
+`setup-local-dms.ps1` and the CDC E2E setup run these declaration checks before they start
+infrastructure, and provisioning repeats them before any reset. A value set in the shell overrides
+the file, so the file's declarations of that name are not checked; the shell value is still
+compared with the E2E name.
+
+When `POSTGRES_DB_NAME` is absent from both the environment file and the shell, the check protects
+`edfi_datamanagementservice`, the name `postgresql.yml` uses by default. Other absent keys are
+skipped, so Compose can still give a container a database name the check never sees: without
+`CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` the Configuration Service builds its connection
+from `CONFIGURATION_SERVICE_DATABASE_NAME` or `POSTGRES_DB_NAME`. Declare the engine's database-name
+key and both connection strings in any environment file used for E2E provisioning, especially when
+running `provision-e2e-database.ps1` directly.
 
 If DMS starts before provisioning has run (or against a database missing
 `dms.EffectiveSchema`), DMS will start successfully but requests to the
@@ -305,8 +347,14 @@ A few things are specific to the MSSQL path:
 
 For a self-contained smoke run, set `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1`
 in your `.env` before starting or recreating the stack: the Smoke Test Utility requests
-a new token for each resource GET and otherwise exceeds the default limit of 15.
-Restore the configured limit and recreate the stack after the smoke run.
+a new token for each resource GET and otherwise exceeds the default limit of 15. A self-contained
+DMS also proxies each token request to the Configuration Service's `/connect/token`, so also raise
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_SOURCE_PERMIT_LIMIT` and
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_CLIENT_PERMIT_LIMIT` for the run, or set
+`CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED=false`. The rate-limit raise is only needed for stacks
+not started from `.env.smoke*` (for example custom or `.env.example`-based stacks), since the tracked
+smoke profiles already raise them.
+Restore the configured values and recreate the stack after the smoke run.
 
 After the stack is up, run the smoke tests the same way as for PostgreSQL. The script imports its
 modules relative to the current directory, so run it from `eng/smoke_test`. For `$key` and `$secret`, see
@@ -361,7 +409,7 @@ Run the non-destructive API smoke tests:
 * **IDE-hosted DMS** (`-InfraOnly`, with or without `-DmsBaseUrl`): whether the summary adds a tenant segment follows `DMS_MULTI_TENANCY` from the env file, but the IDE-hosted DMS reads its own `AppSettings:MultiTenancy` (default `false`). The summary states the value it assumes; set the IDE configuration to match.
 * **Tenant routes:** the summary lists the tenant-qualified DMS base and token URLs instead of a command. DMS serves tenant routes only with `DMS_MULTI_TENANCY=true`; a `DMS_CONFIGURATION_SERVICE_TENANT` used only by the Configuration Service does not qualify the URLs. Smoke runs against qualified routes have not been validated with the Smoke Test Utility.
 * **Data stores with route contexts** (school-year data stores from `-SchoolYearRange`, or a `-NoDataStore` direct start that selects a data store qualified by `schoolYear`, `districtId` or several contexts): the summary lists each data store's contexts as `key=value`, with no command or URL. Whether and in what order those values appear in the route depends on the target DMS's `ROUTE_QUALIFIER_SEGMENTS` (`AppSettings:RouteQualifierSegments`), which the Configuration Service records do not establish.
-* **Self-contained identity:** the summary also reminds you that `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` must be set **before the stack starts** (see above and `eng/smoke_test/SMOKETEST.md`).
+* **Self-contained identity:** the summary also reminds you that `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1` and a raised (or disabled) `/connect/*` rate limit must be set **before the stack starts** (see above and `eng/smoke_test/SMOKETEST.md`).
 
 > [!IMPORTANT]
 > Pass `-AddSmokeTestCredentials` only once per Configuration Service. The application name is unique
@@ -1026,6 +1074,7 @@ The artifact includes:
 | `AppSettings:AuthenticationService` | `http://localhost:8081/connect/token` |
 | `JwtAuthentication:Authority` | `http://localhost:8081` (must exactly match the self-contained Configuration Service issuer configured in `.env.ide`) |
 | `JwtAuthentication:MetadataAddress` | `http://localhost:8081/.well-known/openid-configuration` (must share the advertised JWKS origin) |
+| `JwtAuthentication:RequireHttpsMetadata` | `false` (local http Configuration Service; the shipped default is `true`, see [docs/CONFIGURATION.md](../../docs/CONFIGURATION.md#jwtauthentication-parameters-in-appsettingsjson-dms-api-service)) |
 | `JwtAuthentication:ClientRole` | `dms-client` |
 | `JwtAuthentication:RoleClaimType` | `http://schemas.microsoft.com/ws/2008/06/identity/claims/role` |
 

@@ -224,11 +224,14 @@ public sealed class CmsContributorSecretResolver : ISecretResolver
         throw new NotSupportedException("the fixture resolver is registered, never called");
 }
 
-/// <summary>The plugin's client secret hasher. Hashes nothing: only its registration is under test.</summary>
+/// <summary>
+/// The plugin's client secret hasher. Only its registration is under test; it hashes only the
+/// placeholder a self-contained host generates once at startup, and verifies nothing.
+/// </summary>
 public sealed class CmsContributorClientSecretHasher : IClientSecretHasher
 {
     public Task<string> HashSecretAsync(string plainTextSecret) =>
-        throw new NotSupportedException("the fixture hasher is registered, never called");
+        Task.FromResult("cms-contributor-fixture-hash");
 
     public Task<bool> VerifySecretAsync(string plainTextSecret, string hashedSecret) =>
         throw new NotSupportedException("the fixture hasher is registered, never called");

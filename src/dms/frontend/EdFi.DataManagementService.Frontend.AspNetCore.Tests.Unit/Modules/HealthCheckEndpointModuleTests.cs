@@ -208,6 +208,7 @@ public class Given_HealthCheckEndpointModule
         HttpResponseMessage response = await client.GetAsync("/health/document-cache");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.NonValidated["Cache-Control"].Should().Equal("no-store");
         documentCacheStatusService.CallCount.Should().Be(0);
     }
 
@@ -270,6 +271,7 @@ public class Given_HealthCheckEndpointModule
         HttpResponseMessage response = await client.GetAsync("/health/document-cache");
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Headers.NonValidated["Cache-Control"].Should().Equal("no-store");
         jwtValidationService.CallCount.Should().Be(1);
         documentCacheStatusService.CallCount.Should().Be(0);
     }
@@ -305,6 +307,27 @@ public class Given_HealthCheckEndpointModule
     }
 
     [Test]
+    public async Task It_marks_document_cache_status_no_store()
+    {
+        ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            documentCacheStatusService,
+            ValidRequiredRole,
+            ValidJwtWithClaims(new Claim(RoleClaimType, ValidRequiredRole))
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            ValidBearerToken
+        );
+
+        HttpResponseMessage response = await client.GetAsync("/health/document-cache");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.NonValidated["Cache-Control"].Should().Equal("no-store");
+    }
+
+    [Test]
     public async Task It_keeps_the_existing_health_endpoint_independent_from_document_cache_status()
     {
         ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
@@ -320,6 +343,7 @@ public class Given_HealthCheckEndpointModule
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         content.Should().Contain("\"Name\": \"ApplicationHealthCheck\"");
         content.Should().NotContain("document-cache");
+        response.Headers.CacheControl.Should().BeNull();
         documentCacheStatusService.CallCount.Should().Be(0);
     }
 

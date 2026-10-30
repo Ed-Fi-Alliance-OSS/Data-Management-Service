@@ -505,6 +505,9 @@ if (-not $databaseOnlyStartup) {
     # database-only diagnostic phase. Every non-teardown bootstrap run starts Config Service,
     # including keycloak-backed runs. -EnableConfig is retained for backward compatibility.
     $files += @("-f", "local-config.yml")
+    # Keep the combined topology consistent across infrastructure, DMS-only and teardown phases.
+    # The CMS-only launcher omits this overlay and retains its existing forwarding settings.
+    $files += @("-f", "dms-cms-proxy.yml")
 
     if ($bootstrapMode) {
         # Include bootstrap-dms.yml in the managed compose set so follow-up up/down calls operate

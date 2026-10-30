@@ -59,6 +59,7 @@ COPY Directory.Build.props Directory.Build.targets ./
 
 COPY frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/*.csproj frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/packages.lock.json ./frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/
 COPY backend/EdFi.DmsConfigurationService.Backend/*.csproj backend/EdFi.DmsConfigurationService.Backend/packages.lock.json ./backend/EdFi.DmsConfigurationService.Backend/
+COPY backend/EdFi.DmsConfigurationService.Claims/*.csproj backend/EdFi.DmsConfigurationService.Claims/packages.lock.json ./backend/EdFi.DmsConfigurationService.Claims/
 COPY backend/EdFi.DmsConfigurationService.Backend.Keycloak/*.csproj backend/EdFi.DmsConfigurationService.Backend.Keycloak/packages.lock.json ./backend/EdFi.DmsConfigurationService.Backend.Keycloak/
 COPY backend/EdFi.DmsConfigurationService.Backend.OpenIddict/*.csproj backend/EdFi.DmsConfigurationService.Backend.OpenIddict/packages.lock.json ./backend/EdFi.DmsConfigurationService.Backend.OpenIddict/
 COPY backend/EdFi.DmsConfigurationService.Backend.Mssql/*.csproj backend/EdFi.DmsConfigurationService.Backend.Mssql/packages.lock.json ./backend/EdFi.DmsConfigurationService.Backend.Mssql/
@@ -75,6 +76,7 @@ RUN dotnet restore frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdF
 
 COPY frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/ ./frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/
 COPY backend/EdFi.DmsConfigurationService.Backend/ ./backend/EdFi.DmsConfigurationService.Backend/
+COPY backend/EdFi.DmsConfigurationService.Claims/ ./backend/EdFi.DmsConfigurationService.Claims/
 COPY backend/EdFi.DmsConfigurationService.Backend.Keycloak/ ./backend/EdFi.DmsConfigurationService.Backend.Keycloak/
 COPY backend/EdFi.DmsConfigurationService.Backend.OpenIddict/ ./backend/EdFi.DmsConfigurationService.Backend.OpenIddict/
 COPY backend/EdFi.DmsConfigurationService.Backend.Mssql/ ./backend/EdFi.DmsConfigurationService.Backend.Mssql/

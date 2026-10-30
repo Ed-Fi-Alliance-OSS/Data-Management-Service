@@ -145,7 +145,7 @@ RunBootstrapPhase(
                     // Any query can be answered with the ignored-parameter warning, so it is always
                     // readable. The identity surface's async 202 and incomplete results 200 carry a
                     // Location the Swagger UI must read; with the surface off, Location is not exposed.
-                    List<string> exposedHeaders = ["X-EdFi-Warning"];
+                    List<string> exposedHeaders = ["X-EdFi-Warning", "X-Correlation-ID", "WWW-Authenticate"];
                     if (
                         builder.Configuration.GetValue<bool>(
                             $"{IdentityManagementOptions.SectionName}:Enabled"
@@ -180,6 +180,12 @@ app.Logger.LogInformation(
 // it. The per-file loaded flags are read at this moment rather than carried from loading, because an
 // assembly first touched inside a contribution hook loaded after that phase returned.
 PluginInventoryLog.Emit(app.Logger, app.Services.GetRequiredService<PluginAuditInput>());
+
+// Before every configuration gate below, so a host that goes on to install the
+// invalid-configuration middleware (and skips the startup phases) still logs it. Reads the
+// flag from configuration without binding, so nothing here can throw on a configuration
+// value: this line sits in the unguarded window described in ReportInvalidConfiguration.
+RequireHttpsMetadataStartupWarning.Emit(app.Logger, app.Environment, app.Configuration);
 
 var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");
 if (!string.IsNullOrEmpty(pathBase))
@@ -253,6 +259,8 @@ if (invalidConfigurationException is null)
         app.UseRouting();
 
         app.UseMiddleware<IdentityResponseCachePolicyMiddleware>();
+        app.UseMiddleware<TokenResponseCachePolicyMiddleware>();
+        app.UseMiddleware<DataResponseCachePolicyMiddleware>();
 
         if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {

@@ -39,6 +39,7 @@ public class KeycloakTokenManagerTests
     {
         protected TokenResult _result = null!;
         protected List<KeyValuePair<string, string>> _postedForm = [];
+        protected bool _connectionClose;
         protected Exception? _thrown;
 
         protected abstract HttpResponseMessage Answer();
@@ -48,6 +49,7 @@ public class KeycloakTokenManagerTests
         {
             using var handler = new StubHandler(async request =>
             {
+                _connectionClose = request.Headers.ConnectionClose == true;
                 string body = await request.Content!.ReadAsStringAsync();
                 _postedForm =
                 [
@@ -191,15 +193,65 @@ public class KeycloakTokenManagerTests
             ProviderError().GetType().Should().Be(typeof(IdentityProviderError));
     }
 
-    [TestFixture]
-    public class Given_keycloak_answers_401 : TokenManagerFixture
+    [TestFixture("unauthorized_client", "Invalid client or Invalid client credentials")]
+    [TestFixture("invalid_client", "Invalid client or Invalid client credentials")]
+    [TestFixture("invalid_client", "some other description")]
+    public class Given_keycloak_answers_401_for_a_failed_client_authentication(
+        string error,
+        string description
+    ) : TokenManagerFixture
     {
         protected override HttpResponseMessage Answer() =>
-            Json(HttpStatusCode.Unauthorized, """{"error":"unauthorized_client"}""");
+            Json(
+                HttpStatusCode.Unauthorized,
+                $$"""{"error":"{{error}}","error_description":"{{description}}"}"""
+            );
+
+        [Test]
+        public void It_answers_invalid_client_with_the_shared_message() =>
+            _result
+                .Should()
+                .Be(
+                    new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    )
+                );
+    }
+
+    [TestFixture]
+    public class Given_keycloak_answers_401_with_another_error : TokenManagerFixture
+    {
+        protected override HttpResponseMessage Answer() =>
+            Json(HttpStatusCode.Unauthorized, """{"error":"invalid_token"}""");
 
         [Test]
         public void It_returns_Unauthorized() =>
             ProviderError().GetType().Should().Be(typeof(IdentityProviderError.Unauthorized));
+    }
+
+    [TestFixture("Client not enabled to retrieve service account")]
+    [TestFixture("Public client not allowed to retrieve service account")]
+    public class Given_keycloak_answers_401_unauthorized_client_for_a_grant_the_client_cannot_use(
+        string description
+    ) : TokenManagerFixture
+    {
+        protected override HttpResponseMessage Answer() =>
+            Json(
+                HttpStatusCode.Unauthorized,
+                $$"""{"error":"unauthorized_client","error_description":"{{description}}"}"""
+            );
+
+        [Test]
+        public void It_answers_invalid_client_with_the_shared_message() =>
+            _result
+                .Should()
+                .Be(
+                    new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    )
+                );
     }
 
     [TestFixture]
@@ -233,5 +285,9 @@ public class KeycloakTokenManagerTests
         [Test]
         public void It_posts_exactly_the_given_form_fields_in_order() =>
             _postedForm.Should().Equal(_credentials);
+
+        [Test]
+        public void It_asks_for_the_connection_to_be_closed_after_the_answer() =>
+            _connectionClose.Should().BeTrue();
     }
 }

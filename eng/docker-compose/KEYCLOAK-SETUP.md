@@ -138,17 +138,21 @@ Keycloak needs the following for this to work:
 
 ### Confirming a revocation at Keycloak
 
-A `200 OK` from `/connect/revoke` does not prove the token was revoked (RFC 7009 answers
-`200` for unknown and foreign tokens too), and Configuration Service `/connect/introspect` cannot observe
-Keycloak tokens. Confirm through Keycloak's introspection endpoint,
-`POST http://localhost:8045/realms/edfi/protocol/openid-connect/token/introspect`, with
-`token=<the token>` and the credentials of a **confidential** client:
+A `200 OK` from `/connect/revoke` does not prove the token was revoked (RFC 7009 answers `200` for unknown and foreign tokens too).
+Configuration Service `/connect/introspect`, authenticated as the token's owner, passes the owner's credentials to Keycloak and describes only the owner's access tokens, so it is subject to the audience rule below and cannot observe a public client's or a refresh token.
+Every client the Configuration Service creates, and every client `setup-keycloak.ps1` creates, already carries an audience mapper for itself, so the owner of an access token whose `aud` contains its own client id can confirm there.
+A client created by an earlier version of the Configuration Service gains that mapper from its next update through `PUT /v3/apiClients/{id}` or `PUT /v3/vendors/{id}` (every API client of the vendor's applications), but not from a credential reset (see [CS-AUTH.md § Token introspection](../../reference/design/configuration-service/CS-AUTH.md#token-introspection)), unless it already has an OpenID Connect mapper named `Client's own audience` that does not put it into its own access tokens: the update leaves that mapper unchanged and logs a Warning.
+Run again for a client that already exists, such as `DmsConfigurationService`, `setup-keycloak.ps1` adds the mapper to that client when no mapper already gives it its own audience and changes nothing else; when the client has a conflicting OpenID Connect `Client's own audience` mapper, the script leaves it unchanged and warns that the client was not repaired.
+The script reaches only the client it is run for, not the other clients the Configuration Service manages.
+Only tokens issued after the mapper is added carry the audience: on Keycloak 26.6.2 or later, a live token issued before then is still answered `active:false` to its owner, so request a new token.
+On Keycloak 26.6.2 or later, add the mapper yourself to a client that none of those updates or script runs will reach, or to one that kept such a mapper, with the steps below, using the client itself as both the observed and the introspecting client and, when `Client's own audience` is taken, another mapper name.
+For a client the Configuration Service manages, put the mapper in the client's own `<client>-dedicated` scope: its next `PUT /v3/apiClients/{id}`, or a `PUT /v3/applications/{id}` that synchronizes that client because the change affects it or it is already pending, removes every default client scope other than its claim set's, the realm's default scopes and the service-account scope.
+Otherwise confirm through Keycloak's introspection endpoint, `POST http://localhost:8045/realms/edfi/protocol/openid-connect/token/introspect`, with `token=<the token>` and the credentials of a **confidential** client:
 
-- Introspect access tokens with a client that is in the token's audience (`aud`). From
-  Keycloak 26.4.12 (per the Red Hat build of Keycloak 26.4 migration guide; observed on
-  26.7.5, not on the pinned 26.1.4), any other client is answered `active:false` for a live
-  token. The mapper goes on the clients whose tokens you observe, not on the introspecting
-  client:
+- Introspect access tokens with a client that is in the token's audience (`aud`).
+  From Keycloak 26.6.2 (the Red Hat build of Keycloak 26.4.12, per its 26.4 migration guide; observed on 26.7.5, not on the pinned 26.1.4), any other client is answered `active:false` for a live token.
+  Keycloak's opt-outs from this check (the server option `allow-token-introspection-without-audience-check` and the client setting *Allow token introspection without audience check*) are deprecated and not recommended ([Migrating to 26.6.2](https://www.keycloak.org/docs/latest/upgrading/index.html#migrating-to-26-6-2)).
+  The mapper goes on the clients whose tokens you observe, not on the introspecting client:
 
   1. Create a client scope (or use each observed client's `<client>-dedicated` scope) and
      add an `Audience` mapper by configuration, with *Included Client Audience* set to the
@@ -401,7 +405,7 @@ Please refer "Creating a Configuration Service Client" section above
             "Authority": "http://your-keycloak-url:port/realms/<your-realm>",
             "MetadataAddress": "http://your-keycloak-url:port/realms/<your-realm>/.well-known/openid-configuration",
             "Audience": "account",
-            "RequireHttpsMetadata": false,
+            "RequireHttpsMetadata": false, // local http Keycloak only; the application default is true (docs/CONFIGURATION.md)
             "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
         ```
 

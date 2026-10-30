@@ -21,6 +21,13 @@ public class Given_E2E_Feature_File_Guardrails
     private const string DedicatedSizingLaneTag = "@CursorPartitionSizing";
 
     /// <summary>
+    /// The token contract lane starts a provider proxy and configures root and qualified token
+    /// routes in separate passes. Its scenarios run through the dedicated launcher, outside the
+    /// default-version shards.
+    /// </summary>
+    private const string DedicatedTokenContractLaneTag = "@TokenContractProxy";
+
+    /// <summary>
     /// The dedicated identity plugin lane. Its scenarios need a deployment with the identity fixture
     /// plugin mounted and allowlisted, so they run in their own job against a generated environment
     /// file rather than in the sharded instance management lane, whose deployment answers every
@@ -110,6 +117,7 @@ public class Given_E2E_Feature_File_Guardrails
             // than one partition, which the default-version stack is not, so they run only in their own
             // job against their own environment file.
             .Where(s => !s.Tags.Contains(DedicatedSizingLaneTag, StringComparer.OrdinalIgnoreCase))
+            .Where(s => !s.Tags.Contains(DedicatedTokenContractLaneTag, StringComparer.OrdinalIgnoreCase))
             .Where(s =>
                 s.Tags.Count(t => t.StartsWith(E2EShardTagPrefix, StringComparison.OrdinalIgnoreCase)) != 1
             )
@@ -119,7 +127,7 @@ public class Given_E2E_Feature_File_Guardrails
         offendingScenarios
             .Should()
             .BeEmpty(
-                "each default-version DMS E2E scenario must carry exactly one @e2e-ci-shard-N tag so PR CI shards balance and never overlap (version-coupled @StandardVersion-<NN> scenarios run in their own lane and are exempt)"
+                "each default-version DMS E2E scenario must carry exactly one @e2e-ci-shard-N tag so PR CI shards balance and never overlap (version-coupled @StandardVersion-<NN>, @CursorPartitionSizing, and @TokenContractProxy scenarios run in dedicated lanes and are exempt)"
             );
     }
 

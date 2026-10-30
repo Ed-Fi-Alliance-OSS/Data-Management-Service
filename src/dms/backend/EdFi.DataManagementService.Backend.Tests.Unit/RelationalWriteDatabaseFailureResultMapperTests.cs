@@ -223,7 +223,8 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
                         new ResourceName("School"),
                         [new KeyValuePair<string, string>("schoolId", "255901")]
                     )
-                )
+                ),
+                options => options.RespectingRuntimeTypes()
             );
     }
 
@@ -247,7 +248,8 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
                         new ResourceName("School"),
                         [new KeyValuePair<string, string>("schoolId", "255901")]
                     )
-                )
+                ),
+                options => options.RespectingRuntimeTypes()
             );
     }
 
@@ -280,7 +282,8 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
                         new ResourceName("School"),
                         [new KeyValuePair<string, string>("schoolId", "155901")]
                     )
-                )
+                ),
+                options => options.RespectingRuntimeTypes()
             );
     }
 
@@ -312,7 +315,8 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
                         new ResourceName("School"),
                         [new KeyValuePair<string, string>("schoolId", "155901")]
                     )
-                )
+                ),
+                options => options.RespectingRuntimeTypes()
             );
     }
 
@@ -345,7 +349,8 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
                         new ResourceName("LocalEducationAgency"),
                         [new KeyValuePair<string, string>("localEducationAgencyId", "155901")]
                     )
-                )
+                ),
+                options => options.RespectingRuntimeTypes()
             );
     }
 
@@ -354,9 +359,9 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
     {
         // A reference-backed concrete identity element (a GeneralStudentProgramAssociation member's
         // $.programReference.educationOrganizationId) is addressed by a multi-segment JSONPath. The mapper
-        // must read its duplicate value by walking the nested request body, and report it under the trailing
-        // path segment (educationOrganizationId), proving the abstract-identity conflict path is not limited
-        // to top-level scalar identities.
+        // must read its duplicate value by walking the nested request body, and report it under its full
+        // property path (programReference.educationOrganizationId), proving the abstract-identity conflict
+        // path is not limited to top-level scalar identities and keeps the reference that owns the value.
         var classifier = new RecordingRelationalWriteExceptionClassifier
         {
             ClassificationToReturn = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
@@ -378,10 +383,205 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpsertFailureIdentityConflict(
                         new ResourceName("StudentProgramAssociation"),
-                        [new KeyValuePair<string, string>("educationOrganizationId", "255901001")]
+                        [
+                            new KeyValuePair<string, string>(
+                                "programReference.educationOrganizationId",
+                                "255901001"
+                            ),
+                        ]
                     )
-                )
+                ),
+                options => options.RespectingRuntimeTypes()
             );
+    }
+
+    [TestFixture("PK_ReferentialIdentity")]
+    [TestFixture("PK_EducationOrganizationIdToEducationOrganizationId")]
+    public class Given_A_School_Identity_Conflict_Reported_By_An_Identity_Maintenance_Primary_Key(
+        string constraintName
+    )
+    {
+        private RelationalWriteExecutorResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // On SQL Server the School AFTER triggers fire in an undefined order, so a duplicate education
+            // organization id can be reported by the referential identity or auth hierarchy primary key instead
+            // of UX_EducationOrganizationIdentity_NK. Drive the real resolver so the client still gets the
+            // identity conflict for the concrete School body.
+            var classifier = new RecordingRelationalWriteExceptionClassifier
+            {
+                ClassificationToReturn = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+                    constraintName
+                ),
+            };
+            var mapper = new RelationalWriteDatabaseFailureResultMapper(
+                classifier,
+                new RelationalWriteConstraintResolver()
+            );
+
+            mapper.TryBuild(
+                CreateSchoolAbstractIdentityRequest(RelationalWriteOperationKind.Post),
+                new StubDbException("unique violation"),
+                out var result
+            );
+            _result = result!;
+        }
+
+        [Test]
+        public void It_reports_an_identity_conflict_with_the_school_identity()
+        {
+            _result
+                .Should()
+                .BeEquivalentTo(
+                    new RelationalWriteExecutorResult.Upsert(
+                        new UpsertResult.UpsertFailureIdentityConflict(
+                            new ResourceName("School"),
+                            [new KeyValuePair<string, string>("schoolId", "155901")]
+                        )
+                    ),
+                    options => options.RespectingRuntimeTypes()
+                );
+        }
+    }
+
+    [TestFixture(RelationalWriteOperationKind.Post)]
+    [TestFixture(RelationalWriteOperationKind.Put)]
+    public class Given_Repeated_Identity_Leaf_Names_With_Different_Values(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        private bool _isMapped;
+        private RelationalWriteExecutorResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Two reference-backed identity elements end in the same property (educationOrganizationId) and
+            // carry different values. Each must be reported under its own reference path so the two values
+            // cannot be confused, in referential-identity metadata order (which the test data makes
+            // non-alphabetical).
+            var request = CreateRepeatedIdentityLeafRequest(
+                operationKind,
+                """{"educationOrganizationReference":{"educationOrganizationId":255901001},"programReference":{"educationOrganizationId":255901002},"beginDate":"2024-08-01"}"""
+            );
+
+            _isMapped = MapRepeatedIdentityLeafConflict(request, out var result);
+            _result = result!;
+        }
+
+        [Test]
+        public void It_maps_the_database_failure()
+        {
+            _isMapped.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_reports_the_concrete_resource_name()
+        {
+            GetRepeatedIdentityLeafConflict(_result, operationKind)
+                .ResourceName.Should()
+                .Be(new ResourceName("StudentProgramAssociation"));
+        }
+
+        [Test]
+        public void It_qualifies_each_repeated_leaf_with_its_reference_path_in_metadata_order()
+        {
+            GetRepeatedIdentityLeafConflict(_result, operationKind)
+                .DuplicateIdentityValues.Select(static pair => (pair.Key, pair.Value))
+                .Should()
+                .Equal(
+                    ("programReference.educationOrganizationId", "255901002"),
+                    ("educationOrganizationReference.educationOrganizationId", "255901001")
+                );
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Repeated_Identity_Leaf_Value_Missing_From_The_Request_Body
+    {
+        private bool _isMapped;
+        private RelationalWriteExecutorResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            // A value absent from the selected body is still omitted rather than reported empty; the value that
+            // is present keeps its full reference path.
+            var request = CreateRepeatedIdentityLeafRequest(
+                RelationalWriteOperationKind.Post,
+                """{"educationOrganizationReference":{"educationOrganizationId":255901001},"beginDate":"2024-08-01"}"""
+            );
+
+            _isMapped = MapRepeatedIdentityLeafConflict(request, out var result);
+            _result = result!;
+        }
+
+        [Test]
+        public void It_maps_the_database_failure()
+        {
+            _isMapped.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_omits_the_missing_value_and_qualifies_the_rest()
+        {
+            GetRepeatedIdentityLeafConflict(_result, RelationalWriteOperationKind.Post)
+                .DuplicateIdentityValues.Select(static pair => (pair.Key, pair.Value))
+                .Should()
+                .Equal(("educationOrganizationReference.educationOrganizationId", "255901001"));
+        }
+    }
+
+    // Drives the real resolver through the mapper for the repeated-leaf model.
+    private static bool MapRepeatedIdentityLeafConflict(
+        RelationalWriteExecutorRequest request,
+        out RelationalWriteExecutorResult? result
+    )
+    {
+        var classifier = new RecordingRelationalWriteExceptionClassifier
+        {
+            ClassificationToReturn = new RelationalWriteExceptionClassification.UniqueConstraintViolation(
+                AbstractIdentitySchoolTestData.GeneralStudentProgramAssociationNaturalKeyConstraintName
+            ),
+        };
+        var mapper = new RelationalWriteDatabaseFailureResultMapper(
+            classifier,
+            new RelationalWriteConstraintResolver()
+        );
+
+        return mapper.TryBuild(request, new StubDbException("unique violation"), out result);
+    }
+
+    // Returns the identity-conflict payload for either operation kind, failing the test if the result is not an
+    // identity conflict.
+    private static (
+        ResourceName ResourceName,
+        IEnumerable<KeyValuePair<string, string>> DuplicateIdentityValues
+    ) GetRepeatedIdentityLeafConflict(
+        RelationalWriteExecutorResult? result,
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        if (operationKind == RelationalWriteOperationKind.Put)
+        {
+            var updateConflict = result
+                .Should()
+                .BeOfType<RelationalWriteExecutorResult.Update>()
+                .Which.Result.Should()
+                .BeOfType<UpdateResult.UpdateFailureIdentityConflict>()
+                .Which;
+            return (updateConflict.ResourceName, updateConflict.DuplicateIdentityValues);
+        }
+
+        var upsertConflict = result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureIdentityConflict>()
+            .Which;
+        return (upsertConflict.ResourceName, upsertConflict.DuplicateIdentityValues);
     }
 
     private static RelationalWriteExecutorRequest CreateRequest(
@@ -618,6 +818,39 @@ public class Given_RelationalWriteDatabaseFailureResultMapper
             new TraceId("abstract-identity-conflict-reference-backed-test"),
             new ReferenceResolverRequest(mappingSet, writePlan.Model.Resource, [], DescriptorReferences: []),
             new RelationalWriteTargetContext.CreateNew(createDocumentUuid)
+        );
+    }
+
+    // Builds a POST or PUT request for the StudentProgramAssociation model whose two reference-backed identity
+    // elements share the trailing property educationOrganizationId, with the supplied request body.
+    private static RelationalWriteExecutorRequest CreateRepeatedIdentityLeafRequest(
+        RelationalWriteOperationKind operationKind,
+        string requestBody
+    )
+    {
+        var (writePlan, mappingSet) =
+            AbstractIdentitySchoolTestData.BuildRepeatedIdentityLeafSubclassWriteModel();
+        var createDocumentUuid = new DocumentUuid(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd"));
+        var updateDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+
+        return new RelationalWriteExecutorRequest(
+            mappingSet,
+            operationKind,
+            operationKind == RelationalWriteOperationKind.Put
+                ? new RelationalWriteTargetRequest.Put(updateDocumentUuid)
+                : new RelationalWriteTargetRequest.Post(
+                    new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                    createDocumentUuid
+                ),
+            writePlan,
+            existingDocumentReadPlan: null,
+            JsonNode.Parse(requestBody)!,
+            allowIdentityUpdates: false,
+            new TraceId("repeated-identity-leaf-conflict-test"),
+            new ReferenceResolverRequest(mappingSet, writePlan.Model.Resource, [], DescriptorReferences: []),
+            operationKind == RelationalWriteOperationKind.Put
+                ? new RelationalWriteTargetContext.ExistingDocument(345L, updateDocumentUuid, 44L)
+                : new RelationalWriteTargetContext.CreateNew(createDocumentUuid)
         );
     }
 

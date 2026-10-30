@@ -107,6 +107,8 @@ Source: `src/config/datamodel/EdFi.DmsConfigurationService.DataModel/Infrastruct
 | F-14 | `ForBadGateway` (230) | 502 | `Bad Gateway` | caller-supplied | `urn:ed-fi:api:bad-gateway` | `urn:ed-fi:management-api:bad-gateway` |
 | F-15 | `ForUnknown` (240) | 500 | `Internal Server Error` | `""` | `urn:ed-fi:api:internal-server-error` | `urn:ed-fi:management-api:internal-server-error` |
 
+> **Superseded by [DMS-1491](https://edfi.atlassian.net/browse/DMS-1491):** the Configuration Service's `/connect/token` no longer emits the F-2 too-many-tokens problem response: its 429 is the OAuth error `temporarily_unavailable`, and `ForTooManyTokens` is removed from the CMS `FailureResponse`. DMS still recognises both problem types from an earlier Configuration Service. See `CS-AUTH.md` (`/connect/token` failures).
+
 Body shape (`CreateBaseJsonObject`, lines 32–56) is unchanged: `detail`, `type`, `title`, `status`, `correlationId`, `validationErrors` (`{}` default), `errors` (`[]` default), in that order. The `ForTooManyTokens` `errors[0]` sentence is a cross-service parsing contract and is not touched.
 
 ### 4.2 CMS emission paths (all route through `FailureResponse`)

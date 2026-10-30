@@ -26,6 +26,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -130,9 +131,61 @@ public class TokenRevocationStartupTests
     }
 
     /// <summary>
-    /// The introspection registration is pinned here because it shares this file's boot harness. The
-    /// self-contained shapes ship <see cref="OpenIddictTokenManager"/>; Keycloak ships none, so
-    /// introspection there answers inactive without any check.
+    /// The self-contained host as <c>Program</c> composes it, with nothing replaced: each engine's
+    /// own token repository, wrapping that engine's data repository, offers the narrow credential
+    /// read, so the token manager authenticates from it rather than from the full application.
+    /// </summary>
+    [TestFixture("postgresql")]
+    [TestFixture("mssql")]
+    public class Given_a_self_contained_boot_with_the_shipped_repositories(string datastore)
+    {
+        private RevocationBoot _boot = null!;
+
+        [OneTimeSetUp]
+        public void OneTimeSetUp() => _boot = RevocationBoot.Run("self-contained", datastore);
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown() => _boot.Dispose();
+
+        private T Resolve<T>()
+            where T : notnull
+        {
+            using IServiceScope scope = _boot.Factory.Services.CreateScope();
+            return scope.ServiceProvider.GetRequiredService<T>();
+        }
+
+        [Test]
+        public void It_starts() => _boot.StartupException.Should().BeNull();
+
+        [Test]
+        public void It_resolves_the_engines_token_repository() =>
+            Resolve<IOpenIddictTokenRepository>()
+                .Should()
+                .BeOfType(
+                    datastore == "mssql"
+                        ? typeof(Backend.Mssql.OpenIddict.Repositories.OpenIddictTokenRepository)
+                        : typeof(Backend.Postgresql.OpenIddict.Repositories.OpenIddictTokenRepository)
+                );
+
+        [Test]
+        public void It_resolves_the_engines_data_repository() =>
+            Resolve<IOpenIddictDataRepository>()
+                .Should()
+                .BeOfType(
+                    datastore == "mssql"
+                        ? typeof(Backend.Mssql.OpenIddict.Repositories.OpenIddictDataRepository)
+                        : typeof(Backend.Postgresql.OpenIddict.Repositories.OpenIddictDataRepository)
+                );
+
+        [Test]
+        public void It_resolves_the_self_contained_token_manager() =>
+            Resolve<ITokenManager>().Should().BeOfType<OpenIddictTokenManager>();
+    }
+
+    /// <summary>
+    /// The introspection registration is pinned here because it shares this file's boot harness: the
+    /// self-contained shapes ship <see cref="OpenIddictTokenManager"/> and Keycloak ships
+    /// <see cref="KeycloakTokenIntrospectionManager"/>, constructed at startup without a provider request.
     /// </summary>
     [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(Shapes))]
     public class Given_a_boot_with_the_introspection_registration_its_provider_ships(
@@ -155,46 +208,53 @@ public class TokenRevocationStartupTests
         public void It_resolves_the_providers_introspection_manager()
         {
             using IServiceScope scope = _boot.Factory.Services.CreateScope();
-            ITokenIntrospectionManager? manager =
-                scope.ServiceProvider.GetService<ITokenIntrospectionManager>();
+            Type expected =
+                provider == "keycloak"
+                    ? typeof(KeycloakTokenIntrospectionManager)
+                    : typeof(OpenIddictTokenManager);
 
-            if (provider == "keycloak")
-            {
-                manager.Should().BeNull();
-            }
-            else
-            {
-                manager.Should().BeOfType<OpenIddictTokenManager>();
-            }
+            scope
+                .ServiceProvider.GetRequiredService<ITokenIntrospectionManager>()
+                .Should()
+                .BeOfType(expected);
         }
+
+        [Test]
+        public void It_bounds_the_keycloak_introspection_client_by_the_token_request_timeout() =>
+            _boot
+                .Factory.Services.GetRequiredService<IHttpClientFactory>()
+                .CreateClient(KeycloakTokenIntrospectionManager.HttpClientName)
+                .Timeout.Should()
+                .Be(
+                    TimeSpan.FromSeconds(
+                        _boot
+                            .Factory.Services.GetRequiredService<IConfiguration>()
+                            .GetValue<int>("AppSettings:TokenRequestTimeoutSeconds")
+                    )
+                );
+
+        [Test]
+        public void It_makes_no_identity_provider_request() =>
+            _boot.ProviderConnectionsAtStartup.Should().Be(0);
     }
 
     /// <summary>
-    /// The datastores of the self-contained shapes, which must ship an introspection manager.
+    /// Every introspection request resolves the manager, under either provider, so a host that cannot
+    /// construct one refuses to start rather than serve an endpoint that cannot authenticate its callers.
     /// </summary>
-    public static readonly object[] SelfContainedDatastores =
-    [
-        new object[] { "postgresql" },
-        new object[] { "mssql" },
-    ];
-
-    /// <summary>
-    /// Without a manager, introspection answers without any credential check, which is right only for
-    /// Keycloak, so a self-contained host missing its manager refuses to start.
-    /// </summary>
-    [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(SelfContainedDatastores))]
-    public class Given_a_self_contained_boot_with_no_introspection_manager_registered(string datastore)
+    [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(Shapes))]
+    public class Given_a_boot_with_no_introspection_manager_registered(string provider, string datastore)
     {
-        private const string NotRegisteredMessage =
-            "No token introspection manager is registered for AppSettings:IdentityProvider "
-            + "'self-contained'. Register one or correct the setting, then restart.";
+        private static string NotRegisteredMessage(string provider) =>
+            $"No token introspection manager is registered for AppSettings:IdentityProvider '{provider}'. "
+            + "Register one for this provider or correct the setting, then restart.";
 
         private RevocationBoot _boot = null!;
 
         [OneTimeSetUp]
         public void OneTimeSetUp() =>
             _boot = RevocationBoot.Run(
-                "self-contained",
+                provider,
                 datastore,
                 services => services.RemoveAll<ITokenIntrospectionManager>()
             );
@@ -204,7 +264,10 @@ public class TokenRevocationStartupTests
 
         [Test]
         public void It_fails_to_start_with_the_not_registered_message() =>
-            _boot.FindByMessage(NotRegisteredMessage).Should().BeOfType<InvalidOperationException>();
+            _boot
+                .FindByMessage(NotRegisteredMessage(provider))
+                .Should()
+                .BeOfType<InvalidOperationException>();
 
         [Test]
         public void It_logs_the_same_message_as_critical_without_an_exception()
@@ -213,25 +276,28 @@ public class TokenRevocationStartupTests
                 .Logs.Records.Should()
                 .ContainSingle(record => record.Level == LogLevel.Critical)
                 .Subject;
-            critical.Message.Should().Be(NotRegisteredMessage);
+            critical.Message.Should().Be(NotRegisteredMessage(provider));
             critical.Exception.Should().BeNull();
         }
+
+        [Test]
+        public void It_makes_no_identity_provider_request() =>
+            _boot.ProviderConnectionsAtStartup.Should().Be(0);
     }
 
-    [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(SelfContainedDatastores))]
-    public class Given_a_self_contained_boot_whose_introspection_manager_factory_throws(string datastore)
+    [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(Shapes))]
+    public class Given_a_boot_whose_introspection_manager_factory_throws(string provider, string datastore)
     {
-        private static string NotConstructedMessage(string exceptionTypes) =>
-            "The token introspection manager for AppSettings:IdentityProvider 'self-contained' could "
-            + $"not be constructed ({exceptionTypes}). Correct the registration or its dependencies, "
-            + "then restart.";
+        private static string NotConstructedMessage(string provider, string exceptionTypes) =>
+            $"The token introspection manager for AppSettings:IdentityProvider '{provider}' could not be "
+            + $"constructed ({exceptionTypes}). Correct the registration or its dependencies, then restart.";
 
         private RevocationBoot _boot = null!;
 
         [OneTimeSetUp]
         public void OneTimeSetUp() =>
             _boot = RevocationBoot.Run(
-                "self-contained",
+                provider,
                 datastore,
                 services =>
                 {
@@ -246,14 +312,14 @@ public class TokenRevocationStartupTests
         [Test]
         public void It_fails_to_start_with_the_message_naming_the_exception_type_chain() =>
             _boot
-                .FindByMessage(NotConstructedMessage(_throwingFactoryTypeChain))
+                .FindByMessage(NotConstructedMessage(provider, _throwingFactoryTypeChain))
                 .Should()
                 .BeOfType<InvalidOperationException>();
 
         [Test]
         public void It_does_not_wrap_the_factory_exception() =>
             _boot
-                .FindByMessage(NotConstructedMessage(_throwingFactoryTypeChain))!
+                .FindByMessage(NotConstructedMessage(provider, _throwingFactoryTypeChain))!
                 .InnerException.Should()
                 .BeNull();
 
@@ -264,12 +330,198 @@ public class TokenRevocationStartupTests
                 .Logs.Records.Should()
                 .ContainSingle(record => record.Level == LogLevel.Critical)
                 .Subject;
-            critical.Message.Should().Be(NotConstructedMessage(_throwingFactoryTypeChain));
+            critical.Message.Should().Be(NotConstructedMessage(provider, _throwingFactoryTypeChain));
             critical.Exception.Should().BeNull();
         }
 
         [Test]
         public void It_keeps_the_factory_exception_text_out_of_every_log_field_and_the_startup_failure() =>
+            _boot.CapturedText().Should().NotContain(Sentinel);
+
+        [Test]
+        public void It_makes_no_identity_provider_request() =>
+            _boot.ProviderConnectionsAtStartup.Should().Be(0);
+    }
+
+    /// <summary>The datastores of the self-contained shapes.</summary>
+    public static readonly object[] SelfContainedDatastores =
+    [
+        new object[] { "postgresql" },
+        new object[] { "mssql" },
+    ];
+
+    /// <summary>
+    /// The placeholder an unknown client's secret is verified against is generated at startup through
+    /// the final hasher registration, a replacement included, before any request is served; requests
+    /// only verify against it. The repository is faked so the unknown client needs no database.
+    /// </summary>
+    [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(SelfContainedDatastores))]
+    public class Given_a_self_contained_boot_with_a_replacement_client_secret_hasher(string datastore)
+    {
+        private const string AbsentClientId = "absent-client";
+        private const string PresentedSecret = "absent-client-secret";
+        private const string StartupPlaceholder = "replacement-startup-placeholder";
+        private const int Requests = 2;
+
+        private IClientSecretHasher _hasher = null!;
+        private RevocationBoot _boot = null!;
+        private int _hashesBeforeAnyRequest;
+        private readonly List<(HttpStatusCode Status, string? Error, string? Description)> _answers = [];
+
+        private int Hashes() =>
+            Fake.GetCalls(_hasher)
+                .Count(call => call.Method.Name == nameof(IClientSecretHasher.HashSecretAsync));
+
+        [OneTimeSetUp]
+        public async Task OneTimeSetUp()
+        {
+            _hasher = A.Fake<IClientSecretHasher>();
+            A.CallTo(() => _hasher.HashSecretAsync(A<string>._)).Returns(StartupPlaceholder);
+            IOpenIddictTokenRepository repository = A.Fake<IOpenIddictTokenRepository>();
+            A.CallTo(() => repository.GetClientCredentialAsync(AbsentClientId))
+                .Returns((ClientCredential?)null);
+
+            _boot = RevocationBoot.Run(
+                "self-contained",
+                datastore,
+                services =>
+                {
+                    services.AddSingleton(_hasher);
+                    services.AddSingleton(repository);
+                }
+            );
+            _hashesBeforeAnyRequest = Hashes();
+
+            for (int request = 0; request < Requests; request++)
+            {
+                using HttpResponseMessage response = await _boot.Client!.PostAsync(
+                    "/connect/token",
+                    new FormUrlEncodedContent([
+                        new KeyValuePair<string, string>("client_id", AbsentClientId),
+                        new KeyValuePair<string, string>("client_secret", PresentedSecret),
+                        new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                        new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
+                    ])
+                );
+                JsonNode body =
+                    JsonNode.Parse(await response.Content.ReadAsStringAsync())
+                    ?? throw new InvalidOperationException("The token response body was JSON null.");
+                _answers.Add(
+                    (
+                        response.StatusCode,
+                        body["error"]?.GetValue<string>(),
+                        body["error_description"]?.GetValue<string>()
+                    )
+                );
+            }
+        }
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown() => _boot.Dispose();
+
+        [Test]
+        public void It_starts() => _boot.StartupException.Should().BeNull();
+
+        [Test]
+        public void It_generates_the_placeholder_once_before_any_request() =>
+            _hashesBeforeAnyRequest.Should().Be(1);
+
+        [Test]
+        public void It_hashes_nothing_for_the_requests() => Hashes().Should().Be(1);
+
+        [Test]
+        public void It_verifies_each_request_against_the_startup_placeholder() =>
+            A.CallTo(() => _hasher.VerifySecretAsync(PresentedSecret, StartupPlaceholder))
+                .MustHaveHappened(Requests, Times.Exactly);
+
+        [Test]
+        public void It_answers_each_request_invalid_client() =>
+            _answers
+                .Should()
+                .HaveCount(Requests)
+                .And.AllBeEquivalentTo(
+                    (
+                        HttpStatusCode.BadRequest,
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    )
+                );
+    }
+
+    /// <summary>
+    /// A hasher that cannot produce the placeholder stops startup, so no request is ever served
+    /// without the unknown-client verification. The failure is reported by exception type names alone:
+    /// a replacement hasher's exception can carry anything.
+    /// </summary>
+    [TestFixture("throws")]
+    [TestFixture("faults")]
+    [TestFixture("returns an empty hash")]
+    public class Given_a_self_contained_boot_whose_client_secret_hasher_cannot_produce_the_placeholder(
+        string failure
+    )
+    {
+        private static string NotGeneratedMessage(string exceptionTypes) =>
+            "The placeholder client secret hash could not be generated with the registered client secret "
+            + $"hasher ({exceptionTypes}). Correct the hasher registration or its settings, then restart.";
+
+        private string ExpectedMessage() =>
+            NotGeneratedMessage(
+                failure == "returns an empty hash"
+                    ? typeof(InvalidOperationException).FullName!
+                    : _throwingFactoryTypeChain
+            );
+
+        private IClientSecretHasher _hasher = null!;
+        private RevocationBoot _boot = null!;
+
+        [OneTimeSetUp]
+        public void OneTimeSetUp()
+        {
+            _hasher = A.Fake<IClientSecretHasher>();
+            A.CallTo(() => _hasher.HashSecretAsync(A<string>._))
+                .ReturnsLazily(() =>
+                    failure switch
+                    {
+                        "throws" => throw ThrowingFactoryFailure(),
+                        "faults" => Task.FromException<string>(ThrowingFactoryFailure()),
+                        _ => Task.FromResult(string.Empty),
+                    }
+                );
+
+            _boot = RevocationBoot.Run(
+                "self-contained",
+                "postgresql",
+                services => services.AddSingleton(_hasher)
+            );
+        }
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown() => _boot.Dispose();
+
+        [Test]
+        public void It_fails_to_start_with_the_message_naming_the_exception_type_chain() =>
+            _boot.FindByMessage(ExpectedMessage()).Should().BeOfType<InvalidOperationException>();
+
+        [Test]
+        public void It_does_not_wrap_the_hashers_exception() =>
+            _boot.FindByMessage(ExpectedMessage())!.InnerException.Should().BeNull();
+
+        [Test]
+        public void It_serves_no_request() => _boot.Client.Should().BeNull();
+
+        [Test]
+        public void It_logs_the_same_message_as_critical_without_an_exception()
+        {
+            CapturedStartupLog critical = _boot
+                .Logs.Records.Should()
+                .ContainSingle(record => record.Level == LogLevel.Critical)
+                .Subject;
+            critical.Message.Should().Be(ExpectedMessage());
+            critical.Exception.Should().BeNull();
+        }
+
+        [Test]
+        public void It_keeps_the_hashers_exception_text_out_of_every_log_field_and_the_startup_failure() =>
             _boot.CapturedText().Should().NotContain(Sentinel);
     }
 
@@ -1114,18 +1366,89 @@ public class TokenRevocationStartupTests
     }
 
     /// <summary>
-    /// A loopback HTTP server standing in for Keycloak: the realm's revoke endpoint answers with the
-    /// given redirect to a target on the same server, which answers 200. Each path counts its
-    /// requests before answering, so a request has been counted by the time its caller sees the
-    /// response.
+    /// The shipped Keycloak introspection manager and the host's own client registration, over a real
+    /// loopback transport, against an introspection endpoint that answers with a redirect. The realm URL
+    /// points at the redirecting server. The redirect target answers 200 <c>{"active":false}</c>, so a
+    /// followed redirect would turn an unusable answer into a token outcome, and a followed 307 would
+    /// resend the caller's secret and token to the target.
+    /// </summary>
+    [TestFixture(HttpStatusCode.Found)]
+    [TestFixture(HttpStatusCode.TemporaryRedirect)]
+    public class Given_a_keycloak_introspection_endpoint_that_answers_with_a_redirect(HttpStatusCode redirect)
+    {
+        private RedirectingProvider _provider = null!;
+        private RevocationBoot _boot = null!;
+        private HttpResponseMessage _response = null!;
+
+        [OneTimeSetUp]
+        public async Task OneTimeSetUp()
+        {
+            _provider = await RedirectingProvider.StartAsync(redirect);
+            _boot = RevocationBoot.Run(
+                "keycloak",
+                "postgresql",
+                services =>
+                {
+                    services.RemoveAll<KeycloakContext>();
+                    services.AddScoped(_ => new KeycloakContext(
+                        _provider.BaseUrl,
+                        "edfi",
+                        "cms-service",
+                        "cms-secret",
+                        "role"
+                    ));
+                }
+            );
+
+            using HttpRequestMessage request = new(HttpMethod.Post, "/connect/introspect")
+            {
+                Content = RevocationForm(("token", "opaque-token")),
+            };
+            request.Headers.Authorization = new AuthenticationHeaderValue(
+                "Basic",
+                Convert.ToBase64String(Encoding.UTF8.GetBytes("introspection-caller:introspection-secret"))
+            );
+            _response = await _boot.Client!.SendAsync(request);
+        }
+
+        [OneTimeTearDown]
+        public async Task OneTimeTearDown()
+        {
+            _response.Dispose();
+            _boot.Dispose();
+            await _provider.DisposeAsync();
+        }
+
+        [Test]
+        public async Task It_answers_503_temporarily_unavailable()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+            (await OAuthErrorAsync(_response)).Should().Be("temporarily_unavailable");
+        }
+
+        [Test]
+        public void It_sends_the_introspection_to_the_realm_introspection_endpoint_once() =>
+            _provider.IntrospectRequests.Should().Be(1);
+
+        [Test]
+        public void It_does_not_follow_the_redirect() => _provider.RedirectTargetRequests.Should().Be(0);
+    }
+
+    /// <summary>
+    /// A loopback HTTP server standing in for Keycloak: the realm's revoke and introspection endpoints
+    /// answer with the given redirect to a target on the same server, which answers 200
+    /// <c>{"active":false}</c>. Each path counts its requests before answering, so a request has been
+    /// counted by the time its caller sees the response.
     /// </summary>
     private sealed class RedirectingProvider : IAsyncDisposable
     {
         private const string RevokePath = "/realms/edfi/protocol/openid-connect/revoke";
+        private const string IntrospectPath = "/realms/edfi/protocol/openid-connect/token/introspect";
         private const string RedirectTargetPath = "/redirect-target";
 
         private readonly WebApplication _app;
         private int _revokeRequests;
+        private int _introspectRequests;
         private int _redirectTargetRequests;
 
         private RedirectingProvider(HttpStatusCode redirect)
@@ -1135,25 +1458,36 @@ public class TokenRevocationStartupTests
                 .WebHost.UseKestrelCore()
                 .ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0));
             _app = builder.Build();
-            _app.Run(context =>
+            _app.Run(async context =>
             {
                 if (context.Request.Path == RevokePath)
                 {
                     Interlocked.Increment(ref _revokeRequests);
-                    context.Response.StatusCode = (int)redirect;
-                    context.Response.Headers.Location = RedirectTargetPath;
+                    Redirect(context.Response, redirect);
+                }
+                else if (context.Request.Path == IntrospectPath)
+                {
+                    Interlocked.Increment(ref _introspectRequests);
+                    Redirect(context.Response, redirect);
                 }
                 else if (context.Request.Path == RedirectTargetPath)
                 {
                     Interlocked.Increment(ref _redirectTargetRequests);
                     context.Response.StatusCode = StatusCodes.Status200OK;
+                    context.Response.ContentType = "application/json";
+                    await context.Response.WriteAsync("""{"active":false}""");
                 }
                 else
                 {
                     context.Response.StatusCode = StatusCodes.Status404NotFound;
                 }
-                return Task.CompletedTask;
             });
+        }
+
+        private static void Redirect(HttpResponse response, HttpStatusCode redirect)
+        {
+            response.StatusCode = (int)redirect;
+            response.Headers.Location = RedirectTargetPath;
         }
 
         internal static async Task<RedirectingProvider> StartAsync(HttpStatusCode redirect)
@@ -1167,6 +1501,8 @@ public class TokenRevocationStartupTests
         internal string BaseUrl => _app.Urls.Single();
 
         internal int RevokeRequests => Volatile.Read(ref _revokeRequests);
+
+        internal int IntrospectRequests => Volatile.Read(ref _introspectRequests);
 
         internal int RedirectTargetRequests => Volatile.Read(ref _redirectTargetRequests);
 
@@ -1200,6 +1536,10 @@ public class TokenRevocationStartupTests
             CertificatePath = Path.Combine(_directory, "devcert.pfx");
             WriteDevelopmentCertificate(CertificatePath);
 
+            A.CallTo(() => Repository.GetClientCredentialAsync(ClientId))
+                .ReturnsLazily(() =>
+                    new ClientCredential(ApplicationId, ClientId, _storedSecret, IsApproved: true)
+                );
             A.CallTo(() => Repository.GetApplicationByClientIdAsync(ClientId))
                 .ReturnsLazily(() =>
                     new ApplicationInfo

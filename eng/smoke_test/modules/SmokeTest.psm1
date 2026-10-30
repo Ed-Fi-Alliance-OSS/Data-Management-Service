@@ -355,7 +355,7 @@ function Get-SmokeTestCredentialSummary {
     }
 
     if ($SelfContainedIdentity) {
-        $lines.Add("Self-contained identity: set CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1 before starting the stack (see eng/smoke_test/SMOKETEST.md); the default limit stops the smoke run.")
+        $lines.Add("Self-contained identity: set CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT=-1 and raise CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_SOURCE_PERMIT_LIMIT and CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_CLIENT_PERMIT_LIMIT (or set CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED=false) before starting the stack (see eng/smoke_test/SMOKETEST.md); the default limits stop the smoke run.")
     }
 
     return $lines.ToArray()

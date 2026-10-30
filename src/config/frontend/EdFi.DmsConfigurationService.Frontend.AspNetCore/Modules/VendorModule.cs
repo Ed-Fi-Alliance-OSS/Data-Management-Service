@@ -64,7 +64,8 @@ public class VendorModule : IEndpointModule
         endpoints.MapSecuredDelete($"/v3/vendors/{{id}}", Delete);
         endpoints
             .MapSecuredGet($"/v3/vendors/{{id}}/applications", GetApplicationsByVendorId)
-            .Produces<List<ApplicationResponse>>(200);
+            .Produces<List<ApplicationResponse>>(200)
+            .WithDescription(ApplicationModule.ApplicationClientStateDescription);
     }
 
     private static async Task<IResult> InsertVendor(
