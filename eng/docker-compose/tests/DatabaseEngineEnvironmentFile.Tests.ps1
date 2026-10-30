@@ -180,7 +180,7 @@ MSSQL_SA_PASSWORD=CustomSecret1!
     It "composes the overlay onto a partial env carrying DMS_DATASTORE=mssql without the full overlay signal" {
         # A hand-authored env with only DMS_DATASTORE=mssql must not be mistaken for a
         # wrapper-composed file: it would miss the CMS SQL Server settings and credentials
-        # while mssql.yml starts no PostgreSQL container to fall back to.
+        # while mssql.compose.yml starts no PostgreSQL container to fall back to.
         $partialPath = Join-Path $script:work ".env.partial"
         Set-Content -LiteralPath $partialPath -Value "DMS_DATASTORE=mssql`n" -NoNewline
 

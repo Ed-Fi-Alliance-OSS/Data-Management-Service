@@ -486,7 +486,7 @@ Describe 'Stock image proof decisions' {
             $commands = @(
                 'docker pull edfialliance/ed-fi-api@sha256:abc'
                 'dotnet publish eng/fixtures/plugins/Acme.CustomValidationProof'
-                'docker compose -f postgresql.yml up -d'
+                'docker compose -f postgresql.compose.yml up -d'
             )
 
             (Test-BuildCommandAbsent -Command $commands).Verified | Should -BeTrue

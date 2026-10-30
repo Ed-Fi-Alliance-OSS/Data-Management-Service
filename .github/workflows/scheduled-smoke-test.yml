@@ -42,9 +42,9 @@ on:
       # the DS 6.1 educator-prep filter + tolerance). Listed so a change to any engine/DS leg is
       # validated on PRs instead of only the cron run (DMS-1136).
       - '.github/workflows/build-populated-template.yml'
-      - 'eng/docker-compose/mssql.yml'
+      - 'eng/docker-compose/mssql.compose.yml'
       - 'eng/docker-compose/.env.mssql'
-      - 'eng/docker-compose/postgresql.yml'
+      - 'eng/docker-compose/postgresql.compose.yml'
       - 'eng/docker-compose/.env.smoke'
       - 'eng/docker-compose/.env.smoke.ds61'
       - 'eng/docker-compose/start-local-dms.ps1'

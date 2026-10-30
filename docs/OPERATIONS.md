@@ -69,7 +69,7 @@ at `/var/lib/postgresql`, where earlier images mounted the volume at
 not read: PostgreSQL 18 initializes a new, empty cluster beside the old files.
 Before the first start on 18, either remove the old volume (its data is lost) or
 upgrade it with `pg_upgrade`. This applies to developer volumes from
-`eng/docker-compose/postgresql.yml`. The security-review VM's `update.sh` refuses
+`eng/docker-compose/postgresql.compose.yml`. The security-review VM's `update.sh` refuses
 to update such a volume; see
 [its update runbook](../eng/azure-vm/provision/UPDATE.md#part-b-update-to-a-newer-build--bash).
 
@@ -314,7 +314,7 @@ by no `.deps.json`, and the next person to read that directory cannot tell which
 version they are looking at.
 
 **The `fetch-plugins` image is pinned by digest**, following the convention every
-third-party image in `eng/docker-compose/` already uses — `postgresql.yml` pins its
+third-party image in `eng/docker-compose/` already uses — `postgresql.compose.yml` pins its
 Postgres image the same way. The committed digest is a real, pullable `alpine` 3.22
 image, so the recipe is runnable as it stands rather than a placeholder that must be
 replaced before it works. An operator may re-pin it to an image they have approved; a

@@ -31,7 +31,7 @@ services. For the Configuration Service-only stack:
 
 ```powershell
 cd eng/docker-compose
-docker compose -f postgresql.yml -f local-config.yml -f keycloak.yml `
+docker compose -f postgresql.compose.yml -f local-config.yml -f keycloak.compose.yml `
   -f local-config-diagnostics.yml -f local-postgresql-diagnostics.yml `
   --env-file .env.e2e -p cs-local up -d db config cms-monitor
 ```
@@ -205,7 +205,7 @@ before recreating. P-runner-approx:
 ```powershell
 cd eng/docker-compose
 $env:CONFIGURATION_SERVICE_LOG_LEVEL = 'Debug'
-docker compose -f postgresql.yml -f local-config.yml -f local-config-diagnostics.yml `
+docker compose -f postgresql.compose.yml -f local-config.yml -f local-config-diagnostics.yml `
   -f local-postgresql-diagnostics.yml -f local-resource-runner-approx.yml `
   --env-file .env.e2e -p dms-local up -d --no-deps db config
 ```

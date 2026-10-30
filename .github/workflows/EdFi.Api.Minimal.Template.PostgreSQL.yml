@@ -37,7 +37,7 @@ on:
       - "eng/docker-compose/local-config.yml"
       - "eng/docker-compose/local-dms.yml"
       - "eng/docker-compose/OpenIddict-Crypto.psm1"
-      - "eng/docker-compose/postgresql.yml"
+      - "eng/docker-compose/postgresql.compose.yml"
       - "eng/docker-compose/postgresql-init.sh"
       - "eng/docker-compose/provision-dms-schema.ps1"
       - "eng/docker-compose/provision-e2e-database.ps1"

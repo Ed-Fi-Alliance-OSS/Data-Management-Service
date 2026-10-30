@@ -576,7 +576,7 @@ $failureStatement
                 param($ProjectName, $DatabaseEngine, $EnvironmentFile)
                 # Records the full shape so tests can prove the slice is stopped with the same
                 # compose files/env file it was started with - never a bare compose call.
-                $composeFiles = if ($DatabaseEngine -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
+                $composeFiles = if ($DatabaseEngine -eq "mssql") { "mssql.compose.yml" } else { "postgresql.compose.yml" }
                 Add-Content -LiteralPath $log -Value "restore:stop-db project=$ProjectName engine=$DatabaseEngine env=[$EnvironmentFile] files=[$composeFiles]"
                 & $stubThrow "Stop-RestoreDatabaseOnlySlice"
             }.GetNewClosure()
@@ -2363,7 +2363,7 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
             $stopDbLine = $log[(Get-RestoreLogIndex -Log $log -Pattern "restore:stop-db*")]
             $stopDbLine | Should -BeLike "*project=dms-local engine=postgresql*"
             $stopDbLine | Should -BeLike "*env=[[]*preflight.env]*"
-            $stopDbLine | Should -BeLike "*files=[[]postgresql.yml]*"
+            $stopDbLine | Should -BeLike "*files=[[]postgresql.compose.yml]*"
             $wrapperSource = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Raw
             # No bare compose invocation survives anywhere in the wrapper: every remaining
             # mention is commentary. (The helper's own argv contract - stop/db only, carrying the
@@ -4691,7 +4691,7 @@ Export-ModuleMember -Function *
     Context "MSSQL datastore engine compose selection and runtime isolation (DMS-1238, DMS-1279)" {
         It "isolates the SQL Server 2025 runtime from legacy SQL Server volumes (DMS-1279)" {
             $mssqlCompose = Get-Content -LiteralPath (
-                Join-Path $script:sourceDockerComposeRoot "mssql.yml"
+                Join-Path $script:sourceDockerComposeRoot "mssql.compose.yml"
             ) -Raw
 
             $mssqlCompose | Should -Match '(?m)^\s*image:\s*\$\{MSSQL_IMAGE:-mcr\.microsoft\.com/mssql/server:2025-latest\}\s*$'
@@ -4725,13 +4725,13 @@ Export-ModuleMember -Function *
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            # postgresql.yml and mssql.yml both define the "db" service that local-config.yml
+            # postgresql.compose.yml and mssql.compose.yml both define the "db" service that local-config.yml
             # gates on (depends_on: db: service_healthy), so exactly one of them may join the
             # compose set: SQL Server hosts the whole stack on the mssql path (DMS-1243 CMS
             # SQL Server backend), and no PostgreSQL container runs.
-            $startScript | Should -Match '\$databaseComposeFile = if \(\$DatabaseEngine -eq "mssql"\) \{ "mssql\.yml" \} else \{ "postgresql\.yml" \}'
+            $startScript | Should -Match '\$databaseComposeFile = if \(\$DatabaseEngine -eq "mssql"\) \{ "mssql\.compose\.yml" \} else \{ "postgresql\.compose\.yml" \}'
             $startScript | Should -Match '\$files\s*=\s*@\(\s*"-f",\s*\$databaseComposeFile'
-            $startScript | Should -Not -Match '\$files \+= @\("-f", "mssql\.yml"\)'
+            $startScript | Should -Not -Match '\$files \+= @\("-f", "mssql\.compose\.yml"\)'
         }
 
         It "start-local-dms.ps1 passes engine-aware database parameters to every setup-openiddict.ps1 call" {
@@ -5451,7 +5451,7 @@ Export-ModuleMember -Function Invoke-CdcDeploymentLifecycle
 
     # =========================================================================
     # DMS-1238 - -DatabaseEngine parameter surface and unconditional forwarding across both
-    # start scripts. mssql.yml is no longer a local-only tier: both bootstrap entry points
+    # start scripts. mssql.compose.yml is no longer a local-only tier: both bootstrap entry points
     # accept -DatabaseEngine, and the wrapper forwards it to whichever start script it targets
     # without gating on StartScriptName.
     # =========================================================================
@@ -5542,7 +5542,7 @@ Add-Content -LiteralPath '$callLog' -Value "start DatabaseEngine=`$DatabaseEngin
                 Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1"
             ) -Raw
 
-            # mssql.yml is no longer a local-only tier, so there must be no gating variable
+            # mssql.compose.yml is no longer a local-only tier, so there must be no gating variable
             # deciding forwarding by StartScriptName.
             $wrapperSource | Should -Not -Match "startScriptSupportsDatabaseEngine"
             $wrapperSource | Should -Match '(?m)^\s*\$startArgs\.DatabaseEngine\s*=\s*\$DatabaseEngine\s*$'

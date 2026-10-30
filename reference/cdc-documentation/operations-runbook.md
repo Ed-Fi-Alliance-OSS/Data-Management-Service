@@ -151,7 +151,7 @@ and verify `docker ps` succeeds in the session. The scripts enforce Linux owners
 checks. Reserve the `dms` network, selected project and container names exclusively;
 no unrelated containers on the Configuration Service/database network and no DMS/IDE writers are allowed.
 
-Use the pinned PostgreSQL image in [postgresql.yml](../../eng/docker-compose/postgresql.yml)
+Use the pinned PostgreSQL image in [postgresql.compose.yml](../../eng/docker-compose/postgresql.compose.yml)
 (`postgres:18.6-alpine`, including its digest), the broker in
 [kafka-broker.yml](../../eng/docker-compose/kafka-broker.yml), and the qualified worker
 in [kafka-cdc.yml](../../eng/docker-compose/kafka-cdc.yml). The worker digest is checked
@@ -502,7 +502,7 @@ and [initial-admission owner](../design/backend-redesign/design-docs/cdc/cdc-str
 
 ### Prepare SQL Server infrastructure and login
 
-Use [mssql.yml](../../eng/docker-compose/mssql.yml)'s SQL Server **2025** Developer
+Use [mssql.compose.yml](../../eng/docker-compose/mssql.compose.yml)'s SQL Server **2025** Developer
 image (`mcr.microsoft.com/mssql/server:2025-latest`), not an old 2022 volume/container.
 The Compose SQL Server tag is mutable; retain the resolved image identity in each
 qualification result rather than treating the tag as proof of the tested digest.

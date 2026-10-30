@@ -3276,7 +3276,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
 
                 $dir = Join-Path $script:work ("compose-" + [Guid]::NewGuid().ToString('N'))
                 New-Item -ItemType Directory -Path $dir -Force | Out-Null
-                Set-Content -LiteralPath (Join-Path $dir "$Engine.yml") -NoNewline -Value ($Line -join "`n")
+                Set-Content -LiteralPath (Join-Path $dir "$Engine.compose.yml") -NoNewline -Value ($Line -join "`n")
                 return $dir
             }
 
@@ -3523,7 +3523,7 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
 
                 $message | Should -Not -BeNullOrEmpty -Because "$($case.Label) is not the supported header form"
                 $message | Should -BeLike "*does not use the supported 'name:' header form*"
-                $message | Should -BeLike "*postgresql.yml*" -Because "the operator needs to know which file"
+                $message | Should -BeLike "*postgresql.compose.yml*" -Because "the operator needs to know which file"
                 $message | Should -BeLike "*at line 2*" -Because "the operator needs to know where"
                 $message | Should -Not -BeLike "*NOT-THE-DATABASE*" -Because "no later sibling may be adopted"
                 $message | Should -Not -BeLike "*$($case.Header.Trim())*" -Because "diagnostics name the location, never the line content"
@@ -3592,9 +3592,9 @@ Describe "Confirm-CmsDatabaseTopologyAgreement" {
                 Should -Be @('db', 'dms-mssql')
 
             foreach ($engine in @('postgresql', 'mssql')) {
-                $composeText = [System.IO.File]::ReadAllText((Join-Path $script:dockerComposeRoot "$engine.yml"))
+                $composeText = [System.IO.File]::ReadAllText((Join-Path $script:dockerComposeRoot "$engine.compose.yml"))
                 foreach ($alias in @(Get-ComposeDatabaseServiceHostAlias -DatabaseEngine $engine -DockerComposeRoot $script:dockerComposeRoot)) {
-                    $composeText | Should -BeLike "*$alias*" -Because "every accepted host must appear in $engine.yml"
+                    $composeText | Should -BeLike "*$alias*" -Because "every accepted host must appear in $engine.compose.yml"
                 }
             }
         }
@@ -3992,7 +3992,7 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
 
         # Captured empirically (DMS-1270 Phase 1a spike) by rendering the genuine, checked-in
         # nested Compose fallback with a real Docker Compose invocation:
-        #   docker compose -f postgresql.yml -f local-config.yml --env-file <fixture> config
+        #   docker compose -f postgresql.compose.yml -f local-config.yml --env-file <fixture> config
         # where the fixture env file defined only POSTGRES_DB_NAME=edfi_datamanagementservice and
         # POSTGRES_PASSWORD=abcdefgh1! (CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING left entirely absent,
         # matching an old .env predating that key). Docker Compose v5.1.3 rendered
@@ -4006,7 +4006,7 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
         # shaped exactly like today's checked-in templates - connection string present,
         # CONFIGURATION_SERVICE_DATABASE_NAME absent) and feeding the ACTUAL resulting derived file to a real
         # Docker Compose invocation:
-        #   docker compose -f postgresql.yml -f local-config.yml --env-file <derived file> config
+        #   docker compose -f postgresql.compose.yml -f local-config.yml --env-file <derived file> config
         # This uncovered a genuine bug, since fixed (Move-EnvFileKeyBeforeAnotherKey): Docker
         # Compose's --env-file interpolation is order-dependent, like shell `source` semantics - a
         # forward reference (CONFIGURATION_SERVICE_DATABASE_NAME's line appearing after the connection string

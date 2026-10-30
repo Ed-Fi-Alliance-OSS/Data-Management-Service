@@ -74,10 +74,10 @@ Describe 'Stock image pin selection' {
             return $images
         }
 
-        $script:publishedSet = @('postgresql.yml', 'published-dms.yml', 'published-config.yml')
+        $script:publishedSet = @('postgresql.compose.yml', 'published-dms.yml', 'published-config.yml')
         # The order the launchers build: application file, then the plugin overlays, then the
         # configuration service. The pin overlay rides the plugin hook, so it lands in the middle.
-        $script:pinnedSet = @('postgresql.yml', 'published-dms.yml', $script:pinOverlay, 'published-config.yml')
+        $script:pinnedSet = @('postgresql.compose.yml', 'published-dms.yml', $script:pinOverlay, 'published-config.yml')
     }
 
     Context 'the shipped default, which this change must not move' {

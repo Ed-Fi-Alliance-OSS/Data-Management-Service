@@ -667,7 +667,7 @@ function Get-LocalComposeDatabaseHostSideEndpoint {
     )
 
     if ($Dialect -eq "mssql") {
-        # mssql.yml publishes this port on 127.0.0.1 only (IPv4); use the literal address so
+        # mssql.compose.yml publishes this port on 127.0.0.1 only (IPv4); use the literal address so
         # SqlClient cannot resolve "localhost" to ::1 first and stall or fail on an IPv6 host.
         $mssqlPort = Get-EnvValueOrDefault -EnvValues $EnvValues -Name "MSSQL_PORT" -DefaultValue "1435"
         return [pscustomobject]@{
@@ -827,7 +827,7 @@ function Test-ProvisionTargetIsLocalComposeDatabase {
 
     The host is matched as a LOOPBACK EQUIVALENCE CLASS, not against one canonical spelling, and the
     SQL Server host is compared as a parsed part rather than inside its combined "host,port" text.
-    Both Compose services publish on 127.0.0.1 (postgresql.yml, mssql.yml) while the PostgreSQL
+    Both Compose services publish on 127.0.0.1 (postgresql.compose.yml, mssql.compose.yml) while the PostgreSQL
     translation writes "localhost" and the SQL Server translation writes "127.0.0.1" - so exact text
     equality against either canonical spelling leaves the other spelling of the SAME server looking
     external, and a stored connection string may legitimately carry either. The port must still

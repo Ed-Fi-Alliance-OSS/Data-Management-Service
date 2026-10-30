@@ -180,7 +180,7 @@ It then restarts the gateway and Swagger UI, because both read their mounted fil
 The Configuration Service applies its database migrations at startup.
 If a Configuration Service stays unhealthy, `./logs.sh st-config` (or `mt-config`) names the migration that failed.
 
-Keycloak: `keycloak.yml` pins one image by tag and digest (`26.8.1@sha256:…`), the same image as `eng/docker-compose/keycloak.yml`.
+Keycloak: `keycloak.compose.yml` pins one image by tag and digest (`26.8.1@sha256:…`), the same image as `eng/docker-compose/keycloak.compose.yml`.
 To protect the persisted H2 realm volume, `update.sh` refuses any change to that reference, including a new digest under the same tag; such an update follows [`REDEPLOY.md`](REDEPLOY.md), which issues new API keys.
 
 PostgreSQL: builds from October 2026 run PostgreSQL 18, which keeps its cluster in a versioned directory inside the `dms-security-review_dms-sec-postgres` volume.
@@ -374,7 +374,7 @@ The DS 6.1 template must exist for the running build; builds before 8.0.1-alpha.
    It loads claims only into an empty database, so the recreated services need one reload:
 
    ```bash
-   docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps st-config mt-config
+   docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d --no-deps st-config mt-config
    until [ "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/st-config/health)" = 200 ] &&
      curl -sk -o /dev/null -w '%{http_code}' https://localhost/mt-config/health | grep -qE '^(200|400)$'; do sleep 5; done
    ADMIN_ID=$(grep -E '^BOOTSTRAP_ADMIN_CLIENT_ID=' .env | cut -d= -f2-)
@@ -412,7 +412,7 @@ The DS 6.1 template must exist for the running build; builds before 8.0.1-alpha.
 
    ```bash
    sed -i 's/^CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=.*/CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=false/' .env
-   docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps st-config mt-config
+   docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d --no-deps st-config mt-config
    ```
 
 5. Start the DMS services and check the existing keys **[bash]**:

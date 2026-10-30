@@ -14,7 +14,7 @@ Describe "Azure VM lifecycle safety" {
         $script:updateSource = Join-Path $script:azureVmRoot "compose/update.sh"
         $script:recordKeycloakImageSource = Join-Path $script:azureVmRoot "compose/record-keycloak-image.sh"
         $script:legacyEnvWarningSource = Join-Path $script:azureVmRoot "compose/legacy-env-warning.sh"
-        # Matches the pin in compose/keycloak.yml, as `docker compose config --images` and
+        # Matches the pin in compose/keycloak.compose.yml, as `docker compose config --images` and
         # `docker inspect --format {{.Config.Image}}` both report a tag@digest reference.
         $script:keycloakImage = "quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b"
     }
@@ -380,7 +380,7 @@ exit 17
 
     It "pins the same Keycloak image by tag and digest in both compose files" {
         $repoRoot = Join-Path $script:azureVmRoot "../.."
-        foreach ($file in @("eng/azure-vm/compose/keycloak.yml", "eng/docker-compose/keycloak.yml")) {
+        foreach ($file in @("eng/azure-vm/compose/keycloak.compose.yml", "eng/docker-compose/keycloak.compose.yml")) {
             $images = @(Select-String -LiteralPath (Join-Path $repoRoot $file) -Pattern '^\s*image:\s*(\S+)\s*$' |
                     ForEach-Object { $_.Matches[0].Groups[1].Value })
             $images | Should -Be @($script:keycloakImage) -Because $file
@@ -506,8 +506,8 @@ exit 17
 
         $LASTEXITCODE | Should -Be 0
         $calls = Get-Content -LiteralPath $script:dockerLog -Raw
-        $calls | Should -Match 'compose -f docker-compose\.yml -f keycloak\.yml --env-file \.env down -v'
-        $calls | Should -Match 'compose -f docker-compose\.yml -f keycloak\.yml --env-file \.env up -d --no-deps'
+        $calls | Should -Match 'compose -f docker-compose\.yml -f keycloak\.compose\.yml --env-file \.env down -v'
+        $calls | Should -Match 'compose -f docker-compose\.yml -f keycloak\.compose\.yml --env-file \.env up -d --no-deps'
         Test-Path -LiteralPath $attempted | Should -BeFalse
         Test-Path -LiteralPath $complete | Should -BeFalse
         Test-Path -LiteralPath (Join-Path $script:composeRoot ".bootstrap/reset-pending") | Should -BeFalse

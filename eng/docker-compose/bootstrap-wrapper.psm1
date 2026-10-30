@@ -1082,7 +1082,7 @@ function Invoke-BootstrapWrapper {
                     -EnvironmentValues $restoreEnvironmentValues `
                     -Name "MSSQL_SA_PASSWORD" `
                     -DefaultValue "abcdefgh1!"
-                # Likewise the PostgreSQL administrator: postgresql.yml initializes the container
+                # Likewise the PostgreSQL administrator: postgresql.compose.yml initializes the container
                 # with ${POSTGRES_USER:-postgres}, and no postgres role exists under an override,
                 # so every restore helper and the preflight cleanup connect as this account.
                 $restorePostgresUser = Get-ComposeResolvedEnvValue `

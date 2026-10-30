@@ -269,12 +269,12 @@ Describe 'Plugin compose file resolution' {
             $scratch = New-ScratchDirectory
             try {
                 $hook = New-LauncherBlockFile $_ $scratch
-                $files = @('-f', 'postgresql.yml', '-f', 'the-application-file.yml')
+                $files = @('-f', 'postgresql.compose.yml', '-f', 'the-application-file.yml')
                 $envValues = @{}
 
                 . $hook
 
-                $files | Should -Be @('-f', 'postgresql.yml', '-f', 'the-application-file.yml')
+                $files | Should -Be @('-f', 'postgresql.compose.yml', '-f', 'the-application-file.yml')
                 $script:calls.Count | Should -Be 0
             }
             finally { Remove-Item -LiteralPath $scratch -Recurse -Force }

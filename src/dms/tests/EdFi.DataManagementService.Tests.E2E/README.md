@@ -28,8 +28,8 @@ rebuild those images first.
 
 The suite is engine-aware. `-DatabaseEngine` defaults to `postgresql`; pass `mssql` to run the
 same public entry point against SQL Server. The `-DatabaseEngine mssql` value composes the
-`eng/docker-compose/.env.mssql` overlay onto `-EnvironmentFile` and swaps `mssql.yml` for
-`postgresql.yml`; the SQL Server stack is relational-only (no Kafka / OpenSearch).
+`eng/docker-compose/.env.mssql` overlay onto `-EnvironmentFile` and swaps `mssql.compose.yml` for
+`postgresql.compose.yml`; the SQL Server stack is relational-only (no Kafka / OpenSearch).
 
 ### PostgreSQL (default engine)
 

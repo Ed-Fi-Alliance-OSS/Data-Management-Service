@@ -162,7 +162,7 @@ function Get-CdcComposeInput {
     # down -v (both start scripts include its volume then) and the worker's broker extension.
     # Never discover inputs by enumerating unrelated Compose files in the checkout.
     $files = @($compose.File, (Join-Path (Split-Path $compose.File -Parent) 'kafka-broker.yml'))
-    $files += @("$provider.yml", "$flavor-dms.yml", "$flavor-config.yml", 'keycloak.yml', 'bootstrap-dms.yml' |
+    $files += @("$provider.compose.yml", "$flavor-dms.yml", "$flavor-config.yml", 'keycloak.compose.yml', 'bootstrap-dms.yml' |
         ForEach-Object { Join-Path $PSScriptRoot $_ })
     if ($provider -ceq 'mssql') { $files += Join-Path $PSScriptRoot 'mssql-cdc.yml' }
     if ($provider -ceq 'postgresql' -and $env:POSTGRES_USE_TMPFS -ieq 'true') { $files += Join-Path $PSScriptRoot 'postgresql-tmpfs.yml' }

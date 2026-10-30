@@ -107,9 +107,9 @@ $allLegIndices = @($legPostgres52, $legPostgres61, $legMssql52, $legMssql61)
 
 # Pattern -> the indices (into $allLegs) that a matching changed file selects.
 $pathPatternMap = [ordered]@{
-    "eng/docker-compose/mssql.yml"                   = @($legMssql52, $legMssql61)
+    "eng/docker-compose/mssql.compose.yml"           = @($legMssql52, $legMssql61)
     "eng/docker-compose/.env.mssql"                  = @($legMssql52, $legMssql61)
-    "eng/docker-compose/postgresql.yml"              = @($legPostgres52, $legPostgres61)
+    "eng/docker-compose/postgresql.compose.yml"      = @($legPostgres52, $legPostgres61)
     "eng/docker-compose/.env.smoke"                  = @($legPostgres52, $legMssql52)
     "eng/docker-compose/.env.smoke.ds61"             = @($legPostgres61, $legMssql61)
     ".github/workflows/scheduled-smoke-test.yml"     = $allLegIndices

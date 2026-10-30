@@ -232,8 +232,8 @@ BeforeDiscovery {
     # Every leftover-volume case runs for both engines: the allow rule and the selected-engine
     # block rule swap between them, and the other block rules must hold under either.
     $script:engineCases = @(
-        @{ Engine = "postgresql"; SelectedKey = "dms-postgresql"; SelectedFile = "postgresql.yml"; OtherEngine = "mssql"; OtherKey = "dms-mssql-2025"; OtherFile = "mssql.yml" }
-        @{ Engine = "mssql"; SelectedKey = "dms-mssql-2025"; SelectedFile = "mssql.yml"; OtherEngine = "postgresql"; OtherKey = "dms-postgresql"; OtherFile = "postgresql.yml" }
+        @{ Engine = "postgresql"; SelectedKey = "dms-postgresql"; SelectedFile = "postgresql.compose.yml"; OtherEngine = "mssql"; OtherKey = "dms-mssql-2025"; OtherFile = "mssql.compose.yml" }
+        @{ Engine = "mssql"; SelectedKey = "dms-mssql-2025"; SelectedFile = "mssql.compose.yml"; OtherEngine = "postgresql"; OtherKey = "dms-postgresql"; OtherFile = "postgresql.compose.yml" }
     )
 
     # Each case changes one thing about a volume that would otherwise be allowed (the other
@@ -248,9 +248,9 @@ BeforeDiscovery {
         @{ Case = "the project label conflicts with the listed project"; Name = "dms-local_{other}"; Entry = @{ Labels = @{ "com.docker.compose.project" = "dms-published"; "com.docker.compose.volume" = "{other}" } }; Expected = "its com.docker.compose.project label is 'dms-published', but it was listed under 'dms-local'" }
         @{ Case = "the volume label is missing"; Name = "dms-local_{other}"; Entry = @{ Labels = @{ "com.docker.compose.project" = "dms-local" } }; Expected = "it has no com.docker.compose.volume label" }
         @{ Case = "the name does not match the labels (a renamed volume)"; Name = "edfi-{other}-copy"; Entry = @{ Labels = @{ "com.docker.compose.project" = "dms-local"; "com.docker.compose.volume" = "{other}" } }; Expected = "its name does not match its compose labels (expected 'dms-local_{other}')" }
-        @{ Case = "the volume label differs only in case from a declared volume"; Name = "dms-local_{OTHER}"; Entry = @{ Labels = "default" }; Expected = "volume '{OTHER}' is not declared by any engine compose file (postgresql.yml, mssql.yml), so it cannot be identified" }
-        @{ Case = "the name merely contains the other engine's volume name"; Name = "dms-local_{other}-backup"; Entry = @{ Labels = "default" }; Expected = "volume '{other}-backup' is not declared by any engine compose file (postgresql.yml, mssql.yml), so it cannot be identified" }
-        @{ Case = "the volume is not engine storage (Keycloak)"; Name = "dms-local_dms-keycloak"; Entry = @{ Labels = "default" }; Expected = "volume 'dms-keycloak' is not declared by any engine compose file (postgresql.yml, mssql.yml), so it cannot be identified" }
+        @{ Case = "the volume label differs only in case from a declared volume"; Name = "dms-local_{OTHER}"; Entry = @{ Labels = "default" }; Expected = "volume '{OTHER}' is not declared by any engine compose file (postgresql.compose.yml, mssql.compose.yml), so it cannot be identified" }
+        @{ Case = "the name merely contains the other engine's volume name"; Name = "dms-local_{other}-backup"; Entry = @{ Labels = "default" }; Expected = "volume '{other}-backup' is not declared by any engine compose file (postgresql.compose.yml, mssql.compose.yml), so it cannot be identified" }
+        @{ Case = "the volume is not engine storage (Keycloak)"; Name = "dms-local_dms-keycloak"; Entry = @{ Labels = "default" }; Expected = "volume 'dms-keycloak' is not declared by any engine compose file (postgresql.compose.yml, mssql.compose.yml), so it cannot be identified" }
         @{ Case = "the volume is the selected engine's storage"; Name = "dms-local_{selected}"; Entry = @{ Labels = "default" }; Expected = "it is the selected engine's ({engine}) storage, declared in {selectedFile}; the run needs fresh storage" }
     )
     function Expand-CaseText {
@@ -350,16 +350,16 @@ Describe "Leftover volume identification" {
             @($definitions.Engine) | Should -Be @("postgresql", "mssql")
             $postgresql = @($definitions | Where-Object Engine -eq "postgresql")[0]
             $mssql = @($definitions | Where-Object Engine -eq "mssql")[0]
-            $postgresql.ComposeFile | Should -Be "postgresql.yml"
+            $postgresql.ComposeFile | Should -Be "postgresql.compose.yml"
             @($postgresql.Volumes) | Should -Be @("dms-postgresql")
-            $mssql.ComposeFile | Should -Be "mssql.yml"
+            $mssql.ComposeFile | Should -Be "mssql.compose.yml"
             @($mssql.Volumes) | Should -Be @("dms-mssql-2025")
         }
 
         It "reads only top-level volume keys, ignoring service volume lists, comments, nested settings, and other sections" {
             $root = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
             New-Item -ItemType Directory -Path $root | Out-Null
-            Set-Content -LiteralPath (Join-Path $root "postgresql.yml") -Value @(
+            Set-Content -LiteralPath (Join-Path $root "postgresql.compose.yml") -Value @(
                 "services:"
                 "  db:"
                 "    volumes:"
@@ -375,7 +375,7 @@ Describe "Leftover volume identification" {
                 "networks:"
                 "  pg-network:"
             )
-            Set-Content -LiteralPath (Join-Path $root "mssql.yml") -Value @("volumes:", "  sql-data:")
+            Set-Content -LiteralPath (Join-Path $root "mssql.compose.yml") -Value @("volumes:", "  sql-data:")
 
             $definitions = Get-RestoreSmokeEngineVolumeDefinition -DockerComposeRoot $root
 
@@ -384,15 +384,15 @@ Describe "Leftover volume identification" {
         }
 
         It "fails closed when <case>" -ForEach @(
-            @{ Case = "an engine compose file is missing"; Postgresql = @("volumes:", "  pg-data:"); Mssql = $null; Expected = "Cannot identify leftover volumes: the mssql compose file 'mssql.yml' was not found*" }
-            @{ Case = "an engine compose file declares no top-level volume"; Postgresql = @("services:", "  db:", "    volumes:", "      - pg-data:/data"); Mssql = @("volumes:", "  sql-data:"); Expected = "Cannot identify leftover volumes: the postgresql compose file 'postgresql.yml' declares no top-level volume." }
-            @{ Case = "both engines declare the same volume"; Postgresql = @("volumes:", "  shared-data:"); Mssql = @("volumes:", "  shared-data:"); Expected = "Cannot identify leftover volumes: volume 'shared-data' is declared by both postgresql.yml and mssql.yml." }
+            @{ Case = "an engine compose file is missing"; Postgresql = @("volumes:", "  pg-data:"); Mssql = $null; Expected = "Cannot identify leftover volumes: the mssql compose file 'mssql.compose.yml' was not found*" }
+            @{ Case = "an engine compose file declares no top-level volume"; Postgresql = @("services:", "  db:", "    volumes:", "      - pg-data:/data"); Mssql = @("volumes:", "  sql-data:"); Expected = "Cannot identify leftover volumes: the postgresql compose file 'postgresql.compose.yml' declares no top-level volume." }
+            @{ Case = "both engines declare the same volume"; Postgresql = @("volumes:", "  shared-data:"); Mssql = @("volumes:", "  shared-data:"); Expected = "Cannot identify leftover volumes: volume 'shared-data' is declared by both postgresql.compose.yml and mssql.compose.yml." }
         ) {
             $root = Join-Path $TestDrive ([Guid]::NewGuid().ToString("N"))
             New-Item -ItemType Directory -Path $root | Out-Null
-            Set-Content -LiteralPath (Join-Path $root "postgresql.yml") -Value $Postgresql
+            Set-Content -LiteralPath (Join-Path $root "postgresql.compose.yml") -Value $Postgresql
             if ($null -ne $Mssql) {
-                Set-Content -LiteralPath (Join-Path $root "mssql.yml") -Value $Mssql
+                Set-Content -LiteralPath (Join-Path $root "mssql.compose.yml") -Value $Mssql
             }
 
             { Get-RestoreSmokeEngineVolumeDefinition -DockerComposeRoot $root } | Should -Throw $Expected
@@ -462,7 +462,7 @@ Describe "Leftover volume identification" {
 
             $message = Format-RestoreSmokeLeftoverVolumeClassification -Classification $classification -Decision blocked
             $message | Should -Be ("dms-local_$SelectedKey (it is the selected engine's ($Engine) storage, declared in $SelectedFile; the run needs fresh storage); " +
-                "dms-local_dms-keycloak (volume 'dms-keycloak' is not declared by any engine compose file (postgresql.yml, mssql.yml), so it cannot be identified); " +
+                "dms-local_dms-keycloak (volume 'dms-keycloak' is not declared by any engine compose file (postgresql.compose.yml, mssql.compose.yml), so it cannot be identified); " +
                 "dms-published_$SelectedKey (inspection failed (docker exit 1: Error response from daemon: context deadline exceeded))")
 
             Should -Invoke docker -ModuleName RestoreSmokeProbes -Times 5 -Exactly
@@ -4961,7 +4961,7 @@ Describe "Get-RestoreSmokeResultClassification" {
         function script:New-AllowedLeftoverForeignStack {
             param([AllowNull()] [object[]]$EndStates)
 
-            $allowed = [pscustomobject]@{ Project = "dms-local"; Name = "dms-local_dms-mssql-2025"; Decision = "allowed"; CreatedAt = "2026-10-01T00:00:00Z"; Reason = "declared in mssql.yml as mssql storage" }
+            $allowed = [pscustomobject]@{ Project = "dms-local"; Name = "dms-local_dms-mssql-2025"; Decision = "allowed"; CreatedAt = "2026-10-01T00:00:00Z"; Reason = "declared in mssql.compose.yml as mssql storage" }
             return [ordered]@{
                 RemovalConfirmed    = $true
                 LeftoverVolumes     = [pscustomobject]@{ DatabaseEngine = "postgresql"; Volumes = @($allowed); Allowed = @($allowed); Blocked = @() }
@@ -5355,7 +5355,7 @@ Describe "Invoke-BootstrapRestoreSmoke complete preflight path (sandboxed, no Do
             Set-Content -LiteralPath (Join-Path $composeRoot ".env.example") -Value "POSTGRES_DB_NAME=edfi_datamanagementservice"
             # The repository's real engine compose files: leftover volumes are identified against them.
             if (-not $WithoutEngineComposeFiles) {
-                foreach ($composeFile in @("postgresql.yml", "mssql.yml")) {
+                foreach ($composeFile in @("postgresql.compose.yml", "mssql.compose.yml")) {
                     Copy-Item -LiteralPath (Join-Path $PSScriptRoot "../$composeFile") -Destination $composeRoot
                 }
             }
@@ -5677,7 +5677,7 @@ exit $LASTEXITCODE
             @($leftovers.Allowed.Name) | Should -Be @("dms-local_$OtherKey")
             @($leftovers.Allowed)[0].Reason | Should -Be "declared in $OtherFile as $OtherEngine storage; this run uses $Engine, whose $SelectedFile does not declare it, so this run's down -v teardowns leave it in place"
             @($leftovers.Blocked) | Should -BeNullOrEmpty
-            @($run.Results.Provenance.ForeignStack.EngineVolumeDefinitions.ComposeFile) | Should -Be @("postgresql.yml", "mssql.yml")
+            @($run.Results.Provenance.ForeignStack.EngineVolumeDefinitions.ComposeFile) | Should -Be @("postgresql.compose.yml", "mssql.compose.yml")
 
             # Authorization came back after the check: the build failure's teardown ran, after the build.
             $firstDotnet = [array]::FindIndex([string[]]$run.Calls, [Predicate[string]] { param($line) $line -like "dotnet: *" })
@@ -5777,7 +5777,7 @@ exit $LASTEXITCODE
             $run = Invoke-SandboxedSmoke -DockerState $script:dms1440Shape -Arguments @{ ConfirmForeignStackRemoval = $true } -WithoutEngineComposeFiles
 
             $run.ExitCode | Should -Be 1
-            $run.Output | Should -BeLike "*Cannot identify leftover volumes: the postgresql compose file 'postgresql.yml' was not found*"
+            $run.Output | Should -BeLike "*Cannot identify leftover volumes: the postgresql compose file 'postgresql.compose.yml' was not found*"
             $run.Output | Should -BeLike "*no teardown: the preflight did not authorize any Docker change*"
             @($run.Calls | Where-Object { $_ -like "script: *" -or $_ -like "dotnet: *" }) | Should -BeNullOrEmpty
             @($run.Calls | Where-Object { $_ -like "docker: *" -and $_ -notmatch '^docker: (info|ps -a|volume ls) ' }) | Should -BeNullOrEmpty

@@ -34,7 +34,7 @@ Describe 'Connect rate limit proxy deployment' {
 
             Push-Location $script:composeRoot
             try {
-                $arguments = @('-f', 'postgresql.yml', '-f', "$Mode-config.yml")
+                $arguments = @('-f', 'postgresql.compose.yml', '-f', "$Mode-config.yml")
                 if (-not $CmsOnly) {
                     $arguments += @('-f', "$Mode-dms.yml", '-f', 'dms-cms-proxy.yml')
                 }

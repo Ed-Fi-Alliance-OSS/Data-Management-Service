@@ -35,9 +35,9 @@ try {
 
     # Define the compose files used by CMS (matching start-local-config.ps1)
     $composeFiles = @(
-        "-f", "postgresql.yml",
+        "-f", "postgresql.compose.yml",
         "-f", "local-config.yml",
-        "-f", "keycloak.yml"
+        "-f", "keycloak.compose.yml"
     )
 
     # Check if Docker is running

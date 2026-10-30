@@ -35,11 +35,11 @@ start up different configurations:
 
 1. `kafka.yml` covers Kafka
 2. `kafka-ui.yml` covers KafkaUI
-3. `postgresql.yml` starts only PostgreSQL
-4. `mssql.yml` starts SQL Server for the DMS datastore (see "Running on the MSSQL backend" below)
+3. `postgresql.compose.yml` starts only PostgreSQL
+4. `mssql.compose.yml` starts SQL Server for the DMS datastore (see "Running on the MSSQL backend" below)
 5. `local-dms.yml` runs the DMS from local source code.
 6. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
-7. `keycloak.yml` runs KeyCloak (identity provider).
+7. `keycloak.compose.yml` runs KeyCloak (identity provider).
 8. `swagger-ui.yml` covers SwaggerUI
 
 ### Selecting published images
@@ -82,7 +82,7 @@ another network, change `DMS_CMS_PROXY_SUBNET`, `DMS_CMS_PROXY_IP` and `CMS_PROX
 starting. Parallel paired stacks need different subnets. See
 [ConnectRateLimit](../../docs/CONFIGURATION.md#connectratelimit) for defaults and custom topologies.
 
-* `start-all-services.ps1` launches `postgresql.yml`, without starting the DMS.
+* `start-all-services.ps1` launches `postgresql.compose.yml`, without starting the DMS.
   Useful for running DMS in a local debugger.
 * `start-local-dms.ps1` launches the DMS local build along with all necessary
   services.
@@ -182,7 +182,7 @@ the file, so the file's declarations of that name are not checked; the shell val
 compared with the E2E name.
 
 When `POSTGRES_DB_NAME` is absent from both the environment file and the shell, the check protects
-`edfi_datamanagementservice`, the name `postgresql.yml` uses by default. Other absent keys are
+`edfi_datamanagementservice`, the name `postgresql.compose.yml` uses by default. Other absent keys are
 skipped, so Compose can still give a container a database name the check never sees: without
 `CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` the Configuration Service builds its connection
 from `CONFIGURATION_SERVICE_DATABASE_NAME` or `POSTGRES_DB_NAME`. Declare the engine's database-name
@@ -260,7 +260,7 @@ entry points or `start-local-dms.ps1` (they seed `.env` from `.env.example` when
 ./bootstrap-local-dms.ps1 -DatabaseEngine mssql -d -v
 ```
 
-`mssql.yml` runs `mcr.microsoft.com/mssql/server:2025-latest` (Developer Edition), the same
+`mssql.compose.yml` runs `mcr.microsoft.com/mssql/server:2025-latest` (Developer Edition), the same
 image used in CI, publishing host port `1435`. `-DatabaseEngine mssql` composes the `.env.mssql`
 overlay (`DMS_DATASTORE=mssql`, `CONFIGURATION_SERVICE_DATASTORE=mssql`, the `MSSQL_*` keys, and the SQL
 Server connection strings) onto the base environment file automatically — the same composition
@@ -271,7 +271,7 @@ endpoints, etc.) still comes from the base environment file; pass `-EnvironmentF
 override those base settings, and the overlay still composes on top of it.
 
 > [!WARNING]
-> **SQL Server 2022 volume transition.** `mssql.yml` mounts the major-versioned
+> **SQL Server 2022 volume transition.** `mssql.compose.yml` mounts the major-versioned
 > `dms-mssql-2025` volume so an ordinary `docker compose up` never reuses a legacy
 > `dms-mssql` volume with the SQL Server 2025 image. Microsoft currently supports persisted
 > container upgrades only between release candidates and GA, not from SQL Server 2022 to 2025.
@@ -295,7 +295,7 @@ A few things are specific to the MSSQL path:
 
 * **It is single-engine.** SQL Server hosts everything: the DMS datastore, the Configuration
   Service (Configuration Service SQL Server backend), and the self-contained (OpenIddict) identity stores.
-  `mssql.yml` swaps in for `postgresql.yml` - both define the same `db` service that
+  `mssql.compose.yml` swaps in for `postgresql.compose.yml` - both define the same `db` service that
   `local-config.yml` health-gates on - and no PostgreSQL container runs. In the default
   self-contained flow, `setup-openiddict.ps1 -InitDb` creates the Configuration Service's
   database during the infrastructure phase (the shared datastore database by default; the
@@ -1402,7 +1402,7 @@ deployment described in two places is a deployment nobody can read back.
 The launcher is the entry point rather than a convenience. An overlay only adds a
 mount and a fetch step to the DMS service; it provisions no schema and configures
 no Configuration Service, and DMS validates at startup that both were done. A bare
-`docker compose up` of `postgresql.yml` and `local-dms.yml` with an overlay added
+`docker compose up` of `postgresql.compose.yml` and `local-dms.yml` with an overlay added
 therefore cannot produce a working deployment on a fresh environment. Compose those
 files directly only against an environment already provisioned and configured by a
 previous `bootstrap-local-dms.ps1` run.
@@ -1543,7 +1543,7 @@ services:
 cd eng/docker-compose
 # CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE is required by plugins-config.yml; set it here or in the env file.
 $env:CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE = "C:/cms-plugins"
-docker compose -f postgresql.yml -f local-config.yml -f keycloak.yml `
+docker compose -f postgresql.compose.yml -f local-config.yml -f keycloak.compose.yml `
   -f plugins-config.yml -f my-plugins-allowed-config.yml `
   --env-file .env -p cs-local up -d config
 ```

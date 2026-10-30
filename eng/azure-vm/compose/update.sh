@@ -41,7 +41,7 @@ if ! volumes="$(docker volume ls --quiet)"; then
   exit 1
 fi
 if grep -qxF "$postgres_volume" <<<"$volumes"; then
-  postgres_image="$(docker compose -f docker-compose.yml -f keycloak.yml --env-file .env config --images | grep -m1 -E '(^|/)postgres[:@]' || true)"
+  postgres_image="$(docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env config --images | grep -m1 -E '(^|/)postgres[:@]' || true)"
   layout=""
   if [ -n "$postgres_image" ]; then
     # Prints "absent", or "legacy" followed by the file's first line; exits non-zero if unreadable.
@@ -75,14 +75,14 @@ if grep -qxF "$postgres_volume" <<<"$volumes"; then
   esac
 fi
 
-# Keycloak's persisted dev-file H2 database cannot cross image-pin changes (see keycloak.yml).
+# Keycloak's persisted dev-file H2 database cannot cross image-pin changes (see keycloak.compose.yml).
 # If the pull above brought a compose config with a different Keycloak pin, recreating the
 # container below would apply it to the unmigratable volume -- refuse and point at the redeploy.
 # The deployed reference comes from the container when it exists, else from the reference file
 # this script persists (a plain ./down.sh removes the container but keeps the volume). When the
 # volume exists and neither source is available, FAIL CLOSED: an unverifiable pin must not be
 # applied to live realm state.
-configured_keycloak="$(docker compose -f docker-compose.yml -f keycloak.yml --env-file .env config --images | grep -m1 -i 'keycloak' || true)"
+configured_keycloak="$(docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env config --images | grep -m1 -i 'keycloak' || true)"
 keycloak_ref_file=".bootstrap/keycloak-image"
 current_keycloak="$(docker inspect --format '{{.Config.Image}}' dms-sec-keycloak 2>/dev/null || true)"
 if [ -z "$current_keycloak" ] && [ -f "$keycloak_ref_file" ]; then
@@ -105,7 +105,7 @@ if docker volume inspect dms-security-review_dms-sec-keycloak >/dev/null 2>&1; t
 fi
 
 echo "Pulling latest images..."
-docker compose -f docker-compose.yml -f keycloak.yml --env-file .env pull
+docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env pull
 
 echo "Recreating changed containers..."
 # Route through up.sh so the ApiSchema-staged guard applies: a full-stack `up -d` here (gateway
@@ -120,6 +120,6 @@ echo "Recreating changed containers..."
 # container start; Compose does not recreate a container whose definition is unchanged. Restart
 # both so a pulled change to either takes effect.
 echo "Restarting the gateway and Swagger UI to apply their mounted configuration..."
-docker compose -f docker-compose.yml -f keycloak.yml --env-file .env restart gateway swagger-ui
+docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env restart gateway swagger-ui
 
 echo "Update complete."

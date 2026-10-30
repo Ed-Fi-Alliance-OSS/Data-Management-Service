@@ -63,7 +63,7 @@ Describe 'Stock image proof orchestration' {
         It 'refuses the fixed container name <_>, which no project name can move' -ForEach @(
             'dms-postgresql', 'ed-fi-api-config-service', 'ed-fi-api-swagger-ui', 'dms-keycloak', 'ed-fi-api'
         ) {
-            # postgresql.yml and its siblings hard-code container_name, so a running one of these
+            # postgresql.compose.yml and its siblings hard-code container_name, so a running one of these
             # collides whatever compose project this run uses.
             $result = Get-OccupiedHostResource -ExistingContainerName @($_)
 

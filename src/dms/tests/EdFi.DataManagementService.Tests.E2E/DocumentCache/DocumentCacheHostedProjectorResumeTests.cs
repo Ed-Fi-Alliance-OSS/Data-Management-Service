@@ -206,7 +206,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         [
             "compose",
             "-f",
-            IsMssql() ? "mssql.yml" : "postgresql.yml",
+            IsMssql() ? "mssql.compose.yml" : "postgresql.compose.yml",
             "-f",
             "local-dms.yml",
             "-f",

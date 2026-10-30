@@ -7,7 +7,7 @@
 # Apply IN ADDITION to the stack's own -f list (see local-config-diagnostics.yml for the
 # invocation shape); recreate the db service for the flags to take effect.
 #
-# Compose replaces `command` wholesale, so the base postgresql.yml setting
+# Compose replaces `command` wholesale, so the base postgresql.compose.yml setting
 # (max_locks_per_transaction=256) is restated here — dropping it re-surfaces PG error
 # 53200 under parallel provisioning.
 services:

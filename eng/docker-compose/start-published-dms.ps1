@@ -129,13 +129,13 @@ param (
     [string]
     $DataStandardVersion,
 
-    # Database engine for the whole stack. "postgresql" (default) uses postgresql.yml.
-    # "mssql" swaps in mssql.yml: SQL Server hosts the DMS datastore, the Configuration
+    # Database engine for the whole stack. "postgresql" (default) uses postgresql.compose.yml.
+    # "mssql" swaps in mssql.compose.yml: SQL Server hosts the DMS datastore, the Configuration
     # Service (its SQL Server backend), and the self-contained OpenIddict identity stores -
     # no PostgreSQL container runs. The relational backend has no Debezium CDC (Kafka is
     # PostgreSQL-only and omitted). The .env.mssql overlay (DMS_DATASTORE=mssql,
     # CONFIGURATION_SERVICE_DATASTORE=mssql, the MSSQL_* keys, and the SQL Server connection strings)
-    # is composed automatically onto -EnvironmentFile. See mssql.yml and
+    # is composed automatically onto -EnvironmentFile. See mssql.compose.yml and
     # Resolve-DatabaseEngineEnvironmentFile.
     [ValidateSet("postgresql", "mssql")]
     [string]
@@ -411,11 +411,11 @@ if ($usePostgresqlTmpfs) {
     Write-Output "Using PostgreSQL tmpfs data directory (POSTGRES_TMPFS_SIZE=$postgresqlTmpfsSize, POSTGRES_CONTAINER_MEMORY=$postgresqlContainerMemory)."
 }
 
-# The database compose file is a swap: both postgresql.yml and mssql.yml define the same
+# The database compose file is a swap: both postgresql.compose.yml and mssql.compose.yml define the same
 # "db" service, so exactly one of them joins the compose set. On the mssql path SQL Server
 # hosts everything - the DMS datastore, the Configuration Service (CMS SQL Server backend),
 # and the self-contained OpenIddict identity stores - and no PostgreSQL container runs at all.
-$databaseComposeFile = if ($DatabaseEngine -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
+$databaseComposeFile = if ($DatabaseEngine -eq "mssql") { "mssql.compose.yml" } else { "postgresql.compose.yml" }
 $files = @(
     "-f",
     $databaseComposeFile
@@ -467,7 +467,7 @@ if (-not $databaseOnlyStartup) {
     # compose file left out of the down set takes its named volume (dms-keycloak) with it, leaking
     # <project>_dms-keycloak past `down -v`.
     if ($d -or $IdentityProvider -eq "keycloak") {
-        $files += @("-f", "keycloak.yml")
+        $files += @("-f", "keycloak.compose.yml")
     }
 
     if ($EnableKafkaUI -and ($DatabaseEngine -eq "postgresql" -or $CdcKafkaInfrastructure)) {
@@ -488,7 +488,7 @@ if (-not $databaseOnlyStartup) {
 
     if ($bootstrapMode) {
         # Include bootstrap-dms.yml in the managed compose set so follow-up up/down calls operate
-        # on the full environment (same pattern as keycloak.yml above). This mounts the staged
+        # on the full environment (same pattern as keycloak.compose.yml above). This mounts the staged
         # .bootstrap/ApiSchema workspace into the DMS container at /app/ApiSchema:ro.
         $files += @("-f", "bootstrap-dms.yml")
     }
@@ -762,7 +762,7 @@ else {
 
     if ($DatabaseEngine -eq "mssql") {
         # SQL Server accepts connections noticeably later than its container reports running;
-        # poll before the phase commands need it. Default matches mssql.yml's compose default.
+        # poll before the phase commands need it. Default matches mssql.compose.yml's compose default.
         $mssqlSaPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_SA_PASSWORD" -DefaultValue "abcdefgh1!"
         Wait-MssqlReady -ContainerName "dms-mssql" -Password $mssqlSaPassword
 
@@ -808,7 +808,7 @@ else {
             @{ DbType = "MSSQL"; DbUser = "sa"; DbPort = "ENV:MSSQL_PORT"; DbName = "ENV:CONFIGURATION_SERVICE_DATABASE_NAME" }
         }
         else {
-            # POSTGRES_USER is a supported override - postgresql.yml passes ${POSTGRES_USER:-postgres}
+            # POSTGRES_USER is a supported override - postgresql.compose.yml passes ${POSTGRES_USER:-postgres}
             # to the container - and setup-openiddict.ps1 defaults DbUser to postgres. Because these
             # calls pass -EnvironmentFile, Get-EffectiveConnectionString always builds the connection
             # string from this parameter group, so that default would reach psql as Username=postgres

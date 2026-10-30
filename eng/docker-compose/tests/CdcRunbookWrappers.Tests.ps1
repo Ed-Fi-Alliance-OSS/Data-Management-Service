@@ -130,7 +130,7 @@ Describe 'CDC provider image environment retention' -ForEach @(
         $script:composeSource = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         Import-Module (Join-Path $script:composeSource 'env-utility.psm1') -DisableNameChecking
         Import-Module (Join-Path $script:composeSource 'database-safety.psm1') -DisableNameChecking
-        $imageLine = [regex]::Match((Get-Content (Join-Path $script:composeSource "$Engine.yml") -Raw), '(?m)^\s*image:\s*(\S+)\s*$')
+        $imageLine = [regex]::Match((Get-Content (Join-Path $script:composeSource "$Engine.compose.yml") -Raw), '(?m)^\s*image:\s*(\S+)\s*$')
         $script:imageExpression = $imageLine.Groups[1].Value
         # Synthetic immutable reference deliberately differs from both shipped defaults.
         $script:overrideImage = 'example.invalid/provider@sha256:' + ('a' * 64)

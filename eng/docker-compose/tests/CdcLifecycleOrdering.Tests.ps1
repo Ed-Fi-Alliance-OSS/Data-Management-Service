@@ -258,7 +258,7 @@ DOCKER_LOG_MAX_SIZE=${T74_NESTED}
             'services: { unrelated: { image: "${T74_UNRELATED}" } }' | Set-Content (Join-Path $script:root 'unrelated-t74.yml')
             $otherProvider = if ($provider -eq 'mssql') { 'postgresql' } else { 'mssql' }
             $otherFlavor = if ($project -eq 'dms-local') { 'published' } else { 'local' }
-            foreach ($file in @("$otherProvider.yml", "$otherFlavor-dms.yml")) {
+            foreach ($file in @("$otherProvider.compose.yml", "$otherFlavor-dms.yml")) {
                 Add-Content (Join-Path $script:root $file) '# ${T74_UNRELATED}'
             }
             Set-TestChangedShell

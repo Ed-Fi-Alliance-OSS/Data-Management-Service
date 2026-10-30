@@ -17,7 +17,7 @@ Keycloak locally using docker-compose.
 1. Create a `.env` file. The `.env.example` is a good starting point
 
 2. You have two options to set up the Keycloak container: either use the
-   `keycloak.yml` Docker Compose file or run the `start-keycloak.ps1` script.
+   `keycloak.compose.yml` Docker Compose file or run the `start-keycloak.ps1` script.
 
     ```pwsh
     ./start-keycloak.ps1

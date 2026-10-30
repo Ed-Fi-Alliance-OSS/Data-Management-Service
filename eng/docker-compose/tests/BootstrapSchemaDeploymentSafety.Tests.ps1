@@ -5554,7 +5554,7 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
             }
 
             function script:New-ProvisionGuardMssqlEnvFile {
-                # MssqlPort is parameterized because mssql.yml permits MSSQL_PORT=1434, which is exactly the
+                # MssqlPort is parameterized because mssql.compose.yml permits MSSQL_PORT=1434, which is exactly the
                 # DAC port a portless admin: endpoint resolves to. Default unchanged, so every existing
                 # caller is unaffected.
                 param(
@@ -5946,7 +5946,7 @@ CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=
         }
 
         It "refuses a PostgreSQL target spelled 127.0.0.1, the address the Compose service actually publishes" {
-            # postgresql.yml publishes on 127.0.0.1 while the host-side translation writes
+            # postgresql.compose.yml publishes on 127.0.0.1 while the host-side translation writes
             # "localhost", so matching one canonical spelling would classify the OTHER spelling of
             # the same server as external and skip the guard entirely.
             $capturePath = Initialize-ProvisionGuardWorkspace
@@ -6260,7 +6260,7 @@ CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=
         }
 
         It "reaches the MSSQL authority for portless 'admin:localhost' when the published port IS the DAC port 1434" {
-            # mssql.yml permits MSSQL_PORT=1434, and a portless admin: endpoint resolves to exactly that
+            # mssql.compose.yml permits MSSQL_PORT=1434, and a portless admin: endpoint resolves to exactly that
             # port, so this reaches the host's published listener. Reported as a non-TCP transport it
             # classified as external and skipped the authority entirely.
             $capturePath = Initialize-ProvisionGuardWorkspace
@@ -6384,7 +6384,7 @@ CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=
         ) {
             # InferLocalServerName localizes Environment.MachineName to the local server for the Admin
             # protocol only. With MSSQL_PORT=1434 - the DAC port a portless admin: endpoint resolves to, and
-            # a port mssql.yml permits - a localized target names the published Compose listener, so the
+            # a port mssql.compose.yml permits - a localized target names the published Compose listener, so the
             # authority must be consulted. Read as an ordinary hostname it looked external and the guard was
             # skipped.
             #
