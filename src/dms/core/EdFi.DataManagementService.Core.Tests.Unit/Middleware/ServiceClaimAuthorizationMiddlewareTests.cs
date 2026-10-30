@@ -77,7 +77,10 @@ public class ServiceClaimAuthorizationMiddlewareTests
                 EducationOrganizationIds: [],
                 NamespacePrefixes: [],
                 DataStoreIds: []
-            ),
+            )
+            {
+                ScopeValues = [claimSetName],
+            },
         };
     }
 
@@ -788,13 +791,12 @@ public class ServiceClaimAuthorizationMiddlewareTests
                 .MustHaveHappenedOnceExactly();
 
         [Test]
-        public void It_does_not_log_the_scope_values() =>
+        public void It_logs_the_scope_values_for_diagnosis() =>
             _logger
                 .Records.Should()
-                .NotContain(record =>
-                    record.Message.Contains("Alpha")
-                    || record.Message.Contains("Beta")
-                    || record.Message.Contains("profile")
+                .ContainSingle(record =>
+                    record.Message.Contains("multiple claim sets")
+                    && Equals(record.Properties["Scope"], scopeValueList.Replace('|', ' '))
                 );
     }
 
@@ -803,16 +805,18 @@ public class ServiceClaimAuthorizationMiddlewareTests
     public class Given_Scope_Values_That_Match_No_Claim_Set
     {
         private RequestInfo _requestInfo = null!;
+        private RecordingLogger<ServiceClaimAuthorizationMiddleware> _logger = null!;
         private int _continuations;
 
         [SetUp]
         public async Task Setup()
         {
             IClaimSetProvider claimSetProvider = CreateProvider(IdentityClaimSet("Alpha"));
-            _requestInfo = CreateScopedRequestInfo("profile|Gamma");
+            _logger = new RecordingLogger<ServiceClaimAuthorizationMiddleware>();
+            _requestInfo = CreateScopedRequestInfo("pro\r\nfile|Gamma");
 
             _continuations = await ExecuteCountingContinuations(
-                CreateMiddleware(claimSetProvider),
+                CreateMiddleware(claimSetProvider, _logger),
                 _requestInfo
             );
         }
@@ -826,6 +830,15 @@ public class ServiceClaimAuthorizationMiddlewareTests
 
         [Test]
         public void It_does_not_continue() => _continuations.Should().Be(0);
+
+        [Test]
+        public void It_logs_all_unmatched_scope_values() =>
+            _logger
+                .Records.Should()
+                .ContainSingle(record =>
+                    record.Message.Contains("No ClaimSet matching Scope")
+                    && Equals(record.Properties["Scope"], "profile Gamma")
+                );
     }
 
     [TestFixture]
@@ -868,11 +881,11 @@ public class ServiceClaimAuthorizationMiddlewareTests
         public void It_does_not_continue() => _continuations.Should().Be(0);
 
         [Test]
-        public void It_logs_a_fixed_diagnostic_with_sanitized_request_context()
+        public void It_logs_duplicate_names_with_sanitized_request_context()
         {
             LogRecord record = _logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Error).Subject;
             record.Message.Should().Contain("duplicate claim-set names");
-            record.Message.Should().NotContain("Alpha");
+            record.Properties["DuplicateNames"].Should().Be("Alpha alpha");
             record.Properties["Tenant"].Should().Be("TenantA");
             record.Properties["CorrelationId"].Should().Be("traceid");
         }

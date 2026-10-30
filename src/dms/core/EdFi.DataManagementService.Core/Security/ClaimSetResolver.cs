@@ -36,7 +36,7 @@ internal abstract record ClaimSetResolution
     /// Matching claim-set metadata contains duplicate names under the resolution comparison, so no
     /// record can be chosen safely.
     /// </summary>
-    public sealed record InvalidMetadata : ClaimSetResolution;
+    public sealed record InvalidMetadata(IReadOnlyList<string> DuplicateNames) : ClaimSetResolution;
 }
 
 /// <summary>
@@ -75,12 +75,17 @@ internal static class ClaimSetResolver
 
         // Checked before ambiguity: two records with one name cannot be told apart, whatever else
         // the token recognizes.
-        if (
-            matchingClaimSets.Select(claimSet => claimSet.Name).Distinct(NameComparer).Count()
-            != matchingClaimSets.Count
-        )
+        string[] duplicateNames =
+        [
+            .. matchingClaimSets
+                .GroupBy(claimSet => claimSet.Name, NameComparer)
+                .Where(group => group.Count() > 1)
+                .SelectMany(group => group.Select(claimSet => claimSet.Name))
+                .Distinct(StringComparer.Ordinal),
+        ];
+        if (duplicateNames.Length > 0)
         {
-            return new ClaimSetResolution.InvalidMetadata();
+            return new ClaimSetResolution.InvalidMetadata(duplicateNames);
         }
 
         switch (matchingClaimSets.Count)
@@ -107,7 +112,11 @@ internal static class ClaimSetResolver
         return new ClaimSetResolution.Success(matched, selectedName);
     }
 
-    private static IReadOnlyList<string> GetCandidates(ClientAuthorizations authorizations)
+    /// <summary>
+    /// Unresolved names used by resolution and its diagnostics. Retains the legacy single-name
+    /// contract for callers that do not supply scope values.
+    /// </summary>
+    public static IReadOnlyList<string> GetCandidates(ClientAuthorizations authorizations)
     {
         if (authorizations.ScopeValues.Count > 0)
         {

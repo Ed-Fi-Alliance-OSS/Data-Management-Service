@@ -116,7 +116,10 @@ public class ResourceActionAuthorizationMiddlewareTests
 
         var requestInfo = new RequestInfo(frontEndRequest, requestMethod, No.ServiceProvider)
         {
-            ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
+            ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], [])
+            {
+                ScopeValues = ["SIS-Vendor"],
+            },
             PathComponents = new PathComponents(
                 ProjectEndpointName: new ProjectEndpointName("ed-fi"),
                 EndpointName: new EndpointName(endpointName),
@@ -242,7 +245,10 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], [])
+                {
+                    ScopeValues = ["SIS-Vendor"],
+                },
                 PathComponents = new PathComponents(
                     ProjectEndpointName: new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     EndpointName: new EndpointName("schools"),
@@ -337,7 +343,10 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "", "NO-MATCH", [], [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "NO-MATCH", [], [], [])
+                {
+                    ScopeValues = ["NO-MATCH"],
+                },
                 PathComponents = new PathComponents(
                     ProjectEndpointName: new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     EndpointName: new EndpointName("schools"),
@@ -370,8 +379,8 @@ public class ResourceActionAuthorizationMiddlewareTests
     }
 
     /// <summary>
-    /// AGENTS.md Logging: the token-scope claim-set name must be sanitized before reaching a log
-    /// line - the "Claim set name from token scope" information log fires unconditionally, and the
+    /// The token's scope values must be sanitized before reaching a log
+    /// line - the "Scope values from token" information log fires unconditionally, and the
     /// "No ClaimSet matching Scope" log fires because no configured claim set matches the injected
     /// name.
     /// </summary>
@@ -420,7 +429,10 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "", InjectedClaimSetName, [], [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", InjectedClaimSetName, [], [], [])
+                {
+                    ScopeValues = [InjectedClaimSetName],
+                },
                 PathComponents = new PathComponents(
                     ProjectEndpointName: new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     EndpointName: new EndpointName("schools"),
@@ -438,15 +450,15 @@ public class ResourceActionAuthorizationMiddlewareTests
         }
 
         [Test]
-        public void It_logs_the_claim_set_name_from_token_scope_without_carriage_return_or_line_feed()
+        public void It_logs_the_scope_values_without_carriage_return_or_line_feed()
         {
             LogRecord record = _logger
                 .Records.Should()
-                .ContainSingle(record => record.Message.StartsWith("Claim set name from token scope"))
+                .ContainSingle(record => record.Message.StartsWith("Scope values from token"))
                 .Subject;
 
             record.Level.Should().Be(LogLevel.Information);
-            record.Properties["ClaimSetName"].Should().Be("BadInjected");
+            record.Properties["Scope"].Should().Be("BadInjected");
         }
 
         [Test]
@@ -481,7 +493,10 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], [])
+                {
+                    ScopeValues = ["SIS-Vendor"],
+                },
                 PathComponents = new PathComponents(
                     ProjectEndpointName: new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     EndpointName: new EndpointName("stateDescriptor"),
@@ -529,7 +544,10 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], [])
+                {
+                    ScopeValues = ["SIS-Vendor"],
+                },
                 PathComponents = new PathComponents(
                     ProjectEndpointName: new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     EndpointName: new EndpointName("schools"),
@@ -571,7 +589,10 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT, No.ServiceProvider)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], [])
+                {
+                    ScopeValues = ["SIS-Vendor"],
+                },
                 PathComponents = new PathComponents(
                     ProjectEndpointName: new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     EndpointName: new EndpointName("schools"),
@@ -643,7 +664,10 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.PUT, No.ServiceProvider)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], [])
+                {
+                    ScopeValues = ["SIS-Vendor"],
+                },
                 PathComponents = new PathComponents(
                     ProjectEndpointName: new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     EndpointName: new EndpointName("stateDescriptor"),
@@ -692,7 +716,10 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], [])
+                {
+                    ScopeValues = ["SIS-Vendor"],
+                },
                 PathComponents = new PathComponents(
                     ProjectEndpointName: new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     EndpointName: new EndpointName("schools"),
@@ -735,7 +762,10 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], [])
+                {
+                    ScopeValues = ["SIS-Vendor"],
+                },
                 PathComponents = new PathComponents(
                     ProjectEndpointName: new Core.ApiSchema.Model.ProjectEndpointName("ed-fi"),
                     EndpointName: new EndpointName("schools"),
@@ -809,7 +839,10 @@ public class ResourceActionAuthorizationMiddlewareTests
 
             _requestInfo = new RequestInfo(frontEndRequest, RequestMethod.POST, No.ServiceProvider)
             {
-                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], [])
+                {
+                    ScopeValues = ["SIS-Vendor"],
+                },
             };
 
             await middleware.Execute(_requestInfo, NullNext);
@@ -869,7 +902,10 @@ public class ResourceActionAuthorizationMiddlewareTests
                 _cts.Token
             )
             {
-                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], []),
+                ClientAuthorizations = new ClientAuthorizations("", "", "SIS-Vendor", [], [], [])
+                {
+                    ScopeValues = ["SIS-Vendor"],
+                },
             };
 
             _act = () => middleware.Execute(_requestInfo, NullNext);
@@ -1989,13 +2025,12 @@ public class ResourceActionAuthorizationMiddlewareTests
                 .MustHaveHappenedOnceExactly();
 
         [Test]
-        public void It_does_not_log_the_scope_values() =>
+        public void It_logs_the_scope_values_for_diagnosis() =>
             _logger
                 .Records.Should()
-                .NotContain(record =>
-                    record.Message.Contains("Alpha")
-                    || record.Message.Contains("Beta")
-                    || record.Message.Contains("profile")
+                .ContainSingle(record =>
+                    record.Message.Contains("multiple claim sets")
+                    && Equals(record.Properties["Scope"], scopeValueList.Replace('|', ' '))
                 );
     }
 
@@ -2003,6 +2038,7 @@ public class ResourceActionAuthorizationMiddlewareTests
     [Parallelizable]
     public class Given_Scope_Values_That_Match_No_Claim_Set : ResourceActionAuthorizationMiddlewareTests
     {
+        private RecordingLogger _logger = null!;
         private int _continuations;
 
         [SetUp]
@@ -2015,10 +2051,11 @@ public class ResourceActionAuthorizationMiddlewareTests
                     AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
                 )
             );
-            _requestInfo = ScopedReadRequest("profile", "Gamma");
+            _logger = new RecordingLogger();
+            _requestInfo = ScopedReadRequest("pro\r\nfile", "Gamma");
             _continuations = 0;
 
-            await new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance).Execute(
+            await new ResourceActionAuthorizationMiddleware(claimSetProvider, _logger).Execute(
                 _requestInfo,
                 () =>
                 {
@@ -2039,6 +2076,24 @@ public class ResourceActionAuthorizationMiddlewareTests
 
         [Test]
         public void It_does_not_continue() => _continuations.Should().Be(0);
+
+        [Test]
+        public void It_logs_all_unmatched_scope_values() =>
+            _logger
+                .Records.Should()
+                .ContainSingle(record =>
+                    record.Message.Contains("No ClaimSet matching Scope")
+                    && Equals(record.Properties["Scope"], "profile Gamma")
+                );
+
+        [Test]
+        public void It_includes_the_scopes_in_the_security_configuration_diagnostic() =>
+            _logger
+                .Records.Should()
+                .ContainSingle(record =>
+                    record.Message.StartsWith("SecurityConfigurationFailure.")
+                    && Equals(record.Properties["AssignedClaimSet"], "profile Gamma")
+                );
     }
 
     [TestFixture]
@@ -2091,7 +2146,7 @@ public class ResourceActionAuthorizationMiddlewareTests
         public void It_does_not_continue() => _continuations.Should().Be(0);
 
         [Test]
-        public void It_logs_a_fixed_diagnostic_with_sanitized_request_context()
+        public void It_logs_duplicate_names_with_sanitized_request_context()
         {
             LogRecord record = _logger
                 .Records.Should()
@@ -2099,7 +2154,7 @@ public class ResourceActionAuthorizationMiddlewareTests
                 .Subject;
 
             record.Message.Should().Contain("duplicate claim-set names");
-            record.Message.Should().NotContain("Alpha");
+            record.Properties["DuplicateNames"].Should().Be("Alpha ALPHA");
             record.Properties["Tenant"].Should().Be("TenantA");
             record.Properties["CorrelationId"].Should().Be("traceId");
         }

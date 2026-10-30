@@ -44,7 +44,10 @@ internal sealed class ServiceClaimAuthorizationMiddleware(
             requestInfo.RequestCancellationToken
         );
 
-        string claimSetName = requestInfo.ClientAuthorizations.ClaimSetName;
+        string scopeForLogging = LoggingSanitizer.SanitizeFreeTextForLogging(
+            string.Join(' ', ClaimSetResolver.GetCandidates(requestInfo.ClientAuthorizations)),
+            maxLength: 1024
+        );
         ClaimSet claimSet;
 
         switch (ClaimSetResolver.Resolve(requestInfo.ClientAuthorizations, claimSets))
@@ -59,16 +62,21 @@ internal sealed class ServiceClaimAuthorizationMiddleware(
                 break;
             case ClaimSetResolution.Ambiguous:
                 logger.LogInformation(
-                    "ServiceClaimAuthorizationMiddleware: The token identifies multiple claim sets - {TraceId}",
+                    "ServiceClaimAuthorizationMiddleware: The token identifies multiple claim sets. Scope: {Scope} - {TraceId}",
+                    scopeForLogging,
                     LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
                 );
                 requestInfo.FrontendResponse = ClaimSetResolutionResponses.Ambiguous(
                     requestInfo.FrontendRequest.TraceId
                 );
                 return;
-            case ClaimSetResolution.InvalidMetadata:
+            case ClaimSetResolution.InvalidMetadata invalidMetadata:
                 logger.LogError(
-                    "ServiceClaimAuthorizationMiddleware: The security metadata contains duplicate claim-set names. Tenant: {Tenant}; CorrelationId: {CorrelationId}",
+                    "ServiceClaimAuthorizationMiddleware: The security metadata contains duplicate claim-set names: {DuplicateNames}. Tenant: {Tenant}; CorrelationId: {CorrelationId}",
+                    LoggingSanitizer.SanitizeFreeTextForLogging(
+                        string.Join(' ', invalidMetadata.DuplicateNames),
+                        maxLength: 1024
+                    ),
                     LoggingSanitizer.SanitizeInternalValueForLogging(requestInfo.FrontendRequest.Tenant),
                     LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
                 );
@@ -79,7 +87,7 @@ internal sealed class ServiceClaimAuthorizationMiddleware(
             case ClaimSetResolution.NoMatch:
                 logger.LogInformation(
                     "ServiceClaimAuthorizationMiddleware: No ClaimSet matching Scope {Scope} - {TraceId}",
-                    LoggingSanitizer.SanitizeInternalValueForLogging(claimSetName),
+                    scopeForLogging,
                     LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
                 );
                 CreateForbiddenResponse(requestInfo);

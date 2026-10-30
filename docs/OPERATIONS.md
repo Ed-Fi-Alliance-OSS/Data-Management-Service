@@ -760,9 +760,7 @@ self-contained provider issues scopes separated by spaces. See
 [Roles and Scopes](./ROLES-SCOPES.md#claim-set-selection-from-token-scopes) for the
 rules. Complete the steps below **before** rolling out the release that contains
 them. This is a deployment prerequisite for operators, not a code migration, and
-nothing in the product performs it for you. No deployment inventory has been
-inspected for this documentation, so what your deployment holds is unknown until
-you run the inventory.
+nothing in the product performs it for you.
 
 1. **Inventory comma-containing claim-set names.** List every claim set in every
    tenant whose name contains a comma. The new validation rejects such a name
@@ -771,6 +769,17 @@ you run the inventory.
    so an existing one can no longer be re-saved unchanged. Fragment registration skips
    registering an invalid name, logs it, and continues with the other claim sets, and
    the XML conversion tool throws its established `InvalidOperationException`.
+
+   In **self-contained mode**, this inventory also prevents an unintended change in
+   permissions. A client assigned `Alpha,Beta` stores separate `Alpha` and `Beta`
+   permissions. Fresh tokens carry `Alpha Beta`, so DMS looks up those two names
+   instead of the literal `Alpha,Beta` claim set. If neither name exists in the
+   tenant, resource requests return `500`, identity-service requests return `403`,
+   and `/oauth/token_info` returns `401`. If exactly one exists, requests use that
+   claim set's permissions, which may differ from the application's assigned claim
+   set. If both exist, requests return `403` for ambiguity. Skipping preflight can
+   therefore change effective permissions as well as cause an outage. Keycloak
+   stores the literal client scope name and does not perform this comma split.
 2. **Inventory the references to those names.** List every application, and every
    identity-provider client or client scope (the Keycloak realm, or the
    `OpenIddictScope` and `OpenIddictApplicationScope` rows of the self-contained

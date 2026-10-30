@@ -56,10 +56,9 @@ client holds, the client's registered scopes when none of the requested scopes i
 held, and the client's registered scopes when no scope is requested. The token
 response `scope` and the signed JWT `scope` describe the same granted values.
 
-A token *request* may still list the requested scopes separated by commas as well as
-spaces; that legacy request parsing is retained. Only issued output changed. Tokens
-issued before this change keep the scope shape they were issued with until they
-expire.
+A token *request* may list the requested scopes separated by commas or spaces.
+Issued tokens retain their scope values and delimiters until they expire;
+requesting a new token is necessary to obtain the current issuance format.
 
 ### Claim-Set Names Must Not Contain Commas
 
@@ -193,21 +192,6 @@ a direct copy of the token's `scope`. See
 **dms-client:** This role is assigned to all vendor applications by default.
 Currently, the role is used only as an identity tag and does not enforce any
 specific access control logic.
-
-#### Role claim type
-
-`JwtRoleAuthenticationMiddleware` trusts only the claim type configured as
-`JwtAuthentication:RoleClaimType`. It no longer falls back to `role`, `roles`, or the
-Microsoft role URI; each of those works only when it is the configured value. Role
-values still compare ordinally (case-sensitive). The behavior when no client role is
-configured, and the 401 and 403 responses, are unchanged.
-
-> [!NOTE]
-> Static analysis of the repository found this middleware registered in dependency
-> injection and exercised by tests, but not resolved by any shipping request pipeline.
-> This change narrows the middleware itself. It is not a new gate on the resource data
-> routes. The role gates that are reachable today (management endpoints and
-> document-cache status) already use the exact configured role type and are unchanged.
 
 ## Deployment Preflight for Claim-Set Names and Scope Shapes
 

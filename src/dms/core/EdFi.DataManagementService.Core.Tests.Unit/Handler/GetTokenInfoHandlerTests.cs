@@ -18,9 +18,11 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
+using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -739,10 +741,77 @@ public class Given_GetTokenInfoHandler
             );
     }
 
-    private async Task Execute(RequestInfo requestInfo)
+    [TestCase("pro\r\nfile|Gamma", "Alpha", "No ClaimSet matching Scope", "Scope", "profile Gamma", 401)]
+    [TestCase("Alpha|Beta", "Alpha|Beta", "multiple claim sets", "Scope", "Alpha Beta", 403)]
+    [TestCase(
+        "Alpha\r\n",
+        "Alpha\r\n|alpha\r\n|Beta",
+        "duplicate claim-set names",
+        "DuplicateNames",
+        "Alpha alpha",
+        500
+    )]
+    public async Task It_logs_sanitized_resolution_details_without_reflecting_them_in_errors(
+        string scopes,
+        string metadataNames,
+        string diagnostic,
+        string property,
+        string expected,
+        int statusCode
+    )
+    {
+        A.CallTo(() => _claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+            .Returns(metadataNames.Split('|').Select(name => new ClaimSet(name, [])).ToList());
+        ClientAuthorizations authorizations = CreateScopedClientAuthorizations(scopes);
+        ConfigureJwtValidation(authorizations);
+        var (services, _) = CreateRecordingApplicationContext();
+        RequestInfo requestInfo = CreateRequestInfo(authorizations, services);
+        var logger = new RecordingLogger<GetTokenInfoHandler>();
+
+        await Execute(requestInfo, logger);
+
+        logger
+            .Records.Should()
+            .ContainSingle(record =>
+                record.Message.Contains(diagnostic) && Equals(record.Properties[property], expected)
+            );
+        requestInfo.FrontendResponse.StatusCode.Should().Be(statusCode);
+        requestInfo
+            .FrontendResponse.Body!.ToJsonString()
+            .Should()
+            .NotContain("Alpha")
+            .And.NotContain("Gamma");
+    }
+
+    private Task Execute(RequestInfo requestInfo) =>
+        Execute(requestInfo, NullLogger<GetTokenInfoHandler>.Instance);
+
+    [Test]
+    public async Task It_bounds_scope_diagnostics_after_removing_control_characters()
+    {
+        ClientAuthorizations authorizations = CreateScopedClientAuthorizations(
+            new string('\r', 1024) + new string('x', 1030)
+        );
+        ConfigureJwtValidation(authorizations);
+        var (services, _) = CreateRecordingApplicationContext();
+        RequestInfo requestInfo = CreateRequestInfo(authorizations, services);
+        var logger = new RecordingLogger<GetTokenInfoHandler>();
+
+        await Execute(requestInfo, logger);
+
+        logger
+            .Records.Should()
+            .ContainSingle(record =>
+                record.Message.Contains("No ClaimSet matching Scope")
+                && Equals(record.Properties["Scope"], new string('x', 1024) + "...[truncated]")
+            );
+        requestInfo.FrontendResponse.StatusCode.Should().Be(401);
+    }
+
+    private async Task Execute(RequestInfo requestInfo, ILogger<GetTokenInfoHandler> logger)
     {
         var handler = new GetTokenInfoHandler(
-            NullLogger<GetTokenInfoHandler>.Instance,
+            logger,
             _jwtValidationService,
             _claimSetProvider,
             _profileService,
@@ -881,7 +950,10 @@ public class Given_GetTokenInfoHandler
             EducationOrganizationIds: educationOrganizationIds,
             NamespacePrefixes: [new NamespacePrefix("uri://ed-fi")],
             DataStoreIds: [new DataStoreId(1)]
-        );
+        )
+        {
+            ScopeValues = [ClaimSetName],
+        };
     }
 
     private static MappingSet CreateMappingSet()

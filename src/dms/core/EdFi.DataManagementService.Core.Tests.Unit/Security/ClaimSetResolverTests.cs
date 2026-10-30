@@ -150,6 +150,27 @@ public class ClaimSetResolverTests
     }
 
     [TestFixture]
+    public class Given_Duplicate_Names_Alongside_Another_Recognized_Name
+    {
+        private ClaimSetResolution _result = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _result = ClaimSetResolver.Resolve(
+                CreateAuthorizations(["Alpha", "Beta"]),
+                CreateClaimSets("Alpha|alpha|Beta")
+            );
+
+        [Test]
+        public void It_identifies_only_the_duplicate_metadata_names() =>
+            _result
+                .Should()
+                .BeOfType<ClaimSetResolution.InvalidMetadata>()
+                .Which.DuplicateNames.Should()
+                .Equal("Alpha", "alpha");
+    }
+
+    [TestFixture]
     public class Given_Duplicate_Metadata_Names_That_Match_No_Scope
     {
         private ClaimSetResolution _result = null!;

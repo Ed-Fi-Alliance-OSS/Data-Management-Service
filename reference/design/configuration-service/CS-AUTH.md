@@ -73,7 +73,7 @@ The `self-contained` provider does not reject an ungranted scope: it issues the 
 
 The `self-contained` provider joins the scopes it grants with single spaces, in all three cases: the requested scopes the client holds, the client's registered scopes when none of the requested scopes is held, and the client's registered scopes when no scope is requested.
 The token response `scope` and the signed JWT `scope` describe the same granted values.
-Only the issued output changed: the token request parser still accepts a requested scope list separated by commas as well as spaces, and a token issued before this change keeps its scope shape until it expires.
+The token request parser accepts a requested scope list separated by commas or spaces. Issued tokens retain their scope values and delimiters until they expire; clients must request a new token to obtain the current issuance format.
 
 Both `/openapi/v1.json` and `/metadata/specifications` declare an `oauth2_client_credentials` scheme whose `tokenUrl` is the document's own server URL (request scheme, host and path base) followed by `/connect/token`.
 The token URL follows the address the document was requested on, as the server URL and the DMS OpenAPI token URL do; the discovery document instead builds its endpoints from `IdentitySettings:Authority`, because services fetch it to validate tokens.
