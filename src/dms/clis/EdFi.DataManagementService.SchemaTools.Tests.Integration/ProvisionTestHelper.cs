@@ -51,7 +51,8 @@ internal static partial class ProvisionTestHelper
         documentVersion.DataType.Should().Be("bigint");
         documentVersion.DefaultExpression.Should().Contain("ChangeVersionSequence");
 
-        // The fixture's resource roots and Descriptor retain version mirrors and own their timestamps.
+        // The fixture's resource roots and Descriptor retain version mirrors and own their timestamps,
+        // including the creation timestamp, which has the same shape as the last-modified timestamp.
         var owners = manifest
             .Columns.Where(c =>
                 c.ColumnName == "ContentVersion"
@@ -77,7 +78,29 @@ internal static partial class ProvisionTestHelper
             timestamp
                 .DefaultExpression.Should()
                 .Be(manifest.Dialect == "pgsql" ? "now()" : "(sysutcdatetime())");
+
+            var createdAt = manifest
+                .Columns.Should()
+                .ContainSingle(c =>
+                    c.SchemaName == owner.SchemaName
+                    && c.TableName == owner.TableName
+                    && c.ColumnName == "ContentCreatedAt"
+                )
+                .Subject;
+            createdAt.IsNullable.Should().BeFalse();
+            createdAt.DataType.Should().Be(timestamp.DataType);
+            createdAt.DefaultExpression.Should().Be(timestamp.DefaultExpression);
         }
+
+        manifest
+            .Columns.Where(c => c.ColumnName == "ContentCreatedAt")
+            .Select(c => (c.SchemaName, c.TableName))
+            .Should()
+            .BeEquivalentTo(owners.Select(c => (c.SchemaName, c.TableName)));
+        manifest
+            .Indexes.Where(index => index.Columns.Contains("ContentCreatedAt"))
+            .Should()
+            .BeEmpty("the creation timestamp is not indexed");
     }
 
     internal static DateTime AssertCachedContentStamp(
