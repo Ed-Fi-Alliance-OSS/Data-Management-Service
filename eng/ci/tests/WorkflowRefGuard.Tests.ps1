@@ -285,6 +285,283 @@ jobs:
         $found[0].Line | Should -Be $Line
     }
 
+    It 'finds a secret in <case>' -ForEach @(
+        @{ Case = 'a literal block'; Line = 8; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Attach
+        shell: pwsh
+        run: |
+          $token = "${{ secrets.GITHUB_TOKEN }}"
+'@ }
+        @{ Case = 'bracket notation in a single-line run'; Line = 5; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -H "Authorization: Bearer ${{ secrets['API_TOKEN'] }}" https://example.invalid
+'@ }
+        @{ Case = 'the whole context wrapped in a function across lines'; Line = 7; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo one
+          echo '${{
+            toJSON(secrets)
+          }}'
+'@ }
+        @{ Case = 'a workflow env alias'; Line = 9; Text = @'
+env:
+  ARTIFACTS_API_KEY: ${{ secrets.FEED_TOKEN }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - shell: pwsh
+        run: |
+          dotnet nuget push x.nupkg --api-key "${{ env.ARTIFACTS_API_KEY }}"
+'@ }
+        @{ Case = 'a job env alias'; Line = 9; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets.BUILD_AGENT_PAT }}
+    steps:
+      - shell: pwsh
+        run: |
+          $headers = @{ Authorization = "Bearer ${{ env.TOKEN }}" }
+'@ }
+        @{ Case = 'a step env alias in bracket form'; Line = 9; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.FEED_USER }}
+        run: |
+          Write-Output "${{ env['ARTIFACTS_USERNAME'] }}"
+'@ }
+        @{ Case = 'an alias whose value embeds a secret in other text'; Line = 8; Text = @'
+env:
+  FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://example.invalid","password": "${{ secrets.FEED_TOKEN }}"}]}'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo '${{ env.FEED_ENDPOINTS }}'
+'@ }
+        @{ Case = 'an alias whose secret is on a continuation line'; Line = 10; Text = @'
+env:
+  FEED_ENDPOINTS: >-
+    {"endpointCredentials": [{"endpoint": "https://example.invalid",
+    "password": "${{ secrets.FEED_TOKEN }}"}]}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo '${{ env.FEED_ENDPOINTS }}'
+'@ }
+        @{ Case = 'an alias of an alias'; Line = 11; Text = @'
+env:
+  FEED_TOKEN: ${{ secrets.FEED_TOKEN }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      API_KEY: ${{ env.FEED_TOKEN }}
+    steps:
+      - shell: pwsh
+        run: |
+          Write-Output "${{ env.API_KEY }}"
+'@ }
+    ) {
+        $found = script:Find-Injection $Text
+
+        $found.Count | Should -Be 1
+        $found[0].Problem | Should -BeExactly 'Secret'
+        $found[0].Line | Should -Be $Line
+    }
+
+    It 'allows <case>' -ForEach @(
+        @{ Case = 'secrets bound in env at every level and read as data'; Text = @'
+env:
+  ARTIFACTS_API_KEY: ${{ secrets.FEED_TOKEN }}
+  FEED_ENDPOINTS: '{"endpointCredentials": [{"password": "${{ secrets.FEED_TOKEN }}"}]}'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets.BUILD_AGENT_PAT }}
+    steps:
+      - shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ARTIFACTS_USERNAME: ${{ secrets.FEED_USER }}
+        run: |
+          $token = $env:GITHUB_TOKEN
+          Publish -Username $env:ARTIFACTS_USERNAME -ApiKey $env:ARTIFACTS_API_KEY -Token "Bearer $env:TOKEN"
+      - shell: bash
+        env:
+          API_KEY: ${{ secrets.FEED_TOKEN }}
+        run: dotnet nuget push x.nupkg --api-key "$API_KEY"
+'@ }
+        @{ Case = 'secrets in with: and a reusable workflow secrets: mapping'; Text = @'
+jobs:
+  login:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+  call:
+    uses: ./.github/workflows/build.yml
+    secrets:
+      FEED_URL: ${{ secrets.FEED_TOKEN }}
+'@ }
+        @{ Case = 'env and other expressions that are not secrets'; Text = @'
+env:
+  ARTIFACTS_FEED_URL: "https://example.invalid/index.json"
+  SECRETS_PACKAGE_NAME: "EdFi.Api.Secrets"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - shell: pwsh
+        run: |
+          Push -Source "${{ env.ARTIFACTS_FEED_URL }}" -Package "${{ env.SECRETS_PACKAGE_NAME }}.${{ needs.pack-secrets.outputs.contract-version }}.nupkg" -Flag "${{ inputs.secrets }}"
+'@ }
+    ) {
+        script:Find-Injection $Text | Should -BeNullOrEmpty
+    }
+
+    It 'refuses <case> as an env it cannot read, whatever the value' -ForEach @(
+        @{ Case = 'a flow env mapping holding a secret'; Line = 5; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - env: { TOKEN: "${{ secrets.API_TOKEN }}" }
+        run: echo "${{ env.TOKEN }}"
+'@ }
+        @{ Case = 'a flow env mapping with the safe pattern'; Line = 5; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - env: { TOKEN: "${{ secrets.API_TOKEN }}" }
+        run: echo "$TOKEN"
+'@ }
+        @{ Case = 'an env that is an alias'; Line = 8; Text = @'
+x-credentials: &credentials
+  TOKEN: ${{ secrets.API_TOKEN }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - shell: pwsh
+        'env': *credentials
+        run: Write-Output "${{ env.TOKEN }}"
+'@ }
+        @{ Case = 'a merge key in env'; Line = 9; Text = @'
+x-credentials: &credentials
+  TOKEN: ${{ secrets.API_TOKEN }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - shell: pwsh
+        env:
+          <<: *credentials
+        run: Write-Output "${{ env.TOKEN }}"
+'@ }
+        @{ Case = 'an env entry whose value is an alias'; Line = 6; Text = @'
+x-token: &token ${{ secrets.API_TOKEN }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: *token
+    steps:
+      - run: echo "${{ env.TOKEN }}"
+'@ }
+        @{ Case = 'an env built by an expression from secrets'; Line = 4; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env: ${{ fromJSON(format('{{"TOKEN":"{0}"}}', secrets.API_TOKEN)) }}
+    steps:
+      - run: echo "${{ env.TOKEN }}"
+'@ }
+    ) {
+        $found = script:Find-Injection $Text
+
+        $found.Count | Should -Be 1
+        $found[0].Problem | Should -BeExactly 'Unsupported'
+        $found[0].Line | Should -Be $Line
+    }
+
+    It 'still reads <case>' -ForEach @(
+        @{ Case = 'an anchored env with a trailing comment'; Line = 8; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env: &credentials # publishing
+      TOKEN: ${{ secrets.API_TOKEN }}
+    steps:
+      - run: |
+          echo "${{ env.TOKEN }}"
+'@ }
+    ) {
+        $found = script:Find-Injection $Text
+
+        $found.Count | Should -Be 1
+        $found[0].Problem | Should -BeExactly 'Secret'
+        $found[0].Line | Should -Be $Line
+    }
+
+    It 'allows an action input named env, whatever its value' {
+        script:Find-Injection @'
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: example/deploy@v1
+        with:
+          env: ${{ secrets.DEPLOY_ENV }}
+      - uses: example/deploy@v1
+        "with":
+          env: { TOKEN: "${{ secrets.API_TOKEN }}" }
+      - uses: example/deploy@v1
+        with:
+          env: production
+'@ | Should -BeNullOrEmpty
+    }
+
+    It 'does not read env keys out of another key''s block scalar' {
+        script:Find-Injection @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: slackapi/slack-github-action@v2
+        with:
+          payload: |
+            env: { "token": "${{ secrets.SLACK_TOKEN }}" }
+      - run: |
+          cat <<'YAML' > config.yml
+          env: { TOKEN: placeholder }
+          YAML
+'@ | Should -BeNullOrEmpty
+    }
+
     It 'allows the safe env pattern under quoted run keys' {
         script:Find-Injection @'
 jobs:
@@ -331,24 +608,46 @@ Describe 'Test-WorkflowRefInjection' {
         $result = script:Invoke-Guard $script:repoRoot
 
         $result.ExitCode | Should -Be 0 -Because ($result.Printed -join "`n")
-        $result.Printed -join "`n" | Should -BeLike 'No ref or tag expression in a run script across * file(s).'
+        $result.Printed -join "`n" | Should -BeLike 'No ref, tag or secret expression in a run script across * file(s).'
     }
 
-    It 'fails with an annotation for <case> in on-release.yml' -ForEach @(
-        @{ Case = 'the original ref interpolation'; Find = 'MAJOR_TAG="$RELEASE_REF"'; Replace = 'MAJOR_TAG="${{ github.ref_name }}"' }
-        @{ Case = 'the env alias pasted back'; Find = 'MAJOR_TAG="$RELEASE_REF"'; Replace = 'MAJOR_TAG="${{ env.RELEASE_REF }}"' }
+    It 'fails with an annotation for <case> in <file>' -ForEach @(
+        @{ Case = 'the original ref interpolation'; File = 'on-release.yml'; Find = 'MAJOR_TAG="$RELEASE_REF"'; Replace = 'MAJOR_TAG="${{ github.ref_name }}"' }
+        @{ Case = 'the env alias pasted back'; File = 'on-release.yml'; Find = 'MAJOR_TAG="$RELEASE_REF"'; Replace = 'MAJOR_TAG="${{ env.RELEASE_REF }}"' }
+        @{ Case = 'the original GITHUB_TOKEN interpolation'; File = 'on-release.yml'; Find = '$token = $env:GITHUB_TOKEN'; Replace = '$token = "${{ secrets.GITHUB_TOKEN }}"' }
+        @{ Case = 'the original promotion API key interpolation'; File = 'on-release.yml'; Find = '-ApiKey $env:ARTIFACTS_API_KEY'; Replace = '-ApiKey "${{ env.ARTIFACTS_API_KEY }}"' }
+        @{ Case = 'the original feed API key interpolation'; File = 'on-prerelease.yml'; Find = 'NuGetApiKey = $env:ARTIFACTS_API_KEY'; Replace = 'NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"' }
+        @{ Case = 'the original template push key interpolation'; File = 'build-minimal-template.yml'; Find = '--api-key $env:ARTIFACTS_API_KEY'; Replace = '--api-key "${{ env.ARTIFACTS_API_KEY }}"' }
+        @{ Case = 'the original release token interpolation'; File = 'on-dms-merge-or-tag.yml'; Find = '"Bearer $env:TOKEN"'; Replace = '"Bearer ${{ env.TOKEN }}"' }
     ) {
         # The regression this guard exists for, made in a copy of the real workflow.
-        $workflow = Get-Content -LiteralPath (Join-Path $script:repoRoot '.github/workflows/on-release.yml') -Raw
+        $workflow = Get-Content -LiteralPath (Join-Path $script:repoRoot ".github/workflows/$File") -Raw
         $workflow.Contains($Find) | Should -BeTrue
         $index = $workflow.IndexOf($Find)
         $line = ([regex]::Matches($workflow.Substring(0, $index), "`n")).Count + 1
-        $repo = script:New-Repository ($workflow.Remove($index, $Find.Length).Insert($index, $Replace)) '.github/workflows/on-release.yml'
+        $repo = script:New-Repository ($workflow.Remove($index, $Find.Length).Insert($index, $Replace)) ".github/workflows/$File"
+        $expression = [regex]::Match($Replace, '\$\{\{.*?\}\}').Value
 
         $result = script:Invoke-Guard $repo
 
         $result.ExitCode | Should -Be 1
-        $result.Printed | Should -Contain "::error file=.github/workflows/on-release.yml,line=$line::$($Replace.Substring($Replace.IndexOf('$'), $Replace.Length - $Replace.IndexOf('$') - 1)) is written into a run script. Pass it through env: and read it as `"`$NAME`" (bash) or `$env:NAME (pwsh)."
+        $result.Printed | Should -Contain "::error file=.github/workflows/$File,line=$line::$expression is written into a run script. Pass it through env: and read it as `"`$NAME`" (bash) or `$env:NAME (pwsh)."
+    }
+
+    It 'fails with an annotation for a flow-style env' {
+        $repo = script:New-Repository @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - env: { TOKEN: "${{ secrets.API_TOKEN }}" }
+        run: echo "${{ env.TOKEN }}"
+'@
+
+        $result = script:Invoke-Guard $repo
+
+        $result.ExitCode | Should -Be 1
+        $result.Printed | Should -Contain "::error file=.github/workflows/test.yml,line=5::'- env: { TOKEN: `"`${{ secrets.API_TOKEN }}`" }' is a run or env this guard cannot read (a flow mapping, alias, anchor or tag). Write run and env as block-style keys with plain, quoted or block scalar values."
     }
 
     It 'fails with an annotation for a flow-style step' {
@@ -363,7 +662,7 @@ jobs:
         $result = script:Invoke-Guard $repo
 
         $result.ExitCode | Should -Be 1
-        $result.Printed | Should -Contain "::error file=.github/workflows/test.yml,line=5::'- { name: Prepare, run: 'echo `"`${{ github.ref_name }}`"' }' is a run this guard cannot read (a flow mapping, alias, anchor or tag). Write run as a block-style key with a plain, quoted or block scalar value."
+        $result.Printed | Should -Contain "::error file=.github/workflows/test.yml,line=5::'- { name: Prepare, run: 'echo `"`${{ github.ref_name }}`"' }' is a run or env this guard cannot read (a flow mapping, alias, anchor or tag). Write run and env as block-style keys with plain, quoted or block scalar values."
     }
 
     It 'scans a new .yaml workflow' {

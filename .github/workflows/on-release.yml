@@ -43,9 +43,11 @@ jobs:
 
       - name: Delete other pre-releases and their tags
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
 
           # An ordinary main build's prerelease is deleted; a tagged release build's is kept. The same
           # rule on-prerelease.yml applies, read once here for every page below.
@@ -115,10 +117,10 @@ jobs:
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
-            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            Username    = $env:ARTIFACTS_USERNAME
             ViewId        = "release"
             ReleaseRef  = $env:RELEASE_REF
-            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            Password    = (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force)
             PackageName = "EdFi.Api"
           }
 
@@ -130,10 +132,10 @@ jobs:
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
-            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            Username    = $env:ARTIFACTS_USERNAME
             ViewId      = "release"
             ReleaseRef  = $env:RELEASE_REF
-            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            Password    = (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force)
             PackageName = "EdFi.Api.ConfigurationService"
           }
 
@@ -145,10 +147,10 @@ jobs:
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
-            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            Username    = $env:ARTIFACTS_USERNAME
             ViewId      = "release"
             ReleaseRef  = $env:RELEASE_REF
-            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            Password    = (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force)
             PackageName = "EdFi.Api.SchemaTools"
           }
 
@@ -172,10 +174,10 @@ jobs:
           $version = Get-SecurityMetadataToolsVersion -AppVersion "${{ steps.tool-release-source.outputs.dms-v }}" -StableRelease
           Invoke-ContractPromotion `
               -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
-              -Username "${{ env.ARTIFACTS_USERNAME }}" `
-              -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
+              -Username $env:ARTIFACTS_USERNAME `
+              -Password (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force) `
               -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-              -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
+              -ApiKey $env:ARTIFACTS_API_KEY `
               -PackageName "EdFi.Api.SecurityMetadataTools" `
               -Version $version
 
@@ -205,10 +207,10 @@ jobs:
 
           Invoke-ContractPromotion `
             -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
-            -Username "${{ env.ARTIFACTS_USERNAME }}" `
-            -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
+            -Username $env:ARTIFACTS_USERNAME `
+            -Password (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force) `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
+            -ApiKey $env:ARTIFACTS_API_KEY `
             -PackageName "EdFi.Api.Plugins" `
             -Version (Get-PluginsContractVersion)
 
@@ -231,10 +233,10 @@ jobs:
 
           Invoke-ContractPromotion `
             -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
-            -Username "${{ env.ARTIFACTS_USERNAME }}" `
-            -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
+            -Username $env:ARTIFACTS_USERNAME `
+            -Password (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force) `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
+            -ApiKey $env:ARTIFACTS_API_KEY `
             -PackageName "EdFi.Api.CustomValidation" `
             -Version (Get-CustomValidationContractVersion)
 
@@ -250,10 +252,10 @@ jobs:
 
           Invoke-ContractPromotion `
             -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
-            -Username "${{ env.ARTIFACTS_USERNAME }}" `
-            -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
+            -Username $env:ARTIFACTS_USERNAME `
+            -Password (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force) `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
+            -ApiKey $env:ARTIFACTS_API_KEY `
             -PackageName "EdFi.Api.Identity" `
             -Version (Get-IdentityContractVersion)
 
@@ -269,10 +271,10 @@ jobs:
 
           Invoke-ContractPromotion `
             -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
-            -Username "${{ env.ARTIFACTS_USERNAME }}" `
-            -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
+            -Username $env:ARTIFACTS_USERNAME `
+            -Password (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force) `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
+            -ApiKey $env:ARTIFACTS_API_KEY `
             -PackageName "EdFi.Api.Secrets" `
             -Version (Get-SecretsContractVersion)
 

@@ -7,12 +7,13 @@
 
 <#
     .SYNOPSIS
-        Fails when a workflow or composite action writes a ref or tag name into a run script.
+        Fails when a workflow or composite action writes a ref or tag name, or a secret, into a run
+        script.
     .DESCRIPTION
         Scans .github/workflows/*.yml and *.yaml and .github/actions/**/action.yml and action.yaml
         with eng/ci/workflow-ref-guard.psm1, reports each finding as a GitHub error annotation, and
-        exits 1 when there is any. Pass the ref through env and read "$NAME" (bash) or $env:NAME
-        (pwsh) instead.
+        exits 1 when there is any. Pass the ref or secret through env and read "$NAME" (bash) or
+        $env:NAME (pwsh) instead.
     .PARAMETER Root
         The repository root to scan. Defaults to the repository this script is in.
 #>
@@ -38,7 +39,7 @@ $findings = @(Find-WorkflowRefInjection -Path $files -Root $Root)
 
 foreach ($finding in $findings) {
     $message = if ($finding.Problem -eq 'Unsupported') {
-        "'$($finding.Expression)' is a run this guard cannot read (a flow mapping, alias, anchor or tag). Write run as a block-style key with a plain, quoted or block scalar value."
+        "'$($finding.Expression)' is a run or env this guard cannot read (a flow mapping, alias, anchor or tag). Write run and env as block-style keys with plain, quoted or block scalar values."
     }
     else {
         "$($finding.Expression) is written into a run script. Pass it through env: and read it as `"`$NAME`" (bash) or `$env:NAME (pwsh)."
@@ -51,4 +52,4 @@ if ($findings.Count -gt 0) {
     exit 1
 }
 
-Write-Output "No ref or tag expression in a run script across $($files.Count) file(s)."
+Write-Output "No ref, tag or secret expression in a run script across $($files.Count) file(s)."

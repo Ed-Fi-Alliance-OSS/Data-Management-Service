@@ -76,7 +76,7 @@ jobs:
 
           $headers = @{
             Accept = "application/vnd.github+json"
-            Authorization = "Bearer ${{ env.TOKEN }}"
+            Authorization = "Bearer $env:TOKEN"
           }
 
           Invoke-RestMethod -Method POST -Uri ${{ env.API_URL }}/releases -Body $body -Headers $headers
