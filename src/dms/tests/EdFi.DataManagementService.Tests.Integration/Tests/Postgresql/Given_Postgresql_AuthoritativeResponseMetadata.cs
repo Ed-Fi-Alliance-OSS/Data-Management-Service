@@ -38,6 +38,14 @@ public sealed class Given_Postgresql_AuthoritativeResponseMetadata : PostgresqlA
             descriptor
         );
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public Task It_starts_a_new_creation_time_when_a_deleted_resource_is_recreated(bool descriptor) =>
+        AuthoritativeResponseMetadataScenario.It_starts_a_new_creation_time_when_a_deleted_resource_is_recreated(
+            Harness,
+            descriptor
+        );
+
     [Test]
     public Task It_keeps_page_metadata_in_one_batch_as_the_page_grows() =>
         AuthoritativeResponseMetadataScenario.It_keeps_page_metadata_in_one_batch_as_the_page_grows(Harness);
