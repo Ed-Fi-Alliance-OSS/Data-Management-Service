@@ -314,7 +314,7 @@ pwsh -NoProfile -File ./bootstrap-local-dms.ps1 -DatabaseEngine postgresql -Iden
 # 5. Stop the applications, set the deployment aside, then restore. Nothing may hold a connection
 #    during the rename or the restore.
 #    Read the live values rather than assuming defaults. The superuser name is one of them:
-#    postgresql.yml sets POSTGRES_USER: ${POSTGRES_USER:-postgres}, so the container accepts an
+#    postgresql.compose.yml sets POSTGRES_USER: ${POSTGRES_USER:-postgres}, so the container accepts an
 #    override, and this recipe reads whatever the running container was given rather than adding a
 #    hard-coded copy of its own -- here, and in the connection string built in step 9, where a
 #    wrong name registers a data store that saves cleanly and cannot connect. This is not a claim
@@ -696,7 +696,7 @@ echo "reference database $REF dropped"
 #
 #    The key is replaced in the Configuration Service database: the Configuration Service mints tokens from the dmscs."OpenIddictKey" row of
 #    the database it reads its dmscs rows from, taken from the running Configuration Service rather
-#    than assumed to be $DB -- CONFIGURATION_SERVICE_DATABASE_NAME is a supported override, and local-config.yml
+#    than assumed to be $DB -- CONFIGURATION_SERVICE_DATABASE_NAME is a supported override, and local-config.compose.yml
 #    builds the Configuration Service connection string from it -- so a key replaced anywhere else leaves the Configuration Service reading
 #    the producer's. The rule for the rest of the recipe: dmscs operations target $CMSDB (step 10
 #    reuses this value), dms data-store operations target $DB. The connection string carries the
@@ -791,7 +791,7 @@ echo "SourceIdentity rotated to $NEW_SOURCE_ID"
 #    replaced dmscs.OpenIddict*, so register the admin client AFTER the restore, not before.
 #    Skip this and DMS restart-loops with "Failed to decrypt the connection string".
 #
-#    The ports are read from the containers, not assumed. local-config.yml and local-dms.yml set each
+#    The ports are read from the containers, not assumed. local-config.compose.yml and local-dms.compose.yml set each
 #    container's ASPNETCORE_HTTP_PORTS from CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS and DMS_HTTP_PORTS
 #    respectively and publish that same number on 127.0.0.1, so the value inside the container is the
 #    host port -- the same two overrides eng/docker-compose/env-utility.psm1 resolves in
@@ -973,7 +973,7 @@ test -n "$CID" -a -n "$CSEC" -a -n "$CSCOPE" || \
 
 #     The two role names are read as well, and from the Configuration Service rather than from DMS, because the Configuration Service is the side
 #     that enforces them: its service policy requires the presented token to carry
-#     IdentitySettings:ConfigServiceRole. Both are supported overrides -- local-config.yml sets them
+#     IdentitySettings:ConfigServiceRole. Both are supported overrides -- local-config.compose.yml sets them
 #     from CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE and CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE -- and left unpassed,
 #     setup-openiddict.ps1 falls back to its own cms-client/dms-client defaults and grants a role your
 #     Configuration Service does not require. The token check below would still pass, because minting a token does not
@@ -1218,7 +1218,7 @@ Every published artifact records the following, on its ticket and in this direct
 | Branch head at publication | `b303450ab5fd689526696cb088a76a90b7ef6c14` on `DMS-1406` — the workflow tooling and restore recipe as they stood when the artifact was uploaded |
 | Recipe text executed | the eleven-step text at `b303450ab5fd689526696cb088a76a90b7ef6c14` (no 5b, no 5c, DMS started as step 10), from a clean slate with non-default credentials on 2026-08-19. The current fourteen-step text has **not** been executed end to end against the published artifact — see *Recipe execution record* below |
 | `SourceIdentity` as shipped | `8b962de6-b979-49aa-bce0-ca59e0a1ad51` — rotate it (step 8); a consumer whose value still reads this has skipped the step |
-| Engine image | `postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0` — `eng/docker-compose/postgresql.yml` at the DMS revision built, unchanged at the publication head; the archive header reads `Dumped from database version: 16.8` and `Dumped by pg_dump version: 16.8` (`pg_restore -l`) |
+| Engine image | `postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0` — `eng/docker-compose/postgresql.compose.yml` at the DMS revision built, unchanged at the publication head; the archive header reads `Dumped from database version: 16.8` and `Dumped by pg_dump version: 16.8` (`pg_restore -l`) |
 | `ResourceKeySeedHash` | `fae376b7b81722efe1878226a49200d74ae68febac7d21f5121a0824236e981b` — `dms."EffectiveSchema"` of the restored artifact and of the fresh same-revision deployment step 5c compares it against (section `11-fingerprint` of both snapshots), and asserted against the reference in every checkpoint record |
 | `ResourceKey` rows | 351 |
 | `dms."Descriptor"` rows | 2,968 |

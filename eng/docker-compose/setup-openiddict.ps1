@@ -143,7 +143,7 @@ function New-OpenIddictRole {
     param([string]$RoleName)
     $roleId = [guid]::NewGuid().ToString()
     # Every PostgreSQL string literal below is built by ConvertTo-PostgresSqlLiteral rather than
-    # pasted between bare quotes. The role name is a configured value - local-config.yml exposes it
+    # pasted between bare quotes. The role name is a configured value - local-config.compose.yml exposes it
     # as CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE / CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE - and one carrying a
     # single quote would close its literal, leaving psql to reject the whole statement. The helper
     # returns the surrounding quotes as part of its result, so the templates embed it bare.

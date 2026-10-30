@@ -486,7 +486,7 @@ Describe 'Stock image proof decisions' {
             $commands = @(
                 'docker pull edfialliance/ed-fi-api@sha256:abc'
                 'dotnet publish eng/fixtures/plugins/Acme.CustomValidationProof'
-                'docker compose -f postgresql.yml up -d'
+                'docker compose -f postgresql.compose.yml up -d'
             )
 
             (Test-BuildCommandAbsent -Command $commands).Verified | Should -BeTrue
@@ -495,7 +495,7 @@ Describe 'Stock image proof decisions' {
         It 'refuses <Case>' -ForEach @(
             @{ Case = 'a docker build'; Command = 'docker build -t local/ed-fi-api src/dms' }
             @{ Case = 'a buildx build'; Command = 'docker buildx build --push src/dms' }
-            @{ Case = 'a compose build'; Command = 'docker compose -f local-dms.yml build dms' }
+            @{ Case = 'a compose build'; Command = 'docker compose -f local-dms.compose.yml build dms' }
             @{ Case = "build-dms.ps1 DockerBuild"; Command = 'pwsh ./build-dms.ps1 DockerBuild -DMSVersion 9.9.9' }
         ) {
             $verdict = Test-BuildCommandAbsent -Command @('docker pull something', $Command)
@@ -511,8 +511,8 @@ Describe 'Stock image proof decisions' {
         }
 
         It 'accepts <Case>, where the word build is not the command' -ForEach @(
-            @{ Case = 'an explicit --no-build'; Command = 'docker compose -f published-dms.yml up -d --no-build' }
-            @{ Case = 'a compose file whose path contains build'; Command = 'docker compose -f eng/build/published-dms.yml up -d' }
+            @{ Case = 'an explicit --no-build'; Command = 'docker compose -f published-dms.compose.yml up -d --no-build' }
+            @{ Case = 'a compose file whose path contains build'; Command = 'docker compose -f eng/build/published-dms.compose.yml up -d' }
             @{ Case = 'a compose file literally named build.yml'; Command = 'docker compose -f build.yml up -d' }
             @{ Case = 'a project directory containing build'; Command = 'docker compose --project-directory ./build up -d' }
             @{ Case = 'a pull of an image whose tag contains build'; Command = 'docker pull edfialliance/ed-fi-api:8.0.1-build.7' }
@@ -523,7 +523,7 @@ Describe 'Stock image proof decisions' {
         }
 
         It 'still refuses <Case>' -ForEach @(
-            @{ Case = 'a compose up that rebuilds'; Command = 'docker compose -f local-dms.yml up -d --build' }
+            @{ Case = 'a compose up that rebuilds'; Command = 'docker compose -f local-dms.compose.yml up -d --build' }
             @{ Case = 'a compose build with file options first'; Command = 'docker compose -f a.yml -f b.yml build dms' }
             @{ Case = 'a buildx build with options'; Command = 'docker --context default buildx build --push src/dms' }
         ) {

@@ -64,9 +64,9 @@ fi
 # Bash 3.2 with `set -u` treats an empty-array expansion as an unbound variable. Keep the
 # no-argument path explicit so the wrapper also works with the macOS system Bash.
 if [ ${#ARGS[@]} -eq 0 ]; then
-  docker compose -f docker-compose.yml -f keycloak.yml --env-file .env down
+  docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env down
 else
-  docker compose -f docker-compose.yml -f keycloak.yml --env-file .env down "${ARGS[@]}"
+  docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env down "${ARGS[@]}"
 fi
 
 # The destructive down completed; clear the sentinel so bootstrap may run again, and the

@@ -44,7 +44,7 @@ Describe 'CDC infrastructure startup' {
         $files = @()
         . (Get-StartupBlock 'start-local-dms.ps1' 'CDC database preparation requires')
         ($files -contains 'mssql-cdc.yml') | Should -Be ($Provider -eq 'mssql')
-        $files | Should -Not -Contain 'kafka-cdc.yml'
+        $files | Should -Not -Contain 'kafka-cdc.compose.yml'
         $script:calls.Count | Should -Be 0
     }
 
@@ -60,8 +60,8 @@ Describe 'CDC infrastructure startup' {
         $files = @()
         . (Get-StartupBlock $Script 'CDC database preparation requires')
         ($files -contains 'mssql-cdc.yml') | Should -Be ($Engine -eq 'mssql')
-        $files | Should -Not -Contain 'kafka-cdc.yml'
-        $files | Should -Not -Contain 'kafka.yml'
+        $files | Should -Not -Contain 'kafka-cdc.compose.yml'
+        $files | Should -Not -Contain 'kafka.compose.yml'
         $script:calls.Count | Should -Be 0
     }
 
@@ -91,7 +91,7 @@ Describe 'CDC infrastructure startup' {
         $enableKafkaInfrastructure = $true
         $DatabaseEngine = $Engine
         $EnvironmentFile = 'selected.env'
-        $files = @('-f', 'kafka-cdc.yml', '-f', 'kafka-ui.yml')
+        $files = @('-f', 'kafka-cdc.compose.yml', '-f', 'kafka-ui.compose.yml')
         $upArgs = @('-d')
         & (Get-StartupBlock $Script 'Starting CDC broker') | Out-Null
         $script:calls.Count | Should -Be 1
@@ -102,7 +102,7 @@ Describe 'CDC infrastructure startup' {
     It 'propagates broker startup failure' {
         Mock docker { $global:LASTEXITCODE = 1 }
         $CdcKafkaInfrastructure = $true
-        $files = @('-f', 'kafka-cdc.yml')
+        $files = @('-f', 'kafka-cdc.compose.yml')
         $EnvironmentFile = 'selected.env'
         $upArgs = @('-d')
         { & (Get-StartupBlock 'start-local-dms.ps1' 'Starting CDC broker') } | Should -Throw '*Failed to start CDC broker*'
@@ -130,8 +130,8 @@ Describe 'CDC Compose service selection' {
         @{ Engine = 'postgresql'; Ui = $false }, @{ Engine = 'postgresql'; Ui = $true },
         @{ Engine = 'mssql'; Ui = $false }, @{ Engine = 'mssql'; Ui = $true }
     ) {
-        $arguments = @('compose', '-f', (Join-Path $script:root 'kafka-cdc.yml'))
-        if ($Ui) { $arguments += @('-f', (Join-Path $script:root 'kafka-ui.yml')) }
+        $arguments = @('compose', '-f', (Join-Path $script:root 'kafka-cdc.compose.yml'))
+        if ($Ui) { $arguments += @('-f', (Join-Path $script:root 'kafka-ui.compose.yml')) }
         $arguments += @('config', '--format', 'json')
         $config = (& docker @arguments | ConvertFrom-Json)
         $LASTEXITCODE | Should -Be 0
@@ -140,7 +140,7 @@ Describe 'CDC Compose service selection' {
         $config.services.PSObject.Properties.Name | Should -Not -Contain 'kafka-postgresql-source'
         if ($Ui) { $config.services.'kafka-ui' | Should -Not -BeNullOrEmpty }
 
-        $all = (& docker compose -f (Join-Path $script:root 'kafka-cdc.yml') --profile cdc-managed-worker config --format json | ConvertFrom-Json)
+        $all = (& docker compose -f (Join-Path $script:root 'kafka-cdc.compose.yml') --profile cdc-managed-worker config --format json | ConvertFrom-Json)
         $LASTEXITCODE | Should -Be 0
         $worker = $all.services.'kafka-cdc-worker'
         $worker.image | Should -Be $env:CDC_CONNECT_IMAGE
@@ -155,7 +155,7 @@ Describe 'CDC Compose service selection' {
         $override = $env:CDC_CONNECT_IMAGE
         try {
             $env:CDC_CONNECT_IMAGE = $null
-            $config = (& docker compose -f (Join-Path $script:root 'kafka-cdc.yml') --profile cdc-managed-worker config --format json | ConvertFrom-Json)
+            $config = (& docker compose -f (Join-Path $script:root 'kafka-cdc.compose.yml') --profile cdc-managed-worker config --format json | ConvertFrom-Json)
             $LASTEXITCODE | Should -Be 0
             $record = Get-Content -Raw (Join-Path $script:root '../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json') | ConvertFrom-Json
             $config.services.'kafka-cdc-worker'.image | Should -Be $record.image
@@ -164,7 +164,7 @@ Describe 'CDC Compose service selection' {
     }
 
     It 'preserves the ordinary legacy Kafka and UI-only service inventory' {
-        $config = (& docker compose -f (Join-Path $script:root 'kafka.yml') -f (Join-Path $script:root 'kafka-ui.yml') config --format json | ConvertFrom-Json)
+        $config = (& docker compose -f (Join-Path $script:root 'kafka.compose.yml') -f (Join-Path $script:root 'kafka-ui.compose.yml') config --format json | ConvertFrom-Json)
         $LASTEXITCODE | Should -Be 0
         $config.services.PSObject.Properties.Name | Should -Contain 'kafka-postgresql-source'
         $config.services.PSObject.Properties.Name | Should -Not -Contain 'kafka-cdc-worker'

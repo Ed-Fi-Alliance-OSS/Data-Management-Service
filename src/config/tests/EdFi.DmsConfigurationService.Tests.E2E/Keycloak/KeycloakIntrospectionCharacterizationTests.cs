@@ -44,6 +44,13 @@ public readonly record struct KeycloakServerVersion(int Major, int Minor, int Pa
     /// </summary>
     public bool On267ReleaseLine => (Major, Minor).CompareTo((26, 7)) >= 0;
 
+    /// <summary>
+    /// True from 26.8.0. Answers that differ between the observed 26.7.5 and 26.8.1 key on this. No
+    /// release between the two was observed, so, as with <see cref="On267ReleaseLine"/>, this is the
+    /// observed release line, not a verified change point.
+    /// </summary>
+    public bool On268ReleaseLine => (Major, Minor).CompareTo((26, 8)) >= 0;
+
     public static KeycloakServerVersion Parse(string version)
     {
         string[] parts = version.Split('.');
@@ -151,6 +158,8 @@ public sealed class IntrospectionCharacterizationRealm : IAsyncDisposable
     public bool AudienceChecked => Version.AudienceChecked;
 
     public bool On267ReleaseLine => Version.On267ReleaseLine;
+
+    public bool On268ReleaseLine => Version.On268ReleaseLine;
 
     public string? SslRequired { get; private set; }
 
@@ -1050,7 +1059,7 @@ public static class ExpectedIntrospection
         );
 
     /// <summary>
-    /// R's refresh token answered active, identical on both versions: the answer carries
+    /// R's refresh token answered active, identical on 26.1.4, 26.7.5 and 26.8.1: the answer carries
     /// access-token claims, an <c>aud</c> of the issuer, R and <c>account</c> although the refresh
     /// token's own <c>aud</c> is the issuer alone, and a <c>scope</c> that also names scopes the
     /// access token's <c>scope</c> omits (for example <c>basic</c>, <c>roles</c> and R's audience scope).
@@ -1314,7 +1323,8 @@ public sealed class IntrospectionEvidenceLog(SensitiveValueRegistry sensitive)
         markdown.AppendLine(
             $"Keycloak `{realm.ServerVersion}` at `{KeycloakCharacterizationEnvironment.KeycloakUrl}`, realm `{KeycloakCharacterizationEnvironment.Realm}` (`sslRequired` = `{realm.SslRequired ?? "(absent)"}`), "
                 + $"introspection audience check predicted: {(realm.AudienceChecked ? "yes" : "no")} (version {realm.Version} {(realm.AudienceChecked ? ">=" : "<")} 26.6.2, the Red Hat build's 26.4.12), "
-                + $"26.7 release-line answers predicted: {(realm.On267ReleaseLine ? "yes" : "no")}, run `{realm.RunId}`, {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC."
+                + $"26.7 release-line answers predicted: {(realm.On267ReleaseLine ? "yes" : "no")}, "
+                + $"26.8 release-line answers predicted: {(realm.On268ReleaseLine ? "yes" : "no")}, run `{realm.RunId}`, {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC."
         );
         markdown.AppendLine();
         markdown.AppendLine(
@@ -2153,9 +2163,11 @@ public class Given_an_owner_introspecting_its_refresh_token_without_a_hint : Int
     protected override string Scenario => "R introspects its own refresh token with no token_type_hint";
 
     // Observed: 26.1.4 answers exactly as with the refresh_token hint (I-16); 26.7.5 runs the
-    // access-token checks without the hint and answers inactive.
+    // access-token checks without the hint and answers inactive; 26.8.1 again answers as with the hint.
     protected override IntrospectionPrediction Prediction =>
-        Realm.On267ReleaseLine ? IntrospectionPrediction.Inactive() : ExpectedIntrospection.OwnRefreshToken();
+        Realm.On267ReleaseLine && !Realm.On268ReleaseLine
+            ? IntrospectionPrediction.Inactive()
+            : ExpectedIntrospection.OwnRefreshToken();
 
     protected override async Task<IntrospectionObservation> ObserveAsync()
     {

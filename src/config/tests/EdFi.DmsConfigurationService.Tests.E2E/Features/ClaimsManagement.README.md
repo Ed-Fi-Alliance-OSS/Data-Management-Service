@@ -152,7 +152,7 @@ The negative authorization behavior of the `/management/*` claims endpoints is c
 3. **"Claim set 'E2E-NameSpaceBasedClaimSet' was not found"**
    - Verify the E2E fragment files are in `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments/`
    - Verify the stack was started through the E2E setup, so `eng/docker-compose/.e2e-claims/` holds all eight fragments and is the mounted claims directory; a default stack mounts only `Deploy/AdditionalClaims` and has no E2E claim sets
-   - Check Docker volume mounting in `local-config.yml` and `local-dms.yml`
+   - Check Docker volume mounting in `local-config.compose.yml` and `local-dms.compose.yml`
    - Ensure fragment files follow naming pattern: `*-claims.json`
 
 4. **404 responses from management endpoints**

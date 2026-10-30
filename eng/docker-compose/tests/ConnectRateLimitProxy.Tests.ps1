@@ -34,9 +34,9 @@ Describe 'Connect rate limit proxy deployment' {
 
             Push-Location $script:composeRoot
             try {
-                $arguments = @('-f', 'postgresql.yml', '-f', "$Mode-config.yml")
+                $arguments = @('-f', 'postgresql.compose.yml', '-f', "$Mode-config.compose.yml")
                 if (-not $CmsOnly) {
-                    $arguments += @('-f', "$Mode-dms.yml", '-f', 'dms-cms-proxy.yml')
+                    $arguments += @('-f', "$Mode-dms.compose.yml", '-f', 'dms-cms-proxy.yml')
                 }
                 $rendered = & docker compose @arguments --env-file $environmentFile config --format json
                 if ($LASTEXITCODE -ne 0) {

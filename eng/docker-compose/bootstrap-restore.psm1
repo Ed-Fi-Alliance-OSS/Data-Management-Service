@@ -1125,7 +1125,7 @@ function Get-RestoreDatabaseOnlyComposeFile {
         [string]$DatabaseEngine
     )
 
-    $databaseComposeFile = if ($DatabaseEngine -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
+    $databaseComposeFile = if ($DatabaseEngine -eq "mssql") { "mssql.compose.yml" } else { "postgresql.compose.yml" }
     $composeArguments = [System.Collections.Generic.List[string]]::new()
     $composeArguments.Add("-f")
     $composeArguments.Add((Join-Path $PSScriptRoot $databaseComposeFile))
@@ -1379,8 +1379,8 @@ function Publish-RestoreCandidateWorkspace {
 function Get-RestoreDatabaseContainerName {
     <#
     .SYNOPSIS
-    The compose container name of the selected engine's database service (postgresql.yml /
-    mssql.yml both name the service 'db' with a fixed container_name).
+    The compose container name of the selected engine's database service (postgresql.compose.yml /
+    mssql.compose.yml both name the service 'db' with a fixed container_name).
     #>
     param (
         [Parameter(Mandatory = $true)]
@@ -1434,7 +1434,7 @@ function New-RestorePreflightEnvironment {
         }
     }
 
-    # The image's own initialization also creates POSTGRES_DB, which postgresql.yml does not set,
+    # The image's own initialization also creates POSTGRES_DB, which postgresql.compose.yml does not set,
     # so it defaults to the POSTGRES_USER name; a target spelled like the administrator would be
     # created by fresh-volume initialization no matter what POSTGRES_DB_NAME says. PostgreSQL
     # truncates names past 63 bytes, so a longer administrator name could still create the target.
@@ -1499,7 +1499,7 @@ function Wait-RestorePostgresqlTcpReady {
         [int]$RetryIntervalSeconds = 3
     )
 
-    # postgresql.yml publishes the container's fixed port 5432; inside the container the server
+    # postgresql.compose.yml publishes the container's fixed port 5432; inside the container the server
     # always listens on 5432, whatever POSTGRES_PORT maps on the host.
     $probeArguments = @("exec", $ContainerName, "pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", $PostgresUser)
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {

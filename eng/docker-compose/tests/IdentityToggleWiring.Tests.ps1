@@ -7,8 +7,8 @@ Describe "Identity management toggle wiring" {
     # -ForEach arrays are evaluated at discovery time, before any BeforeAll runs, so the paths
     # are computed inline from $PSScriptRoot rather than from a script-scoped variable.
     It "wires DataManagement__IdentityManagement__Enabled to DMS_ENABLE_IDENTITY_MANAGEMENT, defaulting to false like AppSettings__ManagementEndpoints__Enabled, in <_>" -ForEach @(
-        (Join-Path $PSScriptRoot "../local-dms.yml"),
-        (Join-Path $PSScriptRoot "../published-dms.yml"),
+        (Join-Path $PSScriptRoot "../local-dms.compose.yml"),
+        (Join-Path $PSScriptRoot "../published-dms.compose.yml"),
         (Join-Path $PSScriptRoot "../../azure-vm/compose/docker-compose.yml")
     ) {
         $path = [System.IO.Path]::GetFullPath($_)

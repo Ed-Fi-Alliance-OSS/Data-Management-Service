@@ -7,7 +7,7 @@
 
 [CmdletBinding()]
 param(
-    [string] $ComposeFile = (Join-Path $PSScriptRoot '../docker-compose/postgresql.yml')
+    [string] $ComposeFile = (Join-Path $PSScriptRoot '../docker-compose/postgresql.compose.yml')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -16,6 +16,6 @@ $compose = Get-Content -LiteralPath $ComposeFile -Raw
 $image = [regex]::Match($compose, '(?m)^\s+image:\s+\$\{POSTGRES_IMAGE:-(?<image>[^}\r\n]+)\}\s*$').Groups['image'].Value
 $pin = [regex]::Match($image, '^postgres:(?<major>[0-9]+)(?:[.-][a-zA-Z0-9.-]+)?@sha256:[a-f0-9]{64}$')
 if (-not $pin.Success -or [int]$pin.Groups['major'].Value -lt 18) {
-    throw 'CDC qualification requires a digest-pinned PostgreSQL 18 or later default in eng/docker-compose/postgresql.yml.'
+    throw 'CDC qualification requires a digest-pinned PostgreSQL 18 or later default in eng/docker-compose/postgresql.compose.yml.'
 }
 $image

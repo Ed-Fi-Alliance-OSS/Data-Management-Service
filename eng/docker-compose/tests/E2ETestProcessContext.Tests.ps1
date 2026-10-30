@@ -356,7 +356,7 @@ Describe "Invoke-WithDmsEnvironmentFileSchemaAuthority makes the environment fil
     # that collapses present-but-empty to absent, or a finally that does not run on exit each fail here.
     #
     # Docker Compose gives process environment variables precedence over --env-file entries, and
-    # local-dms.yml resolves USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES with
+    # local-dms.compose.yml resolves USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES with
     # ${VAR:-default} fallbacks. Because ':-' substitutes the default for an empty value as well as an
     # unset one, an ambient blank value silently wins over the selected environment file: DMS starts on
     # the image-baked schemas while provisioning already stamped the file's full package surface, and
@@ -886,7 +886,7 @@ Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
     ./start-local-dms.ps1 -InfraOnly
 }
 
-docker compose -p dms-local --env-file ./.env.e2e -f local-dms.yml up -d dms
+docker compose -p dms-local --env-file ./.env.e2e -f local-dms.compose.yml up -d dms
 '@
 
         $invocations = @(Get-GuardedPhaseInvocation -ScriptPath $fixturePath)
@@ -1135,7 +1135,7 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
 
     It "fails on the reported compose-fallback shape, naming AppSettings__ApiSchema__UseCustomPath" {
         # The exact container state DMS-1300 reported: false plus two blanks, which is what
-        # local-dms.yml's ${VAR:-default} produces when the process carries blank schema variables.
+        # local-dms.compose.yml's ${VAR:-default} produces when the process carries blank schema variables.
         $verdict = Get-DmsSchemaEnvironmentVerdict `
             -ContainerEnvironment (Get-ContainerEnvironmentFixture -UseApiSchemaPath "false" -ApiSchemaPath "" -RawSchemaPackages "") `
             -ExpectedPackageIdentity $script:fixturePackageIdentity `
@@ -2615,10 +2615,10 @@ Describe "The container schema gate accepts the repository's own tracked environ
     }
 }
 
-Describe "The guard removes exactly the names local-dms.yml resolves for the DMS schema surface (DMS-1300)" {
+Describe "The guard removes exactly the names local-dms.compose.yml resolves for the DMS schema surface (DMS-1300)" {
     # The guard's variable list and the compose file's ${VAR:-default} references are two halves of one
     # contract, and nothing in this suite held them together. The guard removes names so Compose has to
-    # fall back to the --env-file; a name local-dms.yml resolves for one of the three DMS schema
+    # fall back to the --env-file; a name local-dms.compose.yml resolves for one of the three DMS schema
     # settings but the guard does not remove is resolved ambient-first again, which is the whole defect.
     # A rename on either side, or a fourth schema setting added to the compose file, would leave the
     # guard silently short while every behavioral test above still passed - they arrange the names the
@@ -2630,7 +2630,7 @@ Describe "The guard removes exactly the names local-dms.yml resolves for the DMS
     # list stops being a literal can turn this into an empty-equals-empty pass.
 
     BeforeAll {
-        $script:composeFilePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../local-dms.yml"))
+        $script:composeFilePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../local-dms.compose.yml"))
         $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
 
         # The compose keys the DMS container's schema surface is delivered through: the two
@@ -2760,16 +2760,16 @@ Describe "The guard removes exactly the names local-dms.yml resolves for the DMS
         }
     }
 
-    It "names the same set local-dms.yml resolves for the dms service's schema settings" {
+    It "names the same set local-dms.compose.yml resolves for the dms service's schema settings" {
         $dmsEnvironment = Get-ComposeServiceEnvironmentEntry -ComposeFilePath $script:composeFilePath -ServiceName "dms"
 
         $dmsEnvironment.Count |
-            Should -BeGreaterThan 0 -Because "the reader must have found the dms service's environment block in local-dms.yml"
+            Should -BeGreaterThan 0 -Because "the reader must have found the dms service's environment block in local-dms.compose.yml"
 
         $composeReferencedName = @(
             foreach ($key in $script:schemaComposeKey) {
                 $dmsEnvironment.Contains($key) |
-                    Should -BeTrue -Because "local-dms.yml's dms service must still deliver $key, which is what the gate reads off the container"
+                    Should -BeTrue -Because "local-dms.compose.yml's dms service must still deliver $key, which is what the gate reads off the container"
 
                 $referenced = @(Get-ComposeInterpolatedName -Value ([string]$dmsEnvironment[$key]))
                 $referenced.Count |
@@ -2784,6 +2784,6 @@ Describe "The guard removes exactly the names local-dms.yml resolves for the DMS
         # Set equality, sorted Ordinal so the comparison cannot vary with the host's culture, and
         # -BeExactly because a dotenv name is case-sensitive on the Linux runtime path these resolve on.
         @($guardVariableName | Sort-Object -CaseSensitive) |
-            Should -BeExactly @($composeReferencedName | Sort-Object -CaseSensitive) -Because "the guard must remove exactly the names local-dms.yml resolves for the DMS schema surface: one it misses is resolved ambient-first again, and one it removes that compose does not read is a name it clears for no reason"
+            Should -BeExactly @($composeReferencedName | Sort-Object -CaseSensitive) -Because "the guard must remove exactly the names local-dms.compose.yml resolves for the DMS schema surface: one it misses is resolved ambient-first again, and one it removes that compose does not read is a name it clears for no reason"
     }
 }

@@ -10,11 +10,11 @@
 #   /st-config  single-tenant  Configuration Service (admin API)
 #   /mt-dms     multi-tenant   Data Management Service API
 #   /mt-config  multi-tenant   Configuration Service (admin API)
-#   /auth       Keycloak (shared identity provider, see keycloak.yml)
+#   /auth       Keycloak (shared identity provider, see keycloak.compose.yml)
 #   /pgadmin    pgAdmin (direct database access for the review team)
 #
 # The two stacks are byte-identical images differing only by the multitenancy
-# flags, path base, and per-stack database. Keycloak lives in keycloak.yml so its lifecycle can be
+# flags, path base, and per-stack database. Keycloak lives in keycloak.compose.yml so its lifecycle can be
 # managed explicitly; destructive reset includes it so stale review clients cannot survive CMS.
 #
 # NOT FOR PRODUCTION. Contains review-only default secrets.

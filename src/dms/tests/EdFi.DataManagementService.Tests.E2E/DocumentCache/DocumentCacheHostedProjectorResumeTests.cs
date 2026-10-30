@@ -206,9 +206,9 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         [
             "compose",
             "-f",
-            IsMssql() ? "mssql.yml" : "postgresql.yml",
+            IsMssql() ? "mssql.compose.yml" : "postgresql.compose.yml",
             "-f",
-            "local-dms.yml",
+            "local-dms.compose.yml",
             "-f",
             "local-dms-document-cache.yml",
         ];
@@ -220,7 +220,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         }
 
         arguments.Add("-f");
-        arguments.Add("local-config.yml");
+        arguments.Add("local-config.compose.yml");
         // Preserve the launcher's trusted CMS connection when recreating only DMS.
         arguments.Add("-f");
         arguments.Add("dms-cms-proxy.yml");

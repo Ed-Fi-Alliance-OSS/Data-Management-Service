@@ -35,7 +35,7 @@
 
 Set-StrictMode -Version Latest
 
-# The two locally-built image names pinned on the build services in local-dms.yml / local-config.yml.
+# The two locally-built image names pinned on the build services in local-dms.compose.yml / local-config.compose.yml.
 # Exact names only: removing these never touches the published edfialliance/* images, the CI
 # ghcr.io/*-ci images, or any unrelated image.
 $script:KnownLocalImageNames = @('ed-fi-api-local', 'ed-fi-api-config-local')

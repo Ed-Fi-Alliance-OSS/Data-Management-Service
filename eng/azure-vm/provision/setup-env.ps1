@@ -269,7 +269,7 @@ try {
     Write-Output "Starting infrastructure (postgres, keycloak, Configuration Service instances, gateway)..."
     # --no-deps so the gateway (which depends_on the DMS services) does not pull them up early;
     # the gateway resolves upstreams at request time, so it starts fine without the DMS backends.
-    docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps `
+    docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d --no-deps `
         postgres keycloak st-config mt-config pgadmin swagger-ui gateway
     if ($LASTEXITCODE -ne 0) { throw "docker compose up (infrastructure) failed ($LASTEXITCODE)." }
 
@@ -343,7 +343,7 @@ try {
                 "copy that folder here), then re-run with -StartDms. See ../docs/infrastructure.md 'Provisioning method'.")
         }
         Write-Output "Starting DMS services..."
-        docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d st-dms mt-dms
+        docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d st-dms mt-dms
         if ($LASTEXITCODE -ne 0) { throw "docker compose up st-dms/mt-dms failed ($LASTEXITCODE)." }
         Write-Output "Waiting for DMS services to report healthy (requires provisioned schema)..."
         $deadline = (Get-Date).AddMinutes(8)

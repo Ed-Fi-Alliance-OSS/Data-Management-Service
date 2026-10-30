@@ -928,11 +928,11 @@ Describe "Stop-RestoreDatabaseOnlySlice" {
             $postgresqlSet = @(Get-RestoreDatabaseOnlyComposeFile -DatabaseEngine postgresql)
             $postgresqlSet.Count | Should -Be 2
             $postgresqlSet[0] | Should -Be "-f"
-            $postgresqlSet[1] | Should -BeLike "*postgresql.yml"
+            $postgresqlSet[1] | Should -BeLike "*postgresql.compose.yml"
 
             $mssqlSet = @(Get-RestoreDatabaseOnlyComposeFile -DatabaseEngine mssql)
             $mssqlSet.Count | Should -Be 2
-            $mssqlSet[1] | Should -BeLike "*mssql.yml"
+            $mssqlSet[1] | Should -BeLike "*mssql.compose.yml"
 
             # Same condition the start scripts use: the process-environment opt-in, and only on
             # PostgreSQL - SQL Server never gets the tmpfs override.
@@ -947,7 +947,7 @@ Describe "Stop-RestoreDatabaseOnlySlice" {
             $env:POSTGRES_USE_TMPFS = "true"
             foreach ($engine in @("postgresql", "mssql")) {
                 $composeSet = @(Get-RestoreDatabaseOnlyComposeFile -DatabaseEngine $engine) -join " "
-                foreach ($forbidden in @("local-dms.yml", "published-dms.yml", "local-config.yml", "published-config.yml", "bootstrap-dms.yml", "keycloak.yml", "kafka.yml", "swagger-ui.yml")) {
+                foreach ($forbidden in @("local-dms.compose.yml", "published-dms.compose.yml", "local-config.compose.yml", "published-config.compose.yml", "bootstrap-dms.yml", "keycloak.compose.yml", "kafka.compose.yml", "swagger-ui.compose.yml")) {
                     $composeSet | Should -Not -BeLike "*$forbidden*"
                 }
             }
@@ -967,8 +967,8 @@ Describe "Stop-RestoreDatabaseOnlySlice" {
         }
 
         It "stops only the db service with the compose files, the preflight env file, and this run's project (<Project>/<Engine>)" -ForEach @(
-            @{ Project = "dms-local"; Engine = "postgresql"; ExpectedFile = "postgresql.yml" }
-            @{ Project = "dms-published"; Engine = "mssql"; ExpectedFile = "mssql.yml" }
+            @{ Project = "dms-local"; Engine = "postgresql"; ExpectedFile = "postgresql.compose.yml" }
+            @{ Project = "dms-published"; Engine = "mssql"; ExpectedFile = "mssql.compose.yml" }
         ) {
             Stop-RestoreDatabaseOnlySlice `
                 -ProjectName $Project `

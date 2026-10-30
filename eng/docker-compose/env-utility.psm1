@@ -722,6 +722,12 @@ function Resolve-PluginComposeFile {
             }
 
         if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+            # The image-bearing overlays were renamed to *.compose.yml; name the replacement
+            # for an entry an older .env still carries.
+            $renamed = [System.IO.Path]::ChangeExtension($path, ".compose.yml")
+            if ($path.EndsWith(".yml") -and -not $path.EndsWith(".compose.yml") -and (Test-Path -LiteralPath $renamed -PathType Leaf)) {
+                throw "DMS_PLUGINS_COMPOSE_FILES does not identify a compose file: $path (renamed to $([System.IO.Path]::GetFileName($renamed)))"
+            }
             throw "DMS_PLUGINS_COMPOSE_FILES does not identify a compose file: $path"
         }
 
@@ -1503,7 +1509,7 @@ function Resolve-DatabaseEngineEnvironmentFile {
         be written, so DMS_DATASTORE and the SQL Server connection strings reach every phase - configure,
         provision, and the start scripts - from one canonical path. Without this, a run could provision
         an MSSQL data store in the Configuration Service while the DMS container itself still starts on its postgresql default
-        (local-dms.yml AppSettings__Datastore), since that setting comes only from the env file.
+        (local-dms.compose.yml AppSettings__Datastore), since that setting comes only from the env file.
 
         Validation and the write describe the SAME artifact: the prospective lines are evaluated
         sequentially, that result is validated, and those same lines are written. An earlier design
@@ -2145,8 +2151,8 @@ function Get-ComposeDatabaseServiceHostAlias {
 
     .DESCRIPTION
         On a user-defined Docker network a service is reachable by its service key, by its
-        `container_name`, and by its `hostname`. Both postgresql.yml and mssql.yml deliberately name the
-        service `db` - mssql.yml's own header says so, to make it a drop-in swap for postgresql.yml - while
+        `container_name`, and by its `hostname`. Both postgresql.compose.yml and mssql.compose.yml deliberately name the
+        service `db` - mssql.compose.yml's own header says so, to make it a drop-in swap for postgresql.compose.yml - while
         setting `container_name`/`hostname` to `dms-postgresql` / `dms-mssql`. All of those address the
         same database, so a Configuration Service connection string may legitimately use any of them.
 
@@ -2198,7 +2204,7 @@ function Get-ComposeDatabaseServiceHostAlias {
     )
 
     if ([string]::IsNullOrWhiteSpace($DockerComposeRoot)) { $DockerComposeRoot = $PSScriptRoot }
-    $composeFile = Join-Path $DockerComposeRoot "$DatabaseEngine.yml"
+    $composeFile = Join-Path $DockerComposeRoot "$DatabaseEngine.compose.yml"
 
     # With no compose file to read, fall back to the canonical container name ONLY - never to a guessed
     # service key. Absent input must not widen what endpoint validation accepts; it may only narrow it back
@@ -3905,7 +3911,7 @@ function Confirm-CmsDatabaseTopologyAgreement {
     }
     # The database service is reachable under more than one name on the shared Compose network, and all of
     # them denote the SAME container: the service key under `services:` (deliberately `db` in both
-    # postgresql.yml and mssql.yml so either file is a drop-in swap), plus that service's
+    # postgresql.compose.yml and mssql.compose.yml so either file is a drop-in swap), plus that service's
     # `container_name:` and `hostname:`. Accepting only `dms-<engine>` rejected a connection string using
     # the service name, which is a legitimate way to address exactly this database.
     #

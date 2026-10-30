@@ -190,7 +190,7 @@ function New-BootstrapCdcHandoff {
     $settingsCopy = $Settings | ConvertTo-Json -Depth 64 | ConvertFrom-Json -AsHashtable
     $settingsCopy.Cdc.Schemas = @($workspace.CoreSchemaPath) + @($workspace.ExtensionSchemaPaths)
     $settingsCopy.Cdc.Compose = @{
-        File = Join-Path $PSScriptRoot 'kafka-cdc.yml'
+        File = Join-Path $PSScriptRoot 'kafka-cdc.compose.yml'
         EnvironmentFile = $EnvironmentFile
         Project = $Project
         BrokerSizeOverrideFile = Join-Path $StatePath 'broker-size.json'
@@ -287,7 +287,7 @@ function Invoke-BootstrapCdcKafkaUI {
     param($Handoff)
     $compose = $Handoff.Settings.Cdc.Compose
     # Explicit service selection and --no-deps keep this optional UI from launching Kafka.
-    & docker compose -f $compose.File -f (Join-Path $PSScriptRoot 'kafka-ui.yml') `
+    & docker compose -f $compose.File -f (Join-Path $PSScriptRoot 'kafka-ui.compose.yml') `
         --env-file $compose.EnvironmentFile -p $compose.Project up --detach --no-deps kafka-ui
     if ($LASTEXITCODE -ne 0) { throw "Failed to start CDC Kafka UI. Exit code $LASTEXITCODE" }
 }

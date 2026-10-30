@@ -440,7 +440,7 @@ endpoints, use the [PostgreSQL setup procedure](../../../../reference/cdc-docume
     "KafkaClientSecurityProperties": {},
     "KafkaAdminProperties": {},
     "Compose": {
-      "File": "/absolute/path/to/eng/docker-compose/kafka-cdc.yml",
+      "File": "/absolute/path/to/eng/docker-compose/kafka-cdc.compose.yml",
       "EnvironmentFile": "/absolute/path/to/eng/docker-compose/.env",
       "Project": "dms-local",
       "BrokerSizeOverrideFile": "/absolute/path/to/retained/broker-size.json"

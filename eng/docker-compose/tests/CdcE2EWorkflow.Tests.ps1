@@ -557,7 +557,7 @@ Describe 'Managed CDC provider infrastructure selection' {
         $files = @()
         . ([scriptblock]::Create($selection.Extent.Text))
         ($files -contains 'mssql-cdc.yml') | Should -Be ($Enabled -and $Engine -eq 'mssql')
-        ($files -contains 'kafka-cdc.yml') | Should -Be $Enabled
+        ($files -contains 'kafka-cdc.compose.yml') | Should -Be $Enabled
     }
 }
 
@@ -659,7 +659,7 @@ Describe 'Private API CDC attachment contract' {
                     Worker = @{ Key = 'custom-worker'; OffsetStorageTopic = 'custom-offsets' }
                     Compose = @{
                         Project = $Project; EnvironmentFile = $environmentFile
-                        File = Join-Path $script:attachmentRoot 'kafka-cdc.yml'
+                        File = Join-Path $script:attachmentRoot 'kafka-cdc.compose.yml'
                         BrokerSizeOverrideFile = Join-Path $script:state 'broker-size.json'; DatabaseHostPort = 15432
                     }
                 }

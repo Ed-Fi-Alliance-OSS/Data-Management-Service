@@ -297,7 +297,7 @@ param(
     # invocation. When -LoadSeedData is also set, forwarded to load-dms-seed-data.ps1.
     [string]$DmsBaseUrl,
 
-    # Database engine for the whole stack. "mssql" swaps mssql.yml in for postgresql.yml:
+    # Database engine for the whole stack. "mssql" swaps mssql.compose.yml in for postgresql.compose.yml:
     # SQL Server hosts the DMS datastore (relational backend), the Configuration Service
     # (its SQL Server backend), and the self-contained OpenIddict identity stores — no
     # PostgreSQL container runs. Forwarded to start-local-dms.ps1 and
@@ -383,14 +383,14 @@ if ($d) {
     }
     # Forward only the flags that shape the compose-file set start-local-dms.ps1 rebuilds for
     # `docker compose ... down`, so teardown targets the same containers/volumes and env the stack
-    # started with: -DatabaseEngine (postgresql.yml vs mssql.yml), -IdentityProvider (keycloak.yml),
-    # -EnableKafkaUI (kafka.yml + kafka-ui.yml), -EnableSwaggerUI (swagger-ui.yml), and the env file.
+    # started with: -DatabaseEngine (postgresql.compose.yml vs mssql.compose.yml), -IdentityProvider (keycloak.compose.yml),
+    # -EnableKafkaUI (kafka.compose.yml + kafka-ui.compose.yml), -EnableSwaggerUI (swagger-ui.compose.yml), and the env file.
     # Seed/configure/IDE options and -DataStandardVersion do not change the compose-file set (the DS
     # overlay only rewrites env values such as SCHEMA_PACKAGES), so they are omitted. Each is forwarded
     # only when the caller bound it; the unbound defaults (postgresql, no switches) match
     # start-local-dms.ps1's own, so an omitted flag and its default forward identically.
     #
-    # -SeparateConfigDatabase is deliberately omitted too: local-config.yml is unconditional in
+    # -SeparateConfigDatabase is deliberately omitted too: local-config.compose.yml is unconditional in
     # start-local-dms.ps1's compose set, so the switch changes which database CMS targets but never
     # which compose files a teardown must cover. (It does shape the set in start-published-dms.ps1,
     # but that script owns its own teardown; this wrapper offers none for the published path.)

@@ -107,9 +107,9 @@ $allLegIndices = @($legPostgres52, $legPostgres61, $legMssql52, $legMssql61)
 
 # Pattern -> the indices (into $allLegs) that a matching changed file selects.
 $pathPatternMap = [ordered]@{
-    "eng/docker-compose/mssql.yml"                   = @($legMssql52, $legMssql61)
+    "eng/docker-compose/mssql.compose.yml"           = @($legMssql52, $legMssql61)
     "eng/docker-compose/.env.mssql"                  = @($legMssql52, $legMssql61)
-    "eng/docker-compose/postgresql.yml"              = @($legPostgres52, $legPostgres61)
+    "eng/docker-compose/postgresql.compose.yml"      = @($legPostgres52, $legPostgres61)
     "eng/docker-compose/.env.smoke"                  = @($legPostgres52, $legMssql52)
     "eng/docker-compose/.env.smoke.ds61"             = @($legPostgres61, $legMssql61)
     ".github/workflows/scheduled-smoke-test.yml"     = $allLegIndices
@@ -119,8 +119,8 @@ $pathPatternMap = [ordered]@{
     "eng/sdkGen/**"                                  = $allLegIndices
     "eng/DatabaseTemplates/**"                       = $allLegIndices
     "eng/docker-compose/start-local-dms.ps1"         = $allLegIndices
-    "eng/docker-compose/local-dms.yml"               = $allLegIndices
-    "eng/docker-compose/local-config.yml"            = $allLegIndices
+    "eng/docker-compose/local-dms.compose.yml"               = $allLegIndices
+    "eng/docker-compose/local-config.compose.yml"            = $allLegIndices
     "eng/docker-compose/dms-cms-proxy.yml"           = $allLegIndices
     "eng/docker-compose/env-utility.psm1"            = $allLegIndices
     "eng/Dms-Management.psm1"                        = $allLegIndices

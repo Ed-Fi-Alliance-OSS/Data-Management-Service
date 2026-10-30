@@ -166,7 +166,7 @@ Order used to stand the environment up (and that a re-deploy should follow):
 
 1. Bring up everything **except** the DMS services — PostgreSQL, Keycloak, the Configuration
    Services, and the gateway (`setup-env.ps1`, or `docker compose -f docker-compose.yml -f
-   keycloak.yml --env-file .env up -d --no-deps postgres keycloak st-config mt-config pgadmin
+   keycloak.compose.yml --env-file .env up -d --no-deps postgres keycloak st-config mt-config pgadmin
    gateway`). `postgres/init-databases.sh` creates the empty databases. (Bare `./up.sh` starts the
    **full** stack including the DMS — only safe once bootstrap + schema already exist, e.g. a restart.)
 2. **Stage the ApiSchema workspace** at `compose/.bootstrap/ApiSchema`:

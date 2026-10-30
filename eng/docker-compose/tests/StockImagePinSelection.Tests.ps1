@@ -7,7 +7,7 @@
 
 # DMS-1502: the stock-image proof has to name one published Ed-Fi API image by version-specific tag
 # and digest, and a digest is meaningful only against the repository it was published under.
-# published-dms.yml and published-config.yml shared DMS_IMAGE_TAG, so pinning through it would have
+# published-dms.compose.yml and published-config.compose.yml shared DMS_IMAGE_TAG, so pinning through it would have
 # asked Docker Hub for the Ed-Fi API's digest under the Configuration Service's repository. These
 # assert the two seams that separate them, against what Compose actually renders rather than against
 # the files' text.
@@ -74,10 +74,10 @@ Describe 'Stock image pin selection' {
             return $images
         }
 
-        $script:publishedSet = @('postgresql.yml', 'published-dms.yml', 'published-config.yml')
+        $script:publishedSet = @('postgresql.compose.yml', 'published-dms.compose.yml', 'published-config.compose.yml')
         # The order the launchers build: application file, then the plugin overlays, then the
         # configuration service. The pin overlay rides the plugin hook, so it lands in the middle.
-        $script:pinnedSet = @('postgresql.yml', 'published-dms.yml', $script:pinOverlay, 'published-config.yml')
+        $script:pinnedSet = @('postgresql.compose.yml', 'published-dms.compose.yml', $script:pinOverlay, 'published-config.compose.yml')
     }
 
     Context 'the shipped default, which this change must not move' {

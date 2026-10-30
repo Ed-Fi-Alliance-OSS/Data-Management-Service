@@ -13,7 +13,7 @@ Describe 'CDC qualification PostgreSQL image selection' {
         $savedImage = $env:POSTGRES_IMAGE
         try {
             $env:POSTGRES_IMAGE = 'postgres:16'
-            $compose = Get-Content (Join-Path $PSScriptRoot '../../docker-compose/postgresql.yml') -Raw
+            $compose = Get-Content (Join-Path $PSScriptRoot '../../docker-compose/postgresql.compose.yml') -Raw
             $expected = [regex]::Match($compose, '\$\{POSTGRES_IMAGE:-([^}]+)\}').Groups[1].Value
             $actual = & $script:postgresqlImageScript
             $actual | Should -Be $expected
@@ -31,14 +31,14 @@ Describe 'CDC qualification PostgreSQL image selection' {
         @{ Fault = 'malformed digest'; Image = 'postgres:18.6-alpine@sha256:invalid' },
         @{ Fault = 'unversioned tag'; Image = 'postgres:latest@sha256:' + ('a' * 64) }
     ) {
-        $composePath = Join-Path $TestDrive 'postgresql.yml'
+        $composePath = Join-Path $TestDrive 'postgresql.compose.yml'
         ('services:' + "`n  db:`n    image: " + '${POSTGRES_IMAGE:-' + $Image + '}') |
             Set-Content -LiteralPath $composePath
         { & $script:postgresqlImageScript -ComposeFile $composePath } |
             Should -Throw '*requires a digest-pinned PostgreSQL 18 or later*'
     }
     It 'rejects a missing Compose default' {
-        $composePath = Join-Path $TestDrive 'postgresql.yml'
+        $composePath = Join-Path $TestDrive 'postgresql.compose.yml'
         'services: {}' | Set-Content -LiteralPath $composePath
         { & $script:postgresqlImageScript -ComposeFile $composePath } |
             Should -Throw '*requires a digest-pinned PostgreSQL 18 or later*'
