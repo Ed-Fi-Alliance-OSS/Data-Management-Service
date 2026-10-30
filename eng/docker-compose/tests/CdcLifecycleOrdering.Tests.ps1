@@ -1044,6 +1044,20 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
         $script:trace | Should -Not -Contain 'down-volumes'
         (Read-TestDeployment).Phase | Should -Be 'Retiring'
     }
+    It 'journals the failing retirement boundary before any infrastructure deletion' {
+        $savedEvents = $env:CDC_API_CLEANUP_EVENTS
+        try {
+            $env:CDC_API_CLEANUP_EVENTS = Join-Path $TestDrive 'cleanup-events.jsonl'
+            '{"InvocationId":"test"}' | Set-Content $env:CDC_API_CLEANUP_EVENTS
+            $script:failure = 'retire:42'
+            { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw
+            $events = @(Get-Content $env:CDC_API_CLEANUP_EVENTS | Select-Object -Skip 1 | ForEach-Object { $_ | ConvertFrom-Json })
+            @($events | Where-Object Status -eq Failed | ForEach-Object Step) | Should -Be @('ControllerRetirement')
+            @($events | Where-Object Step -eq ComposeTeardown).Count | Should -Be 0
+            $script:trace | Should -Not -Contain 'down-volumes'
+            (Read-TestDeployment).Phase | Should -Be Retiring
+        } finally { $env:CDC_API_CLEANUP_EVENTS = $savedEvents }
+    }
     It 'CDC-DOC cdc-stack-teardown' {
         $invocation = Get-CdcRunbookInvocation 'cdc-stack-teardown' $script:root
         $invocation.Path | Should -Be 'eng/docker-compose/bootstrap-local-dms.ps1'
@@ -1427,7 +1441,7 @@ Describe 'SchemaTools lifecycle result boundary' {
         $script:root = Join-Path $TestDrive 'native'
         New-Item -ItemType Directory $script:root | Out-Null
         Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') $script:root
-        foreach ($name in @('bootstrap-schema-tool.psm1', 'bootstrap-manifest.psm1')) {
+        foreach ($name in @('bootstrap-schema-tool.psm1', 'bootstrap-manifest.psm1', 'cdc-cleanup-diagnostics.psm1')) {
             Copy-Item (Join-Path $PSScriptRoot "../$name") $script:root
         }
         @'
@@ -1860,7 +1874,9 @@ if (-not (Test-CdcInfrastructureInvocation)) { throw 'Lost lifecycle ownership' 
 if ($Fail) { throw 'Child failure' }
 $global:LASTEXITCODE = 0
 '@ | Set-Content $script:child
-        Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') (Join-Path $TestDrive 'cdc-lifecycle.psm1')
+        foreach ($name in @('cdc-lifecycle.psm1', 'cdc-cleanup-diagnostics.psm1')) {
+            Copy-Item (Join-Path $PSScriptRoot "../$name") (Join-Path $TestDrive $name)
+        }
         # Use the same module path in the child as the owning invocation, just like real primitives.
         Import-Module (Join-Path $TestDrive 'cdc-lifecycle.psm1') -Force
     }

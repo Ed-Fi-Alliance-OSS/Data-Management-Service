@@ -185,7 +185,7 @@ internal static class OdsXmlToClaimsConverter
             )
             {
                 throw new InvalidOperationException(
-                    $"Claim-set name \"{sourceName}\" must contain 1 to {ValidationConstants.ClaimSetNameMaxLength} characters after removing literal spaces and hyphens, and must not contain whitespace or control characters."
+                    $"Claim-set name \"{sourceName}\" must contain 1 to {ValidationConstants.ClaimSetNameMaxLength} characters after removing literal spaces and hyphens, and must not contain whitespace, commas, or control characters."
                 );
             }
 

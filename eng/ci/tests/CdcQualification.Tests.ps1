@@ -1301,8 +1301,9 @@ Describe 'CDC API E2E runner stages' {
                         $LASTEXITCODE | Should -Be 0
                     }
                 }
-                @{ ExitCode = $(if ($failed) { 1 } else { 0 }); FailureKind = $(if ($failed) { 'TimedOut' } else { 'None' }) }
+                @{ ExitCode = $(if ($failed) { 1 } else { 0 }); FailureKind = $(if ($failed) { 'Timeout' } else { 'None' }) }
             }
+            Mock Write-CdcApiRemainingResource { }
             Mock Get-CdcQualificationReport { @{ Status = 'Passed'; Total = 1; Passed = 1; Failed = 0; Skipped = 0 } }
 
         }
@@ -1358,7 +1359,13 @@ Describe 'CDC API E2E runner stages' {
                 $evidence.InvocationId | Should -Be $script:runner.InvocationId
                 $evidence.Stages.Teardown | Should -Be $script:runner.Stages.Teardown
                 $evidence.Failures.Reason | Should -Be $(if ($Fault -eq 'cleanup') { 'None' } else { $script:runner.Reason })
-                if ($Fault -eq 'cleanup') { $evidence.ReportValidation | Should -Be RunnerStageFailed }
+                if ($Fault -eq 'cleanup') {
+                    $evidence.ReportValidation | Should -Be RunnerStageFailed
+                    $evidence.Cleanup.Process.FailureKind | Should -Be Timeout
+                    $evidence.Cleanup.Process.TimedOut | Should -BeTrue
+                    $evidence.Cleanup.Process.ExitCode | Should -Be 1
+                    Should -Invoke Write-CdcApiRemainingResource -Times 1 -Exactly
+                }
                 $evidence.Failures.CleanupFailure | Should -Be $script:runner.CleanupFailure
             }
             if ($Fault -like 'build-*' -or $Fault -eq 'Ownership') { $script:events | Should -Not -Contain 'setup' }
@@ -1472,7 +1479,7 @@ Describe 'CDC API E2E setup and governed cleanup adapters' {
         $script:private = Join-Path $script:fakeRepo 'private'
         $null = New-Item -ItemType Directory -Path $script:private -Force
         foreach ($file in @('eng/docker-compose/.env.e2e', 'eng/docker-compose/env-utility.psm1', 'eng/docker-compose/database-safety.psm1',
-            'eng/docker-compose/e2e-teardown.psm1', 'eng/docker-compose/tests/cdc-fixture-inputs.psm1',
+            'eng/docker-compose/e2e-teardown.psm1', 'eng/docker-compose/cdc-cleanup-diagnostics.psm1', 'eng/docker-compose/tests/cdc-fixture-inputs.psm1',
             'src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.json',
             'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json')) { Copy-FixtureFile $file }
         # Native/provider boundaries only are replaced. Actual private input/settings construction executes.
@@ -1606,6 +1613,15 @@ function global:docker { $global:LASTEXITCODE = 0 }
         }
         if ($Fault -eq 'Ownership') { Test-Path (Join-Path $script:private 'calls.txt') | Should -BeFalse }
         else { @(Get-Content (Join-Path $script:private 'calls.txt')) | Should -Be @('governed') }
+        Import-Module (Join-Path $script:sourceRepo 'eng/ci/cdc-qualification.psm1') -Force
+        $runner = New-CdcApiRunnerReport Postgresql
+        $runner.InvocationId = $id
+        Export-CdcQualificationEvidence -RawDirectory $script:private -Destination (Join-Path $script:private 'out') -ApiRunner $runner
+        $cleanup = (Get-Content (Join-Path $script:private 'out/cdc-api-e2e.json') -Raw | ConvertFrom-Json).Cleanup
+        $cleanup.Availability | Should -Be Available
+        $expected = switch ($Fault) { None { 'Cleanup' }; cleanup { 'GovernedTeardown' }; Ownership { 'OwnershipValidation' } }
+        $status = if ($Fault -eq 'None') { 'Passed' } else { 'Failed' }
+        @($cleanup.Steps | Where-Object { $_.Step -eq $expected -and $_.Status -eq $status }).Count | Should -Be 1
     }
 }
 
@@ -2349,5 +2365,154 @@ Describe 'CDC E2E setup export allowlist' {
         Export-CdcQualificationEvidence $raw $published
         $safe = Get-Content (Join-Path $published $name) -Raw | ConvertFrom-Json -AsHashtable
         $safe.Count | Should -Be 0
+    }
+}
+
+Describe 'CDC API cleanup diagnostic export' {
+    BeforeAll {
+        Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
+        Import-Module (Join-Path $PSScriptRoot '../../docker-compose/cdc-cleanup-diagnostics.psm1') -Force
+    }
+    BeforeEach {
+        $script:cleanupPrivate = Join-Path $TestDrive ([guid]::NewGuid().ToString('N'))
+        $null = New-Item -ItemType Directory -Path $script:cleanupPrivate
+        $script:cleanupRunner = New-CdcApiRunnerReport Mssql
+        $script:cleanupRunner.Stages.Teardown = 'Failed'
+        $script:savedCleanupEvents = $env:CDC_API_CLEANUP_EVENTS
+        $env:CDC_API_CLEANUP_EVENTS = Join-Path $script:cleanupPrivate 'cleanup-events.jsonl'
+        @{ InvocationId = $script:cleanupRunner.InvocationId; Version = 1 } | ConvertTo-Json -Compress |
+            Set-Content $env:CDC_API_CLEANUP_EVENTS
+    }
+    AfterEach { $env:CDC_API_CLEANUP_EVENTS = $script:savedCleanupEvents }
+
+    It 'exports the inner failed step, timings and safe exception metadata after nested cleanup fails' {
+        {
+            Invoke-CdcCleanupStep -Step GovernedTeardown -Action {
+                Invoke-CdcCleanupStep -Step ControllerRetirement -Command api-schema-tools -Action {
+                    throw 'Password=credential-sentinel; /private/path; response-body-sentinel'
+                }
+            }
+        } | Should -Throw '*credential-sentinel*'
+        Export-CdcQualificationEvidence -RawDirectory $script:cleanupPrivate -Destination (Join-Path $script:cleanupPrivate 'out') -ApiRunner $script:cleanupRunner
+        $json = Get-Content (Join-Path $script:cleanupPrivate 'out/cdc-api-e2e.json') -Raw
+        $cleanup = ($json | ConvertFrom-Json).Cleanup
+        $cleanup.Availability | Should -Be Available
+        @($cleanup.Steps | ForEach-Object { "$($_.Step):$($_.Status)" }) | Should -Be @(
+            'GovernedTeardown:Running', 'ControllerRetirement:Running', 'ControllerRetirement:Failed', 'GovernedTeardown:Failed')
+        $cleanup.Steps[2].Command | Should -Be 'api-schema-tools'
+        $cleanup.Steps[2].ElapsedMilliseconds | Should -BeGreaterOrEqual 0
+        $cleanup.Steps[2].StartedUtc | Should -Not -BeNullOrEmpty
+        $cleanup.Steps[2].Failure.ExceptionType | Should -Be 'System.Management.Automation.RuntimeException'
+        $json | Should -Not -Match 'credential-sentinel|response-body-sentinel|/private/path'
+    }
+
+    It 'retains a native command exit code without copying stderr into the artifact' {
+        {
+            Invoke-CdcCleanupStep -Step ImageRemoval -Command docker -NativeCommand -Action {
+                & pwsh -NoProfile -Command '[Console]::Error.WriteLine("secret-stderr"); exit 17' 2>$null
+            }
+        } | Should -Throw 'CDC cleanup command failed.'
+        Export-CdcQualificationEvidence -RawDirectory $script:cleanupPrivate -Destination (Join-Path $script:cleanupPrivate 'out') -ApiRunner $script:cleanupRunner
+        $json = Get-Content (Join-Path $script:cleanupPrivate 'out/cdc-api-e2e.json') -Raw
+        $cleanup = ($json | ConvertFrom-Json).Cleanup
+        $cleanup.Steps[-1].ExitCode | Should -Be 17
+        $cleanup.Steps[-1].Status | Should -Be Failed
+        $json | Should -Not -Match 'secret-stderr'
+    }
+
+    It 'keeps the last running checkpoint and process timeout even with a partially written final line' {
+        @{ Step = 'ControllerRetirement'; Status = 'Running'; Command = 'api-schema-tools' } |
+            ConvertTo-Json -Compress | Add-Content $env:CDC_API_CLEANUP_EVENTS
+        '{"Step":' | Add-Content $env:CDC_API_CLEANUP_EVENTS
+        @{ InvocationId = $script:cleanupRunner.InvocationId; FailureKind = 'Timeout'; TimedOut = $true
+            ExitCode = -1; TimeoutSeconds = 900; ElapsedMilliseconds = 900000; StandardError = 'secret-stderr' } |
+            ConvertTo-Json | Set-Content (Join-Path $script:cleanupPrivate 'cleanup-process.json')
+        Export-CdcQualificationEvidence -RawDirectory $script:cleanupPrivate -Destination (Join-Path $script:cleanupPrivate 'out') -ApiRunner $script:cleanupRunner
+        $json = Get-Content (Join-Path $script:cleanupPrivate 'out/cdc-api-e2e.json') -Raw
+        $cleanup = ($json | ConvertFrom-Json).Cleanup
+        $cleanup.Availability | Should -Be Partial
+        $cleanup.Steps.Count | Should -Be 1
+        $cleanup.Steps[0].Step | Should -Be ControllerRetirement
+        $cleanup.Steps[0].Status | Should -Be Running
+        $cleanup.Process.FailureKind | Should -Be Timeout
+        $cleanup.Process.TimedOut | Should -BeTrue
+        $cleanup.Process.TimeoutSeconds | Should -Be 900
+        $cleanup.RemainingResources.Availability | Should -Be Missing
+        $json | Should -Not -Match 'secret-stderr'
+    }
+
+    It 'exports allowlisted controller causes and post-cleanup counts separately from the original inventory' {
+        @{ InvocationId = $script:cleanupRunner.InvocationId; Availability = 'Partial'; container = 2; network = 1
+            Names = @('credential-sentinel') } | ConvertTo-Json | Set-Content (Join-Path $script:cleanupPrivate 'cleanup-remaining.json')
+        @(@{ Phase = 'Teardown'; ControllerOperation = 'retire'; ControllerExitCode = 13; Reason = 'ControllerRejected'
+            ControllerFailureCodes = @('Connect/Unavailable', 'WorkflowState/Conflict', 'secret/Unavailable')
+            Message = 'credential-sentinel' }) | ConvertTo-Json -AsArray -Depth 5 |
+            Set-Content (Join-Path $script:cleanupPrivate 'cleanup-child-failures.json')
+        Export-CdcQualificationEvidence -RawDirectory $script:cleanupPrivate -Destination (Join-Path $script:cleanupPrivate 'out') -ApiRunner $script:cleanupRunner
+        $json = Get-Content (Join-Path $script:cleanupPrivate 'out/cdc-api-e2e.json') -Raw
+        $cleanup = ($json | ConvertFrom-Json).Cleanup
+        $cleanup.RemainingResources.Availability | Should -Be Partial
+        $cleanup.RemainingResources.container | Should -Be 2
+        $cleanup.RemainingResources.network | Should -Be 1
+        $cleanup.RemainingResources.PSObject.Properties.Name | Should -Not -Contain volume
+        $cleanup.ChildFailures[0].ControllerExitCode | Should -Be 13
+        $cleanup.ChildFailures[0].ControllerFailureCodes | Should -Be @('Connect/Unavailable', 'WorkflowState/Conflict')
+        $json | Should -Not -Match 'credential-sentinel|secret/Unavailable|Names'
+    }
+
+    It 'rejects <Damage> cleanup evidence without leaking untrusted metadata' -ForEach @(
+        @{ Damage = 'Identity'; Expected = 'IdentityMismatch' }
+        @{ Damage = 'Oversized'; Expected = 'Oversized' }
+        @{ Damage = 'Fields'; Expected = 'Available' }
+    ) {
+        switch ($Damage) {
+            Identity { @{ InvocationId = 'credential-sentinel' } | ConvertTo-Json -Compress | Set-Content $env:CDC_API_CLEANUP_EVENTS }
+            Oversized { ('credential-sentinel' * 20000) | Set-Content $env:CDC_API_CLEANUP_EVENTS }
+            Fields {
+                @{ Step = 'credential-sentinel'; Status = 'Running'; Command = 'PowerShell' } | ConvertTo-Json -Compress | Add-Content $env:CDC_API_CLEANUP_EVENTS
+                @{ Step = 'Cleanup'; Status = 'Failed'; Command = 'credential-sentinel'; StartedUtc = 'credential-sentinel'
+                    ElapsedMilliseconds = 'credential-sentinel'; ExitCode = 'credential-sentinel'
+                    Failure = @{ Source = 'credential-sentinel'; ExceptionType = 'credential-sentinel'; Message = 'credential-sentinel' } } |
+                    ConvertTo-Json -Compress -Depth 5 | Add-Content $env:CDC_API_CLEANUP_EVENTS
+            }
+        }
+        Export-CdcQualificationEvidence -RawDirectory $script:cleanupPrivate -Destination (Join-Path $script:cleanupPrivate 'out') -ApiRunner $script:cleanupRunner
+        $json = Get-Content (Join-Path $script:cleanupPrivate 'out/cdc-api-e2e.json') -Raw
+        ($json | ConvertFrom-Json).Cleanup.Availability | Should -Be $Expected
+        $json | Should -Not -Match 'credential-sentinel'
+    }
+
+    It 'preserves cleanup execution and its original failure when checkpoint storage fails' {
+        $env:CDC_API_CLEANUP_EVENTS = Join-Path $script:cleanupPrivate 'missing/events.jsonl'
+        { Invoke-CdcCleanupStep -Step StateCleanup -Action { throw 'original-cleanup-failure' } -WarningAction SilentlyContinue } |
+            Should -Throw 'original-cleanup-failure'
+    }
+}
+
+
+Describe 'CDC API cleanup remaining resource probes' {
+    BeforeDiscovery { Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force }
+    InModuleScope cdc-qualification {
+        BeforeAll { Import-Module (Join-Path $PSScriptRoot '../../docker-compose/env-utility.psm1') -DisableNameChecking }
+        It 'records observed counts and leaves a failed volume probe unknown' {
+            Mock Invoke-NativeCommandWithInput {
+                $ArgumentList | Should -Contain 'label=com.docker.compose.project=dms-local'
+                $TimeoutSeconds | Should -Be 10
+                switch ($ArgumentList[0]) {
+                    ps { @{ ExitCode = 0; FailureKind = 'None'; StandardOutput = "first-private-id`nsecond-private-id`n" } }
+                    volume { @{ ExitCode = 1; FailureKind = 'None'; StandardOutput = 'private-error' } }
+                    network { @{ ExitCode = 0; FailureKind = 'None'; StandardOutput = '' } }
+                }
+            }
+            Write-CdcApiRemainingResource -PrivateDirectory $TestDrive -InvocationId test
+            $json = Get-Content (Join-Path $TestDrive 'cleanup-remaining.json') -Raw
+            $observed = $json | ConvertFrom-Json
+            $observed.Availability | Should -Be Partial
+            $observed.container | Should -Be 2
+            $observed.network | Should -Be 0
+            $observed.PSObject.Properties.Name | Should -Not -Contain volume
+            $json | Should -Not -Match 'private'
+            Should -Invoke Invoke-NativeCommandWithInput -Times 3 -Exactly
+        }
     }
 }

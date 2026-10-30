@@ -246,7 +246,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     grantedScopes = allowedScopes;
                     _logger.LogInformation(
                         "No scope requested, using application defaults: {ListOfScopes}",
-                        LoggingUtility.SanitizeForLog(string.Join(",", grantedScopes))
+                        LoggingUtility.SanitizeForLog(string.Join(" ", grantedScopes))
                     );
                 }
                 else
@@ -280,12 +280,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     }
                 }
 
-                // The access token keeps its comma-joined scope claim; the response reports the same
-                // granted set space-delimited, as RFC 6749 section 3.3 defines the scope parameter.
-                // That definition requires at least one scope token, so an empty granted set is
-                // reported as no scope at all, which the response leaves out.
-                string listOfScopes = string.Join(",", grantedScopes);
-                string? responseScope = grantedScopes.Length == 0 ? null : string.Join(" ", grantedScopes);
+                // The access token scope claim and the response report the same granted set space-delimited,
+                // as RFC 6749 section 3.3 defines the scope parameter. That definition requires at least
+                // one scope token, so an empty granted set is reported as no scope at all, which the
+                // response leaves out.
+                string listOfScopes = string.Join(" ", grantedScopes);
+                string? responseScope = grantedScopes.Length == 0 ? null : listOfScopes;
 
                 // Mint from the stored client id, not the one the caller typed, so that every
                 // token issued to a client carries one identity. This single argument feeds the

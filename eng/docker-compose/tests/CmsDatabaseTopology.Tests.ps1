@@ -4175,6 +4175,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
         # env-file leaf name, so derived files (named <leaf>.<token>) cannot collide between tests or
         # overwrite a developer's existing .derived/.env.mssql.
         function script:Invoke-StartScript {
+            [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Proxy parameters are consumed by the nested docker stand-in.')]
             param([scriptblock]$ScriptBlock, [bool]$PairedProxyNetwork = $false, [int]$ProxyInventoryExitCode = 0)
 
             # -Force is required on every .derived enumeration in this Describe, not optional
@@ -5121,7 +5122,7 @@ Add-Content -LiteralPath (Join-Path $PSScriptRoot 'sibling-observations.jsonl') 
         # instance whose $PSScriptRoot is the staging directory - which the cell then deletes - so
         # without restoration a later caller resolves module defaults against a path that is gone.
         # Ordered by dependency: env-utility.psm1 imports database-safety.psm1 internally.
-        $script:ownershipStagedModule = @('database-safety', 'env-utility', 'bootstrap-manifest', 'bootstrap-claims-gate', 'cdc-lifecycle')
+        $script:ownershipStagedModule = @('database-safety', 'env-utility', 'bootstrap-manifest', 'bootstrap-claims-gate', 'cdc-cleanup-diagnostics', 'cdc-lifecycle')
 
         # Environment variables a cell can change. The first five are written by the start scripts and
         # nothing restores them (Get-BootstrapEnvSnapshot covers only the seven that follow). The seven
@@ -5366,6 +5367,9 @@ foreach ($name in $InterceptedCommand) {
                 [switch]$Teardown
             )
 
+            # Match CI even when Pester is launched from a shell that continues on import errors.
+            $ErrorActionPreference = 'Stop'
+
             # Preconditions FIRST: before the snapshot, before the staging directory exists, before any
             # stand-in is installed. Nothing has been mutated yet, so a precondition failure leaves the
             # session exactly as it was.
@@ -5391,7 +5395,7 @@ foreach ($name in $InterceptedCommand) {
                 # string below uses the canonical container name.
                 foreach ($name in @(
                     $StartScript, 'bootstrap-manifest.psm1', 'bootstrap-claims-gate.psm1',
-                    'env-utility.psm1', 'database-safety.psm1', 'cdc-lifecycle.psm1'
+                    'env-utility.psm1', 'database-safety.psm1', 'cdc-lifecycle.psm1', 'cdc-cleanup-diagnostics.psm1'
                 )) {
                     Copy-Item -LiteralPath (Join-Path $script:dockerComposeRoot $name) -Destination (Join-Path $stage $name)
                     if ($FailStaging) { throw "Forced staging failure after copying '$name'." }

@@ -4,6 +4,7 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 Set-StrictMode -Version Latest
+Import-Module (Join-Path $PSScriptRoot 'cdc-cleanup-diagnostics.psm1')
 
 function Write-CdcLifecycleQualificationFailure {
     param($Record, [string] $ControllerOperation = '', [int] $ControllerExitCode = 0,
@@ -735,7 +736,7 @@ function Invoke-CdcDeploymentLifecycle {
     $lock = Enter-CdcDeploymentLock $Project
     $environmentSnapshot = @{}
     try {
-        $deployment = Read-CdcDeployment $Project
+        $deployment = Invoke-CdcCleanupStep -Step DeploymentValidation -Action { Read-CdcDeployment $Project }
         # Explicit selection must agree; omitted values inherit the original selected environment.
         if ($Parameters.ContainsKey('IdentityProvider') -and $Parameters.IdentityProvider -ine $deployment.IdentityProvider) {
             throw 'CDC lifecycle IdentityProvider conflicts with the retained deployment.'
@@ -781,8 +782,14 @@ function Invoke-CdcDeploymentLifecycle {
             $deployment.Phase = if ($destructive) { 'Retiring' } else { 'Transition' }
             Write-CdcDeployment $Project $deployment
             if ($destructive) {
-                foreach ($entry in $deployment.Entries) { Invoke-CdcLifecycleCommand $entry 'retire' }
-                Assert-CdcWorkerInventory $deployment -Empty
+                foreach ($entry in $deployment.Entries) {
+                    Invoke-CdcCleanupStep -Step ControllerRetirement -Command api-schema-tools -Action {
+                        Invoke-CdcLifecycleCommand $entry 'retire'
+                    }
+                }
+                Invoke-CdcCleanupStep -Step WorkerVerification -Command api-schema-tools -Action {
+                    Assert-CdcWorkerInventory $deployment -Empty
+                }
                 $deployment.Phase = 'Retired'
             }
             else {
@@ -815,8 +822,14 @@ function Invoke-CdcDeploymentLifecycle {
             if ($destructive) {
                 $deployment.Phase = 'Retiring'
                 Write-CdcDeployment $Project $deployment
-                foreach ($entry in $deployment.Entries) { Invoke-CdcLifecycleCommand $entry 'retire' }
-                Assert-CdcWorkerInventory $deployment -Empty
+                foreach ($entry in $deployment.Entries) {
+                    Invoke-CdcCleanupStep -Step ControllerRetirement -Command api-schema-tools -Action {
+                        Invoke-CdcLifecycleCommand $entry 'retire'
+                    }
+                }
+                Invoke-CdcCleanupStep -Step WorkerVerification -Command api-schema-tools -Action {
+                    Assert-CdcWorkerInventory $deployment -Empty
+                }
                 $deployment.Phase = 'Retired'
             }
             else {
@@ -827,9 +840,11 @@ function Invoke-CdcDeploymentLifecycle {
         }
         if ($down) {
             if ($destructive -and $deployment.Phase -ne 'Retired') { throw 'CDC destructive cleanup has not completed.' }
-            Invoke-CdcInfrastructure $StartScript ($infrastructure + @{
-                d = $true; v = $destructive; RemoveBootstrap = $false
-            })
+            Invoke-CdcCleanupStep -Step ComposeTeardown -Command docker -Action {
+                Invoke-CdcInfrastructure $StartScript ($infrastructure + @{
+                    d = $true; v = $destructive; RemoveBootstrap = $false
+                })
+            }
             if ($destructive) {
                 # Persist exact current hashes before deleting the first generated file. The
                 # separate checkpoint permits retries without re-reading partially deleted inputs.
@@ -838,7 +853,9 @@ function Invoke-CdcDeploymentLifecycle {
                 })
                 $deployment.Phase = 'RuntimeCleanup'
                 Write-CdcDeployment $Project $deployment
-                Complete-CdcRuntimeCleanup $deployment -RemoveBootstrap:($Parameters['RemoveBootstrap'] -eq $true)
+                Invoke-CdcCleanupStep -Step RuntimeCleanup -Action {
+                    Complete-CdcRuntimeCleanup $deployment -RemoveBootstrap:($Parameters['RemoveBootstrap'] -eq $true)
+                }
             }
         }
         elseif (-not $Parameters['InfraOnly']) {
