@@ -253,6 +253,7 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "EffectiveEndDate" date NULL,
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DescriptorId")
 );
 
@@ -732,7 +733,7 @@ BEGIN
             WHERE "DocumentId" = NEW."DocumentId"
         )
         UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now(), "ContentCreatedAt" = now()
         FROM stamped
         WHERE r."DocumentId" = stamped."DocumentId";
     ELSIF TG_OP = 'UPDATE' THEN
@@ -1063,6 +1064,7 @@ CREATE SCHEMA IF NOT EXISTS "tracked_changes_sample";
 CREATE TABLE IF NOT EXISTS "edfi"."AcademicWeek"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "School_DocumentId" bigint NOT NULL,
@@ -1080,6 +1082,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AcademicWeek"
 CREATE TABLE IF NOT EXISTS "edfi"."AccountabilityRating"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -1100,6 +1103,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AccountabilityRating"
 CREATE TABLE IF NOT EXISTS "edfi"."Assessment"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NULL,
@@ -1278,6 +1282,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentSection"
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministration"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Assessment_DocumentId" bigint NOT NULL,
@@ -1323,6 +1328,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationParticipation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "AssessmentAdministration_DocumentId" bigint NOT NULL,
@@ -1358,6 +1364,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentAdministrationParticipationAdminist
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentBatteryPart"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Assessment_DocumentId" bigint NOT NULL,
@@ -1388,6 +1395,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentBatteryPartObjectiveAssessment"
 CREATE TABLE IF NOT EXISTS "edfi"."AssessmentItem"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Assessment_DocumentId" bigint NOT NULL,
@@ -1436,6 +1444,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScoreRangeLearningStandard"
 (
     "DocumentId" bigint NOT NULL,
     "AssessmentIdentifier_Unified" varchar(60) NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
@@ -1472,6 +1481,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."AssessmentScoreRangeLearningStandardLearningS
 CREATE TABLE IF NOT EXISTS "edfi"."BalanceSheetDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
@@ -1496,6 +1506,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."BalanceSheetDimensionReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."BellSchedule"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "School_DocumentId" bigint NOT NULL,
@@ -1549,6 +1560,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."BellScheduleGradeLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."Calendar"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SchoolYear_DocumentId" bigint NOT NULL,
@@ -1578,6 +1590,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CalendarGradeLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."CalendarDate"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Calendar_DocumentId" bigint NOT NULL,
@@ -1605,6 +1618,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CalendarDateCalendarEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."ChartOfAccount"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "FiscalYear_Unified" integer NOT NULL,
@@ -1667,6 +1681,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ChartOfAccountReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."ClassPeriod"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "School_DocumentId" bigint NOT NULL,
@@ -1694,6 +1709,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ClassPeriodMeetingTime"
 CREATE TABLE IF NOT EXISTS "edfi"."Cohort"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -1727,6 +1743,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CohortProgram"
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganization"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "OperationalStatusDescriptor_DescriptorId" integer NULL,
@@ -1864,6 +1881,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityOrganizationIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProvider"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CommunityOrganization_DocumentId" bigint NULL,
@@ -2009,6 +2027,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderLicense"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CommunityProvider_DocumentId" bigint NOT NULL,
@@ -2031,6 +2050,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CommunityProviderLicense"
 CREATE TABLE IF NOT EXISTS "edfi"."CompetencyObjective"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -2049,6 +2069,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CompetencyObjective"
 CREATE TABLE IF NOT EXISTS "edfi"."Contact"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Person_DocumentId" bigint NULL,
@@ -2343,6 +2364,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ContactLanguageUs"
 CREATE TABLE IF NOT EXISTS "edfi"."Course"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -2444,6 +2466,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferedGradeLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."CourseOffering"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NOT NULL,
@@ -2503,6 +2526,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseOfferingOfferedGradeLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscript"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CourseCourse_DocumentId" bigint NOT NULL,
@@ -2640,6 +2664,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CourseTranscriptSection"
 CREATE TABLE IF NOT EXISTS "edfi"."Credential"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CredentialFieldDescriptor_DescriptorId" integer NULL,
@@ -2693,6 +2718,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CredentialGradeLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."CrisisEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CrisisTypeDescriptor_DescriptorId" integer NOT NULL,
@@ -2708,6 +2734,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."CrisisEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."DescriptorMapping"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "MappedNamespace" varchar(255) NOT NULL,
@@ -2732,6 +2759,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DescriptorMappingModelEntity"
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineAction"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "AssignmentSchool_DocumentId" bigint NULL,
@@ -2797,6 +2825,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineActionStudentDisciplineIncidentBeha
 CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncident"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "School_DocumentId" bigint NOT NULL,
@@ -2856,6 +2885,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DisciplineIncidentWeapon"
 CREATE TABLE IF NOT EXISTS "edfi"."EducationContent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "LearningResourceChoiceLearningResourceLearningStanda_5916be65e2" bigint NULL,
@@ -2964,6 +2994,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationContentLanguage"
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationInterventionPrescriptionAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -2982,6 +3013,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationInterventionPrescription
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetwork"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "NetworkPurposeDescriptor_DescriptorId" integer NOT NULL,
@@ -3120,6 +3152,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganizationNetwork_DocumentId" bigint NOT NULL,
@@ -3137,6 +3170,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationNetworkAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationPeerAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -3152,6 +3186,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationPeerAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenter"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "StateEducationAgency_DocumentId" bigint NULL,
@@ -3292,6 +3327,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EducationServiceCenterIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."EvaluationRubricDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ProgramEvaluationElement_DocumentId" bigint NOT NULL,
@@ -3314,6 +3350,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EvaluationRubricDimension"
 CREATE TABLE IF NOT EXISTS "edfi"."FeederSchoolAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "FeederSchool_DocumentId" bigint NOT NULL,
@@ -3332,6 +3369,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."FeederSchoolAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."FunctionDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
@@ -3356,6 +3394,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."FunctionDimensionReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."FundDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
@@ -3380,6 +3419,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."FundDimensionReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."Grade"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NOT NULL,
@@ -3432,6 +3472,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradeLearningStandardGrade"
 CREATE TABLE IF NOT EXISTS "edfi"."GradebookEntry"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NULL,
@@ -3480,6 +3521,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradebookEntryLearningStandard"
 CREATE TABLE IF NOT EXISTS "edfi"."GradingPeriod"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SchoolYear_DocumentId" bigint NOT NULL,
@@ -3502,6 +3544,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GradingPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlan"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -3618,6 +3661,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."GraduationPlanRequiredAssessmentScore"
 CREATE TABLE IF NOT EXISTS "edfi"."Intervention"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -3757,6 +3801,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionUri"
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescription"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -3855,6 +3900,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionPrescriptionUri"
 CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudy"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -3970,6 +4016,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."InterventionStudyUri"
 CREATE TABLE IF NOT EXISTS "edfi"."LearningStandard"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "MandatingEducationOrganization_DocumentId" bigint NULL,
@@ -4048,6 +4095,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardIdentificationCode"
 CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardEquivalenceAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SourceLearningStandard_DocumentId" bigint NOT NULL,
@@ -4067,6 +4115,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LearningStandardEquivalenceAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."LocalAccount"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "FiscalYear_Unified" integer NOT NULL,
@@ -4101,6 +4150,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalAccountReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."LocalActual"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "LocalAccount_DocumentId" bigint NOT NULL,
@@ -4118,6 +4168,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalActual"
 CREATE TABLE IF NOT EXISTS "edfi"."LocalBudget"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "LocalAccount_DocumentId" bigint NOT NULL,
@@ -4135,6 +4186,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalBudget"
 CREATE TABLE IF NOT EXISTS "edfi"."LocalContractedStaff"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "LocalAccount_DocumentId" bigint NOT NULL,
@@ -4155,6 +4207,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalContractedStaff"
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationServiceCenter_DocumentId" bigint NULL,
@@ -4337,6 +4390,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgencyIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEncumbrance"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "LocalAccount_DocumentId" bigint NOT NULL,
@@ -4354,6 +4408,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalEncumbrance"
 CREATE TABLE IF NOT EXISTS "edfi"."LocalPayroll"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "LocalAccount_DocumentId" bigint NOT NULL,
@@ -4374,6 +4429,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."LocalPayroll"
 CREATE TABLE IF NOT EXISTS "edfi"."Location"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "School_DocumentId" bigint NOT NULL,
@@ -4390,6 +4446,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Location"
 CREATE TABLE IF NOT EXISTS "edfi"."ObjectDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
@@ -4415,6 +4472,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessment"
 (
     "DocumentId" bigint NOT NULL,
     "AssessmentIdentifier_Unified" varchar(60) NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
@@ -4499,6 +4557,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ObjectiveAssessmentScore"
 CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPosition"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -4541,6 +4600,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OpenStaffPositionInstructionalGradeLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."OperationalUnitDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
@@ -4565,6 +4625,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OperationalUnitDimensionReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartment"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ParentEducationOrganization_DocumentId" bigint NULL,
@@ -4705,6 +4766,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."OrganizationDepartmentIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."Person"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SourceSystemDescriptor_DescriptorId" integer NOT NULL,
@@ -4717,6 +4779,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Person"
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "PostSecondaryInstitution_DocumentId" bigint NULL,
@@ -4734,6 +4797,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitution"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "AdministrativeFundingControlDescriptor_DescriptorId" integer NULL,
@@ -4884,6 +4948,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."PostSecondaryInstitutionIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."Program"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -4935,6 +5000,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramSponsor"
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
@@ -4959,6 +5025,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramDimensionReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -4993,6 +5060,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElement"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ProgramEducationOrganizationId_Unified" bigint NOT NULL,
@@ -5044,6 +5112,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationElementProgramEvaluationLeve
 CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationObjective"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ProgramEvaluation_DocumentId" bigint NOT NULL,
@@ -5080,6 +5149,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProgramEvaluationObjectiveProgramEvaluationLe
 CREATE TABLE IF NOT EXISTS "edfi"."ProjectDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
@@ -5104,6 +5174,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProjectDimensionReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."ReportCard"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -5188,6 +5259,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ReportCardStudentCompetencyObjective"
 CREATE TABLE IF NOT EXISTS "edfi"."RestraintEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NOT NULL,
@@ -5237,6 +5309,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."RestraintEventReason"
 CREATE TABLE IF NOT EXISTS "edfi"."School"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CharterApprovalSchoolYear_DocumentId" bigint NULL,
@@ -5434,6 +5507,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."SchoolYearType"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CurrentSchoolYear" boolean NOT NULL,
@@ -5447,6 +5521,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SchoolYearType"
 CREATE TABLE IF NOT EXISTS "edfi"."Section"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_U35501e03_Unified" bigint NULL,
@@ -5547,6 +5622,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionProgram"
 CREATE TABLE IF NOT EXISTS "edfi"."SectionAttendanceTakenEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NOT NULL,
@@ -5575,6 +5651,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SectionAttendanceTakenEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."Session"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SchoolYear_DocumentId" bigint NOT NULL,
@@ -5626,6 +5703,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SessionGradingPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."SourceDimension"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Code" varchar(16) NOT NULL,
@@ -5650,6 +5728,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SourceDimensionReportingTag"
 CREATE TABLE IF NOT EXISTS "edfi"."Staff"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Person_DocumentId" bigint NULL,
@@ -5959,6 +6038,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffLanguageUs"
 CREATE TABLE IF NOT EXISTS "edfi"."StaffAbsenceEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Staff_DocumentId" bigint NOT NULL,
@@ -5975,6 +6055,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffAbsenceEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."StaffCohortAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Cohort_DocumentId" bigint NOT NULL,
@@ -5994,6 +6075,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffCohortAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."StaffDisciplineIncidentAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "DisciplineIncident_DocumentId" bigint NOT NULL,
@@ -6021,6 +6103,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffDisciplineIncidentAssociationDisciplineI
 CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationAssignmentAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "StaffUniqueId_Unified" varchar(32) NOT NULL,
@@ -6054,6 +6137,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationAssignmentAssociati
 CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -6113,6 +6197,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationContactAssociationT
 CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationEmploymentAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Credential_DocumentId" bigint NULL,
@@ -6143,6 +6228,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffEducationOrganizationEmploymentAssociati
 CREATE TABLE IF NOT EXISTS "edfi"."StaffLeave"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Staff_DocumentId" bigint NOT NULL,
@@ -6160,6 +6246,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffLeave"
 CREATE TABLE IF NOT EXISTS "edfi"."StaffProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ProgramProgram_DocumentId" bigint NOT NULL,
@@ -6180,6 +6267,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffProgramAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NOT NULL,
@@ -6228,6 +6316,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSchoolAssociationGradeLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."StaffSectionAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Section_DocumentId" bigint NOT NULL,
@@ -6253,6 +6342,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StaffSectionAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgency"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "OperationalStatusDescriptor_DescriptorId" integer NULL,
@@ -6416,6 +6506,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StateEducationAgencyIndicatorPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."Student"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Person_DocumentId" bigint NULL,
@@ -6568,6 +6659,7 @@ CREATE TABLE IF NOT EXISTS "sample"."StudentExtensionFavoriteBookArtMedia"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecord"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -6715,6 +6807,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAcademicRecordReportCard"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessment"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Assessment_DocumentId" bigint NOT NULL,
@@ -6861,6 +6954,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentStudentObjectiveAssessmentSc
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentEducationOrganizationAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -6883,6 +6977,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentEducationOrganizationAssocia
 CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistration"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "StudentUniqueId_Unified" varchar(32) NOT NULL,
@@ -6945,6 +7040,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationBatteryPartAssoc
 (
     "DocumentId" bigint NOT NULL,
     "AssessmentIdentifier_Unified" varchar(60) NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
@@ -6979,6 +7075,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentAssessmentRegistrationBatteryPartAssoc
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -7043,6 +7140,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCTEProgramAssociationProgramParticipat
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCohortAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Cohort_DocumentId" bigint NOT NULL,
@@ -7078,6 +7176,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCohortAssociationSection"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjective"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "GradingPeriodGradingPeriod_DocumentId" bigint NOT NULL,
@@ -7141,6 +7240,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentCompetencyObjectiveStudentSectionAssoc
 CREATE TABLE IF NOT EXISTS "edfi"."StudentContactAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Contact_DocumentId" bigint NOT NULL,
@@ -7250,6 +7350,7 @@ CREATE TABLE IF NOT EXISTS "sample"."StudentContactAssociationExtensionStaffEduc
 CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "DisciplineIncident_DocumentId" bigint NOT NULL,
@@ -7291,6 +7392,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentBehaviorAssociationW
 CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentNonOffenderAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "DisciplineIncident_DocumentId" bigint NOT NULL,
@@ -7318,6 +7420,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentDisciplineIncidentNonOffenderAssociati
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssessmentAccommodation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -7345,6 +7448,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssessmentAccommo
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -7712,6 +7816,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationAssociationStuden
 CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationResponsibilityAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -7730,6 +7835,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentEducationOrganizationResponsibilityAss
 CREATE TABLE IF NOT EXISTS "edfi"."StudentGradebookEntry"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "GradebookEntry_DocumentId" bigint NOT NULL,
@@ -7755,6 +7861,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentGradebookEntry"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHealth"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -7823,6 +7930,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHealthRequiredImmunizationDate"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -7878,6 +7986,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentHomelessProgramAssociationProgramParti
 CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "CohortCohort_DocumentId" bigint NULL,
@@ -7915,6 +8024,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAssociationInterventionEff
 CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAttendanceEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Intervention_DocumentId" bigint NOT NULL,
@@ -7937,6 +8047,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentInterventionAttendanceEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -8008,6 +8119,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentLanguageInstructionProgramAssociationP
 CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -8069,6 +8181,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentMigrantEducationProgramAssociationProg
 CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -8124,6 +8237,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentNeglectedOrDelinquentProgramAssociatio
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -8177,6 +8291,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAssociationService"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAttendanceEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -8203,6 +8318,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramAttendanceEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NULL,
@@ -8287,6 +8403,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentProgramEvaluationStudentEvaluationObje
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NOT NULL,
@@ -8374,6 +8491,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociationEducationPlan"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAttendanceEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SchoolId_Unified" bigint NOT NULL,
@@ -8403,6 +8521,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAttendanceEvent"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -8456,6 +8575,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolFoodServiceProgramAssociationSch
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSection504ProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -8499,6 +8619,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSection504ProgramAssociationProgramPar
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "DualCreditEducationOrganization_DocumentId" bigint NULL,
@@ -8571,6 +8692,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAssociationProgram"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAttendanceEvent"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Section_DocumentId" bigint NOT NULL,
@@ -8612,6 +8734,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSectionAttendanceEventClassPeriod"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -8736,6 +8859,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramAssociationSpec
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramEligibilityAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -8772,6 +8896,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSpecialEducationProgramEligibilityAsso
 CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -8825,6 +8950,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTitleIPartAProgramAssociationTitleIPar
 CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Student_DocumentId" bigint NOT NULL,
@@ -8868,6 +8994,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentTransportationTravelDirection"
 CREATE TABLE IF NOT EXISTS "edfi"."Survey"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SchoolYear_Unified" integer NOT NULL,
@@ -8895,6 +9022,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Survey"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyCourseAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Course_DocumentId" bigint NOT NULL,
@@ -8912,6 +9040,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyCourseAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Program_DocumentId" bigint NOT NULL,
@@ -8930,6 +9059,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyProgramAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestion"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
@@ -8980,6 +9110,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponseChoice"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponse"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
@@ -9032,6 +9163,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyQuestionResponseValue"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponse"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SurveyResponderChoiceContact_DocumentId" bigint NULL,
@@ -9072,6 +9204,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseSurveyLevel"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseEducationOrganizationTargetAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -9089,6 +9222,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseEducationOrganizationTargetAsso
 CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseStaffTargetAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Staff_DocumentId" bigint NOT NULL,
@@ -9106,6 +9240,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveyResponseStaffTargetAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveySection"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Survey_DocumentId" bigint NOT NULL,
@@ -9121,6 +9256,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySection"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Section_DocumentId" bigint NOT NULL,
@@ -9141,6 +9277,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionAssociation"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponse"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
@@ -9164,6 +9301,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponse"
 CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponseEducationOrganizationTargetAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
@@ -9186,6 +9324,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponseEducationOrganizationTar
 CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponseStaffTargetAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Namespace_Unified" varchar(255) NOT NULL,
@@ -9208,6 +9347,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."SurveySectionResponseStaffTargetAssociation"
 CREATE TABLE IF NOT EXISTS "sample"."Bus"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "BusId" varchar(60) NOT NULL,
@@ -9219,6 +9359,7 @@ CREATE TABLE IF NOT EXISTS "sample"."Bus"
 CREATE TABLE IF NOT EXISTS "sample"."BusRoute"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "Bus_DocumentId" bigint NOT NULL,
@@ -9311,6 +9452,7 @@ CREATE TABLE IF NOT EXISTS "sample"."BusRouteTelephone"
 CREATE TABLE IF NOT EXISTS "sample"."StudentArtProgramAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -9421,6 +9563,7 @@ CREATE TABLE IF NOT EXISTS "sample"."StudentArtProgramAssociationStyle"
 CREATE TABLE IF NOT EXISTS "sample"."StudentGraduationPlanAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "GraduationPlan_DocumentId" bigint NOT NULL,
@@ -40097,6 +40240,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -40193,6 +40337,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -40291,6 +40436,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -40487,6 +40633,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -40693,6 +40840,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -41193,6 +41341,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -41489,6 +41638,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -42373,6 +42523,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -42667,6 +42818,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -42859,6 +43011,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -43249,6 +43402,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -43351,6 +43505,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -43651,6 +43806,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -43847,6 +44003,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -44039,6 +44196,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -44282,6 +44440,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -45274,6 +45433,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -46133,6 +46293,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -46236,6 +46397,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -46338,6 +46500,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -47310,6 +47473,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -47996,6 +48160,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -48411,6 +48576,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -49234,6 +49400,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -49630,6 +49797,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -49724,6 +49892,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -49931,6 +50100,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -50333,6 +50503,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -50721,6 +50892,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -51484,6 +51656,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -51652,6 +51825,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -51921,6 +52095,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -52603,6 +52778,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -52832,6 +53008,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -53710,6 +53887,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -53848,6 +54026,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -53946,6 +54125,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -54138,6 +54318,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -54355,6 +54536,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -54597,6 +54779,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -54796,6 +54979,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -54909,6 +55093,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -55601,6 +55786,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -56479,6 +56665,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -57357,6 +57544,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -58333,6 +58521,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -58625,6 +58814,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -58921,6 +59111,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -59121,6 +59312,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -59227,6 +59419,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -59338,6 +59531,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -59655,6 +59849,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -60712,6 +60907,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -60823,6 +61019,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -60935,6 +61132,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -61029,6 +61227,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -61223,6 +61422,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -61713,6 +61913,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -62003,6 +62204,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -62332,6 +62534,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -63192,6 +63395,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -63300,6 +63504,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -63461,6 +63666,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -64421,6 +64627,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -64623,6 +64830,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -64832,6 +65040,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -64979,6 +65188,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -65326,6 +65536,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -65752,6 +65963,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -65958,6 +66170,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -66379,6 +66592,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -66814,6 +67028,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -67865,6 +68080,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -67961,6 +68177,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -68077,6 +68294,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -68683,6 +68901,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -68977,6 +69196,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -69167,6 +69387,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -69265,6 +69486,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -69676,6 +69898,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -69887,6 +70110,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -70099,6 +70323,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -70218,6 +70443,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -70528,6 +70754,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -71238,6 +71465,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -71556,6 +71784,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -71878,6 +72107,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -72197,6 +72427,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -72662,6 +72893,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -73713,6 +73945,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -73813,6 +74046,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -74426,6 +74660,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -74650,6 +74885,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -74979,6 +75215,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -75304,6 +75541,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -75951,6 +76189,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -76227,6 +76466,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -76454,6 +76694,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -76792,6 +77033,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -76908,6 +77150,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -77223,6 +77466,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -77428,6 +77672,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -77629,6 +77874,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -79601,6 +79847,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -79720,6 +79967,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -79827,6 +80075,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -80356,6 +80605,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -80728,6 +80978,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -80942,6 +81193,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -81097,6 +81349,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -81501,6 +81754,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -81807,6 +82061,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -82309,6 +82564,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -82597,6 +82853,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -82753,6 +83010,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -83194,6 +83452,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -83508,6 +83767,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -83667,6 +83927,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -83973,6 +84234,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -84157,6 +84419,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -84393,6 +84656,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -84658,6 +84922,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -85333,6 +85598,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -85492,6 +85758,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -85764,6 +86031,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -86158,6 +86426,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -86256,6 +86525,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -86367,6 +86637,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -86481,6 +86752,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -86681,6 +86953,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -87079,6 +87352,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -87181,6 +87455,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -87290,6 +87565,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -87498,6 +87774,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -87606,6 +87883,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -87724,6 +88002,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -87813,6 +88092,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -87947,6 +88227,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -88057,6 +88338,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -88147,6 +88429,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -90140,6 +90423,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -92575,6 +92859,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')

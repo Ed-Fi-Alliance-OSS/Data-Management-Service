@@ -245,6 +245,7 @@ CREATE TABLE [dms].[Descriptor]
     [Uri] AS ([Namespace] + N'#' + [CodeValue]),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DescriptorId])
 );
 
@@ -634,11 +635,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Descriptor] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [dms].[Descriptor] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [dms].[Descriptor] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -762,6 +776,7 @@ IF OBJECT_ID(N'edfi.AcademicWeek', N'U') IS NULL
 CREATE TABLE [edfi].[AcademicWeek]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AcademicWeek_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AcademicWeek_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_AcademicWeek_ContentVersion] DEFAULT 0,
     [School_DocumentId] bigint NOT NULL,
@@ -780,6 +795,7 @@ IF OBJECT_ID(N'edfi.AccountabilityRating', N'U') IS NULL
 CREATE TABLE [edfi].[AccountabilityRating]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AccountabilityRating_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AccountabilityRating_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_AccountabilityRating_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -801,6 +817,7 @@ IF OBJECT_ID(N'edfi.Assessment', N'U') IS NULL
 CREATE TABLE [edfi].[Assessment]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Assessment_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Assessment_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Assessment_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NULL,
@@ -991,6 +1008,7 @@ IF OBJECT_ID(N'edfi.AssessmentAdministration', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentAdministration]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentAdministration_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentAdministration_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_AssessmentAdministration_ContentVersion] DEFAULT 0,
     [Assessment_DocumentId] bigint NOT NULL,
@@ -1039,6 +1057,7 @@ IF OBJECT_ID(N'edfi.AssessmentAdministrationParticipation', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentAdministrationParticipation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentAdministrationParticipation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentAdministrationParticipation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_AssessmentAdministrationParticipation_ContentVersion] DEFAULT 0,
     [AssessmentAdministration_DocumentId] bigint NOT NULL,
@@ -1076,6 +1095,7 @@ IF OBJECT_ID(N'edfi.AssessmentBatteryPart', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentBatteryPart]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentBatteryPart_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentBatteryPart_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_AssessmentBatteryPart_ContentVersion] DEFAULT 0,
     [Assessment_DocumentId] bigint NOT NULL,
@@ -1108,6 +1128,7 @@ IF OBJECT_ID(N'edfi.AssessmentItem', N'U') IS NULL
 CREATE TABLE [edfi].[AssessmentItem]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentItem_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentItem_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_AssessmentItem_ContentVersion] DEFAULT 0,
     [Assessment_DocumentId] bigint NOT NULL,
@@ -1159,6 +1180,7 @@ CREATE TABLE [edfi].[AssessmentScoreRangeLearningStandard]
 (
     [DocumentId] bigint NOT NULL,
     [AssessmentIdentifier_Unified] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentScoreRangeLearningStandard_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_AssessmentScoreRangeLearningStandard_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_AssessmentScoreRangeLearningStandard_ContentVersion] DEFAULT 0,
     [Namespace_Unified] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -1197,6 +1219,7 @@ IF OBJECT_ID(N'edfi.BalanceSheetDimension', N'U') IS NULL
 CREATE TABLE [edfi].[BalanceSheetDimension]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_BalanceSheetDimension_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_BalanceSheetDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_BalanceSheetDimension_ContentVersion] DEFAULT 0,
     [Code] nvarchar(16) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -1223,6 +1246,7 @@ IF OBJECT_ID(N'edfi.BellSchedule', N'U') IS NULL
 CREATE TABLE [edfi].[BellSchedule]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_BellSchedule_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_BellSchedule_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_BellSchedule_ContentVersion] DEFAULT 0,
     [School_DocumentId] bigint NOT NULL,
@@ -1280,6 +1304,7 @@ IF OBJECT_ID(N'edfi.Calendar', N'U') IS NULL
 CREATE TABLE [edfi].[Calendar]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Calendar_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Calendar_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Calendar_ContentVersion] DEFAULT 0,
     [SchoolYear_DocumentId] bigint NOT NULL,
@@ -1311,6 +1336,7 @@ IF OBJECT_ID(N'edfi.CalendarDate', N'U') IS NULL
 CREATE TABLE [edfi].[CalendarDate]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CalendarDate_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CalendarDate_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CalendarDate_ContentVersion] DEFAULT 0,
     [Calendar_DocumentId] bigint NOT NULL,
@@ -1340,6 +1366,7 @@ IF OBJECT_ID(N'edfi.ChartOfAccount', N'U') IS NULL
 CREATE TABLE [edfi].[ChartOfAccount]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ChartOfAccount_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ChartOfAccount_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ChartOfAccount_ContentVersion] DEFAULT 0,
     [FiscalYear_Unified] int NOT NULL,
@@ -1404,6 +1431,7 @@ IF OBJECT_ID(N'edfi.ClassPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[ClassPeriod]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ClassPeriod_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ClassPeriod_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ClassPeriod_ContentVersion] DEFAULT 0,
     [School_DocumentId] bigint NOT NULL,
@@ -1433,6 +1461,7 @@ IF OBJECT_ID(N'edfi.Cohort', N'U') IS NULL
 CREATE TABLE [edfi].[Cohort]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Cohort_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Cohort_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Cohort_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -1468,6 +1497,7 @@ IF OBJECT_ID(N'edfi.CommunityOrganization', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityOrganization]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CommunityOrganization_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CommunityOrganization_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CommunityOrganization_ContentVersion] DEFAULT 0,
     [OperationalStatusDescriptor_DescriptorId] int NULL,
@@ -1614,6 +1644,7 @@ IF OBJECT_ID(N'edfi.CommunityProvider', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityProvider]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CommunityProvider_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CommunityProvider_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CommunityProvider_ContentVersion] DEFAULT 0,
     [CommunityOrganization_DocumentId] bigint NULL,
@@ -1768,6 +1799,7 @@ IF OBJECT_ID(N'edfi.CommunityProviderLicense', N'U') IS NULL
 CREATE TABLE [edfi].[CommunityProviderLicense]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CommunityProviderLicense_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CommunityProviderLicense_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CommunityProviderLicense_ContentVersion] DEFAULT 0,
     [CommunityProvider_DocumentId] bigint NOT NULL,
@@ -1791,6 +1823,7 @@ IF OBJECT_ID(N'edfi.CompetencyObjective', N'U') IS NULL
 CREATE TABLE [edfi].[CompetencyObjective]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CompetencyObjective_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CompetencyObjective_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CompetencyObjective_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -1810,6 +1843,7 @@ IF OBJECT_ID(N'edfi.Contact', N'U') IS NULL
 CREATE TABLE [edfi].[Contact]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Contact_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Contact_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Contact_ContentVersion] DEFAULT 0,
     [Person_DocumentId] bigint NULL,
@@ -1991,6 +2025,7 @@ IF OBJECT_ID(N'edfi.Course', N'U') IS NULL
 CREATE TABLE [edfi].[Course]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Course_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Course_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Course_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -2099,6 +2134,7 @@ IF OBJECT_ID(N'edfi.CourseOffering', N'U') IS NULL
 CREATE TABLE [edfi].[CourseOffering]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CourseOffering_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CourseOffering_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CourseOffering_ContentVersion] DEFAULT 0,
     [SchoolId_Unified] bigint NOT NULL,
@@ -2162,6 +2198,7 @@ IF OBJECT_ID(N'edfi.CourseTranscript', N'U') IS NULL
 CREATE TABLE [edfi].[CourseTranscript]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CourseTranscript_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CourseTranscript_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CourseTranscript_ContentVersion] DEFAULT 0,
     [CourseCourse_DocumentId] bigint NOT NULL,
@@ -2307,6 +2344,7 @@ IF OBJECT_ID(N'edfi.Credential', N'U') IS NULL
 CREATE TABLE [edfi].[Credential]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Credential_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Credential_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Credential_ContentVersion] DEFAULT 0,
     [CredentialFieldDescriptor_DescriptorId] int NULL,
@@ -2398,6 +2436,7 @@ IF OBJECT_ID(N'edfi.CrisisEvent', N'U') IS NULL
 CREATE TABLE [edfi].[CrisisEvent]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CrisisEvent_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CrisisEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CrisisEvent_ContentVersion] DEFAULT 0,
     [CrisisTypeDescriptor_DescriptorId] int NOT NULL,
@@ -2414,6 +2453,7 @@ IF OBJECT_ID(N'edfi.DescriptorMapping', N'U') IS NULL
 CREATE TABLE [edfi].[DescriptorMapping]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DescriptorMapping_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DescriptorMapping_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_DescriptorMapping_ContentVersion] DEFAULT 0,
     [MappedNamespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -2440,6 +2480,7 @@ IF OBJECT_ID(N'edfi.DisciplineAction', N'U') IS NULL
 CREATE TABLE [edfi].[DisciplineAction]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DisciplineAction_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DisciplineAction_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_DisciplineAction_ContentVersion] DEFAULT 0,
     [AssignmentSchool_DocumentId] bigint NULL,
@@ -2509,6 +2550,7 @@ IF OBJECT_ID(N'edfi.DisciplineIncident', N'U') IS NULL
 CREATE TABLE [edfi].[DisciplineIncident]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DisciplineIncident_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DisciplineIncident_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_DisciplineIncident_ContentVersion] DEFAULT 0,
     [School_DocumentId] bigint NOT NULL,
@@ -2572,6 +2614,7 @@ IF OBJECT_ID(N'edfi.EducationContent', N'U') IS NULL
 CREATE TABLE [edfi].[EducationContent]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationContent_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationContent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducationContent_ContentVersion] DEFAULT 0,
     [LearningResourceChoiceLearningResourceLearningStandard_DocumentId] bigint NULL,
@@ -2688,6 +2731,7 @@ IF OBJECT_ID(N'edfi.EducationOrganizationInterventionPrescriptionAssociation', N
 CREATE TABLE [edfi].[EducationOrganizationInterventionPrescriptionAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationInterventionPrescriptionAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationInterventionPrescriptionAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducationOrganizationInterventionPrescriptionAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -2707,6 +2751,7 @@ IF OBJECT_ID(N'edfi.EducationOrganizationNetwork', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationNetwork]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationNetwork_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationNetwork_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducationOrganizationNetwork_ContentVersion] DEFAULT 0,
     [NetworkPurposeDescriptor_DescriptorId] int NOT NULL,
@@ -2854,6 +2899,7 @@ IF OBJECT_ID(N'edfi.EducationOrganizationNetworkAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationNetworkAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationNetworkAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationNetworkAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducationOrganizationNetworkAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganizationNetwork_DocumentId] bigint NOT NULL,
@@ -2872,6 +2918,7 @@ IF OBJECT_ID(N'edfi.EducationOrganizationPeerAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[EducationOrganizationPeerAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationPeerAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationOrganizationPeerAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducationOrganizationPeerAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -2888,6 +2935,7 @@ IF OBJECT_ID(N'edfi.EducationServiceCenter', N'U') IS NULL
 CREATE TABLE [edfi].[EducationServiceCenter]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationServiceCenter_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducationServiceCenter_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducationServiceCenter_ContentVersion] DEFAULT 0,
     [StateEducationAgency_DocumentId] bigint NULL,
@@ -3037,6 +3085,7 @@ IF OBJECT_ID(N'edfi.EvaluationRubricDimension', N'U') IS NULL
 CREATE TABLE [edfi].[EvaluationRubricDimension]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EvaluationRubricDimension_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EvaluationRubricDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EvaluationRubricDimension_ContentVersion] DEFAULT 0,
     [ProgramEvaluationElement_DocumentId] bigint NOT NULL,
@@ -3060,6 +3109,7 @@ IF OBJECT_ID(N'edfi.FeederSchoolAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[FeederSchoolAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_FeederSchoolAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_FeederSchoolAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_FeederSchoolAssociation_ContentVersion] DEFAULT 0,
     [FeederSchool_DocumentId] bigint NOT NULL,
@@ -3079,6 +3129,7 @@ IF OBJECT_ID(N'edfi.FunctionDimension', N'U') IS NULL
 CREATE TABLE [edfi].[FunctionDimension]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_FunctionDimension_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_FunctionDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_FunctionDimension_ContentVersion] DEFAULT 0,
     [Code] nvarchar(16) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -3105,6 +3156,7 @@ IF OBJECT_ID(N'edfi.FundDimension', N'U') IS NULL
 CREATE TABLE [edfi].[FundDimension]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_FundDimension_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_FundDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_FundDimension_ContentVersion] DEFAULT 0,
     [Code] nvarchar(16) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -3131,6 +3183,7 @@ IF OBJECT_ID(N'edfi.Grade', N'U') IS NULL
 CREATE TABLE [edfi].[Grade]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Grade_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Grade_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Grade_ContentVersion] DEFAULT 0,
     [SchoolId_Unified] bigint NOT NULL,
@@ -3185,6 +3238,7 @@ IF OBJECT_ID(N'edfi.GradebookEntry', N'U') IS NULL
 CREATE TABLE [edfi].[GradebookEntry]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_GradebookEntry_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_GradebookEntry_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_GradebookEntry_ContentVersion] DEFAULT 0,
     [SchoolId_Unified] bigint NULL,
@@ -3235,6 +3289,7 @@ IF OBJECT_ID(N'edfi.GradingPeriod', N'U') IS NULL
 CREATE TABLE [edfi].[GradingPeriod]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_GradingPeriod_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_GradingPeriod_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_GradingPeriod_ContentVersion] DEFAULT 0,
     [SchoolYear_DocumentId] bigint NOT NULL,
@@ -3258,6 +3313,7 @@ IF OBJECT_ID(N'edfi.GraduationPlan', N'U') IS NULL
 CREATE TABLE [edfi].[GraduationPlan]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_GraduationPlan_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_GraduationPlan_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_GraduationPlan_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -3381,6 +3437,7 @@ IF OBJECT_ID(N'edfi.Intervention', N'U') IS NULL
 CREATE TABLE [edfi].[Intervention]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Intervention_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Intervention_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Intervention_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -3531,6 +3588,7 @@ IF OBJECT_ID(N'edfi.InterventionPrescription', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionPrescription]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_InterventionPrescription_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_InterventionPrescription_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_InterventionPrescription_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -3637,6 +3695,7 @@ IF OBJECT_ID(N'edfi.InterventionStudy', N'U') IS NULL
 CREATE TABLE [edfi].[InterventionStudy]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_InterventionStudy_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_InterventionStudy_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_InterventionStudy_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -3760,6 +3819,7 @@ IF OBJECT_ID(N'edfi.LearningStandard', N'U') IS NULL
 CREATE TABLE [edfi].[LearningStandard]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LearningStandard_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LearningStandard_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LearningStandard_ContentVersion] DEFAULT 0,
     [MandatingEducationOrganization_DocumentId] bigint NULL,
@@ -3843,6 +3903,7 @@ IF OBJECT_ID(N'edfi.LearningStandardEquivalenceAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[LearningStandardEquivalenceAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LearningStandardEquivalenceAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LearningStandardEquivalenceAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LearningStandardEquivalenceAssociation_ContentVersion] DEFAULT 0,
     [SourceLearningStandard_DocumentId] bigint NOT NULL,
@@ -3863,6 +3924,7 @@ IF OBJECT_ID(N'edfi.LocalAccount', N'U') IS NULL
 CREATE TABLE [edfi].[LocalAccount]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalAccount_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalAccount_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LocalAccount_ContentVersion] DEFAULT 0,
     [FiscalYear_Unified] int NOT NULL,
@@ -3899,6 +3961,7 @@ IF OBJECT_ID(N'edfi.LocalActual', N'U') IS NULL
 CREATE TABLE [edfi].[LocalActual]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalActual_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalActual_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LocalActual_ContentVersion] DEFAULT 0,
     [LocalAccount_DocumentId] bigint NOT NULL,
@@ -3917,6 +3980,7 @@ IF OBJECT_ID(N'edfi.LocalBudget', N'U') IS NULL
 CREATE TABLE [edfi].[LocalBudget]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalBudget_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalBudget_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LocalBudget_ContentVersion] DEFAULT 0,
     [LocalAccount_DocumentId] bigint NOT NULL,
@@ -3935,6 +3999,7 @@ IF OBJECT_ID(N'edfi.LocalContractedStaff', N'U') IS NULL
 CREATE TABLE [edfi].[LocalContractedStaff]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalContractedStaff_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalContractedStaff_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LocalContractedStaff_ContentVersion] DEFAULT 0,
     [LocalAccount_DocumentId] bigint NOT NULL,
@@ -3956,6 +4021,7 @@ IF OBJECT_ID(N'edfi.LocalEducationAgency', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEducationAgency]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalEducationAgency_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalEducationAgency_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LocalEducationAgency_ContentVersion] DEFAULT 0,
     [EducationServiceCenter_DocumentId] bigint NULL,
@@ -4149,6 +4215,7 @@ IF OBJECT_ID(N'edfi.LocalEncumbrance', N'U') IS NULL
 CREATE TABLE [edfi].[LocalEncumbrance]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalEncumbrance_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalEncumbrance_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LocalEncumbrance_ContentVersion] DEFAULT 0,
     [LocalAccount_DocumentId] bigint NOT NULL,
@@ -4167,6 +4234,7 @@ IF OBJECT_ID(N'edfi.LocalPayroll', N'U') IS NULL
 CREATE TABLE [edfi].[LocalPayroll]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalPayroll_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_LocalPayroll_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_LocalPayroll_ContentVersion] DEFAULT 0,
     [LocalAccount_DocumentId] bigint NOT NULL,
@@ -4188,6 +4256,7 @@ IF OBJECT_ID(N'edfi.Location', N'U') IS NULL
 CREATE TABLE [edfi].[Location]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Location_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Location_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Location_ContentVersion] DEFAULT 0,
     [School_DocumentId] bigint NOT NULL,
@@ -4205,6 +4274,7 @@ IF OBJECT_ID(N'edfi.ObjectDimension', N'U') IS NULL
 CREATE TABLE [edfi].[ObjectDimension]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ObjectDimension_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ObjectDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ObjectDimension_ContentVersion] DEFAULT 0,
     [Code] nvarchar(16) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -4232,6 +4302,7 @@ CREATE TABLE [edfi].[ObjectiveAssessment]
 (
     [DocumentId] bigint NOT NULL,
     [AssessmentIdentifier_Unified] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ObjectiveAssessment_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ObjectiveAssessment_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ObjectiveAssessment_ContentVersion] DEFAULT 0,
     [Namespace_Unified] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -4321,6 +4392,7 @@ IF OBJECT_ID(N'edfi.OpenStaffPosition', N'U') IS NULL
 CREATE TABLE [edfi].[OpenStaffPosition]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_OpenStaffPosition_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_OpenStaffPosition_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_OpenStaffPosition_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -4366,6 +4438,7 @@ IF OBJECT_ID(N'edfi.OperationalUnitDimension', N'U') IS NULL
 CREATE TABLE [edfi].[OperationalUnitDimension]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_OperationalUnitDimension_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_OperationalUnitDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_OperationalUnitDimension_ContentVersion] DEFAULT 0,
     [Code] nvarchar(16) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -4392,6 +4465,7 @@ IF OBJECT_ID(N'edfi.OrganizationDepartment', N'U') IS NULL
 CREATE TABLE [edfi].[OrganizationDepartment]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_OrganizationDepartment_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_OrganizationDepartment_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_OrganizationDepartment_ContentVersion] DEFAULT 0,
     [ParentEducationOrganization_DocumentId] bigint NULL,
@@ -4541,6 +4615,7 @@ IF OBJECT_ID(N'edfi.Person', N'U') IS NULL
 CREATE TABLE [edfi].[Person]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Person_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Person_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Person_ContentVersion] DEFAULT 0,
     [SourceSystemDescriptor_DescriptorId] int NOT NULL,
@@ -4554,6 +4629,7 @@ IF OBJECT_ID(N'edfi.PostSecondaryEvent', N'U') IS NULL
 CREATE TABLE [edfi].[PostSecondaryEvent]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_PostSecondaryEvent_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_PostSecondaryEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_PostSecondaryEvent_ContentVersion] DEFAULT 0,
     [PostSecondaryInstitution_DocumentId] bigint NULL,
@@ -4572,6 +4648,7 @@ IF OBJECT_ID(N'edfi.PostSecondaryInstitution', N'U') IS NULL
 CREATE TABLE [edfi].[PostSecondaryInstitution]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_PostSecondaryInstitution_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_PostSecondaryInstitution_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_PostSecondaryInstitution_ContentVersion] DEFAULT 0,
     [AdministrativeFundingControlDescriptor_DescriptorId] int NULL,
@@ -4732,6 +4809,7 @@ IF OBJECT_ID(N'edfi.Program', N'U') IS NULL
 CREATE TABLE [edfi].[Program]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Program_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Program_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Program_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -4787,6 +4865,7 @@ IF OBJECT_ID(N'edfi.ProgramDimension', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramDimension]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramDimension_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ProgramDimension_ContentVersion] DEFAULT 0,
     [Code] nvarchar(16) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -4813,6 +4892,7 @@ IF OBJECT_ID(N'edfi.ProgramEvaluation', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramEvaluation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramEvaluation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramEvaluation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ProgramEvaluation_ContentVersion] DEFAULT 0,
     [ProgramProgram_DocumentId] bigint NOT NULL,
@@ -4849,6 +4929,7 @@ IF OBJECT_ID(N'edfi.ProgramEvaluationElement', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramEvaluationElement]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramEvaluationElement_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramEvaluationElement_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ProgramEvaluationElement_ContentVersion] DEFAULT 0,
     [ProgramEducationOrganizationId_Unified] bigint NOT NULL,
@@ -4902,6 +4983,7 @@ IF OBJECT_ID(N'edfi.ProgramEvaluationObjective', N'U') IS NULL
 CREATE TABLE [edfi].[ProgramEvaluationObjective]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramEvaluationObjective_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProgramEvaluationObjective_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ProgramEvaluationObjective_ContentVersion] DEFAULT 0,
     [ProgramEvaluation_DocumentId] bigint NOT NULL,
@@ -4940,6 +5022,7 @@ IF OBJECT_ID(N'edfi.ProjectDimension', N'U') IS NULL
 CREATE TABLE [edfi].[ProjectDimension]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProjectDimension_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ProjectDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ProjectDimension_ContentVersion] DEFAULT 0,
     [Code] nvarchar(16) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -4966,6 +5049,7 @@ IF OBJECT_ID(N'edfi.ReportCard', N'U') IS NULL
 CREATE TABLE [edfi].[ReportCard]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ReportCard_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ReportCard_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ReportCard_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -5054,6 +5138,7 @@ IF OBJECT_ID(N'edfi.RestraintEvent', N'U') IS NULL
 CREATE TABLE [edfi].[RestraintEvent]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_RestraintEvent_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_RestraintEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_RestraintEvent_ContentVersion] DEFAULT 0,
     [SchoolId_Unified] bigint NOT NULL,
@@ -5106,6 +5191,7 @@ IF OBJECT_ID(N'edfi.School', N'U') IS NULL
 CREATE TABLE [edfi].[School]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_School_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_School_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_School_ContentVersion] DEFAULT 0,
     [CharterApprovalSchoolYear_DocumentId] bigint NULL,
@@ -5299,6 +5385,7 @@ IF OBJECT_ID(N'edfi.SchoolYearType', N'U') IS NULL
 CREATE TABLE [edfi].[SchoolYearType]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SchoolYearType_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SchoolYearType_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SchoolYearType_ContentVersion] DEFAULT 0,
     [CurrentSchoolYear] bit NOT NULL,
@@ -5313,6 +5400,7 @@ IF OBJECT_ID(N'edfi.Section', N'U') IS NULL
 CREATE TABLE [edfi].[Section]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Section_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Section_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Section_ContentVersion] DEFAULT 0,
     [SchoolId_U35501e03_Unified] bigint NULL,
@@ -5419,6 +5507,7 @@ IF OBJECT_ID(N'edfi.SectionAttendanceTakenEvent', N'U') IS NULL
 CREATE TABLE [edfi].[SectionAttendanceTakenEvent]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SectionAttendanceTakenEvent_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SectionAttendanceTakenEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SectionAttendanceTakenEvent_ContentVersion] DEFAULT 0,
     [SchoolId_Unified] bigint NOT NULL,
@@ -5448,6 +5537,7 @@ IF OBJECT_ID(N'edfi.Session', N'U') IS NULL
 CREATE TABLE [edfi].[Session]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Session_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Session_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Session_ContentVersion] DEFAULT 0,
     [SchoolYear_DocumentId] bigint NOT NULL,
@@ -5502,6 +5592,7 @@ IF OBJECT_ID(N'edfi.SourceDimension', N'U') IS NULL
 CREATE TABLE [edfi].[SourceDimension]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SourceDimension_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SourceDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SourceDimension_ContentVersion] DEFAULT 0,
     [Code] nvarchar(16) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -5528,6 +5619,7 @@ IF OBJECT_ID(N'edfi.Staff', N'U') IS NULL
 CREATE TABLE [edfi].[Staff]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Staff_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Staff_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Staff_ContentVersion] DEFAULT 0,
     [Person_DocumentId] bigint NULL,
@@ -5834,6 +5926,7 @@ IF OBJECT_ID(N'edfi.StaffAbsenceEvent', N'U') IS NULL
 CREATE TABLE [edfi].[StaffAbsenceEvent]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffAbsenceEvent_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffAbsenceEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffAbsenceEvent_ContentVersion] DEFAULT 0,
     [Staff_DocumentId] bigint NOT NULL,
@@ -5851,6 +5944,7 @@ IF OBJECT_ID(N'edfi.StaffCohortAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffCohortAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffCohortAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffCohortAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffCohortAssociation_ContentVersion] DEFAULT 0,
     [Cohort_DocumentId] bigint NOT NULL,
@@ -5871,6 +5965,7 @@ IF OBJECT_ID(N'edfi.StaffDisciplineIncidentAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffDisciplineIncidentAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffDisciplineIncidentAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffDisciplineIncidentAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffDisciplineIncidentAssociation_ContentVersion] DEFAULT 0,
     [DisciplineIncident_DocumentId] bigint NOT NULL,
@@ -5900,6 +5995,7 @@ IF OBJECT_ID(N'edfi.StaffEducationOrganizationAssignmentAssociation', N'U') IS N
 CREATE TABLE [edfi].[StaffEducationOrganizationAssignmentAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffEducationOrganizationAssignmentAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffEducationOrganizationAssignmentAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffEducationOrganizationAssignmentAssociation_ContentVersion] DEFAULT 0,
     [StaffUniqueId_Unified] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -5933,6 +6029,7 @@ IF OBJECT_ID(N'edfi.StaffEducationOrganizationContactAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffEducationOrganizationContactAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffEducationOrganizationContactAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffEducationOrganizationContactAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffEducationOrganizationContactAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -5995,6 +6092,7 @@ IF OBJECT_ID(N'edfi.StaffEducationOrganizationEmploymentAssociation', N'U') IS N
 CREATE TABLE [edfi].[StaffEducationOrganizationEmploymentAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffEducationOrganizationEmploymentAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffEducationOrganizationEmploymentAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffEducationOrganizationEmploymentAssociation_ContentVersion] DEFAULT 0,
     [Credential_DocumentId] bigint NULL,
@@ -6026,6 +6124,7 @@ IF OBJECT_ID(N'edfi.StaffLeave', N'U') IS NULL
 CREATE TABLE [edfi].[StaffLeave]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffLeave_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffLeave_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffLeave_ContentVersion] DEFAULT 0,
     [Staff_DocumentId] bigint NOT NULL,
@@ -6044,6 +6143,7 @@ IF OBJECT_ID(N'edfi.StaffProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffProgramAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffProgramAssociation_ContentVersion] DEFAULT 0,
     [ProgramProgram_DocumentId] bigint NOT NULL,
@@ -6065,6 +6165,7 @@ IF OBJECT_ID(N'edfi.StaffSchoolAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffSchoolAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffSchoolAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffSchoolAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffSchoolAssociation_ContentVersion] DEFAULT 0,
     [SchoolId_Unified] bigint NOT NULL,
@@ -6116,6 +6217,7 @@ IF OBJECT_ID(N'edfi.StaffSectionAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StaffSectionAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffSectionAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StaffSectionAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StaffSectionAssociation_ContentVersion] DEFAULT 0,
     [Section_DocumentId] bigint NOT NULL,
@@ -6142,6 +6244,7 @@ IF OBJECT_ID(N'edfi.StateEducationAgency', N'U') IS NULL
 CREATE TABLE [edfi].[StateEducationAgency]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StateEducationAgency_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StateEducationAgency_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StateEducationAgency_ContentVersion] DEFAULT 0,
     [OperationalStatusDescriptor_DescriptorId] int NULL,
@@ -6316,6 +6419,7 @@ IF OBJECT_ID(N'edfi.Student', N'U') IS NULL
 CREATE TABLE [edfi].[Student]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Student_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Student_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Student_ContentVersion] DEFAULT 0,
     [Person_DocumentId] bigint NULL,
@@ -6414,6 +6518,7 @@ IF OBJECT_ID(N'edfi.StudentAcademicRecord', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAcademicRecord]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAcademicRecord_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAcademicRecord_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentAcademicRecord_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -6560,6 +6665,7 @@ IF OBJECT_ID(N'edfi.StudentAssessment', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessment]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAssessment_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAssessment_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentAssessment_ContentVersion] DEFAULT 0,
     [Assessment_DocumentId] bigint NOT NULL,
@@ -6714,6 +6820,7 @@ IF OBJECT_ID(N'edfi.StudentAssessmentEducationOrganizationAssociation', N'U') IS
 CREATE TABLE [edfi].[StudentAssessmentEducationOrganizationAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAssessmentEducationOrganizationAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAssessmentEducationOrganizationAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentAssessmentEducationOrganizationAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -6737,6 +6844,7 @@ IF OBJECT_ID(N'edfi.StudentAssessmentRegistration', N'U') IS NULL
 CREATE TABLE [edfi].[StudentAssessmentRegistration]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAssessmentRegistration_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAssessmentRegistration_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentAssessmentRegistration_ContentVersion] DEFAULT 0,
     [StudentUniqueId_Unified] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -6802,6 +6910,7 @@ CREATE TABLE [edfi].[StudentAssessmentRegistrationBatteryPartAssociation]
 (
     [DocumentId] bigint NOT NULL,
     [AssessmentIdentifier_Unified] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAssessmentRegistrationBatteryPartAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentAssessmentRegistrationBatteryPartAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentAssessmentRegistrationBatteryPartAssociation_ContentVersion] DEFAULT 0,
     [Namespace_Unified] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -6838,6 +6947,7 @@ IF OBJECT_ID(N'edfi.StudentCTEProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentCTEProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentCTEProgramAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentCTEProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentCTEProgramAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -6897,6 +7007,7 @@ IF OBJECT_ID(N'edfi.StudentCohortAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentCohortAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentCohortAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentCohortAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentCohortAssociation_ContentVersion] DEFAULT 0,
     [Cohort_DocumentId] bigint NOT NULL,
@@ -6934,6 +7045,7 @@ IF OBJECT_ID(N'edfi.StudentCompetencyObjective', N'U') IS NULL
 CREATE TABLE [edfi].[StudentCompetencyObjective]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentCompetencyObjective_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentCompetencyObjective_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentCompetencyObjective_ContentVersion] DEFAULT 0,
     [GradingPeriodGradingPeriod_DocumentId] bigint NOT NULL,
@@ -7000,6 +7112,7 @@ IF OBJECT_ID(N'edfi.StudentContactAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentContactAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentContactAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentContactAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentContactAssociation_ContentVersion] DEFAULT 0,
     [Contact_DocumentId] bigint NOT NULL,
@@ -7023,6 +7136,7 @@ IF OBJECT_ID(N'edfi.StudentDisciplineIncidentBehaviorAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentDisciplineIncidentBehaviorAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentDisciplineIncidentBehaviorAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentDisciplineIncidentBehaviorAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentDisciplineIncidentBehaviorAssociation_ContentVersion] DEFAULT 0,
     [DisciplineIncident_DocumentId] bigint NOT NULL,
@@ -7067,6 +7181,7 @@ IF OBJECT_ID(N'edfi.StudentDisciplineIncidentNonOffenderAssociation', N'U') IS N
 CREATE TABLE [edfi].[StudentDisciplineIncidentNonOffenderAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentDisciplineIncidentNonOffenderAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentDisciplineIncidentNonOffenderAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentDisciplineIncidentNonOffenderAssociation_ContentVersion] DEFAULT 0,
     [DisciplineIncident_DocumentId] bigint NOT NULL,
@@ -7096,6 +7211,7 @@ IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssessmentAccommodation', N'U') 
 CREATE TABLE [edfi].[StudentEducationOrganizationAssessmentAccommodation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentEducationOrganizationAssessmentAccommodation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentEducationOrganizationAssessmentAccommodation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentEducationOrganizationAssessmentAccommodation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -7125,6 +7241,7 @@ IF OBJECT_ID(N'edfi.StudentEducationOrganizationAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentEducationOrganizationAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentEducationOrganizationAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentEducationOrganizationAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentEducationOrganizationAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -7445,6 +7562,7 @@ IF OBJECT_ID(N'edfi.StudentEducationOrganizationResponsibilityAssociation', N'U'
 CREATE TABLE [edfi].[StudentEducationOrganizationResponsibilityAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentEducationOrganizationResponsibilityAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentEducationOrganizationResponsibilityAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentEducationOrganizationResponsibilityAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -7464,6 +7582,7 @@ IF OBJECT_ID(N'edfi.StudentGradebookEntry', N'U') IS NULL
 CREATE TABLE [edfi].[StudentGradebookEntry]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentGradebookEntry_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentGradebookEntry_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentGradebookEntry_ContentVersion] DEFAULT 0,
     [GradebookEntry_DocumentId] bigint NOT NULL,
@@ -7490,6 +7609,7 @@ IF OBJECT_ID(N'edfi.StudentHealth', N'U') IS NULL
 CREATE TABLE [edfi].[StudentHealth]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentHealth_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentHealth_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentHealth_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -7563,6 +7683,7 @@ IF OBJECT_ID(N'edfi.StudentHomelessProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentHomelessProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentHomelessProgramAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentHomelessProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentHomelessProgramAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -7621,6 +7742,7 @@ IF OBJECT_ID(N'edfi.StudentInterventionAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentInterventionAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentInterventionAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentInterventionAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentInterventionAssociation_ContentVersion] DEFAULT 0,
     [CohortCohort_DocumentId] bigint NULL,
@@ -7660,6 +7782,7 @@ IF OBJECT_ID(N'edfi.StudentInterventionAttendanceEvent', N'U') IS NULL
 CREATE TABLE [edfi].[StudentInterventionAttendanceEvent]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentInterventionAttendanceEvent_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentInterventionAttendanceEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentInterventionAttendanceEvent_ContentVersion] DEFAULT 0,
     [Intervention_DocumentId] bigint NOT NULL,
@@ -7683,6 +7806,7 @@ IF OBJECT_ID(N'edfi.StudentLanguageInstructionProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentLanguageInstructionProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentLanguageInstructionProgramAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentLanguageInstructionProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentLanguageInstructionProgramAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -7758,6 +7882,7 @@ IF OBJECT_ID(N'edfi.StudentMigrantEducationProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentMigrantEducationProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentMigrantEducationProgramAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentMigrantEducationProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentMigrantEducationProgramAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -7822,6 +7947,7 @@ IF OBJECT_ID(N'edfi.StudentNeglectedOrDelinquentProgramAssociation', N'U') IS NU
 CREATE TABLE [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentNeglectedOrDelinquentProgramAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentNeglectedOrDelinquentProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentNeglectedOrDelinquentProgramAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -7880,6 +8006,7 @@ IF OBJECT_ID(N'edfi.StudentProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentProgramAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentProgramAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -7935,6 +8062,7 @@ IF OBJECT_ID(N'edfi.StudentProgramAttendanceEvent', N'U') IS NULL
 CREATE TABLE [edfi].[StudentProgramAttendanceEvent]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentProgramAttendanceEvent_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentProgramAttendanceEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentProgramAttendanceEvent_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -7962,6 +8090,7 @@ IF OBJECT_ID(N'edfi.StudentProgramEvaluation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentProgramEvaluation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentProgramEvaluation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentProgramEvaluation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentProgramEvaluation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NULL,
@@ -8050,6 +8179,7 @@ IF OBJECT_ID(N'edfi.StudentSchoolAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSchoolAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSchoolAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSchoolAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSchoolAssociation_ContentVersion] DEFAULT 0,
     [SchoolId_Unified] bigint NOT NULL,
@@ -8133,6 +8263,7 @@ IF OBJECT_ID(N'edfi.StudentSchoolAttendanceEvent', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSchoolAttendanceEvent]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSchoolAttendanceEvent_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSchoolAttendanceEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSchoolAttendanceEvent_ContentVersion] DEFAULT 0,
     [SchoolId_Unified] bigint NOT NULL,
@@ -8163,6 +8294,7 @@ IF OBJECT_ID(N'edfi.StudentSchoolFoodServiceProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSchoolFoodServiceProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSchoolFoodServiceProgramAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSchoolFoodServiceProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSchoolFoodServiceProgramAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -8219,6 +8351,7 @@ IF OBJECT_ID(N'edfi.StudentSection504ProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSection504ProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSection504ProgramAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSection504ProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSection504ProgramAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -8264,6 +8397,7 @@ IF OBJECT_ID(N'edfi.StudentSectionAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSectionAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSectionAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSectionAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSectionAssociation_ContentVersion] DEFAULT 0,
     [DualCreditEducationOrganization_DocumentId] bigint NULL,
@@ -8314,6 +8448,7 @@ IF OBJECT_ID(N'edfi.StudentSectionAttendanceEvent', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSectionAttendanceEvent]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSectionAttendanceEvent_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSectionAttendanceEvent_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSectionAttendanceEvent_ContentVersion] DEFAULT 0,
     [Section_DocumentId] bigint NOT NULL,
@@ -8357,6 +8492,7 @@ IF OBJECT_ID(N'edfi.StudentSpecialEducationProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSpecialEducationProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSpecialEducationProgramAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSpecialEducationProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSpecialEducationProgramAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -8488,6 +8624,7 @@ IF OBJECT_ID(N'edfi.StudentSpecialEducationProgramEligibilityAssociation', N'U')
 CREATE TABLE [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSpecialEducationProgramEligibilityAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentSpecialEducationProgramEligibilityAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentSpecialEducationProgramEligibilityAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -8525,6 +8662,7 @@ IF OBJECT_ID(N'edfi.StudentTitleIPartAProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentTitleIPartAProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentTitleIPartAProgramAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentTitleIPartAProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentTitleIPartAProgramAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -8581,6 +8719,7 @@ IF OBJECT_ID(N'edfi.StudentTransportation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentTransportation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentTransportation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_StudentTransportation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_StudentTransportation_ContentVersion] DEFAULT 0,
     [Student_DocumentId] bigint NOT NULL,
@@ -8627,6 +8766,7 @@ IF OBJECT_ID(N'edfi.Survey', N'U') IS NULL
 CREATE TABLE [edfi].[Survey]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Survey_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Survey_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Survey_ContentVersion] DEFAULT 0,
     [SchoolYear_Unified] int NOT NULL,
@@ -8655,6 +8795,7 @@ IF OBJECT_ID(N'edfi.SurveyCourseAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyCourseAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyCourseAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyCourseAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveyCourseAssociation_ContentVersion] DEFAULT 0,
     [Course_DocumentId] bigint NOT NULL,
@@ -8673,6 +8814,7 @@ IF OBJECT_ID(N'edfi.SurveyProgramAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyProgramAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveyProgramAssociation_ContentVersion] DEFAULT 0,
     [Program_DocumentId] bigint NOT NULL,
@@ -8692,6 +8834,7 @@ IF OBJECT_ID(N'edfi.SurveyQuestion', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyQuestion]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyQuestion_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyQuestion_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveyQuestion_ContentVersion] DEFAULT 0,
     [Namespace_Unified] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -8745,6 +8888,7 @@ IF OBJECT_ID(N'edfi.SurveyQuestionResponse', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyQuestionResponse]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyQuestionResponse_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyQuestionResponse_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveyQuestionResponse_ContentVersion] DEFAULT 0,
     [Namespace_Unified] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -8800,6 +8944,7 @@ IF OBJECT_ID(N'edfi.SurveyResponse', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyResponse]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyResponse_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyResponse_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveyResponse_ContentVersion] DEFAULT 0,
     [SurveyResponderChoiceContact_DocumentId] bigint NULL,
@@ -8853,6 +8998,7 @@ IF OBJECT_ID(N'edfi.SurveyResponseEducationOrganizationTargetAssociation', N'U')
 CREATE TABLE [edfi].[SurveyResponseEducationOrganizationTargetAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyResponseEducationOrganizationTargetAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyResponseEducationOrganizationTargetAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveyResponseEducationOrganizationTargetAssociation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -8871,6 +9017,7 @@ IF OBJECT_ID(N'edfi.SurveyResponseStaffTargetAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[SurveyResponseStaffTargetAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyResponseStaffTargetAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyResponseStaffTargetAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveyResponseStaffTargetAssociation_ContentVersion] DEFAULT 0,
     [Staff_DocumentId] bigint NOT NULL,
@@ -8889,6 +9036,7 @@ IF OBJECT_ID(N'edfi.SurveySection', N'U') IS NULL
 CREATE TABLE [edfi].[SurveySection]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySection_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySection_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveySection_ContentVersion] DEFAULT 0,
     [Survey_DocumentId] bigint NOT NULL,
@@ -8905,6 +9053,7 @@ IF OBJECT_ID(N'edfi.SurveySectionAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[SurveySectionAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveySectionAssociation_ContentVersion] DEFAULT 0,
     [Section_DocumentId] bigint NOT NULL,
@@ -8926,6 +9075,7 @@ IF OBJECT_ID(N'edfi.SurveySectionResponse', N'U') IS NULL
 CREATE TABLE [edfi].[SurveySectionResponse]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionResponse_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionResponse_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveySectionResponse_ContentVersion] DEFAULT 0,
     [Namespace_Unified] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -8950,6 +9100,7 @@ IF OBJECT_ID(N'edfi.SurveySectionResponseEducationOrganizationTargetAssociation'
 CREATE TABLE [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionResponseEducationOrganizationTargetAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionResponseEducationOrganizationTargetAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveySectionResponseEducationOrganizationTargetAssociation_ContentVersion] DEFAULT 0,
     [Namespace_Unified] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -8973,6 +9124,7 @@ IF OBJECT_ID(N'edfi.SurveySectionResponseStaffTargetAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[SurveySectionResponseStaffTargetAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionResponseStaffTargetAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionResponseStaffTargetAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveySectionResponseStaffTargetAssociation_ContentVersion] DEFAULT 0,
     [Namespace_Unified] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -8996,6 +9148,7 @@ IF OBJECT_ID(N'tpdm.Candidate', N'U') IS NULL
 CREATE TABLE [tpdm].[Candidate]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Candidate_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Candidate_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Candidate_ContentVersion] DEFAULT 0,
     [Person_DocumentId] bigint NULL,
@@ -9209,6 +9362,7 @@ IF OBJECT_ID(N'tpdm.CandidateEducatorPreparationProgramAssociation', N'U') IS NU
 CREATE TABLE [tpdm].[CandidateEducatorPreparationProgramAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CandidateEducatorPreparationProgramAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_CandidateEducatorPreparationProgramAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_CandidateEducatorPreparationProgramAssociation_ContentVersion] DEFAULT 0,
     [Candidate_DocumentId] bigint NOT NULL,
@@ -9262,6 +9416,7 @@ IF OBJECT_ID(N'tpdm.EducatorPreparationProgram', N'U') IS NULL
 CREATE TABLE [tpdm].[EducatorPreparationProgram]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducatorPreparationProgram_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EducatorPreparationProgram_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EducatorPreparationProgram_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -9292,6 +9447,7 @@ IF OBJECT_ID(N'tpdm.Evaluation', N'U') IS NULL
 CREATE TABLE [tpdm].[Evaluation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Evaluation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Evaluation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Evaluation_ContentVersion] DEFAULT 0,
     [PerformanceEvaluation_DocumentId] bigint NOT NULL,
@@ -9331,6 +9487,7 @@ IF OBJECT_ID(N'tpdm.EvaluationElement', N'U') IS NULL
 CREATE TABLE [tpdm].[EvaluationElement]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EvaluationElement_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EvaluationElement_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EvaluationElement_ContentVersion] DEFAULT 0,
     [EvaluationObjective_DocumentId] bigint NOT NULL,
@@ -9371,6 +9528,7 @@ IF OBJECT_ID(N'tpdm.EvaluationElementRating', N'U') IS NULL
 CREATE TABLE [tpdm].[EvaluationElementRating]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EvaluationElementRating_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EvaluationElementRating_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EvaluationElementRating_ContentVersion] DEFAULT 0,
     [EducationOrganizationId_Unified] bigint NOT NULL,
@@ -9439,6 +9597,7 @@ IF OBJECT_ID(N'tpdm.EvaluationObjective', N'U') IS NULL
 CREATE TABLE [tpdm].[EvaluationObjective]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EvaluationObjective_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EvaluationObjective_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EvaluationObjective_ContentVersion] DEFAULT 0,
     [Evaluation_DocumentId] bigint NOT NULL,
@@ -9479,6 +9638,7 @@ IF OBJECT_ID(N'tpdm.EvaluationObjectiveRating', N'U') IS NULL
 CREATE TABLE [tpdm].[EvaluationObjectiveRating]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EvaluationObjectiveRating_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EvaluationObjectiveRating_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EvaluationObjectiveRating_ContentVersion] DEFAULT 0,
     [EducationOrganizationId_Unified] bigint NOT NULL,
@@ -9541,6 +9701,7 @@ IF OBJECT_ID(N'tpdm.EvaluationRating', N'U') IS NULL
 CREATE TABLE [tpdm].[EvaluationRating]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EvaluationRating_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_EvaluationRating_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_EvaluationRating_ContentVersion] DEFAULT 0,
     [EducationOrganizationId_Unified] bigint NOT NULL,
@@ -9622,6 +9783,7 @@ IF OBJECT_ID(N'tpdm.FinancialAid', N'U') IS NULL
 CREATE TABLE [tpdm].[FinancialAid]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_FinancialAid_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_FinancialAid_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_FinancialAid_ContentVersion] DEFAULT 0,
     [Student_DocumentId] bigint NOT NULL,
@@ -9641,6 +9803,7 @@ IF OBJECT_ID(N'tpdm.PerformanceEvaluation', N'U') IS NULL
 CREATE TABLE [tpdm].[PerformanceEvaluation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_PerformanceEvaluation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_PerformanceEvaluation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_PerformanceEvaluation_ContentVersion] DEFAULT 0,
     [EducationOrganization_DocumentId] bigint NOT NULL,
@@ -9690,6 +9853,7 @@ IF OBJECT_ID(N'tpdm.PerformanceEvaluationRating', N'U') IS NULL
 CREATE TABLE [tpdm].[PerformanceEvaluationRating]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_PerformanceEvaluationRating_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_PerformanceEvaluationRating_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_PerformanceEvaluationRating_ContentVersion] DEFAULT 0,
     [PerformanceEvaluation_DocumentId] bigint NOT NULL,
@@ -9754,6 +9918,7 @@ IF OBJECT_ID(N'tpdm.RubricDimension', N'U') IS NULL
 CREATE TABLE [tpdm].[RubricDimension]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_RubricDimension_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_RubricDimension_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_RubricDimension_ContentVersion] DEFAULT 0,
     [EvaluationElement_DocumentId] bigint NOT NULL,
@@ -9779,6 +9944,7 @@ IF OBJECT_ID(N'tpdm.SurveyResponsePersonTargetAssociation', N'U') IS NULL
 CREATE TABLE [tpdm].[SurveyResponsePersonTargetAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyResponsePersonTargetAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveyResponsePersonTargetAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveyResponsePersonTargetAssociation_ContentVersion] DEFAULT 0,
     [Person_DocumentId] bigint NOT NULL,
@@ -9798,6 +9964,7 @@ IF OBJECT_ID(N'tpdm.SurveySectionResponsePersonTargetAssociation', N'U') IS NULL
 CREATE TABLE [tpdm].[SurveySectionResponsePersonTargetAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionResponsePersonTargetAssociation_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_SurveySectionResponsePersonTargetAssociation_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_SurveySectionResponsePersonTargetAssociation_ContentVersion] DEFAULT 0,
     [Namespace_Unified] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -41217,11 +41384,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[AcademicWeek] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[AcademicWeek] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[AcademicWeek] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -41346,11 +41526,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[AccountabilityRating] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[AccountabilityRating] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[AccountabilityRating] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -41481,11 +41674,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Assessment] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Assessment] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Assessment] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -41648,11 +41854,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[AssessmentAdministration] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[AssessmentAdministration] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[AssessmentAdministration] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -41827,11 +42046,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[AssessmentAdministrationParticipation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[AssessmentAdministrationParticipation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[AssessmentAdministrationParticipation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -42126,11 +42358,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[AssessmentBatteryPart] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[AssessmentBatteryPart] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[AssessmentBatteryPart] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -42337,11 +42582,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[AssessmentItem] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[AssessmentItem] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[AssessmentItem] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -42776,11 +43034,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[AssessmentScoreRangeLearningStandard] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[AssessmentScoreRangeLearningStandard] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[AssessmentScoreRangeLearningStandard] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -42987,11 +43258,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[BalanceSheetDimension] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[BalanceSheetDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[BalanceSheetDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -43154,11 +43438,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[BellSchedule] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[BellSchedule] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[BellSchedule] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -43397,11 +43694,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Calendar] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Calendar] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Calendar] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -43532,11 +43842,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[CalendarDate] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[CalendarDate] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[CalendarDate] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -43749,11 +44072,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[ChartOfAccount] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[ChartOfAccount] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[ChartOfAccount] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -43922,11 +44258,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[ClassPeriod] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[ClassPeriod] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[ClassPeriod] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -44089,11 +44438,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Cohort] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Cohort] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Cohort] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -44338,11 +44700,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -44932,11 +45307,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -45331,11 +45719,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[CommunityProviderLicense] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[CommunityProviderLicense] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[CommunityProviderLicense] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -45466,11 +45867,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[CompetencyObjective] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[CompetencyObjective] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[CompetencyObjective] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -45610,11 +46024,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Contact] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Contact] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Contact] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -46075,11 +46502,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Course] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Course] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Course] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -46432,11 +46872,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[CourseOffering] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[CourseOffering] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[CourseOffering] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -46687,11 +47140,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -47139,11 +47605,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Credential] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Credential] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Credential] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -47397,11 +47876,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[CrisisEvent] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[CrisisEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[CrisisEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -47520,11 +48012,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[DescriptorMapping] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[DescriptorMapping] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[DescriptorMapping] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -47699,11 +48204,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[DisciplineAction] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[DisciplineAction] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[DisciplineAction] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -47963,11 +48481,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[DisciplineIncident] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[DisciplineIncident] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[DisciplineIncident] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -48206,11 +48737,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[EducationContent] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[EducationContent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[EducationContent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -48601,11 +49145,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[EducationOrganizationInterventionPrescriptionAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[EducationOrganizationInterventionPrescriptionAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[EducationOrganizationInterventionPrescriptionAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -48818,11 +49375,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -48989,11 +49559,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[EducationOrganizationNetworkAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[EducationOrganizationNetworkAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[EducationOrganizationNetworkAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -49346,11 +49929,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[EducationOrganizationPeerAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[EducationOrganizationPeerAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[EducationOrganizationPeerAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -49670,11 +50266,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -50069,11 +50678,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[EvaluationRubricDimension] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[EvaluationRubricDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[EvaluationRubricDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -50261,11 +50883,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[FeederSchoolAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[FeederSchoolAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[FeederSchoolAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -50396,11 +51031,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[FunctionDimension] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[FunctionDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[FunctionDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -50563,11 +51211,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[FundDimension] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[FundDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[FundDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -50730,11 +51391,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Grade] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Grade] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Grade] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -50972,11 +51646,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[GradebookEntry] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[GradebookEntry] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[GradebookEntry] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -51139,11 +51826,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[GradingPeriod] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[GradingPeriod] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[GradingPeriod] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -51289,11 +51989,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -51661,11 +52374,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Intervention] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Intervention] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Intervention] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -52094,11 +52820,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -52527,11 +53266,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -52998,11 +53750,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[LearningStandard] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[LearningStandard] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[LearningStandard] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53203,11 +53968,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[LearningStandardEquivalenceAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[LearningStandardEquivalenceAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[LearningStandardEquivalenceAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53414,11 +54192,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[LocalAccount] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[LocalAccount] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[LocalAccount] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53587,11 +54378,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[LocalActual] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[LocalActual] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[LocalActual] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53728,11 +54532,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[LocalBudget] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[LocalBudget] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[LocalBudget] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -53869,11 +54686,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[LocalContractedStaff] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[LocalContractedStaff] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[LocalContractedStaff] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -54310,11 +55140,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -54785,11 +55628,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[LocalEncumbrance] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[LocalEncumbrance] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[LocalEncumbrance] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -54926,11 +55782,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[LocalPayroll] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[LocalPayroll] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[LocalPayroll] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -55082,11 +55951,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Location] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Location] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Location] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -55211,11 +56093,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[ObjectDimension] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[ObjectDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[ObjectDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -55378,11 +56273,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[ObjectiveAssessment] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[ObjectiveAssessment] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[ObjectiveAssessment] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -55665,11 +56573,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[OpenStaffPosition] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[OpenStaffPosition] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[OpenStaffPosition] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -55870,11 +56791,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[OperationalUnitDimension] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[OperationalUnitDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[OperationalUnitDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -56232,11 +57166,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -56633,11 +57580,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Person] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Person] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Person] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -56771,11 +57731,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[PostSecondaryEvent] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[PostSecondaryEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[PostSecondaryEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -57006,11 +57979,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -57443,11 +58429,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Program] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Program] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Program] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -57625,11 +58624,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[ProgramDimension] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[ProgramDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[ProgramDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -57792,11 +58804,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[ProgramEvaluation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[ProgramEvaluation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[ProgramEvaluation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -57972,11 +58997,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[ProgramEvaluationElement] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[ProgramEvaluationElement] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[ProgramEvaluationElement] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -58234,11 +59272,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[ProgramEvaluationObjective] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[ProgramEvaluationObjective] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[ProgramEvaluationObjective] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -58534,11 +59585,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[ProjectDimension] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[ProjectDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[ProjectDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -58701,11 +59765,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[ReportCard] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[ReportCard] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[ReportCard] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -58986,11 +60063,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[RestraintEvent] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[RestraintEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[RestraintEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59401,11 +60491,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[School] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[School] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[School] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59876,11 +60979,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[SchoolYearType] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[SchoolYearType] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[SchoolYearType] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -59999,11 +61115,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Section] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Section] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Section] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -60146,11 +61275,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[SectionAttendanceTakenEvent] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[SectionAttendanceTakenEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[SectionAttendanceTakenEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -60495,11 +61637,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Session] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Session] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Session] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -60706,11 +61861,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[SourceDimension] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[SourceDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[SourceDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -60873,11 +62041,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Staff] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Staff] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Staff] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -60996,11 +62177,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StaffAbsenceEvent] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StaffAbsenceEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StaffAbsenceEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -61263,11 +62457,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StaffCohortAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StaffCohortAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StaffCohortAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -61451,11 +62658,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StaffDisciplineIncidentAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StaffDisciplineIncidentAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StaffDisciplineIncidentAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -61633,11 +62853,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StaffEducationOrganizationAssignmentAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StaffEducationOrganizationAssignmentAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StaffEducationOrganizationAssignmentAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -61792,11 +63025,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StaffEducationOrganizationContactAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StaffEducationOrganizationContactAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StaffEducationOrganizationContactAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -62012,11 +63258,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StaffEducationOrganizationEmploymentAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StaffEducationOrganizationEmploymentAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StaffEducationOrganizationEmploymentAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -62399,11 +63658,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StaffLeave] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StaffLeave] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StaffLeave] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -62628,11 +63900,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StaffProgramAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StaffProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StaffProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -62869,11 +64154,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StaffSchoolAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StaffSchoolAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StaffSchoolAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -63098,11 +64396,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StaffSectionAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StaffSectionAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StaffSectionAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -63462,11 +64773,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -63937,11 +65261,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Student] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Student] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Student] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -64060,11 +65397,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -64409,11 +65759,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -64603,11 +65966,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentAssessmentEducationOrganizationAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentAssessmentEducationOrganizationAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentAssessmentEducationOrganizationAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -64850,11 +66226,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentAssessmentRegistration] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentAssessmentRegistration] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentAssessmentRegistration] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -65088,11 +66477,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -65502,11 +66904,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentCTEProgramAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentCTEProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentCTEProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -65689,11 +67104,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentCohortAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentCohortAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentCohortAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -65877,11 +67305,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentCompetencyObjective] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentCompetencyObjective] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentCompetencyObjective] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -66145,11 +67586,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentContactAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentContactAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentContactAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -66292,11 +67746,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentDisciplineIncidentBehaviorAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentDisciplineIncidentBehaviorAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentDisciplineIncidentBehaviorAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -66527,11 +67994,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentDisciplineIncidentNonOffenderAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentDisciplineIncidentNonOffenderAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentDisciplineIncidentNonOffenderAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -66709,11 +68189,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentEducationOrganizationAssessmentAccommodation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentEducationOrganizationAssessmentAccommodation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentEducationOrganizationAssessmentAccommodation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -66885,11 +68378,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -67745,11 +69251,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentEducationOrganizationResponsibilityAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentEducationOrganizationResponsibilityAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentEducationOrganizationResponsibilityAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -67904,11 +69423,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentGradebookEntry] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentGradebookEntry] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentGradebookEntry] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -68048,11 +69580,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentHealth] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentHealth] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentHealth] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -68394,11 +69939,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentHomelessProgramAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentHomelessProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentHomelessProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -68619,11 +70177,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentInterventionAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentInterventionAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentInterventionAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -68801,11 +70372,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentInterventionAttendanceEvent] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentInterventionAttendanceEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentInterventionAttendanceEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -69022,11 +70606,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentLanguageInstructionProgramAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentLanguageInstructionProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentLanguageInstructionProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -69303,11 +70900,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentMigrantEducationProgramAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentMigrantEducationProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentMigrantEducationProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -69546,11 +71156,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -69865,11 +71488,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentProgramAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -70052,11 +71688,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentProgramAttendanceEvent] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentProgramAttendanceEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentProgramAttendanceEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -70238,11 +71887,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentProgramEvaluation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentProgramEvaluation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentProgramEvaluation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -70553,11 +72215,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentSchoolAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentSchoolAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentSchoolAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -70773,11 +72448,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentSchoolAttendanceEvent] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentSchoolAttendanceEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentSchoolAttendanceEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -71000,11 +72688,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentSchoolFoodServiceProgramAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentSchoolFoodServiceProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentSchoolFoodServiceProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -71243,11 +72944,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentSection504ProgramAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentSection504ProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentSection504ProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -71392,11 +73106,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentSectionAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentSectionAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentSectionAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -71598,11 +73325,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentSectionAttendanceEvent] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentSectionAttendanceEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentSectionAttendanceEvent] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -71875,11 +73615,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72214,11 +73967,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentSpecialEducationProgramEligibilityAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentSpecialEducationProgramEligibilityAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentSpecialEducationProgramEligibilityAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72441,11 +74207,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentTitleIPartAProgramAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentTitleIPartAProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentTitleIPartAProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72628,11 +74407,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[StudentTransportation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[StudentTransportation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[StudentTransportation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -72880,11 +74672,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Survey] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Survey] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Survey] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -73009,11 +74814,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[SurveyCourseAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[SurveyCourseAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[SurveyCourseAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -73150,11 +74968,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[SurveyProgramAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[SurveyProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[SurveyProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -73306,11 +75137,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[SurveyQuestion] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[SurveyQuestion] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[SurveyQuestion] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -73479,11 +75323,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[SurveyQuestionResponse] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[SurveyQuestionResponse] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[SurveyQuestionResponse] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -73734,11 +75591,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[SurveyResponse] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[SurveyResponse] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[SurveyResponse] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -73869,11 +75739,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[SurveyResponseEducationOrganizationTargetAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[SurveyResponseEducationOrganizationTargetAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[SurveyResponseEducationOrganizationTargetAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -74010,11 +75893,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[SurveyResponseStaffTargetAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[SurveyResponseStaffTargetAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[SurveyResponseStaffTargetAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -74198,11 +76094,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[SurveySection] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[SurveySection] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[SurveySection] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -74333,11 +76242,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[SurveySectionAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[SurveySectionAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[SurveySectionAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -74492,11 +76414,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[SurveySectionResponse] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[SurveySectionResponse] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[SurveySectionResponse] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -74633,11 +76568,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -74780,11 +76728,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[SurveySectionResponseStaffTargetAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[SurveySectionResponseStaffTargetAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[SurveySectionResponseStaffTargetAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -74936,11 +76897,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [tpdm].[Candidate] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [tpdm].[Candidate] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [tpdm].[Candidate] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -75211,11 +77185,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [tpdm].[CandidateEducatorPreparationProgramAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [tpdm].[CandidateEducatorPreparationProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [tpdm].[CandidateEducatorPreparationProgramAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -75785,11 +77772,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [tpdm].[EducatorPreparationProgram] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [tpdm].[EducatorPreparationProgram] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [tpdm].[EducatorPreparationProgram] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -75967,11 +77967,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [tpdm].[Evaluation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [tpdm].[Evaluation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [tpdm].[Evaluation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -76153,11 +78166,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [tpdm].[EvaluationElement] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [tpdm].[EvaluationElement] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [tpdm].[EvaluationElement] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -76351,11 +78377,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [tpdm].[EvaluationElementRating] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [tpdm].[EvaluationElementRating] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [tpdm].[EvaluationElementRating] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -76697,11 +78736,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [tpdm].[EvaluationObjective] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [tpdm].[EvaluationObjective] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [tpdm].[EvaluationObjective] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -76889,11 +78941,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [tpdm].[EvaluationObjectiveRating] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [tpdm].[EvaluationObjectiveRating] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [tpdm].[EvaluationObjectiveRating] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -77229,11 +79294,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [tpdm].[EvaluationRating] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [tpdm].[EvaluationRating] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [tpdm].[EvaluationRating] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -77601,11 +79679,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [tpdm].[FinancialAid] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [tpdm].[FinancialAid] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [tpdm].[FinancialAid] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -77754,11 +79845,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [tpdm].[PerformanceEvaluation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [tpdm].[PerformanceEvaluation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [tpdm].[PerformanceEvaluation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -77972,11 +80076,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [tpdm].[PerformanceEvaluationRating] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [tpdm].[PerformanceEvaluationRating] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [tpdm].[PerformanceEvaluationRating] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -78287,11 +80404,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [tpdm].[RubricDimension] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [tpdm].[RubricDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [tpdm].[RubricDimension] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -78567,11 +80697,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [tpdm].[SurveyResponsePersonTargetAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [tpdm].[SurveyResponsePersonTargetAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [tpdm].[SurveyResponsePersonTargetAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -78723,11 +80866,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [tpdm].[SurveySectionResponsePersonTargetAssociation] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [tpdm].[SurveySectionResponsePersonTargetAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [tpdm].[SurveySectionResponsePersonTargetAssociation] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN

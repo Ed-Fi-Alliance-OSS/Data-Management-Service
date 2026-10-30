@@ -245,6 +245,7 @@ CREATE TABLE [dms].[Descriptor]
     [Uri] AS ([Namespace] + N'#' + [CodeValue]),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DescriptorId])
 );
 
@@ -634,11 +635,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [dms].[Descriptor] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [dms].[Descriptor] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [dms].[Descriptor] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
 END;
 GO
@@ -738,6 +752,7 @@ IF OBJECT_ID(N'edfi.ParentResource', N'U') IS NULL
 CREATE TABLE [edfi].[ParentResource]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ParentResource_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ParentResource_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ParentResource_ContentVersion] DEFAULT 0,
     [ParentResourceId] int NOT NULL,
@@ -774,6 +789,7 @@ IF OBJECT_ID(N'edfi.Sponsor', N'U') IS NULL
 CREATE TABLE [edfi].[Sponsor]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Sponsor_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Sponsor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Sponsor_ContentVersion] DEFAULT 0,
     [SponsorName] nvarchar(30) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
@@ -1002,11 +1018,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[ParentResource] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[ParentResource] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[ParentResource] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -1163,11 +1192,24 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Sponsor] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Sponsor] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Sponsor] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
