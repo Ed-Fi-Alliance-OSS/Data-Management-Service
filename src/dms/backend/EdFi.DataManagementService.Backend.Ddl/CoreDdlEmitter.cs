@@ -1574,7 +1574,7 @@ public sealed class CoreDdlEmitter
                     writer.AppendLine();
                 }
                 writer.AppendLine(")");
-                EmitPgsqlDescriptorStampUpdateFromVersion(writer, descriptorTable);
+                EmitPgsqlDescriptorStampUpdateFromVersion(writer, descriptorTable, initializeCreatedAt: true);
             }
             writer.AppendLine("ELSIF TG_OP = 'UPDATE' THEN");
             using (writer.Indent())
@@ -1601,7 +1601,11 @@ public sealed class CoreDdlEmitter
                     writer.AppendLine();
                 }
                 writer.AppendLine(")");
-                EmitPgsqlDescriptorStampUpdateFromVersion(writer, descriptorTable);
+                EmitPgsqlDescriptorStampUpdateFromVersion(
+                    writer,
+                    descriptorTable,
+                    initializeCreatedAt: false
+                );
             }
             writer.AppendLine("ELSIF TG_OP = 'DELETE' THEN");
             using (writer.Indent())
@@ -1650,7 +1654,16 @@ public sealed class CoreDdlEmitter
         writer.AppendLine();
     }
 
-    private void EmitPgsqlDescriptorStampUpdateFromVersion(SqlWriter writer, string descriptorTable)
+    /// <summary>
+    /// Emits the descriptor owner stamp from the captured document version. Only the INSERT branch
+    /// initializes <c>ContentCreatedAt</c>; <c>now()</c> is the transaction start time, so it equals the
+    /// initial <c>ContentLastModifiedAt</c>.
+    /// </summary>
+    private void EmitPgsqlDescriptorStampUpdateFromVersion(
+        SqlWriter writer,
+        string descriptorTable,
+        bool initializeCreatedAt
+    )
     {
         writer.Append("UPDATE ");
         writer.Append(descriptorTable);
@@ -1662,6 +1675,12 @@ public sealed class CoreDdlEmitter
         writer.Append(", ");
         writer.Append(Quote("ContentLastModifiedAt"));
         writer.Append(" = now()");
+        if (initializeCreatedAt)
+        {
+            writer.Append(", ");
+            writer.Append(Quote("ContentCreatedAt"));
+            writer.Append(" = now()");
+        }
         writer.AppendLine();
         writer.AppendLine("FROM stamped");
         // The captured version is keyed by the owning document, not the compact descriptor identity.
