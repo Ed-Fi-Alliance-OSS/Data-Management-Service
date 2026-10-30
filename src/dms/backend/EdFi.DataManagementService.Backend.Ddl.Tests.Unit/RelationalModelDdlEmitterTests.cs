@@ -1043,6 +1043,12 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     }
 
     [Test]
+    public void It_should_not_diff_the_root_creation_timestamp_in_the_no_op_predicate()
+    {
+        GetRootStampFunctionBody().Should().NotContain("OLD.\"ContentCreatedAt\" IS DISTINCT FROM");
+    }
+
+    [Test]
     public void It_should_short_circuit_no_op_updates_by_comparing_stored_root_columns()
     {
         _ddl.Should()
@@ -1617,6 +1623,13 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
 
         triggerBody.Should().NotContain("UPDATE([ContentVersion])");
         triggerBody.Should().NotContain("UPDATE([ContentLastModifiedAt])");
+        triggerBody.Should().NotContain("UPDATE([ContentCreatedAt])");
+    }
+
+    [Test]
+    public void It_should_not_diff_the_root_creation_timestamp_in_the_no_op_filter()
+    {
+        GetSchoolStampTriggerBody().Should().NotContain("i.[ContentCreatedAt] <> del.[ContentCreatedAt]");
     }
 
     [Test]
@@ -3012,6 +3025,17 @@ internal static class PgsqlDocumentStampingFixture
                 {
                     IsWritable = false,
                 },
+                new DbColumnModel(
+                    new DbColumnName("ContentCreatedAt"),
+                    ColumnKind.AuthoritativeContentCreatedAt,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
             ],
             []
         )
@@ -3361,6 +3385,17 @@ internal static class MssqlDocumentStampingFixture
                 new DbColumnModel(
                     contentLastModifiedAtColumn,
                     ColumnKind.AuthoritativeContentLastModifiedAt,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
+                new DbColumnModel(
+                    new DbColumnName("ContentCreatedAt"),
+                    ColumnKind.AuthoritativeContentCreatedAt,
                     new RelationalScalarType(ScalarKind.DateTime),
                     IsNullable: false,
                     SourceJsonPath: null,

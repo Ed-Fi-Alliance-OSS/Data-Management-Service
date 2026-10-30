@@ -470,8 +470,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Resolves the named default constraint for a backend-owned root stamp column:
-    /// <c>ContentVersion</c> defaults to a non-null sentinel and
-    /// <c>ContentLastModifiedAt</c> defaults to the current UTC timestamp. Both use a
+    /// <c>ContentVersion</c> defaults to a non-null sentinel, and <c>ContentLastModifiedAt</c> and
+    /// <c>ContentCreatedAt</c> default to the current UTC timestamp. All use a
     /// <c>DF_&lt;Table&gt;_&lt;Column&gt;</c> constraint name (rendered by SQL Server; ignored by PostgreSQL),
     /// The trigger overwrites these defaults at write time.
     /// </summary>
@@ -489,6 +489,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 defaultExpression = "0";
                 return true;
             case ColumnKind.AuthoritativeContentLastModifiedAt:
+            case ColumnKind.AuthoritativeContentCreatedAt:
                 constraintName = BuildStampDefaultConstraintName(table, column);
                 defaultExpression = _dialect.CurrentTimestampDefaultExpression;
                 return true;
@@ -3312,7 +3313,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         string triggerName
     )
     {
-        // Exclude the backend-owned version mirror and authoritative timestamp: they are stamp targets, not client
+        // Exclude the backend-owned version mirror and authoritative timestamps: they are stamp targets, not client
         // content, so a stamp-only mirror update must not be treated as a representation change. This
         // matches change-queries.md invariant #5 (affectedDocs excludes rows differing only in stamp
         // columns) and keeps mirror columns out of the no-op diff predicate.
@@ -3323,6 +3324,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     is not (
                         ColumnKind.MirroredContentVersion
                         or ColumnKind.AuthoritativeContentLastModifiedAt
+                        or ColumnKind.AuthoritativeContentCreatedAt
                     )
             )
             .Select(column => column.ColumnName)

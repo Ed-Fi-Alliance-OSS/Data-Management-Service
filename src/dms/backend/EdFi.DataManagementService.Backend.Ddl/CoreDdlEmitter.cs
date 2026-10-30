@@ -474,6 +474,9 @@ public sealed class CoreDdlEmitter
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentLastModifiedAt"), DateTimeType, false, "DF_Descriptor_ContentLastModifiedAt", _dialect.CurrentTimestampDefaultExpression)},"
             );
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentCreatedAt"), DateTimeType, false, "DF_Descriptor_ContentCreatedAt", _dialect.CurrentTimestampDefaultExpression)},"
+            );
             writer.AppendLine(_dialect.RenderNamedPrimaryKeyClause("PK_Descriptor", [Col("DescriptorId")]));
         }
         writer.AppendLine(");");
