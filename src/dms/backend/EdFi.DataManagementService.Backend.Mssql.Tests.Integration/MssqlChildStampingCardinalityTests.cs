@@ -193,6 +193,84 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     }
 
     [Test]
+    public async Task It_keeps_creation_and_last_modified_equal_when_a_creating_transaction_inserts_children()
+    {
+        var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
+
+        // The write path's shape: the root, then child and _ext rows as later statements of one
+        // transaction. The delay only guarantees a per-statement clock would read a later value; the
+        // assertion holds however long the statements take.
+        var created = (
+            await _database.QueryRowsAsync(
+                """
+                DECLARE @Inserted TABLE ([DocumentId] bigint);
+                BEGIN TRANSACTION;
+                INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
+                OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
+                VALUES (@documentUuid, @resourceKeyId);
+                DECLARE @documentId bigint = (SELECT TOP (1) [DocumentId] FROM @Inserted);
+                INSERT INTO [edfi].[School] ([DocumentId], [SchoolId]) VALUES (@documentId, 930);
+                DECLARE @rootInsertVersion bigint = (SELECT [ContentVersion] FROM [dms].[Document] WHERE [DocumentId] = @documentId);
+                WAITFOR DELAY '00:00:00.020';
+                INSERT INTO [edfi].[SchoolAddress] ([Ordinal], [School_DocumentId], [City])
+                VALUES (1, @documentId, N'City-930');
+                WAITFOR DELAY '00:00:00.020';
+                INSERT INTO [sample].[SchoolExtension] ([DocumentId], [CampusCode]) VALUES (@documentId, N'Campus-930');
+                COMMIT;
+                SELECT @documentId AS [DocumentId], @rootInsertVersion AS [RootInsertVersion];
+                """,
+                new SqlParameter("@documentUuid", Guid.NewGuid()),
+                new SqlParameter("@resourceKeyId", resourceKeyId)
+            )
+        ).Single();
+
+        var after = await ReadStampPairAsync(Convert.ToInt64(created["DocumentId"]));
+        after
+            .Owner.ContentLastModifiedAt.Should()
+            .Be(
+                after.Owner.ContentCreatedAt,
+                "every stamp in the creating transaction reuses the root insert's clock value"
+            );
+        // The child and _ext inserts still stamp the root with one new version each.
+        after.DocumentVersion.Should().Be(Convert.ToInt64(created["RootInsertVersion"]) + 2);
+        after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
+    }
+
+    [Test]
+    public async Task It_reads_a_fresh_stamp_clock_for_each_transaction_on_one_connection()
+    {
+        var documentId = await SeedSchoolWithAddressesAsync(940, 1);
+
+        // Both transactions run on one session, so the second sees the first one's stored clock value
+        // and must reject it because the transaction differs. The delay only guarantees the clock moves.
+        var rows = await _database.QueryRowsAsync(
+            """
+            DECLARE @first datetime2(7);
+            BEGIN TRANSACTION;
+            UPDATE [edfi].[SchoolAddress] SET [City] = N'City-940-a' WHERE [School_DocumentId] = @documentId;
+            COMMIT;
+            SELECT @first = [ContentLastModifiedAt] FROM [edfi].[School] WHERE [DocumentId] = @documentId;
+            WAITFOR DELAY '00:00:00.020';
+            BEGIN TRANSACTION;
+            UPDATE [edfi].[SchoolAddress] SET [City] = N'City-940-b' WHERE [School_DocumentId] = @documentId;
+            COMMIT;
+            SELECT @first AS [FirstStamp], [ContentLastModifiedAt] AS [SecondStamp]
+            FROM [edfi].[School] WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", documentId)
+        );
+
+        var row = rows.Single();
+        Convert
+            .ToDateTime(row["SecondStamp"])
+            .Should()
+            .BeAfter(
+                Convert.ToDateTime(row["FirstStamp"]),
+                "a new transaction must not reuse the stored value"
+            );
+    }
+
+    [Test]
     public async Task It_terminates_stamp_maintenance_with_recursive_triggers_enabled()
     {
         await _database.ExecuteNonQueryAsync("ALTER DATABASE CURRENT SET RECURSIVE_TRIGGERS ON;");
