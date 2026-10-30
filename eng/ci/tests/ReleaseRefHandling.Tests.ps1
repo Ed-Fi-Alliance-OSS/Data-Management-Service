@@ -201,9 +201,9 @@ Describe 'on-prerelease.yml' {
     ) {
         # Expanding the expression as well lets this run against the old, interpolating text too,
         # which is how the derived values were shown to be unchanged.
-        $script = script:Expand-Expression (script:Get-StepScript $script:prerelease $Job 'Prepare release version') @{ 'github.event.release.tag_name' = $Tag }
+        $script = script:Expand-Expression (script:Get-StepScript -Workflow $script:prerelease -Job $Job -StepName 'Prepare release version') @{ 'github.event.release.tag_name' = $Tag }
 
-        $result = script:Invoke-Bash $script @{ TAG_NAME = $Tag } (script:New-WorkDir)
+        $result = script:Invoke-Bash -Script $script -Environment @{ TAG_NAME = $Tag } -WorkDir (script:New-WorkDir)
 
         $result.ExitCode | Should -Be 0
         $result.Outputs['semver'] | Should -BeExactly $Semver
@@ -218,9 +218,9 @@ Describe 'on-prerelease.yml' {
         $jobText = script:Get-Job $script:prerelease $Job
         foreach ($tag in $script:hostileRef) {
             $workDir = script:New-WorkDir
-            $script = script:Expand-Expression (script:Get-StepScript $script:prerelease $Job 'Prepare release version') @{ 'github.event.release.tag_name' = $tag }
+            $script = script:Expand-Expression (script:Get-StepScript -Workflow $script:prerelease -Job $Job -StepName 'Prepare release version') @{ 'github.event.release.tag_name' = $tag }
 
-            $null = script:Invoke-Bash $script @{ TAG_NAME = $tag } $workDir
+            $null = script:Invoke-Bash -Script $script -Environment @{ TAG_NAME = $tag } -WorkDir $workDir
 
             Join-Path $workDir 'pwned' | Should -Not -Exist -Because "the tag '$tag' is data"
         }
@@ -228,11 +228,11 @@ Describe 'on-prerelease.yml' {
     }
 
     It 'composes the Configuration Service image tags from REF unchanged' {
-        $step = script:Get-StepScript $script:prerelease 'docker-publish-cs' 'Prepare Config Tags'
+        $step = script:Get-StepScript -Workflow $script:prerelease -Job 'docker-publish-cs' -StepName 'Prepare Config Tags'
         $name = @{ 'env.CONFIG_IMAGE_NAME' = 'edfialliance/ed-fi-api-configuration-service' }
 
-        $tagged = script:Invoke-Bash (script:Expand-Expression $step ($name + @{ 'env.REF' = 'cs-pre-8.1.0-beta.0.1' })) @{ REF = 'cs-pre-8.1.0-beta.0.1'; TAGGED_RELEASE = 'true' } (script:New-WorkDir)
-        $main = script:Invoke-Bash (script:Expand-Expression $step ($name + @{ 'env.REF' = 'cs-pre-8.1.0-beta.0.1.3' })) @{ REF = 'cs-pre-8.1.0-beta.0.1.3'; TAGGED_RELEASE = 'false' } (script:New-WorkDir)
+        $tagged = script:Invoke-Bash -Script (script:Expand-Expression $step ($name + @{ 'env.REF' = 'cs-pre-8.1.0-beta.0.1' })) -Environment @{ REF = 'cs-pre-8.1.0-beta.0.1'; TAGGED_RELEASE = 'true' } -WorkDir (script:New-WorkDir)
+        $main = script:Invoke-Bash -Script (script:Expand-Expression $step ($name + @{ 'env.REF' = 'cs-pre-8.1.0-beta.0.1.3' })) -Environment @{ REF = 'cs-pre-8.1.0-beta.0.1.3'; TAGGED_RELEASE = 'false' } -WorkDir (script:New-WorkDir)
 
         $tagged.Outputs['DMSTAGS'] | Should -BeExactly 'edfialliance/ed-fi-api-configuration-service:cs-pre-8.1.0-beta.0.1,edfialliance/ed-fi-api-configuration-service:cs-pre-8.1'
         $tagged.Outputs['VERSION'] | Should -BeExactly '8.1.0-beta.0.1'
@@ -241,12 +241,12 @@ Describe 'on-prerelease.yml' {
     }
 
     It 'runs nothing from a hostile tag name while composing the Configuration Service image tags' {
-        $step = script:Get-StepScript $script:prerelease 'docker-publish-cs' 'Prepare Config Tags'
+        $step = script:Get-StepScript -Workflow $script:prerelease -Job 'docker-publish-cs' -StepName 'Prepare Config Tags'
         foreach ($tag in $script:hostileRef) {
             $workDir = script:New-WorkDir
             $script = script:Expand-Expression $step @{ 'env.CONFIG_IMAGE_NAME' = 'image'; 'env.REF' = $tag }
 
-            $null = script:Invoke-Bash $script @{ REF = $tag; TAGGED_RELEASE = 'true' } $workDir
+            $null = script:Invoke-Bash -Script $script -Environment @{ REF = $tag; TAGGED_RELEASE = 'true' } -WorkDir $workDir
 
             Join-Path $workDir 'pwned' | Should -Not -Exist -Because "the tag '$tag' is data"
         }
@@ -302,9 +302,9 @@ Describe 'on-prerelease.yml' {
         @{ Tag = 'v8.1.0'; Passes = $false }
     ) {
         $workDir = script:New-WorkDir
-        $script = script:Get-StepScript $script:prerelease 'classify-release' 'Validate the release tag'
+        $script = script:Get-StepScript -Workflow $script:prerelease -Job 'classify-release' -StepName 'Validate the release tag'
 
-        $result = script:Invoke-Pwsh $script @{ REF = $Tag } $workDir
+        $result = script:Invoke-Pwsh -Script $script -Environment @{ REF = $Tag } -WorkDir $workDir
 
         ($result.ExitCode -eq 0) | Should -Be $Passes -Because $result.Printed
         Join-Path $workDir 'pwned' | Should -Not -Exist
@@ -337,9 +337,9 @@ Describe 'on-release.yml' {
         @{ Job = 'tag-dms-image'; Image = 'DMS'; Tag = 'v8.1.0-beta.0.1'; Name = 'edfialliance/data-management-service'; Pre = 'dms-pre-8.1.0-beta.0.1'; Major = '8.1.0-beta.0.1'; Minor = '8.1' }
         @{ Job = 'tag-cs-image'; Image = 'Configuration'; Tag = 'v8.0.0'; Name = 'edfialliance/ed-fi-api-configuration-service'; Pre = 'cs-pre-8.0.0'; Major = '8.0.0'; Minor = '8.0' }
     ) {
-        $script = script:Expand-Expression (script:Get-StepScript $script:release $Job 'Prepare Release Tags') @{ 'vars.IMAGE_NAME' = $Name; 'github.ref_name' = $Tag }
+        $script = script:Expand-Expression (script:Get-StepScript -Workflow $script:release -Job $Job -StepName 'Prepare Release Tags') @{ 'vars.IMAGE_NAME' = $Name; 'github.ref_name' = $Tag }
 
-        $result = script:Invoke-Bash $script @{ RELEASE_REF = $Tag } (script:New-WorkDir)
+        $result = script:Invoke-Bash -Script $script -Environment @{ RELEASE_REF = $Tag } -WorkDir (script:New-WorkDir)
 
         $result.ExitCode | Should -Be 0
         $result.Outputs['PRE_IMAGE'] | Should -BeExactly "${Name}:$Pre"
@@ -353,9 +353,9 @@ Describe 'on-release.yml' {
     ) {
         foreach ($tag in $script:hostileRef) {
             $workDir = script:New-WorkDir
-            $script = script:Expand-Expression (script:Get-StepScript $script:release $Job 'Prepare Release Tags') @{ 'vars.IMAGE_NAME' = 'image'; 'github.ref_name' = $tag }
+            $script = script:Expand-Expression (script:Get-StepScript -Workflow $script:release -Job $Job -StepName 'Prepare Release Tags') @{ 'vars.IMAGE_NAME' = 'image'; 'github.ref_name' = $tag }
 
-            $null = script:Invoke-Bash $script @{ RELEASE_REF = $tag } $workDir
+            $null = script:Invoke-Bash -Script $script -Environment @{ RELEASE_REF = $tag } -WorkDir $workDir
 
             Join-Path $workDir 'pwned' | Should -Not -Exist -Because "the tag '$tag' is data"
         }
@@ -367,9 +367,9 @@ Describe 'on-release.yml' {
         @{ Ref = 'v8.0.0'; RefType = 'branch'; Case = 'a dispatch from a branch named like a release'; Message = '*runs for a v tag*branch*' }
     ) {
         $workDir = script:New-WorkDir
-        $script = script:Get-StepScript $script:release 'delete-pre-releases' 'Validate the release tag'
+        $script = script:Get-StepScript -Workflow $script:release -Job 'delete-pre-releases' -StepName 'Validate the release tag'
 
-        $result = script:Invoke-Pwsh $script @{ RELEASE_REF = $Ref; GITHUB_REF_TYPE = $RefType } $workDir
+        $result = script:Invoke-Pwsh -Script $script -Environment @{ RELEASE_REF = $Ref; GITHUB_REF_TYPE = $RefType } -WorkDir $workDir
 
         $result.ExitCode | Should -Not -Be 0
         $result.Printed | Should -BeLike $Message
@@ -380,9 +380,9 @@ Describe 'on-release.yml' {
         @{ Ref = 'v8.0.0' }
         @{ Ref = 'v8.1.0-beta.0.1' }
     ) {
-        $script = script:Get-StepScript $script:release 'tag-dms-image' 'Validate the release tag'
+        $script = script:Get-StepScript -Workflow $script:release -Job 'tag-dms-image' -StepName 'Validate the release tag'
 
-        $result = script:Invoke-Pwsh $script @{ RELEASE_REF = $Ref; GITHUB_REF_TYPE = 'tag' } (script:New-WorkDir)
+        $result = script:Invoke-Pwsh -Script $script -Environment @{ RELEASE_REF = $Ref; GITHUB_REF_TYPE = 'tag' } -WorkDir (script:New-WorkDir)
 
         $result.ExitCode | Should -Be 0 -Because $result.Printed
     }
@@ -428,7 +428,7 @@ Describe 'Reusable package workflows and merge-or-tag workflows' {
         @{ File = 'build-minimal-template.yml'; Step = 'Promote Minimal Template Azure Package' }
         @{ File = 'build-populated-template.yml'; Step = 'Promote Populated Template Azure Package' }
     ) {
-        $script = script:Get-StepScript (script:Read-Workflow $File) 'promote-azure-package' $Step
+        $script = script:Get-StepScript -Workflow (script:Read-Workflow $File) -Job 'promote-azure-package' -StepName $Step
 
         $script | Should -Match '(?m)^\$releaseVersion = \$env:RELEASE_REF -replace "v", ""$'
         $script | Should -Match '(?m)^  ReleaseRef  = \$env:RELEASE_REF$'
@@ -438,15 +438,15 @@ Describe 'Reusable package workflows and merge-or-tag workflows' {
         @{ File = 'build-sdk-package.yml'; Job = 'build-sdk' }
         @{ File = 'on-dms-merge-or-tag.yml'; Job = 'create-pre-releases' }
     ) {
-        $script = script:Get-StepScript (script:Read-Workflow $File) $Job 'Validate the release tag'
+        $script = script:Get-StepScript -Workflow (script:Read-Workflow $File) -Job $Job -StepName 'Validate the release tag'
         foreach ($tag in $script:hostileRef) {
             $workDir = script:New-WorkDir
 
-            $result = script:Invoke-Pwsh $script @{ RELEASE_REF = $tag } $workDir
+            $result = script:Invoke-Pwsh -Script $script -Environment @{ RELEASE_REF = $tag } -WorkDir $workDir
 
             $result.ExitCode | Should -Not -Be 0
             Join-Path $workDir 'pwned' | Should -Not -Exist
         }
-        (script:Invoke-Pwsh $script @{ RELEASE_REF = 'v8.0.0' } (script:New-WorkDir)).ExitCode | Should -Be 0
+        (script:Invoke-Pwsh -Script $script -Environment @{ RELEASE_REF = 'v8.0.0' } -WorkDir (script:New-WorkDir)).ExitCode | Should -Be 0
     }
 }
