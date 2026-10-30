@@ -334,7 +334,7 @@ jobs:
          $artifact = (Get-ChildItem -Name -Include *.nupkg)
          $arguments = @{
            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-           NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+           NuGetApiKey = $env:ARTIFACTS_API_KEY
          }
 
          $artifact | ForEach-Object {
@@ -365,10 +365,10 @@ jobs:
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
-            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            Username    = $env:ARTIFACTS_USERNAME
             ViewId      = "release"
             ReleaseRef  = $env:RELEASE_REF
-            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            Password    = (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force)
             PackageName = "${{ inputs.sdk_package_name }}"
           }
 
@@ -402,10 +402,12 @@ jobs:
 
       - name: Attach SBOM to Release
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $release = $env:RELEASE_REF
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
           $file = "${{ inputs.manifest_file }}"
           $uploadName = "${{ inputs.sdk_package_name }}-SBOM.zip"
 
@@ -427,10 +429,12 @@ jobs:
 
       - name: Attach Provenance to Release
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $release = $env:RELEASE_REF
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
           $file = "${{ inputs.provenance_file }}"
           $uploadName = "${{ inputs.provenance_file }}"
 

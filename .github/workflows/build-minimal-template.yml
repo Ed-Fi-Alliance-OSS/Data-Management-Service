@@ -837,7 +837,7 @@ jobs:
               }
               Write-Host "Pushing $_ to ${{ env.ARTIFACTS_FEED_URL }}"
               $global:LASTEXITCODE = 0
-              dotnet nuget push $_ --api-key "${{ env.ARTIFACTS_API_KEY }}" --source "${{ env.ARTIFACTS_FEED_URL }}" @duplicateHandling
+              dotnet nuget push $_ --api-key $env:ARTIFACTS_API_KEY --source "${{ env.ARTIFACTS_FEED_URL }}" @duplicateHandling
               if ($LASTEXITCODE -ne 0) {
                 throw "Package push failed for '$_' with exit code $LASTEXITCODE."
               }
@@ -868,7 +868,7 @@ jobs:
 
           $releaseVersion = $env:RELEASE_REF -replace "v", ""
           $companionPackageName = "${{ inputs.package_name }}.Attestation"
-          $credential = New-Object -TypeName PSCredential -ArgumentList "${{ env.ARTIFACTS_USERNAME }}", (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+          $credential = New-Object -TypeName PSCredential -ArgumentList $env:ARTIFACTS_USERNAME, (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force)
 
           # Promotion coupling mirrors publication: when the companion attestation package
           # exists at this version (attested-era release), it promotes FIRST so the template
@@ -887,10 +887,10 @@ jobs:
 
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
-            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            Username    = $env:ARTIFACTS_USERNAME
             ViewId      = "release"
             ReleaseRef  = $env:RELEASE_REF
-            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            Password    = (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force)
           }
 
           if ($promoteCompanion) {
@@ -928,10 +928,12 @@ jobs:
 
       - name: Attach SBOM to Release
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $release = $env:RELEASE_REF
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
           $file = "${{ inputs.manifest_file }}"
           $uploadName = "${{ inputs.package_name }}-SBOM.zip"
 
@@ -953,10 +955,12 @@ jobs:
 
       - name: Attach Provenance to Release
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $release = $env:RELEASE_REF
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
           $file = "${{ inputs.provenance_file }}"
           $uploadName = "${{ inputs.provenance_file }}"
 

@@ -412,7 +412,7 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
@@ -453,7 +453,7 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
@@ -1044,7 +1044,7 @@ jobs:
             -PackageVersion "${{ needs.pack-plugins.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "plugins-check-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1083,7 +1083,7 @@ jobs:
             -PackageVersion "${{ needs.pack-custom-validation.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "custom-validation-check-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1132,7 +1132,7 @@ jobs:
             -PackageVersion "${{ needs.pack-identity.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "identity-check-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1206,7 +1206,7 @@ jobs:
             -ContractVersion "${{ needs.pack-identity.outputs.contract-version }}" `
             -PackedPackageFile (Resolve-Path "${{ env.IDENTITY_PACKAGE_NAME }}.${{ needs.pack-identity.outputs.contract-version }}.nupkg").Path `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}"
+            -FeedApiKey $env:ARTIFACTS_API_KEY
 
           $line = "Identity wire gate: outcome=$($decision.Outcome) published=$($decision.PublishedVersion) anchor=$($decision.AnchorCommit) contract=${{ needs.pack-identity.outputs.contract-version }}"
           Write-Host $line
@@ -1260,7 +1260,7 @@ jobs:
             -PackageVersion "${{ needs.pack-plugins.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "plugins-publish-decide-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1280,7 +1280,7 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
@@ -1326,7 +1326,7 @@ jobs:
             -PackageVersion "${{ needs.pack-custom-validation.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "custom-validation-publish-decide-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1346,7 +1346,7 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
@@ -1400,7 +1400,7 @@ jobs:
             -PackageVersion "${{ needs.pack-identity.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "identity-publish-decide-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1424,7 +1424,7 @@ jobs:
             -ContractVersion "${{ needs.pack-identity.outputs.contract-version }}" `
             -PackedPackageFile (Resolve-Path "${{ env.IDENTITY_PACKAGE_NAME }}.${{ needs.pack-identity.outputs.contract-version }}.nupkg").Path `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}"
+            -FeedApiKey $env:ARTIFACTS_API_KEY
 
           $line = "Identity wire gate before push: outcome=$($decision.Outcome) published=$($decision.PublishedVersion) anchor=$($decision.AnchorCommit) contract=${{ needs.pack-identity.outputs.contract-version }}"
           Write-Host $line
@@ -1446,7 +1446,7 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
@@ -1511,10 +1511,11 @@ jobs:
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ steps.prepare-version.outputs.semver }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $release = $env:RELEASE_VERSION
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
 
           $url = "https://api.github.com/repos/$repo/releases/tags/$release"
           $gh_headers = @{
@@ -1695,12 +1696,13 @@ jobs:
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ steps.prepare-version.outputs.semver }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
 
           $release = $env:RELEASE_VERSION
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
 
           $gh_headers = @{
               "Accept"        = "application/vnd.github+json"
@@ -1965,7 +1967,7 @@ jobs:
             -PackageVersion "${{ needs.pack-secrets.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "secrets-check-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -2009,7 +2011,7 @@ jobs:
             -PackageVersion "${{ needs.pack-secrets.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "secrets-publish-decide-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -2029,7 +2031,7 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
@@ -2284,7 +2286,7 @@ jobs:
          $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
          $arguments = @{
            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-           NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+           NuGetApiKey = $env:ARTIFACTS_API_KEY
          }
 
          $artifact | ForEach-Object {
@@ -2333,10 +2335,11 @@ jobs:
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ steps.prepare-version.outputs.semver }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $release = $env:RELEASE_VERSION
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
 
           $url = "https://api.github.com/repos/$repo/releases/tags/$release"
           $gh_headers = @{
@@ -2602,7 +2605,7 @@ jobs:
               -PackageFile $packageFile `
               -Sha256 "${{ needs.pack-security-metadata-tools.outputs.sha256 }}" `
               -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-              -ApiKey "${{ env.ARTIFACTS_API_KEY }}"
+              -ApiKey $env:ARTIFACTS_API_KEY
 
   attach-security-metadata-tools-artifacts-to-release:
     name: Attach SecurityMetadataTools Artifacts to GitHub Release
@@ -2644,10 +2647,11 @@ jobs:
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ steps.prepare-version.outputs.semver }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $release = $env:RELEASE_VERSION
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
 
           $url = "https://api.github.com/repos/$repo/releases/tags/$release"
           $gh_headers = @{
