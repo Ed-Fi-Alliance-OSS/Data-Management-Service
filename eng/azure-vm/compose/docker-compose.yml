@@ -291,7 +291,7 @@ services:
     <<: *app-defaults
     # Keep this pin CURRENT before each deployment: pgAdmin is a public, DB-privileged
     # surface and ships security fixes frequently (https://www.pgadmin.org/security/).
-    image: dpage/pgadmin4:9.16
+    image: dpage/pgadmin4:9.18
     hostname: pgadmin
     container_name: dms-sec-pgadmin
     environment:
