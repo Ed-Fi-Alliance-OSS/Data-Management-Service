@@ -28,6 +28,17 @@ internal static class AuthoritativeResponseMetadataScenario
     private const string Descriptors = "/data/ed-fi/schoolTypeDescriptors";
     private const string Items = "/data/ed-fi/compactDescriptorItems";
 
+    // Whole microseconds, so the value round-trips exactly on both providers.
+    private static readonly DateTimeOffset CreatedAtSentinel = new DateTimeOffset(
+        2000,
+        2,
+        3,
+        4,
+        5,
+        6,
+        TimeSpan.Zero
+    ).AddTicks(1_234_560);
+
     public static async Task It_serves_owner_metadata_after_creation_changes_no_ops_and_restamping(
         ApiIntegrationHarness harness,
         bool descriptor
@@ -35,11 +46,16 @@ internal static class AuthoritativeResponseMetadataScenario
     {
         Resource resource = await CreateAsync(harness, descriptor);
         Stamp created = await ReadStampAsync(harness, resource);
+        created
+            .CreatedAt.Should()
+            .Be(created.ModifiedAt, "insert initializes both timestamps from one database timestamp");
         JsonObject initial = await AssertReadsAsync(harness, resource, created);
         string variant = initial["_etag"]!.GetValue<string>().Split('-', 2)[1];
 
         await BackdateAsync(harness, resource);
+        await SetCreatedAtAsync(harness, resource, CreatedAtSentinel);
         Stamp before = await ReadStampAsync(harness, resource);
+        before.CreatedAt.Should().Be(CreatedAtSentinel);
         JsonObject backdated = await AssertReadsAsync(harness, resource, before);
         backdated["_etag"]!.GetValue<string>().Should().Be(initial["_etag"]!.GetValue<string>());
         resource.Body[descriptor ? "shortDescription" : "displayName"] = "Changed representation";
@@ -58,6 +74,7 @@ internal static class AuthoritativeResponseMetadataScenario
         Stamp after = await ReadStampAsync(harness, resource);
         after.Version.Should().BeGreaterThan(before.Version);
         after.ModifiedAt.Should().BeAfter(before.ModifiedAt);
+        after.CreatedAt.Should().Be(CreatedAtSentinel);
         JsonObject changedBody = await AssertReadsAsync(harness, resource, after);
         changedBody["_etag"]!.GetValue<string>().Should().Be($"{after.Version}-{variant}");
 
@@ -76,20 +93,84 @@ internal static class AuthoritativeResponseMetadataScenario
         (await ReadStampAsync(harness, resource)).Should().Be(after);
         JsonNode.DeepEquals(await AssertReadsAsync(harness, resource, after), changedBody).Should().BeTrue();
 
+        using (HttpResponseMessage postUnchanged = await PostAsUpdateAsync(harness, resource))
+        {
+            postUnchanged
+                .StatusCode.Should()
+                .Be(HttpStatusCode.OK, await postUnchanged.Content.ReadAsStringAsync());
+        }
+        (await ReadStampAsync(harness, resource)).Should().Be(after);
+        JsonNode.DeepEquals(await AssertReadsAsync(harness, resource, after), changedBody).Should().BeTrue();
+
+        await BackdateAsync(harness, resource);
+        Stamp beforePost = await ReadStampAsync(harness, resource);
+        resource.Body[descriptor ? "shortDescription" : "displayName"] = "Changed by POST";
+        using (HttpResponseMessage postChanged = await PostAsUpdateAsync(harness, resource))
+        {
+            postChanged
+                .StatusCode.Should()
+                .Be(HttpStatusCode.OK, await postChanged.Content.ReadAsStringAsync());
+        }
+        Stamp posted = await ReadStampAsync(harness, resource);
+        posted.Version.Should().BeGreaterThan(beforePost.Version);
+        posted.ModifiedAt.Should().BeAfter(beforePost.ModifiedAt);
+        posted.CreatedAt.Should().Be(CreatedAtSentinel);
+        JsonObject postedBody = await AssertReadsAsync(harness, resource, posted);
+        postedBody["_etag"]!.GetValue<string>().Should().Be($"{posted.Version}-{variant}");
+
         await BackdateAsync(harness, resource);
         Stamp beforeRestamp = await ReadStampAsync(harness, resource);
         await RestampAsync(harness, resource, beforeRestamp);
         Stamp restamped = await ReadStampAsync(harness, resource);
-        restamped.Version.Should().Be(after.Version + 1);
+        restamped.Version.Should().Be(posted.Version + 1);
         restamped.ModifiedAt.Should().BeAfter(beforeRestamp.ModifiedAt);
+        restamped.CreatedAt.Should().Be(CreatedAtSentinel);
         JsonObject restampedBody = await AssertReadsAsync(harness, resource, restamped);
         restampedBody["_etag"]!.GetValue<string>().Should().Be($"{restamped.Version}-{variant}");
         foreach (string metadata in new[] { "_etag", "_lastModifiedDate" })
         {
-            changedBody.Remove(metadata);
+            postedBody.Remove(metadata);
             restampedBody.Remove(metadata);
         }
-        JsonNode.DeepEquals(restampedBody, changedBody).Should().BeTrue("restamping changes metadata only");
+        JsonNode.DeepEquals(restampedBody, postedBody).Should().BeTrue("restamping changes metadata only");
+    }
+
+    public static async Task It_starts_a_new_creation_time_when_a_deleted_resource_is_recreated(
+        ApiIntegrationHarness harness,
+        bool descriptor
+    )
+    {
+        Resource resource = await CreateAsync(harness, descriptor);
+        await SetCreatedAtAsync(harness, resource, CreatedAtSentinel);
+        Stamp original = await ReadStampAsync(harness, resource);
+        original.CreatedAt.Should().Be(CreatedAtSentinel);
+        JsonObject body = await AssertReadsAsync(harness, resource, original);
+
+        using (
+            HttpResponseMessage deleted = await DeleteAsync(
+                harness,
+                resource,
+                body["_etag"]!.GetValue<string>()
+            )
+        )
+        {
+            deleted
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent, await deleted.Content.ReadAsStringAsync());
+        }
+
+        Resource recreated = await PostAsync(
+            harness,
+            resource.Endpoint,
+            resource.Body.DeepClone().AsObject(),
+            resource.Schema,
+            resource.Table
+        );
+        Stamp stamp = await ReadStampAsync(harness, recreated);
+        stamp.DocumentId.Should().NotBe(original.DocumentId);
+        stamp.CreatedAt.Should().NotBe(CreatedAtSentinel, "a recreated resource starts a new lifetime");
+        stamp.CreatedAt.Should().Be(stamp.ModifiedAt);
+        await AssertReadsAsync(harness, recreated, stamp);
     }
 
     public static async Task It_preserves_wrong_resource_and_conditional_lookup_behavior(
@@ -428,6 +509,11 @@ internal static class AuthoritativeResponseMetadataScenario
         return await harness.HttpClient.SendAsync(request);
     }
 
+    private static async Task<HttpResponseMessage> PostAsUpdateAsync(
+        ApiIntegrationHarness harness,
+        Resource resource
+    ) => await harness.HttpClient.PostAsync(resource.Endpoint, JsonContent(resource.Body));
+
     private static async Task<HttpResponseMessage> DeleteAsync(
         ApiIntegrationHarness harness,
         Resource resource,
@@ -452,6 +538,12 @@ internal static class AuthoritativeResponseMetadataScenario
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         JsonObject body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
         AssertMetadata(body, resource, stamp);
+        // Backend-owned timestamps other than _lastModifiedDate never reach the resource JSON.
+        body.Select(field => field.Key)
+            .Should()
+            .BeEquivalentTo(
+                resource.Body.Select(field => field.Key).Concat(["id", "_etag", "_lastModifiedDate"])
+            );
         response.TryReadRawEtag(out string etag).Should().BeTrue();
         etag.Should().Be(body["_etag"]!.GetValue<string>());
         foreach (var field in resource.Body)
@@ -490,7 +582,8 @@ internal static class AuthoritativeResponseMetadataScenario
     {
         await using DbCommand command = harness.DbConnection.CreateCommand();
         command.CommandText = $"""
-            SELECT d."DocumentId", d."ResourceKeyId", d."ContentVersion", r."ContentLastModifiedAt", r."ContentVersion"
+            SELECT d."DocumentId", d."ResourceKeyId", d."ContentVersion", r."ContentLastModifiedAt", r."ContentVersion",
+                r."ContentCreatedAt"
             {(resource.Table == "Descriptor" ? ", r.\"DescriptorId\"" : "")}
             FROM "dms"."Document" d JOIN "{resource.Schema}"."{resource.Table}" r ON r."DocumentId" = d."DocumentId"
             WHERE d."DocumentUuid" = @uuid
@@ -501,13 +594,44 @@ internal static class AuthoritativeResponseMetadataScenario
         reader.GetInt64(4).Should().Be(reader.GetInt64(2));
         if (resource.Table == "Descriptor")
         {
-            reader.GetInt64(0).Should().BeGreaterThan(int.MaxValue).And.NotBe(reader.GetInt32(5));
+            reader.GetInt64(0).Should().BeGreaterThan(int.MaxValue).And.NotBe(reader.GetInt32(6));
         }
-        object value = reader.GetValue(3);
-        DateTimeOffset modified = value is DateTimeOffset offset
+        return new(
+            reader.GetInt64(0),
+            reader.GetInt16(1),
+            reader.GetInt64(2),
+            ReadTimestamp(reader.GetValue(3)),
+            ReadTimestamp(reader.GetValue(5))
+        );
+    }
+
+    private static DateTimeOffset ReadTimestamp(object value) =>
+        value is DateTimeOffset offset
             ? offset
             : new DateTimeOffset(DateTime.SpecifyKind((DateTime)value, DateTimeKind.Utc));
-        return new(reader.GetInt64(0), reader.GetInt16(1), reader.GetInt64(2), modified);
+
+    internal static async Task SetCreatedAtAsync(
+        ApiIntegrationHarness harness,
+        Resource resource,
+        DateTimeOffset createdAt
+    )
+    {
+        await using DbCommand command = harness.DbConnection.CreateCommand();
+        command.CommandText = $"""
+            UPDATE "{resource.Schema}"."{resource.Table}" SET "ContentCreatedAt" = @createdAt
+            WHERE "DocumentId" = (SELECT "DocumentId" FROM "dms"."Document" WHERE "DocumentUuid" = @uuid)
+            """;
+        Add(command, "@uuid", resource.Uuid);
+        DbParameter parameter = command.CreateParameter();
+        parameter.ParameterName = "@createdAt";
+        parameter.Value = createdAt.UtcDateTime;
+        if (harness.DbConnection is not NpgsqlConnection)
+        {
+            // SQL Server would otherwise bind datetime and round away the microseconds.
+            parameter.DbType = DbType.DateTime2;
+        }
+        command.Parameters.Add(parameter);
+        (await command.ExecuteNonQueryAsync()).Should().BeGreaterThanOrEqualTo(1);
     }
 
     internal static async Task BackdateAsync(ApiIntegrationHarness harness, Resource resource, int offset = 0)
@@ -636,6 +760,7 @@ internal static class AuthoritativeResponseMetadataScenario
         long DocumentId,
         short ResourceKeyId,
         long Version,
-        DateTimeOffset ModifiedAt
+        DateTimeOffset ModifiedAt,
+        DateTimeOffset CreatedAt
     );
 }
