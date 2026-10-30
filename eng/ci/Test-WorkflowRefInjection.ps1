@@ -38,8 +38,14 @@ $files = @(
 $findings = @(Find-WorkflowRefInjection -Path $files -Root $Root)
 
 foreach ($finding in $findings) {
-    $message = if ($finding.Problem -eq 'Unsupported') {
-        "'$($finding.Expression)' is a run or env this guard cannot read (a flow mapping, alias, anchor or tag). Write run and env as block-style keys with plain, quoted or block scalar values."
+    $message = if ($finding.Problem -eq 'InvalidYaml') {
+        "This file is not YAML GitHub can read: $($finding.Expression)"
+    }
+    elseif ($finding.Problem -eq 'MergeKey') {
+        "A merge key (<<) can bring in a run or env this guard does not read. Write the mapping out in full."
+    }
+    elseif ($finding.Problem -eq 'Unsupported') {
+        "'$($finding.Expression)' builds the whole env from a ref or secret, so this guard cannot see which names it sets. Write env as a mapping of names to values."
     }
     else {
         "$($finding.Expression) is written into a run script. Pass it through env: and read it as `"`$NAME`" (bash) or `$env:NAME (pwsh)."

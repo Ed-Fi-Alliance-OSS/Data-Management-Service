@@ -42,18 +42,17 @@ BeforeAll {
         return @()
     }
 
-    # Each run script in a workflow, by the same reading the workflow ref guard uses.
-    function script:Get-RunScript([string]$Text) {
-        Get-WorkflowRunScript -Content $Text | Where-Object Supported | ForEach-Object Text
+    # Each run script in a workflow, or in one of its jobs, by the same reading the workflow ref
+    # guard uses.
+    function script:Get-RunScript([string]$Workflow, [string]$Job) {
+        Get-WorkflowRunScript -Content $Workflow | Where-Object { -not $Job -or $_.Job -eq $Job } | ForEach-Object Text
     }
 
-    # The run script of the step named $StepName in one job, unindented.
-    function script:Get-StepScript([string]$Job, [string]$StepName) {
-        $step = [regex]::Match($Job, "(?ms)^      - name: $([regex]::Escape($StepName))\n.*?(?=^      - |\z)").Value
-        $step | Should -Not -BeNullOrEmpty -Because "the job has a '$StepName' step"
-        $script = @(script:Get-RunScript $step)
-        $script.Count | Should -Be 1
-        ($script[0] -split "`n" | ForEach-Object { if ($_.Length -ge 10) { $_.Substring(10) } else { '' } }) -join "`n"
+    # The run script of the step named $StepName in one job.
+    function script:Get-StepScript([string]$Workflow, [string]$Job, [string]$StepName) {
+        $script = @(Get-WorkflowRunScript -Content $Workflow | Where-Object { $_.Job -eq $Job -and $_.Step -eq $StepName })
+        $script.Count | Should -Be 1 -Because "the job $Job has one '$StepName' step"
+        $script[0].Text
     }
 
     # Replaces any expression GitHub would substitute, as the runner would, so a script that still
@@ -202,8 +201,7 @@ Describe 'on-prerelease.yml' {
     ) {
         # Expanding the expression as well lets this run against the old, interpolating text too,
         # which is how the derived values were shown to be unchanged.
-        $job = script:Get-Job $script:prerelease $Job
-        $script = script:Expand-Expression (script:Get-StepScript $job 'Prepare release version') @{ 'github.event.release.tag_name' = $Tag }
+        $script = script:Expand-Expression (script:Get-StepScript $script:prerelease $Job 'Prepare release version') @{ 'github.event.release.tag_name' = $Tag }
 
         $result = script:Invoke-Bash $script @{ TAG_NAME = $Tag } (script:New-WorkDir)
 
@@ -217,21 +215,20 @@ Describe 'on-prerelease.yml' {
         @{ Job = 'attach-cs-artifacts-to-release' }
         @{ Job = 'attach-security-metadata-tools-artifacts-to-release' }
     ) {
-        $job = script:Get-Job $script:prerelease $Job
+        $jobText = script:Get-Job $script:prerelease $Job
         foreach ($tag in $script:hostileRef) {
             $workDir = script:New-WorkDir
-            $script = script:Expand-Expression (script:Get-StepScript $job 'Prepare release version') @{ 'github.event.release.tag_name' = $tag }
+            $script = script:Expand-Expression (script:Get-StepScript $script:prerelease $Job 'Prepare release version') @{ 'github.event.release.tag_name' = $tag }
 
             $null = script:Invoke-Bash $script @{ TAG_NAME = $tag } $workDir
 
             Join-Path $workDir 'pwned' | Should -Not -Exist -Because "the tag '$tag' is data"
         }
-        $job | Should -Match "(?m)^          TAG_NAME: \`$\{\{ github\.event\.release\.tag_name \}\}$"
+        $jobText | Should -Match "(?m)^          TAG_NAME: \`$\{\{ github\.event\.release\.tag_name \}\}$"
     }
 
     It 'composes the Configuration Service image tags from REF unchanged' {
-        $job = script:Get-Job $script:prerelease 'docker-publish-cs'
-        $step = script:Get-StepScript $job 'Prepare Config Tags'
+        $step = script:Get-StepScript $script:prerelease 'docker-publish-cs' 'Prepare Config Tags'
         $name = @{ 'env.CONFIG_IMAGE_NAME' = 'edfialliance/ed-fi-api-configuration-service' }
 
         $tagged = script:Invoke-Bash (script:Expand-Expression $step ($name + @{ 'env.REF' = 'cs-pre-8.1.0-beta.0.1' })) @{ REF = 'cs-pre-8.1.0-beta.0.1'; TAGGED_RELEASE = 'true' } (script:New-WorkDir)
@@ -244,7 +241,7 @@ Describe 'on-prerelease.yml' {
     }
 
     It 'runs nothing from a hostile tag name while composing the Configuration Service image tags' {
-        $step = script:Get-StepScript (script:Get-Job $script:prerelease 'docker-publish-cs') 'Prepare Config Tags'
+        $step = script:Get-StepScript $script:prerelease 'docker-publish-cs' 'Prepare Config Tags'
         foreach ($tag in $script:hostileRef) {
             $workDir = script:New-WorkDir
             $script = script:Expand-Expression $step @{ 'env.CONFIG_IMAGE_NAME' = 'image'; 'env.REF' = $tag }
@@ -262,11 +259,11 @@ Describe 'on-prerelease.yml' {
         @{ Job = 'pack-identity'; Prefix = 'dms-pre-'; Release = $true }
         @{ Job = 'pack-secrets'; Prefix = 'cs-pre-'; Release = $true }
     ) {
-        $job = script:Get-Job $script:prerelease $Job
-        $firstRun = @(script:Get-RunScript $job)[0]
+        $jobText = script:Get-Job $script:prerelease $Job
+        $firstRun = @(script:Get-RunScript $script:prerelease $Job)[0]
 
         $firstRun | Should -Match "Assert-ReleaseRef -ReleaseRef \`$env:REF -Prefix $Prefix\s*$"
-        $step = [regex]::Match($job, '(?ms)^      - name: Validate the release tag\n.*?(?=^      - |\z)').Value
+        $step = [regex]::Match($jobText, '(?ms)^      - name: Validate the release tag\n.*?(?=^      - |\z)').Value
         if ($Release) {
             # The dispatch dry run carries no tag and must still run these jobs.
             $step | Should -Match "if: \`$\{\{ github\.event_name == 'release' \}\}"
@@ -305,7 +302,7 @@ Describe 'on-prerelease.yml' {
         @{ Tag = 'v8.1.0'; Passes = $false }
     ) {
         $workDir = script:New-WorkDir
-        $script = script:Get-StepScript (script:Get-Job $script:prerelease 'classify-release') 'Validate the release tag'
+        $script = script:Get-StepScript $script:prerelease 'classify-release' 'Validate the release tag'
 
         $result = script:Invoke-Pwsh $script @{ REF = $Tag } $workDir
 
@@ -329,10 +326,10 @@ Describe 'on-release.yml' {
         @{ Job = 'tag-dms-image' }
         @{ Job = 'tag-cs-image' }
     ) {
-        $job = script:Get-Job $script:release $Job
+        $jobText = script:Get-Job $script:release $Job
 
-        @(script:Get-JobNeed $job) | Should -BeNullOrEmpty
-        @(script:Get-RunScript $job)[0] | Should -Match 'Assert-ReleaseRef -ReleaseRef \$env:RELEASE_REF -Prefix v\s*$'
+        @(script:Get-JobNeed $jobText) | Should -BeNullOrEmpty
+        @(script:Get-RunScript $script:release $Job)[0] | Should -Match 'Assert-ReleaseRef -ReleaseRef \$env:RELEASE_REF -Prefix v\s*$'
     }
 
     It 'derives the <image> image tags from <tag> as before' -ForEach @(
@@ -340,8 +337,7 @@ Describe 'on-release.yml' {
         @{ Job = 'tag-dms-image'; Image = 'DMS'; Tag = 'v8.1.0-beta.0.1'; Name = 'edfialliance/data-management-service'; Pre = 'dms-pre-8.1.0-beta.0.1'; Major = '8.1.0-beta.0.1'; Minor = '8.1' }
         @{ Job = 'tag-cs-image'; Image = 'Configuration'; Tag = 'v8.0.0'; Name = 'edfialliance/ed-fi-api-configuration-service'; Pre = 'cs-pre-8.0.0'; Major = '8.0.0'; Minor = '8.0' }
     ) {
-        $job = script:Get-Job $script:release $Job
-        $script = script:Expand-Expression (script:Get-StepScript $job 'Prepare Release Tags') @{ 'vars.IMAGE_NAME' = $Name; 'github.ref_name' = $Tag }
+        $script = script:Expand-Expression (script:Get-StepScript $script:release $Job 'Prepare Release Tags') @{ 'vars.IMAGE_NAME' = $Name; 'github.ref_name' = $Tag }
 
         $result = script:Invoke-Bash $script @{ RELEASE_REF = $Tag } (script:New-WorkDir)
 
@@ -355,10 +351,9 @@ Describe 'on-release.yml' {
         @{ Job = 'tag-dms-image' }
         @{ Job = 'tag-cs-image' }
     ) {
-        $job = script:Get-Job $script:release $Job
         foreach ($tag in $script:hostileRef) {
             $workDir = script:New-WorkDir
-            $script = script:Expand-Expression (script:Get-StepScript $job 'Prepare Release Tags') @{ 'vars.IMAGE_NAME' = 'image'; 'github.ref_name' = $tag }
+            $script = script:Expand-Expression (script:Get-StepScript $script:release $Job 'Prepare Release Tags') @{ 'vars.IMAGE_NAME' = 'image'; 'github.ref_name' = $tag }
 
             $null = script:Invoke-Bash $script @{ RELEASE_REF = $tag } $workDir
 
@@ -372,7 +367,7 @@ Describe 'on-release.yml' {
         @{ Ref = 'v8.0.0'; RefType = 'branch'; Case = 'a dispatch from a branch named like a release'; Message = '*runs for a v tag*branch*' }
     ) {
         $workDir = script:New-WorkDir
-        $script = script:Get-StepScript (script:Get-Job $script:release 'delete-pre-releases') 'Validate the release tag'
+        $script = script:Get-StepScript $script:release 'delete-pre-releases' 'Validate the release tag'
 
         $result = script:Invoke-Pwsh $script @{ RELEASE_REF = $Ref; GITHUB_REF_TYPE = $RefType } $workDir
 
@@ -385,7 +380,7 @@ Describe 'on-release.yml' {
         @{ Ref = 'v8.0.0' }
         @{ Ref = 'v8.1.0-beta.0.1' }
     ) {
-        $script = script:Get-StepScript (script:Get-Job $script:release 'tag-dms-image') 'Validate the release tag'
+        $script = script:Get-StepScript $script:release 'tag-dms-image' 'Validate the release tag'
 
         $result = script:Invoke-Pwsh $script @{ RELEASE_REF = $Ref; GITHUB_REF_TYPE = 'tag' } (script:New-WorkDir)
 
@@ -404,10 +399,11 @@ Describe 'Reusable package workflows and merge-or-tag workflows' {
         @{ File = 'on-dms-merge-or-tag.yml'; Job = 'create-pre-releases'; TagOnly = $true; When = 'on a tag only' }
         @{ File = 'on-config-merge-or-tag.yml'; Job = 'create-pre-releases'; TagOnly = $true; When = 'on a tag only' }
     ) {
-        $job = script:Get-Job (script:Read-Workflow $File) $Job
-        $step = [regex]::Match($job, '(?ms)^      - name: Validate the release tag\n.*?(?=^      - |\z)').Value
+        $workflow = script:Read-Workflow $File
+        $jobText = script:Get-Job $workflow $Job
+        $step = [regex]::Match($jobText, '(?ms)^      - name: Validate the release tag\n.*?(?=^      - |\z)').Value
 
-        @(script:Get-RunScript $job)[0] | Should -Match 'Assert-ReleaseRef -ReleaseRef \$env:RELEASE_REF -Prefix v\s*$'
+        @(script:Get-RunScript $workflow $Job)[0] | Should -Match 'Assert-ReleaseRef -ReleaseRef \$env:RELEASE_REF -Prefix v\s*$'
         if ($TagOnly) {
             # Branch, pull request and schedule runs carry no release tag and are unchanged.
             $step | Should -Match "if: \`$\{\{ github\.ref_type == 'tag' \}\}"
@@ -432,7 +428,7 @@ Describe 'Reusable package workflows and merge-or-tag workflows' {
         @{ File = 'build-minimal-template.yml'; Step = 'Promote Minimal Template Azure Package' }
         @{ File = 'build-populated-template.yml'; Step = 'Promote Populated Template Azure Package' }
     ) {
-        $script = script:Get-StepScript (script:Get-Job (script:Read-Workflow $File) 'promote-azure-package') $Step
+        $script = script:Get-StepScript (script:Read-Workflow $File) 'promote-azure-package' $Step
 
         $script | Should -Match '(?m)^\$releaseVersion = \$env:RELEASE_REF -replace "v", ""$'
         $script | Should -Match '(?m)^  ReleaseRef  = \$env:RELEASE_REF$'
@@ -442,7 +438,7 @@ Describe 'Reusable package workflows and merge-or-tag workflows' {
         @{ File = 'build-sdk-package.yml'; Job = 'build-sdk' }
         @{ File = 'on-dms-merge-or-tag.yml'; Job = 'create-pre-releases' }
     ) {
-        $script = script:Get-StepScript (script:Get-Job (script:Read-Workflow $File) $Job) 'Validate the release tag'
+        $script = script:Get-StepScript (script:Read-Workflow $File) $Job 'Validate the release tag'
         foreach ($tag in $script:hostileRef) {
             $workDir = script:New-WorkDir
 

@@ -50,7 +50,7 @@ jobs:
     steps:
       - run: "echo ${{ github.head_ref }}"
 '@ }
-        @{ Case = 'a ref in a plain run that continues on the next line'; Line = 6; Text = @'
+        @{ Case = 'a ref in a plain run that continues on the next line, on the line the run starts'; Line = 5; Text = @'
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -154,7 +154,7 @@ jobs:
     steps:
       - {
           name: Prepare,
-          run: echo ${{ github.ref_name }} }
+          run: 'echo ${{ github.ref_name }}' }
 '@ }
         @{ Case = 'a workflow env alias pasted back into a script'; Line = 10; Text = @'
 env:
@@ -233,6 +233,47 @@ jobs:
       - run: |
           echo "${{ env.REF }}"
 '@ }
+        @{ Case = 'a ref in a flow-style step'; Line = 5; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - { name: Prepare, run: 'echo "${{ github.ref_name }}"' }
+'@ }
+        @{ Case = 'a ref in a flow-style step whose run key leads'; Line = 5; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - { "run": "echo ${{ github.head_ref }}" }
+'@ }
+        @{ Case = 'a ref in a run value that is an alias, where the anchor writes it'; Line = 2; Text = @'
+x-script: &script |
+  echo "${{ github.ref_name }}"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Prepare
+        run: *script
+      - name: Again
+        run: *script
+'@ }
+        @{ Case = 'a ref in a run value with a tag'; Line = 5; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: !!str echo ${{ github.ref_name }}
+'@ }
+        @{ Case = 'a ref under an explicit run key'; Line = 6; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - ? run
+        : echo ${{ github.ref_name }}
+'@ }
     ) {
         $found = script:Find-Injection $Text
 
@@ -289,63 +330,28 @@ defaults:
     working-directory: ${{ github.workspace }}
 jobs: {}
 '@ }
-    ) {
-        script:Find-Injection $Text | Should -BeNullOrEmpty
-    }
-
-    It 'refuses <case> as a run it cannot read, whatever the value' -ForEach @(
-        @{ Case = 'a flow-style step with a ref'; Line = 5; Text = @'
+        @{ Case = 'a run key outside a step'; Text = @'
+x-notes:
+  run: echo ${{ github.ref_name }}
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - { name: Prepare, run: 'echo "${{ github.ref_name }}"' }
+      - uses: actions/checkout@v4
+        with:
+          run: ${{ github.ref_name }}
 '@ }
-        @{ Case = 'a flow-style step whose run key leads'; Line = 5; Text = @'
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - { "run": "echo ${{ github.head_ref }}" }
-'@ }
-        @{ Case = 'a flow-style step with the safe env pattern'; Line = 5; Text = @'
+        @{ Case = 'the env pattern in flow style'; Text = @'
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - { env: { REF: "${{ github.ref_name }}" }, run: 'echo "$REF"' }
-'@ }
-        @{ Case = 'a run value that is an alias'; Line = 8; Text = @'
-x-script: &script |
-  echo "${{ github.ref_name }}"
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Prepare
-        run: *script
-'@ }
-        @{ Case = 'a run value with a tag'; Line = 5; Text = @'
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - run: !!str echo hi
-'@ }
-        @{ Case = 'an explicit key'; Line = 5; Text = @'
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - ? run
-        : echo ${{ github.ref_name }}
+      - env: { TOKEN: "${{ secrets.API_TOKEN }}" }
+        run: echo "$TOKEN"
 '@ }
     ) {
-        $found = script:Find-Injection $Text
-
-        $found.Count | Should -Be 1
-        $found[0].Problem | Should -BeExactly 'Unsupported'
-        $found[0].Line | Should -Be $Line
+        script:Find-Injection $Text | Should -BeNullOrEmpty
     }
 
     It 'finds a secret in <case>' -ForEach @(
@@ -364,7 +370,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - run: curl -H "Authorization: Bearer ${{ secrets['API_TOKEN'] }}" https://example.invalid
+      - run: curl -H "Authorization ${{ secrets['API_TOKEN'] }}" https://example.invalid
 '@ }
         @{ Case = 'the whole context wrapped in a function across lines'; Line = 7; Text = @'
 jobs:
@@ -463,6 +469,35 @@ jobs:
           TOKEN: ${{ secrets.API_TOKEN }}
         run: echo "${{ env.TOKEN }}"
 '@ }
+        @{ Case = 'a flow env mapping'; Line = 6; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - env: { TOKEN: "${{ secrets.API_TOKEN }}" }
+        run: echo "${{ env.TOKEN }}"
+'@ }
+        @{ Case = 'an env that is an alias'; Line = 9; Text = @'
+x-credentials: &credentials
+  TOKEN: ${{ secrets.API_TOKEN }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - shell: pwsh
+        'env': *credentials
+        run: Write-Output "${{ env.TOKEN }}"
+'@ }
+        @{ Case = 'an env entry whose value is an alias'; Line = 8; Text = @'
+x-token: &token ${{ secrets.API_TOKEN }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: *token
+    steps:
+      - run: echo "${{ env.TOKEN }}"
+'@ }
         @{ Case = 'an alias in a job called with'; Line = 7; Text = @'
 jobs:
   with:
@@ -532,35 +567,23 @@ jobs:
         script:Find-Injection $Text | Should -BeNullOrEmpty
     }
 
-    It 'refuses <case> as an env it cannot read, whatever the value' -ForEach @(
-        @{ Case = 'a flow env mapping holding a secret'; Line = 5; Text = @'
+    It 'refuses an env built by an expression from secrets, whatever it sets' {
+        $found = script:Find-Injection @'
 jobs:
   build:
     runs-on: ubuntu-latest
+    env: ${{ fromJSON(format('{{"TOKEN":"{0}"}}', secrets.API_TOKEN)) }}
     steps:
-      - env: { TOKEN: "${{ secrets.API_TOKEN }}" }
-        run: echo "${{ env.TOKEN }}"
-'@ }
-        @{ Case = 'a flow env mapping with the safe pattern'; Line = 5; Text = @'
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - env: { TOKEN: "${{ secrets.API_TOKEN }}" }
-        run: echo "$TOKEN"
-'@ }
-        @{ Case = 'an env that is an alias'; Line = 8; Text = @'
-x-credentials: &credentials
-  TOKEN: ${{ secrets.API_TOKEN }}
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - shell: pwsh
-        'env': *credentials
-        run: Write-Output "${{ env.TOKEN }}"
-'@ }
-        @{ Case = 'a merge key in env'; Line = 9; Text = @'
+      - run: echo "${{ env.TOKEN }}"
+'@
+
+        $found.Count | Should -Be 1
+        $found[0].Problem | Should -BeExactly 'Unsupported'
+        $found[0].Line | Should -Be 4
+    }
+
+    It 'refuses a merge key <case>, which YamlDotNet does not expand' -ForEach @(
+        @{ Case = 'in env'; Line = 9; Text = @'
 x-credentials: &credentials
   TOKEN: ${{ secrets.API_TOKEN }}
 jobs:
@@ -572,30 +595,51 @@ jobs:
           <<: *credentials
         run: Write-Output "${{ env.TOKEN }}"
 '@ }
-        @{ Case = 'an env entry whose value is an alias'; Line = 6; Text = @'
-x-token: &token ${{ secrets.API_TOKEN }}
+        @{ Case = 'in a step'; Line = 7; Text = @'
+x-step: &step
+  run: echo ${{ github.ref_name }}
 jobs:
   build:
     runs-on: ubuntu-latest
-    env:
-      TOKEN: *token
     steps:
-      - run: echo "${{ env.TOKEN }}"
+      - <<: *step
 '@ }
-        @{ Case = 'an env built by an expression from secrets'; Line = 4; Text = @'
-jobs:
+        @{ Case = 'under jobs'; Line = 7; Text = @'
+x-jobs: &common
   build:
     runs-on: ubuntu-latest
-    env: ${{ fromJSON(format('{{"TOKEN":"{0}"}}', secrets.API_TOKEN)) }}
     steps:
-      - run: echo "${{ env.TOKEN }}"
+      - run: echo ${{ github.ref_name }}
+jobs:
+  <<: *common
+'@ }
+        @{ Case = 'in a composite action step'; Line = 6; Text = @'
+x-step: &step
+  run: echo ${{ github.ref_name }}
+runs:
+  using: composite
+  steps:
+    - <<: *step
+      shell: bash
 '@ }
     ) {
         $found = script:Find-Injection $Text
 
         $found.Count | Should -Be 1
-        $found[0].Problem | Should -BeExactly 'Unsupported'
+        $found[0].Problem | Should -BeExactly 'MergeKey'
         $found[0].Line | Should -Be $Line
+    }
+
+    It 'reads a quoted << key as an ordinary key' {
+        script:Find-Injection @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: example/deploy@v1
+        with:
+          '<<': not a merge
+'@ | Should -BeNullOrEmpty
     }
 
     It 'still reads <case>' -ForEach @(
@@ -679,6 +723,19 @@ jobs:
 '@ | Should -BeNullOrEmpty
     }
 
+    It 'refuses a YamlDotNet package that does not have the pinned hash' {
+        $guard = Get-Module workflow-ref-guard
+        $pinned = & $guard { $script:YamlDotNetSha512 }
+        try {
+            & $guard { $script:YamlDotNet = $null; $script:YamlDotNetSha512 = '00' }
+
+            { & $guard { Get-YamlDotNet } } | Should -Throw '*does not have the pinned SHA-512*'
+        }
+        finally {
+            & $guard { param($Hash) $script:YamlDotNet = $null; $script:YamlDotNetSha512 = $Hash } $pinned
+        }
+    }
+
     It 'scans composite actions as well' {
         $found = script:Find-Injection @'
 runs:
@@ -724,35 +781,53 @@ Describe 'Test-WorkflowRefInjection' {
         $result.Printed | Should -Contain "::error file=.github/workflows/$File,line=$line::$expression is written into a run script. Pass it through env: and read it as `"`$NAME`" (bash) or `$env:NAME (pwsh)."
     }
 
-    It 'fails with an annotation for a flow-style env' {
+    It 'fails with an annotation for an env built by an expression' {
         $repo = script:New-Repository @'
 jobs:
   build:
     runs-on: ubuntu-latest
+    env: ${{ fromJSON(secrets.ENV_JSON) }}
     steps:
-      - env: { TOKEN: "${{ secrets.API_TOKEN }}" }
-        run: echo "${{ env.TOKEN }}"
+      - run: echo "$TOKEN"
 '@
 
         $result = script:Invoke-Guard $repo
 
         $result.ExitCode | Should -Be 1
-        $result.Printed | Should -Contain "::error file=.github/workflows/test.yml,line=5::'- env: { TOKEN: `"`${{ secrets.API_TOKEN }}`" }' is a run or env this guard cannot read (a flow mapping, alias, anchor or tag). Write run and env as block-style keys with plain, quoted or block scalar values."
+        $result.Printed | Should -Contain "::error file=.github/workflows/test.yml,line=4::'`${{ fromJSON(secrets.ENV_JSON) }}' builds the whole env from a ref or secret, so this guard cannot see which names it sets. Write env as a mapping of names to values."
     }
 
-    It 'fails with an annotation for a flow-style step' {
+    It 'fails with an annotation for a merge key' {
         $repo = script:New-Repository @'
+x-step: &step
+  run: echo hi
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - { name: Prepare, run: 'echo "${{ github.ref_name }}"' }
+      - <<: *step
 '@
 
         $result = script:Invoke-Guard $repo
 
         $result.ExitCode | Should -Be 1
-        $result.Printed | Should -Contain "::error file=.github/workflows/test.yml,line=5::'- { name: Prepare, run: 'echo `"`${{ github.ref_name }}`"' }' is a run or env this guard cannot read (a flow mapping, alias, anchor or tag). Write run and env as block-style keys with plain, quoted or block scalar values."
+        $result.Printed | Should -Contain '::error file=.github/workflows/test.yml,line=7::A merge key (<<) can bring in a run or env this guard does not read. Write the mapping out in full.'
+    }
+
+    It 'fails with an annotation for a file that is not YAML' {
+        $repo = script:New-Repository @'
+jobs:
+  build:
+    steps: [
+      run: echo hi
+'@
+
+        $result = script:Invoke-Guard $repo
+
+        $result.ExitCode | Should -Be 1
+        $errors = @($result.Printed | Where-Object { $_ -like '::error *' })
+        $errors.Count | Should -Be 1
+        $errors[0] | Should -BeLike '::error file=.github/workflows/test.yml,line=5::This file is not YAML GitHub can read: *'
     }
 
     It 'scans a new .yaml workflow' {
