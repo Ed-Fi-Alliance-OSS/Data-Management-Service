@@ -852,6 +852,42 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Triggers
     }
 
     [Test]
+    public void It_should_never_touch_the_root_creation_timestamp_from_child_or_extension_triggers()
+    {
+        // The stamping fixture is the one model with nested child and _ext stamp triggers; its tables
+        // are dialect-neutral, so it is emitted here as SQL Server.
+        var ddl = new RelationalModelDdlEmitter(SqlDialectFactory.Create(SqlDialect.Mssql)).Emit(
+            PgsqlDocumentStampingFixture.Build() with
+            {
+                Dialect = SqlDialect.Mssql,
+            }
+        );
+
+        foreach (
+            var tableName in new[]
+            {
+                "SchoolAddress",
+                "SchoolExtension",
+                "SchoolAddressPeriod",
+                "SchoolExtensionAddress",
+            }
+        )
+        {
+            var triggerStart = ddl.IndexOf(
+                $"CREATE OR ALTER TRIGGER [edfi].[TR_{tableName}_Stamp]",
+                StringComparison.Ordinal
+            );
+            triggerStart.Should().BeGreaterOrEqualTo(0, "expected a stamp trigger for {0}", tableName);
+            var triggerEnd = ddl.IndexOf("\nGO", triggerStart, StringComparison.Ordinal);
+            var triggerBody = ddl[triggerStart..triggerEnd];
+
+            triggerBody.Should().Contain("UPDATE r");
+            triggerBody.Should().NotContain("ContentCreatedAt");
+            triggerBody.Should().NotContain("@createdAt");
+        }
+    }
+
+    [Test]
     public void It_should_emit_document_stamping_create_or_alter_trigger()
     {
         _ddl.Should().Contain("CREATE OR ALTER TRIGGER");
@@ -1835,6 +1871,41 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
                 "RI DELETE must consume the @changedDocs workset after it is populated"
             );
     }
+
+    /// <summary>
+    /// Update and delete firings keep the single owner stamp; only the root INSERT firing (empty deleted
+    /// set) initializes the creation time, from the same captured value as the initial last-modified
+    /// time, because the column defaults and this AFTER trigger read the clock separately.
+    /// </summary>
+    [Test]
+    public void It_should_initialize_the_root_creation_timestamp_only_in_the_insert_firing_branch()
+    {
+        var triggerBody = CollapseWhitespace(GetSchoolStampTriggerBody());
+
+        triggerBody
+            .Should()
+            .Contain(
+                "IF EXISTS (SELECT 1 FROM @stamped) BEGIN IF EXISTS (SELECT 1 FROM deleted) BEGIN UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = sysutcdatetime() FROM [edfi].[School] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END ELSE BEGIN DECLARE @createdAt datetime2(7) = sysutcdatetime(); UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = @createdAt, r.[ContentCreatedAt] = @createdAt FROM [edfi].[School] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END END"
+            );
+        triggerBody.Split("[ContentCreatedAt]", StringSplitOptions.None).Length.Should().Be(2);
+    }
+
+    [Test]
+    public void It_should_keep_the_child_owner_stamp_free_of_the_creation_timestamp()
+    {
+        var triggerBody = GetStampTriggerBody("SchoolAddress");
+
+        triggerBody.Should().NotContain("ContentCreatedAt");
+        triggerBody.Should().NotContain("@createdAt");
+        CollapseWhitespace(triggerBody)
+            .Should()
+            .Contain(
+                "IF EXISTS (SELECT 1 FROM @stamped) BEGIN UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = sysutcdatetime() FROM [edfi].[School] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END"
+            );
+    }
+
+    private static string CollapseWhitespace(string value) =>
+        string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     private string GetSchoolStampTriggerBody()
     {

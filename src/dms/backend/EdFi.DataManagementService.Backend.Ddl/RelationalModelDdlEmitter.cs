@@ -1750,6 +1750,56 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(";");
     }
 
+    /// <summary>
+    /// Emits the owner-stamp UPDATE that copies captured document versions onto the owner rows.
+    /// <paramref name="lastModifiedAtExpression"/> supplies the timestamp; when
+    /// <paramref name="setCreatedAt"/> is true the same expression initializes <c>ContentCreatedAt</c>.
+    /// </summary>
+    private void EmitMssqlOwnerStampUpdate(
+        SqlWriter writer,
+        string mirrorStampTarget,
+        string lastModifiedAtExpression,
+        bool setCreatedAt
+    )
+    {
+        writer.AppendLine("UPDATE r");
+        writer.Append("SET r.");
+        writer.Append(Quote(ContentVersionColumn));
+        writer.Append(" = s.");
+        writer.Append(Quote(ContentVersionColumn));
+        writer.AppendLine(",");
+        writer.Append("    r.");
+        writer.Append(Quote(ContentLastModifiedAtColumn));
+        writer.Append(" = ");
+        writer.Append(lastModifiedAtExpression);
+        if (setCreatedAt)
+        {
+            writer.AppendLine(",");
+            writer.Append("    r.");
+            writer.Append(Quote(ContentCreatedAtColumn));
+            writer.Append(" = ");
+            writer.Append(lastModifiedAtExpression);
+        }
+        writer.AppendLine();
+        writer.Append("FROM ");
+        writer.Append(mirrorStampTarget);
+        // @stamped is a table variable, so the cached plan reflects the cardinality of whichever
+        // firing compiled it, and a plan that scans this table takes update locks across rows the
+        // transaction never touched. Measured: leave this statement unhinted and that contention
+        // is the sole cycle in every deadlock graph a concurrent child-collection load produces.
+        //
+        // FORCESEEK is the hint that forbids the scan itself. OPTION (LOOP JOIN) was measured and
+        // is not sufficient: it constrains the join algorithm but still permits a scan of the
+        // inner input, and the load deadlocked identically with it. The join predicate is an
+        // equality on this table's primary key, so a seek is always available.
+        writer.AppendLine(" r WITH (FORCESEEK)");
+        writer.Append("INNER JOIN @stamped s ON s.");
+        writer.Append(Quote(DocumentIdColumn));
+        writer.Append(" = r.");
+        writer.Append(Quote(DocumentIdColumn));
+        writer.AppendLine(";");
+    }
+
     private void EmitMssqlDocumentStampingBody(
         SqlWriter writer,
         DbTriggerInfo trigger,
@@ -1933,32 +1983,37 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
-            writer.AppendLine("UPDATE r");
-            writer.Append("SET r.");
-            writer.Append(Quote(ContentVersionColumn));
-            writer.Append(" = s.");
-            writer.Append(Quote(ContentVersionColumn));
-            writer.AppendLine(",");
-            writer.Append("    r.");
-            writer.Append(Quote(ContentLastModifiedAtColumn));
-            writer.AppendLine(" = sysutcdatetime()");
-            writer.Append("FROM ");
-            writer.Append(mirrorStampTarget);
-            // @stamped is a table variable, so the cached plan reflects the cardinality of whichever
-            // firing compiled it, and a plan that scans this table takes update locks across rows the
-            // transaction never touched. Measured: leave this statement unhinted and that contention
-            // is the sole cycle in every deadlock graph a concurrent child-collection load produces.
-            //
-            // FORCESEEK is the hint that forbids the scan itself. OPTION (LOOP JOIN) was measured and
-            // is not sufficient: it constrains the join algorithm but still permits a scan of the
-            // inner input, and the load deadlocked identically with it. The join predicate is an
-            // equality on this table's primary key, so a seek is always available.
-            writer.AppendLine(" r WITH (FORCESEEK)");
-            writer.Append("INNER JOIN @stamped s ON s.");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.Append(" = r.");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.AppendLine(";");
+            if (isRootDocumentStampingTrigger)
+            {
+                // Only a root INSERT firing creates the owner row, and its deleted set is empty. The
+                // column defaults and this AFTER trigger read the clock separately, so the insert branch
+                // assigns both timestamps from one captured value. Child and _ext INSERT firings also
+                // have an empty deleted set but stamp an existing root, so they never take this branch.
+                writer.AppendLine("IF EXISTS (SELECT 1 FROM deleted)");
+                writer.AppendLine("BEGIN");
+                using (writer.Indent())
+                {
+                    EmitMssqlOwnerStampUpdate(
+                        writer,
+                        mirrorStampTarget,
+                        "sysutcdatetime()",
+                        setCreatedAt: false
+                    );
+                }
+                writer.AppendLine("END");
+                writer.AppendLine("ELSE");
+                writer.AppendLine("BEGIN");
+                using (writer.Indent())
+                {
+                    writer.AppendLine("DECLARE @createdAt datetime2(7) = sysutcdatetime();");
+                    EmitMssqlOwnerStampUpdate(writer, mirrorStampTarget, "@createdAt", setCreatedAt: true);
+                }
+                writer.AppendLine("END");
+            }
+            else
+            {
+                EmitMssqlOwnerStampUpdate(writer, mirrorStampTarget, "sysutcdatetime()", setCreatedAt: false);
+            }
         }
         writer.AppendLine("END");
 

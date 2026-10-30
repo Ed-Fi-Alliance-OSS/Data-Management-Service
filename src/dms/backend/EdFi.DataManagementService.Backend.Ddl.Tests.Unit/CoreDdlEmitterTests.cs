@@ -2344,6 +2344,28 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("WHERE del.[DescriptorId] IS NULL;");
     }
 
+    /// <summary>
+    /// Only the descriptor INSERT firing (empty deleted set) initializes the creation time, from the
+    /// same captured value as the initial last-modified time; update and delete firings keep the
+    /// single owner stamp.
+    /// </summary>
+    [Test]
+    public void It_should_initialize_the_descriptor_creation_timestamp_only_in_the_insert_firing_branch()
+    {
+        var triggerBody = Regex.Replace(
+            ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document"),
+            @"\s+",
+            " "
+        );
+
+        triggerBody
+            .Should()
+            .Contain(
+                "IF EXISTS (SELECT 1 FROM @stamped) BEGIN IF EXISTS (SELECT 1 FROM deleted) BEGIN UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = sysutcdatetime() FROM [dms].[Descriptor] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END ELSE BEGIN DECLARE @createdAt datetime2(7) = sysutcdatetime(); UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = @createdAt, r.[ContentCreatedAt] = @createdAt FROM [dms].[Descriptor] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END END"
+            );
+        triggerBody.Split("[ContentCreatedAt]", StringSplitOptions.None).Length.Should().Be(2);
+    }
+
     [Test]
     public void It_should_capture_descriptor_document_versions_and_stamp_the_descriptor()
     {
