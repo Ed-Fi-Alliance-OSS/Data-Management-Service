@@ -5,7 +5,7 @@
 
 services:
   kafka:
-    image: apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f
+    image: apache/kafka:4.3.1@sha256:77e3df9054047a88b520d0cc46e16696d3b22022e1d580aeccd2632df6532837
     container_name: dms-kafka1
     # Docker creates this new volume mount as root; initialize only its directory,
     # then run the image's normal startup as the unprivileged Kafka user.
