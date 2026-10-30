@@ -2319,6 +2319,14 @@ public class OAuthManagerTests
     [TestFixture(HttpStatusCode.BadRequest, true, "not-a-real-charset")]
     [TestFixture(HttpStatusCode.BadRequest, false, "utf-7")]
     [TestFixture(HttpStatusCode.BadRequest, true, "utf-7")]
+    [TestFixture(HttpStatusCode.InternalServerError, false, "not-a-real-charset")]
+    [TestFixture(HttpStatusCode.InternalServerError, true, "not-a-real-charset")]
+    [TestFixture(HttpStatusCode.ServiceUnavailable, false, "not-a-real-charset")]
+    [TestFixture(HttpStatusCode.ServiceUnavailable, true, "not-a-real-charset")]
+    [TestFixture(HttpStatusCode.InternalServerError, false, "utf-7")]
+    [TestFixture(HttpStatusCode.InternalServerError, true, "utf-7")]
+    [TestFixture(HttpStatusCode.ServiceUnavailable, false, "utf-7")]
+    [TestFixture(HttpStatusCode.ServiceUnavailable, true, "utf-7")]
     public class Given_An_Upstream_Error_With_Unsupported_Charset(
         HttpStatusCode upstreamStatus,
         bool interruptedBody,
@@ -2347,7 +2355,11 @@ public class OAuthManagerTests
             _response
                 .StatusCode.Should()
                 .Be(
-                    interruptedBody || upstreamStatus is HttpStatusCode.BadRequest
+                    interruptedBody
+                    || upstreamStatus
+                        is HttpStatusCode.BadRequest
+                            or HttpStatusCode.InternalServerError
+                            or HttpStatusCode.ServiceUnavailable
                         ? HttpStatusCode.BadGateway
                         : upstreamStatus
                 );
@@ -2356,7 +2368,13 @@ public class OAuthManagerTests
         public void It_returns_the_exact_safe_oauth_contract()
         {
             string expectedError;
-            if (interruptedBody || upstreamStatus is HttpStatusCode.BadRequest)
+            if (
+                interruptedBody
+                || upstreamStatus
+                    is HttpStatusCode.BadRequest
+                        or HttpStatusCode.InternalServerError
+                        or HttpStatusCode.ServiceUnavailable
+            )
             {
                 expectedError = "server_error";
             }
@@ -2370,7 +2388,13 @@ public class OAuthManagerTests
             }
 
             string expectedDescription;
-            if (interruptedBody || upstreamStatus is HttpStatusCode.BadRequest)
+            if (
+                interruptedBody
+                || upstreamStatus
+                    is HttpStatusCode.BadRequest
+                        or HttpStatusCode.InternalServerError
+                        or HttpStatusCode.ServiceUnavailable
+            )
             {
                 expectedDescription = ExpectedGatewayDetail;
             }
@@ -2408,13 +2432,25 @@ public class OAuthManagerTests
                 _logger
                     .Records.Should()
                     .NotContain(record => record.Properties.ContainsKey("StandardFields"));
+                _logger.Records.Should().NotContain(record => record.Level == LogLevel.Warning);
                 return;
             }
 
-            if (upstreamStatus is HttpStatusCode.BadRequest)
+            if (
+                upstreamStatus
+                is HttpStatusCode.BadRequest
+                    or HttpStatusCode.InternalServerError
+                    or HttpStatusCode.ServiceUnavailable
+            )
             {
                 LogRecord warning = _logger.Records.Single(record => record.Level == LogLevel.Warning);
                 warning.Properties["TraceId"].Should().Be(CorrelationId);
+                warning
+                    .Properties["UpstreamStatusCode"]
+                    .Should()
+                    .BeOfType<int>()
+                    .Which.Should()
+                    .Be((int)upstreamStatus);
                 warning.Properties["Content"].Should().Be(string.Empty);
                 warning.Exception.Should().BeNull();
                 _logger.Records.Should().NotContain(record => record.Level == LogLevel.Error);

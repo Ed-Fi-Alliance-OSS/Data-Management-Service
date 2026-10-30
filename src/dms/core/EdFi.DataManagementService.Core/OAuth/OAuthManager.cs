@@ -454,7 +454,7 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
                         traceId
                     );
                 default:
-                    var content = await response.Content.ReadAsStringAsync();
+                    string content = await ReadStatusClassifiedBody(response.Content);
                     // The original status is logged because the client only ever sees the 502:
                     // without it an operator cannot tell an upstream 500 from a 503.
                     logger.LogWarning(

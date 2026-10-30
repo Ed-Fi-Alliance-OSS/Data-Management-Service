@@ -307,6 +307,15 @@ whose scheme is genuinely Basic but whose value `HttpHeaders.Add` can't parse, s
 and the header still isn't logged. Callers that authenticate with a genuine Basic header, in any
 letter case, see no change.
 
+The comma cases differ because scheme recognition precedes header-value validation. In
+`Basic,Basic Y`, the whole leading run is `Basic,Basic`, so it is rejected as non-Basic before
+header addition. In `Basic X,Basic Y`, the leading run is `Basic`, so header addition rejects the
+malformed parameter. This preserves the early rejection of every unequal scheme token without
+adding a separate malformed-scheme rule or moving credential validation ahead of grant validation.
+The resource API's `AuthorizationHeaderParser` instead validates Bearer grammar and distinguishes
+malformed headers from unknown schemes; the token proxy reuses only its scheme-scanning approach.
+Both comma forms are rejected locally without forwarding or logging the header.
+
 The rest of this decision, including body credentials, the order of rules 1 to 7 and the
 normalization to Basic at the proxy, is unchanged.
 
