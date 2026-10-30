@@ -441,8 +441,10 @@ and holds it until its transaction ends:
   case-insensitive default collation cannot weaken the check. Otherwise it stores nothing and
   answers `invalid_client`, exactly as a wrong secret is answered. When the active-token limit is
   enforced, the count is checked in the same transaction.
-- A **lifecycle operation** takes the lock with its first statement on the application row, and
-  makes both the change and the revocation before it commits.
+- A **lifecycle operation** takes the lock with its first statement on the
+  `dmscs.OpenIddictApplication` row, and makes both the change and the revocation before it
+  commits. Un-approval takes CMS `dmscs.Application` locks before it (see
+  [Transaction order per operation](#transaction-order-per-operation)).
 
 The grant applies the lock and the re-validation whatever `IdentitySettings:BearerTokenPerClientLimit`
 is, including the disabled setting (below 1) and clients exempt from the limit, which previously
@@ -468,10 +470,22 @@ credential check before the lock may be arbitrarily stale.
 | --- | --- | --- |
 | Credential reset | `OpenIddictClientRepository.ResetCredentialsAsync` | The new secret is generated and hashed before the transaction. `UPDATE OpenIddictApplication SET ClientSecret` takes the lock; with no row the transaction rolls back, nothing is revoked, and the result is `FailureClientNotFound`. The client's tokens are revoked. Commit, then log. |
 | Client deletion | `OpenIddictClientRepository.DeleteClientAsync` | `DELETE OpenIddictApplication` takes the lock; the client's scope and role rows cascade. The client's tokens are revoked, also when no row was deleted. Commit, then log. The result is `FailureClientNotFound` when no row was deleted. |
-| Un-approval | CMS `ApiClientRepository.UpdateApiClient`, when the command carries `IsApproved = false` | A tenant-scoped existence read returns the stored `ClientUuid` and holds no lock past the statement. The un-approval participant locks the application row and revokes the client's tokens. `UPDATE dmscs.ApiClient SET IsApproved = false, …`, then the data-store mappings. Commit. |
+| Un-approval | CMS `ApiClientRepository.UpdateApiClient`, when the command carries `IsApproved = false` | 1. CMS `dmscs.Application` locks: SQL Server share-locks the client's current and target Application rows (`HOLDLOCK`) in one statement on every update; PostgreSQL share-locks the target Application row (`FOR SHARE`) only when the update completes an identity provider sync. 2. A tenant-scoped read returns the stored `ClientUuid` and holds no lock past the statement. 3. The un-approval participant locks the client's `dmscs.OpenIddictApplication` row and revokes the client's tokens. 4. The `dmscs.ApiClient` row lock (`XLOCK, HOLDLOCK` on SQL Server, `FOR UPDATE` on PostgreSQL). 5. `UPDATE dmscs.ApiClient SET IsApproved = false, …`, the client's education organization rows when the update requests a scope or moves the client to another Application, then the data-store mappings. Commit. |
 
 `PUT /v3/applications/{id}/reset-credential` and `DELETE /v3/applications/{id}` reach the same
 provider methods for the application's clients.
+
+Un-approval takes the `dmscs.OpenIddictApplication` lock after the CMS `dmscs.Application` locks
+and before the `dmscs.ApiClient` row lock:
+
+- **Before the `ApiClient` row lock.** A grant holds the `dmscs.OpenIddictApplication` lock while it
+  reads the client's approval from `dmscs.ApiClient`. On SQL Server that read waits for the
+  `ApiClient` row lock, so taking the row lock first could deadlock with a grant. On PostgreSQL the
+  read does not wait, and the order is kept the same.
+- **After the `Application` locks.** No grant reads `dmscs.Application`, so this order adds no cycle
+  with a grant. The tenant-scoped `ClientUuid` read joins `dmscs.Application`. Before those locks, on
+  SQL Server, it could wait on an uncommitted claim set rename while holding the `ApiClient` row that
+  the rename marks next.
 
 Un-approval revokes in the transaction that writes `dmscs.ApiClient.IsApproved` because that
 column is what a grant re-validates. Revoking in a provider transaction of its own would let a

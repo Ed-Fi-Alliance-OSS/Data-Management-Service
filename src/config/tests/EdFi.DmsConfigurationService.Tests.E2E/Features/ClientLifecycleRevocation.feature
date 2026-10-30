@@ -118,20 +118,9 @@ Feature: Client lifecycle token revocation
              When a GET request is made to "/v3/vendors" with the token captured as "bystander"
              Then it should respond with 403
              When a token is requested with the credentials captured as "victim" and scope "TestClaim01"
-             Then it should respond with 401
-              And the response body is
-                  """
-                    {
-                      "detail": "The request could not be processed. See 'errors' for details.",
-                      "type": "urn:ed-fi:management-api:security:authentication",
-                      "title": "Authentication Failed",
-                      "status": 401,
-                      "validationErrors": {},
-                      "errors": [
-                        "invalid_client. Invalid client or Invalid client credentials"
-                      ]
-                    }
-                  """
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
+              And the response header "WWW-Authenticate" is not present
 
         @MssqlRepresentative
         Scenario: 03 Un-approving a client revokes its tokens and re-approving it does not revive them
@@ -158,20 +147,9 @@ Feature: Client lifecycle token revocation
              When a GET request is made to "/v3/vendors" with the token captured as "bystander"
              Then it should respond with 403
              When a token is requested with the credentials captured as "victim" and scope "TestClaim01"
-             Then it should respond with 401
-              And the response body is
-                  """
-                    {
-                      "detail": "The request could not be processed. See 'errors' for details.",
-                      "type": "urn:ed-fi:management-api:security:authentication",
-                      "title": "Authentication Failed",
-                      "status": 401,
-                      "validationErrors": {},
-                      "errors": [
-                        "invalid_client. Invalid client or Invalid client credentials"
-                      ]
-                    }
-                  """
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
+              And the response header "WWW-Authenticate" is not present
              When a PUT request is made to "/v3/apiClients/{victimApiClientId}" with
                   """
                   {
