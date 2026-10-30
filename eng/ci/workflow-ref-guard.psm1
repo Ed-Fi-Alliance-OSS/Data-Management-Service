@@ -27,13 +27,15 @@ $script:YamlDotNet = $null
 # A ref or tag name the event carries: github.ref, github.ref_name, github.head_ref,
 # github.base_ref, github.event.ref, github.event.pull_request.head.ref,
 # github.event.release.tag_name, github.event.workflow_run.head_branch and the like, in dot or
-# bracket form. github.ref_type is 'branch' or 'tag', never a name, and is not matched.
-$script:RefProperty = 'ref|ref_name|head_ref|base_ref|tag_name|head_branch|target_commitish'
+# bracket form, and github.workflow_ref, which ends in the ref the workflow file was read from.
+# github.ref_type is 'branch' or 'tag', never a name, and is not matched.
+$script:RefProperty = 'ref|ref_name|head_ref|base_ref|tag_name|head_branch|target_commitish|workflow_ref'
 $script:RefPattern = "(?i)\bgithub(?:\.[\w*-]+)*\.(?:$script:RefProperty)(?![\w-])"
 
-# The secrets context, as secrets.NAME, secrets['NAME'] or toJSON(secrets). A property or job
-# named like it (needs.pack-secrets, env.SECRETS_PACKAGE_NAME) is not the context.
-$script:SecretPattern = '(?i)(?<![\w.-])secrets(?![\w-])'
+# The secrets context, as secrets.NAME, secrets['NAME'] or toJSON(secrets), and github.token, which
+# is secrets.GITHUB_TOKEN. A property or job named like the context (needs.pack-secrets,
+# env.SECRETS_PACKAGE_NAME) is not the context.
+$script:SecretPattern = '(?i)(?<![\w.-])(?:secrets|github\.token)(?![\w-])'
 
 function Get-YamlDotNet {
     # The YamlDotNet assembly. The package is downloaded once into the temp directory, and its hash
@@ -278,12 +280,12 @@ function Find-WorkflowRefInjection {
     .SYNOPSIS
         Returns each ref, tag or secret expression written into a run script in the given files.
     .DESCRIPTION
-        Matches github.<...>.ref, ref_name, head_ref, base_ref, tag_name, head_branch and
-        target_commitish in dot or bracket form, anywhere inside a ${{ }} expression (including
+        Matches github.<...>.ref, ref_name, head_ref, base_ref, tag_name, head_branch,
+        target_commitish and workflow_ref in dot or bracket form, anywhere inside a ${{ }} expression (including
         one that spans lines or wraps the ref in a function call), and env.NAME where the same
         file defines env NAME, at any level, from such an expression; those findings have Problem
-        Ref. Matches the secrets context and env.NAME defined from it the same way, with Problem
-        Secret. Expressions in env:, with: and if: are not run scripts and are not matched. An env
+        Ref. Matches the secrets context, github.token and env.NAME defined from either the same way,
+        with Problem Secret. Expressions in env:, with: and if: are not run scripts and are not matched. An env
         built by an expression from a ref or secret has Problem Unsupported, a merge key has Problem
         MergeKey, and a file that is not YAML has Problem InvalidYaml. A script text an alias repeats is reported once, where it is written.
     #>

@@ -274,6 +274,24 @@ jobs:
       - ? run
         : echo ${{ github.ref_name }}
 '@ }
+        @{ Case = 'the workflow ref, which ends in a branch or tag'; Line = 6; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "${{ github.workflow_ref }}"
+'@ }
+        @{ Case = 'a job env alias of the workflow ref'; Line = 8; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      CALLER: ${{ github.workflow_ref }}
+    steps:
+      - run: |
+          echo "${{ env.CALLER }}"
+'@ }
     ) {
         $found = script:Find-Injection $Text
 
@@ -498,6 +516,32 @@ jobs:
     steps:
       - run: echo "${{ env.TOKEN }}"
 '@ }
+        @{ Case = 'the github token'; Line = 5; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: curl -H "Authorization Bearer ${{ github.token }}" https://example.invalid
+'@ }
+        @{ Case = 'the github token in bracket notation'; Line = 6; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "${{ github['token'] }}"
+'@ }
+        @{ Case = 'a step env alias of the github token'; Line = 9; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $headers = @{ Authorization = "Bearer ${{ env.GH_TOKEN }}" }
+'@ }
         @{ Case = 'an alias in a job called with'; Line = 7; Text = @'
 jobs:
   with:
@@ -550,6 +594,18 @@ jobs:
     uses: ./.github/workflows/build.yml
     secrets:
       FEED_URL: ${{ secrets.FEED_TOKEN }}
+'@ }
+        @{ Case = 'the github token bound in env and passed in with:'; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          password: ${{ github.token }}
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view --repo x/y
 '@ }
         @{ Case = 'env and other expressions that are not secrets'; Text = @'
 env:
