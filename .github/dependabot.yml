@@ -28,9 +28,6 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
-      semver-patch-days: 5
-      semver-minor-days: 7
-      semver-major-days: 14
     # One PR per image across both directories, so a Keycloak bump changes both pins together.
     groups:
       compose-images:
