@@ -506,36 +506,6 @@ public class ApiClientRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
-            // Read the stored client identifier within the current tenant; the read holds no lock past
-            // the statement. An un-approving update revokes the client's outstanding tokens in this
-            // transaction, before IsApproved is written, so the two commit together or not at all. It
-            // runs on every un-approving update, a repeat included, and uses the stored identifier: the
-            // update below may replace it. The revocation takes the identity provider's application row
-            // lock before this update locks the Application or the ApiClient row: a token grant holds
-            // that lock while it reads the client's approval, so the reverse order could deadlock.
-            Guid? storedClientUuid = await connection.QuerySingleOrDefaultAsync<Guid?>(
-                $"""
-                SELECT ClientUuid FROM dmscs.ApiClient
-                WHERE Id = @Id AND {TenantScopedApplicationCondition()};
-                """,
-                new { command.Id, TenantId },
-                transaction
-            );
-            if (storedClientUuid is null)
-            {
-                await transaction.RollbackAsync();
-                return new ApiClientUpdateResult.FailureNotFound();
-            }
-
-            if (!command.IsApproved)
-            {
-                await unapprovalTokenRevocation.RevokeOutstandingTokensAsync(
-                    storedClientUuid.Value,
-                    connection,
-                    transaction
-                );
-            }
-
             // Share-lock the client's current Application and its target before the client row, the
             // order a claim set rename takes: it locks its Applications and then marks their clients.
             // Locking only the target would deadlock a move out of an Application being renamed, since
@@ -575,6 +545,38 @@ public class ApiClientRepository(
                         StringComparison.Ordinal
                     )
                 );
+
+            // Read the stored client identifier within the current tenant. The read joins the Application,
+            // so it follows the Application locks above: before them it could wait on an uncommitted
+            // claim set rename while holding the client row the rename marks next. It holds no lock past
+            // the statement. An un-approving update revokes the client's outstanding tokens in this
+            // transaction, before IsApproved is written, so the two commit together or not at all. It
+            // runs on every un-approving update, a repeat included, and uses the stored identifier: the
+            // update below may replace it. The revocation takes the identity provider's application row
+            // lock before the client row lock below: a token grant holds that lock while it reads the
+            // client's approval, so the reverse order could deadlock.
+            Guid? storedClientUuid = await connection.QuerySingleOrDefaultAsync<Guid?>(
+                $"""
+                SELECT ClientUuid FROM dmscs.ApiClient
+                WHERE Id = @Id AND {TenantScopedApplicationCondition()};
+                """,
+                new { command.Id, TenantId },
+                transaction
+            );
+            if (storedClientUuid is null)
+            {
+                await transaction.RollbackAsync();
+                return new ApiClientUpdateResult.FailureNotFound();
+            }
+
+            if (!command.IsApproved)
+            {
+                await unapprovalTokenRevocation.RevokeOutstandingTokensAsync(
+                    storedClientUuid.Value,
+                    connection,
+                    transaction
+                );
+            }
 
             // Lock the ApiClient within the current tenant; a move rewrites its education organization
             // rows. XLOCK, not UPDLOCK, so a state read holding a shared lock never interleaves.

@@ -510,13 +510,32 @@ public class ApiClientRepository(
         await using var transaction = await connection.BeginTransactionAsync();
         try
         {
+            // A completing update share-locks its target Application before the client row, the order
+            // a claim set rename takes. A rename in progress is waited for and its new name read, and
+            // one that starts later waits for this transaction and then finds the client there. A
+            // client moving in stays on its old Application until this commits, so no rename marks
+            // it, and this update marks it itself when the name the provider was sent is stale.
+            // The read is not tenant scoped; the UPDATE's tenant condition rejects a foreign target.
+            bool sentClaimSetIsCurrent = false;
+            if (command.CompletesIdentityProviderSync)
+            {
+                string? claimSetName = await connection.QuerySingleOrDefaultAsync<string?>(
+                    """
+                    SELECT "ClaimSetName" FROM "dmscs"."Application" WHERE "Id" = @ApplicationId FOR SHARE;
+                    """,
+                    new { command.ApplicationId },
+                    transaction
+                );
+                sentClaimSetIsCurrent = claimSetName is not null && claimSetName == command.SentClaimSetName;
+            }
+
             // Read the stored client identifier within the current tenant; the read holds no lock past
             // the statement. An un-approving update revokes the client's outstanding tokens in this
             // transaction, before IsApproved is written, so the two commit together or not at all. It
             // runs on every un-approving update, a repeat included, and uses the stored identifier: the
-            // update below may replace it. The revocation takes the identity provider's application row
-            // lock before this update locks the Application or the ApiClient row, so it takes that lock
-            // first, as every token grant and every other lifecycle operation does.
+            // update below may replace it. As on SQL Server, the revocation takes the identity provider's
+            // application row lock after the Application share lock above, when a completing update takes
+            // one, and before the client row lock below.
             Guid? storedClientUuid = await connection.QuerySingleOrDefaultAsync<Guid?>(
                 $"""
                 SELECT "ClientUuid" FROM "dmscs"."ApiClient"
@@ -538,25 +557,6 @@ public class ApiClientRepository(
                     connection,
                     transaction
                 );
-            }
-
-            // A completing update share-locks its target Application before the client row, the order
-            // a claim set rename takes. A rename in progress is waited for and its new name read, and
-            // one that starts later waits for this transaction and then finds the client there. A
-            // client moving in stays on its old Application until this commits, so no rename marks
-            // it, and this update marks it itself when the name the provider was sent is stale.
-            // The read is not tenant scoped; the UPDATE's tenant condition rejects a foreign target.
-            bool sentClaimSetIsCurrent = false;
-            if (command.CompletesIdentityProviderSync)
-            {
-                string? claimSetName = await connection.QuerySingleOrDefaultAsync<string?>(
-                    """
-                    SELECT "ClaimSetName" FROM "dmscs"."Application" WHERE "Id" = @ApplicationId FOR SHARE;
-                    """,
-                    new { command.ApplicationId },
-                    transaction
-                );
-                sentClaimSetIsCurrent = claimSetName is not null && claimSetName == command.SentClaimSetName;
             }
 
             // Lock the ApiClient within the current tenant; a move rewrites its education organization rows
