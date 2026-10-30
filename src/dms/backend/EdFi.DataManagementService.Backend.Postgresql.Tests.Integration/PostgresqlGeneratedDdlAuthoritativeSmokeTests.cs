@@ -1006,6 +1006,11 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     public async Task It_should_stamp_indirect_identity_propagation_changes_via_postgresql_cascade()
     {
         await BackdateOwnerTimestampAsync(_seedData.StudentEducationOrganizationAssociationDocumentId);
+        await SetOwnerCreatedAtAsync(
+            _studentEducationOrganizationAssociationTable,
+            _seedData.StudentEducationOrganizationAssociationDocumentId,
+            CreatedAtSentinel
+        );
         var before = await GetDocumentStampStateAsync(
             _seedData.StudentEducationOrganizationAssociationDocumentId
         );
@@ -1039,6 +1044,14 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
 
         after.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
         after.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        (
+            await GetOwnerCreatedAtAsync(
+                _studentEducationOrganizationAssociationTable,
+                _seedData.StudentEducationOrganizationAssociationDocumentId
+            )
+        )
+            .Should()
+            .Be(CreatedAtSentinel, "a cascaded identity change keeps the referrer's creation time");
         await AssertRootVersionMatchesDocumentAsync(_schoolTable, _seedData.SchoolDocumentId);
         await AssertRootVersionMatchesDocumentAsync(
             _studentEducationOrganizationAssociationTable,
@@ -1345,9 +1358,13 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         var afterInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
         afterInsert.ContentVersion.Should().Be(beforeInsertVersion);
         afterInsertMaxChangeVersion.Should().Be(beforeInsertMaxChangeVersion);
+        (await GetOwnerCreatedAtAsync(_busTable, busDocumentId))
+            .Should()
+            .Be(afterInsert.ContentLastModifiedAt, "insert initializes both timestamps from one value");
         await AssertRootVersionMatchesDocumentAsync(_busTable, busDocumentId);
 
         await BackdateOwnerTimestampAsync(busDocumentId);
+        await SetOwnerCreatedAtAsync(_busTable, busDocumentId, CreatedAtSentinel);
         afterInsert = await GetDocumentStampStateAsync(busDocumentId);
         var updateRowsAffected = await _database.ExecuteNonQueryAsync(
             """
@@ -1382,6 +1399,7 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         afterNoOp.Should().Be(afterUpdate);
         afterNoOpMirror.Should().Be(beforeNoOpMirror);
         AssertRootVersionMatchesDocument(afterNoOpMirror, afterNoOp);
+        (await GetOwnerCreatedAtAsync(_busTable, busDocumentId)).Should().Be(CreatedAtSentinel);
     }
 
     [Test]
@@ -1426,6 +1444,18 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
         trackedChangeRowsAfter.Should().Be(trackedChangeRowsBefore);
         afterMirror.ContentVersion.Should().Be(beforeMirror.ContentVersion + 1);
         afterMirror.ContentLastModifiedAt.Should().Be(beforeMirror.ContentLastModifiedAt);
+
+        // A creation-only update is stamp maintenance too: no version, no tracked change, and the
+        // last-modified time is untouched.
+        await SetOwnerCreatedAtAsync(_busTable, busDocumentId, CreatedAtSentinel);
+
+        (await GetDocumentStampStateAsync(busDocumentId)).Should().Be(beforeDocument);
+        (await GetRootMirrorStampStateAsync(_busTable, busDocumentId)).Should().Be(afterMirror);
+        (await ReadMaxChangeVersionAsync()).Should().Be(beforeMaxChangeVersion);
+        (await CountRowsAsync("""SELECT COUNT(*) FROM "tracked_changes_sample"."Bus";"""))
+            .Should()
+            .Be(trackedChangeRowsBefore);
+        (await GetOwnerCreatedAtAsync(_busTable, busDocumentId)).Should().Be(CreatedAtSentinel);
     }
 
     // GUID allocation convention for tracked-change tests:
@@ -3623,6 +3653,51 @@ public class Given_A_Postgresql_Generated_Ddl_Apply_Harness_With_The_Authoritati
     )
     {
         mirror.ContentVersion.Should().Be(document.ContentVersion);
+    }
+
+    // Whole microseconds, so the value round-trips exactly through timestamp with time zone.
+    private static readonly DateTimeOffset CreatedAtSentinel = new DateTimeOffset(
+        2000,
+        2,
+        3,
+        4,
+        5,
+        6,
+        TimeSpan.Zero
+    ).AddTicks(1_234_560);
+
+    private async Task SetOwnerCreatedAtAsync(
+        DbTableModel rootTable,
+        long documentId,
+        DateTimeOffset createdAt
+    )
+    {
+        // Stamp-only maintenance is excluded from representation stamping.
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            UPDATE "{rootTable.Table.Schema.Value}"."{rootTable.Table.Name}"
+            SET "ContentCreatedAt" = @createdAt
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("createdAt", createdAt),
+            new NpgsqlParameter("documentId", documentId)
+        );
+    }
+
+    private async Task<DateTimeOffset> GetOwnerCreatedAtAsync(DbTableModel rootTable, long documentId)
+    {
+        var row = (
+            await _database.QueryRowsAsync(
+                $"""
+                SELECT "ContentCreatedAt"
+                FROM "{rootTable.Table.Schema.Value}"."{rootTable.Table.Name}"
+                WHERE "DocumentId" = @documentId;
+                """,
+                new NpgsqlParameter("documentId", documentId)
+            )
+        ).Single();
+
+        return ReadDateTimeOffset(row["ContentCreatedAt"]);
     }
 
     private async Task BackdateOwnerTimestampAsync(long documentId)
