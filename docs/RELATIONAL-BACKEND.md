@@ -248,6 +248,10 @@ backend-owned: inserting the owner row sets it from the same database timestamp 
 recreating a resource starts a new lifetime with a new value. It is not client-writable, does not
 appear in API JSON, and never allocates a `ContentVersion` or a tracked-change row; see
 [update-tracking.md](../reference/design/backend-redesign/design-docs/update-tracking.md#creation-time-normative).
+Rows loaded by the [carry-forward route](#reprovisioning-and-legacy-data-carry-forward) are the
+exception: the copy runs with triggers disabled and keeps each row's source `ContentLastModifiedAt`,
+so `ContentCreatedAt` takes its default, the copy time, which is later than the carried
+`ContentLastModifiedAt`.
 
 `RelationalMappingVersion` stays `v3`, and generated DDL is not a hash input, so a database
 provisioned before this change passes startup validation but lacks the column until it is
