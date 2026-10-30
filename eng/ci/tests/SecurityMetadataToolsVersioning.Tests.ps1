@@ -517,7 +517,7 @@ Describe 'Security Metadata Tools normal release workflow wiring and source hand
             $step = [regex]::Match($workflow, '(?ms)^      - name: Create CS API Pre-Release\r?\n        run: \|\r?\n(?<body>.*)\z').Groups['body'].Value
             $step | Should -Not -BeNullOrEmpty
             $body = ($step -replace '(?m)^          ', '').Replace('${{ steps.versions.outputs.dms-semver }}', 'cs-v8.1.9').
-                Replace('${{ github.sha }}', $triggerSha).Replace('${{ env.TOKEN }}', 'test-only').
+                Replace('${{ github.sha }}', $triggerSha).
                 Replace('${{ env.API_URL }}', 'https://api.invalid/repos/test/repo')
             $script:capturedRelease = $null
             Mock Invoke-RestMethod {

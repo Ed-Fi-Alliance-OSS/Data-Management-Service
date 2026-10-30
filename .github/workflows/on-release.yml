@@ -15,6 +15,8 @@ env:
   ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
   ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
   ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+  # Read by the scripts below as $env:RELEASE_REF or "$RELEASE_REF", never interpolated into them.
+  RELEASE_REF: ${{ github.ref_name }}
 
 permissions: read-all
 
@@ -28,12 +30,24 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Delete other pre-releases and their tags
+      # Each job here deletes, promotes or pushes for the release, and none of them needs another,
+      # so each refuses a ref that is not a v tag before it does anything else.
+      - name: Validate the release tag
         shell: pwsh
         run: |
-          $release = "${{ github.ref_name }}"
+          if ($env:GITHUB_REF_TYPE -cne 'tag') {
+            throw "On Release runs for a v tag; this run is for a $env:GITHUB_REF_TYPE."
+          }
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:RELEASE_REF -Prefix v
+
+      - name: Delete other pre-releases and their tags
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
 
           # An ordinary main build's prerelease is deleted; a tagged release build's is kept. The same
           # rule on-prerelease.yml applies, read once here for every page below.
@@ -79,6 +93,17 @@ jobs:
           ref: ${{ github.ref }}
           fetch-depth: 0
 
+      # Each job here deletes, promotes or pushes for the release, and none of them needs another,
+      # so each refuses a ref that is not a v tag before it does anything else.
+      - name: Validate the release tag
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -cne 'tag') {
+            throw "On Release runs for a v tag; this run is for a $env:GITHUB_REF_TYPE."
+          }
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:RELEASE_REF -Prefix v
+
       # The four contract promotions below compare feed-listed versions through NuGet's own parsers,
       # which package-helpers.psm1 loads from the installed .NET SDK. The runner image ships some
       # SDK, but which one is the image's choice; this pins the same SDK every other job uses.
@@ -92,10 +117,10 @@ jobs:
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
-            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            Username    = $env:ARTIFACTS_USERNAME
             ViewId        = "release"
-            ReleaseRef  = "${{ github.ref_name }}"
-            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            ReleaseRef  = $env:RELEASE_REF
+            Password    = (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force)
             PackageName = "EdFi.Api"
           }
 
@@ -107,10 +132,10 @@ jobs:
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
-            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            Username    = $env:ARTIFACTS_USERNAME
             ViewId      = "release"
-            ReleaseRef  = "${{ github.ref_name }}"
-            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            ReleaseRef  = $env:RELEASE_REF
+            Password    = (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force)
             PackageName = "EdFi.Api.ConfigurationService"
           }
 
@@ -122,10 +147,10 @@ jobs:
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
-            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            Username    = $env:ARTIFACTS_USERNAME
             ViewId      = "release"
-            ReleaseRef  = "${{ github.ref_name }}"
-            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            ReleaseRef  = $env:RELEASE_REF
+            Password    = (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force)
             PackageName = "EdFi.Api.SchemaTools"
           }
 
@@ -149,10 +174,10 @@ jobs:
           $version = Get-SecurityMetadataToolsVersion -AppVersion "${{ steps.tool-release-source.outputs.dms-v }}" -StableRelease
           Invoke-ContractPromotion `
               -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
-              -Username "${{ env.ARTIFACTS_USERNAME }}" `
-              -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
+              -Username $env:ARTIFACTS_USERNAME `
+              -Password (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force) `
               -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-              -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
+              -ApiKey $env:ARTIFACTS_API_KEY `
               -PackageName "EdFi.Api.SecurityMetadataTools" `
               -Version $version
 
@@ -182,10 +207,10 @@ jobs:
 
           Invoke-ContractPromotion `
             -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
-            -Username "${{ env.ARTIFACTS_USERNAME }}" `
-            -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
+            -Username $env:ARTIFACTS_USERNAME `
+            -Password (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force) `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
+            -ApiKey $env:ARTIFACTS_API_KEY `
             -PackageName "EdFi.Api.Plugins" `
             -Version (Get-PluginsContractVersion)
 
@@ -208,10 +233,10 @@ jobs:
 
           Invoke-ContractPromotion `
             -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
-            -Username "${{ env.ARTIFACTS_USERNAME }}" `
-            -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
+            -Username $env:ARTIFACTS_USERNAME `
+            -Password (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force) `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
+            -ApiKey $env:ARTIFACTS_API_KEY `
             -PackageName "EdFi.Api.CustomValidation" `
             -Version (Get-CustomValidationContractVersion)
 
@@ -227,10 +252,10 @@ jobs:
 
           Invoke-ContractPromotion `
             -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
-            -Username "${{ env.ARTIFACTS_USERNAME }}" `
-            -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
+            -Username $env:ARTIFACTS_USERNAME `
+            -Password (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force) `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
+            -ApiKey $env:ARTIFACTS_API_KEY `
             -PackageName "EdFi.Api.Identity" `
             -Version (Get-IdentityContractVersion)
 
@@ -246,10 +271,10 @@ jobs:
 
           Invoke-ContractPromotion `
             -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
-            -Username "${{ env.ARTIFACTS_USERNAME }}" `
-            -Password (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force) `
+            -Username $env:ARTIFACTS_USERNAME `
+            -Password (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force) `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -ApiKey "${{ env.ARTIFACTS_API_KEY }}" `
+            -ApiKey $env:ARTIFACTS_API_KEY `
             -PackageName "EdFi.Api.Secrets" `
             -Version (Get-SecretsContractVersion)
 
@@ -261,11 +286,22 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Each job here deletes, promotes or pushes for the release, and none of them needs another,
+      # so each refuses a ref that is not a v tag before it does anything else.
+      - name: Validate the release tag
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -cne 'tag') {
+            throw "On Release runs for a v tag; this run is for a $env:GITHUB_REF_TYPE."
+          }
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:RELEASE_REF -Prefix v
+
       - name: Prepare Release Tags
         id: prepare-tags
         run: |
           IMAGE_NAME="${{ vars.IMAGE_NAME }}"
-          MAJOR_TAG="${{ github.ref_name }}"
+          MAJOR_TAG="$RELEASE_REF"
           MAJOR_TAG=${MAJOR_TAG#v}
           MINOR_TAG=$(echo "$MAJOR_TAG" | cut -d '.' -f 1,2)
           PRE_IMAGE="${IMAGE_NAME}:dms-pre-${MAJOR_TAG}"
@@ -284,9 +320,13 @@ jobs:
           images: ${{ steps.prepare-tags.outputs.PRE_IMAGE }}
 
       - name: Tag DMS image
+        env:
+          PRE_IMAGE: ${{ steps.prepare-tags.outputs.PRE_IMAGE }}
+          RELEASE_MAJOR: ${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}
+          RELEASE_MINOR: ${{ steps.prepare-tags.outputs.RELEASE_MINOR }}
         run: |
-          docker tag "${{ steps.prepare-tags.outputs.PRE_IMAGE }}" "${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}"
-          docker tag "${{ steps.prepare-tags.outputs.PRE_IMAGE }}" "${{ steps.prepare-tags.outputs.RELEASE_MINOR }}"
+          docker tag "$PRE_IMAGE" "$RELEASE_MAJOR"
+          docker tag "$PRE_IMAGE" "$RELEASE_MINOR"
 
       - name: Login to Docker hub
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -295,9 +335,12 @@ jobs:
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Push DMS Image
+        env:
+          RELEASE_MAJOR: ${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}
+          RELEASE_MINOR: ${{ steps.prepare-tags.outputs.RELEASE_MINOR }}
         run: |
-          docker push "${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}"
-          docker push "${{ steps.prepare-tags.outputs.RELEASE_MINOR }}"
+          docker push "$RELEASE_MAJOR"
+          docker push "$RELEASE_MINOR"
 
   tag-cs-image:
     name: Release Tag Configuration Image
@@ -307,11 +350,22 @@ jobs:
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # Each job here deletes, promotes or pushes for the release, and none of them needs another,
+      # so each refuses a ref that is not a v tag before it does anything else.
+      - name: Validate the release tag
+        shell: pwsh
+        run: |
+          if ($env:GITHUB_REF_TYPE -cne 'tag') {
+            throw "On Release runs for a v tag; this run is for a $env:GITHUB_REF_TYPE."
+          }
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:RELEASE_REF -Prefix v
+
       - name: Prepare Release Tags
         id: prepare-tags
         run: |
           IMAGE_NAME="edfialliance/ed-fi-api-configuration-service"
-          MAJOR_TAG="${{ github.ref_name }}"
+          MAJOR_TAG="$RELEASE_REF"
           MAJOR_TAG=${MAJOR_TAG#v}
           MINOR_TAG=$(echo "$MAJOR_TAG" | cut -d '.' -f 1,2)
           PRE_IMAGE="${IMAGE_NAME}:cs-pre-${MAJOR_TAG}"
@@ -330,9 +384,13 @@ jobs:
           images: ${{ steps.prepare-tags.outputs.PRE_IMAGE }}
 
       - name: Tag Configuration image
+        env:
+          PRE_IMAGE: ${{ steps.prepare-tags.outputs.PRE_IMAGE }}
+          RELEASE_MAJOR: ${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}
+          RELEASE_MINOR: ${{ steps.prepare-tags.outputs.RELEASE_MINOR }}
         run: |
-          docker tag "${{ steps.prepare-tags.outputs.PRE_IMAGE }}" "${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}"
-          docker tag "${{ steps.prepare-tags.outputs.PRE_IMAGE }}" "${{ steps.prepare-tags.outputs.RELEASE_MINOR }}"
+          docker tag "$PRE_IMAGE" "$RELEASE_MAJOR"
+          docker tag "$PRE_IMAGE" "$RELEASE_MINOR"
 
       - name: Login to Docker hub
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
@@ -341,6 +399,9 @@ jobs:
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Push Configuration Image
+        env:
+          RELEASE_MAJOR: ${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}
+          RELEASE_MINOR: ${{ steps.prepare-tags.outputs.RELEASE_MINOR }}
         run: |
-          docker push "${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}"
-          docker push "${{ steps.prepare-tags.outputs.RELEASE_MINOR }}"
+          docker push "$RELEASE_MAJOR"
+          docker push "$RELEASE_MINOR"

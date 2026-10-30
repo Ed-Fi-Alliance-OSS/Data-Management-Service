@@ -11,6 +11,9 @@ on:
     paths:
       - "**/*.ps1"
       - "**/*.psm1"
+      # The workflow ref guard below reads these, so a workflow-only change still runs it.
+      - ".github/workflows/**"
+      - ".github/actions/**"
   pull_request:
     # Declaring types replaces the default set (opened, synchronize, reopened), so all three are
     # restated. Jobs skip while a pull request is a draft, and ready_for_review runs them once it is
@@ -24,11 +27,14 @@ on:
     paths:
       - "**/*.ps1"
       - "**/*.psm1"
+      # The workflow ref guard below reads these, so a workflow-only change still runs it.
+      - ".github/workflows/**"
+      - ".github/actions/**"
 
 permissions: read-all
 
 jobs:
- run-ps-lint:
+  run-ps-lint:
     name: PowerShell Linter
     if: github.event.pull_request.draft != true
     uses: Ed-Fi-Alliance-OSS/Ed-Fi-Actions/.github/workflows/powershell-analyzer.yml@main
@@ -36,3 +42,39 @@ jobs:
       security-events: write
       actions: read
       contents: read
+
+  # GitHub substitutes ${{ }} expressions into a run script before the shell reads it, and git
+  # allows shell metacharacters in branch and tag names, so a ref written into a script is code.
+  # This refuses any ref or tag expression in a workflow or composite action run script, then runs
+  # its own tests. The guard itself, and the release workflow tests that execute those scripts with
+  # hostile names, also run in the DMS bootstrap Pester job, which is required and runs in the merge
+  # queue, where this workflow is not required and does not run.
+  workflow-ref-guard:
+    name: Workflow Ref Injection Guard
+    if: github.event.pull_request.draft != true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Refuse ref and tag expressions in run scripts
+        run: ./eng/ci/Test-WorkflowRefInjection.ps1
+
+      - name: Install Pester
+        run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
+
+      - name: Run Workflow Ref Guard Tests
+        run: |
+          $result = Invoke-Pester -Path "eng/ci/tests/WorkflowRefGuard.Tests.ps1" -Output Detailed -PassThru
+          # A syntax error or a discovery-time failure is recorded in FailedContainersCount or
+          # FailedBlocksCount with FailedCount still 0, so all three have to fail the job.
+          if ($result.FailedCount -gt 0 -or $result.FailedContainersCount -gt 0 -or $result.FailedBlocksCount -gt 0) {
+              throw "Workflow ref guard tests failed: $($result.FailedCount) test(s), $($result.FailedContainersCount) container(s), $($result.FailedBlocksCount) block(s)."
+          }
