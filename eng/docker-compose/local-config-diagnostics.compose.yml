@@ -31,7 +31,7 @@ services:
   cms-monitor:
     # Digest resolved from mcr.microsoft.com/dotnet/monitor:9 on 2026-09-29 (Q17: the
     # diagnostics tooling is version-pinned so recorded output labels stay comparable).
-    image: mcr.microsoft.com/dotnet/monitor:9@sha256:ca0dd147d5ca5a261ec75961ae7399ce3a87aea45f1a2c8336b73c02027af816
+    image: mcr.microsoft.com/dotnet/monitor:10@sha256:200dbc2060a2f4101dbc1fe4fa68ce3dd096426ebd82383f5698c4cc17bd97ec
     container_name: cms-dotnet-monitor
     # Root, unlike the image's default non-root user: the in-process (call stacks)
     # channel is a unix socket the CMS process creates under its own user in /diag, and
