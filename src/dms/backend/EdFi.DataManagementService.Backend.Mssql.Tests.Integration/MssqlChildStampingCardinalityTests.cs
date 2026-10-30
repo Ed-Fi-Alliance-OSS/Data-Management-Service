@@ -198,27 +198,30 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
 
         // The write path's shape: the root, then child and _ext rows as later statements of one
-        // transaction. The delay only guarantees a per-statement clock would read a later value; the
-        // assertion holds however long the statements take.
+        // transaction. Seeding the stamp clock's session-context keys for this transaction with a
+        // sentinel is the test hook: a stamp that read the clock itself could never produce it.
         var created = (
             await _database.QueryRowsAsync(
                 """
                 DECLARE @Inserted TABLE ([DocumentId] bigint);
                 BEGIN TRANSACTION;
+                DECLARE @transactionId bigint = CURRENT_TRANSACTION_ID();
+                DECLARE @seed datetime2(7) = @createdAt;
+                EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @seed;
+                EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @transactionId;
                 INSERT INTO [dms].[Document] ([DocumentUuid], [ResourceKeyId])
                 OUTPUT INSERTED.[DocumentId] INTO @Inserted ([DocumentId])
                 VALUES (@documentUuid, @resourceKeyId);
                 DECLARE @documentId bigint = (SELECT TOP (1) [DocumentId] FROM @Inserted);
                 INSERT INTO [edfi].[School] ([DocumentId], [SchoolId]) VALUES (@documentId, 930);
                 DECLARE @rootInsertVersion bigint = (SELECT [ContentVersion] FROM [dms].[Document] WHERE [DocumentId] = @documentId);
-                WAITFOR DELAY '00:00:00.020';
                 INSERT INTO [edfi].[SchoolAddress] ([Ordinal], [School_DocumentId], [City])
                 VALUES (1, @documentId, N'City-930');
-                WAITFOR DELAY '00:00:00.020';
                 INSERT INTO [sample].[SchoolExtension] ([DocumentId], [CampusCode]) VALUES (@documentId, N'Campus-930');
                 COMMIT;
                 SELECT @documentId AS [DocumentId], @rootInsertVersion AS [RootInsertVersion];
                 """,
+                new SqlParameter("@createdAt", SqlDbType.DateTime2) { Value = CreatedAtSentinel },
                 new SqlParameter("@documentUuid", Guid.NewGuid()),
                 new SqlParameter("@resourceKeyId", resourceKeyId)
             )
@@ -226,11 +229,11 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
 
         var after = await ReadStampPairAsync(Convert.ToInt64(created["DocumentId"]));
         after
+            .Owner.ContentCreatedAt.Should()
+            .Be(CreatedAtSentinel, "the root insert takes the transaction's clock value");
+        after
             .Owner.ContentLastModifiedAt.Should()
-            .Be(
-                after.Owner.ContentCreatedAt,
-                "every stamp in the creating transaction reuses the root insert's clock value"
-            );
+            .Be(CreatedAtSentinel, "the child and _ext stamps reuse the transaction's clock value");
         // The child and _ext inserts still stamp the root with one new version each.
         after.DocumentVersion.Should().Be(Convert.ToInt64(created["RootInsertVersion"]) + 2);
         after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
@@ -241,33 +244,44 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     {
         var documentId = await SeedSchoolWithAddressesAsync(940, 1);
 
-        // Both transactions run on one session, so the second sees the first one's stored clock value
-        // and must reject it because the transaction differs. The delay only guarantees the clock moves.
+        // Both transactions run on one session. The first stamp stores its value under the first
+        // transaction's ID; overwriting that value with a sentinel under the same ID means the second
+        // transaction would write the sentinel if it reused a stale entry instead of reading the clock.
         var rows = await _database.QueryRowsAsync(
             """
-            DECLARE @first datetime2(7);
+            DECLARE @firstTransactionId bigint;
             BEGIN TRANSACTION;
+            SET @firstTransactionId = CURRENT_TRANSACTION_ID();
             UPDATE [edfi].[SchoolAddress] SET [City] = N'City-940-a' WHERE [School_DocumentId] = @documentId;
             COMMIT;
-            SELECT @first = [ContentLastModifiedAt] FROM [edfi].[School] WHERE [DocumentId] = @documentId;
-            WAITFOR DELAY '00:00:00.020';
+            DECLARE @storedTransactionId bigint = CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint);
+            DECLARE @storedStamp datetime2(7) = CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7));
+            DECLARE @firstStamp datetime2(7) = (SELECT [ContentLastModifiedAt] FROM [edfi].[School] WHERE [DocumentId] = @documentId);
+            DECLARE @stale datetime2(7) = @sentinel;
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stale;
             BEGIN TRANSACTION;
             UPDATE [edfi].[SchoolAddress] SET [City] = N'City-940-b' WHERE [School_DocumentId] = @documentId;
             COMMIT;
-            SELECT @first AS [FirstStamp], [ContentLastModifiedAt] AS [SecondStamp]
+            SELECT
+                CAST(CASE WHEN @storedTransactionId = @firstTransactionId THEN 1 ELSE 0 END AS bit) AS [StoredUnderFirstTransaction],
+                CAST(CASE WHEN @storedStamp = @firstStamp THEN 1 ELSE 0 END AS bit) AS [StoredFirstStamp],
+                [ContentLastModifiedAt] AS [SecondStamp]
             FROM [edfi].[School] WHERE [DocumentId] = @documentId;
             """,
+            new SqlParameter("@sentinel", SqlDbType.DateTime2) { Value = CreatedAtSentinel },
             new SqlParameter("@documentId", documentId)
         );
 
         var row = rows.Single();
         Convert
+            .ToBoolean(row["StoredUnderFirstTransaction"])
+            .Should()
+            .BeTrue("the first stamp keys its stored value by its own transaction");
+        Convert.ToBoolean(row["StoredFirstStamp"]).Should().BeTrue("the stored value is the first stamp");
+        Convert
             .ToDateTime(row["SecondStamp"])
             .Should()
-            .BeAfter(
-                Convert.ToDateTime(row["FirstStamp"]),
-                "a new transaction must not reuse the stored value"
-            );
+            .NotBe(CreatedAtSentinel, "a new transaction must not reuse the stored value");
     }
 
     [Test]
