@@ -74,8 +74,7 @@ Each persisted document maintains two representation stamps in the same transact
 The same owner also stores `<root>.ContentCreatedAt` (or `dms.Descriptor.ContentCreatedAt`), the
 UTC creation time of the current resource lifetime. It is owner metadata, not a representation
 stamp: it is set once when the owner row is inserted and follows the rules in "Creation time
-(normative)" below. Child/collection tables, `_ext` tables, `dms.Document` and
-`dms.DocumentCache` do not store it.
+(normative)" below. Child/collection tables, `_ext` tables and `dms.Document` do not store it.
 
 Note: `dms.Document` also carries metadata used by other subsystems (e.g., `CreatedByOwnershipTokenId` for ownership-based authorization; see `auth.md`). Update-tracking rules defined in this document are unchanged by those additional columns.
 
