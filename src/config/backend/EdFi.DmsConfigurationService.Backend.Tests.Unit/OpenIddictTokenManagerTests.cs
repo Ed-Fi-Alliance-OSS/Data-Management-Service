@@ -3515,7 +3515,10 @@ public class OpenIddictTokenManagerTests
     /// A token manager whose only non-default setting is the per-client token limit, so a test
     /// asserting on that number is asserting on a configured value rather than on the default.
     /// </summary>
-    private OpenIddictTokenManager CreateTokenManagerWithTokenLimit(int limit) =>
+    private OpenIddictTokenManager CreateTokenManagerWithTokenLimit(
+        int limit,
+        ILogger<OpenIddictTokenManager>? logger = null
+    ) =>
         NewTokenManager(
             // EncryptionKey has to be set for the database signing-key path to run at all; the
             // faked repository ignores its value.
@@ -3525,7 +3528,8 @@ public class OpenIddictTokenManagerTests
                 Audience = TestAudience,
                 EncryptionKey = "test-encryption-key",
                 BearerTokenPerClientLimit = limit,
-            }
+            },
+            logger
         );
 
     /// <summary>
@@ -3893,13 +3897,16 @@ public class OpenIddictTokenManagerTests
     {
         private TokenResult _result = null!;
 
+        protected ILogger<OpenIddictTokenManager> Logger { get; private set; } = null!;
+
         [SetUp]
         public async Task Act()
         {
             ArrangeGrantableClient(scopes: registeredScopes);
             ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
+            Logger = A.Fake<ILogger<OpenIddictTokenManager>>();
 
-            _result = await CreateTokenManagerWithTokenLimit(3)
+            _result = await CreateTokenManagerWithTokenLimit(3, Logger)
                 .GetAccessTokenAsync(GrantCredentialsWithScope(requestedScope));
         }
 
@@ -3915,11 +3922,68 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_does_not_store_a_token() => StoreMustNotHaveHappened();
+
+        /// <summary>The structured values of the single warning the rejection wrote.</summary>
+        protected IReadOnlyDictionary<string, object?> RejectionWarningValues() =>
+            Fake.GetCalls(Logger)
+                .Where(call =>
+                    call.Method.Name == nameof(ILogger.Log)
+                    && call.GetArgument<LogLevel>(0) == LogLevel.Warning
+                )
+                .Select(call => call.Arguments[2])
+                .OfType<IEnumerable<KeyValuePair<string, object?>>>()
+                .Single()
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
     }
 
     [TestFixture]
     public class Given_GetAccessTokenAsync_WithNoRequestedScopeHeld()
         : ScopeRejection([ReadOnlyScope], "bogus other");
+
+    // The rejection warning logs the requested value with its commas shown as the separators they
+    // are, and with line breaks and other control characters stripped so it cannot forge a line.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithACommaDelimitedScopeNoneHeldAndControlCharacters()
+        : ScopeRejection([ReadOnlyScope], CommaDelimitedScope)
+    {
+        private const string CommaDelimitedScope = "bogus,other\r\nforged\u0007";
+
+        [Test]
+        public void It_logs_the_sanitized_values_separated() =>
+            RejectionWarningValues()["RequestedScopePrefix"].Should().Be("bogus otherforged");
+
+        [Test]
+        public void It_logs_the_original_length() =>
+            RejectionWarningValues()["RequestedScopeOriginalLength"].Should().Be(CommaDelimitedScope.Length);
+
+        [Test]
+        public void It_logs_the_client_id() =>
+            RejectionWarningValues()["ClientId"].Should().Be(GrantClientId);
+    }
+
+    // The form accepts values of several MiB, so the warning carries only a bounded prefix of the
+    // value, cut before sanitizing, beside the length of the whole value. The comma that ends the
+    // prefix is the last code unit kept; nothing after it reaches the log.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithAnOversizedScopeNoneHeld()
+        : ScopeRejection([ReadOnlyScope], OversizedScope)
+    {
+        private const string BeyondCutoff = "beyond-the-cutoff";
+        private static readonly string OversizedScope =
+            new string('x', 255) + "," + BeyondCutoff + new string('y', 4096);
+
+        [Test]
+        public void It_logs_exactly_the_first_256_code_units() =>
+            RejectionWarningValues()["RequestedScopePrefix"].Should().Be(new string('x', 255) + " ");
+
+        [Test]
+        public void It_logs_the_length_of_the_whole_value() =>
+            RejectionWarningValues()["RequestedScopeOriginalLength"].Should().Be(4369);
+
+        [Test]
+        public void It_logs_nothing_beyond_the_cutoff() =>
+            AllLoggedText(Logger).Should().NotContain(BeyondCutoff);
+    }
 
     [TestFixture]
     public class Given_GetAccessTokenAsync_WithAScopeRequestedByAClientHoldingNoScopes()

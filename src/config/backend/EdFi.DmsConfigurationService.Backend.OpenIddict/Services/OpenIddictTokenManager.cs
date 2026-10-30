@@ -56,6 +56,13 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         private readonly string _placeholderHash = placeholderHash.Hash;
 
         /// <summary>
+        /// The most UTF-16 code units of a rejected scope value written to the invalid_scope warning.
+        /// The form accepts values far larger than any real scope list, so the warning carries this
+        /// prefix and the value's original length rather than the whole value.
+        /// </summary>
+        private const int LoggedScopePrefixLength = 256;
+
+        /// <summary>
         /// Static helper to validate a JWT token and check its revocation status using a service provider.
         /// This allows easy integration into authentication middleware or endpoint handlers.
         /// </summary>
@@ -257,10 +264,17 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     {
                         // Returned before the canonical client id, the signing key, the mint and the
                         // store are touched, so a rejected request leaves no token behind.
+                        // The prefix is cut before it is sanitized, so a large value is never copied
+                        // whole, and its commas become spaces so the separators survive the sanitizer.
                         _logger.LogWarning(
-                            "Client {ClientId} requested a scope it does not hold ({RequestedScope}); answering invalid_scope",
+                            "Client {ClientId} requested a scope it does not hold; answering invalid_scope. "
+                                + "Requested scope prefix: {RequestedScopePrefix} (sanitized; original length "
+                                + "{RequestedScopeOriginalLength})",
                             LoggingUtility.SanitizeForLog(clientId),
-                            LoggingUtility.SanitizeForLog(scope)
+                            LoggingUtility.SanitizeForLog(
+                                scope[..Math.Min(scope.Length, LoggedScopePrefixLength)].Replace(',', ' ')
+                            ),
+                            scope.Length
                         );
                         return new TokenResult.FailureInvalidScope();
                     }
