@@ -10,6 +10,7 @@
 
 BeforeAll {
     Import-Module (Join-Path $PSScriptRoot '../release-classification.psm1') -Force
+    Import-Module (Join-Path $PSScriptRoot '../workflow-ref-guard.psm1') -Force
 
     $script:workflows = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../.github/workflows'))
     $script:repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../..'))
@@ -41,27 +42,9 @@ BeforeAll {
         return @()
     }
 
-    # Each run script in a workflow: the block form (run: |) with its indentation removed, or the
-    # single-line form.
+    # Each run script in a workflow, by the same reading the workflow ref guard uses.
     function script:Get-RunScript([string]$Text) {
-        $lines = $Text -split "`n"
-        for ($i = 0; $i -lt $lines.Count; $i++) {
-            $match = [regex]::Match($lines[$i], '^(\s*)(?:- )?run: *(.*)$')
-            if (-not $match.Success) { continue }
-            $value = $match.Groups[2].Value
-            # defaults: run: is a mapping, not a script.
-            if ($value.Length -eq 0) { continue }
-            if ($value -notmatch '^[|>][-+]?$') {
-                $value
-                continue
-            }
-            $indent = $match.Groups[1].Value.Length
-            $body = for ($j = $i + 1; $j -lt $lines.Count; $j++) {
-                if ($lines[$j].Trim().Length -gt 0 -and ($lines[$j].Length - $lines[$j].TrimStart().Length) -le $indent) { break }
-                $lines[$j]
-            }
-            $body -join "`n"
-        }
+        Get-WorkflowRunScript -Content $Text | Where-Object Supported | ForEach-Object Text
     }
 
     # The run script of the step named $StepName in one job, unindented.
