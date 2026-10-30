@@ -1336,6 +1336,20 @@ public class ApiClientModule : IEndpointModule
                         switch (await apiClientRepository.GetApiClientResolutionState(id))
                         {
                             case ApiClientResolutionResult.Success resolution
+                                when !command.IsApproved
+                                    && MatchesCommand(resolution.State)
+                                    && MatchesOriginal(resolution.State):
+                                // An un-approval revokes the client's tokens in its transaction,
+                                // and no stored field records that. A client that already held the
+                                // requested state reads the same whether the transaction committed
+                                // or rolled back, so the revocation is unconfirmed; there is no
+                                // change to compensate.
+                                logger.LogError(
+                                    "Could not confirm the token revocation of the failed un-approval of ApiClient {Id}; retry the un-approval",
+                                    id
+                                );
+                                return FailureResults.Unknown(httpContext.TraceIdentifier);
+                            case ApiClientResolutionResult.Success resolution
                                 when MatchesCommand(resolution.State):
                                 // The ambiguous transaction committed completely; the provider
                                 // and the database already hold the intended state.
