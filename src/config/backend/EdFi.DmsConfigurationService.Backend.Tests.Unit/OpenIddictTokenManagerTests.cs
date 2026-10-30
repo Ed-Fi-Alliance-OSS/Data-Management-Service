@@ -3057,6 +3057,41 @@ public class OpenIddictTokenManagerTests
             _result.Should().BeOfType<TokenResult.Success>();
     }
 
+    // Registered scopes that do not qualify for exemption, issued through the defaults of an omitted
+    // scope: the configured limit applies. The empty row guards the nonempty-scopes requirement,
+    // since every element of an empty set is trivially an admin scope.
+    [TestFixture("")]
+    [TestFixture("EdFiSandbox")]
+    [TestFixture("edfi_admin_api")]
+    [TestFixture("edfi_admin_api/sis")]
+    [TestFixture("edfi_admin_api/")]
+    public class Given_GetAccessTokenAsync_WithoutAScopeWhenTheRegisteredScopesDoNotQualifyForExemption(
+        string registeredScopes
+    ) : OpenIddictTokenManagerTests
+    {
+        private StoredTokenCall _call = null!;
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient(
+                hasNoApiClientRow: true,
+                scopes: registeredScopes.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            );
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => _call = call);
+
+            _result = await CreateTokenManagerWithTokenLimit(1).GetAccessTokenAsync(GrantCredentials());
+        }
+
+        [Test]
+        public void It_passes_the_configured_limit() => _call.MaxActiveTokens.Should().Be(1);
+
+        [Test]
+        public void It_preserves_successful_authentication() =>
+            _result.Should().BeOfType<TokenResult.Success>();
+    }
+
     // Rows whose registered scopes do not include the requested admin scope. Before DMS-1492 the
     // empty intersection fell back to the registered scopes and the token was stored under the
     // configured limit; now the request is refused before the store, where the limit is applied,
@@ -3335,6 +3370,33 @@ public class OpenIddictTokenManagerTests
             ["EDFI_ADMIN_API/full_access"],
             () => GrantCredentialsWithScope(FullAccessScope),
             [FullAccessScope]
+        );
+
+    // A comma separates scopes as a space does.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithACommaSeparatedScope()
+        : ScopeGrant(
+            [FullAccessScope, ReadOnlyScope],
+            () => GrantCredentialsWithScope($"{FullAccessScope},{ReadOnlyScope}"),
+            [FullAccessScope, ReadOnlyScope]
+        );
+
+    // The grant follows the requested order, not the registered one.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithScopesRequestedInReverseRegisteredOrder()
+        : ScopeGrant(
+            [FullAccessScope, ReadOnlyScope],
+            () => GrantCredentialsWithScope($"{ReadOnlyScope} {FullAccessScope}"),
+            [ReadOnlyScope, FullAccessScope]
+        );
+
+    // A repeated held scope is granted as many times as it is requested.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithAHeldScopeRequestedTwice()
+        : ScopeGrant(
+            [FullAccessScope, ReadOnlyScope],
+            () => GrantCredentialsWithScope($"{FullAccessScope} {ReadOnlyScope} {FullAccessScope}"),
+            [FullAccessScope, ReadOnlyScope, FullAccessScope]
         );
 
     // A partial request succeeds with the intersection only: the unheld value is dropped and the

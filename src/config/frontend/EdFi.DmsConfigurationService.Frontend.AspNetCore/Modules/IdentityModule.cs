@@ -1135,7 +1135,7 @@ public class IdentityModule(IConfiguration configuration) : IEndpointModule
     /// <summary>
     /// RFC 6749 §5.2 answer for a self-contained scope rejection. The description is fixed and
     /// service-owned, never caller content. Keycloak's <c>invalid_scope</c> still answers through
-    /// <c>FailureResults.InvalidScope</c> until DMS-1491.
+    /// <c>FailureResults.InvalidScope</c>.
     /// </summary>
     private const string InvalidScopeDescription =
         "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client.";

@@ -208,7 +208,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 // registered permissions (RFC 6749 section 3.3). A non-empty scope is narrowed to the
                 // requested values the application holds, in the requested spelling and order; when
                 // that leaves nothing, including a value that names no scope at all, the request is
-                // rejected as invalid_scope (section 5.2) rather than widened to the defaults (DMS-1492).
+                // rejected as invalid_scope (section 5.2) rather than widened to the defaults.
                 string[] allowedScopes = applicationInfo.Permissions ?? [];
                 string[] grantedScopes;
                 if (string.IsNullOrEmpty(scope))
@@ -236,18 +236,18 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                         // Returned before the canonical client id, the signing key, the mint and the
                         // store are touched, so a rejected request leaves no token behind.
                         _logger.LogWarning(
-                            "Client {ClientId} requested a scope it does not hold; answering invalid_scope",
-                            LoggingUtility.SanitizeForLog(clientId)
+                            "Client {ClientId} requested a scope it does not hold ({RequestedScope}); answering invalid_scope",
+                            LoggingUtility.SanitizeForLog(clientId),
+                            LoggingUtility.SanitizeForLog(scope)
                         );
                         return new TokenResult.FailureInvalidScope();
                     }
                 }
 
-                // The access token keeps its comma-joined scope claim (DMS-1486 owns that
-                // representation); the response reports the same granted set space-delimited, as
-                // RFC 6749 section 3.3 defines the scope parameter. That definition requires at least
-                // one scope token, so an empty granted set is reported as no scope at all, which the
-                // response leaves out.
+                // The access token keeps its comma-joined scope claim; the response reports the same
+                // granted set space-delimited, as RFC 6749 section 3.3 defines the scope parameter.
+                // That definition requires at least one scope token, so an empty granted set is
+                // reported as no scope at all, which the response leaves out.
                 string listOfScopes = string.Join(",", grantedScopes);
                 string? responseScope = grantedScopes.Length == 0 ? null : string.Join(" ", grantedScopes);
 
