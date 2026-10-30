@@ -43,6 +43,16 @@ jobs:
           # there will be between different major.minor releases.
           fetch-depth: 0
 
+      # A v tag push cuts a prerelease that later publishing runs read the version from, so the tag
+      # must be a v version before anything is versioned or released for it.
+      - name: Validate the release tag
+        if: ${{ github.ref_type == 'tag' }}
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:RELEASE_REF -Prefix v
+
       - name: Set Version Numbers
         id: versions
         run: |
