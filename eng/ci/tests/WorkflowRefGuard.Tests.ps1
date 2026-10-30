@@ -178,6 +178,61 @@ jobs:
         run: |
           echo "${{ env['TAG'] }}"
 '@ }
+        @{ Case = 'a ref under a run key with space before the colon'; Line = 6; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run : |
+          echo "${{ github.ref_name }}"
+'@ }
+        @{ Case = 'a ref in a job called run'; Line = 5; Text = @'
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ${{ github.ref_name }}
+'@ }
+        @{ Case = 'bracket notation that YAML single-quote decoding produces'; Line = 5; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: 'echo "${{ github[''ref_name''] }}"'
+'@ }
+        @{ Case = 'bracket notation that a YAML double-quote escape produces'; Line = 5; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: "echo ${{ github[\x27ref_name\x27] }}"
+'@ }
+        @{ Case = 'a ref after braces in a string inside the expression'; Line = 6; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "${{ format('{{{0}}}', github.ref_name) }}"
+'@ }
+        @{ Case = 'a ref after a closing pair inside a string'; Line = 6; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "${{ format('}} {0}', github.ref_name) }}"
+'@ }
+        @{ Case = 'an env alias whose quoted value decodes to bracket notation'; Line = 8; Text = @'
+env:
+  REF: '${{ github[''ref_name''] }}'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "${{ env.REF }}"
+'@ }
     ) {
         $found = script:Find-Injection $Text
 
@@ -276,6 +331,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: !!str echo hi
+'@ }
+        @{ Case = 'an explicit key'; Line = 5; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - ? run
+        : echo ${{ github.ref_name }}
 '@ }
     ) {
         $found = script:Find-Injection $Text
@@ -381,6 +444,33 @@ jobs:
       - shell: pwsh
         run: |
           Write-Output "${{ env.API_KEY }}"
+'@ }
+        @{ Case = 'an alias whose secret follows braces in a string'; Line = 7; Text = @'
+env:
+  TOKEN: ${{ format('{{{0}}}', secrets.API_TOKEN) }}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "${{ env.TOKEN }}"
+'@ }
+        @{ Case = 'an alias under an env key with space before the colon'; Line = 7; Text = @'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - env :
+          TOKEN: ${{ secrets.API_TOKEN }}
+        run: echo "${{ env.TOKEN }}"
+'@ }
+        @{ Case = 'an alias in a job called with'; Line = 7; Text = @'
+jobs:
+  with:
+    runs-on: ubuntu-latest
+    env:
+      TOKEN: ${{ secrets.API_TOKEN }}
+    steps:
+      - run: echo "${{ env.TOKEN }}"
 '@ }
     ) {
         $found = script:Find-Injection $Text
@@ -703,7 +793,15 @@ Describe 'Workflow ref guard wiring' {
         $job | Should -Match 'persist-credentials: false'
         $job | Should -Match '(?m)^        run: \./eng/ci/Test-WorkflowRefInjection\.ps1$'
         $job | Should -Match '"eng/ci/tests/WorkflowRefGuard\.Tests\.ps1"'
-        $job | Should -Match '"eng/ci/tests/ReleaseRefHandling\.Tests\.ps1"'
         $job | Should -Match 'FailedContainersCount -gt 0'
+    }
+
+    It 'runs the release ref tests once, in the bootstrap job that the merge queue also runs' {
+        $pullRequest = (Get-Content -LiteralPath (Join-Path $script:repoRoot '.github/workflows/on-dms-pullrequest.yml') -Raw) -replace "`r`n", "`n"
+        $bootstrap = [regex]::Match($pullRequest, '(?ms)^  run-bootstrap-pester-tests:\n.*?(?=^  \S|\z)').Value
+
+        $pullRequest | Should -Match '(?m)^  merge_group:$'
+        $bootstrap | Should -Match '"eng/ci/tests/ReleaseRefHandling\.Tests\.ps1"'
+        $script:analysis | Should -Not -Match 'ReleaseRefHandling'
     }
 }

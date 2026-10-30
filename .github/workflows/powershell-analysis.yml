@@ -46,7 +46,8 @@ jobs:
   # GitHub substitutes ${{ }} expressions into a run script before the shell reads it, and git
   # allows shell metacharacters in branch and tag names, so a ref written into a script is code.
   # This refuses any ref or tag expression in a workflow or composite action run script, then runs
-  # its own tests and the release workflow tests that execute those scripts with hostile names.
+  # its own tests. The release workflow tests that execute those scripts with hostile names run in
+  # the DMS bootstrap Pester job, which also runs in the merge queue, where this workflow does not.
   workflow-ref-guard:
     name: Workflow Ref Injection Guard
     if: github.event.pull_request.draft != true
@@ -70,11 +71,7 @@ jobs:
 
       - name: Run Workflow Ref Guard Tests
         run: |
-          $paths = @(
-            "eng/ci/tests/WorkflowRefGuard.Tests.ps1",
-            "eng/ci/tests/ReleaseRefHandling.Tests.ps1"
-          )
-          $result = Invoke-Pester -Path $paths -Output Detailed -PassThru
+          $result = Invoke-Pester -Path "eng/ci/tests/WorkflowRefGuard.Tests.ps1" -Output Detailed -PassThru
           # A syntax error or a discovery-time failure is recorded in FailedContainersCount or
           # FailedBlocksCount with FailedCount still 0, so all three have to fail the job.
           if ($result.FailedCount -gt 0 -or $result.FailedContainersCount -gt 0 -or $result.FailedBlocksCount -gt 0) {
