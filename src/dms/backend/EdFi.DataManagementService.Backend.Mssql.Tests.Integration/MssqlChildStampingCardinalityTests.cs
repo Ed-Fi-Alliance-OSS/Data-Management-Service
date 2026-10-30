@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -38,6 +39,17 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     );
 
     private MssqlGeneratedDdlTestDatabase _database = null!;
+
+    // Whole microseconds, so the value round-trips exactly through datetime2(7).
+    private static readonly DateTime CreatedAtSentinel = new DateTime(
+        2000,
+        2,
+        3,
+        4,
+        5,
+        6,
+        DateTimeKind.Utc
+    ).AddTicks(1_234_560);
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -86,7 +98,7 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
             JOIN sys.schemas s ON s.schema_id = t.schema_id
             WHERE ((s.name = 'dms' AND t.name IN ('Document', 'Descriptor'))
                 OR (s.name = 'edfi' AND t.name = 'School'))
-              AND c.name IN ('ContentVersion', 'ContentLastModifiedAt')
+              AND c.name IN ('ContentVersion', 'ContentLastModifiedAt', 'ContentCreatedAt')
             ORDER BY s.name, t.name, c.name;
             """
         );
@@ -96,9 +108,11 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
             )
             .Should()
             .Equal(
+                "dms.Descriptor.ContentCreatedAt:datetime2:False:7",
                 "dms.Descriptor.ContentLastModifiedAt:datetime2:False:7",
                 "dms.Descriptor.ContentVersion:bigint:False:0",
                 "dms.Document.ContentVersion:bigint:False:0",
+                "edfi.School.ContentCreatedAt:datetime2:False:7",
                 "edfi.School.ContentLastModifiedAt:datetime2:False:7",
                 "edfi.School.ContentVersion:bigint:False:0"
             );
@@ -163,8 +177,8 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         var beforeInsert = await _database.ExecuteScalarAsync<DateTime>("SELECT SYSUTCDATETIME();");
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[School] ([DocumentId], [SchoolId], [ContentLastModifiedAt])
-            VALUES (@documentId, 900, '2000-01-01');
+            INSERT INTO [edfi].[School] ([DocumentId], [SchoolId], [ContentLastModifiedAt], [ContentCreatedAt])
+            VALUES (@documentId, 900, '2000-01-01', '2000-01-01');
             """,
             new SqlParameter("@documentId", documentId)
         );
@@ -173,6 +187,8 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         after.DocumentVersion.Should().Be(version);
         after.Owner.ContentVersion.Should().Be(version);
         after.Owner.ContentLastModifiedAt.Should().BeOnOrAfter(beforeInsert).And.BeOnOrBefore(afterInsert);
+        // The insert firing overrides both supplied timestamps from one captured value.
+        after.Owner.ContentCreatedAt.Should().Be(after.Owner.ContentLastModifiedAt);
         (await ReadMaxChangeVersionAsync()).Should().Be(watermark);
     }
 
@@ -182,9 +198,29 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         await _database.ExecuteNonQueryAsync("ALTER DATABASE CURRENT SET RECURSIVE_TRIGGERS ON;");
         try
         {
+            // The insert firing's own owner stamp re-fires the trigger as an UPDATE. A supplied creation
+            // value makes that stamp change ContentCreatedAt, so the re-fire would allocate a version if
+            // the creation column were in the no-op diff or the UPDATE() pre-filter.
+            var insertedDocumentId = await InsertDocumentAsync("Ed-Fi", "School");
+            var insertedVersion = await ReadDocumentContentVersionAsync(insertedDocumentId);
+            var insertWatermark = await ReadMaxChangeVersionAsync();
+            await _database.ExecuteNonQueryAsync(
+                """
+                INSERT INTO [edfi].[School] ([DocumentId], [SchoolId], [ContentCreatedAt])
+                VALUES (@documentId, 905, '2000-01-01');
+                """,
+                new SqlParameter("@documentId", insertedDocumentId)
+            );
+            var inserted = await ReadStampPairAsync(insertedDocumentId);
+            inserted.DocumentVersion.Should().Be(insertedVersion);
+            inserted.Owner.ContentVersion.Should().Be(insertedVersion);
+            inserted.Owner.ContentCreatedAt.Should().Be(inserted.Owner.ContentLastModifiedAt);
+            (await ReadMaxChangeVersionAsync()).Should().Be(insertWatermark);
+
             var documentId = await SeedSchoolWithAddressesAsync(910, 3);
             var watermark = await ReadMaxChangeVersionAsync();
             await RewindContentLastModifiedAtAsync(documentId);
+            await SetOwnerCreatedAtSentinelAsync(documentId);
             var before = await ReadStampPairAsync(documentId);
             before.Owner.ContentLastModifiedAt.Should().Be(RewoundContentLastModifiedAt);
             (await ReadMaxChangeVersionAsync()).Should().Be(watermark);
@@ -196,6 +232,7 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
             after.DocumentVersion.Should().Be(watermark + 1);
             after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
             after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
+            after.Owner.ContentCreatedAt.Should().Be(CreatedAtSentinel);
             (await ReadMaxChangeVersionAsync()).Should().Be(watermark + 1);
         }
         finally
@@ -217,6 +254,7 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     {
         var documentId = await SeedSchoolWithFullDescendantGraphAsync(800, 3);
         await RewindContentLastModifiedAtAsync(documentId);
+        await SetOwnerCreatedAtSentinelAsync(documentId);
         var before = await ReadStampPairAsync(documentId);
         var watermark = await ReadMaxChangeVersionAsync();
         await _database.ExecuteNonQueryAsync(
@@ -229,6 +267,7 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         after.DocumentVersion.Should().Be(watermark + 1);
         after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
         after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
+        after.Owner.ContentCreatedAt.Should().Be(CreatedAtSentinel);
         (await ReadMaxChangeVersionAsync()).Should().Be(watermark + 1);
     }
 
@@ -246,6 +285,7 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
     {
         var documentId = await SeedSchoolWithFullDescendantGraphAsync(700, 3);
         await RewindContentLastModifiedAtAsync(documentId);
+        await SetOwnerCreatedAtSentinelAsync(documentId);
         var before = await ReadStampPairAsync(documentId);
         var watermark = await ReadMaxChangeVersionAsync();
         var beforeWork = await _database.QueryRowsAsync(
@@ -273,6 +313,7 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         var schoolDocumentId = await InsertDocumentAsync("Ed-Fi", "School");
         await InsertSchoolAsync(schoolDocumentId, schoolId: 170);
         await RewindContentLastModifiedAtAsync(schoolDocumentId);
+        await SetOwnerCreatedAtSentinelAsync(schoolDocumentId);
         var before = await ReadStampPairAsync(schoolDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
 
@@ -304,6 +345,36 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
         after
             .Owner.ContentVersion.Should()
             .Be(after.DocumentVersion, "the root mirror ContentVersion must equal dms.Document");
+        after
+            .Owner.ContentCreatedAt.Should()
+            .Be(
+                CreatedAtSentinel,
+                "a child INSERT firing has an empty deleted set but must never take the root insert branch"
+            );
+    }
+
+    [Test]
+    public async Task It_should_preserve_the_root_creation_timestamp_on_a_root_extension_insert()
+    {
+        var schoolDocumentId = await InsertDocumentAsync("Ed-Fi", "School");
+        await InsertSchoolAsync(schoolDocumentId, schoolId: 175);
+        await RewindContentLastModifiedAtAsync(schoolDocumentId);
+        await SetOwnerCreatedAtSentinelAsync(schoolDocumentId);
+        var before = await ReadStampPairAsync(schoolDocumentId);
+        var watermark = await ReadMaxChangeVersionAsync();
+
+        await InsertSchoolExtensionAsync(schoolDocumentId, "Campus-175");
+
+        var after = await ReadStampPairAsync(schoolDocumentId);
+        after.DocumentVersion.Should().Be(watermark + 1);
+        after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
+        after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
+        after
+            .Owner.ContentCreatedAt.Should()
+            .Be(
+                CreatedAtSentinel,
+                "an _ext INSERT firing has an empty deleted set but must never take the root insert branch"
+            );
     }
 
     [Test]
@@ -769,7 +840,8 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
             SELECT
                 doc.[ContentVersion] AS [DocumentContentVersion],
                 school.[ContentVersion] AS [OwnerContentVersion],
-                school.[ContentLastModifiedAt] AS [OwnerContentLastModifiedAt]
+                school.[ContentLastModifiedAt] AS [OwnerContentLastModifiedAt],
+                school.[ContentCreatedAt] AS [OwnerContentCreatedAt]
             FROM [dms].[Document] doc
             INNER JOIN [edfi].[School] school ON school.[DocumentId] = doc.[DocumentId]
             WHERE doc.[DocumentId] = @documentId;
@@ -786,7 +858,8 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
             Convert.ToInt64(row["DocumentContentVersion"]),
             new StampValues(
                 Convert.ToInt64(row["OwnerContentVersion"]),
-                Convert.ToDateTime(row["OwnerContentLastModifiedAt"])
+                Convert.ToDateTime(row["OwnerContentLastModifiedAt"]),
+                Convert.ToDateTime(row["OwnerContentCreatedAt"])
             )
         );
     }
@@ -808,5 +881,23 @@ public class Given_A_Provisioned_Mssql_Database_With_NonRoot_Statement_Level_Sta
 
     private sealed record StampPair(long DocumentVersion, StampValues Owner);
 
-    private sealed record StampValues(long ContentVersion, DateTime ContentLastModifiedAt);
+    private async Task SetOwnerCreatedAtSentinelAsync(long documentId)
+    {
+        // Stamp-only maintenance is excluded from representation stamping.
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE [edfi].[School]
+            SET [ContentCreatedAt] = @createdAt
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@createdAt", SqlDbType.DateTime2) { Value = CreatedAtSentinel },
+            new SqlParameter("@documentId", documentId)
+        );
+    }
+
+    private sealed record StampValues(
+        long ContentVersion,
+        DateTime ContentLastModifiedAt,
+        DateTime ContentCreatedAt
+    );
 }
