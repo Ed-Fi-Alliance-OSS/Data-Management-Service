@@ -904,6 +904,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
         insertBranch.Should().Contain("INTO STRICT _stampedContentVersion");
         insertBranch.Should().Contain("NEW.\"ContentVersion\" := _stampedContentVersion;");
         insertBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := now();");
+        insertBranch.Should().Contain("NEW.\"ContentCreatedAt\" := NEW.\"ContentLastModifiedAt\";");
         insertBranch.Should().NotContain("SELECT \"ContentVersion\", \"ContentLastModifiedAt\"");
         insertBranch.Should().NotContain("nextval");
     }
@@ -981,6 +982,32 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
         updateBranch.Should().Contain("RETURNING \"ContentVersion\" INTO STRICT _stampedContentVersion;");
         updateBranch.Should().Contain("NEW.\"ContentVersion\" := _stampedContentVersion;");
         updateBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := now();");
+    }
+
+    [Test]
+    public void It_should_initialize_the_root_creation_timestamp_only_on_root_insert()
+    {
+        var root = GetRootStampFunctionBody();
+
+        root.Split("\"ContentCreatedAt\"", StringSplitOptions.None).Length.Should().Be(2);
+        ExtractPlpgsqlBlock(root, "ELSIF TG_OP = 'UPDATE' THEN").Should().NotContain("ContentCreatedAt");
+        ExtractPlpgsqlBlock(root, "IF TG_OP = 'DELETE' THEN").Should().NotContain("ContentCreatedAt");
+
+        foreach (
+            var tableName in new[]
+            {
+                "SchoolAddress",
+                "SchoolAddressPeriod",
+                "SchoolExtension",
+                "SchoolExtensionAddress",
+            }
+        )
+        {
+            foreach (var suffix in new[] { "ins", "upd", "del" })
+            {
+                GetPerEventStampFunctionBody(tableName, suffix).Should().NotContain("ContentCreatedAt");
+            }
+        }
     }
 
     [Test]

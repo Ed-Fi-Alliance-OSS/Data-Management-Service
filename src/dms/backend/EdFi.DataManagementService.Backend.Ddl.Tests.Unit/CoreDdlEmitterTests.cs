@@ -1004,6 +1004,33 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_initialize_the_descriptor_creation_timestamp_only_on_insert()
+    {
+        var functionStart = _ddl.IndexOf(
+            "CREATE OR REPLACE FUNCTION \"dms\".\"TF_Descriptor_Stamp_Document\"()",
+            StringComparison.Ordinal
+        );
+        functionStart.Should().BeGreaterOrEqualTo(0);
+        var functionEnd = _ddl.IndexOf("$func$ LANGUAGE plpgsql;", functionStart, StringComparison.Ordinal);
+        var function = _ddl[functionStart..functionEnd];
+
+        var insertStart = function.IndexOf("IF TG_OP = 'INSERT' THEN", StringComparison.Ordinal);
+        var updateStart = function.IndexOf("ELSIF TG_OP = 'UPDATE' THEN", StringComparison.Ordinal);
+        var deleteStart = function.IndexOf("ELSIF TG_OP = 'DELETE' THEN", StringComparison.Ordinal);
+        insertStart.Should().BeGreaterOrEqualTo(0);
+        updateStart.Should().BeGreaterThan(insertStart);
+        deleteStart.Should().BeGreaterThan(updateStart);
+
+        function[insertStart..updateStart]
+            .Should()
+            .Contain(
+                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = now(), \"ContentCreatedAt\" = now()"
+            );
+        function[updateStart..].Should().NotContain("ContentCreatedAt");
+        function.Split("ContentCreatedAt", StringSplitOptions.None).Length.Should().Be(2);
+    }
+
+    [Test]
     public void It_should_allocate_document_stamps_for_descriptor_updates()
     {
         _ddl.Should().Contain("ELSIF TG_OP = 'UPDATE' THEN");

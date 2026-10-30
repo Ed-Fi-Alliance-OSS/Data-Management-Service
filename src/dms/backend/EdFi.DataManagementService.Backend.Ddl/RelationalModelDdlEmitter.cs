@@ -20,6 +20,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private static readonly DbColumnName DocumentIdColumn = RelationalNameConventions.DocumentIdColumnName;
     private static readonly DbColumnName ContentVersionColumn = new("ContentVersion");
     private static readonly DbColumnName ContentLastModifiedAtColumn = new("ContentLastModifiedAt");
+    private static readonly DbColumnName ContentCreatedAtColumn = new("ContentCreatedAt");
     private static readonly DbColumnName ReferentialIdColumn = new("ReferentialId");
     private static readonly DbColumnName ResourceKeyIdColumn = new("ResourceKeyId");
     private static readonly DbColumnName DiscriminatorColumn = new("Discriminator");
@@ -1636,6 +1637,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append("NEW.");
             writer.Append(Quote(ContentLastModifiedAtColumn));
             writer.AppendLine(" := now();");
+            // Creation time starts the resource lifetime from the same timestamp as the initial
+            // last-modified value; no later path assigns it.
+            writer.Append("NEW.");
+            writer.Append(Quote(ContentCreatedAtColumn));
+            writer.Append(" := NEW.");
+            writer.Append(Quote(ContentLastModifiedAtColumn));
+            writer.AppendLine(";");
         }
     }
 
