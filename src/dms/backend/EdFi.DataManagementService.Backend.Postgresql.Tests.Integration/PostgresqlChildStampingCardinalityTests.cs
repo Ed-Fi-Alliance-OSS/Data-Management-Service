@@ -27,6 +27,17 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
 
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
 
+    // Whole microseconds, so the value round-trips exactly through timestamp with time zone.
+    private static readonly DateTime CreatedAtSentinel = new DateTime(
+        2000,
+        2,
+        3,
+        4,
+        5,
+        6,
+        DateTimeKind.Utc
+    ).AddTicks(1_234_560);
+
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
@@ -60,7 +71,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
             SELECT table_schema, table_name, column_name, data_type, is_nullable
             FROM information_schema.columns
             WHERE (table_schema, table_name) IN (('dms', 'Document'), ('dms', 'Descriptor'), ('edfi', 'School'))
-              AND column_name IN ('ContentVersion', 'ContentLastModifiedAt')
+              AND column_name IN ('ContentVersion', 'ContentLastModifiedAt', 'ContentCreatedAt')
             ORDER BY table_schema, table_name, column_name;
             """
         );
@@ -70,9 +81,11 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
             )
             .Should()
             .Equal(
+                "dms.Descriptor.ContentCreatedAt:timestamp with time zone:NO",
                 "dms.Descriptor.ContentLastModifiedAt:timestamp with time zone:NO",
                 "dms.Descriptor.ContentVersion:bigint:NO",
                 "dms.Document.ContentVersion:bigint:NO",
+                "edfi.School.ContentCreatedAt:timestamp with time zone:NO",
                 "edfi.School.ContentLastModifiedAt:timestamp with time zone:NO",
                 "edfi.School.ContentVersion:bigint:NO"
             );
@@ -86,15 +99,16 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
         var watermark = await ReadMaxChangeVersionAsync();
         var insertTimestamp = await _database.ExecuteScalarAsync<DateTime>(
             """
-            INSERT INTO "edfi"."School" ("DocumentId", "SchoolId", "ContentLastModifiedAt")
-            VALUES (@documentId, 900, '2000-01-01T00:00:00Z')
+            INSERT INTO "edfi"."School" ("DocumentId", "SchoolId", "ContentLastModifiedAt", "ContentCreatedAt")
+            VALUES (@documentId, 900, '2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z')
             RETURNING now();
             """,
             new NpgsqlParameter("documentId", documentId)
         );
         var after = await ReadStampPairAsync(documentId);
         after.DocumentVersion.Should().Be(version);
-        after.Owner.Should().Be(new StampValues(version, insertTimestamp));
+        // The trigger overrides both supplied timestamps with the inserting transaction's now().
+        after.Owner.Should().Be(new StampValues(version, insertTimestamp, insertTimestamp));
         (await ReadMaxChangeVersionAsync()).Should().Be(watermark);
     }
 
@@ -117,6 +131,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
     {
         var documentId = await SeedSchoolWithFullDescendantGraphAsync(800, 3);
         await BackdateOwnerTimestampAsync(documentId);
+        await SetOwnerCreatedAtSentinelAsync(documentId);
         var before = await ReadStampPairAsync(documentId);
         var watermark = await ReadMaxChangeVersionAsync();
         await _database.ExecuteNonQueryAsync(
@@ -129,6 +144,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
         after.DocumentVersion.Should().Be(watermark + 1);
         after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
         after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
+        after.Owner.ContentCreatedAt.Should().Be(CreatedAtSentinel);
         (await ReadMaxChangeVersionAsync()).Should().Be(watermark + 1);
     }
 
@@ -146,6 +162,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
     {
         var documentId = await SeedSchoolWithFullDescendantGraphAsync(700, 3);
         await BackdateOwnerTimestampAsync(documentId);
+        await SetOwnerCreatedAtSentinelAsync(documentId);
         var before = await ReadStampPairAsync(documentId);
         var watermark = await ReadMaxChangeVersionAsync();
         var beforeWork = await _database.QueryRowsAsync(
@@ -173,6 +190,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
         var schoolDocumentId = await InsertDocumentAsync("Ed-Fi", "School");
         await InsertSchoolAsync(schoolDocumentId, schoolId: 170);
         await BackdateOwnerTimestampAsync(schoolDocumentId);
+        await SetOwnerCreatedAtSentinelAsync(schoolDocumentId);
         var before = await ReadStampPairAsync(schoolDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
 
@@ -204,6 +222,28 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
         after
             .Owner.ContentVersion.Should()
             .Be(after.DocumentVersion, "the root mirror ContentVersion must equal dms.Document");
+        after
+            .Owner.ContentCreatedAt.Should()
+            .Be(CreatedAtSentinel, "a child insert stamps an existing root and never restarts its lifetime");
+    }
+
+    [Test]
+    public async Task It_should_preserve_the_root_creation_timestamp_on_a_root_extension_insert()
+    {
+        var schoolDocumentId = await InsertDocumentAsync("Ed-Fi", "School");
+        await InsertSchoolAsync(schoolDocumentId, schoolId: 175);
+        await BackdateOwnerTimestampAsync(schoolDocumentId);
+        await SetOwnerCreatedAtSentinelAsync(schoolDocumentId);
+        var before = await ReadStampPairAsync(schoolDocumentId);
+        var watermark = await ReadMaxChangeVersionAsync();
+
+        await InsertSchoolExtensionAsync(schoolDocumentId, "Campus-175");
+
+        var after = await ReadStampPairAsync(schoolDocumentId);
+        after.DocumentVersion.Should().Be(watermark + 1);
+        after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
+        after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
+        after.Owner.ContentCreatedAt.Should().Be(CreatedAtSentinel);
     }
 
     [Test]
@@ -666,7 +706,8 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
             SELECT
                 doc."ContentVersion" AS "DocumentContentVersion",
                 school."ContentVersion" AS "OwnerContentVersion",
-                school."ContentLastModifiedAt" AS "OwnerContentLastModifiedAt"
+                school."ContentLastModifiedAt" AS "OwnerContentLastModifiedAt",
+                school."ContentCreatedAt" AS "OwnerContentCreatedAt"
             FROM "dms"."Document" doc
             INNER JOIN "edfi"."School" school ON school."DocumentId" = doc."DocumentId"
             WHERE doc."DocumentId" = @documentId;
@@ -683,8 +724,23 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
             Convert.ToInt64(row["DocumentContentVersion"]),
             new StampValues(
                 Convert.ToInt64(row["OwnerContentVersion"]),
-                Convert.ToDateTime(row["OwnerContentLastModifiedAt"])
+                Convert.ToDateTime(row["OwnerContentLastModifiedAt"]),
+                Convert.ToDateTime(row["OwnerContentCreatedAt"])
             )
+        );
+    }
+
+    private async Task SetOwnerCreatedAtSentinelAsync(long documentId)
+    {
+        // Stamp-only maintenance is excluded from representation stamping.
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."School"
+            SET "ContentCreatedAt" = @createdAt
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("createdAt", CreatedAtSentinel),
+            new NpgsqlParameter("documentId", documentId)
         );
     }
 
@@ -702,5 +758,9 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
 
     private sealed record StampPair(long DocumentVersion, StampValues Owner);
 
-    private sealed record StampValues(long ContentVersion, DateTime ContentLastModifiedAt);
+    private sealed record StampValues(
+        long ContentVersion,
+        DateTime ContentLastModifiedAt,
+        DateTime ContentCreatedAt
+    );
 }
