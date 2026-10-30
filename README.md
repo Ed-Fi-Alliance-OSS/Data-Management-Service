@@ -54,6 +54,8 @@ for detailed information on how to contribute source code.
   plugin, rotation, and the trust position
 - [Relational Backend Developer Guide](./docs/RELATIONAL-BACKEND.md)
 - [Docker](./docs/DOCKER.md)
+- [CI Publishing Credentials](./docs/CI-PUBLISHING-CREDENTIALS.md) — how the workflows hold the
+  package and image publishing tokens, and the GitHub environment setup they require
 - [Removing reference validation](./docs/REFERENCE-VALIDATION.md)
 - [Setting Up Development Environment](./docs/SETUP-DEV-ENVIRONMENT.md)
 - [School Year Loader](./docs/SCHOOL-YEAR-LOADER.md)

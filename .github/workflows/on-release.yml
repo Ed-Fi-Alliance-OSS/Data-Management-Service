@@ -10,11 +10,11 @@ on:
       - released
   workflow_dispatch:
 
+# No publishing credential lives here: only the promote steps and the Docker Hub logins read the
+# publishing tokens, in jobs that run in the 'publishing' environment.
 env:
-  ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
   ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
   ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
-  ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
 
 permissions: read-all
 
@@ -70,6 +70,10 @@ jobs:
 
   promote-azure-artifact:
     name: Promote Azure Artifact
+    # Only on a v* release tag, never a manual run from a branch or a prerelease tag; the
+    # 'publishing' environment releases the publishing tokens only after its protection rules pass.
+    if: ${{ github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v') }}
+    environment: publishing
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the repo
@@ -89,6 +93,9 @@ jobs:
 
       - name: Promote EdFi.Api Package
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
@@ -104,6 +111,9 @@ jobs:
 
       - name: Promote EdFi.Api.ConfigurationService Package
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
@@ -119,6 +129,9 @@ jobs:
 
       - name: Promote EdFi.Api.SchemaTools Package
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
@@ -143,6 +156,9 @@ jobs:
       - name: Promote EdFi.Api.SecurityMetadataTools Package
         if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
           Import-Module ./package-helpers.psm1
@@ -175,6 +191,9 @@ jobs:
         # named anything, v8.0.0 included, so a name test alone would admit a branch dispatch.
         if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -201,6 +220,9 @@ jobs:
         # named anything, v8.0.0 included, so a name test alone would admit a branch dispatch.
         if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -220,6 +242,9 @@ jobs:
         # two steps above, and for the same reason.
         if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -239,6 +264,9 @@ jobs:
         # its own csproj declares. Guarded like the steps above, and for the same reason.
         if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -255,6 +283,10 @@ jobs:
 
   tag-dms-image:
     name: Release Tag DMS Image
+    # Only on a v* release tag, never a manual run from a branch or a prerelease tag; the
+    # 'publishing' environment releases the publishing tokens only after its protection rules pass.
+    if: ${{ github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v') }}
+    environment: publishing
     runs-on: ubuntu-latest
     steps:
       # Required so the local pull action below resolves from the workspace.
@@ -301,6 +333,10 @@ jobs:
 
   tag-cs-image:
     name: Release Tag Configuration Image
+    # Only on a v* release tag, never a manual run from a branch or a prerelease tag; the
+    # 'publishing' environment releases the publishing tokens only after its protection rules pass.
+    if: ${{ github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v') }}
+    environment: publishing
     runs-on: ubuntu-latest
     steps:
       # Required so the local pull action below resolves from the workspace.

@@ -50,11 +50,16 @@ on:
         type: boolean
         default: true
     secrets:
+      # The Azure Artifacts publishing credentials. Only publish-sdk-package and
+      # promote-azure-package read them, in the push and promote steps alone, after entering the
+      # 'publishing' environment; the build restores from the feed anonymously. They must exist
+      # ONLY as secrets of the 'publishing' environment, never as repository or organization
+      # secrets: GitHub requires the caller to pass an environment secret by name, but the caller's
+      # own job has no environment, so what it passes resolves only inside these jobs.
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN:
-        required: true
+        required: false
       AZURE_ARTIFACTS_USER_NAME:
-        # Consumed only on the release-promotion path (env.ARTIFACTS_USERNAME); restore uses the PAT
-        # alone. Optional so non-publishing callers and forks without the secret do not hard-fail.
+        # Consumed only on the release-promotion path.
         required: false
     outputs:
       hash-code:
@@ -70,9 +75,6 @@ on:
 env:
   ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
   ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
-  ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
-  ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
-  VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
 
 permissions:
   contents: write
@@ -296,11 +298,14 @@ jobs:
 
   publish-sdk-package:
     name: Publish ${{ inputs.sdk_display_name }} Package
-    if: ${{ inputs.publish_package }}
+    # Only from main or a v* tag, never a manual run from another branch, and only in the
+    # 'publishing' environment, whose protection rules GitHub checks before it releases the token.
+    if: ${{ inputs.publish_package && github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) }}
     needs:
       - build-sdk
       - generate-package-sbom
       - generate-package-provenance
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -320,6 +325,9 @@ jobs:
             InstallCredentialHandler
 
       - name: Push SDK Package to Azure Artifacts
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
          $artifact = (Get-ChildItem -Name -Include *.nupkg)
          $arguments = @{
@@ -334,7 +342,9 @@ jobs:
 
   promote-azure-package:
     name: Promote Azure Package
-    if: ${{ github.event_name == 'release' }}
+    # Only a publishing call promotes, and only a release event on its v* tag.
+    if: ${{ inputs.publish_package && github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v') }}
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -344,6 +354,9 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Promote SDK Azure Package
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"

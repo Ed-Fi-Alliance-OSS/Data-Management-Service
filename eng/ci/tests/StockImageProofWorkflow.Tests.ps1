@@ -154,9 +154,9 @@ Describe 'Stock image plugin proof lane' {
             $script:proofJob | Should -Match 'docker/setup-buildx-action@'
         }
 
-        It 'restores from the Ed-Fi feed with the credential the other lanes use' {
+        It 'restores from the public Ed-Fi feed anonymously, holding no publishing credential' {
             $script:proofJob | Should -Match 'ARTIFACTS_FEED_URL: \$\{\{ vars\.AZURE_ARTIFACTS_FEED_URL \}\}'
-            $script:proofJob | Should -Match 'secrets\.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN'
+            $script:proofJob | Should -Not -Match 'secrets\.|VSS_NUGET_EXTERNAL_FEED_ENDPOINTS|ARTIFACTS_API_KEY|environment:'
         }
 
         It 'runs the harness that already exists rather than a second copy of it' {

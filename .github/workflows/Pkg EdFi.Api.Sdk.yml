@@ -53,6 +53,9 @@ jobs:
       manifest_file: "_manifest/spdx_2.2/manifest.spdx.json"
       provenance_file: ${{ matrix.provenance_file }}
       publish_package: ${{ github.event_name != 'workflow_dispatch' || inputs.publish_package == true }}
+    # Passed by name because GitHub requires it for an environment secret. They exist only in the
+    # 'publishing' environment, so this job, which has none, holds nothing: the values resolve only
+    # in the reusable workflow's publish and promote jobs. This workflow has no pull_request trigger.
     secrets:
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
       AZURE_ARTIFACTS_USER_NAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
