@@ -13,7 +13,9 @@
 .DESCRIPTION
     Provisioning is create-only and there is no migration path for the DMS document store, so moving a
     published dataset onto a newer schema means provisioning a fresh database and copying the data in.
-    The copy validates the current compact catalog and source column shapes before loading.
+    The copy validates the current compact catalog and source column shapes before loading. Every
+    target column needs a source column, except an owner's ContentCreatedAt, which legacy dumps
+    predate and the target fills from its default.
 
     Triggers. The current schema carries more than a thousand triggers. A plain data-only restore fires
     the per-row projection stamping triggers, which rewrite ContentVersion and ContentLastModifiedAt on
@@ -1564,6 +1566,9 @@ function Assert-CopyColumnShape {
             continue
         }
         if ($QualifiedTable -ceq 'tracked_changes_edfi.Descriptor' -and $column.Name -ceq 'ResourceKeyId') { continue }
+        # Owner ContentCreatedAt (DMS-1656) postdates legacy dumps. With triggers off, the load leaves it
+        # to the column default, so a source without it is complete; a source with it is checked below.
+        if ($column.Name -ceq 'ContentCreatedAt' -and $match.Count -eq 0 -and -not $column.Generated) { continue }
         if ($match.Count -ne 1 -or $match[0].Generated -ne $column.Generated) { throw "Missing/mismatched source-shape coverage: $QualifiedTable/$($column.Name)." }
         if ($column.Name -cin $descriptorAliasNames -and (-not $column.Generated -or $column.Type -cne 'integer')) {
             throw "Missing/noncompact generated descriptor alias in target: $QualifiedTable/$($column.Name)."

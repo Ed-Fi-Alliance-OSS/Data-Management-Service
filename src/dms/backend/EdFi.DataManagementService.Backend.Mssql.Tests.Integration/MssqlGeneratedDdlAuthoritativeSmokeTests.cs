@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Globalization;
 using System.Xml.Linq;
 using Be.Vlaanderen.Basisregisters.Generators.Guid;
@@ -1196,6 +1197,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var beforeSurveySessionReferenceState = await GetSurveySessionReferenceStateAsync(
             _seedData.SurveyDocumentId
         );
+        await SetOwnerCreatedAtAsync("edfi", "CourseOffering", _seedData.CourseOfferingDocumentId);
+        await SetOwnerCreatedAtAsync("edfi", "Survey", _seedData.SurveyDocumentId);
         var beforeSession = await GetDocumentStampStateAsync(_seedData.SessionDocumentId);
         var beforeCourseOffering = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
         var beforeSurvey = await GetDocumentStampStateAsync(_seedData.SurveyDocumentId);
@@ -1285,6 +1288,12 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         AssertRootVersionMatchesDocument(afterSessionMirror, afterSession);
         AssertRootVersionMatchesDocument(afterCourseOfferingMirror, afterCourseOffering);
         AssertRootVersionMatchesDocument(afterSurveyMirror, afterSurvey);
+        (await GetOwnerCreatedAtAsync("edfi", "CourseOffering", _seedData.CourseOfferingDocumentId))
+            .Should()
+            .Be(CreatedAtSentinel, "a cascaded update keeps the referrer's creation time");
+        (await GetOwnerCreatedAtAsync("edfi", "Survey", _seedData.SurveyDocumentId))
+            .Should()
+            .Be(CreatedAtSentinel, "a cascaded update keeps the referrer's creation time");
 
         // The renamed Session and the cascade-updated CourseOffering each insert
         // exactly one key-change row. Survey's session reference is NOT part of its
@@ -1661,7 +1670,11 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var afterInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
         afterInsert.ContentVersion.Should().Be(beforeInsertVersion);
         afterInsertMaxChangeVersion.Should().Be(beforeInsertMaxChangeVersion);
+        (await GetOwnerCreatedAtAsync("sample", "Bus", busDocumentId))
+            .Should()
+            .Be(afterInsert.ContentLastModifiedAt, "insert initializes both timestamps from one value");
         await AssertRootVersionMatchesDocumentAsync("sample", "Bus", busDocumentId);
+        await SetOwnerCreatedAtAsync("sample", "Bus", busDocumentId);
 
         await DelayForDistinctTimestampsAsync();
         var updateRowsAffected = await _database.ExecuteNonQueryAsync(
@@ -1698,6 +1711,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         afterNoOp.Should().Be(afterUpdate);
         afterNoOpMirror.Should().Be(beforeNoOpMirror);
         AssertRootVersionMatchesDocument(afterNoOpMirror, afterNoOp);
+        (await GetOwnerCreatedAtAsync("sample", "Bus", busDocumentId)).Should().Be(CreatedAtSentinel);
     }
 
     [Test]
@@ -1760,6 +1774,18 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         trackedChangeRowsAfter.Should().Be(trackedChangeRowsBefore);
         afterMirror.ContentVersion.Should().Be(beforeMirror.ContentVersion + 1);
         afterMirror.ContentLastModifiedAt.Should().Be(beforeMirror.ContentLastModifiedAt);
+
+        // A creation-only update is stamp maintenance too: no version, no tracked change, and the
+        // last-modified time is untouched.
+        await SetOwnerCreatedAtAsync("sample", "Bus", busDocumentId);
+
+        (await GetDocumentStampStateAsync(busDocumentId)).Should().Be(beforeDocument);
+        (await GetRootMirrorStampStateAsync("sample", "Bus", busDocumentId)).Should().Be(afterMirror);
+        (await ReadMaxChangeVersionAsync()).Should().Be(beforeMaxChangeVersion);
+        (await CountRowsAsync("SELECT COUNT(*) FROM [tracked_changes_sample].[Bus];"))
+            .Should()
+            .Be(trackedChangeRowsBefore);
+        (await GetOwnerCreatedAtAsync("sample", "Bus", busDocumentId)).Should().Be(CreatedAtSentinel);
     }
 
     // GUID allocation convention for tracked-change tests:
@@ -4496,6 +4522,51 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """SELECT [ContentVersion] FROM [dms].[Document] WHERE [DocumentId] = @documentId;""",
             new SqlParameter("@documentId", documentId)
         );
+
+    // Whole microseconds, so the value round-trips exactly through datetime2(7).
+    private static readonly DateTimeOffset CreatedAtSentinel = new DateTimeOffset(
+        2000,
+        2,
+        3,
+        4,
+        5,
+        6,
+        TimeSpan.Zero
+    ).AddTicks(1_234_560);
+
+    private async Task SetOwnerCreatedAtAsync(string schemaName, string tableName, long documentId)
+    {
+        // Stamp-only maintenance is excluded from representation stamping.
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            UPDATE [{schemaName}].[{tableName}]
+            SET [ContentCreatedAt] = @createdAt
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@createdAt", SqlDbType.DateTime2) { Value = CreatedAtSentinel.UtcDateTime },
+            new SqlParameter("@documentId", documentId)
+        );
+    }
+
+    private async Task<DateTimeOffset> GetOwnerCreatedAtAsync(
+        string schemaName,
+        string tableName,
+        long documentId
+    )
+    {
+        var row = (
+            await _database.QueryRowsAsync(
+                $"""
+                SELECT [ContentCreatedAt]
+                FROM [{schemaName}].[{tableName}]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
+        return ReadDateTimeOffset(row["ContentCreatedAt"]);
+    }
 
     private async Task<DocumentStampState> GetRootMirrorStampStateAsync(
         string schemaName,

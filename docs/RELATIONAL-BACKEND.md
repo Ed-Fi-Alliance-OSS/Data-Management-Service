@@ -194,7 +194,8 @@ dataset republication is not a prerequisite for this schema change.
 **`dms.Document.CreatedAt` removal (DMS-1403).** Freshly provisioned schemas no longer have
 `dms.Document.CreatedAt` on either engine. The DMS API data path did not use this column;
 removing it does not change API fields, ETags, change queries, or authorization decisions. It
-is removed without a replacement creation-time capability. `RelationalMappingVersion` stays `v3`, and generated
+is not replaced on `dms.Document`; resource creation time is stored on the owner as
+`ContentCreatedAt` (see DMS-1656 below). `RelationalMappingVersion` stays `v3`, and generated
 DDL is not a hash input, so `EffectiveSchemaHash` is unchanged. A matching hash and successful
 startup validation therefore cannot prove that a database no longer has the column. Verify the
 catalog instead. The first query must return at least one row, which proves the table exists.
@@ -235,6 +236,46 @@ serve, but they do not deliver the saving. Replace them with packages built from
 includes this change. `eng/DatabaseTemplates/verify-template-restore.ps1` rejects them: it fails
 when the source database (before the restore) or the restored database (before the API probe)
 has no `dms.Document` table, still has `CreatedAt`, or cannot be queried.
+
+**Owner `ContentCreatedAt` (DMS-1656).** Freshly provisioned schemas store each resource's
+creation time as a non-null `ContentCreatedAt` column on the root table of every resource
+(core and extension-project) and on `dms.Descriptor`: PostgreSQL `timestamp with time zone`,
+SQL Server `datetime2(7)`, both UTC. It is not on `dms.Document`, child/collection tables,
+`_ext` tables or `dms.DocumentCache`, and it has no index. A direct database reader gets a
+resource's creation time from its own row, without joining `dms.Document`. The column is
+backend-owned: inserting the owner row sets it from the same database timestamp as the initial
+`ContentLastModifiedAt`, and no later write, cascade, no-op or restamp changes it. Deleting and
+recreating a resource starts a new lifetime with a new value. It is not client-writable, does not
+appear in API JSON, and never allocates a `ContentVersion` or a tracked-change row; see
+[update-tracking.md](../reference/design/backend-redesign/design-docs/update-tracking.md#creation-time-normative).
+Rows loaded by the [carry-forward route](#reprovisioning-and-legacy-data-carry-forward) are the
+exception: the copy runs with triggers disabled and keeps each row's source `ContentLastModifiedAt`,
+so `ContentCreatedAt` takes its default, the copy time, which is later than the carried
+`ContentLastModifiedAt`.
+
+`RelationalMappingVersion` stays `v3`, and generated DDL is not a hash input, so a database
+provisioned before this change passes startup validation but lacks the column until it is
+deliberately reprovisioned. Verify the catalog. The first query must return at least one row
+(the owner tables). The second lists owners without the column and must return no rows:
+
+```sql
+-- PostgreSQL
+SELECT table_schema, table_name FROM information_schema.columns
+WHERE column_name = 'ContentLastModifiedAt' ORDER BY table_schema, table_name;
+SELECT o.table_schema, o.table_name FROM information_schema.columns o
+WHERE o.column_name = 'ContentLastModifiedAt'
+  AND NOT EXISTS (SELECT 1 FROM information_schema.columns c
+                  WHERE c.table_schema = o.table_schema AND c.table_name = o.table_name
+                    AND c.column_name = 'ContentCreatedAt');
+
+-- SQL Server
+SELECT OBJECT_SCHEMA_NAME(o.object_id), OBJECT_NAME(o.object_id) FROM sys.columns o
+WHERE o.name = N'ContentLastModifiedAt' ORDER BY 1, 2;
+SELECT OBJECT_SCHEMA_NAME(o.object_id), OBJECT_NAME(o.object_id) FROM sys.columns o
+WHERE o.name = N'ContentLastModifiedAt'
+  AND NOT EXISTS (SELECT 1 FROM sys.columns c
+                  WHERE c.object_id = o.object_id AND c.name = N'ContentCreatedAt');
+```
 
 ### Descriptor catalog checks and template handoff
 
@@ -511,7 +552,11 @@ an authoritative `ContentLastModifiedAt` on its resource root or `dms.Descriptor
 mirrors `ContentVersion`. **Stamping triggers** maintain those stamps in one transaction, including
 child/extension and identity-cascade changes; `dms.Document` has no last-modified timestamp.
 No-op writes preserve stamps. Document insertion allocates the initial version and owner insertion
-copies it while generating its timestamp. Document locks, optimistic concurrency and projection
+copies it while generating its timestamp. Owner insertion also sets `ContentCreatedAt` from that
+same timestamp; it is not a stamp, and every later write preserves it. Every stamp the stamping
+triggers write in one transaction uses one timestamp on both engines (PostgreSQL's `now()`; on SQL
+Server, the first trigger stamp's `sysutcdatetime()` reading, kept in the session context for that transaction), so child
+and `_ext` rows inserted by the creating write leave the two values equal. Document locks, optimistic concurrency and projection
 enqueueing remain version-only. Those triggers
 also populate per-resource **tracked-change tables** that live under a per-project schema named
 `tracked_changes_<projectSchema>` (for example the `tracked_changes_edfi` schema), recording the
@@ -523,7 +568,7 @@ history snapshots dereference stored `int` values through `dms.Descriptor.Descri
 When debugging a stamp or a
 tracked-change row, these are the sources of truth:
 
-- [`RelationalModelDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs) (per-resource root tables) and [`CoreDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs) (descriptors) — the stamping-trigger bodies that write the `ContentVersion` / `ContentLastModifiedAt` stamps
+- [`RelationalModelDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs) (per-resource root tables) and [`CoreDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs) (descriptors) — the stamping-trigger bodies that write the `ContentVersion` / `ContentLastModifiedAt` stamps and initialize `ContentCreatedAt` on insert
 - [`TrackedChangeTriggerBodyEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/TrackedChangeTriggerBodyEmitter.cs) — the trigger bodies that write the tracked-change rows (they read the already-stamped `ContentVersion`)
 - [`DeriveTrackedChangeInventoryPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTrackedChangeInventoryPass.cs) — how the tracked-change table inventory and columns are derived
 
@@ -560,14 +605,14 @@ existing document-version trigger drives projection work when the lifecycle enab
 
 #### Change-version filtering (`minChangeVersion` / `maxChangeVersion`)
 
-Root and descriptor tables carry a **mirrored** `ContentVersion` and **authoritative**
-`ContentLastModifiedAt` (`ColumnKind.MirroredContentVersion` /
-`ColumnKind.AuthoritativeContentLastModifiedAt`).
+Root and descriptor tables carry a **mirrored** `ContentVersion`, an **authoritative**
+`ContentLastModifiedAt` and a creation-time `ContentCreatedAt` (`ColumnKind.MirroredContentVersion` /
+`ColumnKind.AuthoritativeContentLastModifiedAt` / `ColumnKind.AuthoritativeContentCreatedAt`).
 The query-time change-version filter ranges over `ContentVersion`. Descriptor live windows use
 `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`; history windows use
 `IX_Descriptor_ResourceKeyId_ChangeVersion` on the shared history table.
 
-- [`DeriveContentVersionMirrorPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveContentVersionMirrorPass.cs) — derives the version mirror and authoritative timestamp on root resource tables (the core DDL pass owns those columns on `dms.Descriptor`)
+- [`DeriveContentVersionMirrorPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveContentVersionMirrorPass.cs) — derives the version mirror, authoritative timestamp and creation time on root resource tables (the core DDL pass owns those columns on `dms.Descriptor`)
 - [`RelationalQueryPageKeysetPlanner.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalQueryPageKeysetPlanner.cs) — the change-version range predicate (`ChangeVersionFilterConstants`, `AppendChangeVersionPredicates`)
 
 The relational `/deletes` and `/keyChanges` paths use

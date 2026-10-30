@@ -16,17 +16,22 @@ internal static class ProjectionMetadataResolver
     /// <summary>
     /// Returns <see langword="true"/> when the column participates in the hydration (read) projection.
     /// The synthesized version mirror and authoritative timestamp columns
-    /// (<see cref="ColumnKind.MirroredContentVersion"/> and
-    /// <see cref="ColumnKind.AuthoritativeContentLastModifiedAt"/>) are excluded from JSON reconstitution.
+    /// (<see cref="ColumnKind.MirroredContentVersion"/>,
+    /// <see cref="ColumnKind.AuthoritativeContentLastModifiedAt"/> and
+    /// <see cref="ColumnKind.AuthoritativeContentCreatedAt"/>) are excluded from JSON reconstitution.
     /// Metadata readers select the version from <c>dms.Document</c> and the timestamp from the resource root.
-    /// Both columns remain in the relational model for DDL, indexing, and query planning.
+    /// All three columns remain in the relational model for DDL, indexing, and query planning.
     /// </summary>
     public static bool IsHydrationProjectionColumn(DbColumnModel column)
     {
         ArgumentNullException.ThrowIfNull(column);
 
         return column.Kind
-            is not (ColumnKind.MirroredContentVersion or ColumnKind.AuthoritativeContentLastModifiedAt);
+            is not (
+                ColumnKind.MirroredContentVersion
+                or ColumnKind.AuthoritativeContentLastModifiedAt
+                or ColumnKind.AuthoritativeContentCreatedAt
+            );
     }
 
     /// <summary>

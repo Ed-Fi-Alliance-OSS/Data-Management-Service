@@ -474,6 +474,9 @@ public sealed class CoreDdlEmitter
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentLastModifiedAt"), DateTimeType, false, "DF_Descriptor_ContentLastModifiedAt", _dialect.CurrentTimestampDefaultExpression)},"
             );
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinitionWithNamedDefault(Col("ContentCreatedAt"), DateTimeType, false, "DF_Descriptor_ContentCreatedAt", _dialect.CurrentTimestampDefaultExpression)},"
+            );
             writer.AppendLine(_dialect.RenderNamedPrimaryKeyClause("PK_Descriptor", [Col("DescriptorId")]));
         }
         writer.AppendLine(");");
@@ -1718,7 +1721,7 @@ public sealed class CoreDdlEmitter
                     writer.AppendLine();
                 }
                 writer.AppendLine(")");
-                EmitPgsqlDescriptorStampUpdateFromVersion(writer, descriptorTable);
+                EmitPgsqlDescriptorStampUpdateFromVersion(writer, descriptorTable, initializeCreatedAt: true);
             }
             writer.AppendLine("ELSIF TG_OP = 'UPDATE' THEN");
             using (writer.Indent())
@@ -1745,7 +1748,11 @@ public sealed class CoreDdlEmitter
                     writer.AppendLine();
                 }
                 writer.AppendLine(")");
-                EmitPgsqlDescriptorStampUpdateFromVersion(writer, descriptorTable);
+                EmitPgsqlDescriptorStampUpdateFromVersion(
+                    writer,
+                    descriptorTable,
+                    initializeCreatedAt: false
+                );
             }
             writer.AppendLine("ELSIF TG_OP = 'DELETE' THEN");
             using (writer.Indent())
@@ -1794,7 +1801,16 @@ public sealed class CoreDdlEmitter
         writer.AppendLine();
     }
 
-    private void EmitPgsqlDescriptorStampUpdateFromVersion(SqlWriter writer, string descriptorTable)
+    /// <summary>
+    /// Emits the descriptor owner stamp from the captured document version. Only the INSERT branch
+    /// initializes <c>ContentCreatedAt</c>; <c>now()</c> is the transaction start time, so it equals the
+    /// initial <c>ContentLastModifiedAt</c>.
+    /// </summary>
+    private void EmitPgsqlDescriptorStampUpdateFromVersion(
+        SqlWriter writer,
+        string descriptorTable,
+        bool initializeCreatedAt
+    )
     {
         writer.Append("UPDATE ");
         writer.Append(descriptorTable);
@@ -1806,6 +1822,12 @@ public sealed class CoreDdlEmitter
         writer.Append(", ");
         writer.Append(Quote("ContentLastModifiedAt"));
         writer.Append(" = now()");
+        if (initializeCreatedAt)
+        {
+            writer.Append(", ");
+            writer.Append(Quote("ContentCreatedAt"));
+            writer.Append(" = now()");
+        }
         writer.AppendLine();
         writer.AppendLine("FROM stamped");
         // The captured version is keyed by the owning document, not the compact descriptor identity.
@@ -1817,8 +1839,55 @@ public sealed class CoreDdlEmitter
     }
 
     /// <summary>
+    /// Emits the descriptor owner-stamp UPDATE that copies captured document versions onto
+    /// <c>dms.Descriptor</c> and stamps them from the transaction-stable <see cref="MssqlStampClock"/>;
+    /// when <paramref name="setCreatedAt"/> is true the same value initializes <c>ContentCreatedAt</c>.
+    /// </summary>
+    private void EmitMssqlDescriptorOwnerStampUpdate(
+        SqlWriter writer,
+        string descriptorTable,
+        string quotedDocumentKeyColumn,
+        bool setCreatedAt
+    )
+    {
+        writer.AppendLine("UPDATE r");
+        writer.Append("SET r.");
+        writer.Append(Quote("ContentVersion"));
+        writer.Append(" = s.");
+        writer.Append(Quote("ContentVersion"));
+        writer.AppendLine(",");
+        writer.Append("    r.");
+        writer.Append(Quote("ContentLastModifiedAt"));
+        writer.Append(" = ");
+        writer.Append(MssqlStampClock.Variable);
+        if (setCreatedAt)
+        {
+            writer.AppendLine(",");
+            writer.Append("    r.");
+            writer.Append(Quote("ContentCreatedAt"));
+            writer.Append(" = ");
+            writer.Append(MssqlStampClock.Variable);
+        }
+        writer.AppendLine();
+        writer.Append("FROM ");
+        writer.Append(descriptorTable);
+        // Same reason as the resource owner stamp: @stamped is a table variable, so the
+        // cached plan reflects the cardinality of whichever firing compiled it, and a plan
+        // that scans dms.Descriptor takes update locks across rows the transaction never
+        // touched. FORCESEEK forbids that scan; UX_Descriptor_DocumentId supports a seek
+        // on the unique document association even though DescriptorId is the primary key.
+        writer.AppendLine(" r WITH (FORCESEEK)");
+        writer.Append("INNER JOIN @stamped s ON s.");
+        writer.Append(quotedDocumentKeyColumn);
+        writer.Append(" = r.");
+        writer.Append(quotedDocumentKeyColumn);
+        writer.AppendLine(";");
+    }
+
+    /// <summary>
     /// Emits the SQL Server descriptor stamping trigger. INSERT rows copy the
-    /// <c>dms.Document</c> version default and generate a descriptor timestamp; UPDATE rows flow
+    /// <c>dms.Document</c> version default and initialize the descriptor last-modified and creation
+    /// timestamps from one captured value; UPDATE rows flow
     /// through the null-safe per-column diff predicates across every stored descriptor
     /// column, so no-op UPDATEs produce no CTE rows and the downstream owner stamp
     /// updates stamp nothing. DELETE rows stamp the owning document before it is removed.
@@ -1979,28 +2048,34 @@ public sealed class CoreDdlEmitter
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
-                writer.AppendLine("UPDATE r");
-                writer.Append("SET r.");
-                writer.Append(Quote("ContentVersion"));
-                writer.Append(" = s.");
-                writer.Append(Quote("ContentVersion"));
-                writer.AppendLine(",");
-                writer.Append("    r.");
-                writer.Append(Quote("ContentLastModifiedAt"));
-                writer.AppendLine(" = sysutcdatetime()");
-                writer.Append("FROM ");
-                writer.Append(descriptorTable);
-                // Same reason as the resource owner stamp: @stamped is a table variable, so the
-                // cached plan reflects the cardinality of whichever firing compiled it, and a plan
-                // that scans dms.Descriptor takes update locks across rows the transaction never
-                // touched. FORCESEEK forbids that scan; UX_Descriptor_DocumentId supports a seek
-                // on the unique document association even though DescriptorId is the primary key.
-                writer.AppendLine(" r WITH (FORCESEEK)");
-                writer.Append("INNER JOIN @stamped s ON s.");
-                writer.Append(quotedDocumentKeyColumn);
-                writer.Append(" = r.");
-                writer.Append(quotedDocumentKeyColumn);
-                writer.AppendLine(";");
+                // One value per transaction, matching the resource owner stamps.
+                MssqlStampClock.Emit(writer);
+                // Only an INSERT firing has an empty deleted set. The column defaults read the clock
+                // separately from this AFTER trigger, so the insert branch overwrites both timestamps.
+                writer.AppendLine("IF EXISTS (SELECT 1 FROM deleted)");
+                writer.AppendLine("BEGIN");
+                using (writer.Indent())
+                {
+                    EmitMssqlDescriptorOwnerStampUpdate(
+                        writer,
+                        descriptorTable,
+                        quotedDocumentKeyColumn,
+                        setCreatedAt: false
+                    );
+                }
+                writer.AppendLine("END");
+                writer.AppendLine("ELSE");
+                writer.AppendLine("BEGIN");
+                using (writer.Indent())
+                {
+                    EmitMssqlDescriptorOwnerStampUpdate(
+                        writer,
+                        descriptorTable,
+                        quotedDocumentKeyColumn,
+                        setCreatedAt: true
+                    );
+                }
+                writer.AppendLine("END");
             }
             writer.AppendLine("END");
             if (_sharedDescriptorTrackedChangeTable is not null)

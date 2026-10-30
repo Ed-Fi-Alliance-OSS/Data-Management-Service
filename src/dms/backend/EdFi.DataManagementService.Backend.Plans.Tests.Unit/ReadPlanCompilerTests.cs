@@ -70,7 +70,8 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Model.Root.Columns.Select(static column => column.Kind)
             .Should()
             .Contain(ColumnKind.MirroredContentVersion)
-            .And.Contain(ColumnKind.AuthoritativeContentLastModifiedAt);
+            .And.Contain(ColumnKind.AuthoritativeContentLastModifiedAt)
+            .And.Contain(ColumnKind.AuthoritativeContentCreatedAt);
     }
 
     [Test]
@@ -86,6 +87,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 column.Kind
                     is ColumnKind.MirroredContentVersion
                         or ColumnKind.AuthoritativeContentLastModifiedAt
+                        or ColumnKind.AuthoritativeContentCreatedAt
             )
             .Should()
             .BeEmpty();
@@ -93,7 +95,8 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         rootPlan
             .SelectByKeysetSql.Should()
             .NotContain("ContentVersion")
-            .And.NotContain("ContentLastModifiedAt");
+            .And.NotContain("ContentLastModifiedAt")
+            .And.NotContain("ContentCreatedAt");
     }
 
     [Test]
@@ -129,6 +132,17 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             new DbColumnModel(
                 ColumnName: new DbColumnName("ContentLastModifiedAt"),
                 Kind: ColumnKind.AuthoritativeContentLastModifiedAt,
+                ScalarType: new RelationalScalarType(ScalarKind.DateTime),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            )
+            {
+                IsWritable = false,
+            },
+            new DbColumnModel(
+                ColumnName: new DbColumnName("ContentCreatedAt"),
+                Kind: ColumnKind.AuthoritativeContentCreatedAt,
                 ScalarType: new RelationalScalarType(ScalarKind.DateTime),
                 IsNullable: false,
                 SourceJsonPath: null,

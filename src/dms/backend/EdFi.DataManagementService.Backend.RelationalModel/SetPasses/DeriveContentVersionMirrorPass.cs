@@ -8,17 +8,17 @@ using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 
 /// <summary>
-/// Synthesizes the row-local <c>ContentVersion</c> mirror and authoritative
-/// <c>ContentLastModifiedAt</c> timestamp on the root table of every concrete relational resource.
-/// The columns have no source JSONPath and no target resource; they are maintained only by document-stamping
+/// Synthesizes the row-local <c>ContentVersion</c> mirror and the authoritative
+/// <c>ContentLastModifiedAt</c> and <c>ContentCreatedAt</c> timestamps on the root table of every concrete
+/// relational resource. The columns have no source JSONPath and no target resource; they are maintained only by document-stamping
 /// triggers and are kept out of client-writable projections via <see cref="DbColumnModel.IsWritable"/>.
 /// Descriptor resources (<see cref="ResourceStorageKind.SharedDescriptorTable"/>) are skipped; their
-/// version mirror and authoritative timestamp live on the shared <c>dms.Descriptor</c> table.
+/// version mirror and authoritative timestamps live on the shared <c>dms.Descriptor</c> table.
 /// </summary>
 public sealed class DeriveContentVersionMirrorPass : IRelationalModelSetPass
 {
     /// <summary>
-    /// Appends the version mirror and authoritative timestamp to each relational resource root.
+    /// Appends the version mirror and authoritative timestamps to each relational resource root.
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
@@ -72,6 +72,17 @@ public sealed class DeriveContentVersionMirrorPass : IRelationalModelSetPass
             new DbColumnModel(
                 RelationalNameConventions.ContentLastModifiedAtColumnName,
                 ColumnKind.AuthoritativeContentLastModifiedAt,
+                new RelationalScalarType(ScalarKind.DateTime),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            )
+            {
+                IsWritable = false,
+            },
+            new DbColumnModel(
+                RelationalNameConventions.ContentCreatedAtColumnName,
+                ColumnKind.AuthoritativeContentCreatedAt,
                 new RelationalScalarType(ScalarKind.DateTime),
                 IsNullable: false,
                 SourceJsonPath: null,

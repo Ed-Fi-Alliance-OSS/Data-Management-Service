@@ -101,6 +101,13 @@ public enum ColumnKind
     /// target resource; maintained by stamping triggers and excluded from client-writable projections.
     /// </summary>
     AuthoritativeContentLastModifiedAt,
+
+    /// <summary>
+    /// The authoritative creation timestamp for the current lifetime of the resource row. Has no source
+    /// JSONPath or target resource; set by the owner's stamping trigger on insert, never client-writable,
+    /// and excluded from JSON reconstitution and representation (no-op) comparisons.
+    /// </summary>
+    AuthoritativeContentCreatedAt,
 }
 
 /// <summary>

@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
+using EdFi.DataManagementService.Backend.RelationalModel.Build;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -98,6 +99,7 @@ internal static class MirrorDerivationTestHelpers
                 column.Kind
                     is ColumnKind.MirroredContentVersion
                         or ColumnKind.AuthoritativeContentLastModifiedAt
+                        or ColumnKind.AuthoritativeContentCreatedAt
             )
             .Should()
             .BeEmpty();
@@ -106,7 +108,8 @@ internal static class MirrorDerivationTestHelpers
             .Columns.Select(column => column.ColumnName.Value)
             .Should()
             .NotContain("ContentVersion")
-            .And.NotContain("ContentLastModifiedAt");
+            .And.NotContain("ContentLastModifiedAt")
+            .And.NotContain("ContentCreatedAt");
     }
 }
 
@@ -166,6 +169,24 @@ public class Given_A_Core_Resource_With_Collections_For_Mirror_Derivation
         var column = root.Columns.Single(c => c.ColumnName.Value == "ContentLastModifiedAt");
 
         column.Kind.Should().Be(ColumnKind.AuthoritativeContentLastModifiedAt);
+        column.ScalarType!.Kind.Should().Be(ScalarKind.DateTime);
+        column.IsNullable.Should().BeFalse();
+        column.SourceJsonPath.Should().BeNull();
+        column.TargetResource.Should().BeNull();
+        column.IsWritable.Should().BeFalse();
+        column.Storage.Should().BeOfType<ColumnStorage.Stored>();
+    }
+
+    /// <summary>
+    /// It should add an authoritative ContentCreatedAt column to the resource root table.
+    /// </summary>
+    [Test]
+    public void It_should_add_authoritative_ContentCreatedAt_column_to_root()
+    {
+        var root = MirrorDerivationTestHelpers.RootByTableName(_set, "BusRoute");
+        var column = root.Columns.Single(c => c.ColumnName.Value == "ContentCreatedAt");
+
+        column.Kind.Should().Be(ColumnKind.AuthoritativeContentCreatedAt);
         column.ScalarType!.Kind.Should().Be(ScalarKind.DateTime);
         column.IsNullable.Should().BeFalse();
         column.SourceJsonPath.Should().BeNull();
@@ -249,6 +270,7 @@ public class Given_Resource_Extension_Tables_For_Mirror_Derivation
 
         root.Columns.Should().ContainSingle(c => c.Kind == ColumnKind.MirroredContentVersion);
         root.Columns.Should().ContainSingle(c => c.Kind == ColumnKind.AuthoritativeContentLastModifiedAt);
+        root.Columns.Should().ContainSingle(c => c.Kind == ColumnKind.AuthoritativeContentCreatedAt);
     }
 
     /// <summary>
@@ -307,6 +329,7 @@ public class Given_An_Extension_Project_Resource_For_Mirror_Derivation
         root.Table.Schema.Value.Should().Be("sample");
         root.Columns.Should().ContainSingle(c => c.Kind == ColumnKind.MirroredContentVersion);
         root.Columns.Should().ContainSingle(c => c.Kind == ColumnKind.AuthoritativeContentLastModifiedAt);
+        root.Columns.Should().ContainSingle(c => c.Kind == ColumnKind.AuthoritativeContentCreatedAt);
     }
 }
 
@@ -348,6 +371,50 @@ public class Given_Descriptor_Resources_For_Mirror_Derivation
         );
 
         MirrorDerivationTestHelpers.ShouldHaveNoMirrorColumns(descriptorResource.RelationalModel.Root);
+    }
+}
+
+/// <summary>
+/// Test fixture for a resource property whose column name collides with the synthesized
+/// <c>ContentCreatedAt</c> stamp column.
+/// </summary>
+[TestFixture]
+public class Given_A_Resource_Property_That_Collides_With_ContentCreatedAt
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            MirrorPassTestSchemaBuilder.BuildProjectWithContentCreatedAtPropertySchema(),
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateStrict());
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should fail closed with an error naming the colliding column. The first pass to index root
+    /// columns by name rejects the duplicate, so the exception type is not pinned.
+    /// </summary>
+    [Test]
+    public void It_should_fail_with_an_error_naming_ContentCreatedAt()
+    {
+        _exception.Should().NotBeNull();
+        _exception!.Message.Should().Contain("ContentCreatedAt");
     }
 }
 
@@ -397,6 +464,57 @@ file static class MirrorPassTestSchemaBuilder
             ["projectEndpointName"] = "sample",
             ["projectVersion"] = "1.0.0",
             ["resourceSchemas"] = new JsonObject { ["candidates"] = candidate },
+        };
+    }
+
+    /// <summary>
+    /// Builds a core project schema whose root resource has a <c>contentCreatedAt</c> property, which
+    /// normalizes to the same column name as the synthesized creation timestamp.
+    /// </summary>
+    internal static JsonObject BuildProjectWithContentCreatedAtPropertySchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["widgetIdentifier"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
+                ["contentCreatedAt"] = new JsonObject { ["type"] = "string", ["format"] = "date-time" },
+            },
+            ["required"] = new JsonArray("widgetIdentifier"),
+        };
+
+        var widget = new JsonObject
+        {
+            ["resourceName"] = "Widget",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.widgetIdentifier" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["WidgetIdentifier"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["path"] = "$.widgetIdentifier",
+                },
+                ["ContentCreatedAt"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["path"] = "$.contentCreatedAt",
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "5.0.0",
+            ["resourceSchemas"] = new JsonObject { ["widgets"] = widget },
         };
     }
 }

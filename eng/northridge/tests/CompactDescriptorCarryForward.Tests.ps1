@@ -58,6 +58,15 @@ CREATE SCHEMA auth; CREATE TABLE auth."CarryForwardWitness" ("DocumentId" bigint
         $documentKey = 'CONSTRAINT "PK_Document" PRIMARY KEY ("DocumentId")'
         if (($legacy.Length - $legacy.Replace($documentKey, '').Length) -ne $documentKey.Length) { throw "Fixture DDL must declare $documentKey exactly once" }
         $legacy = $legacy.Replace($documentKey, '"CreatedAt" timestamp with time zone NOT NULL DEFAULT now(),' + "`n    " + $documentKey)
+        # Legacy dumps predate the owner ContentCreatedAt (DMS-1656): drop the column and its trigger assignments.
+        foreach ($createdAt in @(
+                ("`n" + '    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),'),
+                ', "ContentCreatedAt" = now()',
+                ("`n" + '        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";'))) {
+            if (-not $legacy.Contains($createdAt)) { throw "Fixture DDL no longer contains: $createdAt" }
+            $legacy = $legacy.Replace($createdAt, '')
+        }
+        if ($legacy.Contains('ContentCreatedAt')) { throw 'Fixture legacy DDL still references ContentCreatedAt' }
         foreach ($db in $script:databases) {
             docker exec $script:container createdb -U $script:user $db
             if ($LASTEXITCODE -ne 0) { throw "Cannot create fixture $db" }
@@ -144,6 +153,15 @@ COMMIT;
         $map = Import-Csv (Join-Path $script:outputDir "descriptor-key-map.$script:target.tsv") -Delimiter "`t"
         $map.DocumentId | Should -Be @('5000000042', '5000000043', '5000000044', '5000000045')
         $map.DescriptorId | Should -Be @('41', '42', '43', '44')
+    }
+    It 'Loads owners from an archive that predates ContentCreatedAt, leaving it to the copy-time default' {
+        $script:copyOutput -join "`n" | Should -Match 'PASS: copy complete'
+        (Query $script:source "SELECT count(*) FROM information_schema.columns WHERE column_name = 'ContentCreatedAt';") | Should -Be @('0')
+        # The legacy stamps are from January 2026, so the copy-time default is always later.
+        foreach ($owner in @('dms."Descriptor"', 'edfi."Student"', 'edfi."ProfileRootOnlyMergeItem"')) {
+            (Query $script:target "SELECT count(*) || '|' || count(*) FILTER (WHERE ""ContentCreatedAt"" > ""ContentLastModifiedAt"") FROM $owner;") |
+                Should -Be (Query $script:source "SELECT count(*) || '|' || count(*) FROM $owner;")
+        }
     }
     It 'Reads a legacy archive whose dms.Document still carries ContentLastModifiedAt and CreatedAt' {
         $archive = @(docker exec $script:container pg_restore --data-only -n dms -t Document -f - /tmp/nr-compact-fixture.dump)

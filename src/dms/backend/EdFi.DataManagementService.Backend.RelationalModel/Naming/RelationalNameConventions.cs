@@ -67,6 +67,11 @@ public static class RelationalNameConventions
     public static DbColumnName ContentLastModifiedAtColumnName { get; } = new("ContentLastModifiedAt");
 
     /// <summary>
+    /// The authoritative creation timestamp column on a resource root.
+    /// </summary>
+    public static DbColumnName ContentCreatedAtColumnName { get; } = new("ContentCreatedAt");
+
+    /// <summary>
     /// The standard stable row-identity column name used by persisted collection and extension child tables.
     /// </summary>
     public static DbColumnName CollectionItemIdColumnName { get; } = new("CollectionItemId");

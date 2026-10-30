@@ -253,6 +253,7 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "EffectiveEndDate" date NULL,
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DescriptorId")
 );
 
@@ -732,7 +733,7 @@ BEGIN
             WHERE "DocumentId" = NEW."DocumentId"
         )
         UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now(), "ContentCreatedAt" = now()
         FROM stamped
         WHERE r."DocumentId" = stamped."DocumentId";
     ELSIF TG_OP = 'UPDATE' THEN
@@ -1061,6 +1062,7 @@ CREATE SCHEMA IF NOT EXISTS "tracked_changes_edfi";
 CREATE TABLE IF NOT EXISTS "edfi"."ProfileRootOnlyMergeItem"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "PrimarySchoolTypeDescriptor_DescriptorId_Present" boolean NULL,
@@ -1114,6 +1116,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ProfileRootOnlyMergeItemItemNested"
 CREATE TABLE IF NOT EXISTS "edfi"."Student"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SchoolTypeDescriptor_DescriptorId" integer NOT NULL,
@@ -1477,6 +1480,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -1789,6 +1793,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')

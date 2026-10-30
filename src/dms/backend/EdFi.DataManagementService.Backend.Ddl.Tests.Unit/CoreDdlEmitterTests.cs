@@ -356,6 +356,15 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_emit_the_descriptor_creation_timestamp_after_the_last_modified_timestamp()
+    {
+        _ddl.Should().Contain("\"ContentCreatedAt\" timestamp with time zone NOT NULL DEFAULT now()");
+
+        var columns = DescriptorTableColumnExtractor.ExtractPgColumns(_ddl).ToList();
+        columns.IndexOf("ContentCreatedAt").Should().Be(columns.IndexOf("ContentLastModifiedAt") + 1);
+    }
+
+    [Test]
     public void It_should_include_resource_key_id_in_descriptor_table()
     {
         // Denormalized from dms.Document so descriptor paging can root on dms.Descriptor.
@@ -380,6 +389,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
 
         document.Should().Contain("\"ContentVersion\" bigint NOT NULL DEFAULT nextval");
         document.Should().NotContain("ContentLastModifiedAt");
+        document.Should().NotContain("ContentCreatedAt");
         document.Split("ChangeVersionSequence", StringSplitOptions.None).Length.Should().Be(2);
     }
 
@@ -994,6 +1004,33 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_initialize_the_descriptor_creation_timestamp_only_on_insert()
+    {
+        var functionStart = _ddl.IndexOf(
+            "CREATE OR REPLACE FUNCTION \"dms\".\"TF_Descriptor_Stamp_Document\"()",
+            StringComparison.Ordinal
+        );
+        functionStart.Should().BeGreaterOrEqualTo(0);
+        var functionEnd = _ddl.IndexOf("$func$ LANGUAGE plpgsql;", functionStart, StringComparison.Ordinal);
+        var function = _ddl[functionStart..functionEnd];
+
+        var insertStart = function.IndexOf("IF TG_OP = 'INSERT' THEN", StringComparison.Ordinal);
+        var updateStart = function.IndexOf("ELSIF TG_OP = 'UPDATE' THEN", StringComparison.Ordinal);
+        var deleteStart = function.IndexOf("ELSIF TG_OP = 'DELETE' THEN", StringComparison.Ordinal);
+        insertStart.Should().BeGreaterOrEqualTo(0);
+        updateStart.Should().BeGreaterThan(insertStart);
+        deleteStart.Should().BeGreaterThan(updateStart);
+
+        function[insertStart..updateStart]
+            .Should()
+            .Contain(
+                "SET \"ContentVersion\" = stamped.\"ContentVersion\", \"ContentLastModifiedAt\" = now(), \"ContentCreatedAt\" = now()"
+            );
+        function[updateStart..].Should().NotContain("ContentCreatedAt");
+        function.Split("ContentCreatedAt", StringSplitOptions.None).Length.Should().Be(2);
+    }
+
+    [Test]
     public void It_should_allocate_document_stamps_for_descriptor_updates()
     {
         _ddl.Should().Contain("ELSIF TG_OP = 'UPDATE' THEN");
@@ -1082,7 +1119,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         // ResourceKeyId is denormalized at insert and immutable, so it is likewise excluded:
         // a migration backfill UPDATE of that column must not bump stamps. The trigger's
         // separate equality guard still rejects values that diverge from dms.Document.
-        string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
+        string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt", "ContentCreatedAt"];
         string[] immutableColumns = ["DescriptorId", "DocumentId", "ResourceKeyId"];
         var columns = DescriptorTableColumnExtractor.ExtractPgColumns(_ddl);
         columns.Should().NotBeEmpty("Descriptor CREATE TABLE block must be parseable");
@@ -1719,6 +1756,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
 
         document.Should().Contain("[ContentVersion] bigint NOT NULL");
         document.Should().NotContain("ContentLastModifiedAt");
+        document.Should().NotContain("ContentCreatedAt");
         document.Split("ChangeVersionSequence", StringSplitOptions.None).Length.Should().Be(2);
     }
 
@@ -1730,6 +1768,18 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             .Contain(
                 "[ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime())"
             );
+    }
+
+    [Test]
+    public void It_should_emit_the_descriptor_creation_timestamp_after_the_last_modified_timestamp()
+    {
+        _ddl.Should()
+            .Contain(
+                "[ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentCreatedAt] DEFAULT (sysutcdatetime())"
+            );
+
+        var columns = DescriptorTableColumnExtractor.ExtractMssqlColumns(_ddl).Select(c => c.Name).ToList();
+        columns.IndexOf("ContentCreatedAt").Should().Be(columns.IndexOf("ContentLastModifiedAt") + 1);
     }
 
     // ── MSSQL named default constraints ─────────────────────────────
@@ -2294,6 +2344,33 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("WHERE del.[DescriptorId] IS NULL;");
     }
 
+    private const string DescriptorStampClock =
+        "DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID(); DECLARE @stampedAt datetime2(7) = CASE WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7)) END; IF @stampedAt IS NULL BEGIN SET @stampedAt = sysutcdatetime(); EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt; EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId; END";
+
+    /// <summary>
+    /// Only the descriptor INSERT firing (empty deleted set) initializes the creation time, from the
+    /// same captured value as the initial last-modified time; update and delete firings keep the
+    /// single owner stamp.
+    /// </summary>
+    [Test]
+    public void It_should_initialize_the_descriptor_creation_timestamp_only_in_the_insert_firing_branch()
+    {
+        var triggerBody = Regex.Replace(
+            ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document"),
+            @"\s+",
+            " "
+        );
+
+        triggerBody
+            .Should()
+            .Contain(
+                "IF EXISTS (SELECT 1 FROM @stamped) BEGIN "
+                    + DescriptorStampClock
+                    + " IF EXISTS (SELECT 1 FROM deleted) BEGIN UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = @stampedAt FROM [dms].[Descriptor] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END ELSE BEGIN UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = @stampedAt, r.[ContentCreatedAt] = @stampedAt FROM [dms].[Descriptor] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END END"
+            );
+        triggerBody.Split("[ContentCreatedAt]", StringSplitOptions.None).Length.Should().Be(2);
+    }
+
     [Test]
     public void It_should_capture_descriptor_document_versions_and_stamp_the_descriptor()
     {
@@ -2301,7 +2378,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped");
         _ddl.Should().Contain("UPDATE r");
         _ddl.Should().Contain("SET r.[ContentVersion] = s.[ContentVersion],");
-        _ddl.Should().Contain("r.[ContentLastModifiedAt] = sysutcdatetime()");
+        _ddl.Should().Contain("r.[ContentLastModifiedAt] = @stampedAt");
         _ddl.Should().Contain("FROM [dms].[Descriptor] r");
         // FORCESEEK is a table hint on the mirror target, so the join still terminates the statement.
         _ddl.Should().Contain("FROM [dms].[Descriptor] r WITH (FORCESEEK)");
@@ -2350,6 +2427,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
 
         triggerBody.Should().NotContain("UPDATE([ContentVersion])");
         triggerBody.Should().NotContain("UPDATE([ContentLastModifiedAt])");
+        triggerBody.Should().NotContain("UPDATE([ContentCreatedAt])");
         triggerBody.Should().NotContain("UPDATE([ResourceKeyId])");
         triggerBody.Should().NotContain("UPDATE([DescriptorId])");
         triggerBody.Should().NotContain("UPDATE([DocumentId])");
@@ -2413,7 +2491,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         // ResourceKeyId is denormalized at insert and immutable, so it is likewise excluded:
         // a migration backfill UPDATE of that column must not bump stamps. The trigger's
         // separate equality guard still rejects values that diverge from dms.Document.
-        string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
+        string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt", "ContentCreatedAt"];
         string[] immutableColumns = ["DescriptorId", "DocumentId", "ResourceKeyId"];
         var descriptorTriggerBody = ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document");
         var columns = DescriptorTableColumnExtractor.ExtractMssqlColumns(_ddl);

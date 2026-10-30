@@ -852,6 +852,41 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Triggers
     }
 
     [Test]
+    public void It_should_never_touch_the_root_creation_timestamp_from_child_or_extension_triggers()
+    {
+        // The stamping fixture is the one model with nested child and _ext stamp triggers; its tables
+        // are dialect-neutral, so it is emitted here as SQL Server.
+        var ddl = new RelationalModelDdlEmitter(SqlDialectFactory.Create(SqlDialect.Mssql)).Emit(
+            PgsqlDocumentStampingFixture.Build() with
+            {
+                Dialect = SqlDialect.Mssql,
+            }
+        );
+
+        foreach (
+            var tableName in new[]
+            {
+                "SchoolAddress",
+                "SchoolExtension",
+                "SchoolAddressPeriod",
+                "SchoolExtensionAddress",
+            }
+        )
+        {
+            var triggerStart = ddl.IndexOf(
+                $"CREATE OR ALTER TRIGGER [edfi].[TR_{tableName}_Stamp]",
+                StringComparison.Ordinal
+            );
+            triggerStart.Should().BeGreaterOrEqualTo(0, "expected a stamp trigger for {0}", tableName);
+            var triggerEnd = ddl.IndexOf("\nGO", triggerStart, StringComparison.Ordinal);
+            var triggerBody = ddl[triggerStart..triggerEnd];
+
+            triggerBody.Should().Contain("UPDATE r");
+            triggerBody.Should().NotContain("ContentCreatedAt");
+        }
+    }
+
+    [Test]
     public void It_should_emit_document_stamping_create_or_alter_trigger()
     {
         _ddl.Should().Contain("CREATE OR ALTER TRIGGER");
@@ -904,6 +939,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
         insertBranch.Should().Contain("INTO STRICT _stampedContentVersion");
         insertBranch.Should().Contain("NEW.\"ContentVersion\" := _stampedContentVersion;");
         insertBranch.Should().Contain("NEW.\"ContentLastModifiedAt\" := now();");
+        insertBranch.Should().Contain("NEW.\"ContentCreatedAt\" := NEW.\"ContentLastModifiedAt\";");
         insertBranch.Should().NotContain("SELECT \"ContentVersion\", \"ContentLastModifiedAt\"");
         insertBranch.Should().NotContain("nextval");
     }
@@ -984,6 +1020,32 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
     }
 
     [Test]
+    public void It_should_initialize_the_root_creation_timestamp_only_on_root_insert()
+    {
+        var root = GetRootStampFunctionBody();
+
+        root.Split("\"ContentCreatedAt\"", StringSplitOptions.None).Length.Should().Be(2);
+        ExtractPlpgsqlBlock(root, "ELSIF TG_OP = 'UPDATE' THEN").Should().NotContain("ContentCreatedAt");
+        ExtractPlpgsqlBlock(root, "IF TG_OP = 'DELETE' THEN").Should().NotContain("ContentCreatedAt");
+
+        foreach (
+            var tableName in new[]
+            {
+                "SchoolAddress",
+                "SchoolAddressPeriod",
+                "SchoolExtension",
+                "SchoolExtensionAddress",
+            }
+        )
+        {
+            foreach (var suffix in new[] { "ins", "upd", "del" })
+            {
+                GetPerEventStampFunctionBody(tableName, suffix).Should().NotContain("ContentCreatedAt");
+            }
+        }
+    }
+
+    [Test]
     public void It_should_never_read_or_write_a_document_timestamp_in_postgresql_stamping()
     {
         var root = GetRootStampFunctionBody();
@@ -1040,6 +1102,12 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_DocumentStamping
             .Should()
             .NotContain("IF TG_OP = 'UPDATE' AND (OLD.\"SchoolId\" IS DISTINCT FROM NEW.\"SchoolId\") THEN");
         triggerBody.Should().NotContain("INSERT INTO \"tracked_changes_");
+    }
+
+    [Test]
+    public void It_should_not_diff_the_root_creation_timestamp_in_the_no_op_predicate()
+    {
+        GetRootStampFunctionBody().Should().NotContain("OLD.\"ContentCreatedAt\" IS DISTINCT FROM");
     }
 
     [Test]
@@ -1424,7 +1492,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             StringComparison.Ordinal
         );
         var mirrorSetLastModifiedStart = triggerBody.IndexOf(
-            "r.[ContentLastModifiedAt] = sysutcdatetime()",
+            "r.[ContentLastModifiedAt] = @stampedAt",
             StringComparison.Ordinal
         );
         var mirrorFromStart = triggerBody.IndexOf("FROM [edfi].[School] r", StringComparison.Ordinal);
@@ -1617,6 +1685,13 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
 
         triggerBody.Should().NotContain("UPDATE([ContentVersion])");
         triggerBody.Should().NotContain("UPDATE([ContentLastModifiedAt])");
+        triggerBody.Should().NotContain("UPDATE([ContentCreatedAt])");
+    }
+
+    [Test]
+    public void It_should_not_diff_the_root_creation_timestamp_in_the_no_op_filter()
+    {
+        GetSchoolStampTriggerBody().Should().NotContain("i.[ContentCreatedAt] <> del.[ContentCreatedAt]");
     }
 
     [Test]
@@ -1795,6 +1870,51 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
                 "RI DELETE must consume the @changedDocs workset after it is populated"
             );
     }
+
+    /// <summary>
+    /// Update and delete firings keep the single owner stamp; only the root INSERT firing (empty deleted
+    /// set) initializes the creation time, from the same captured value as the initial last-modified
+    /// time, because the column defaults and this AFTER trigger read the clock separately.
+    /// </summary>
+    [Test]
+    public void It_should_initialize_the_root_creation_timestamp_only_in_the_insert_firing_branch()
+    {
+        var triggerBody = CollapseWhitespace(GetSchoolStampTriggerBody());
+
+        triggerBody
+            .Should()
+            .Contain(
+                "IF EXISTS (SELECT 1 FROM @stamped) BEGIN "
+                    + StampClock
+                    + " IF EXISTS (SELECT 1 FROM deleted) BEGIN UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = @stampedAt FROM [edfi].[School] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END ELSE BEGIN UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = @stampedAt, r.[ContentCreatedAt] = @stampedAt FROM [edfi].[School] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END END"
+            );
+        triggerBody.Split("[ContentCreatedAt]", StringSplitOptions.None).Length.Should().Be(2);
+        // The shared transaction clock is the trigger's only clock read.
+        triggerBody.Split("sysutcdatetime()", StringSplitOptions.None).Length.Should().Be(2);
+    }
+
+    [Test]
+    public void It_should_keep_the_child_owner_stamp_free_of_the_creation_timestamp()
+    {
+        var triggerBody = GetStampTriggerBody("SchoolAddress");
+
+        triggerBody.Should().NotContain("ContentCreatedAt");
+        // A child stamp in the creating transaction reuses the root insert's clock value.
+        triggerBody.Split("sysutcdatetime()", StringSplitOptions.None).Length.Should().Be(2);
+        CollapseWhitespace(triggerBody)
+            .Should()
+            .Contain(
+                "IF EXISTS (SELECT 1 FROM @stamped) BEGIN "
+                    + StampClock
+                    + " UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = @stampedAt FROM [edfi].[School] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END"
+            );
+    }
+
+    private const string StampClock =
+        "DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID(); DECLARE @stampedAt datetime2(7) = CASE WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7)) END; IF @stampedAt IS NULL BEGIN SET @stampedAt = sysutcdatetime(); EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt; EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId; END";
+
+    private static string CollapseWhitespace(string value) =>
+        string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
     private string GetSchoolStampTriggerBody()
     {
@@ -3012,6 +3132,17 @@ internal static class PgsqlDocumentStampingFixture
                 {
                     IsWritable = false,
                 },
+                new DbColumnModel(
+                    new DbColumnName("ContentCreatedAt"),
+                    ColumnKind.AuthoritativeContentCreatedAt,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
             ],
             []
         )
@@ -3361,6 +3492,17 @@ internal static class MssqlDocumentStampingFixture
                 new DbColumnModel(
                     contentLastModifiedAtColumn,
                     ColumnKind.AuthoritativeContentLastModifiedAt,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
+                new DbColumnModel(
+                    new DbColumnName("ContentCreatedAt"),
+                    ColumnKind.AuthoritativeContentCreatedAt,
                     new RelationalScalarType(ScalarKind.DateTime),
                     IsNullable: false,
                     SourceJsonPath: null,

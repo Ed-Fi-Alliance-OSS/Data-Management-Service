@@ -27,7 +27,11 @@ public abstract class AuthoritativeCompactDescriptorDdlGoldenFixtureTestBase : D
         var documentEnd = sql.IndexOf("\n);", documentStart, StringComparison.Ordinal);
         documentEnd.Should().BeGreaterThan(documentStart);
         var documentDefinition = sql[documentStart..documentEnd];
-        documentDefinition.Should().Contain("ContentVersion").And.NotContain("ContentLastModifiedAt");
+        documentDefinition
+            .Should()
+            .Contain("ContentVersion")
+            .And.NotContain("ContentLastModifiedAt")
+            .And.NotContain("ContentCreatedAt");
 
         var descriptorCreateStatement = dialect is "pgsql"
             ? "CREATE TABLE IF NOT EXISTS \"dms\".\"Descriptor\""
@@ -37,7 +41,11 @@ public abstract class AuthoritativeCompactDescriptorDdlGoldenFixtureTestBase : D
         var descriptorEnd = sql.IndexOf("\n);", descriptorStart, StringComparison.Ordinal);
         descriptorEnd.Should().BeGreaterThan(descriptorStart);
         var descriptorDefinition = sql[descriptorStart..descriptorEnd];
-        descriptorDefinition.Should().Contain("ContentVersion").And.Contain("ContentLastModifiedAt");
+        descriptorDefinition
+            .Should()
+            .Contain("ContentVersion")
+            .And.Contain("ContentLastModifiedAt")
+            .And.Contain("ContentCreatedAt");
 
         using var manifest = ReadManifest(dialect);
         var resources = manifest.RootElement.GetProperty("resource_details").EnumerateArray().ToArray();
@@ -54,6 +62,54 @@ public abstract class AuthoritativeCompactDescriptorDdlGoldenFixtureTestBase : D
                 .Single(table => table.GetProperty("scope").GetString() is "$");
             AssertOwnerStamps(root);
         }
+    }
+
+    [TestCase("pgsql")]
+    [TestCase("mssql")]
+    public void It_should_keep_the_creation_timestamp_on_resource_roots_only_and_out_of_indexes(
+        string dialect
+    )
+    {
+        using var manifest = ReadManifest(dialect);
+        var resources = manifest.RootElement.GetProperty("resource_details").EnumerateArray().ToArray();
+
+        var tablesWithCreatedAt = resources
+            .SelectMany(resource =>
+                resource
+                    .GetProperty("tables")
+                    .EnumerateArray()
+                    .Where(table => table.GetProperty("columns").EnumerateArray().Any(IsContentCreatedAt))
+                    .Select(table =>
+                        (
+                            StorageKind: resource.GetProperty("storage_kind").GetString(),
+                            Scope: table.GetProperty("scope").GetString(),
+                            Table: TableIdentity(table)
+                        )
+                    )
+            )
+            .ToArray();
+        var ordinaryRootCount = resources.Count(resource =>
+            resource.GetProperty("storage_kind").GetString() is "RelationalTables"
+        );
+
+        tablesWithCreatedAt.Should().HaveCount(ordinaryRootCount);
+        tablesWithCreatedAt
+            .Should()
+            .OnlyContain(entry => entry.StorageKind == "RelationalTables" && entry.Scope == "$");
+        manifest
+            .RootElement.GetProperty("abstract_identity_tables")
+            .EnumerateArray()
+            .Should()
+            .NotContain(identity =>
+                identity.GetProperty("table").GetProperty("columns").EnumerateArray().Any(IsContentCreatedAt)
+            );
+
+        manifest
+            .RootElement.GetProperty("indexes")
+            .EnumerateArray()
+            .Where(IndexIncludesContentCreatedAt)
+            .Should()
+            .BeEmpty();
     }
 
     [TestCase("pgsql")]
@@ -213,7 +269,61 @@ public abstract class AuthoritativeCompactDescriptorDdlGoldenFixtureTestBase : D
         var version = columns.Single(column => ReadName(column) is "ContentVersion");
         version.GetProperty("kind").GetString().Should().Be("MirroredContentVersion");
         version.GetProperty("is_nullable").GetBoolean().Should().BeFalse();
+
+        var createdAt = columns.Single(IsContentCreatedAt);
+        createdAt.GetProperty("kind").GetString().Should().Be("AuthoritativeContentCreatedAt");
+        createdAt.GetProperty("type").GetProperty("kind").GetString().Should().Be("DateTime");
+        createdAt.GetProperty("is_nullable").GetBoolean().Should().BeFalse();
+        createdAt.GetProperty("source_path").ValueKind.Should().Be(JsonValueKind.Null);
+        createdAt.GetProperty("storage").GetProperty("kind").GetString().Should().Be("Stored");
+
+        AssertCreatedAtPlacement(table, columns);
     }
+
+    /// <summary>
+    /// Canonical ordering places the key columns first, then the stored columns without a source path
+    /// (the stamps plus key-unification support columns) in ordinal name order. A unification column
+    /// such as <c>AssessmentIdentifier_Unified</c> can sort ahead of the creation timestamp, so the
+    /// check locates it within that group rather than at a fixed position.
+    /// </summary>
+    private static void AssertCreatedAtPlacement(JsonElement table, JsonElement[] columns)
+    {
+        var keyNames = table.GetProperty("key_columns").EnumerateArray().Select(ReadName).ToArray();
+        columns.Take(keyNames.Length).Select(ReadName).Should().Equal(keyNames);
+
+        var sourcelessStoredGroup = columns
+            .Skip(keyNames.Length)
+            .TakeWhile(column =>
+                column.GetProperty("storage").GetProperty("kind").GetString() is "Stored"
+                && column.GetProperty("source_path").ValueKind is JsonValueKind.Null
+            )
+            .Select(ReadName)
+            .ToList();
+
+        sourcelessStoredGroup
+            .Should()
+            .Contain(
+                "ContentCreatedAt",
+                $"{TableIdentity(table)} must place the creation timestamp in its group"
+            )
+            .And.BeInAscendingOrder(StringComparer.Ordinal);
+        sourcelessStoredGroup[sourcelessStoredGroup.IndexOf("ContentCreatedAt") + 1]
+            .Should()
+            .Be("ContentLastModifiedAt");
+    }
+
+    private static bool IsContentCreatedAt(JsonElement column) => ReadName(column) is "ContentCreatedAt";
+
+    private static bool IndexIncludesContentCreatedAt(JsonElement index) =>
+        index
+            .GetProperty("key_columns")
+            .EnumerateArray()
+            .Concat(
+                index.TryGetProperty("include_columns", out var include)
+                    ? include.EnumerateArray()
+                    : Enumerable.Empty<JsonElement>()
+            )
+            .Any(column => column.GetString() == "ContentCreatedAt");
 
     private static (string Schema, string Name) TableIdentity(JsonElement table) =>
         (table.GetProperty("schema").GetString()!, ReadName(table));

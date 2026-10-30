@@ -20,6 +20,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     private static readonly DbColumnName DocumentIdColumn = RelationalNameConventions.DocumentIdColumnName;
     private static readonly DbColumnName ContentVersionColumn = new("ContentVersion");
     private static readonly DbColumnName ContentLastModifiedAtColumn = new("ContentLastModifiedAt");
+    private static readonly DbColumnName ContentCreatedAtColumn = new("ContentCreatedAt");
     private static readonly DbColumnName ReferentialIdColumn = new("ReferentialId");
     private static readonly DbColumnName ResourceKeyIdColumn = new("ResourceKeyId");
     private static readonly DbColumnName DiscriminatorColumn = new("Discriminator");
@@ -470,8 +471,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Resolves the named default constraint for a backend-owned root stamp column:
-    /// <c>ContentVersion</c> defaults to a non-null sentinel and
-    /// <c>ContentLastModifiedAt</c> defaults to the current UTC timestamp. Both use a
+    /// <c>ContentVersion</c> defaults to a non-null sentinel, and <c>ContentLastModifiedAt</c> and
+    /// <c>ContentCreatedAt</c> default to the current UTC timestamp. All use a
     /// <c>DF_&lt;Table&gt;_&lt;Column&gt;</c> constraint name (rendered by SQL Server; ignored by PostgreSQL),
     /// The trigger overwrites these defaults at write time.
     /// </summary>
@@ -489,6 +490,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 defaultExpression = "0";
                 return true;
             case ColumnKind.AuthoritativeContentLastModifiedAt:
+            case ColumnKind.AuthoritativeContentCreatedAt:
                 constraintName = BuildStampDefaultConstraintName(table, column);
                 defaultExpression = _dialect.CurrentTimestampDefaultExpression;
                 return true;
@@ -1635,6 +1637,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append("NEW.");
             writer.Append(Quote(ContentLastModifiedAtColumn));
             writer.AppendLine(" := now();");
+            // Creation time starts the resource lifetime from the same timestamp as the initial
+            // last-modified value; no later path assigns it.
+            writer.Append("NEW.");
+            writer.Append(Quote(ContentCreatedAtColumn));
+            writer.Append(" := NEW.");
+            writer.Append(Quote(ContentLastModifiedAtColumn));
+            writer.AppendLine(";");
         }
     }
 
@@ -1737,6 +1746,51 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append("WHERE r.");
         writer.Append(Quote(DocumentIdColumn));
         writer.Append(" = stamped.");
+        writer.Append(Quote(DocumentIdColumn));
+        writer.AppendLine(";");
+    }
+
+    /// <summary>
+    /// Emits the owner-stamp UPDATE that copies captured document versions onto the owner rows and
+    /// stamps them from the transaction-stable <see cref="MssqlStampClock"/>; when
+    /// <paramref name="setCreatedAt"/> is true the same value initializes <c>ContentCreatedAt</c>.
+    /// </summary>
+    private void EmitMssqlOwnerStampUpdate(SqlWriter writer, string mirrorStampTarget, bool setCreatedAt)
+    {
+        writer.AppendLine("UPDATE r");
+        writer.Append("SET r.");
+        writer.Append(Quote(ContentVersionColumn));
+        writer.Append(" = s.");
+        writer.Append(Quote(ContentVersionColumn));
+        writer.AppendLine(",");
+        writer.Append("    r.");
+        writer.Append(Quote(ContentLastModifiedAtColumn));
+        writer.Append(" = ");
+        writer.Append(MssqlStampClock.Variable);
+        if (setCreatedAt)
+        {
+            writer.AppendLine(",");
+            writer.Append("    r.");
+            writer.Append(Quote(ContentCreatedAtColumn));
+            writer.Append(" = ");
+            writer.Append(MssqlStampClock.Variable);
+        }
+        writer.AppendLine();
+        writer.Append("FROM ");
+        writer.Append(mirrorStampTarget);
+        // @stamped is a table variable, so the cached plan reflects the cardinality of whichever
+        // firing compiled it, and a plan that scans this table takes update locks across rows the
+        // transaction never touched. Measured: leave this statement unhinted and that contention
+        // is the sole cycle in every deadlock graph a concurrent child-collection load produces.
+        //
+        // FORCESEEK is the hint that forbids the scan itself. OPTION (LOOP JOIN) was measured and
+        // is not sufficient: it constrains the join algorithm but still permits a scan of the
+        // inner input, and the load deadlocked identically with it. The join predicate is an
+        // equality on this table's primary key, so a seek is always available.
+        writer.AppendLine(" r WITH (FORCESEEK)");
+        writer.Append("INNER JOIN @stamped s ON s.");
+        writer.Append(Quote(DocumentIdColumn));
+        writer.Append(" = r.");
         writer.Append(Quote(DocumentIdColumn));
         writer.AppendLine(";");
     }
@@ -1924,32 +1978,34 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
-            writer.AppendLine("UPDATE r");
-            writer.Append("SET r.");
-            writer.Append(Quote(ContentVersionColumn));
-            writer.Append(" = s.");
-            writer.Append(Quote(ContentVersionColumn));
-            writer.AppendLine(",");
-            writer.Append("    r.");
-            writer.Append(Quote(ContentLastModifiedAtColumn));
-            writer.AppendLine(" = sysutcdatetime()");
-            writer.Append("FROM ");
-            writer.Append(mirrorStampTarget);
-            // @stamped is a table variable, so the cached plan reflects the cardinality of whichever
-            // firing compiled it, and a plan that scans this table takes update locks across rows the
-            // transaction never touched. Measured: leave this statement unhinted and that contention
-            // is the sole cycle in every deadlock graph a concurrent child-collection load produces.
-            //
-            // FORCESEEK is the hint that forbids the scan itself. OPTION (LOOP JOIN) was measured and
-            // is not sufficient: it constrains the join algorithm but still permits a scan of the
-            // inner input, and the load deadlocked identically with it. The join predicate is an
-            // equality on this table's primary key, so a seek is always available.
-            writer.AppendLine(" r WITH (FORCESEEK)");
-            writer.Append("INNER JOIN @stamped s ON s.");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.Append(" = r.");
-            writer.Append(Quote(DocumentIdColumn));
-            writer.AppendLine(";");
+            // One value per transaction, so the child and _ext stamps of a creating write keep the
+            // root's ContentLastModifiedAt equal to the ContentCreatedAt its insert firing set.
+            MssqlStampClock.Emit(writer);
+            if (isRootDocumentStampingTrigger)
+            {
+                // Only a root INSERT firing creates the owner row, and its deleted set is empty. The
+                // column defaults read the clock separately from this AFTER trigger, so the insert
+                // branch overwrites both timestamps. Child and _ext INSERT firings also have an empty
+                // deleted set but stamp an existing root, so they never take this branch.
+                writer.AppendLine("IF EXISTS (SELECT 1 FROM deleted)");
+                writer.AppendLine("BEGIN");
+                using (writer.Indent())
+                {
+                    EmitMssqlOwnerStampUpdate(writer, mirrorStampTarget, setCreatedAt: false);
+                }
+                writer.AppendLine("END");
+                writer.AppendLine("ELSE");
+                writer.AppendLine("BEGIN");
+                using (writer.Indent())
+                {
+                    EmitMssqlOwnerStampUpdate(writer, mirrorStampTarget, setCreatedAt: true);
+                }
+                writer.AppendLine("END");
+            }
+            else
+            {
+                EmitMssqlOwnerStampUpdate(writer, mirrorStampTarget, setCreatedAt: false);
+            }
         }
         writer.AppendLine("END");
 
@@ -3312,7 +3368,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         string triggerName
     )
     {
-        // Exclude the backend-owned version mirror and authoritative timestamp: they are stamp targets, not client
+        // Exclude the backend-owned version mirror and authoritative timestamps: they are stamp targets, not client
         // content, so a stamp-only mirror update must not be treated as a representation change. This
         // matches change-queries.md invariant #5 (affectedDocs excludes rows differing only in stamp
         // columns) and keeps mirror columns out of the no-op diff predicate.
@@ -3323,6 +3379,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     is not (
                         ColumnKind.MirroredContentVersion
                         or ColumnKind.AuthoritativeContentLastModifiedAt
+                        or ColumnKind.AuthoritativeContentCreatedAt
                     )
             )
             .Select(column => column.ColumnName)
