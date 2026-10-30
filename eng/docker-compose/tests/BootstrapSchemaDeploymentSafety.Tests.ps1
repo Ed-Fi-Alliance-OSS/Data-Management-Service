@@ -510,13 +510,13 @@ exit $ExitCode
             foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
                 $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot $name) -Raw
 
-                ([regex]::Matches($content, '"kafka\.yml"')).Count | Should -Be 1
+                ([regex]::Matches($content, '"kafka\.compose\.yml"')).Count | Should -Be 1
                 $content | Should -Match '\$enableKafkaInfrastructure\s*=\s*\$EnableKafka\s+-or\s+\$EnableKafkaUI'
                 # The MSSQL relational path does not use Debezium CDC, so start-local-dms.ps1 additionally
-                # gates the kafka.yml/kafka-ui.yml compose files on $DatabaseEngine -eq "postgresql"; that
+                # gates the kafka.compose.yml/kafka-ui.compose.yml compose files on $DatabaseEngine -eq "postgresql"; that
                 # extra clause is optional here so both start-local-dms.ps1 and start-published-dms.ps1 match.
-                $content | Should -Match 'if \(\$enableKafkaInfrastructure( -and \$DatabaseEngine -eq "postgresql")?\) \{\s*\$files \+= @\("-f", "kafka\.yml"\)\s*\}'
-                $content | Should -Match 'if \(\$EnableKafkaUI -and \(\$DatabaseEngine -eq "postgresql" -or \$CdcKafkaInfrastructure\)\) \{\s*\$files \+= @\("-f", "kafka-ui\.yml"\)\s*\}'
+                $content | Should -Match 'if \(\$enableKafkaInfrastructure( -and \$DatabaseEngine -eq "postgresql")?\) \{\s*\$files \+= @\("-f", "kafka\.compose\.yml"\)\s*\}'
+                $content | Should -Match 'if \(\$EnableKafkaUI -and \(\$DatabaseEngine -eq "postgresql" -or \$CdcKafkaInfrastructure\)\) \{\s*\$files \+= @\("-f", "kafka-ui\.compose\.yml"\)\s*\}'
                 $content | Should -Match 'docker compose \$files --env-file \$EnvironmentFile -p dms-(local|published) up \$upArgs kafka kafka-postgresql-source'
                 $content | Should -Match '"--remove-orphans"'
             }
@@ -3614,7 +3614,7 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
 
             $sourceText = Get-Content -LiteralPath $scriptPath -Raw
             $sourceText | Should -Not -Match ([regex]::Escape($legacyConnectorScript))
-            $sourceText | Should -Not -Match 'kafka\.yml'
+            $sourceText | Should -Not -Match 'kafka\.compose\.yml'
             $sourceText | Should -Not -Match ("dms" + "\.document")
 
             $sourceText | Should -Match '\$LASTEXITCODE -ne 0'

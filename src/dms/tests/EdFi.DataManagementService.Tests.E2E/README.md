@@ -338,7 +338,7 @@ Playwright setup/teardown.
 - **Container names/ports.** DMS `ed-fi-api` (`8080`), Configuration Service
   `ed-fi-api-config-service` (`8081`), PostgreSQL `dms-postgresql` (`5435`), SQL Server
   `dms-mssql` (`1435`), Swagger UI `ed-fi-api-swagger-ui` (`8082`), Keycloak `dms-keycloak`.
-  Those are the local-image names. Only `local-dms.yml` sets `container_name`, so under
+  Those are the local-image names. Only `local-dms.compose.yml` sets `container_name`, so under
   `-UsePublishedImage` Compose names the DMS container after the project and service instead:
   `dms-published-dms-1`.
 - **Custom database names.** If you override `E2E_DATABASE_NAME` (or the connection strings),

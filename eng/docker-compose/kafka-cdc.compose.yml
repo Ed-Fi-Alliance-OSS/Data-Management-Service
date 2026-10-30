@@ -6,7 +6,7 @@
 services:
   kafka:
     extends:
-      file: kafka-broker.yml
+      file: kafka-broker.compose.yml
       service: kafka
     # Host-side SchemaTools must receive reachable broker metadata; Connect uses INTERNAL.
     environment:

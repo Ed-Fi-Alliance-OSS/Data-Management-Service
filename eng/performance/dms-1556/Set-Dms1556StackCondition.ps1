@@ -10,7 +10,7 @@ experiment condition and waits until CMS answers /health.
 
 .DESCRIPTION
 Every condition uses the same base compose set the E1/E2 stacks were built from
-(postgresql.compose.yml, local-config.yml, both diagnostics overlays, .env.e2e,
+(postgresql.compose.yml, local-config.compose.yml, both diagnostics overlays, .env.e2e,
 CONFIGURATION_SERVICE_LOG_LEVEL=Debug) plus the resource-profile overlay, and differs from
 'baseline' by exactly one overlay:
 
@@ -42,7 +42,7 @@ param(
     # Claims directory bind-mounted into CMS (CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE). A stack
     # provisioned by build-dms.ps1 E2ETest mounts eng/docker-compose/.e2e-claims (extension
     # security metadata the E2E suite needs); pass it so the recompose keeps that mount.
-    # Empty keeps local-config.yml's default.
+    # Empty keeps local-config.compose.yml's default.
     [string] $ClaimsMountSource = '',
 
     [string] $HealthUrl = 'http://127.0.0.1:8081/config/health'
@@ -52,7 +52,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $composeDirectory = Join-Path $PSScriptRoot '../../docker-compose' | Resolve-Path
-$files = @('postgresql.compose.yml', 'local-config.yml', 'local-config-diagnostics.yml', 'local-postgresql-diagnostics.yml')
+$files = @('postgresql.compose.yml', 'local-config.compose.yml', 'local-config-diagnostics.compose.yml', 'local-postgresql-diagnostics.yml')
 if ($ResourceProfile -eq 'p-runner-approx') { $files += 'local-resource-runner-approx.yml' }
 switch ($Condition) {
     'e3-certificates' { $files += 'local-control-e3-certificates.yml' }

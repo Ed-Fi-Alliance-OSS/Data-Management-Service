@@ -30,7 +30,7 @@ function global:docker {
         $script:events.Add('config')
         if ($arguments -contains (Join-Path $ComposeRoot 'retained.dms.json') -or
             @($arguments | Where-Object { $_ -match 'api-e2e-[a-f0-9]{32}\.http\.json$' }).Count -ne 1 -or
-            $arguments -notcontains 'bootstrap-dms.yml' -or $arguments -contains 'kafka-cdc.yml') {
+            $arguments -notcontains 'bootstrap-dms.yml' -or $arguments -contains 'kafka-cdc.compose.yml') {
             throw 'Incorrect HTTP Compose file selection'
         }
         $output = @(& $script:dockerExecutable @arguments 2>$null)

@@ -36,7 +36,7 @@ try {
     # Define the compose files used by CMS (matching start-local-config.ps1)
     $composeFiles = @(
         "-f", "postgresql.compose.yml",
-        "-f", "local-config.yml",
+        "-f", "local-config.compose.yml",
         "-f", "keycloak.compose.yml"
     )
 

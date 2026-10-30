@@ -892,7 +892,7 @@ Describe 'Stock image proof orchestration' {
 
         It 'writes the recipe 2 values when they are supplied' {
             $content = Get-StockProofEnvironmentContent -Pin (New-Pin) -BaseContent 'X=1' `
-                -PluginComposeFiles 'plugins-fetch-dms.yml' `
+                -PluginComposeFiles 'plugins-fetch-dms.compose.yml' `
                 -PluginFeedSource '/scratch/feed' `
                 -PluginPackageUrl 'http://plugin-feed:8080/a/1.0.0/a.1.0.0.nupkg' `
                 -PluginPackageSha256 ('0' * 64) `

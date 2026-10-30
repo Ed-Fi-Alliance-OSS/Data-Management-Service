@@ -947,7 +947,7 @@ Describe "Stop-RestoreDatabaseOnlySlice" {
             $env:POSTGRES_USE_TMPFS = "true"
             foreach ($engine in @("postgresql", "mssql")) {
                 $composeSet = @(Get-RestoreDatabaseOnlyComposeFile -DatabaseEngine $engine) -join " "
-                foreach ($forbidden in @("local-dms.yml", "published-dms.yml", "local-config.yml", "published-config.yml", "bootstrap-dms.yml", "keycloak.compose.yml", "kafka.yml", "swagger-ui.yml")) {
+                foreach ($forbidden in @("local-dms.compose.yml", "published-dms.compose.yml", "local-config.compose.yml", "published-config.compose.yml", "bootstrap-dms.yml", "keycloak.compose.yml", "kafka.compose.yml", "swagger-ui.compose.yml")) {
                     $composeSet | Should -Not -BeLike "*$forbidden*"
                 }
             }

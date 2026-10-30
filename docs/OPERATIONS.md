@@ -176,7 +176,7 @@ holds the plugin directories.
 
 # Plugin acquisition, recipe 1: a pre-populated plugin root, bind-mounted read-only.
 #
-# Add with its own -f. It is an alternative to plugins-fetch-dms.yml rather than an addition
+# Add with its own -f. It is an alternative to plugins-fetch-dms.compose.yml rather than an addition
 # to it: /app/plugins is one mount target and two overlays cannot both claim it.
 #
 # DMS_PLUGINS_MOUNT_SOURCE is declared with :? rather than a default. A deployment that
@@ -208,7 +208,7 @@ mounts that volume read-only exactly as in Recipe 1.
 The three required values are `PLUGIN_PACKAGE_URL`, `PLUGIN_PACKAGE_SHA256`, and
 `PLUGIN_NAME`.
 
-<!-- embed: eng/docker-compose/plugins-fetch-dms.yml -->
+<!-- embed: eng/docker-compose/plugins-fetch-dms.compose.yml -->
 ```yaml
 # SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
@@ -587,7 +587,7 @@ stops it before it serves a request, and the reason is on standard error; see
 `plugins-config.yml` is the Configuration Service counterpart of `plugins-dms.yml`.
 `CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE` is the one required value: the host path that holds the
 Configuration Service's plugin directories. Add the file with its own `-f` after
-`local-config.yml` or `published-config.yml`, followed by a deployment-owned
+`local-config.compose.yml` or `published-config.compose.yml`, followed by a deployment-owned
 override that sets `Plugins__Allowed` on the `config` service, because this overlay
 allowlists nothing. When the plugin serves secrets from a vault, that override also
 removes them from the environment; see
@@ -603,7 +603,7 @@ removes them from the environment; see
 # Plugin acquisition for the Configuration Service: a pre-populated plugin root, bind-mounted
 # read-only. The Configuration Service counterpart of plugins-dms.yml, which it mirrors.
 #
-# Add with its own -f, after local-config.yml or published-config.yml, both of which it leaves
+# Add with its own -f, after local-config.compose.yml or published-config.compose.yml, both of which it leaves
 # unchanged. start-local-config.ps1 has no setting that adds it: DMS_PLUGINS_COMPOSE_FILES is the
 # Data Management Service launchers' setting for DMS overlays, not a Configuration Service one.
 #
@@ -636,7 +636,7 @@ mounted differs. Either of two forms does it:
 - **Into the host path Recipe 1 mounts.** Run the four commands as a deployment step
   that extracts into the directory `CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE` names, then compose
   `plugins-config.yml` exactly as in Recipe 1. Nothing about the overlay changes.
-- **Into a volume, as `plugins-fetch-dms.yml` does for DMS.** Copy that file into the
+- **Into a volume, as `plugins-fetch-dms.compose.yml` does for DMS.** Copy that file into the
   deployment and point its last service block at `config` instead of `dms`. When DMS
   also uses Recipe 2 in the same Compose project, rename the `fetch-plugins` service
   and the `plugins` volume as well, because the two files would otherwise define one
@@ -654,7 +654,7 @@ because no committed file is their artifact.
 
 ### The Compose blocks above are asserted equal to the committed files
 
-`eng/docker-compose/plugins-dms.yml`, `eng/docker-compose/plugins-fetch-dms.yml`, and
+`eng/docker-compose/plugins-dms.yml`, `eng/docker-compose/plugins-fetch-dms.compose.yml`, and
 `eng/docker-compose/plugins-config.yml` are the artifact. The end-to-end tiers run
 those files as committed, and a check in this repository compares each block above
 against its file, so a chapter edited without the file — or a file edited without the

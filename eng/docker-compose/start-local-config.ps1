@@ -72,7 +72,7 @@ if ($useMssqlTmpfs -and $datastore -eq "mssql") {
 
 $files += @(
     "-f",
-    "local-config.yml",
+    "local-config.compose.yml",
     "-f",
     "keycloak.compose.yml"
 )
@@ -202,7 +202,7 @@ try {
         # SQL Server readiness is explicitly polled before the config service starts.
         # This sleep covers Keycloak and config-service warmup before the setup scripts run.
         Start-Sleep 25
-        # The two role names CMS enforces are supported overrides: local-config.yml maps
+        # The two role names CMS enforces are supported overrides: local-config.compose.yml maps
         # IdentitySettings:ConfigServiceRole / :ClientRole from CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE /
         # CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE, and BOTH identity setup scripts -- setup-keycloak.ps1 and
         # setup-openiddict.ps1 -InsertData -- fall back to their own cms-client / dms-client defaults when

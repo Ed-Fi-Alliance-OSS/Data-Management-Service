@@ -23,7 +23,7 @@ environment.
 #>
 [CmdletBinding()]
 param(
-    # dotnet-monitor sidecar from eng/docker-compose/local-config-diagnostics.yml.
+    # dotnet-monitor sidecar from eng/docker-compose/local-config-diagnostics.compose.yml.
     [string] $MonitorBaseUrl = 'http://localhost:52323',
 
     # Must match the CMS image's runtime: the CMS Dockerfile builds on Alpine, so the

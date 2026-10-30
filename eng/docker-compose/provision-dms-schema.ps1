@@ -627,7 +627,7 @@ function Resolve-ExpectedProvisioningDialect {
     .SYNOPSIS
     Resolves the SchemaTools dialect the effective environment expects for provisioning targets,
     from the effective DMS_DATASTORE value: mssql -> mssql, postgresql -> pgsql. A missing or
-    blank value defaults to postgresql -> pgsql, matching local-dms.yml's compose-level default
+    blank value defaults to postgresql -> pgsql, matching local-dms.compose.yml's compose-level default
     (AppSettings__Datastore: ${DMS_DATASTORE:-postgresql}).
     #>
     param(

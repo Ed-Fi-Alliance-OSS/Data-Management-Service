@@ -17,3 +17,17 @@ updates:
       semver-patch-days: 5
       semver-minor-days: 7
       semver-major-days: 14
+  - package-ecosystem: docker-compose
+    # Dependabot's Compose fetcher reads only top-level files in each directory whose names
+    # contain `compose` and end in .yml, which is why the image-bearing overlays are *.compose.yml.
+    directories:
+      - /eng/docker-compose
+      - /eng/azure-vm/compose
+    target-branch: main
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+      semver-patch-days: 5
+      semver-minor-days: 7
+      semver-major-days: 14

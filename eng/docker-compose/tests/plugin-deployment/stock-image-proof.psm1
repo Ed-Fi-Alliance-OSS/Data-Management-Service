@@ -765,9 +765,9 @@ function Get-OccupiedHostResource {
 
     .DESCRIPTION
     The published stack claims resources whose names are fixed, so a project rename buys nothing:
-    postgresql.compose.yml declares container_name dms-postgresql, published-config.yml declares
-    ed-fi-api-config-service, swagger-ui.yml declares ed-fi-api-swagger-ui and keycloak.compose.yml declares
-    dms-keycloak. ed-fi-api is reserved as well: local-dms.yml gives DMS that name, and it is not in
+    postgresql.compose.yml declares container_name dms-postgresql, published-config.compose.yml declares
+    ed-fi-api-config-service, swagger-ui.compose.yml declares ed-fi-api-swagger-ui and keycloak.compose.yml declares
+    dms-keycloak. ed-fi-api is reserved as well: local-dms.compose.yml gives DMS that name, and it is not in
     the published set, but a local stack holding it is a live neighbour. It also claims a compose project, that project's named volumes, host ports, the
     shared external dms network, and eng/docker-compose/.bootstrap, which is one fixed path shared
     with the local stack.

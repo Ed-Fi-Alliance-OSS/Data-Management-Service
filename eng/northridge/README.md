@@ -696,7 +696,7 @@ echo "reference database $REF dropped"
 #
 #    The key is replaced in the Configuration Service database: the Configuration Service mints tokens from the dmscs."OpenIddictKey" row of
 #    the database it reads its dmscs rows from, taken from the running Configuration Service rather
-#    than assumed to be $DB -- CONFIGURATION_SERVICE_DATABASE_NAME is a supported override, and local-config.yml
+#    than assumed to be $DB -- CONFIGURATION_SERVICE_DATABASE_NAME is a supported override, and local-config.compose.yml
 #    builds the Configuration Service connection string from it -- so a key replaced anywhere else leaves the Configuration Service reading
 #    the producer's. The rule for the rest of the recipe: dmscs operations target $CMSDB (step 10
 #    reuses this value), dms data-store operations target $DB. The connection string carries the
@@ -791,7 +791,7 @@ echo "SourceIdentity rotated to $NEW_SOURCE_ID"
 #    replaced dmscs.OpenIddict*, so register the admin client AFTER the restore, not before.
 #    Skip this and DMS restart-loops with "Failed to decrypt the connection string".
 #
-#    The ports are read from the containers, not assumed. local-config.yml and local-dms.yml set each
+#    The ports are read from the containers, not assumed. local-config.compose.yml and local-dms.compose.yml set each
 #    container's ASPNETCORE_HTTP_PORTS from CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS and DMS_HTTP_PORTS
 #    respectively and publish that same number on 127.0.0.1, so the value inside the container is the
 #    host port -- the same two overrides eng/docker-compose/env-utility.psm1 resolves in
@@ -973,7 +973,7 @@ test -n "$CID" -a -n "$CSEC" -a -n "$CSCOPE" || \
 
 #     The two role names are read as well, and from the Configuration Service rather than from DMS, because the Configuration Service is the side
 #     that enforces them: its service policy requires the presented token to carry
-#     IdentitySettings:ConfigServiceRole. Both are supported overrides -- local-config.yml sets them
+#     IdentitySettings:ConfigServiceRole. Both are supported overrides -- local-config.compose.yml sets them
 #     from CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE and CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE -- and left unpassed,
 #     setup-openiddict.ps1 falls back to its own cms-client/dms-client defaults and grants a role your
 #     Configuration Service does not require. The token check below would still pass, because minting a token does not

@@ -879,7 +879,7 @@ jobs:
       - name: Fresh rebuild Config Docker image
         working-directory: eng/docker-compose
         run: |
-          docker compose -f postgresql.compose.yml -f local-config.yml -f keycloak.compose.yml --env-file "./.env.config.e2e" -p cs-local build --no-cache
+          docker compose -f postgresql.compose.yml -f local-config.compose.yml -f keycloak.compose.yml --env-file "./.env.config.e2e" -p cs-local build --no-cache
 
   event_file:
     name: Upload Event File

@@ -5,8 +5,8 @@
 
 # DMS-1556 investigation overlay: CMS diagnostics via a dotnet-monitor sidecar.
 # Apply IN ADDITION to the stack's own -f list, with the same --env-file and -p:
-#   docker compose -f postgresql.compose.yml -f local-config.yml -f keycloak.compose.yml \
-#     -f local-config-diagnostics.yml --env-file .env.e2e -p cs-local up -d config cms-monitor
+#   docker compose -f postgresql.compose.yml -f local-config.compose.yml -f keycloak.compose.yml \
+#     -f local-config-diagnostics.compose.yml --env-file .env.e2e -p cs-local up -d config cms-monitor
 # (for the dms-local E2E stack, use that stack's -f list and -p dms-local instead).
 #
 # The sidecar runs in LISTEN mode: CMS connects out to /diag/cms-monitor.sock, so the

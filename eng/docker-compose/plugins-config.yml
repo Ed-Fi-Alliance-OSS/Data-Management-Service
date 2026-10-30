@@ -6,7 +6,7 @@
 # Plugin acquisition for the Configuration Service: a pre-populated plugin root, bind-mounted
 # read-only. The Configuration Service counterpart of plugins-dms.yml, which it mirrors.
 #
-# Add with its own -f, after local-config.yml or published-config.yml, both of which it leaves
+# Add with its own -f, after local-config.compose.yml or published-config.compose.yml, both of which it leaves
 # unchanged. start-local-config.ps1 has no setting that adds it: DMS_PLUGINS_COMPOSE_FILES is the
 # Data Management Service launchers' setting for DMS overlays, not a Configuration Service one.
 #

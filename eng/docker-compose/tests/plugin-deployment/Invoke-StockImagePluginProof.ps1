@@ -14,7 +14,7 @@
     to anything it did not create. It deploys under the ordinary published Compose project,
     dms-published, whose compose files hard-code container names that no project name can move:
     dms-postgresql, ed-fi-api-config-service, ed-fi-api-swagger-ui and dms-keycloak, and the
-    preflight also reserves ed-fi-api, the name local-dms.yml gives DMS. It also uses the
+    preflight also reserves ed-fi-api, the name local-dms.compose.yml gives DMS. It also uses the
     one shared eng/docker-compose/.bootstrap path. So the preflight refuses when any of those, or a
     leftover container or volume of that project, or a foreign container on the shared external
     network, or a required host port, is already in use. There is no override switch: when something
@@ -893,7 +893,7 @@ function Get-ContainerFact([string]$name) {
     }
 }
 
-# A container that has stopped and stayed stopped, of its own accord. published-dms.yml carries
+# A container that has stopped and stayed stopped, of its own accord. published-dms.compose.yml carries
 # restart: unless-stopped, so a DMS that refuses to start would otherwise be restarted for as long
 # as the stack is up and an exit code read once could be any attempt's. The test-owned pin overlay
 # sets restart: "no" for the DMS service, which is what lets the first failure be the final state.
@@ -1620,10 +1620,10 @@ try {
         -PluginMountSource $fixture.PublishRoot -AllowedPlugins $script:pluginName `
         -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -ConfigurationServiceUrl $configurationServiceUrl -EnvironmentFile $environmentFile -Pin $pin }
 
-    # Recipe 2: the committed plugins-fetch-dms.yml, run unedited, fetching over HTTP from the
+    # Recipe 2: the committed plugins-fetch-dms.compose.yml, run unedited, fetching over HTTP from the
     # digest-pinned static-file container in the test-owned feed overlay.
     $result.recipe2 = Invoke-ProofScenario -Name 'recipe2' -Pin $pin -BaseContent $baseContent `
-        -PluginComposeFiles "plugins-fetch-dms.yml;$feedOverlay;$pinOverlay;$allowedOverlay" `
+        -PluginComposeFiles "plugins-fetch-dms.compose.yml;$feedOverlay;$pinOverlay;$allowedOverlay" `
         -PluginFeedSource $package.FeedRoot -PluginPackageUrl $package.Url `
         -PluginPackageSha256 $package.Sha256 -PluginName $script:pluginName -AllowedPlugins $script:pluginName `
         -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -ConfigurationServiceUrl $configurationServiceUrl -EnvironmentFile $environmentFile -Pin $pin }
@@ -1631,7 +1631,7 @@ try {
     # A digest that does not match the served package: the fetch must fail on the comparison
     # specifically, and DMS must never start.
     $result.wrongDigest = Invoke-ProofScenario -Name 'wrong-digest' -Pin $pin -BaseContent $baseContent `
-        -PluginComposeFiles "plugins-fetch-dms.yml;$feedOverlay;$pinOverlay;$allowedOverlay" `
+        -PluginComposeFiles "plugins-fetch-dms.compose.yml;$feedOverlay;$pinOverlay;$allowedOverlay" `
         -PluginFeedSource $package.FeedRoot -PluginPackageUrl $package.Url `
         -PluginPackageSha256 ('0' * 64) -PluginName $script:pluginName -AllowedPlugins $script:pluginName `
         -ExpectStartFailure -Scenario { param($environmentFile) Invoke-WrongDigestCheck -Pin $pin }

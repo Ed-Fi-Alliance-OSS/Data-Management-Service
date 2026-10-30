@@ -38,7 +38,7 @@ Export-ModuleMember -Function Resolve-BootstrapSchemaWorkspace
                 AppSettings = @{ Datastore = $provider }
                 DataManagement = @{ DocumentCache = @{ Targets = @(@{ DataStoreId = $id }) } }
                 Cdc = @{
-                    Compose = @{ Project = $project; EnvironmentFile = (Join-Path $script:root '.env.custom'); File = (Join-Path $script:root 'kafka-cdc.yml'); BrokerSizeOverrideFile = (Join-Path $script:root 'shared/broker-size.json') }
+                    Compose = @{ Project = $project; EnvironmentFile = (Join-Path $script:root '.env.custom'); File = (Join-Path $script:root 'kafka-cdc.compose.yml'); BrokerSizeOverrideFile = (Join-Path $script:root 'shared/broker-size.json') }
                     DeploymentKey = 'deployment'; DataStoreId = [string]$id; InstanceKey = "instance-$id"; Generation = 7
                     Worker = @{ Key = 'worker'; OffsetStorageTopic = 'shared-offsets' }
                     ConnectEndpoint = 'http://localhost:8083/'; WorkerMetricsEndpoint = 'http://localhost:9404/metrics'
@@ -77,7 +77,7 @@ Export-ModuleMember -Function Resolve-BootstrapSchemaWorkspace
             $databaseOnlyStartup = [bool]$parameters['DbOnly']
             $DmsOnly = $false
             $CdcDatabaseInfrastructure = [bool]$parameters['CdcDatabaseInfrastructure']
-            $files = @('-f', "$flavor-dms.yml")
+            $files = @('-f', "$flavor-dms.compose.yml")
             $EnvironmentFile = $parameters.EnvironmentFile
             $commands = [Collections.Generic.List[string]]::new()
             function docker { $commands.Add((@($args | ForEach-Object { $_ }) -join ' ')); $global:LASTEXITCODE = 0 }
@@ -258,7 +258,7 @@ DOCKER_LOG_MAX_SIZE=${T74_NESTED}
             'services: { unrelated: { image: "${T74_UNRELATED}" } }' | Set-Content (Join-Path $script:root 'unrelated-t74.yml')
             $otherProvider = if ($provider -eq 'mssql') { 'postgresql' } else { 'mssql' }
             $otherFlavor = if ($project -eq 'dms-local') { 'published' } else { 'local' }
-            foreach ($file in @("$otherProvider.compose.yml", "$otherFlavor-dms.yml")) {
+            foreach ($file in @("$otherProvider.compose.yml", "$otherFlavor-dms.compose.yml")) {
                 Add-Content (Join-Path $script:root $file) '# ${T74_UNRELATED}'
             }
             Set-TestChangedShell
@@ -286,7 +286,7 @@ DOCKER_LOG_MAX_SIZE=${T74_NESTED}
             Mock -ModuleName cdc-lifecycle Invoke-CdcInfrastructure {
                 Assert-TestRetainedInput
                 $docker = (Get-Command docker -CommandType Application | Select-Object -First 1).Source
-                $model = & $docker compose -f (Join-Path $script:root 'kafka-cdc.yml') --env-file $Parameters.EnvironmentFile -p dms-local --profile cdc-managed-worker config --format json 2>$null |
+                $model = & $docker compose -f (Join-Path $script:root 'kafka-cdc.compose.yml') --env-file $Parameters.EnvironmentFile -p dms-local --profile cdc-managed-worker config --format json 2>$null |
                     ConvertFrom-Json -AsHashtable
                 $LASTEXITCODE | Should -Be 0
                 ($model.services.kafka.environment.KAFKA_ADVERTISED_LISTENERS -clike '*:19092') | Should -BeTrue
@@ -364,7 +364,7 @@ DOCKER_LOG_MAX_SIZE=${T74_NESTED}
                     $deployment.ComposeInputs.Project = 'dms-published'
                     $deployment.ComposeInputsHash = & (Get-Module cdc-lifecycle) { param($inputs) Get-CdcComposeInputHash $inputs } $deployment.ComposeInputs
                 }
-                'selected-file' { Add-Content (Join-Path $script:root 'kafka-cdc.yml') '# changed selected configuration' }
+                'selected-file' { Add-Content (Join-Path $script:root 'kafka-cdc.compose.yml') '# changed selected configuration' }
             }
             $deployment | ConvertTo-Json -Depth 64 -Compress | Set-Content $path
             Set-TestChangedShell
@@ -380,9 +380,9 @@ DOCKER_LOG_MAX_SIZE=${T74_NESTED}
             Register-CdcDeploymentHandoff $handoff (Join-Path $script:root 'state')
             $deployment = Read-TestDeployment
             $paths = @($deployment.ComposeInputs.Files | ForEach-Object { [IO.Path]::GetFileName($_.Path) })
-            $paths | Should -Not -Contain 'kafka-ui.yml'
-            $paths | Should -Not -Contain 'swagger-ui.yml'
-            Add-Content (Join-Path $script:root 'kafka-ui.yml') '# unrelated optional service'
+            $paths | Should -Not -Contain 'kafka-ui.compose.yml'
+            $paths | Should -Not -Contain 'swagger-ui.compose.yml'
+            Add-Content (Join-Path $script:root 'kafka-ui.compose.yml') '# unrelated optional service'
             { Invoke-TestLifecycle @{ d = $true; EnableKafkaUI = $true } } | Should -Throw '*original optional service inputs*'
             $script:trace.Count | Should -Be 0
             $script:live = @('connector-42')
@@ -413,7 +413,7 @@ DOCKER_LOG_MAX_SIZE=${T74_NESTED}
             if (-not $bridge.Live) {
                 # Retain the fixture's copied Compose inputs instead of the command fixture's unused paths.
                 $handoff.Settings.Cdc.Compose.EnvironmentFile = Join-Path $script:root '.env.custom'
-                $handoff.Settings.Cdc.Compose.File = Join-Path $script:root 'kafka-cdc.yml'
+                $handoff.Settings.Cdc.Compose.File = Join-Path $script:root 'kafka-cdc.compose.yml'
             }
             $handoff.Settings.Cdc.Worker.Key = $bridge.WorkerKey
             $handoff.Settings.Cdc.Worker.OffsetStorageTopic = $bridge.OffsetTopic
@@ -540,7 +540,7 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
                     $files = @()
                     $enableKafkaInfrastructure = $false
                     foreach ($block in $blocks) { . $block | Out-Null }
-                    $files | Should -Not -Contain 'kafka-cdc.yml'
+                    $files | Should -Not -Contain 'kafka-cdc.compose.yml'
                     ($files -contains 'mssql-cdc.yml') | Should -Be ($DatabaseEngine -eq 'mssql')
                 } $Parameters $blocks
                 $Parameters.CdcDatabaseInfrastructure | Should -BeTrue
@@ -1589,7 +1589,7 @@ Describe 'Managed primitive DMS startup selection' {
                     ($n.Extent.Text.StartsWith('if ($DmsOnly)') -and $n.Extent.Text.Contains('$dmsServices ='))
             }, $true)
             $nodes.Count | Should -Be 5
-            $files = @('-f', "$flavor-dms.yml")
+            $files = @('-f', "$flavor-dms.compose.yml")
             $EnvironmentFile = '/selected/.env'
             $databaseOnlyStartup = $false
             $CdcDatabaseInfrastructure = $false
@@ -1646,7 +1646,7 @@ Describe 'Managed primitive Docker shutdown selection' {
         & {
             param($block)
             $CdcKafkaInfrastructure = $true
-            $files = @('-f', 'kafka-cdc.yml', '-f', '/custom/broker-size.json')
+            $files = @('-f', 'kafka-cdc.compose.yml', '-f', '/custom/broker-size.json')
             $EnvironmentFile = '/selected/.env'
             $downArgs = @('--remove-orphans', '-v')
             $v = $false

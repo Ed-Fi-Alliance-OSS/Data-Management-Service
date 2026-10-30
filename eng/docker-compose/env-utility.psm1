@@ -1503,7 +1503,7 @@ function Resolve-DatabaseEngineEnvironmentFile {
         be written, so DMS_DATASTORE and the SQL Server connection strings reach every phase - configure,
         provision, and the start scripts - from one canonical path. Without this, a run could provision
         an MSSQL data store in the Configuration Service while the DMS container itself still starts on its postgresql default
-        (local-dms.yml AppSettings__Datastore), since that setting comes only from the env file.
+        (local-dms.compose.yml AppSettings__Datastore), since that setting comes only from the env file.
 
         Validation and the write describe the SAME artifact: the prospective lines are evaluated
         sequentially, that result is validated, and those same lines are written. An earlier design

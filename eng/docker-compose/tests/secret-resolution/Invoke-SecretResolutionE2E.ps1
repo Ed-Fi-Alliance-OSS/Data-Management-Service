@@ -11,7 +11,7 @@
 .DESCRIPTION
     Builds and runs an isolated deployment: its own compose project, network, container names, host
     ports and image tags, so it runs beside any other local stack and never touches cs-local or
-    dms-local. The stock postgresql.compose.yml, local-config.yml and local-dms.yml services are composed with
+    dms-local. The stock postgresql.compose.yml, local-config.compose.yml and local-dms.compose.yml services are composed with
     plugins-config.yml, which mounts a plugin root holding the Acme.FileSecretResolver fixture
     published framework-dependent, and with secret-resolution-isolation.yml, which renames the stack,
     allowlists the plugin and mounts the secrets file the fixture reads on every call.
@@ -106,8 +106,8 @@ $secretsFile = Join-Path $secretsDirectory "secrets.json"
 
 $composeFiles = @(
     "-f", "postgresql.compose.yml",
-    "-f", "local-config.yml",
-    "-f", "local-dms.yml",
+    "-f", "local-config.compose.yml",
+    "-f", "local-dms.compose.yml",
     "-f", "dms-cms-proxy.yml",
     "-f", "plugins-config.yml",
     "-f", "tests/secret-resolution/secret-resolution-isolation.yml"

@@ -4121,7 +4121,7 @@ jobs:
       - name: Fresh rebuild DMS and Config Docker images
         working-directory: eng/docker-compose
         run: |
-          docker compose -f postgresql.compose.yml -f local-dms.yml -f kafka.yml -f local-config.yml --env-file "./.env.e2e" -p dms-local build --no-cache
+          docker compose -f postgresql.compose.yml -f local-dms.compose.yml -f kafka.compose.yml -f local-config.compose.yml --env-file "./.env.e2e" -p dms-local build --no-cache
 
   test-timing-summary:
     name: Test Timing Summary

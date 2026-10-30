@@ -165,7 +165,7 @@ param (
     # Transitional non-bootstrap helper: when no bootstrap manifest is present,
     # passing this switch sets CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid and CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/additional-claims
     # and stages the AdditionalClaims fragments plus the test-owned E2E fragments into
-    # eng/docker-compose/.e2e-claims, which local-config.yml mounts at /app/additional-claims. Extension
+    # eng/docker-compose/.e2e-claims, which local-config.compose.yml mounts at /app/additional-claims. Extension
     # claims fragments (e.g. Sample, Homograph) and the E2E claim sets are therefore both loaded.
     # This flag is intentionally kept as a transitional helper for non-bootstrap extension E2E setups.
     [Switch]
@@ -404,7 +404,7 @@ if ($usePostgresqlTmpfs) {
 }
 
 # The database compose file is a swap: both postgresql.compose.yml and mssql.compose.yml define the same
-# "db" service that local-config.yml gates on (depends_on: db: service_healthy), so exactly
+# "db" service that local-config.compose.yml gates on (depends_on: db: service_healthy), so exactly
 # one of them joins the compose set. On the mssql path SQL Server hosts everything —
 # the DMS datastore, the Configuration Service (CMS SQL Server backend), and the
 # self-contained OpenIddict identity stores — and no PostgreSQL container runs at all.
@@ -421,7 +421,7 @@ if ($usePostgresqlTmpfs -and $DatabaseEngine -eq "postgresql") {
 if (-not $databaseOnlyStartup) {
     $files += @(
         "-f",
-        "local-dms.yml"
+        "local-dms.compose.yml"
     )
 
     $documentCacheComposeFile = Get-EnvValue `
@@ -481,11 +481,11 @@ if (-not $databaseOnlyStartup) {
         if (-not [string]::IsNullOrWhiteSpace($env:COMPOSE_PROFILES)) {
             throw "CDC infrastructure startup does not accept COMPOSE_PROFILES."
         }
-        $files += @("-f", "kafka-cdc.yml")
+        $files += @("-f", "kafka-cdc.compose.yml")
         if ($DatabaseEngine -eq "mssql") { $files += @("-f", "mssql-cdc.yml") }
     }
     elseif ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
-        $files += @("-f", "kafka.yml")
+        $files += @("-f", "kafka.compose.yml")
     }
 
     # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full
@@ -498,13 +498,13 @@ if (-not $databaseOnlyStartup) {
     }
 
     if ($EnableKafkaUI -and ($DatabaseEngine -eq "postgresql" -or $CdcKafkaInfrastructure)) {
-        $files += @("-f", "kafka-ui.yml")
+        $files += @("-f", "kafka-ui.compose.yml")
     }
 
     # Config Service is always included in the managed compose set outside the dedicated
     # database-only diagnostic phase. Every non-teardown bootstrap run starts Config Service,
     # including keycloak-backed runs. -EnableConfig is retained for backward compatibility.
-    $files += @("-f", "local-config.yml")
+    $files += @("-f", "local-config.compose.yml")
     # Keep the combined topology consistent across infrastructure, DMS-only and teardown phases.
     # The CMS-only launcher omits this overlay and retains its existing forwarding settings.
     $files += @("-f", "dms-cms-proxy.yml")
@@ -517,7 +517,7 @@ if (-not $databaseOnlyStartup) {
     }
 
     if ($EnableSwaggerUI) {
-        $files += @("-f", "swagger-ui.yml")
+        $files += @("-f", "swagger-ui.compose.yml")
     }
 }
 
@@ -900,7 +900,7 @@ else {
         return
     }
 
-    # The two role names CMS enforces are supported overrides: local-config.yml maps
+    # The two role names CMS enforces are supported overrides: local-config.compose.yml maps
     # IdentitySettings:ConfigServiceRole / :ClientRole from CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE /
     # CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE, and BOTH identity setup scripts -- setup-keycloak.ps1 and
     # setup-openiddict.ps1 -InsertData -- fall back to their own cms-client / dms-client defaults when

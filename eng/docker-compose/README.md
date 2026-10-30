@@ -33,14 +33,14 @@
 This directory contains several Docker Compose files, which can be combined to
 start up different configurations:
 
-1. `kafka.yml` covers Kafka
-2. `kafka-ui.yml` covers KafkaUI
+1. `kafka.compose.yml` covers Kafka
+2. `kafka-ui.compose.yml` covers KafkaUI
 3. `postgresql.compose.yml` starts only PostgreSQL
 4. `mssql.compose.yml` starts SQL Server for the DMS datastore (see "Running on the MSSQL backend" below)
-5. `local-dms.yml` runs the DMS from local source code.
-6. `published-dms.yml` runs the latest DMS `pre` tag as published to Docker Hub.
+5. `local-dms.compose.yml` runs the DMS from local source code.
+6. `published-dms.compose.yml` runs the latest DMS `pre` tag as published to Docker Hub.
 7. `keycloak.compose.yml` runs KeyCloak (identity provider).
-8. `swagger-ui.yml` covers SwaggerUI
+8. `swagger-ui.compose.yml` covers SwaggerUI
 
 ### Selecting published images
 
@@ -50,7 +50,7 @@ under the same tag. It cannot express a digest: a digest identifies an image
 within one repository, so the same value cannot be correct for both.
 
 `CONFIGURATION_SERVICE_DOCKER_IMAGE` therefore overrides the Configuration Service's whole
-image reference, the same name and meaning `local-config.yml` already gives it.
+image reference, the same name and meaning `local-config.compose.yml` already gives it.
 Left unset it expands to `edfialliance/ed-fi-api-configuration-service:${DMS_IMAGE_TAG:-pre}`,
 so the shipped behaviour is unchanged. Set it to pin that service by digest
 independently of the Ed-Fi API.
@@ -296,7 +296,7 @@ A few things are specific to the MSSQL path:
 * **It is single-engine.** SQL Server hosts everything: the DMS datastore, the Configuration
   Service (Configuration Service SQL Server backend), and the self-contained (OpenIddict) identity stores.
   `mssql.compose.yml` swaps in for `postgresql.compose.yml` - both define the same `db` service that
-  `local-config.yml` health-gates on - and no PostgreSQL container runs. In the default
+  `local-config.compose.yml` health-gates on - and no PostgreSQL container runs. In the default
   self-contained flow, `setup-openiddict.ps1 -InitDb` creates the Configuration Service's
   database during the infrastructure phase (the shared datastore database by default; the
   dedicated one under `-SeparateConfigDatabase`); the Configuration Service then deploys its `dmscs` schema before the
@@ -454,7 +454,7 @@ The switch exists on every public entry point and is forwarded unchanged:
 | Invocation shape | Switch omitted | With `-SeparateConfigDatabase` |
 |---|---|---|
 | `start-local-dms.ps1` / `start-published-dms.ps1`, default or `-InfraOnly` | Datastore database (`POSTGRES_DB_NAME` / `MSSQL_DB_NAME`) | `edfi_configurationservice` |
-| `start-published-dms.ps1` with `-IdentityProvider keycloak` and no `-EnableConfig`/`-InfraOnly` | the Configuration Service does not run at all (`published-config.yml` is opt-in on the published flow) | `edfi_configurationservice` — the switch also adds `published-config.yml` to the compose set so Configuration Service actually runs to create it |
+| `start-published-dms.ps1` with `-IdentityProvider keycloak` and no `-EnableConfig`/`-InfraOnly` | the Configuration Service does not run at all (`published-config.compose.yml` is opt-in on the published flow) | `edfi_configurationservice` — the switch also adds `published-config.compose.yml` to the compose set so Configuration Service actually runs to create it |
 | `-DmsOnly`, `-DbOnly`, teardown (`-d [-v]`) | No effect either way: these shapes never start the Configuration Service. The switch is accepted so continuation invocations of a running stack don't have to drop it; the stack keeps the topology it was started with |
 | `bootstrap-local-dms.ps1` / `bootstrap-published-dms.ps1` / `build-dms.ps1 StartEnvironment` | Same as the start script they invoke | Same — forwarded unchanged |
 
@@ -478,7 +478,7 @@ writes a derived environment file under `.derived/` that redirects it to
 `edfi_configurationservice` — your source `-EnvironmentFile` is never edited. The derived file
 also carries an internal `DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE` marker recording the selection.
 When the connection string is entirely absent on PostgreSQL, the Compose fallback in
-`local-config.yml` / `published-config.yml` resolves the same seam
+`local-config.compose.yml` / `published-config.compose.yml` resolves the same seam
 (`${CONFIGURATION_SERVICE_DATABASE_NAME:-${POSTGRES_DB_NAME}}`). That fallback is PostgreSQL-shaped — Compose
 interpolation cannot branch on the engine — so MSSQL always requires an explicit
 `CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` (the `.env.mssql` overlay supplies it), and an MSSQL run
@@ -531,7 +531,7 @@ closed rather than proceeding unverified. A verification failure names the offen
 parameter and never prints the configured value.
 
 Shapes that never start the Configuration Service — `-DmsOnly`, `-DbOnly`, teardown, and a bare
-published Keycloak start that omits `published-config.yml` — get structural screening only, and
+published Keycloak start that omits `published-config.compose.yml` — get structural screening only, and
 only on SQL Server: every connection string the `.env.mssql` overlay owns must be present,
 non-blank, and carry a SQL Server data-source keyword (`Server=`, `Data Source=`, `Address=`,
 `Addr=`, or `Network Address=`) at a segment boundary. That is the entire check. The value is not
@@ -1379,7 +1379,7 @@ DMS ships no fetcher: getting a plugin directory under the plugin root is a
 deployment step that happens before the process starts, and it comes in two
 recipes. Each is an overlay added with its own `-f`, and they are **alternatives**
 rather than additions: `/app/plugins` is one mount target and two overlays cannot
-both claim it. `local-dms.yml` and `published-dms.yml` are unchanged by either.
+both claim it. `local-dms.compose.yml` and `published-dms.compose.yml` are unchanged by either.
 
 Add the overlays by naming them in `DMS_PLUGINS_COMPOSE_FILES` and starting the
 stack through `bootstrap-local-dms.ps1`. That variable is a semicolon-delimited
@@ -1402,7 +1402,7 @@ deployment described in two places is a deployment nobody can read back.
 The launcher is the entry point rather than a convenience. An overlay only adds a
 mount and a fetch step to the DMS service; it provisions no schema and configures
 no Configuration Service, and DMS validates at startup that both were done. A bare
-`docker compose up` of `postgresql.compose.yml` and `local-dms.yml` with an overlay added
+`docker compose up` of `postgresql.compose.yml` and `local-dms.compose.yml` with an overlay added
 therefore cannot produce a working deployment on a fresh environment. Compose those
 files directly only against an environment already provisioned and configured by a
 previous `bootstrap-local-dms.ps1` run.
@@ -1427,7 +1427,7 @@ that are there when it starts.
 
 ### Recipe 2: a pinned package fetched by the deployment
 
-`plugins-fetch-dms.yml` adds a one-shot `fetch-plugins` service that downloads a
+`plugins-fetch-dms.compose.yml` adds a one-shot `fetch-plugins` service that downloads a
 `.nupkg`, verifies it against a digest the operator pinned, extracts the plugin
 directory into a named volume and exits. `depends_on: service_completed_successfully`
 orders it ahead of DMS, which then mounts that volume read-only.
@@ -1436,7 +1436,7 @@ orders it ahead of DMS, which then mounts that volume read-only.
 cd eng/docker-compose
 
 # In the environment file the launcher reads (.env by default):
-#   DMS_PLUGINS_COMPOSE_FILES=plugins-fetch-dms.yml;my-plugins-allowed-dms.yml
+#   DMS_PLUGINS_COMPOSE_FILES=plugins-fetch-dms.compose.yml;my-plugins-allowed-dms.yml
 #   PLUGIN_PACKAGE_URL=https://feed.example/v3-flatcontainer/acme.dms.identity/1.2.0/acme.dms.identity.1.2.0.nupkg
 #   PLUGIN_PACKAGE_SHA256=9f2c...the digest you pinned...
 #   PLUGIN_NAME=Acme.Dms.Identity
@@ -1486,9 +1486,9 @@ that silently loads nothing. They are listed, commented out, in `.env.example`.
 | Variable | Overlay | Meaning |
 | -------- | ------- | ------- |
 | `DMS_PLUGINS_MOUNT_SOURCE` | `plugins-dms.yml` | Host path holding the plugin directories. |
-| `PLUGIN_PACKAGE_URL` | `plugins-fetch-dms.yml` | `.nupkg` download address, `PackageBaseAddress` form. |
-| `PLUGIN_PACKAGE_SHA256` | `plugins-fetch-dms.yml` | SHA-256 of the pinned `.nupkg`. |
-| `PLUGIN_NAME` | `plugins-fetch-dms.yml` | Plugin directory name inside the package. Must be a single path segment matching `[A-Za-z0-9][A-Za-z0-9._-]*`; anything else fails the fetch before it deletes or moves anything. |
+| `PLUGIN_PACKAGE_URL` | `plugins-fetch-dms.compose.yml` | `.nupkg` download address, `PackageBaseAddress` form. |
+| `PLUGIN_PACKAGE_SHA256` | `plugins-fetch-dms.compose.yml` | SHA-256 of the pinned `.nupkg`. |
+| `PLUGIN_NAME` | `plugins-fetch-dms.compose.yml` | Plugin directory name inside the package. Must be a single path segment matching `[A-Za-z0-9][A-Za-z0-9._-]*`; anything else fails the fetch before it deletes or moves anything. |
 
 ### Enabling a plugin is a separate step
 
@@ -1522,7 +1522,7 @@ its own allowlist; a plugin allowlisted for DMS is not thereby allowlisted for t
 Configuration Service, and the reverse. `plugins-config.yml` is the Configuration
 Service counterpart of `plugins-dms.yml`: it bind-mounts a pre-populated directory
 of plugin directories read-only at `/app/plugins` on the `config` service, and
-`local-config.yml` and `published-config.yml` are unchanged by it. There is no fetch
+`local-config.compose.yml` and `published-config.compose.yml` are unchanged by it. There is no fetch
 overlay for the Configuration Service.
 
 `start-local-config.ps1` has no setting that adds this overlay.
@@ -1543,7 +1543,7 @@ services:
 cd eng/docker-compose
 # CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE is required by plugins-config.yml; set it here or in the env file.
 $env:CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE = "C:/cms-plugins"
-docker compose -f postgresql.compose.yml -f local-config.yml -f keycloak.compose.yml `
+docker compose -f postgresql.compose.yml -f local-config.compose.yml -f keycloak.compose.yml `
   -f plugins-config.yml -f my-plugins-allowed-config.yml `
   --env-file .env -p cs-local up -d config
 ```
@@ -1723,6 +1723,6 @@ equivalent setting, because Keycloak owns its own token housekeeping.
 | `CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES` | `30` | Interval, in minutes, between cleanup sweeps. |
 
 These map to `IdentitySettings__TokenCleanup__Enabled` and
-`IdentitySettings__TokenCleanup__IntervalMinutes` in `local-config.yml` and `published-config.yml`.
+`IdentitySettings__TokenCleanup__IntervalMinutes` in `local-config.compose.yml` and `published-config.compose.yml`.
 The interval accepts values from 1 to 71,582 minutes; a value outside that range is logged as a
 warning and falls back to the 30-minute default.

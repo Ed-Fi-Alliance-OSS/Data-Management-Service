@@ -4,7 +4,7 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 # DMS-1556 investigation overlay: PostgreSQL connection/statement/checkpoint logging.
-# Apply IN ADDITION to the stack's own -f list (see local-config-diagnostics.yml for the
+# Apply IN ADDITION to the stack's own -f list (see local-config-diagnostics.compose.yml for the
 # invocation shape); recreate the db service for the flags to take effect.
 #
 # Compose replaces `command` wholesale, so the base postgresql.compose.yml setting

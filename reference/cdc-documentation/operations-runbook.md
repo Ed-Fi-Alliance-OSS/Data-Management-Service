@@ -153,8 +153,8 @@ no unrelated containers on the Configuration Service/database network and no DMS
 
 Use the pinned PostgreSQL image in [postgresql.compose.yml](../../eng/docker-compose/postgresql.compose.yml)
 (`postgres:18.6-alpine`, including its digest), the broker in
-[kafka-broker.yml](../../eng/docker-compose/kafka-broker.yml), and the qualified worker
-in [kafka-cdc.yml](../../eng/docker-compose/kafka-cdc.yml). The worker digest is checked
+[kafka-broker.compose.yml](../../eng/docker-compose/kafka-broker.compose.yml), and the qualified worker
+in [kafka-cdc.compose.yml](../../eng/docker-compose/kafka-cdc.compose.yml). The worker digest is checked
 against shipped qualification; an arbitrary `CDC_CONNECT_IMAGE` is not supported.
 Image/telemetry qualification is owned by [pinned runtime](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#pinned-connector-runtime)
 and [local telemetry](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#local-and-ci-connector-telemetry).
@@ -318,7 +318,7 @@ $settings.Cdc = @{
     }
     KafkaClientSecurityProperties = @{}; KafkaAdminProperties = @{}
     Compose = @{
-        File = Join-Path $repoRoot 'eng/docker-compose/kafka-cdc.yml'
+        File = Join-Path $repoRoot 'eng/docker-compose/kafka-cdc.compose.yml'
         EnvironmentFile = (Resolve-Path './eng/docker-compose/.env').Path
         Project = 'dms-local'; BrokerSizeOverrideFile = Join-Path $statePath 'broker-size.json'
     }
@@ -506,7 +506,7 @@ Use [mssql.compose.yml](../../eng/docker-compose/mssql.compose.yml)'s SQL Server
 image (`mcr.microsoft.com/mssql/server:2025-latest`), not an old 2022 volume/container.
 The Compose SQL Server tag is mutable; retain the resolved image identity in each
 qualification result rather than treating the tag as proof of the tested digest.
-Use the qualified Connect image in [kafka-cdc.yml](../../eng/docker-compose/kafka-cdc.yml)
+Use the qualified Connect image in [kafka-cdc.compose.yml](../../eng/docker-compose/kafka-cdc.compose.yml)
 and the same broker/worker endpoints, profile and heap as shared preparation.
 The shipped [mssql-cdc.yml](../../eng/docker-compose/mssql-cdc.yml) overlay enables
 SQL Server Agent when `-CdcDatabaseInfrastructure` or CDC bootstrap is selected.
@@ -626,7 +626,7 @@ $settings.Cdc = @{
     }
     KafkaClientSecurityProperties = @{}; KafkaAdminProperties = @{}
     Compose = @{
-        File = Join-Path $repoRoot 'eng/docker-compose/kafka-cdc.yml'
+        File = Join-Path $repoRoot 'eng/docker-compose/kafka-cdc.compose.yml'
         EnvironmentFile = (Resolve-Path './eng/docker-compose/.env').Path
         Project = 'dms-local'; BrokerSizeOverrideFile = Join-Path $statePath 'broker-size.json'
     }

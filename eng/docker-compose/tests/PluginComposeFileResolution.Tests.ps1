@@ -165,7 +165,7 @@ Describe 'Plugin compose file resolution' {
         It 'refuses <Case> rather than silently dropping it' -ForEach @(
             @{ Case = 'a trailing separator'; Value = 'plugins-dms.yml;' }
             @{ Case = 'a leading separator'; Value = ';plugins-dms.yml' }
-            @{ Case = 'a doubled separator'; Value = 'plugins-dms.yml;;plugins-fetch-dms.yml' }
+            @{ Case = 'a doubled separator'; Value = 'plugins-dms.yml;;plugins-fetch-dms.compose.yml' }
             @{ Case = 'a whitespace-only entry'; Value = 'plugins-dms.yml; ' }
         ) {
             { Resolve-PluginComposeFile `
@@ -552,9 +552,9 @@ catch {
             # local launcher's does, or the two stacks would compose the same files differently.
             foreach ($name in $script:launcher) {
                 $body = (Get-ComposeSetIfAst $name).Extent.Text
-                $application = [regex]::Match($body, '"(local-dms\.yml|published-dms\.yml)"').Index
+                $application = [regex]::Match($body, '"(local-dms\.compose\.yml|published-dms\.compose\.yml)"').Index
                 $hook = $body.IndexOf('Resolve-PluginComposeFile')
-                $config = [regex]::Match($body, '"(local-config\.yml|published-config\.yml)"').Index
+                $config = [regex]::Match($body, '"(local-config\.compose\.yml|published-config\.compose\.yml)"').Index
 
                 $application | Should -BeGreaterThan -1 -Because "$name composes an application file"
                 $hook | Should -BeGreaterThan $application -Because "$name composes plugins after the application file"

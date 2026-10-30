@@ -1457,7 +1457,7 @@ function Get-CmsDatabaseTopologyDefaultConnectionString {
         Constructs the concrete PostgreSQL connection-string default
         Confirm-CmsDatabaseTopologyAgreement validates against when
         CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING is entirely absent, in exactly the shape the checked-in
-        local-config.yml / published-config.yml nested Compose fallback renders (confirmed against a
+        local-config.compose.yml / published-config.compose.yml nested Compose fallback renders (confirmed against a
         real `docker compose config` invocation - see CmsDatabaseTopology.Tests.ps1's Compose-rendering
         oracle).
 

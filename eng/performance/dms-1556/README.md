@@ -31,14 +31,14 @@ services. For the Configuration Service-only stack:
 
 ```powershell
 cd eng/docker-compose
-docker compose -f postgresql.compose.yml -f local-config.yml -f keycloak.compose.yml `
-  -f local-config-diagnostics.yml -f local-postgresql-diagnostics.yml `
+docker compose -f postgresql.compose.yml -f local-config.compose.yml -f keycloak.compose.yml `
+  -f local-config-diagnostics.compose.yml -f local-postgresql-diagnostics.yml `
   --env-file .env.e2e -p cs-local up -d db config cms-monitor
 ```
 
 For the dms-local stack, use that stack's `-f` list and `-p dms-local`.
 
-- `local-config-diagnostics.yml` — Configuration Service `DOTNET_DiagnosticPorts` (connect + suspend mode)
+- `local-config-diagnostics.compose.yml` — Configuration Service `DOTNET_DiagnosticPorts` (connect + suspend mode)
   plus a digest-pinned `dotnet-monitor` sidecar in listen mode, `--no-auth`, run as root
   (the in-process call-stacks socket is created by the Configuration Service user and is otherwise
   unreachable across containers), bound to `127.0.0.1:52323`. Suspend mode is required:
@@ -205,7 +205,7 @@ before recreating. P-runner-approx:
 ```powershell
 cd eng/docker-compose
 $env:CONFIGURATION_SERVICE_LOG_LEVEL = 'Debug'
-docker compose -f postgresql.compose.yml -f local-config.yml -f local-config-diagnostics.yml `
+docker compose -f postgresql.compose.yml -f local-config.compose.yml -f local-config-diagnostics.compose.yml `
   -f local-postgresql-diagnostics.yml -f local-resource-runner-approx.yml `
   --env-file .env.e2e -p dms-local up -d --no-deps db config
 ```

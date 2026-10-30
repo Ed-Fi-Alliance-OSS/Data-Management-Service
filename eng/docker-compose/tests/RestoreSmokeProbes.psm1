@@ -868,7 +868,7 @@ function Get-RestoreSmokeImageBuildPlan {
     $plan = foreach ($definition in $script:ImageBuildDefinitions) {
         $tags = @("$($definition.Repository):$runTag")
         if ($definition.Key -eq "Dms" -and $Wrapper -eq "published") {
-            # published-dms.yml pins the edfialliance/ed-fi-api repository and takes only the tag.
+            # published-dms.compose.yml pins the edfialliance/ed-fi-api repository and takes only the tag.
             $tags += "$($script:PublishedDmsRepository):$runTag"
         }
         $iidFile = Join-Path $imageDirectory "$($definition.Key.ToLowerInvariant()).iid"

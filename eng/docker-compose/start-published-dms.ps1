@@ -117,7 +117,7 @@ param (
     # Transitional non-bootstrap helper: when no bootstrap manifest is present,
     # passing this switch sets CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid and CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/additional-claims
     # and stages the AdditionalClaims fragments plus the test-owned E2E fragments into
-    # eng/docker-compose/.e2e-claims, which published-config.yml mounts at /app/additional-claims. Extension
+    # eng/docker-compose/.e2e-claims, which published-config.compose.yml mounts at /app/additional-claims. Extension
     # claims fragments (e.g. Sample, Homograph) and the E2E claim sets are therefore both loaded.
     # This flag is intentionally kept as a transitional helper for non-bootstrap extension E2E setups.
     [Switch]
@@ -144,7 +144,7 @@ param (
     # Redirects the Configuration Service database to a dedicated edfi_configurationservice
     # database instead of sharing the DMS datastore database. Applies only when the Configuration Service actually
     # participates (the default/-InfraOnly shape); has no effect with -DmsOnly/-DbOnly/-d, where
-    # the Configuration Service does not start. Also adds published-config.yml to the managed compose set even when no
+    # the Configuration Service does not start. Also adds published-config.compose.yml to the managed compose set even when no
     # other condition would (e.g. -IdentityProvider keycloak without -EnableConfig/-InfraOnly),
     # since the Configuration Service must actually run to create the separate database. Supported on both database
     # engines.
@@ -217,7 +217,7 @@ $EnvironmentFile = Resolve-DataStandardEnvironmentFile -DataStandardVersion $Dat
 # DMS_DATASTORE=mssql and returns the file unchanged, avoiding a derived-of-derived file).
 # DbOnly and teardown skip the CMS/OpenIddict invariant because neither initializes identity data.
 #
-# Whether published-config.yml joins the managed compose set. Unlike local-config.yml
+# Whether published-config.compose.yml joins the managed compose set. Unlike local-config.compose.yml
 # (unconditional in start-local-dms.ps1), the published stack includes CMS on an explicit
 # request, for self-contained identity, for the
 # bootstrap claims mount, or - this story's own addition - for -SeparateConfigDatabase, since CMS
@@ -230,7 +230,7 @@ $cmsIncludedInComposeSet = $EnableConfig -or $InfraOnly -or $IdentityProvider -e
 
 # CMS participates only when it is both a forward-starting non-DMS-only shape AND actually present
 # in the compose set - not -DmsOnly (CMS doesn't start), -DbOnly, or teardown (-d), and not a bare
-# published Keycloak start that omits published-config.yml entirely. Non-participating shapes get
+# published Keycloak start that omits published-config.compose.yml entirely. Non-participating shapes get
 # structural validation only; every participating MSSQL shape is verified physically on the
 # running server after readiness (Assert-MssqlTopologyPhysicalConsistency), in shared and
 # separate mode alike. Validating a CMS endpoint for a CMS that never starts would reject an
@@ -426,7 +426,7 @@ if ($usePostgresqlTmpfs -and $DatabaseEngine -eq "postgresql") {
 }
 
 if (-not $databaseOnlyStartup) {
-    $files += @("-f", "published-dms.yml")
+    $files += @("-f", "published-dms.compose.yml")
 
     # The same hook, the same resolver and the same diagnostics as the local launcher. The committed
     # acquisition overlays describe a deployment, not a build, so they have to reach a stack running
@@ -454,11 +454,11 @@ if (-not $databaseOnlyStartup) {
         if (-not [string]::IsNullOrWhiteSpace($env:COMPOSE_PROFILES)) {
             throw "CDC infrastructure startup does not accept COMPOSE_PROFILES."
         }
-        $files += @("-f", "kafka-cdc.yml")
+        $files += @("-f", "kafka-cdc.compose.yml")
         if ($DatabaseEngine -eq "mssql") { $files += @("-f", "mssql-cdc.yml") }
     }
     elseif ($enableKafkaInfrastructure -and $DatabaseEngine -eq "postgresql") {
-        $files += @("-f", "kafka.yml")
+        $files += @("-f", "kafka.compose.yml")
     }
 
     # Keep Keycloak in the managed compose set so follow-up up/down calls operate on the full
@@ -471,7 +471,7 @@ if (-not $databaseOnlyStartup) {
     }
 
     if ($EnableKafkaUI -and ($DatabaseEngine -eq "postgresql" -or $CdcKafkaInfrastructure)) {
-        $files += @("-f", "kafka-ui.yml")
+        $files += @("-f", "kafka-ui.compose.yml")
     }
 
     # Include Configuration Service when requested, when needed for self-contained identity, when
@@ -480,7 +480,7 @@ if (-not $databaseOnlyStartup) {
     # provider (e.g. keycloak without -EnableConfig/-InfraOnly would otherwise omit it). The
     # condition itself is computed once, well above, and shared with the CMS-participation gate.
     if ($cmsIncludedInComposeSet) {
-        $files += @("-f", "published-config.yml")
+        $files += @("-f", "published-config.compose.yml")
         # Only the combined DMS/CMS topology needs reserved source attribution. Include it in
         # every managed phase so infrastructure preparation and DMS-only startup stay aligned.
         $files += @("-f", "dms-cms-proxy.yml")
@@ -494,7 +494,7 @@ if (-not $databaseOnlyStartup) {
     }
 
     if ($EnableSwaggerUI) {
-        $files += @("-f", "swagger-ui.yml")
+        $files += @("-f", "swagger-ui.compose.yml")
     }
 }
 
@@ -522,7 +522,7 @@ if ($DmsOnly -and -not $cmsIncludedInComposeSet) {
         throw "Unable to determine the existing DMS/CMS proxy topology. Docker network inventory failed."
     }
     if ($proxyNetworks.Count -gt 0) {
-        $files += @("-f", "published-config.yml", "-f", "dms-cms-proxy.yml")
+        $files += @("-f", "published-config.compose.yml", "-f", "dms-cms-proxy.yml")
     }
 }
 
@@ -720,7 +720,7 @@ else {
         return
     }
 
-    # The two role names CMS enforces are supported overrides: published-config.yml maps
+    # The two role names CMS enforces are supported overrides: published-config.compose.yml maps
     # IdentitySettings:ConfigServiceRole / :ClientRole from CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE /
     # CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE, and BOTH identity setup scripts -- setup-keycloak.ps1 and
     # setup-openiddict.ps1 -InsertData -- fall back to their own cms-client / dms-client defaults when

@@ -183,7 +183,7 @@ param(
 
     # Redirects the Configuration Service database to a dedicated edfi_configurationservice
     # database instead of sharing the DMS datastore database. Forwarded unchanged to
-    # start-published-dms.ps1, where it also brings published-config.yml into the compose set so the Configuration Service
+    # start-published-dms.ps1, where it also brings published-config.compose.yml into the compose set so the Configuration Service
     # actually runs to create that database. Also forwarded to both datastore phases, each of which
     # enforces one half of the rule that the DMS datastore may not land in the dedicated
     # Configuration Service database: the configure phase judges a name it is about to register, and

@@ -3909,7 +3909,7 @@ Describe "Get-CmsDatabaseTopologyDefaultConnectionString" {
         Import-Module (Join-Path $script:dockerComposeRoot "database-safety.psm1") -Force
     }
 
-    It "constructs the exact shape local-config.yml / published-config.yml's nested fallback renders" {
+    It "constructs the exact shape local-config.compose.yml / published-config.compose.yml's nested fallback renders" {
         $result = Get-CmsDatabaseTopologyDefaultConnectionString -ExpectedHost "dms-postgresql" -ExpectedPort "5432" -ExpectedDatabaseName "edfi_datamanagementservice" -PostgresPassword "abcdefgh1!"
         $result | Should -Be 'host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;'
     }
@@ -3984,7 +3984,7 @@ Describe "Exit-code-independent-of-error-text (Phase 1a design invariant)" {
     }
 }
 
-Describe "Compose-rendering oracle (empirical parity with local-config.yml / published-config.yml)" {
+Describe "Compose-rendering oracle (empirical parity with local-config.compose.yml / published-config.compose.yml)" {
     BeforeAll {
         $script:dockerComposeRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
         Import-Module (Join-Path $script:dockerComposeRoot "env-utility.psm1") -Force
@@ -3992,7 +3992,7 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
 
         # Captured empirically (DMS-1270 Phase 1a spike) by rendering the genuine, checked-in
         # nested Compose fallback with a real Docker Compose invocation:
-        #   docker compose -f postgresql.compose.yml -f local-config.yml --env-file <fixture> config
+        #   docker compose -f postgresql.compose.yml -f local-config.compose.yml --env-file <fixture> config
         # where the fixture env file defined only POSTGRES_DB_NAME=edfi_datamanagementservice and
         # POSTGRES_PASSWORD=abcdefgh1! (CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING left entirely absent,
         # matching an old .env predating that key). Docker Compose v5.1.3 rendered
@@ -4006,7 +4006,7 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
         # shaped exactly like today's checked-in templates - connection string present,
         # CONFIGURATION_SERVICE_DATABASE_NAME absent) and feeding the ACTUAL resulting derived file to a real
         # Docker Compose invocation:
-        #   docker compose -f postgresql.compose.yml -f local-config.yml --env-file <derived file> config
+        #   docker compose -f postgresql.compose.yml -f local-config.compose.yml --env-file <derived file> config
         # This uncovered a genuine bug, since fixed (Move-EnvFileKeyBeforeAnotherKey): Docker
         # Compose's --env-file interpolation is order-dependent, like shell `source` semantics - a
         # forward reference (CONFIGURATION_SERVICE_DATABASE_NAME's line appearing after the connection string
@@ -4043,15 +4043,15 @@ Describe "Compose-rendering oracle (empirical parity with local-config.yml / pub
         }
     }
 
-    It "the checked-in local-config.yml / published-config.yml nested fallback still matches the captured oracle text" {
+    It "the checked-in local-config.compose.yml / published-config.compose.yml nested fallback still matches the captured oracle text" {
         # Guards against silent drift: if either file's nested default is ever edited without
         # re-running the live oracle capture, this fails loudly instead of the fixture going stale.
         # The database segment is itself a nested default so the fallback honors the topology seam:
         # CONFIGURATION_SERVICE_DATABASE_NAME when set, POSTGRES_DB_NAME otherwise. Re-captured live against
         # Docker Compose for all three shapes (explicit key, seam set, seam absent) when this form
         # was introduced; both frozen oracle strings below matched the render unchanged.
-        $localConfig = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "local-config.yml") -Raw
-        $publishedConfig = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "published-config.yml") -Raw
+        $localConfig = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "local-config.compose.yml") -Raw
+        $publishedConfig = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "published-config.compose.yml") -Raw
         $expectedNestedSyntax = 'CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME:-${POSTGRES_DB_NAME}};'
 
         $localConfig | Should -Match ([regex]::Escape($expectedNestedSyntax))
@@ -4836,7 +4836,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
 
     # The published script's CMS-participation gate is narrower than the local script's: CMS must
     # also actually be in the compose set. A bare published Keycloak start (no -EnableConfig, no
-    # -InfraOnly, not bootstrap mode, no -SeparateConfigDatabase) omits published-config.yml
+    # -InfraOnly, not bootstrap mode, no -SeparateConfigDatabase) omits published-config.compose.yml
     # entirely, so CMS never runs and this story's topology validator must not pass judgment on its
     # endpoint. These cover both halves behaviorally: the compose file set as actually built, and
     # the gate that follows from it.
@@ -4858,7 +4858,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             }
         }
 
-        It "omits published-config.yml for a bare Keycloak start (CMS opt-in preserved)" {
+        It "omits published-config.compose.yml for a bare Keycloak start (CMS opt-in preserved)" {
             if (-not (Assert-NoStagedBootstrapWorkspace)) { return }
             $envFile = New-WiringEnvFile
 
@@ -4867,11 +4867,11 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             }
 
             $run.ComposeCommand | Should -Not -BeNullOrEmpty
-            $run.ComposeCommand | Should -Not -BeLike "*published-config.yml*"
+            $run.ComposeCommand | Should -Not -BeLike "*published-config.compose.yml*"
             $run.ComposeCommand | Should -Not -BeLike "*dms-cms-proxy.yml*" -Because "the proxy overlay must not create a CMS service when CMS was omitted"
         }
 
-        It "includes published-config.yml for -SeparateConfigDatabase under Keycloak, which would otherwise omit it" {
+        It "includes published-config.compose.yml for -SeparateConfigDatabase under Keycloak, which would otherwise omit it" {
             if (-not (Assert-NoStagedBootstrapWorkspace)) { return }
             $envFile = New-WiringEnvFile
 
@@ -4879,7 +4879,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider keycloak -DatabaseEngine mssql -SeparateConfigDatabase -EnvironmentFile $envFile *>$null
             }
 
-            $run.ComposeCommand | Should -BeLike "*published-config.yml*" -Because "CMS must actually run to create the dedicated database"
+            $run.ComposeCommand | Should -BeLike "*published-config.compose.yml*" -Because "CMS must actually run to create the dedicated database"
             $run.ComposeCommand | Should -BeLike "*dms-cms-proxy.yml*"
             $run.TopologyFile | Should -Not -BeNullOrEmpty -Because "CMS participates in this shape, so the topology sequence must run"
         }
@@ -4896,11 +4896,11 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
 
             $run.ComposeCommand | Should -Not -BeNullOrEmpty
             if ($Paired) {
-                $run.ComposeCommand | Should -BeLike "*published-config.yml*"
+                $run.ComposeCommand | Should -BeLike "*published-config.compose.yml*"
                 $run.ComposeCommand | Should -BeLike "*dms-cms-proxy.yml*"
             }
             else {
-                $run.ComposeCommand | Should -Not -BeLike "*published-config.yml*"
+                $run.ComposeCommand | Should -Not -BeLike "*published-config.compose.yml*"
                 $run.ComposeCommand | Should -Not -BeLike "*dms-cms-proxy.yml*"
             }
             $run.TopologyFile | Should -BeNullOrEmpty -Because "DMS-only continuation does not start CMS"
@@ -4925,22 +4925,22 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             }
 
             $run.ComposeCommand | Should -Not -BeNullOrEmpty
-            $run.ComposeCommand | Should -BeLike "*published-config.yml*"
+            $run.ComposeCommand | Should -BeLike "*published-config.compose.yml*"
             $run.ComposeCommand | Should -BeLike "*dms-cms-proxy.yml*"
             $run.TopologyFile | Should -BeNullOrEmpty -Because "teardown does not start CMS"
         }
 
-        It "includes published-config.yml for -EnableConfig and for self-contained identity" {
+        It "includes published-config.compose.yml for -EnableConfig and for self-contained identity" {
             $enableConfigRun = Invoke-StartScript {
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider keycloak -EnableConfig -EnvironmentFile (New-WiringEnvFile) *>$null
             }
-            $enableConfigRun.ComposeCommand | Should -BeLike "*published-config.yml*"
+            $enableConfigRun.ComposeCommand | Should -BeLike "*published-config.compose.yml*"
             $enableConfigRun.ComposeCommand | Should -BeLike "*dms-cms-proxy.yml*"
 
             $selfContainedRun = Invoke-StartScript {
                 & "$script:dockerComposeRoot/start-published-dms.ps1" -IdentityProvider self-contained -EnvironmentFile (New-WiringEnvFile) *>$null
             }
-            $selfContainedRun.ComposeCommand | Should -BeLike "*published-config.yml*"
+            $selfContainedRun.ComposeCommand | Should -BeLike "*published-config.compose.yml*"
             $selfContainedRun.ComposeCommand | Should -BeLike "*dms-cms-proxy.yml*"
         }
 
@@ -4956,7 +4956,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             }
 
             $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must reach the docker boundary rather than being rejected by a validator that should not have run"
-            $run.ComposeCommand | Should -Not -BeLike "*published-config.yml*"
+            $run.ComposeCommand | Should -Not -BeLike "*published-config.compose.yml*"
             $run.TopologyFile | Should -BeNullOrEmpty -Because "the topology sequence is gated on CMS participation"
             $run.ErrorMessage | Should -Not -BeLike "*topology*"
         }
@@ -4975,7 +4975,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
 
             $run.ErrorMessage | Should -Not -BeLike "*configuration mismatch*" -Because "no offline name verdict exists to reject this shape"
             $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "the run must reach the docker boundary"
-            $run.ComposeCommand | Should -Not -BeLike "*published-config.yml*"
+            $run.ComposeCommand | Should -Not -BeLike "*published-config.compose.yml*"
             $run.TopologyFile | Should -BeNullOrEmpty
         }
 
@@ -4993,7 +4993,7 @@ Describe "start-local-dms.ps1 / start-published-dms.ps1 CMS database topology wi
             }
 
             $run.ComposeCommand | Should -Not -BeNullOrEmpty -Because "a custom CMS host is irrelevant when CMS never starts, so the run must reach the docker boundary"
-            $run.ComposeCommand | Should -Not -BeLike "*published-config.yml*"
+            $run.ComposeCommand | Should -Not -BeLike "*published-config.compose.yml*"
             $run.ErrorMessage | Should -Not -BeLike "*topology*" -Because "Confirm-CmsDatabaseTopologyAgreement checks the host and must not have run"
             $run.TopologyFile | Should -BeNullOrEmpty
         }
@@ -6192,7 +6192,7 @@ if (`$itemAfter.Definition -eq `$definitionBefore -and `$itemAfter.Options -eq `
     }
 
     It "keeps CMS the Keycloak-mode database-creation owner: both config compose files enable the startup deploy" {
-        foreach ($composeFile in @('local-config.yml', 'published-config.yml')) {
+        foreach ($composeFile in @('local-config.compose.yml', 'published-config.compose.yml')) {
             $content = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot $composeFile) -Raw
             $content | Should -Match 'AppSettings__DeployDatabaseOnStartup:\s*\$\{CONFIGURATION_SERVICE_DEPLOY_DATABASE:-true\}' -Because "$composeFile must default CMS's own EnsureDatabase deploy on, so Keycloak-mode creation needs no script-side bootstrap"
         }

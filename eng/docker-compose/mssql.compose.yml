@@ -5,7 +5,7 @@
 
 # SQL Server counterpart to postgresql.compose.yml. The service is deliberately named "db" so this
 # file is a drop-in swap for postgresql.compose.yml in any compose set that gates on
-# `depends_on: db: condition: service_healthy` (local-config.yml). Both the CMS-only stack
+# `depends_on: db: condition: service_healthy` (local-config.compose.yml). Both the CMS-only stack
 # (start-local-config.ps1, CONFIGURATION_SERVICE_DATASTORE=mssql) and the full DMS stack
 # (start-local-dms.ps1 -DatabaseEngine mssql) select this file instead of postgresql.compose.yml.
 # Image and sqlcmd path match the CI integration-test container.

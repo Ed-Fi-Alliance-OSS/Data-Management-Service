@@ -2011,7 +2011,7 @@ exit 0
         It 'proves recipe2 through the committed fetch recipe, unedited' {
             $recipe = $script:strict.Evidence.recipe2
 
-            $recipe.pluginComposeFiles | Should -BeExactly 'plugins-fetch-dms.yml;tests/plugin-deployment/plugins-feed-dms.yml;tests/plugin-deployment/stock-image-pin-dms.yml;tests/plugin-deployment/plugins-allowed-dms.yml'
+            $recipe.pluginComposeFiles | Should -BeExactly 'plugins-fetch-dms.compose.yml;tests/plugin-deployment/plugins-feed-dms.yml;tests/plugin-deployment/stock-image-pin-dms.yml;tests/plugin-deployment/plugins-allowed-dms.yml'
             $recipe.dmsImage | Should -BeExactly ('edfialliance/ed-fi-api:8.0.1-alpha.0.7@sha256:' + ('a' * 64))
             $recipe.readyState | Should -BeExactly 'Ready'
             $recipe.dmsImageId | Should -BeExactly $script:proofImageId

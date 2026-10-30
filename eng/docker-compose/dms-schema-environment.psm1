@@ -42,7 +42,7 @@ function Invoke-WithDmsEnvironmentFileSchemaAuthority {
         caller's exact prior state afterward.
     .DESCRIPTION
         Compose gives process environment variables precedence over --env-file entries, and
-        local-dms.yml resolves all three with a ${VAR:-default} fallback. Because ':-' substitutes the
+        local-dms.compose.yml resolves all three with a ${VAR:-default} fallback. Because ':-' substitutes the
         default for an empty value as well as an unset one, an ambient blank value silently wins over
         the environment file: the DMS container is created with AppSettings__ApiSchema__UseCustomPath=false and
         empty AppSettings__ApiSchema__Path/SCHEMA_PACKAGES, run.sh skips the package download entirely,
@@ -464,7 +464,7 @@ function Get-DmsContainerEnvironment {
 
     # A PowerShell hashtable, so its key lookups are case-INSENSITIVE, and that is deliberate here.
     # Docker Compose is the sole writer of this container's environment and emits the exact
-    # AppSettings__* spelling local-dms.yml declares, so the gate never has two spellings to tell
+    # AppSettings__* spelling local-dms.compose.yml declares, so the gate never has two spellings to tell
     # apart and a case-sensitive map would only add a way for the gate to miss its own keys. Casing
     # matters for the VALUES, which is why Get-DmsSchemaEnvironmentToken compares those Ordinal.
     $containerEnvironment = @{}

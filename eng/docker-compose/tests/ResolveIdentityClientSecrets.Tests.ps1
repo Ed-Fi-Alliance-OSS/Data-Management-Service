@@ -124,7 +124,7 @@ Describe "Start scripts pass the resolved database identity and role names to th
     # the two role names (cms-client / dms-client), so a caller that omits them silently overrides a
     # configured stack -- under either identity provider. POSTGRES_USER is a supported override --
     # postgresql.compose.yml passes ${POSTGRES_USER:-postgres} to the container -- and the role names are
-    # mapped by local-config.yml and published-config.yml onto IdentitySettings:ConfigServiceRole /
+    # mapped by local-config.compose.yml and published-config.compose.yml onto IdentitySettings:ConfigServiceRole /
     # :ClientRole.
 
     # Discovery-time cases: $PSScriptRoot is available during discovery in Pester v5.

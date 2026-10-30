@@ -384,13 +384,13 @@ if ($d) {
     # Forward only the flags that shape the compose-file set start-local-dms.ps1 rebuilds for
     # `docker compose ... down`, so teardown targets the same containers/volumes and env the stack
     # started with: -DatabaseEngine (postgresql.compose.yml vs mssql.compose.yml), -IdentityProvider (keycloak.compose.yml),
-    # -EnableKafkaUI (kafka.yml + kafka-ui.yml), -EnableSwaggerUI (swagger-ui.yml), and the env file.
+    # -EnableKafkaUI (kafka.compose.yml + kafka-ui.compose.yml), -EnableSwaggerUI (swagger-ui.compose.yml), and the env file.
     # Seed/configure/IDE options and -DataStandardVersion do not change the compose-file set (the DS
     # overlay only rewrites env values such as SCHEMA_PACKAGES), so they are omitted. Each is forwarded
     # only when the caller bound it; the unbound defaults (postgresql, no switches) match
     # start-local-dms.ps1's own, so an omitted flag and its default forward identically.
     #
-    # -SeparateConfigDatabase is deliberately omitted too: local-config.yml is unconditional in
+    # -SeparateConfigDatabase is deliberately omitted too: local-config.compose.yml is unconditional in
     # start-local-dms.ps1's compose set, so the switch changes which database CMS targets but never
     # which compose files a teardown must cover. (It does shape the set in start-published-dms.ps1,
     # but that script owns its own teardown; this wrapper offers none for the published path.)
