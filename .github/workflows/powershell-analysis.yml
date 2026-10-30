@@ -46,8 +46,9 @@ jobs:
   # GitHub substitutes ${{ }} expressions into a run script before the shell reads it, and git
   # allows shell metacharacters in branch and tag names, so a ref written into a script is code.
   # This refuses any ref or tag expression in a workflow or composite action run script, then runs
-  # its own tests. The release workflow tests that execute those scripts with hostile names run in
-  # the DMS bootstrap Pester job, which also runs in the merge queue, where this workflow does not.
+  # its own tests. The guard itself, and the release workflow tests that execute those scripts with
+  # hostile names, also run in the DMS bootstrap Pester job, which is required and runs in the merge
+  # queue, where this workflow is not required and does not run.
   workflow-ref-guard:
     name: Workflow Ref Injection Guard
     if: github.event.pull_request.draft != true

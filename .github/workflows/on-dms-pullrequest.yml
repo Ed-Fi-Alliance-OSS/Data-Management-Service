@@ -187,6 +187,12 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The repository-wide workflow ref guard. It runs here because this job is required and runs
+      # in the merge queue; the PowerShell workflow, which also runs it, is neither. A workflow or
+      # action change is DMS-relevant, so a pull request that makes one does not skip this job.
+      - name: Refuse ref, tag and secret expressions in run scripts
+        run: ./eng/ci/Test-WorkflowRefInjection.ps1
+
       - name: Install Pester
         run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
 

@@ -879,4 +879,12 @@ Describe 'Workflow ref guard wiring' {
         $bootstrap | Should -Match '"eng/ci/tests/ReleaseRefHandling\.Tests\.ps1"'
         $script:analysis | Should -Not -Match 'ReleaseRefHandling'
     }
+
+    It 'runs the guard over the whole repository in the bootstrap job that the merge queue also runs' {
+        $pullRequest = (Get-Content -LiteralPath (Join-Path $script:repoRoot '.github/workflows/on-dms-pullrequest.yml') -Raw) -replace "`r`n", "`n"
+        $bootstrap = [regex]::Match($pullRequest, '(?ms)^  run-bootstrap-pester-tests:\n.*?(?=^  \S|\z)').Value
+
+        $pullRequest | Should -Match '(?m)^  merge_group:$'
+        $bootstrap | Should -Match '(?m)^        run: \./eng/ci/Test-WorkflowRefInjection\.ps1$'
+    }
 }
