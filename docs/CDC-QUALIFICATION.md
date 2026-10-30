@@ -157,6 +157,34 @@ signatures are hints, not confirmed causes. Raw log text, health-check output, c
 and exception messages are never exported. The original admission failure codes and
 subsequent cleanup outcome remain separate, even if diagnostic collection fails.
 
+### API E2E cleanup failures
+
+When API E2E scenarios pass but teardown fails, open the artifact
+`cdc-qualification-<Provider>-ApiE2E-<attempt>` and inspect the `Cleanup` object in
+`<Provider>-ApiE2E/cdc-api-e2e.json`. The Actions log also prints the provider,
+first failed cleanup step (or last started step if interrupted), and cleanup process outcome.
+
+- `Steps` records running and completed checkpoints with UTC start times, durations,
+  command categories, and allowlisted exception/source metadata. It distinguishes ownership
+  and deployment validation, controller retirement, worker verification, Compose teardown,
+  runtime/bootstrap cleanup, image removal, resource verification, and final state cleanup.
+  A `Running` checkpoint without a completion can indicate an interrupted child process;
+  consult `Process` for its exit code, failure kind and timeout status.
+- `ChildFailures` retains the existing lifecycle diagnostics, including controller exit codes
+  and fixed failure classifications, before outer catches replace their error messages.
+- `RemainingResources` is a fresh, bounded observation after cleanup, including failures.
+  It is separate from `RuntimeInputs.OwnedCounts`, which is the **pre-cleanup** inventory.
+  A missing count means its probe failed or did not run, not that no resources remain.
+
+The cleanup child writes checkpoints incrementally. If it times out, the parent retains the
+process result and attempts the remaining-resource probes before export. Collection and
+export have size limits; `Missing`, `Partial`, `Invalid`, `IdentityMismatch`, or `Oversized`
+identify unavailable/incomplete evidence. Diagnostics do not authorize cleanup, suppress its
+failure, or replace the scenario results. Raw exception messages, command arguments, resource
+names, stdout and stderr remain private; only explicitly allowed fields enter the existing
+always-uploaded artifact, retained for 14 days. A runner cancellation or loss before export
+can still prevent artifact publication.
+
 With `-PullImages`, each prerequisite image gets at most three pull attempts, with waits of five and fifteen seconds after failures. Exhausting those attempts reports `EnvironmentUnavailable` before any suite starts. The uploaded `image-pulls.jsonl` retains one JSON record per attempt, including failures followed by a successful retry: image reference, attempt/budget, UTC start time, duration, exit code, outcome, failure category, next retry delay, and private log filename. Categories distinguish rate limits, authorization, missing images, disk exhaustion, DNS, TLS, timeouts, connection failures, and registry availability; unrecognized errors are `Unknown`. These classifications are diagnostic hints from Docker output, not confirmed underlying causes. The corresponding `pull-<id>-<attempt>.log` files preserve complete output under the private temporary directory printed by the runner. Raw logs are never uploaded, and unsafe image references are redacted from public evidence and console messages.
 
 Operator runbooks and documentation checks belong to E19-S07; plugin publication belongs to the companion repository. API-driven Kafka scenarios belong to E19-S06. Explanatory prose remains human-reviewed; marked operator examples and relative links have focused documentation checks. Executable E19-S05 scenario-to-invariant traceability remains covered by Contract tests.
