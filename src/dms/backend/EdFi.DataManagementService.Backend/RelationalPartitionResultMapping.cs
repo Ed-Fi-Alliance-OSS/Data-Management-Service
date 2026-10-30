@@ -55,6 +55,10 @@ internal static class RelationalPartitionResultMapping
                     namespaceNotAuthorized.NamespaceFailure
                 ),
 
+            QueryResult.QueryFailureValidation validation => new PartitionResult.PartitionFailureValidation(
+                validation.ValidationFailures
+            ),
+
             QueryResult.QueryFailureRetryable => new PartitionResult.PartitionFailureRetryable(),
 
             QueryResult.UnknownFailure unknownFailure => new PartitionResult.UnknownPartitionFailure(

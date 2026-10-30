@@ -77,7 +77,6 @@ public class Given_MssqlReferenceResolverTestDatabase
                 "dms.Document",
                 "dms.DocumentCache",
                 "dms.EffectiveSchema",
-                "dms.ReferentialIdentity",
                 "dms.ResourceKey",
                 "dms.SchemaComponent",
                 "edfi.LocalEducationAgency",
@@ -126,7 +125,6 @@ public class Given_MssqlReferenceResolverTestDatabase
                 {
                     ["dms.ResourceKey"] = _database.Fixture.SeedData.ResourceKeys.Count,
                     ["dms.Document"] = _database.Fixture.SeedData.Documents.Count,
-                    ["dms.ReferentialIdentity"] = _database.Fixture.SeedData.ReferentialIdentities.Count,
                     ["dms.Descriptor"] = _database.Fixture.SeedData.Descriptors.Count,
                 }
             );
@@ -147,10 +145,6 @@ public class Given_MssqlReferenceResolverTestDatabase
         {
             ["dms.ResourceKey"] = await ReadTableCountAsync(connectionString, "[dms].[ResourceKey]"),
             ["dms.Document"] = await ReadTableCountAsync(connectionString, "[dms].[Document]"),
-            ["dms.ReferentialIdentity"] = await ReadTableCountAsync(
-                connectionString,
-                "[dms].[ReferentialIdentity]"
-            ),
             ["dms.Descriptor"] = await ReadTableCountAsync(connectionString, "[dms].[Descriptor]"),
         };
     }
@@ -174,15 +168,6 @@ public class Given_MssqlReferenceResolverTestDatabase
                 SELECT [DocumentId], [DocumentUuid], [ResourceKeyId]
                 FROM [dms].[Document]
                 ORDER BY [DocumentId]
-                FOR JSON PATH, INCLUDE_NULL_VALUES;
-                """
-            ),
-            ["dms.ReferentialIdentity"] = await ReadJsonAsync(
-                connectionString,
-                """
-                SELECT [ReferentialId], [DocumentId], [ResourceKeyId]
-                FROM [dms].[ReferentialIdentity]
-                ORDER BY [ResourceKeyId], [DocumentId], [ReferentialId]
                 FOR JSON PATH, INCLUDE_NULL_VALUES;
                 """
             ),

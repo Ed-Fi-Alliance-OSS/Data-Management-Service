@@ -302,9 +302,9 @@ try to make them agree:
 
 The examples below were checked on PostgreSQL 18.6 and SQL Server 2025 (RTM-CU9).
 They describe what to expect on each engine; they are not a promise of matching
-behavior, and they do not cover every character. Live fixtures that pin these
-verdicts on both engines are part of DMS-1455, after the descriptor index and
-lookups exist.
+behavior, and they do not cover every character. DMS tests pin these verdicts
+against live databases on both engines, so a change in either engine's behavior
+is caught before release.
 
 | Values compared | PostgreSQL (`pg_c_utf8`) | SQL Server (`SQL_Latin1_General_CP1_CI_AS`) |
 |---|---|---|
@@ -313,6 +313,9 @@ lookups exist.
 | `Straße` and `Strasse` | Different: simple case mapping leaves `ß` as `ß` | Same identity: linguistic comparison equates `ß` and `ss` |
 | Precomposed `é` (U+00E9) and `e` followed by a combining acute accent (U+0301) | Different: compared by code point | Same identity: linguistic comparison equates them |
 | `A` and `A😀` | Different | Same identity: the emoji has no comparison weight |
+| Dotted `İ` (U+0130) and `i` | Same identity: `lower` maps `İ` to `i` | Same identity: `LOWER` maps `İ` to `i` |
+| Fullwidth `Ａ` (U+FF21) and `A` | Different: `lower` maps `Ａ` to fullwidth `ａ` | Same identity: comparison ignores width |
+| Kelvin sign `K` (U+212A) and `k` | Same identity: `lower` maps the Kelvin sign to `k` | Different |
 | `Ǹ` (U+01F8) and `ǹ` (U+01F9) | Same identity: `lower` maps `Ǹ` to `ǹ` | Same identity, but because neither carries a comparison weight: `LOWER` leaves `Ǹ` unchanged, and `AǸ` also matches `A` |
 
 A PostgreSQL major upgrade can change the PostgreSQL column for characters

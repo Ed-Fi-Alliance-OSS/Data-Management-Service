@@ -14,13 +14,14 @@ namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
 internal static partial class DescriptorRuntimeScenario
 {
-    public static async Task It_applies_RI_matching_post_component_and_casing_updates(
+    public static async Task It_keeps_the_stored_components_for_an_equal_whole_URI_post(
         ApiIntegrationHarness harness
     )
     {
         DescriptorValues original = CreateDescriptorValues("compact-post", codeValue: "Campus#MiXeD");
         (string path, string etag) = await CreateDescriptorAsync(harness, original);
         StoredDescriptor before = await ReadStoredDescriptorAsync(harness, path);
+        long initialDocumentCount = await CountAllDocumentRowsAsync(harness);
         DescriptorValues components = original with
         {
             Namespace = $"{original.Namespace}#Campus",
@@ -30,40 +31,93 @@ internal static partial class DescriptorRuntimeScenario
             .Should()
             .Be($"{original.Namespace}#{original.CodeValue}");
 
-        (StoredDescriptor afterComponents, string componentEtag) = await AssertPostUpdateAsync(
+        // The probe matches the stored descriptor and the stored split binds, so the re-split alone changes
+        // nothing and a descriptive change keeps the stored components.
+        await AssertPostNoOpAsync(harness, path, components, before, etag);
+        await AssertPostUpdateAsync(
             harness,
             path,
-            components,
+            components with
+            {
+                Description = "Re-split description",
+            },
             before,
-            etag
+            etag,
+            expected: original with
+            {
+                Description = "Re-split description",
+            }
         );
-        DescriptorValues casing = components with { CodeValue = "MIXED" };
-        await AssertPostUpdateAsync(harness, path, casing, afterComponents, componentEtag);
+        (await CountAllDocumentRowsAsync(harness)).Should().Be(initialDocumentCount);
     }
 
-    public static async Task It_accepts_equal_whole_URI_components_on_put(ApiIntegrationHarness harness)
+    public static async Task It_keeps_the_stored_casing_for_a_case_variant_post(ApiIntegrationHarness harness)
+    {
+        DescriptorValues original = CreateDescriptorValues("compact-post-casing", codeValue: "Campus#MiXeD");
+        (string path, string etag) = await CreateDescriptorAsync(harness, original);
+        StoredDescriptor before = await ReadStoredDescriptorAsync(harness, path);
+        DescriptorValues casing = original with
+        {
+            Namespace = original.Namespace.ToUpperInvariant(),
+            CodeValue = "Campus#MIXED",
+        };
+
+        await AssertPostNoOpAsync(harness, path, casing, before, etag);
+        await AssertPostUpdateAsync(
+            harness,
+            path,
+            casing with
+            {
+                Description = "Recased description",
+            },
+            before,
+            etag,
+            expected: original with
+            {
+                Description = "Recased description",
+            }
+        );
+    }
+
+    public static async Task It_keeps_the_stored_identity_for_an_equal_identity_put(
+        ApiIntegrationHarness harness
+    )
     {
         DescriptorValues original = CreateDescriptorValues("compact-put", codeValue: "Campus#MiXeD");
         (string path, string etag) = await CreateDescriptorAsync(harness, original);
         StoredDescriptor before = await ReadStoredDescriptorAsync(harness, path);
-        DescriptorValues components = original with
+        DescriptorValues[] equalIdentities =
+        [
+            original with
+            {
+                Namespace = $"{original.Namespace}#Campus",
+                CodeValue = "MiXeD",
+            },
+            original with
+            {
+                CodeValue = "CAMPUS#mixed",
+            },
+        ];
+
+        // Equal whole-URI components and casing are the same descriptor to the database: the PUT keeps the
+        // stored identity and is a no-op.
+        foreach (DescriptorValues equalIdentity in equalIdentities)
         {
-            Namespace = $"{original.Namespace}#Campus",
-            CodeValue = "MiXeD",
-        };
-        using HttpResponseMessage response = await PutDescriptorAsync(
-            harness,
-            path,
-            path.Split('/')[^1],
-            components,
-            etag
-        );
-        response.StatusCode.Should().Be(HttpStatusCode.NoContent, await response.Content.ReadAsStringAsync());
-        response.TryReadRawEtag(out string updatedEtag).Should().BeTrue();
-        updatedEtag.Should().NotBe(etag);
-        StoredDescriptor after = await ReadStoredDescriptorAsync(harness, path);
-        AssertChangedState(after, before, components);
-        await AssertResponseStateAsync(harness, path, components, updatedEtag, after);
+            using HttpResponseMessage response = await PutDescriptorAsync(
+                harness,
+                path,
+                path.Split('/')[^1],
+                equalIdentity,
+                etag
+            );
+            response
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent, await response.Content.ReadAsStringAsync());
+            response.TryReadRawEtag(out string putEtag).Should().BeTrue();
+            putEtag.Should().Be(etag);
+            (await ReadStoredDescriptorAsync(harness, path)).Should().Be(before);
+            await AssertResponseStateAsync(harness, path, original, etag, before);
+        }
     }
 
     public static async Task It_preserves_all_stamps_and_change_queries_on_identical_post_and_put(
@@ -113,46 +167,6 @@ internal static partial class DescriptorRuntimeScenario
         (await GetJsonArrayAsync(harness, $"{DescriptorEndpoint}?minChangeVersion={before.Version + 1}"))
             .Should()
             .BeEmpty();
-    }
-
-    public static async Task It_rejects_a_duplicate_whole_URI_without_an_RI_match(
-        ApiIntegrationHarness harness
-    )
-    {
-        DescriptorValues original = CreateDescriptorValues("compact-conflict", codeValue: "Campus#MiXeD");
-        (string path, string etag) = await CreateDescriptorAsync(harness, original);
-        long initialDocumentCount = await CountAllDocumentRowsAsync(harness);
-        // Model a row with no matching RI. Database equality must never silently select it for an upsert.
-        await ExecuteSqlAsync(
-            harness,
-            "DELETE FROM \"dms\".\"ReferentialIdentity\" WHERE \"DocumentId\" = @documentId",
-            ("@documentId", (await ReadStoredDescriptorAsync(harness, path)).DocumentId)
-        );
-        StoredDescriptor before = await ReadStoredDescriptorAsync(harness, path);
-        DescriptorValues components = original with
-        {
-            Namespace = $"{original.Namespace}#Campus",
-            CodeValue = "MiXeD",
-        };
-        using HttpResponseMessage duplicate = await PostJsonAsync(
-            harness,
-            DescriptorEndpoint,
-            CreateDescriptorPayload(components)
-        );
-        string duplicateBody = await duplicate.Content.ReadAsStringAsync();
-        duplicate.StatusCode.Should().Be(HttpStatusCode.InternalServerError, duplicateBody);
-        JsonObject problem = JsonNode.Parse(duplicateBody)!.AsObject();
-        problem["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:system");
-        problem["title"]!.GetValue<string>().Should().Be("System Error");
-        problem["status"]!.GetValue<int>().Should().Be(500);
-        problem["detail"]!.GetValue<string>().Should().Be("An unexpected problem has occurred.");
-        (await CountAllDocumentRowsAsync(harness)).Should().Be(initialDocumentCount);
-        (await ReadStoredDescriptorAsync(harness, path)).Should().Be(before);
-        await AssertResponseStateAsync(harness, path, original, etag, before);
-        (await CountDocumentRowsAsync(harness, path.Split('/')[^1])).Should().Be(1);
-        (await GetJsonArrayAsync(harness, $"{DescriptorEndpoint}?namespace={Escape(original.Namespace)}"))
-            .Count.Should()
-            .Be(1);
     }
 
     public static async Task It_isolates_identical_URIs_across_descriptor_types_and_projects(
@@ -258,8 +272,9 @@ internal static partial class DescriptorRuntimeScenario
         (await GetJsonArrayAsync(harness, $"{DescriptorEndpoint}?namespace={Escape(original.Namespace)}"))
             .Count.Should()
             .Be(1);
-        // The stored namespace passes this narrower prefix; moving a delimiter into CodeValue
-        // leaves the whole URI equal but makes the proposed namespace unauthorized.
+        // The stored namespace passes this narrower prefix. Moving a delimiter into CodeValue leaves the whole
+        // URI equal, so the stored components bind before the proposed check and the write is an authorized
+        // no-op even though the request's own namespace lies outside the prefix.
         DescriptorValues scoped = CreateDescriptorValues("compact-proposed-namespace") with
         {
             CodeValue = "MiXeD",
@@ -273,22 +288,22 @@ internal static partial class DescriptorRuntimeScenario
             Namespace = scoped.Namespace[..scoped.Namespace.LastIndexOf('#')],
             CodeValue = "Campus#MiXeD",
         };
-        using HttpResponseMessage deniedProposedPost = await PostJsonAsync(
+        using HttpResponseMessage boundPost = await PostJsonAsync(
             harness,
             DescriptorEndpoint,
             CreateDescriptorPayload(outsidePrefix)
         );
-        deniedProposedPost
-            .StatusCode.Should()
-            .Be(HttpStatusCode.Forbidden, await deniedProposedPost.Content.ReadAsStringAsync());
-        using HttpResponseMessage deniedProposedPut = await PutDescriptorAsync(
+        boundPost.StatusCode.Should().Be(HttpStatusCode.OK, await boundPost.Content.ReadAsStringAsync());
+        boundPost.TryReadRawEtag(out string boundPostEtag).Should().BeTrue();
+        boundPostEtag.Should().Be(scopedEtag);
+        using HttpResponseMessage boundPut = await PutDescriptorAsync(
             harness,
             scopedPath,
             scopedPath.Split('/')[^1],
             outsidePrefix,
             scopedEtag
         );
-        deniedProposedPut.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        boundPut.StatusCode.Should().Be(HttpStatusCode.NoContent, await boundPut.Content.ReadAsStringAsync());
         (await ReadStoredDescriptorAsync(harness, scopedPath)).Should().Be(scopedBefore);
         await AssertResponseStateAsync(harness, scopedPath, scoped, scopedEtag, scopedBefore);
     }
@@ -299,7 +314,8 @@ internal static partial class DescriptorRuntimeScenario
         DescriptorValues values,
         StoredDescriptor before,
         string etag,
-        string endpoint = DescriptorEndpoint
+        string endpoint = DescriptorEndpoint,
+        DescriptorValues? expected = null
     )
     {
         using HttpResponseMessage response = await PostJsonAsync(
@@ -312,9 +328,33 @@ internal static partial class DescriptorRuntimeScenario
         response.TryReadRawEtag(out string afterEtag).Should().BeTrue();
         afterEtag.Should().NotBe(etag);
         StoredDescriptor after = await ReadStoredDescriptorAsync(harness, path);
-        AssertChangedState(after, before, values);
-        await AssertResponseStateAsync(harness, path, values, afterEtag, after);
+        AssertChangedState(after, before, expected ?? values);
+        await AssertResponseStateAsync(harness, path, expected ?? values, afterEtag, after);
         return (after, afterEtag);
+    }
+
+    /// <summary>
+    /// POSTs a representation that differs from the stored descriptor only in its identity spelling and asserts
+    /// it is matched and changes nothing: same location and ETag, unchanged row, stamps and served casing.
+    /// </summary>
+    private static async Task AssertPostNoOpAsync(
+        ApiIntegrationHarness harness,
+        string path,
+        DescriptorValues values,
+        StoredDescriptor before,
+        string etag
+    )
+    {
+        using HttpResponseMessage response = await PostJsonAsync(
+            harness,
+            DescriptorEndpoint,
+            CreateDescriptorPayload(values)
+        );
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        ToPath(response.Headers.Location!).Should().Be(path);
+        response.TryReadRawEtag(out string afterEtag).Should().BeTrue();
+        afterEtag.Should().Be(etag);
+        (await ReadStoredDescriptorAsync(harness, path)).Should().Be(before);
     }
 
     private static void AssertChangedState(
@@ -330,7 +370,6 @@ internal static partial class DescriptorRuntimeScenario
         after.ModifiedAt.Should().BeAfter(before.ModifiedAt);
         after.Namespace.Should().Be(values.Namespace);
         after.CodeValue.Should().Be(values.CodeValue);
-        after.RiCount.Should().Be(before.RiCount);
         after.HistoryCount.Should().Be(before.HistoryCount);
     }
 
@@ -407,7 +446,6 @@ internal static partial class DescriptorRuntimeScenario
                    descriptor."Namespace", descriptor."CodeValue",
                    document."ContentVersion", descriptor."ContentLastModifiedAt",
                    descriptor."ContentVersion",
-                   (SELECT COUNT(*) FROM "dms"."ReferentialIdentity" ri WHERE ri."DocumentId" = document."DocumentId"),
                    (SELECT COUNT(*) FROM "tracked_changes_edfi"."Descriptor" history WHERE history."DocumentId" = document."DocumentId")
             FROM "dms"."Document" document
             JOIN "dms"."Descriptor" descriptor ON descriptor."DocumentId" = document."DocumentId"
@@ -430,8 +468,7 @@ internal static partial class DescriptorRuntimeScenario
             reader.GetString(4),
             version,
             at,
-            Convert.ToInt32(reader.GetValue(8)),
-            Convert.ToInt32(reader.GetValue(9))
+            Convert.ToInt32(reader.GetValue(8))
         );
     }
 
@@ -443,7 +480,6 @@ internal static partial class DescriptorRuntimeScenario
         string CodeValue,
         long Version,
         DateTimeOffset ModifiedAt,
-        int RiCount,
         int HistoryCount
     );
 }

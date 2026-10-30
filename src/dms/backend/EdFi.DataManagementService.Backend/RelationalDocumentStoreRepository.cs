@@ -169,7 +169,6 @@ public sealed class RelationalDocumentStoreRepository(
                         resource,
                         upsertRequest.EdfiDoc,
                         upsertRequest.DocumentUuid,
-                        upsertRequest.DocumentInfo.ReferentialId,
                         upsertRequest.TraceId,
                         authorizationStrategyEvaluators: [],
                         upsertRequest.AuthorizationContext,
@@ -214,7 +213,7 @@ public sealed class RelationalDocumentStoreRepository(
                 upsertRequest.ResourceInfo,
                 RelationalWriteOperationKind.Post,
                 new RelationalWriteTargetRequest.Post(
-                    upsertRequest.DocumentInfo.ReferentialId,
+                    upsertRequest.DocumentInfo.DocumentIdentity,
                     upsertRequest.DocumentUuid
                 ),
                 documentReferences,
@@ -378,7 +377,6 @@ public sealed class RelationalDocumentStoreRepository(
                         resource,
                         updateRequest.EdfiDoc,
                         updateRequest.DocumentUuid,
-                        referentialId: null,
                         updateRequest.TraceId,
                         updateRequest.AuthorizationStrategyEvaluators,
                         updateRequest.AuthorizationContext,
@@ -1449,6 +1447,14 @@ public sealed class RelationalDocumentStoreRepository(
             return new RelationalQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
 
+        // A rejected request is answered before custom-view validation and page planning.
+        if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.ValidationFailure validation)
+        {
+            return new RelationalQueryPreparationResult.Complete(
+                new QueryResult.QueryFailureValidation([.. validation.Failures])
+            );
+        }
+
         if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
         {
             await ValidateAdaptedCustomViewsAsync(
@@ -1767,6 +1773,14 @@ public sealed class RelationalDocumentStoreRepository(
         catch (InvalidOperationException ex)
         {
             return PartitionComplete(new PartitionResult.UnknownPartitionFailure(ex.Message));
+        }
+
+        // A rejected request is answered before custom-view validation and boundary planning.
+        if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.ValidationFailure validation)
+        {
+            return PartitionComplete(
+                new PartitionResult.PartitionFailureValidation([.. validation.Failures])
+            );
         }
 
         if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)

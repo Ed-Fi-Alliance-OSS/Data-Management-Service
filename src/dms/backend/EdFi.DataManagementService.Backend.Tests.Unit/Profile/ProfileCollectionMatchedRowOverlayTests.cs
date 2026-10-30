@@ -1586,3 +1586,51 @@ public class Given_overlay_matched_row_with_alias_only_member_column_preserves_s
         );
     }
 }
+
+// ── Fixture: case-variant semantic identity keeps the stored spelling ─────────
+
+/// <summary>
+/// The AddressType binding is the table's semantic identity. When its column carries the SQL Server
+/// identity collation, a matched request value that differs from the stored one only in case keeps
+/// the stored spelling; without the flag the request value wins as for any visible binding.
+/// </summary>
+[TestFixture]
+public class Given_overlay_matched_row_with_a_case_variant_semantic_identity
+{
+    [TestCase(true, "Home")]
+    [TestCase(false, "HOME")]
+    public void It_keeps_the_stored_spelling_only_for_a_collated_identity_column(
+        bool usesSqlServerIdentityCollation,
+        string expectedAddressType
+    )
+    {
+        var (resourcePlan, collectionPlan) = BuildCollectionPlan();
+        var addressTypeBinding = collectionPlan.ColumnBindings[AddressTypeBindingIndex];
+        var plan = collectionPlan with
+        {
+            ColumnBindings = collectionPlan.ColumnBindings.SetItem(
+                AddressTypeBindingIndex,
+                addressTypeBinding with
+                {
+                    Column = addressTypeBinding.Column with
+                    {
+                        UsesSqlServerIdentityCollation = usesSqlServerIdentityCollation,
+                    },
+                }
+            ),
+        };
+
+        var result = CallOverlay(
+            resourcePlan,
+            plan,
+            BuildCollectionRequest(),
+            BuildStoredRow([null, null, 1, "Home"]),
+            BuildRequestCandidate(plan, [null, null, 1, "HOME"]),
+            hiddenMemberPaths: ImmutableArray<string>.Empty
+        );
+
+        ((FlattenedWriteValue.Literal)result.Values[AddressTypeBindingIndex])
+            .Value.Should()
+            .Be(expectedAddressType);
+    }
+}

@@ -28,6 +28,12 @@ public sealed class RelationalWriteRequestValidationException : Exception
 
     public WriteValidationFailure[] ValidationFailures { get; }
 
+    /// <summary>
+    /// Optional internal detail (table names, ordinal paths) that is logged at debug level and
+    /// never returned to the client. It must not carry client-supplied values.
+    /// </summary>
+    public string? Diagnostic { get; init; }
+
     public static RelationalWriteRequestValidationException ForPath(string path, string message)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);

@@ -31,4 +31,10 @@ public sealed class Given_Postgresql_CompactDescriptorCustomView : PostgresqlApi
         CompactDescriptorResourceScenario.It_authorizes_custom_view_membership_by_the_owning_descriptor_document(
             Harness
         );
+
+    [Test]
+    public Task It_matches_repeated_POSTs_with_case_variant_descriptors_under_custom_view_authorization() =>
+        CompactDescriptorResourceScenario.It_matches_repeated_POSTs_with_case_variant_descriptors_under_custom_view_authorization(
+            Harness
+        );
 }

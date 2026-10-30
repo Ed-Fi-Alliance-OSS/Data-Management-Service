@@ -21,22 +21,8 @@ internal static class ValidationErrorFactory
     /// <param name="arrayPath">The JSONPath to the array containing duplicates</param>
     /// <param name="index">The index of the duplicate item</param>
     /// <returns>A tuple containing the error key and error message</returns>
-    public static (string errorKey, string message) BuildValidationError(string arrayPath, int index)
-    {
-        if (!arrayPath.Contains("[*]"))
-        {
-            throw new InvalidOperationException(
-                $"Array validation failure: Array path {arrayPath} in ApiSchema.json must contain '[*]' to identify the array."
-            );
-        }
-
-        string errorKey = arrayPath.Substring(0, arrayPath.IndexOf("[*]", StringComparison.Ordinal));
-        string[] parts = errorKey.Split('.');
-        string shortArrayName = parts[^1];
-        string message =
-            $"The {GetOrdinal(index + 1)} item of the {shortArrayName} has the same identifying values as another item earlier in the list.";
-        return (errorKey, message);
-    }
+    public static (string errorKey, string message) BuildValidationError(string arrayPath, int index) =>
+        DuplicateItemValidationError.Build(arrayPath, index);
 
     /// <summary>
     /// Creates a standardized validation error response for the frontend
@@ -89,27 +75,6 @@ internal static class ValidationErrorFactory
             ))
         );
 
-    /// <summary>
-    /// Converts an ordinal number to its string representation (1st, 2nd, 3rd, etc.)
-    /// </summary>
-    /// <param name="number">The number to convert</param>
-    /// <returns>The ordinal string representation</returns>
-    private static string GetOrdinal(int number)
-    {
-        if (number % 100 == 11 || number % 100 == 12 || number % 100 == 13)
-        {
-            return $"{number}th";
-        }
-
-        return (number % 10) switch
-        {
-            1 => $"{number}st",
-            2 => $"{number}nd",
-            3 => $"{number}rd",
-            _ => $"{number}th",
-        };
-    }
-
     private static Dictionary<string, string[]> BuildValidationErrors(
         IEnumerable<KeyValuePair<string, string>> validationErrors
     ) =>
@@ -144,8 +109,6 @@ internal static class ValidationErrorFactory
         {
             DescriptorReferenceFailureReason.Missing =>
                 $"{failure.TargetResource.ResourceName.Value} value '{descriptorIdentity.IdentityValue}' does not exist.",
-            DescriptorReferenceFailureReason.DescriptorTypeMismatch =>
-                $"{failure.TargetResource.ResourceName.Value} value '{descriptorIdentity.IdentityValue}' is not a valid {failure.TargetResource.ResourceName.Value}.",
             _ => throw new InvalidOperationException(
                 $"Unsupported descriptor reference failure reason '{failure.Reason}'."
             ),

@@ -10,14 +10,12 @@ namespace EdFi.DataManagementService.Core.External.Backend;
 public enum DescriptorReferenceFailureReason
 {
     Missing,
-    DescriptorTypeMismatch,
 }
 
 public sealed record DescriptorReferenceFailure(
     JsonPath Path,
     BaseResourceInfo TargetResource,
     DocumentIdentity DocumentIdentity,
-    ReferentialId ReferentialId,
     DescriptorReferenceFailureReason Reason
 )
 {
@@ -29,7 +27,6 @@ public sealed record DescriptorReferenceFailure(
             Path: descriptorReference.Path,
             TargetResource: descriptorReference.ResourceInfo,
             DocumentIdentity: descriptorReference.DocumentIdentity,
-            ReferentialId: descriptorReference.ReferentialId,
             Reason: reason
         );
 }

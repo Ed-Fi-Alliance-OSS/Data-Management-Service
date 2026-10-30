@@ -11,15 +11,5 @@
   "descriptors": [],
   "concreteRootRows": [],
   "childRows": [],
-  "extensionRows": [],
-  "referentialIdentityRows": [
-    {
-      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000012101",
-      "documentId": 972101,
-      "resourceKeyId": 244,
-      "values": {
-        "schoolId": 255903
-      }
-    }
-  ]
+  "extensionRows": []
 }

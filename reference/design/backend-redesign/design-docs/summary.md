@@ -34,9 +34,12 @@ Source documents:
 - Canonical storage is relational (root table per resource, child tables per collection) and is the source of truth.
 - DMS remains schema/behavior-driven by `ApiSchema.json` (no handwritten per-resource code; no checked-in per-resource SQL artifacts).
 - Document relationships are stored as stable `bigint DocumentId` foreign keys; descriptor relationships use independent `int DescriptorId` foreign keys, with referenced identity natural-key fields available locally for query/reconstitution and kept consistent via dialect-specific propagation rules (no FK rewrites): PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets (`ON UPDATE NO ACTION` otherwise); SQL Server retains native cascades where legal and uses safe full-composite `NO ACTION` cuts selected by `sql-server-pruning.md`. That document supersedes the blanket SQL Server `ON UPDATE NO ACTION` plus `MssqlIdentityPropagationTrigger` design. Under key unification, equality-constrained per-site/per-path bindings may be generated/persisted, presence-gated aliases of canonical stored columns (see `key-unification.md`).
-- Current references and POST upserts retain RI calculation, lookup and maintenance. Generated
-  natural-key/lowered-URI probes and their equality, validation and platform changes are future
-  work in [natural-key-resolution.md](natural-key-resolution.md).
+- References and descriptor-valued filters resolve through generated natural-key/lowered-URI
+  probes that carry the raw validated URI and fold case in SQL; a NUL in a descriptor reference or
+  filter is a 400. Resource POST upserts detect existing documents through the own-natural-key
+  capture, and descriptor writes through the lowered-URI probe with stored-wins identity (see
+  [natural-key-resolution.md](natural-key-resolution.md)). Core computes no referential ids,
+  and DMS DDL creates no `dms.ReferentialIdentity` table or referential-identity triggers.
 - SQL Server identity string columns carry the explicit DMS collation
   `SQL_Latin1_General_CP1_CI_AS`, independent of the database default; PostgreSQL keeps its
   existing collation verdicts. Compact descriptor storage introduces no normalization.
@@ -55,9 +58,9 @@ Source documents:
 ## Core concepts and terms
 
 - `DocumentUuid`: stable external identifier for API `id` (does not change on identity updates).
-- `DocumentId`: owning document surrogate (`bigint`) for document references, metadata, locks, RI, cache, restamping and paging.
+- `DocumentId`: owning document surrogate (`bigint`) for document references, metadata, locks, cache, restamping and paging.
 - `DescriptorId`: separately generated descriptor surrogate (`int`) for stored descriptor FKs, filtering and URI hydration. It is not the owning `DocumentId`.
-- **Natural-key probe** (future work): generated lookup metadata that converts a resource's ordered `DocumentIdentity` values into the persisted `DocumentId` by probing the target's `RefKey`, abstract-identity, descriptor, or root natural-key index.
+- **Natural-key probe**: generated lookup metadata that converts a resource's ordered `DocumentIdentity` values into the persisted `DocumentId` by probing the target's `RefKey`, abstract-identity, descriptor, or root natural-key index.
 - **Identity component**: a reference whose projected identity participates in a document’s identity (`identityJsonPaths`). Identity-component values are stored locally as reference-identity bindings (which may be generated/persisted aliases of canonical stored columns under key unification) so natural-key probes and reconstitution read row-local values.
 - **Representation dependency** (1 hop): any referenced non-descriptor document whose identity values are embedded in the full resource-state representation before readable profile projection. Indirect representation changes are realized as native FK-cascade updates to canonical stored identity columns that back the local bindings, including presence-gated aliases that preserve “absent ⇒ `NULL` at the binding columns”, which trigger normal stamping of stored `ContentVersion` / `ContentLastModifiedAt`; `_etag` is composed from `ContentVersion` plus `variantKey`.
 
@@ -76,24 +79,28 @@ Source documents:
   - Holds `DocumentId`, `DocumentUuid`, `ResourceKeyId` (resource type), and update-tracking token columns (see below).
   - Stores ownership-based authorization stamping (`CreatedByOwnershipTokenId`; see `auth.md`).
   - `DocumentUuid` is unique and stable across identity updates.
-  - Descriptor type agreement is checked by its stamping trigger; a composite document/resource
-    candidate key is a later invariant proposal, not a descriptor resource-type scan path.
+  - `UX_Document_DocumentId_ResourceKeyId` is the candidate key that `FK_Descriptor_DocumentResourceKey`
+    references, so the database enforces descriptor type agreement; it is not a descriptor
+    resource-type scan path.
 
 - `dms.Descriptor` (unified)
   - Shared table with native `int DescriptorId` primary key: PostgreSQL `GENERATED ALWAYS AS IDENTITY`
     with its own sequence, SQL Server `IDENTITY(1,1)`. A unique non-null `bigint DocumentId` FK
     associates each row with its owner; resource descriptor FKs target `DescriptorId`.
   - `ResourceKeyId` identifies the qualified type. No live descriptor discriminator or physically
-    stored URI remains. `UX_Descriptor_ResourceKeyId_Uri` enforces unlowered whole-URI uniqueness:
-    PostgreSQL expression `(ResourceKeyId, (Namespace || '#' || CodeValue))` under the database-default
-    collation; SQL Server non-persisted computed `Uri AS ([Namespace] + N'#' + [CodeValue])`, indexed
-    with `ResourceKeyId`, which inherits the `SQL_Latin1_General_CP1_CI_AS` identity collation of its
-    `Namespace` and `CodeValue` components.
-  - Current RI lookup returns both IDs through the existing join. URI witnesses and original-case
+    stored URI remains. SQL Server keeps a non-persisted, unindexed computed
+    `Uri AS ([Namespace] + N'#' + [CodeValue])` that reconstructs the whole URI and inherits the
+    `SQL_Latin1_General_CP1_CI_AS` identity collation of its `Namespace` and `CodeValue` components.
+    `UX_Descriptor_UriLowered_ResourceKeyId`, the only descriptor URI index, enforces lowered
+    whole-URI uniqueness within the type: PostgreSQL expression
+    `lower((Namespace || '#' || CodeValue) COLLATE "pg_c_utf8"), ResourceKeyId`; SQL Server
+    non-persisted `UriLowered AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)`
+    indexed with `ResourceKeyId`.
+  - The natural-key resolver returns both IDs from its lowered-URI probe. Original-case
     responses reconstruct the whole string; stored reference joins use the compact key.
-  - The descriptor stamping trigger rejects `ResourceKeyId` drift from the owning document;
-    the `NO ACTION` resource-key FK retains catalog integrity. `FK_Descriptor_Document` is a
-    safety-net FK with `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server. Delete the
+  - The composite `FK_Descriptor_DocumentResourceKey (DocumentId, ResourceKeyId)` rejects
+    `ResourceKeyId` drift from the owning document and is the safety-net FK, with `RESTRICT` on
+    PostgreSQL and `NO ACTION` on SQL Server. Delete the
     descriptor before its owning document in the same transaction so stamping and tombstone
     capture can read the document metadata before it is removed.
 
@@ -224,10 +231,10 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
      - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
 
 2. **Bulk reference and descriptor resolution**
-   - The current batched resolver probes RI and verifies the target type and identity witnesses.
-     Document references return `DocumentId`; descriptor results additionally carry `DescriptorId`
-     from the same join. Direct and copied descriptor witnesses reconstruct the whole URI before
-     existing transformations. Natural-key probes belong to the later workstream.
+   - The batched natural-key resolver probes each target's compiled natural-key index in one
+     command and maps rows back by explicit ordinal. Document references return `DocumentId`;
+     descriptor results additionally carry `DescriptorId` from the same probe, which folds the raw
+     URI in SQL. Abstract targets return the concrete `ResourceKeyId` for the compatibility check.
 
 3. **DB-enforced identity propagation**
    - Composite foreign keys keep canonical stored identity columns consistent when referenced identities change (PostgreSQL `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets; SQL Server retained native cascades plus safe cuts selected by `sql-server-pruning.md`). Per-site/per-path identity bindings may be generated/persisted (and presence-gated) aliases of those canonical columns under key unification.
@@ -244,10 +251,11 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
      - for profile-scoped collection/common-type/extension collection writes, start from the current full sibling sequence for that scope instance, replace the visible-row subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append extra visible inserts after the last previously visible row for that scope instance (or at the end when there was no previously visible row), and renumber `Ordinal` contiguously using the same deterministic post-merge sibling-order rule as no-op detection.
    - Write extension tables similarly (root extension rows only when extension values exist; scope-aligned rows for nested extension sites).
    - Descriptor writes to resource rows bind `int DescriptorId`; hydration and descriptor-valued
-     filters use that same key. Descriptor CRUD preserves both IDs: RI-matched POST applies
-     incoming components, PUT rejects different whole-URI text ordinally, accepted component
-     changes stamp normally, and unchanged bodies preserve stamps/ETags.
-   - For each document reference site, write the stable `..._DocumentId` FK column (resolved by current RI lookup) and the referenced identity-part values to the table’s canonical stored columns (the per-site binding columns used for query/reconstitution may be generated/persisted aliases under key unification). Composite FKs enforce consistency.
+     filters use that same key. Descriptor CRUD preserves both IDs and keeps the stored identity:
+     a probe-matched POST and an identity-equal PUT keep the stored components, a PUT with a
+     different identity returns 400, descriptive changes stamp normally, and unchanged bodies
+     preserve stamps/ETags.
+   - For each document reference site, write the stable `..._DocumentId` FK column (resolved by the natural-key resolver) and the referenced identity-part values to the table’s canonical stored columns (the per-site binding columns used for query/reconstitution may be generated/persisted aliases under key unification). Composite FKs enforce consistency.
 
 5. **Strict identity maintenance (row-local triggers)**
    - Abstract identity maintenance keeps `{AbstractResource}Identity` rows aligned with concrete root identity values.
@@ -310,8 +318,8 @@ performance results; neither benchmarks nor database-version upgrades gate this 
 The [developer guide](../../../../docs/RELATIONAL-BACKEND.md#reprovisioning-and-legacy-data-carry-forward)
 describes the working PostgreSQL legacy-dump conversion into a fresh target with a reviewed
 exact-schema manifest: source-shaped staging, independent descriptor allocation, remapping
-stored references, translating history types without live owners, preserving documents/RI/stamps,
-and validating the allocator. Restoring an unchanged legacy schema does not perform that conversion.
+stored references, translating history types without live owners, preserving documents and stamps,
+skipping legacy RI rows, and validating the allocator. Restoring an unchanged legacy schema does not perform that conversion.
 
 DMS-1404's closure/handoff includes its working RI runtime on fresh schemas on both engines,
 regenerated fixtures, reusable descriptor catalog assertions, working loaders/copy conversion,

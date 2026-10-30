@@ -59,7 +59,8 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory
             .Session.Executor.Commands[0]
             .CommandText.Should()
-            .Contain("FROM dms.\"ReferentialIdentity\"");
+            .Contain("FROM \"dms\".\"Descriptor\" descriptor")
+            .And.NotContain("ReferentialIdentity");
         sessionFactory.Session.ScalarCommands.Should().BeEmpty();
     }
 
@@ -636,6 +637,8 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
         sessionFactory.Session.ScalarResults.Enqueue(44L);
         sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
+        // The ordinally different URI is probed after the lock; the probe finds no descriptor with it.
+        sessionFactory.Session.Executor.ResultSets.Enqueue([InMemoryRelationalResultSet.Create()]);
         var sut = CreateSut(targetLookupService, sessionFactory);
         var request = new DescriptorWriteRequest(
             CreateMappingSet(SqlDialect.Pgsql),
@@ -652,7 +655,6 @@ public class Given_Descriptor_Write_Preconditions
                 """
             )!,
             documentUuid,
-            null,
             new TraceId("descriptor-put-immutable-if-match")
         )
         {
@@ -666,7 +668,63 @@ public class Given_Descriptor_Write_Preconditions
         sessionFactory.Session.CommitCallCount.Should().Be(0);
         sessionFactory.Session.RollbackCallCount.Should().Be(1);
         sessionFactory.Session.DisposeCallCount.Should().Be(1);
-        sessionFactory.Session.Executor.Commands.Should().HaveCount(2);
+        sessionFactory.Session.Executor.Commands.Should().HaveCount(3);
+        sessionFactory
+            .Session.Executor.Commands.Should()
+            .NotContain(command =>
+                command.CommandText.Contains("UPDATE dms.\"Descriptor\"", StringComparison.Ordinal)
+            );
+    }
+
+    [Test]
+    public async Task It_returns_precondition_failed_before_immutable_identity_for_a_put_under_a_stale_if_match()
+    {
+        var documentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var targetLookupService = new StubRelationalWriteTargetLookupService
+        {
+            PutResult = new RelationalWriteTargetLookupResult.ExistingDocument(345L, documentUuid, 44L),
+        };
+        var sessionFactory = new RecordingRelationalWriteSessionFactory(SqlDialect.Pgsql);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreateResolvedExistingDocumentRow(documentUuid)]);
+        sessionFactory.Session.ScalarResults.Enqueue(44L);
+        sessionFactory.Session.Executor.ResultSets.Enqueue([CreatePersistedDescriptorRow()]);
+        // The ordinally different URI is probed after the lock; the probe finds no descriptor with it.
+        sessionFactory.Session.Executor.ResultSets.Enqueue([InMemoryRelationalResultSet.Create()]);
+        var sut = CreateSut(targetLookupService, sessionFactory);
+        var request = new DescriptorWriteRequest(
+            CreateMappingSet(SqlDialect.Pgsql),
+            _descriptorResource,
+            JsonNode.Parse(
+                """
+                {
+                  "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",
+                  "codeValue": "Alternative",
+                  "shortDescription": "Alternative",
+                  "description": "Alternative",
+                  "effectiveBeginDate": "2024-01-01"
+                }
+                """
+            )!,
+            documentUuid,
+            new TraceId("descriptor-put-immutable-stale-if-match")
+        )
+        {
+            WritePrecondition = new WritePrecondition.IfMatch("\"stale-etag\""),
+        };
+
+        var result = await sut.HandlePutAsync(request);
+
+        // The identity verdict is computed before the ETag compare, but 412 must still win over the
+        // immutable-identity 400 (403 > 412 > 400).
+        result
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
+            .Which.Reason.Should()
+            .Be(ETagPreconditionFailureReason.Concurrency);
+        sessionFactory.CreateAsyncCallCount.Should().Be(1);
+        sessionFactory.Session.CommitCallCount.Should().Be(0);
+        sessionFactory.Session.RollbackCallCount.Should().Be(1);
+        sessionFactory.Session.DisposeCallCount.Should().Be(1);
         sessionFactory
             .Session.Executor.Commands.Should()
             .NotContain(command =>
@@ -953,7 +1011,7 @@ public class Given_Descriptor_Write_Preconditions
             dialect is SqlDialect.Pgsql ? "INSERT INTO dms.\"Document\"" : "INSERT INTO [dms].[Document]";
         sessionFactory.Session.Executor.CommandExceptionFactory = command =>
             command.CommandText.Contains(documentInsert, StringComparison.Ordinal)
-                ? new StubDbException("unique constraint UX_Descriptor_ResourceKeyId_Uri")
+                ? new StubDbException("unique constraint UX_Descriptor_UriLowered_ResourceKeyId")
                 : null;
         var classifier = A.Fake<IRelationalWriteExceptionClassifier>();
         A.CallTo(() => classifier.IsUniqueConstraintViolation(A<DbException>._)).Returns(true);
@@ -1047,7 +1105,6 @@ public class Given_Descriptor_Write_Preconditions
             _descriptorResource,
             CreateRequestBody(description),
             documentUuid,
-            new ReferentialId(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
             new TraceId("descriptor-post-precondition")
         );
     }
@@ -1063,7 +1120,6 @@ public class Given_Descriptor_Write_Preconditions
             _descriptorResource,
             CreateRequestBody(description),
             documentUuid,
-            null,
             new TraceId("descriptor-put-precondition")
         );
     }
@@ -1321,10 +1377,10 @@ public class Given_Descriptor_Write_Preconditions
         public RelationalWriteTargetLookupResult PutResult { get; set; } =
             new RelationalWriteTargetLookupResult.NotFound();
 
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
-            ReferentialId referentialId,
+            string descriptorUri,
             DocumentUuid candidateDocumentUuid,
             CancellationToken cancellationToken = default
         )

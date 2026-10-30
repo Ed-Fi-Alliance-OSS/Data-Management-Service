@@ -43,29 +43,58 @@ Descriptors have two independent keys:
 | Key | Storage and use |
 |---|---|
 | `DescriptorId` | Native `int` primary key on `dms.Descriptor`; PostgreSQL `GENERATED ALWAYS AS IDENTITY` with its own backing sequence, SQL Server `IDENTITY(1,1)`. Every stored descriptor reference is `Int32` and targets this key, including collections, extensions, copied reference identities, and composite keys. |
-| `DocumentId` | Unique, non-null `bigint` association to `dms.Document`; used for UUID lookup, document-level RI, locks, concurrency, paging, cache/projection work, and representation restamping. Updates preserve both keys. |
+| `DocumentId` | Unique, non-null `bigint` association to `dms.Document`; used for UUID lookup, locks, concurrency, paging, cache/projection work, and representation restamping. Updates preserve both keys. |
 
-`ResourceKeyId` (`smallint`) identifies the qualified descriptor type. The descriptor
-stamping trigger enforces agreement with the owning document.
-`FK_Descriptor_Document` uses `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server;
-`FK_Descriptor_ResourceKey` constrains
-the type key to the catalog. Live descriptors have no `Discriminator`
-and no physically stored `Uri`. `UX_Descriptor_ResourceKeyId_Uri` enforces uniqueness over
-the unlowered whole `Namespace + '#' + CodeValue` within a type:
-
-- PostgreSQL indexes `("ResourceKeyId", ("Namespace" || '#' || "CodeValue"))`.
-- SQL Server defines non-persisted `Uri AS ([Namespace] + N'#' + [CodeValue])` and indexes
-  `(ResourceKeyId, Uri)`.
+`ResourceKeyId` (`smallint`) identifies the qualified descriptor type. The composite
+`FK_Descriptor_DocumentResourceKey (DocumentId, ResourceKeyId)` references the owning document's
+`(DocumentId, ResourceKeyId)`, so the database rejects a type key that differs from the
+document's. It uses `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server. Live descriptors
+have no `Discriminator` and no physically stored `Uri`.
 
 On SQL Server, `Namespace` and `CodeValue` carry the DMS identity collation
-(`SQL_Latin1_General_CP1_CI_AS`) independent of the database default, and the computed `Uri`
-and its index inherit it. PostgreSQL uses the database-default collation. Neither expression
-introduces component-wise uniqueness or a lowered URI column.
-The current runtime still calculates and maintains RI: its existing descriptor join returns
-both IDs in one lookup, and URI witnesses and original-case responses reconstruct the whole
-string. Lowered-URI natural-key probes, RI removal, new validation/equality rules, platform
-upgrades, and stored-wins descriptor writes belong to later stories. Abstract identity
-discriminators and union-view discriminator outputs remain unchanged.
+(`SQL_Latin1_General_CP1_CI_AS`) independent of the database default. SQL Server also defines a
+non-persisted, non-indexed `Uri AS ([Namespace] + N'#' + [CodeValue])` that reconstructs the
+whole URI. PostgreSQL components use the database-default collation.
+
+`UX_Descriptor_UriLowered_ResourceKeyId` enforces uniqueness over the lowered whole
+`Namespace + '#' + CodeValue` within a type, so case variants of one URI cannot coexist on either
+engine. It is the only descriptor URI index, and it introduces no component-wise uniqueness:
+
+- PostgreSQL indexes `(lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8"), "ResourceKeyId")`,
+  pinning the folding collation instead of following the database default. It adds no column.
+- SQL Server defines non-persisted
+  `UriLowered AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)`
+  and indexes `(UriLowered, ResourceKeyId)`.
+
+Descriptor writes, descriptor references and descriptor-valued query filters whose values contain
+the NUL character are rejected with HTTP 400 keyed by the offending field path. An
+unpaired-surrogate escape in any request-body string is rejected at body parse with the
+malformed-body 400, whose message names the path. Reference resolution and descriptor-valued query
+filters use the lowered-URI natural-key probes, which return both IDs in one lookup and fold case
+in SQL; original-case responses reconstruct the whole string. Resource POST target detection
+uses the natural-key columns of the resource, and descriptor POST detects its target with the
+same lowered-URI probe; descriptor PUT addresses its target by document UUID and uses the probe
+only for its identity verdict. Core computes no UUIDv5 referential ids, and DMS DDL creates no
+`dms.ReferentialIdentity` table, no referential-identity triggers, no `dms.uuidv5` function and
+no PostgreSQL `pgcrypto` extension. DMS never drops `pgcrypto`; the Configuration Service creates
+its own. On SQL
+Server, a resource's own identity values, including the values of the references that are part
+of it, and the string values that identify collection items keep their stored casing on POST and
+PUT when they are equal under the identity comparer (`OrdinalIgnoreCase`). Values inside other
+references, including the references that identify collection items, are stored as sent.
+Descriptor POST and PUT keep the stored `Namespace` and `CodeValue` on both engines when the
+database treats the request's identity as the stored one: a case variant on either engine, and
+on SQL Server also a collation alias such as `ß`/`ss`. A casing-only descriptor re-POST is a
+no-op, and a PUT that changes only the identity's casing returns 204 without changes. Abstract
+identity discriminators and union-view discriminator outputs remain unchanged.
+
+**Rollback boundary.** From DMS-1454 on, descriptor writes write no RI rows, so descriptor RI
+rows in a database written by DMS-1454 or later are absent or stale. From DMS-1456 on, the
+database has no `dms.ReferentialIdentity` table at all. Every earlier build, including the
+DMS-1451 to DMS-1453 checkpoints and 8.0.x, matches descriptor POSTs through RI, and builds before
+DMS-1456 maintain resource RI rows through triggers. Running any of them against a database
+written by DMS-1454 or later, including one provisioned by DMS-1456 or later, requires
+reprovisioning it with that build or a designed RI backfill.
 
 The regenerated [DS 5.2 artifacts](../src/dms/backend/Fixtures/authoritative/ds-5.2/expected)
 cover 595 stored descriptor columns and 879 indexes containing such columns. These are schema
@@ -136,7 +165,7 @@ api-schema-tools ddl provision \
 bounds DDL execution. For SQL Server, provisioning configures Read Committed Snapshot
 Isolation (and `ALLOW_SNAPSHOT_ISOLATION`) on newly created databases.
 
-`IX_Document_CreatedByOwnershipTokenId` is a filtered index and `UX_Descriptor_ResourceKeyId_Uri` indexes a computed column, so SQL Server requires the indexed-view SET option set (`ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`, `CONCAT_NULL_YIELDS_NULL`, `QUOTED_IDENTIFIER` ON; `NUMERIC_ROUNDABORT` OFF) for index creation and for writes to `dms.Document` or `dms.Descriptor`. It captures `QUOTED_IDENTIFIER` and `ANSI_NULLS` into each stamp trigger the script creates.
+`IX_Document_CreatedByOwnershipTokenId` is a filtered index and `UX_Descriptor_UriLowered_ResourceKeyId` indexes a computed column, so SQL Server requires the indexed-view SET option set (`ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`, `CONCAT_NULL_YIELDS_NULL`, `QUOTED_IDENTIFIER` ON; `NUMERIC_ROUNDABORT` OFF) for index creation and for writes to `dms.Document` or `dms.Descriptor`. It captures `QUOTED_IDENTIFIER` and `ANSI_NULLS` into each stamp trigger the script creates.
 The generated SQL Server script therefore opens with one `SET` batch that puts the session in that state, so applying it with any client, including ODBC `sqlcmd` without `-I`, provisions the index and bakes the right settings into the triggers.
 The filter applies to newly provisioned databases only: both engines guard index creation by name, so a database provisioned before this change keeps its unfiltered index, with no startup-validation signal (generated DDL is not an input to the effective schema hash), until it is deliberately reprovisioned.
 Sessions that write `dms.Document` directly still need `QUOTED_IDENTIFIER` ON: `Microsoft.Data.SqlClient` and go-sqlcmd default it ON, ODBC `sqlcmd` needs `-I`, and a write without it fails with `Msg 1934` while a read raises nothing and silently stops using the index.
@@ -148,7 +177,7 @@ over to pooled runtime connections; direct SQL clients must supply the effective
 ### Reprovisioning and legacy data carry-forward
 
 Existing databases require deliberate reprovisioning before using the runtime with compact
-descriptors and authoritative root/descriptor timestamps. Keep `SchemaHashConstants.RelationalMappingVersion` at `v3` for the current 8.1
+descriptors, authoritative root/descriptor timestamps and no referential-identity objects. Keep `SchemaHashConstants.RelationalMappingVersion` at `v3` for the current 8.1
 release line. The constant tracks releases: bump at most once per release when mapping
 changes, never lower it, and do not add another bump before 8.1 ships. The next eligible
 bump is `v4` for the first qualifying mapping change after 8.1 ships.
@@ -157,7 +186,8 @@ bump is `v4` for the first qualifying mapping change after 8.1 ships.
 generated DDL and mapping-set output. Consequently, this mapping-only physical change can
 leave the hash unchanged. Hash equality and successful first-use validation cannot prove
 that an older database or template has compact descriptor columns or the current timestamp
-ownership (no `dms.Document.ContentLastModifiedAt`, authoritative root/descriptor timestamps). Rerunning create-only
+ownership (no `dms.Document.ContentLastModifiedAt`, authoritative root/descriptor timestamps), or
+that it no longer carries `dms.ReferentialIdentity` and its triggers. Rerunning create-only
 provisioning against it does not convert its schema.
 
 Provision a fresh target from current DDL for its exact core/extension schema set, or use a
@@ -178,8 +208,10 @@ the [current conversion recipe](../eng/northridge/README.md#copy-legacy-data-int
 4. Descriptor history translates source type strings through the qualified resource-key
    catalog to `ResourceKeyId`, including tombstones without live document/descriptor rows.
    Unknown or ambiguous types and unmapped non-null references stop the copy.
-5. Validate preserved document IDs/UUIDs, RI rows, stamps, history, FK integrity, counts,
-   fingerprints, trigger state, and source identity. Copy and Checkpoint also validate the
+5. Validate preserved document IDs/UUIDs, stamps, history, FK integrity, counts,
+   fingerprints, trigger state, and source identity. A legacy dump's `dms.ReferentialIdentity`
+   rows are skipped, never restored, and abstract identity rows take `ResourceKeyId` from their
+   owning document. Copy and Checkpoint also validate the
    independent descriptor allocator against allocated compact keys without consuming an ID.
 
 This conversion loads legacy data into a fresh schema; an unchanged legacy dump restore
@@ -573,8 +605,9 @@ The query-time change-version filter ranges over `ContentVersion`. Descriptor li
 The relational `/deletes` and `/keyChanges` paths use
 [`TrackedChangeQueryPlanner.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/ChangeQueries/TrackedChangeQueryPlanner.cs)
 and retained old identity/securable values. Descriptor routes bind the compile-time qualified
-`ResourceKeyId`; namespace/custom-view authorization and recreation checks retain their
-existing behavior. See [change-queries.md](../reference/design/backend-redesign/design-docs/change-queries.md)
+`ResourceKeyId`. Descriptor recreation checks and custom-view descriptor seeks compare the lowered
+whole URI plus `ResourceKeyId`, the same descriptor identity the write path uses; namespace
+authorization is unchanged. See [change-queries.md](../reference/design/backend-redesign/design-docs/change-queries.md)
 for the endpoint contract.
 
 `newestChangeVersion` is the current value reported by the provider's change-version sequence, not

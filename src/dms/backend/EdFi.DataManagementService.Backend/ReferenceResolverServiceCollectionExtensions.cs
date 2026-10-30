@@ -43,34 +43,14 @@ public static class ReferenceResolverServiceCollectionExtensions
         return services;
     }
 
-    public static IServiceCollection AddReferenceResolver<TReferenceResolverAdapterFactory>(
-        this IServiceCollection services
-    )
-        where TReferenceResolverAdapterFactory : class, IReferenceResolverAdapterFactory
-    {
-        ArgumentNullException.ThrowIfNull(services);
-
-        services.TryAdd(ServiceDescriptor.Scoped<IReferenceResolver, ReferenceResolver>());
-        services.TryAdd(
-            ServiceDescriptor.Scoped<IReferenceResolverAdapterFactory, TReferenceResolverAdapterFactory>()
-        );
-        services.TryAdd(
-            ServiceDescriptor.Scoped<IReferenceResolverAdapter>(static serviceProvider =>
-                serviceProvider.GetRequiredService<IReferenceResolverAdapterFactory>().CreateAdapter()
-            )
-        );
-
-        return services;
-    }
-
     internal static IServiceCollection AddReferenceResolver<
-        TReferenceResolverAdapterFactory,
+        TNaturalKeyLookupCommandBuilder,
         TRelationalCommandExecutor,
         TRelationalWriteSessionFactory,
         TDocumentHydrator,
         TSessionDocumentHydrator
     >(this IServiceCollection services)
-        where TReferenceResolverAdapterFactory : class, IReferenceResolverAdapterFactory
+        where TNaturalKeyLookupCommandBuilder : class, INaturalKeyLookupCommandBuilder
         where TRelationalCommandExecutor : class, IRelationalCommandExecutor
         where TRelationalWriteSessionFactory : class, IRelationalWriteSessionFactory
         where TDocumentHydrator : class, IDocumentHydrator
@@ -376,12 +356,6 @@ public static class ReferenceResolverServiceCollectionExtensions
             >()
         );
         services.TryAdd(
-            ServiceDescriptor.Scoped<
-                IRelationalWriteTargetLookupResolver,
-                RelationalWriteTargetLookupResolver
-            >()
-        );
-        services.TryAdd(
             ServiceDescriptor.Scoped<IRelationalWriteConstraintResolver, RelationalWriteConstraintResolver>()
         );
         // Singleton so the per-model-set ConditionalWeakTable cache is reused across requests.
@@ -396,7 +370,19 @@ public static class ReferenceResolverServiceCollectionExtensions
         services.TryAdd(ServiceDescriptor.Scoped<IRelationalWriteExecutor, DefaultRelationalWriteExecutor>());
         services.AddRelationalRelationshipAuthorizationServices();
 
-        return services.AddReferenceResolver<TReferenceResolverAdapterFactory>();
+        // The natural-key resolver is the only reference resolver; the builder and map factory are stateless.
+        services.TryAdd(
+            ServiceDescriptor.Singleton<INaturalKeyLookupCommandBuilder, TNaturalKeyLookupCommandBuilder>()
+        );
+        services.TryAdd(
+            ServiceDescriptor.Singleton<
+                IResolvedDocumentReferenceMapFactory,
+                ResolvedDocumentReferenceMapFactory
+            >()
+        );
+        services.TryAdd(ServiceDescriptor.Scoped<IReferenceResolver, NaturalKeyReferenceResolver>());
+
+        return services;
     }
 
     internal static IServiceCollection AddDocumentCacheReadAccelerationCoordinator(

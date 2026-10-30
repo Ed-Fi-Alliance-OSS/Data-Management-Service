@@ -37,22 +37,22 @@ public sealed class Given_Postgresql_CompactDescriptorRuntime : PostgresqlApiInt
     public void SetupNamespacePrefixes() => _identity.SetNamespacePrefixes(["uri://ed-fi.org/"]);
 
     [Test]
-    public Task It_applies_RI_matching_post_component_and_casing_updates() =>
-        DescriptorRuntimeScenario.It_applies_RI_matching_post_component_and_casing_updates(Harness);
+    public Task It_keeps_the_stored_components_for_an_equal_whole_URI_post() =>
+        DescriptorRuntimeScenario.It_keeps_the_stored_components_for_an_equal_whole_URI_post(Harness);
 
     [Test]
-    public Task It_accepts_equal_whole_URI_components_on_put() =>
-        DescriptorRuntimeScenario.It_accepts_equal_whole_URI_components_on_put(Harness);
+    public Task It_keeps_the_stored_casing_for_a_case_variant_post() =>
+        DescriptorRuntimeScenario.It_keeps_the_stored_casing_for_a_case_variant_post(Harness);
+
+    [Test]
+    public Task It_keeps_the_stored_identity_for_an_equal_identity_put() =>
+        DescriptorRuntimeScenario.It_keeps_the_stored_identity_for_an_equal_identity_put(Harness);
 
     [Test]
     public Task It_preserves_all_stamps_and_change_queries_on_identical_post_and_put() =>
         DescriptorRuntimeScenario.It_preserves_all_stamps_and_change_queries_on_identical_post_and_put(
             Harness
         );
-
-    [Test]
-    public Task It_rejects_a_duplicate_whole_URI_without_an_RI_match() =>
-        DescriptorRuntimeScenario.It_rejects_a_duplicate_whole_URI_without_an_RI_match(Harness);
 
     [Test]
     public Task It_isolates_identical_URIs_across_descriptor_types_and_projects() =>

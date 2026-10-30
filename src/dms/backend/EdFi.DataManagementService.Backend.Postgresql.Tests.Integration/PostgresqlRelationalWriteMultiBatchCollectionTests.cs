@@ -18,7 +18,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -221,7 +220,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: new DocumentInfo(
                 DocumentIdentity: schoolIdentity,
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
                 DocumentReferences: [],
                 DocumentReferenceArrays: [],
                 DescriptorReferences: [],
@@ -254,7 +252,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: new DocumentInfo(
                 DocumentIdentity: schoolIdentity,
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
                 DocumentReferences: [],
                 DocumentReferenceArrays: [],
                 DescriptorReferences: [],
@@ -433,13 +430,9 @@ file static class MultiBatchCollectionsIntegrationTestSupport
         var descriptorIdentity = new DocumentIdentity([
             new DocumentIdentityElement(
                 DocumentIdentity.DescriptorIdentityJsonPath,
-                addressTypeDescriptorUri.ToLowerInvariant()
+                addressTypeDescriptorUri
             ),
         ]);
-        var descriptorReferentialId = ReferentialIdCalculator.ReferentialIdFrom(
-            descriptorResourceInfo,
-            descriptorIdentity
-        );
 
         DescriptorReference[] descriptorReferences =
         [
@@ -448,14 +441,12 @@ file static class MultiBatchCollectionsIntegrationTestSupport
                 .Select(index => new DescriptorReference(
                     ResourceInfo: descriptorResourceInfo,
                     DocumentIdentity: descriptorIdentity,
-                    ReferentialId: descriptorReferentialId,
                     Path: new JsonPath($"$.addresses[{index}].addressTypeDescriptor")
                 )),
         ];
 
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: descriptorReferences,
@@ -513,7 +504,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
         PostgresqlGeneratedDdlTestDatabase database,
         MappingSet mappingSet,
         Guid documentUuid,
-        string uri,
         string codeValue
     )
     {
@@ -557,48 +547,8 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             new NpgsqlParameter("description", codeValue)
         );
 
-        var referentialId = CreateDescriptorReferentialId("Ed-Fi", "AddressTypeDescriptor", uri);
-        var existing = await database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "DocumentId" = @documentId
-              AND "ResourceKeyId" = @resourceKeyId;
-            """,
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-
-        if (existing.Count == 0)
-        {
-            await database.ExecuteNonQueryAsync(
-                """
-                INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-                VALUES (@referentialId, @documentId, @resourceKeyId);
-                """,
-                new NpgsqlParameter("referentialId", referentialId.Value),
-                new NpgsqlParameter("documentId", documentId),
-                new NpgsqlParameter("resourceKeyId", resourceKeyId)
-            );
-        }
-
         return descriptorId;
     }
-
-    private static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string uri
-    ) =>
-        ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
-            new DocumentIdentity([
-                new DocumentIdentityElement(
-                    new JsonPath(DocumentIdentity.DescriptorIdentityJsonPath.Value),
-                    uri.ToLowerInvariant()
-                ),
-            ])
-        );
 
     public static async Task<
         IReadOnlyList<NoProfileMultiBatchCollectionScenarios.SchoolAddressWithDescriptorRow>
@@ -1216,7 +1166,6 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Changed_
                 _database,
                 _mappingSet,
                 OriginalDescriptorDocumentUuid,
-                MultiBatchCollectionsIntegrationTestSupport.OriginalAddressTypeDescriptorUri,
                 "Physical"
             );
         _replacementDescriptorId =
@@ -1224,7 +1173,6 @@ public class Given_A_Postgresql_Relational_Write_Multi_Batch_Collection_Changed_
                 _database,
                 _mappingSet,
                 ReplacementDescriptorDocumentUuid,
-                MultiBatchCollectionsIntegrationTestSupport.ReplacementAddressTypeDescriptorUri,
                 "Mailing"
             );
 

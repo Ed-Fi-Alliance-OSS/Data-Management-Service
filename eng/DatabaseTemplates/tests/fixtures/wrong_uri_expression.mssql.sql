@@ -4,4 +4,5 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 -- Test-only catalog mutation; the v3 EffectiveSchema fingerprint is deliberately unchanged.
-DROP INDEX [UX_Descriptor_ResourceKeyId_Uri] ON [dms].[Descriptor];ALTER TABLE [dms].[Descriptor] DROP COLUMN [Uri]; ALTER TABLE [dms].[Descriptor] ADD [Uri] AS (LOWER([Namespace]+N'#'+[CodeValue])); CREATE UNIQUE INDEX [UX_Descriptor_ResourceKeyId_Uri] ON [dms].[Descriptor] ([ResourceKeyId], [Uri]);
+-- Rebuilds UriLowered without the DMS identity collation inside LOWER.
+DROP INDEX [UX_Descriptor_UriLowered_ResourceKeyId] ON [dms].[Descriptor]; ALTER TABLE [dms].[Descriptor] DROP COLUMN [UriLowered]; ALTER TABLE [dms].[Descriptor] ADD [UriLowered] AS LOWER([Namespace]+N'#'+[CodeValue]); CREATE UNIQUE INDEX [UX_Descriptor_UriLowered_ResourceKeyId] ON [dms].[Descriptor] ([UriLowered], [ResourceKeyId]);

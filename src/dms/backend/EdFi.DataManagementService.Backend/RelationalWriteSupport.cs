@@ -10,31 +10,20 @@ namespace EdFi.DataManagementService.Backend;
 
 internal static class RelationalWriteSupport
 {
-    public static TriggerKindParameters.ReferentialIdentityMaintenance GetReferentialIdentityParametersOrThrow(
+    public static OwnNaturalKeyProbe GetOwnNaturalKeyProbeOrThrow(
         MappingSet mappingSet,
-        QualifiedResourceName resource,
-        DbTableName rootTable
+        QualifiedResourceName resource
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
 
-        var referentialIdentityTrigger = mappingSet.Model.TriggersInCreateOrder.SingleOrDefault(trigger =>
-            trigger.Table.Equals(rootTable)
-            && trigger.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance parameters
-            && string.Equals(parameters.ProjectName, resource.ProjectName, StringComparison.Ordinal)
-            && string.Equals(parameters.ResourceName, resource.ResourceName, StringComparison.Ordinal)
-        );
-
-        if (
-            referentialIdentityTrigger?.Parameters
-            is TriggerKindParameters.ReferentialIdentityMaintenance referentialIdentityParameters
-        )
+        if (mappingSet.OwnNaturalKeyProbesByResource.TryGetValue(resource, out var probe))
         {
-            return referentialIdentityParameters;
+            return probe;
         }
 
         throw new InvalidOperationException(
-            BuildMissingReferentialIdentityTriggerMetadataMessage(mappingSet.Key, resource)
+            $"Mapping set '{FormatMappingSetKey(mappingSet.Key)}' is missing the own natural-key probe for resource '{FormatResource(resource)}'."
         );
     }
 
@@ -91,13 +80,6 @@ internal static class RelationalWriteSupport
 
     public static string BuildImmutableIdentityFailureMessage(QualifiedResourceName resource) =>
         $"Identifying values for the {resource.ResourceName} resource cannot be changed. Delete and recreate the resource item instead.";
-
-    public static string BuildMissingReferentialIdentityTriggerMetadataMessage(
-        MappingSetKey mappingSetKey,
-        QualifiedResourceName resource
-    ) =>
-        $"Mapping set '{FormatMappingSetKey(mappingSetKey)}' "
-        + $"is missing referential-identity trigger metadata for resource '{FormatResource(resource)}'.";
 
     public static string FormatMappingSetKey(MappingSetKey key) =>
         $"{key.EffectiveSchemaHash}/{key.Dialect}/{key.RelationalMappingVersion}";

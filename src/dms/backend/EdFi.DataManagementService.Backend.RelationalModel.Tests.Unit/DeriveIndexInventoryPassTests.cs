@@ -235,6 +235,55 @@ public class Given_Abstract_Identity_Table_Indexes
             ukIndex.IsUnique.Should().BeTrue();
         }
     }
+
+    [Test]
+    public void It_derives_no_helper_index_for_the_document_resource_foreign_key()
+    {
+        _indexes
+            .Where(index => index.Table.Name == "EducationOrganizationIdentity")
+            .Select(index => index.Name.Value)
+            .Should()
+            .BeEquivalentTo(
+                "PK_EducationOrganizationIdentity",
+                "UX_EducationOrganizationIdentity_NK",
+                "UX_EducationOrganizationIdentity_RefKey"
+            );
+    }
+}
+
+/// <summary>
+/// Test fixture proving the document/resource FK-support index exception is narrow: a
+/// <c>(DocumentId, ResourceKeyId)</c> FK to <c>dms.Document</c> on a table whose primary key is not exactly
+/// <c>(DocumentId)</c> still gets its helper index.
+/// </summary>
+[TestFixture]
+public class Given_A_Document_Resource_Foreign_Key_On_A_Table_Without_A_DocumentId_Primary_Key
+{
+    private IReadOnlyList<DbIndexInfo> _indexes = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new DocumentResourceForeignKeyWithoutDocumentIdPrimaryKeyFixturePass(),
+            new DeriveIndexInventoryPass(),
+        ]);
+
+        _indexes = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules()).IndexesInCreateOrder;
+    }
+
+    [Test]
+    public void It_still_derives_the_helper_index()
+    {
+        _indexes
+            .Where(index => index.Table.Name == "Enrollment" && index.Kind == DbIndexKind.ForeignKeySupport)
+            .Select(index => index.KeyColumns.Select(column => column.Value).ToArray())
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Equal("DocumentId", "ResourceKeyId");
+    }
 }
 
 /// <summary>
@@ -1109,6 +1158,89 @@ public class Given_FK_With_Leftmost_Prefix_Of_Another_FK
             .Where(index => index.Table.Name == "Enrollment" && index.Kind == DbIndexKind.UniqueConstraint)
             .Should()
             .ContainSingle();
+    }
+}
+
+/// <summary>
+/// Test pass that injects a <c>(DocumentId, ResourceKeyId)</c> FK to <c>dms.Document</c> on a table keyed by
+/// <c>(DocumentId, Ordinal)</c>.
+/// </summary>
+file sealed class DocumentResourceForeignKeyWithoutDocumentIdPrimaryKeyFixturePass : IRelationalModelSetPass
+{
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var resourceKey = context.EffectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder[0];
+        var schema = new DbSchemaName("edfi");
+        var tableName = new DbTableName(schema, "Enrollment");
+        var ordinalColumnName = new DbColumnName("Ordinal");
+        DbColumnName[] documentResourceKeyColumns =
+        [
+            RelationalNameConventions.DocumentIdColumnName,
+            RelationalNameConventions.ResourceKeyIdColumnName,
+        ];
+
+        var table = new DbTableModel(
+            tableName,
+            JsonPathExpressionCompiler.Compile("$"),
+            new TableKey(
+                "PK_Enrollment",
+                [
+                    new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(ordinalColumnName, ColumnKind.Ordinal),
+                ]
+            ),
+            [
+                new DbColumnModel(
+                    RelationalNameConventions.DocumentIdColumnName,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    ordinalColumnName,
+                    ColumnKind.Ordinal,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    RelationalNameConventions.ResourceKeyIdColumnName,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            [
+                new TableConstraint.ForeignKey(
+                    "FK_Enrollment_DocumentResourceKey",
+                    documentResourceKeyColumns,
+                    new DbTableName(new DbSchemaName("dms"), "Document"),
+                    documentResourceKeyColumns,
+                    OnDelete: ReferentialAction.Cascade
+                ),
+            ]
+        );
+
+        var relationalModel = new RelationalResourceModel(
+            resourceKey.Resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            table,
+            [table],
+            [],
+            []
+        );
+
+        context.ConcreteResourcesInNameOrder.Add(
+            new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)
+        );
     }
 }
 

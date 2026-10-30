@@ -140,7 +140,7 @@ public class Given_TrackedChange_Descriptor_Snapshots(SqlDialect dialectKind, bo
     public void Setup()
     {
         _dialect = SqlDialectFactory.Create(dialectKind);
-        var source = CompactDescriptorReferentialIdentityTestModel
+        var source = CompactDescriptorAbstractIdentityTestModel
             .Build(dialectKind, unifiedReferenceIdentity)
             .ConcreteResourcesInNameOrder.Single()
             .RelationalModel.Root;

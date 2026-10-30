@@ -57,19 +57,18 @@ public partial class Given_Descriptor_Write_Response_Etags
             .Which.ETag.Should()
             .NotMatchRegex(StampStyleEtagPattern);
         targetLookupService.ResolveForPostCallCount.Should().Be(1);
+        targetLookupService.LastPostDescriptorUri.Should().Be("uri://ed-fi.org/SchoolTypeDescriptor#Charter");
         targetLookupService.ResolveForPutCallCount.Should().Be(0);
         sessionFactory.Session.CommitCallCount.Should().Be(1);
         sessionFactory.Session.RollbackCallCount.Should().Be(0);
         sessionFactory.Session.Executor.Commands.Should().ContainSingle();
         var insert = sessionFactory.Session.Executor.Commands[0];
         AssertOnlyStoredDescriptorParameters(insert);
+        insert.CommandText.Should().NotContain("ReferentialIdentity").And.NotContain("@referentialId");
         if (dialect is SqlDialect.Pgsql)
         {
-            insert.CommandText.Should().Contain("RETURNING \"DocumentId\"");
-            insert.CommandText.Should().Contain("FROM new_doc\n    RETURNING \"DocumentId\"\n)");
-            insert
-                .CommandText.Should()
-                .Contain("SELECT @referentialId, \"DocumentId\", @resourceKeyId\n    FROM new_descriptor");
+            insert.CommandText.Should().Contain("RETURNING \"DocumentId\"\n)");
+            insert.CommandText.Should().Contain("    FROM new_doc\n)\nSELECT 1 WHERE false;");
             insert.CommandText.Should().Contain("work.\"DocumentId\" = document.\"DocumentId\"");
         }
         else
@@ -77,18 +76,13 @@ public partial class Given_Descriptor_Write_Response_Etags
             insert
                 .CommandText.Should()
                 .Contain("DECLARE @insertedDocument TABLE ([DocumentId] BIGINT, [ContentVersion] BIGINT)");
-            insert.CommandText.Should().Contain("DECLARE @insertedDescriptor TABLE ([DocumentId] BIGINT)");
             insert
                 .CommandText.Should()
                 .Contain(
                     "OUTPUT INSERTED.[DocumentId], INSERTED.[ContentVersion]\n    INTO @insertedDocument ([DocumentId], [ContentVersion])"
                 );
-            insert
-                .CommandText.Should()
-                .Contain("OUTPUT INSERTED.[DocumentId]\n    INTO @insertedDescriptor ([DocumentId])");
-            insert
-                .CommandText.Should()
-                .Contain("SELECT @referentialId, [DocumentId], @resourceKeyId\nFROM @insertedDescriptor");
+            insert.CommandText.Should().Contain(")\nSELECT\n    [DocumentId], @resourceKeyId,");
+            insert.CommandText.Should().NotContain("@insertedDescriptor");
             insert.CommandText.Should().Contain("work.[DocumentId] = inserted.[DocumentId]");
             insert.CommandText.Should().NotContain("SCOPE_IDENTITY");
         }
@@ -104,7 +98,6 @@ public partial class Given_Descriptor_Write_Response_Etags
                 "@effectiveEndDate",
                 "@documentUuid",
                 "@resourceKeyId",
-                "@referentialId",
                 "@createdByOwnershipTokenId",
                 "@enqueueOutcomeNoWorkQueued",
                 "@enqueueOutcomeAlreadySatisfied"
@@ -128,7 +121,6 @@ public partial class Given_Descriptor_Write_Response_Etags
             _descriptorResource,
             CreateRequestBodyInNonCanonicalOrder(),
             new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb")),
-            new ReferentialId(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
             new TraceId("descriptor-post-trace")
         );
 
@@ -445,7 +437,6 @@ public partial class Given_Descriptor_Write_Response_Etags
             _descriptorResource,
             CreateRequestBody(description),
             documentUuid,
-            new ReferentialId(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
             new TraceId("descriptor-post-trace")
         );
     }
@@ -461,7 +452,6 @@ public partial class Given_Descriptor_Write_Response_Etags
             _descriptorResource,
             CreateRequestBody(description),
             documentUuid,
-            null,
             new TraceId("descriptor-put-trace")
         );
     }
@@ -603,15 +593,24 @@ public partial class Given_Descriptor_Write_Response_Etags
                     null,
                     new ColumnStorage.Stored()
                 ),
+                new DbColumnModel(
+                    new DbColumnName("ResourceKeyId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
             ],
             [
                 new TableConstraint.Unique("UX_Descriptor_DocumentId", [new DbColumnName("DocumentId")]),
                 new TableConstraint.ForeignKey(
-                    "FK_Descriptor_Document",
-                    [new DbColumnName("DocumentId")],
+                    "FK_Descriptor_DocumentResourceKey",
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
-                    [new DbColumnName("DocumentId")],
-                    OnDelete: ReferentialAction.Cascade
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
+                    OnDelete: ReferentialAction.Restrict
                 ),
             ]
         )
@@ -741,18 +740,21 @@ public partial class Given_Descriptor_Write_Response_Etags
 
         public int ResolveForPostCallCount { get; private set; }
 
+        public string? LastPostDescriptorUri { get; private set; }
+
         public int ResolveForPutCallCount { get; private set; }
 
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
-            ReferentialId referentialId,
+            string descriptorUri,
             DocumentUuid candidateDocumentUuid,
             CancellationToken cancellationToken = default
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
             ResolveForPostCallCount++;
+            LastPostDescriptorUri = descriptorUri;
             return Task.FromResult(PostResult);
         }
 

@@ -5,6 +5,12 @@
 
 namespace EdFi.DataManagementService.Backend;
 
+/// <summary>
+/// Decides whether a descriptor write changes the stored representation. Identity is not compared here:
+/// callers establish it first through the database's descriptor-identity verdict and pass a body that
+/// already carries the persisted <c>Namespace</c> and <c>CodeValue</c>, and a PUT whose identity changed
+/// is rejected before this runs. Only the descriptive fields compare, ordinally.
+/// </summary>
 internal static class DescriptorNoOpComparer
 {
     public static bool IsUnchanged(ExtractedDescriptorBody body, ExtractedDescriptorBody persisted)
@@ -13,8 +19,6 @@ internal static class DescriptorNoOpComparer
 
         return IsUnchanged(
             body,
-            persisted.Namespace,
-            persisted.CodeValue,
             persisted.ShortDescription,
             persisted.Description,
             persisted.EffectiveBeginDate,
@@ -24,8 +28,6 @@ internal static class DescriptorNoOpComparer
 
     public static bool IsUnchanged(
         ExtractedDescriptorBody body,
-        string persistedNamespace,
-        string persistedCodeValue,
         string? persistedShortDescription,
         string? persistedDescription,
         DateOnly? persistedEffectiveBeginDate,
@@ -34,9 +36,7 @@ internal static class DescriptorNoOpComparer
     {
         ArgumentNullException.ThrowIfNull(body);
 
-        return string.Equals(body.Namespace, persistedNamespace, StringComparison.Ordinal)
-            && string.Equals(body.CodeValue, persistedCodeValue, StringComparison.Ordinal)
-            && string.Equals(body.ShortDescription, persistedShortDescription, StringComparison.Ordinal)
+        return string.Equals(body.ShortDescription, persistedShortDescription, StringComparison.Ordinal)
             && string.Equals(body.Description, persistedDescription, StringComparison.Ordinal)
             && body.EffectiveBeginDate == persistedEffectiveBeginDate
             && body.EffectiveEndDate == persistedEffectiveEndDate;

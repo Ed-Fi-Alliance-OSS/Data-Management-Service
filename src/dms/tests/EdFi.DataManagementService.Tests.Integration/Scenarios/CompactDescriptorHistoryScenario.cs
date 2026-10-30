@@ -71,13 +71,13 @@ internal static class CompactDescriptorHistoryScenario
         }
     }
 
-    public static async Task It_preserves_provider_component_comparisons_for_descriptor_recreation(
+    public static async Task It_suppresses_descriptor_recreation_by_lowered_uri_and_resource_key(
         ApiIntegrationHarness harness
     )
     {
         string ns = CreateNamespace();
-        // This history consumer still compares stored components: under the identity collation on SQL Server,
-        // under the database default on PostgreSQL.
+        // Recreation compares the lowered whole URI under the descriptor resource's key, as the write path
+        // does: casing and component splits are the same descriptor; a namespace trailing space is not.
         (
             string OldNamespace,
             string OldCode,
@@ -86,9 +86,9 @@ internal static class CompactDescriptorHistoryScenario
             bool Suppressed
         )[] cases =
         [
-            (ns + "/case", "MiXeD", ns + "/case", "MIXED", !IsPostgresql(harness)),
-            (ns + "/space ", "Code", ns + "/space", "Code", !IsPostgresql(harness)),
-            (ns + "/components", "Campus#Code", ns + "/components#Campus", "Code", false),
+            (ns + "/case", "MiXeD", ns + "/case", "MIXED", true),
+            (ns + "/space ", "Code", ns + "/space", "Code", false),
+            (ns + "/components", "Campus#Code", ns + "/components#Campus", "Code", true),
             (ns + "/exact", "Extra#Code", ns + "/exact", "Extra#Code", true),
         ];
         foreach (var test in cases)
@@ -121,6 +121,29 @@ internal static class CompactDescriptorHistoryScenario
                 AssertHistory(history, deleted.Path, version, ("keyValues", DescriptorKey(deleted)));
             }
         }
+    }
+
+    public static async Task It_matches_a_case_variant_descriptor_repost_without_resource_history(
+        ApiIntegrationHarness harness
+    )
+    {
+        Descriptor descriptor = await CreateDescriptorAsync(
+            harness,
+            Descriptors,
+            CreateNamespace() + " ",
+            "New#MiXeD"
+        );
+        string item = await PostAsync(harness, Items, Item("item", descriptor.Uri));
+        long newest = await NewestVersionAsync(harness);
+
+        (await PostAsync(harness, Items, Item("item", descriptor.Uri.ToUpperInvariant()), HttpStatusCode.OK))
+            .Should()
+            .Be(item);
+        (await NewestVersionAsync(harness)).Should().Be(newest);
+        (await HistoryAsync(harness, Items, "keyChanges", minimum: newest + 1)).Should().BeEmpty();
+
+        await DeleteAsync(harness, item);
+        await DeleteAsync(harness, descriptor.Path);
     }
 
     public static async Task It_snapshots_direct_and_copied_descriptor_identities_for_resource_histories(
@@ -165,9 +188,6 @@ internal static class CompactDescriptorHistoryScenario
             );
         }
         long newest = await NewestVersionAsync(harness);
-        (await PostAsync(harness, Items, Item("item", after.Uri.ToUpperInvariant()), HttpStatusCode.OK))
-            .Should()
-            .Be(item);
         await PutAsync(harness, item, Item("item", after.Uri));
         (await NewestVersionAsync(harness)).Should().Be(newest);
         (await HistoryAsync(harness, Items, "keyChanges", minimum: newest + 1)).Should().BeEmpty();
@@ -207,9 +227,9 @@ internal static class CompactDescriptorHistoryScenario
         (string OldNamespace, string OldCode, string NewNamespace, string NewCode, bool Suppressed)[] cases =
         [
             (ns + "/exact", "Extra#Code", ns + "/exact", "Extra#Code", true),
-            (ns + "/case", "MiXeD", ns + "/case", "MIXED", !IsPostgresql(harness)),
-            (ns + "/space ", "Code", ns + "/space", "Code", !IsPostgresql(harness)),
-            (ns + "/components", "Campus#Code", ns + "/components#Campus", "Code", false),
+            (ns + "/case", "MiXeD", ns + "/case", "MIXED", true),
+            (ns + "/space ", "Code", ns + "/space", "Code", false),
+            (ns + "/components", "Campus#Code", ns + "/components#Campus", "Code", true),
         ];
         foreach (var test in cases)
         {
@@ -273,27 +293,28 @@ internal static class CompactDescriptorHistoryScenario
             "Campus#MiXeD"
         );
         long initial = await NewestVersionAsync(harness);
-        string ns = original.Namespace + "#Campus";
-        (await PostAsync(harness, Descriptors, DescriptorBody(ns, "MiXeD"), HttpStatusCode.OK))
-            .Should()
-            .Be(original.Path);
-        Descriptor components = await ReadDescriptorAsync(harness, original.Path, Descriptors, ns, "MiXeD");
-        components.DescriptorId.Should().Be(original.DescriptorId);
-        components.DocumentId.Should().Be(original.DocumentId);
-        components.Version.Should().BeGreaterThan(initial);
-        components.Uri.Should().Be(original.Uri);
-        (await HistoryAsync(harness, Descriptors, "deletes")).Should().BeEmpty();
-        (await HistoryAsync(harness, Descriptors, "keyChanges")).Should().BeEmpty();
-        long newest = await NewestVersionAsync(harness);
         string etag = await EtagAsync(harness, original.Path);
+        string ns = original.Namespace + "#Campus";
+
+        // The re-split components reconstruct the stored URI, so POST and PUT bind the stored components and
+        // change nothing: no stamp, no ETag change and no change-query history.
         (await PostAsync(harness, Descriptors, DescriptorBody(ns, "MiXeD"), HttpStatusCode.OK))
             .Should()
             .Be(original.Path);
         await PutAsync(harness, original.Path, DescriptorBody(ns, "MiXeD"));
-        (await ReadDescriptorAsync(harness, original.Path, Descriptors, ns, "MiXeD")).Should().Be(components);
-        (await NewestVersionAsync(harness)).Should().Be(newest);
+        Descriptor components = await ReadDescriptorAsync(
+            harness,
+            original.Path,
+            Descriptors,
+            original.Namespace,
+            original.CodeValue
+        );
+        components.Should().Be(original);
+        (await NewestVersionAsync(harness)).Should().Be(initial);
         (await EtagAsync(harness, original.Path)).Should().Be(etag);
-        (await GetArrayAsync(harness, $"{Descriptors}?minChangeVersion={newest + 1}")).Should().BeEmpty();
+        (await GetArrayAsync(harness, $"{Descriptors}?minChangeVersion={initial + 1}")).Should().BeEmpty();
+        (await HistoryAsync(harness, Descriptors, "deletes")).Should().BeEmpty();
+        (await HistoryAsync(harness, Descriptors, "keyChanges")).Should().BeEmpty();
 
         await DeleteAsync(harness, original.Path);
         await AssertGoneAsync(harness, components);
@@ -597,15 +618,6 @@ internal static class CompactDescriptorHistoryScenario
             await ScalarAsync(
                 harness,
                 "SELECT COUNT(*) FROM \"dms\".\"Document\" WHERE \"DocumentId\" = @id",
-                ("@id", descriptor.DocumentId)
-            )
-        )
-            .Should()
-            .Be(0);
-        (
-            await ScalarAsync(
-                harness,
-                "SELECT COUNT(*) FROM \"dms\".\"ReferentialIdentity\" WHERE \"DocumentId\" = @id",
                 ("@id", descriptor.DocumentId)
             )
         )

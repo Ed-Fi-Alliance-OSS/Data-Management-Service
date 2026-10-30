@@ -13,7 +13,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -244,7 +243,6 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
         await SeedDescriptorAsync(
             Guid.Parse("c3200001-0000-0000-0000-000000000001"),
             "EducationOrganizationCategoryDescriptor",
-            "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
             "School"
@@ -252,7 +250,6 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
         await SeedDescriptorAsync(
             Guid.Parse("c3200002-0000-0000-0000-000000000002"),
             "GradeLevelDescriptor",
-            "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
             "Ninth grade"
@@ -262,26 +259,13 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
     private async Task SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
         short resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", resourceName);
-        long documentId = await InsertDescriptorAsync(
-            documentUuid,
-            resourceKeyId,
-            @namespace,
-            codeValue,
-            shortDescription
-        );
-
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", resourceName, uri),
-            documentId,
-            resourceKeyId
-        );
+        await InsertDescriptorAsync(documentUuid, resourceKeyId, @namespace, codeValue, shortDescription);
     }
 
     private async Task<UpsertResult> UpsertSchoolAsync()
@@ -497,43 +481,5 @@ public class Given_A_Mssql_AcademicWeek_Read_With_Different_Caller_Authorization
         );
 
         return documentId;
-    }
-
-    private async Task InsertReferentialIdentityAsync(
-        ReferentialId referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            MERGE INTO [dms].[ReferentialIdentity] AS target
-            USING (SELECT @referentialId AS [ReferentialId]) AS source
-              ON target.[ReferentialId] = source.[ReferentialId]
-            WHEN NOT MATCHED THEN
-              INSERT ([ReferentialId], [DocumentId], [ResourceKeyId])
-              VALUES (@referentialId, @documentId, @resourceKeyId);
-            """,
-            new SqlParameter("@referentialId", referentialId.Value),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
-            new DocumentIdentity([
-                new DocumentIdentityElement(
-                    DocumentIdentity.DescriptorIdentityJsonPath,
-                    descriptorUri.ToLowerInvariant()
-                ),
-            ])
-        );
     }
 }

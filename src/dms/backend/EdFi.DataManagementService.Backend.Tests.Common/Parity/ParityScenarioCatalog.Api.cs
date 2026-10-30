@@ -107,17 +107,24 @@ public static partial class ParityScenarioCatalog
             profiled: true
         ),
         Api(
-            "Api/DescriptorRuntime/RIPostComponentAndCasingUpdates",
-            "RI-matching authorized POST applies incoming equal-URI components and casing, retains independent IDs, and advances stamps and ETags.",
-            "DescriptorRuntimeScenario.It_applies_RI_matching_post_component_and_casing_updates",
-            "It_applies_RI_matching_post_component_and_casing_updates",
+            "Api/DescriptorRuntime/StoredWinsPostIdentity",
+            "An authorized POST matched by descriptor identity keeps the stored components: an equal-URI re-split alone is a no-op with the same ETag, and a descriptive change updates with the stored components, retained IDs and advanced stamps.",
+            "DescriptorRuntimeScenario.It_keeps_the_stored_components_for_an_equal_whole_URI_post",
+            "It_keeps_the_stored_components_for_an_equal_whole_URI_post",
             fixtureSuffix: "CompactDescriptorRuntime"
         ),
         Api(
-            "Api/DescriptorRuntime/EqualWholeUriPut",
-            "Ordinal PUT accepts changed components reconstructing the same whole URI and stamps a representation update.",
-            "DescriptorRuntimeScenario.It_accepts_equal_whole_URI_components_on_put",
-            "It_accepts_equal_whole_URI_components_on_put",
+            "Api/DescriptorRuntime/StoredWinsCaseVariantPost",
+            "An authorized POST that differs from the stored descriptor only in casing keeps the stored casing: alone it is a no-op with the same ETag, and with a descriptive change it updates with the stored identity, retained IDs and advanced stamps.",
+            "DescriptorRuntimeScenario.It_keeps_the_stored_casing_for_a_case_variant_post",
+            "It_keeps_the_stored_casing_for_a_case_variant_post",
+            fixtureSuffix: "CompactDescriptorRuntime"
+        ),
+        Api(
+            "Api/DescriptorRuntime/EqualIdentityPut",
+            "A PUT whose components reconstruct the stored whole URI, or differ from it only in casing, keeps the stored identity and returns 204 with unchanged stamps and ETag.",
+            "DescriptorRuntimeScenario.It_keeps_the_stored_identity_for_an_equal_identity_put",
+            "It_keeps_the_stored_identity_for_an_equal_identity_put",
             fixtureSuffix: "CompactDescriptorRuntime"
         ),
         Api(
@@ -125,13 +132,6 @@ public static partial class ParityScenarioCatalog
             "Identical POST returns 200 and PUT 204 with unchanged IDs, ETags, document/mirror stamps and change-query responses.",
             "DescriptorRuntimeScenario.It_preserves_all_stamps_and_change_queries_on_identical_post_and_put",
             "It_preserves_all_stamps_and_change_queries_on_identical_post_and_put",
-            fixtureSuffix: "CompactDescriptorRuntime"
-        ),
-        Api(
-            "Api/DescriptorRuntime/DuplicateWithoutRIMatch",
-            "Equal whole-URI storage without a matching RI retains the write-conflict outcome (HTTP 500 after retries) and leaves the existing representation and stamps intact.",
-            "DescriptorRuntimeScenario.It_rejects_a_duplicate_whole_URI_without_an_RI_match",
-            "It_rejects_a_duplicate_whole_URI_without_an_RI_match",
             fixtureSuffix: "CompactDescriptorRuntime"
         ),
         Api(
@@ -143,7 +143,7 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/DescriptorRuntime/ImmutablePutIdentity",
-            "Ordinal PUT rejects changed whole URI, including casing-only changes, with exact 400 problem details and unchanged storage/stamps.",
+            "A PUT whose whole URI is a different descriptor identity under the engine's comparison (not a casing change or component re-split) returns 400 with exact problem details and unchanged storage/stamps.",
             "DescriptorRuntimeScenario.It_rejects_descriptor_identity_changes",
             "It_rejects_descriptor_identity_changes",
             fixtureSuffix: "CompactDescriptorRuntime"
@@ -171,7 +171,7 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/CompactDescriptorResources/MixedCaseIdentityMatching",
-            "Repeated resource POSTs and transitive descriptor-bearing document identities resolve mixed-case URIs through RI with stable document IDs and exact no-op stamps.",
+            "Repeated resource POSTs and transitive descriptor-bearing document identities resolve mixed-case URIs by natural key with stable document IDs and exact no-op stamps.",
             "CompactDescriptorResourceScenario.It_matches_repeated_POST_and_transitive_document_identities_with_mixed_case_descriptors",
             "It_matches_repeated_POST_and_transitive_document_identities_with_mixed_case_descriptors",
             fixtureSuffix: "CompactDescriptorResources"
@@ -192,9 +192,9 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/CompactDescriptorResources/IdentityUpdatePropagation",
-            "Regular-resource descriptor identity updates propagate compact keys and canonical URIs through two reference levels, advance stamps, maintain RI matching and reject stale references.",
-            "CompactDescriptorResourceScenario.It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates",
-            "It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates",
+            "Regular-resource descriptor identity updates propagate compact keys and canonical URIs through two reference levels, advance stamps, keep natural-key matching and reject stale references.",
+            "CompactDescriptorResourceScenario.It_maintains_copied_descriptor_keys_after_resource_identity_updates",
+            "It_maintains_copied_descriptor_keys_after_resource_identity_updates",
             fixtureSuffix: "CompactDescriptorResources"
         ),
         Api(
@@ -220,16 +220,16 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/CompactDescriptorHistory/QualifiedDeleteRouting",
-            "Deleted descriptor/document/RI rows retain exact external IDs, type-specific component snapshots and versions; same-named cross-project recreation suppresses only its own ResourceKeyId.",
+            "Deleted descriptor/document rows retain exact external IDs, type-specific component snapshots and versions; same-named cross-project recreation suppresses only its own ResourceKeyId.",
             "CompactDescriptorHistoryScenario.It_routes_deleted_descriptors_by_qualified_resource_key_without_live_rows",
             "It_routes_deleted_descriptors_by_qualified_resource_key_without_live_rows",
             fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"
         ),
         Api(
-            "Api/CompactDescriptorHistory/ProviderRecreationComparisons",
-            "Descriptor recreation follows provider component collation verdicts (the identity collation on SQL Server) for casing, namespace delimiter spaces, equal whole URIs with different components and extra delimiters.",
-            "CompactDescriptorHistoryScenario.It_preserves_provider_component_comparisons_for_descriptor_recreation",
-            "It_preserves_provider_component_comparisons_for_descriptor_recreation",
+            "Api/CompactDescriptorHistory/LoweredUriRecreation",
+            "Descriptor recreation suppresses by lowered whole URI plus ResourceKeyId on both providers: casing and equal whole URIs with different components suppress, a namespace trailing space does not, and extra delimiters compare exactly.",
+            "CompactDescriptorHistoryScenario.It_suppresses_descriptor_recreation_by_lowered_uri_and_resource_key",
+            "It_suppresses_descriptor_recreation_by_lowered_uri_and_resource_key",
             fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"
         ),
         Api(
@@ -241,14 +241,14 @@ public static partial class ParityScenarioCatalog
         ),
         Api(
             "Api/CompactDescriptorHistory/ResourceRecreation",
-            "Recreated resources suppress their old deletes through the qualified descriptor compact key, preserving RI mixed-case matching and exact stored int values.",
+            "Recreated resources suppress their old deletes through the qualified descriptor compact key found by lowered whole URI, preserving mixed-case natural-key matching and exact stored int values.",
             "CompactDescriptorHistoryScenario.It_recreates_resources_using_compact_descriptor_identity_joins",
             "It_recreates_resources_using_compact_descriptor_identity_joins",
             fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"
         ),
         Api(
             "Api/CompactDescriptorHistory/ComponentUpdateAndNoOpHistory",
-            "Accepted equal-whole-URI descriptor component POST advances representation stamps without key history; identical POST/PUT preserve metadata and delete snapshots retain final components.",
+            "An equal-whole-URI descriptor component POST or PUT keeps the stored components and is a no-op without stamps, ETag change or key history; delete snapshots retain the stored components.",
             "CompactDescriptorHistoryScenario.It_keeps_descriptor_component_updates_and_no_ops_out_of_delete_and_key_history",
             "It_keeps_descriptor_component_updates_and_no_ops_out_of_delete_and_key_history",
             fixtureSuffix: "DerivativeTrackedChanges_CompactDescriptors"
@@ -274,6 +274,17 @@ public static partial class ParityScenarioCatalog
             "It_authorizes_descriptor_history_tombstone_probes_by_qualified_document_membership",
             fixtureSuffix: "DerivativeTrackedChanges_CustomViewIncludingDeletes"
         ),
+        Api(
+            "Api/CaseVariantIdentity/ResolvesCaseVariantPostByIdentityCollation",
+            "A POST whose root identity differs from a stored document's only in case targets the stored document where the identity collation equates them, keeps the stored casing, and is a guarded no-op that records no key change and leaves the referrer's copy unchanged.",
+            "CaseVariantIdentityScenario.It_resolves_a_case_variant_class_period_post_by_the_identity_collation",
+            "It_resolves_a_case_variant_class_period_post_by_the_identity_collation",
+            fixtureSuffix: "CaseVariantIdentity",
+            diff: new DialectDifference(
+                "SQL Server answers 200 against the stored document with its stored casing; PostgreSQL answers 201 with a second document.",
+                "SQL Server identity text columns use the case-insensitive SQL_Latin1_General_CP1_CI_AS collation, so the natural-key capture finds the stored document and the identity-stability guard rebinds the CI-equal value; PostgreSQL identity text compares ordinally, so the case variant is a different identity."
+            )
+        ),
     ];
 
     private static ParityScenario Api(
@@ -282,7 +293,8 @@ public static partial class ParityScenarioCatalog
         string sharedEntryPoint,
         string method,
         bool profiled = false,
-        string fixtureSuffix = ""
+        string fixtureSuffix = "",
+        DialectDifference? diff = null
     )
     {
         string suffix = fixtureSuffix;
@@ -305,6 +317,7 @@ public static partial class ParityScenarioCatalog
             PgsqlCoverage = EngineCoverage.Covered,
             MssqlCoverage = EngineCoverage.Covered,
             Classification = ParityClassification.Both,
+            DialectDifference = diff,
         };
     }
 }

@@ -66,7 +66,7 @@ internal static class RelationalWriteMergeOrchestratorTestSupport
             mappingSet,
             RelationalWriteOperationKind.Post,
             new RelationalWriteTargetRequest.Post(
-                new ReferentialId(Guid.Parse("99999999-8888-7777-6666-555555555555")),
+                new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                 documentUuid
             ),
             writePlan,
@@ -118,7 +118,7 @@ internal static class RelationalWriteMergeOrchestratorTestSupport
         new(
             SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
             SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+            DocumentReferences: new ResolvedDocumentReferenceMapFactory().Create([]),
             InvalidDocumentReferences: documentFailures,
             InvalidDescriptorReferences:
             [
@@ -135,12 +135,9 @@ internal static class RelationalWriteMergeOrchestratorTestSupport
                             "uri://ed-fi.org/x#y"
                         ),
                     ]),
-                    new ReferentialId(Guid.NewGuid()),
                     DescriptorReferenceFailureReason.Missing
                 ),
-            ],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            ]
         );
 
     public static DocumentReferenceFailure CreateDocumentFailure(
@@ -153,7 +150,6 @@ internal static class RelationalWriteMergeOrchestratorTestSupport
                 new DocumentIdentity([
                     new DocumentIdentityElement(new JsonPath("$.assessmentIdentifier"), "A1"),
                 ]),
-                new ReferentialId(Guid.NewGuid()),
                 new JsonPath(path)
             ),
             reason

@@ -192,29 +192,6 @@
       }
     },
     {
-      "name": "TR_School_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "School"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "SchoolId"
-      ],
-      "resource_key_id": 2,
-      "project_name": "Ed-Fi",
-      "resource_name": "School",
-      "identity_elements": [
-        {
-          "column": "SchoolId",
-          "identity_json_path": "$.schoolId"
-        }
-      ]
-    },
-    {
       "name": "TR_School_Stamp",
       "table": {
         "schema": "edfi",
@@ -470,6 +447,18 @@
             }
           },
           {
+            "name": "ResourceKeyId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Int16"
+            },
+            "is_nullable": false,
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
+          },
+          {
             "name": "CodeValue",
             "kind": "Scalar",
             "type": {
@@ -531,16 +520,18 @@
           },
           {
             "kind": "ForeignKey",
-            "name": "FK_Descriptor_Document",
+            "name": "FK_Descriptor_DocumentResourceKey",
             "columns": [
-              "DocumentId"
+              "DocumentId",
+              "ResourceKeyId"
             ],
             "target_table": {
               "schema": "dms",
               "name": "Document"
             },
             "target_columns": [
-              "DocumentId"
+              "DocumentId",
+              "ResourceKeyId"
             ],
             "on_delete": "Restrict",
             "on_update": "NoAction"

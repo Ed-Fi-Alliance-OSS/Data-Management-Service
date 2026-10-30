@@ -1,0 +1,90 @@
+{
+  "api_schema_format_version": "1.0.0",
+  "relational_mapping_version": "v3",
+  "effective_schema_hash": "dabf9cd3c36fbd3897b54f63e747ac77326afcfe18b96dc5e2893f04d76c39d1",
+  "resource_key_count": 12,
+  "resource_key_seed_hash": "cf22bda16c6555c3f9f4f106f8ba65c2461e58fc300892b4fbb958648ba026d1",
+  "schema_components": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "5.0.0",
+      "is_extension_project": false,
+      "project_hash": "30c8b060027da9a8231f55b50b91ca8f429d5a5ecc800db852d0ae3ff84eba86"
+    }
+  ],
+  "resource_keys": [
+    {
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "DateTimeKeyResource",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 2,
+      "project_name": "Ed-Fi",
+      "resource_name": "DecimalKeyResource",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 3,
+      "project_name": "Ed-Fi",
+      "resource_name": "DecimalRefResource",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 4,
+      "project_name": "Ed-Fi",
+      "resource_name": "EdOrgDependentChildResource",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 5,
+      "project_name": "Ed-Fi",
+      "resource_name": "EdOrgDependentResource",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 6,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganization",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 7,
+      "project_name": "Ed-Fi",
+      "resource_name": "KeyUnifiedResource",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 8,
+      "project_name": "Ed-Fi",
+      "resource_name": "ResourceA",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 9,
+      "project_name": "Ed-Fi",
+      "resource_name": "ResourceB",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 10,
+      "project_name": "Ed-Fi",
+      "resource_name": "School",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 11,
+      "project_name": "Ed-Fi",
+      "resource_name": "Student",
+      "resource_version": "5.0.0"
+    },
+    {
+      "resource_key_id": 12,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSchoolAssociation",
+      "resource_version": "5.0.0"
+    }
+  ]
+}

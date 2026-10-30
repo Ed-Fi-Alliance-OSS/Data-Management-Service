@@ -8,7 +8,6 @@ using System.Data.Common;
 using EdFi.DataManagementService.Backend.Mssql;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Model;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -33,15 +32,15 @@ public class Given_MssqlRelationalCommandExecutor
             ConnectionString: connectionString,
             RouteContext: []
         );
-        var documentReferentialId = new ReferentialId(Guid.NewGuid());
-        var descriptorReferentialId = new ReferentialId(Guid.NewGuid());
+        var documentLookupId = Guid.NewGuid();
+        var descriptorLookupId = Guid.NewGuid();
         var connection = new RecordingDbConnection(
             new RecordingDbCommand(
                 CreateReader(
                     CreateLookupTable(
-                        (documentReferentialId.Value, 101L, (short)11, (short)11, null, "$.schoolId=255901"),
+                        (documentLookupId, 101L, (short)11, (short)11, null, "$.schoolId=255901"),
                         (
-                            descriptorReferentialId.Value,
+                            descriptorLookupId,
                             202L,
                             (short)12,
                             (short)12,
@@ -74,43 +73,48 @@ public class Given_MssqlRelationalCommandExecutor
 
         var result = await sut.ExecuteReaderAsync(
             new RelationalCommand(
-                "select * from dms.lookup where referential_id in (@p0, @p1)",
+                "select * from dms.lookup where lookup_id in (@p0, @p1)",
                 [
-                    new RelationalParameter("@p0", documentReferentialId.Value),
-                    new RelationalParameter("@p1", descriptorReferentialId.Value),
+                    new RelationalParameter("@p0", documentLookupId),
+                    new RelationalParameter("@p1", descriptorLookupId),
                 ]
             ),
-            ReferenceLookupResultReader.ReadAsync
+            static async (reader, cancellationToken) =>
+            {
+                List<(Guid LookupId, long DocumentId, int? DescriptorId)> rows = [];
+
+                while (await reader.ReadAsync(cancellationToken))
+                {
+                    var descriptorIdOrdinal = reader.GetOrdinal("DescriptorId");
+                    rows.Add(
+                        (
+                            reader.GetFieldValue<Guid>(reader.GetOrdinal("LookupId")),
+                            reader.GetFieldValue<long>(reader.GetOrdinal("DocumentId")),
+                            reader.IsDBNull(descriptorIdOrdinal)
+                                ? null
+                                : reader.GetFieldValue<int>(descriptorIdOrdinal)
+                        )
+                    );
+                }
+
+                return rows;
+            }
         );
 
         A.CallTo(() => dataStoreSelection.GetEffectiveTarget()).MustHaveHappenedOnceExactly();
         connection.OpenAsyncCallCount.Should().Be(1);
         connection.LastOpenAsyncCancellationToken.Should().Be(CancellationToken.None);
         connection.CreateCommandCallCount.Should().Be(1);
-        connection
-            .Command.CommandText.Should()
-            .Be("select * from dms.lookup where referential_id in (@p0, @p1)");
+        connection.Command.CommandText.Should().Be("select * from dms.lookup where lookup_id in (@p0, @p1)");
         connection.Command.Parameters.Should().HaveCount(2);
         connection.Command.Parameters[0].ParameterName.Should().Be("@p0");
-        connection.Command.Parameters[0].Value.Should().Be(documentReferentialId.Value);
+        connection.Command.Parameters[0].Value.Should().Be(documentLookupId);
         connection.Command.Parameters[1].ParameterName.Should().Be("@p1");
-        connection.Command.Parameters[1].Value.Should().Be(descriptorReferentialId.Value);
+        connection.Command.Parameters[1].Value.Should().Be(descriptorLookupId);
         connection.Command.ExecuteReaderCallCount.Should().Be(1);
         connection.Command.DisposeCallCount.Should().Be(1);
         connection.DisposeCallCount.Should().Be(1);
-        result
-            .Should()
-            .BeEquivalentTo([
-                new ReferenceLookupResult(documentReferentialId, 101L, 11, 11, null, "$.schoolId=255901"),
-                new ReferenceLookupResult(
-                    descriptorReferentialId,
-                    202L,
-                    12,
-                    12,
-                    17,
-                    "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
-                ),
-            ]);
+        result.Should().Equal((documentLookupId, 101L, (int?)null), (descriptorLookupId, 202L, (int?)17));
     }
 
     [Test]
@@ -170,30 +174,30 @@ public class Given_MssqlRelationalCommandExecutor
 
     private static DataTable CreateLookupTable(
         params (
-            Guid ReferentialId,
+            Guid LookupId,
             long DocumentId,
             short ResourceKeyId,
-            short ReferentialIdentityResourceKeyId,
+            short LookupResourceKeyId,
             int? DescriptorId,
             string? VerificationIdentityKey
         )[] rows
     )
     {
         var table = new DataTable();
-        table.Columns.Add("ReferentialId", typeof(Guid));
+        table.Columns.Add("LookupId", typeof(Guid));
         table.Columns.Add("DocumentId", typeof(long));
         table.Columns.Add("ResourceKeyId", typeof(short));
-        table.Columns.Add("ReferentialIdentityResourceKeyId", typeof(short));
+        table.Columns.Add("LookupResourceKeyId", typeof(short));
         table.Columns.Add("DescriptorId", typeof(int));
         table.Columns.Add("VerificationIdentityKey", typeof(string));
 
         foreach (var row in rows)
         {
             table.Rows.Add(
-                row.ReferentialId,
+                row.LookupId,
                 row.DocumentId,
                 row.ResourceKeyId,
-                row.ReferentialIdentityResourceKeyId,
+                row.LookupResourceKeyId,
                 (object?)row.DescriptorId ?? DBNull.Value,
                 row.VerificationIdentityKey
             );

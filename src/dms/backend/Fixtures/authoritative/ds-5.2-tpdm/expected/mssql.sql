@@ -143,51 +143,6 @@ BEGIN
     RETURN @Result;
 END;
 GO
-CREATE OR ALTER FUNCTION [dms].[uuidv5](@namespace_uuid uniqueidentifier, @name_text nvarchar(max))
-RETURNS uniqueidentifier
-WITH SCHEMABINDING
-AS
-BEGIN
-    DECLARE @ns_bytes varbinary(16) = CAST(@namespace_uuid AS varbinary(16));
-
-    -- Convert SQL Server mixed-endian to RFC 4122 big-endian for hashing
-    DECLARE @ns_be varbinary(16) =
-        SUBSTRING(@ns_bytes, 4, 1) + SUBSTRING(@ns_bytes, 3, 1)
-        + SUBSTRING(@ns_bytes, 2, 1) + SUBSTRING(@ns_bytes, 1, 1)
-        + SUBSTRING(@ns_bytes, 6, 1) + SUBSTRING(@ns_bytes, 5, 1)
-        + SUBSTRING(@ns_bytes, 8, 1) + SUBSTRING(@ns_bytes, 7, 1)
-        + SUBSTRING(@ns_bytes, 9, 8);
-
-    -- Apply UTF-8 collation to the nvarchar source before casting to varchar so the
-    -- conversion uses code page 65001 directly, matching Core (Encoding.UTF8) and
-    -- PostgreSQL (convert_to ... 'UTF8') for non-ASCII characters.
-    DECLARE @name_bytes varbinary(max) = CAST(CAST(@name_text COLLATE Latin1_General_100_CI_AS_SC_UTF8 AS varchar(max)) AS varbinary(max));
-
-    DECLARE @hash varbinary(20) = HASHBYTES('SHA1', @ns_be + @name_bytes);
-
-    -- Take first 16 bytes and set version/variant bits
-    DECLARE @result varbinary(16) = SUBSTRING(@hash, 1, 16);
-
-    DECLARE @byte6 int = CAST(SUBSTRING(@result, 7, 1) AS int);
-    SET @result = SUBSTRING(@result, 1, 6)
-        + CAST((@byte6 & 0x0F) | 0x50 AS binary(1))
-        + SUBSTRING(@result, 8, 9);
-
-    DECLARE @byte8 int = CAST(SUBSTRING(@result, 9, 1) AS int);
-    SET @result = SUBSTRING(@result, 1, 8)
-        + CAST((@byte8 & 0x3F) | 0x80 AS binary(1))
-        + SUBSTRING(@result, 10, 7);
-
-    -- Convert big-endian result back to SQL Server mixed-endian
-    RETURN CAST(
-        SUBSTRING(@result, 4, 1) + SUBSTRING(@result, 3, 1)
-        + SUBSTRING(@result, 2, 1) + SUBSTRING(@result, 1, 1)
-        + SUBSTRING(@result, 6, 1) + SUBSTRING(@result, 5, 1)
-        + SUBSTRING(@result, 8, 1) + SUBSTRING(@result, 7, 1)
-        + SUBSTRING(@result, 9, 8)
-        AS uniqueidentifier);
-END;
-GO
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.types t
@@ -243,6 +198,7 @@ CREATE TABLE [dms].[Descriptor]
     [EffectiveBeginDate] date NULL,
     [EffectiveEndDate] date NULL,
     [Uri] AS ([Namespace] + N'#' + [CodeValue]),
+    [UriLowered] AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DescriptorId])
@@ -272,6 +228,13 @@ IF NOT EXISTS (
 )
 ALTER TABLE [dms].[Document]
 ADD CONSTRAINT [UX_Document_DocumentUuid] UNIQUE ([DocumentUuid]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.key_constraints
+    WHERE name = N'UX_Document_DocumentId_ResourceKeyId' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.Document')
+)
+ALTER TABLE [dms].[Document]
+ADD CONSTRAINT [UX_Document_DocumentId_ResourceKeyId] UNIQUE ([DocumentId], [ResourceKeyId]);
 
 IF OBJECT_ID(N'dms.DocumentCache', N'U') IS NULL
 CREATE TABLE [dms].[DocumentCache]
@@ -362,16 +325,6 @@ IF NOT EXISTS (
 ALTER TABLE [dms].[EffectiveSchema]
 ADD CONSTRAINT [UX_EffectiveSchema_EffectiveSchemaHash] UNIQUE ([EffectiveSchemaHash]);
 
-IF OBJECT_ID(N'dms.ReferentialIdentity', N'U') IS NULL
-CREATE TABLE [dms].[ReferentialIdentity]
-(
-    [ReferentialId] uniqueidentifier NOT NULL,
-    [DocumentId] bigint NOT NULL,
-    [ResourceKeyId] smallint NOT NULL,
-    CONSTRAINT [PK_ReferentialIdentity] PRIMARY KEY NONCLUSTERED ([ReferentialId]),
-    CONSTRAINT [UX_ReferentialIdentity_DocumentId_ResourceKeyId] UNIQUE CLUSTERED ([DocumentId], [ResourceKeyId])
-);
-
 IF OBJECT_ID(N'dms.RepresentationRestampOperation', N'U') IS NULL
 CREATE TABLE [dms].[RepresentationRestampOperation]
 (
@@ -461,23 +414,12 @@ CREATE TABLE [dms].[SchemaComponent]
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Descriptor_Document' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
+    WHERE name = N'FK_Descriptor_DocumentResourceKey' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
 )
 ALTER TABLE [dms].[Descriptor]
-ADD CONSTRAINT [FK_Descriptor_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Descriptor_ResourceKey' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
-)
-ALTER TABLE [dms].[Descriptor]
-ADD CONSTRAINT [FK_Descriptor_ResourceKey]
-FOREIGN KEY ([ResourceKeyId])
-REFERENCES [dms].[ResourceKey] ([ResourceKeyId])
+ADD CONSTRAINT [FK_Descriptor_DocumentResourceKey]
+FOREIGN KEY ([DocumentId], [ResourceKeyId])
+REFERENCES [dms].[Document] ([DocumentId], [ResourceKeyId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -516,28 +458,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ReferentialIdentity_Document' AND parent_object_id = OBJECT_ID(N'dms.ReferentialIdentity')
-)
-ALTER TABLE [dms].[ReferentialIdentity]
-ADD CONSTRAINT [FK_ReferentialIdentity_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ReferentialIdentity_ResourceKey' AND parent_object_id = OBJECT_ID(N'dms.ReferentialIdentity')
-)
-ALTER TABLE [dms].[ReferentialIdentity]
-ADD CONSTRAINT [FK_ReferentialIdentity_ResourceKey]
-FOREIGN KEY ([ResourceKeyId])
-REFERENCES [dms].[ResourceKey] ([ResourceKeyId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_SchemaComponent_EffectiveSchemaHash' AND parent_object_id = OBJECT_ID(N'dms.SchemaComponent')
 )
 ALTER TABLE [dms].[SchemaComponent]
@@ -563,9 +483,9 @@ IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
     JOIN sys.tables t ON i.object_id = t.object_id
     JOIN sys.schemas s ON t.schema_id = s.schema_id
-    WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'UX_Descriptor_ResourceKeyId_Uri'
+    WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'UX_Descriptor_UriLowered_ResourceKeyId'
 )
-CREATE UNIQUE INDEX [UX_Descriptor_ResourceKeyId_Uri] ON [dms].[Descriptor] ([ResourceKeyId], [Uri]);
+CREATE UNIQUE INDEX [UX_Descriptor_UriLowered_ResourceKeyId] ON [dms].[Descriptor] ([UriLowered], [ResourceKeyId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -594,15 +514,6 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF EXISTS (
-        SELECT 1
-        FROM inserted i
-        INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]
-        WHERE i.[ResourceKeyId] <> d.[ResourceKeyId]
-    )
-    BEGIN
-        THROW 50000, N'dms.Descriptor.ResourceKeyId diverges from the owning dms.Document row.', 1;
-    END
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
         [ContentVersion] bigint NOT NULL
@@ -12932,6 +12843,7 @@ CREATE TABLE [edfi].[EducationOrganizationIdentity]
 (
     [DocumentId] bigint NOT NULL,
     [EducationOrganizationId] bigint NOT NULL,
+    [ResourceKeyId] smallint NOT NULL,
     [Discriminator] nvarchar(256) NOT NULL,
     CONSTRAINT [PK_EducationOrganizationIdentity] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_EducationOrganizationIdentity_NK] UNIQUE ([EducationOrganizationId]),
@@ -12948,6 +12860,7 @@ CREATE TABLE [edfi].[GeneralStudentProgramAssociationIdentity]
     [Program_ProgramName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     [Program_ProgramTypeDescriptor_DescriptorId] int NOT NULL,
     [Student_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [ResourceKeyId] smallint NOT NULL,
     [Discriminator] nvarchar(256) NOT NULL,
     CONSTRAINT [PK_GeneralStudentProgramAssociationIdentity] PRIMARY KEY ([DocumentId]),
     CONSTRAINT [UX_GeneralStudentProgramAssociationIdentity_NK] UNIQUE ([BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId]),
@@ -29951,23 +29864,23 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_EducationOrganizationIdentity_Document' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationIdentity')
+    WHERE name = N'FK_EducationOrganizationIdentity_DocumentResourceKey' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationIdentity')
 )
 ALTER TABLE [edfi].[EducationOrganizationIdentity]
-ADD CONSTRAINT [FK_EducationOrganizationIdentity_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
+ADD CONSTRAINT [FK_EducationOrganizationIdentity_DocumentResourceKey]
+FOREIGN KEY ([DocumentId], [ResourceKeyId])
+REFERENCES [dms].[Document] ([DocumentId], [ResourceKeyId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_GeneralStudentProgramAssociationIdentity_Document' AND parent_object_id = OBJECT_ID(N'edfi.GeneralStudentProgramAssociationIdentity')
+    WHERE name = N'FK_GeneralStudentProgramAssociationIdentity_DocumentResourceKey' AND parent_object_id = OBJECT_ID(N'edfi.GeneralStudentProgramAssociationIdentity')
 )
 ALTER TABLE [edfi].[GeneralStudentProgramAssociationIdentity]
-ADD CONSTRAINT [FK_GeneralStudentProgramAssociationIdentity_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
+ADD CONSTRAINT [FK_GeneralStudentProgramAssociationIdentity_DocumentResourceKey]
+FOREIGN KEY ([DocumentId], [ResourceKeyId])
+REFERENCES [dms].[Document] ([DocumentId], [ResourceKeyId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
@@ -40965,64 +40878,64 @@ CREATE INDEX [IX_Descriptor_ResourceKeyId_ChangeVersion] ON [tracked_changes_edf
 
 GO
 CREATE OR ALTER VIEW [edfi].[EducationOrganization_View] AS
-SELECT [DocumentId] AS [DocumentId], [CommunityOrganizationId] AS [EducationOrganizationId], CAST(N'Ed-Fi:CommunityOrganization' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [CommunityOrganizationId] AS [EducationOrganizationId], CAST(50 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:CommunityOrganization' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[CommunityOrganization]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [CommunityProviderId] AS [EducationOrganizationId], CAST(N'Ed-Fi:CommunityProvider' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [CommunityProviderId] AS [EducationOrganizationId], CAST(51 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:CommunityProvider' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[CommunityProvider]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [EducationOrganizationNetworkId] AS [EducationOrganizationId], CAST(N'Ed-Fi:EducationOrganizationNetwork' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [EducationOrganizationNetworkId] AS [EducationOrganizationId], CAST(100 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:EducationOrganizationNetwork' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[EducationOrganizationNetwork]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [EducationServiceCenterId] AS [EducationOrganizationId], CAST(N'Ed-Fi:EducationServiceCenter' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [EducationServiceCenterId] AS [EducationOrganizationId], CAST(104 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:EducationServiceCenter' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[EducationServiceCenter]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [LocalEducationAgencyId] AS [EducationOrganizationId], CAST(N'Ed-Fi:LocalEducationAgency' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [LocalEducationAgencyId] AS [EducationOrganizationId], CAST(168 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:LocalEducationAgency' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[LocalEducationAgency]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [OrganizationDepartmentId] AS [EducationOrganizationId], CAST(N'Ed-Fi:OrganizationDepartment' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [OrganizationDepartmentId] AS [EducationOrganizationId], CAST(189 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:OrganizationDepartment' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[OrganizationDepartment]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [PostSecondaryInstitutionId] AS [EducationOrganizationId], CAST(N'Ed-Fi:PostSecondaryInstitution' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [PostSecondaryInstitutionId] AS [EducationOrganizationId], CAST(201 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:PostSecondaryInstitution' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[PostSecondaryInstitution]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [SchoolId] AS [EducationOrganizationId], CAST(N'Ed-Fi:School' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [SchoolId] AS [EducationOrganizationId], CAST(244 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:School' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[School]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [StateEducationAgencyId] AS [EducationOrganizationId], CAST(N'Ed-Fi:StateEducationAgency' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [StateEducationAgencyId] AS [EducationOrganizationId], CAST(281 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StateEducationAgency' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StateEducationAgency]
 ;
 
 GO
 CREATE OR ALTER VIEW [edfi].[GeneralStudentProgramAssociation_View] AS
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentCTEProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(288 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentCTEProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentCTEProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentHomelessProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(300 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentHomelessProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentHomelessProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentLanguageInstructionProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(304 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentLanguageInstructionProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentLanguageInstructionProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentMigrantEducationProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(305 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentMigrantEducationProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentMigrantEducationProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(306 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(307 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(312 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentSchoolFoodServiceProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentSection504ProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(313 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentSection504ProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentSection504ProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentSpecialEducationProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(316 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentSpecialEducationProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentSpecialEducationProgramAssociation]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(N'Ed-Fi:StudentTitleIPartAProgramAssociation' AS nvarchar(256)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [BeginDate] AS [BeginDate], [EducationOrganization_EducationOrganizationId] AS [EducationOrganization_EducationOrganizationId], [ProgramProgram_EducationOrganizationId] AS [Program_EducationOrganizationId], [ProgramProgram_ProgramName] AS [Program_ProgramName], [ProgramProgram_ProgramTypeDescriptor_DescriptorId] AS [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId] AS [Student_StudentUniqueId], CAST(318 AS smallint) AS [ResourceKeyId], CAST(N'Ed-Fi:StudentTitleIPartAProgramAssociation' AS nvarchar(256)) AS [Discriminator]
 FROM [edfi].[StudentTitleIPartAProgramAssociation]
 ;
 
@@ -41147,39 +41060,6 @@ INNER JOIN [tracked_changes_edfi].[StudentSchoolAssociation] ssa_tc ON edOrg.[Ta
 ;
 
 GO
-CREATE OR ALTER TRIGGER [edfi].[TR_AcademicWeek_ReferentialIdentity]
-ON [edfi].[AcademicWeek]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 4;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAcademicWeek' AS nvarchar(max)) + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.weekIdentifier=' + i.[WeekIdentifier]), i.[DocumentId], 4
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([School_SchoolId]) OR UPDATE([WeekIdentifier]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)) OR (CAST(i.[WeekIdentifier] AS varbinary(max)) <> CAST(d.[WeekIdentifier] AS varbinary(max)) OR (i.[WeekIdentifier] IS NULL AND d.[WeekIdentifier] IS NOT NULL) OR (i.[WeekIdentifier] IS NOT NULL AND d.[WeekIdentifier] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 4;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAcademicWeek' AS nvarchar(max)) + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.weekIdentifier=' + i.[WeekIdentifier]), i.[DocumentId], 4
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_AcademicWeek_Stamp]
 ON [edfi].[AcademicWeek]
 AFTER INSERT, UPDATE, DELETE
@@ -41271,39 +41151,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_AccountabilityRating_ReferentialIdentity]
-ON [edfi].[AccountabilityRating]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 7;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAccountabilityRating' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.ratingTitle=' + i.[RatingTitle] + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 7
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([RatingTitle]) OR UPDATE([SchoolYear_SchoolYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[RatingTitle] AS varbinary(max)) <> CAST(d.[RatingTitle] AS varbinary(max)) OR (i.[RatingTitle] IS NULL AND d.[RatingTitle] IS NOT NULL) OR (i.[RatingTitle] IS NOT NULL AND d.[RatingTitle] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 7;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAccountabilityRating' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.ratingTitle=' + i.[RatingTitle] + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 7
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -41406,39 +41253,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_Assessment_ReferentialIdentity]
-ON [edfi].[Assessment]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 14;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessment' AS nvarchar(max)) + N'$.assessmentIdentifier=' + i.[AssessmentIdentifier] + N'#' + N'$.namespace=' + i.[Namespace]), i.[DocumentId], 14
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AssessmentIdentifier]) OR UPDATE([Namespace]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[AssessmentIdentifier] AS varbinary(max)) OR (i.[AssessmentIdentifier] IS NULL AND d.[AssessmentIdentifier] IS NOT NULL) OR (i.[AssessmentIdentifier] IS NOT NULL AND d.[AssessmentIdentifier] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(d.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND d.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND d.[Namespace] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 14;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessment' AS nvarchar(max)) + N'$.assessmentIdentifier=' + i.[AssessmentIdentifier] + N'#' + N'$.namespace=' + i.[Namespace]), i.[DocumentId], 14
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -41574,39 +41388,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[Assessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_AssessmentAdministration_ReferentialIdentity]
-ON [edfi].[AssessmentAdministration]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 15;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentAdministration' AS nvarchar(max)) + N'$.administrationIdentifier=' + i.[AdministrationIdentifier] + N'#' + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.assigningEducationOrganizationReference.educationOrganizationId=' + CAST(i.[AssigningEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 15
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AdministrationIdentifier]) OR UPDATE([Assessment_AssessmentIdentifier]) OR UPDATE([Assessment_Namespace]) OR UPDATE([AssigningEducationOrganization_EducationOrganizationId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AdministrationIdentifier] AS varbinary(max)) <> CAST(d.[AdministrationIdentifier] AS varbinary(max)) OR (i.[AdministrationIdentifier] IS NULL AND d.[AdministrationIdentifier] IS NOT NULL) OR (i.[AdministrationIdentifier] IS NOT NULL AND d.[AdministrationIdentifier] IS NULL)) OR (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND d.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND d.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(d.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND d.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND d.[Assessment_Namespace] IS NULL)) OR (i.[AssigningEducationOrganization_EducationOrganizationId] <> d.[AssigningEducationOrganization_EducationOrganizationId] OR (i.[AssigningEducationOrganization_EducationOrganizationId] IS NULL AND d.[AssigningEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[AssigningEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[AssigningEducationOrganization_EducationOrganizationId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 15;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentAdministration' AS nvarchar(max)) + N'$.administrationIdentifier=' + i.[AdministrationIdentifier] + N'#' + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.assigningEducationOrganizationReference.educationOrganizationId=' + CAST(i.[AssigningEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 15
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -41753,39 +41534,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[AssessmentAdministration] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_AssessmentAdministrationParticipation_ReferentialIdentity]
-ON [edfi].[AssessmentAdministrationParticipation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 16;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentAdministrationParticipation' AS nvarchar(max)) + N'$.assessmentAdministrationReference.administrationIdentifier=' + i.[AssessmentAdministration_AdministrationIdentifier] + N'#' + N'$.assessmentAdministrationReference.assessmentIdentifier=' + i.[AssessmentAdministration_AssessmentIdentifier] + N'#' + N'$.assessmentAdministrationReference.assigningEducationOrganizationId=' + CAST(i.[AssessmentAdministration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.assessmentAdministrationReference.namespace=' + i.[AssessmentAdministration_Namespace] + N'#' + N'$.participatingEducationOrganizationReference.educationOrganizationId=' + CAST(i.[ParticipatingEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 16
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AssessmentAdministration_AdministrationIdentifier]) OR UPDATE([AssessmentAdministration_AssessmentIdentifier]) OR UPDATE([AssessmentAdministration_AssigningEducationOrganizationId]) OR UPDATE([AssessmentAdministration_Namespace]) OR UPDATE([ParticipatingEducationOrganization_EducationOrganizationId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NULL AND d.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL AND d.[AssessmentAdministration_AdministrationIdentifier] IS NULL)) OR (CAST(i.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NULL AND d.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL AND d.[AssessmentAdministration_AssessmentIdentifier] IS NULL)) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] <> d.[AssessmentAdministration_AssigningEducationOrganizationId] OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL AND d.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL AND d.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL)) OR (CAST(i.[AssessmentAdministration_Namespace] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_Namespace] AS varbinary(max)) OR (i.[AssessmentAdministration_Namespace] IS NULL AND d.[AssessmentAdministration_Namespace] IS NOT NULL) OR (i.[AssessmentAdministration_Namespace] IS NOT NULL AND d.[AssessmentAdministration_Namespace] IS NULL)) OR (i.[ParticipatingEducationOrganization_EducationOrganizationId] <> d.[ParticipatingEducationOrganization_EducationOrganizationId] OR (i.[ParticipatingEducationOrganization_EducationOrganizationId] IS NULL AND d.[ParticipatingEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[ParticipatingEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[ParticipatingEducationOrganization_EducationOrganizationId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 16;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentAdministrationParticipation' AS nvarchar(max)) + N'$.assessmentAdministrationReference.administrationIdentifier=' + i.[AssessmentAdministration_AdministrationIdentifier] + N'#' + N'$.assessmentAdministrationReference.assessmentIdentifier=' + i.[AssessmentAdministration_AssessmentIdentifier] + N'#' + N'$.assessmentAdministrationReference.assigningEducationOrganizationId=' + CAST(i.[AssessmentAdministration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.assessmentAdministrationReference.namespace=' + i.[AssessmentAdministration_Namespace] + N'#' + N'$.participatingEducationOrganizationReference.educationOrganizationId=' + CAST(i.[ParticipatingEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 16
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -42056,39 +41804,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_AssessmentBatteryPart_ReferentialIdentity]
-ON [edfi].[AssessmentBatteryPart]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 17;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentBatteryPart' AS nvarchar(max)) + N'$.assessmentBatteryPartName=' + i.[AssessmentBatteryPartName] + N'#' + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace]), i.[DocumentId], 17
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AssessmentBatteryPartName]) OR UPDATE([Assessment_AssessmentIdentifier]) OR UPDATE([Assessment_Namespace]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AssessmentBatteryPartName] AS varbinary(max)) <> CAST(d.[AssessmentBatteryPartName] AS varbinary(max)) OR (i.[AssessmentBatteryPartName] IS NULL AND d.[AssessmentBatteryPartName] IS NOT NULL) OR (i.[AssessmentBatteryPartName] IS NOT NULL AND d.[AssessmentBatteryPartName] IS NULL)) OR (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND d.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND d.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(d.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND d.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND d.[Assessment_Namespace] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 17;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentBatteryPart' AS nvarchar(max)) + N'$.assessmentBatteryPartName=' + i.[AssessmentBatteryPartName] + N'#' + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace]), i.[DocumentId], 17
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_AssessmentBatteryPart_Stamp]
 ON [edfi].[AssessmentBatteryPart]
 AFTER INSERT, UPDATE, DELETE
@@ -42263,39 +41978,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[Assessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_AssessmentItem_ReferentialIdentity]
-ON [edfi].[AssessmentItem]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 20;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentItem' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.identificationCode=' + i.[IdentificationCode]), i.[DocumentId], 20
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Assessment_AssessmentIdentifier]) OR UPDATE([Assessment_Namespace]) OR UPDATE([IdentificationCode]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND d.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND d.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(d.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND d.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND d.[Assessment_Namespace] IS NULL)) OR (CAST(i.[IdentificationCode] AS varbinary(max)) <> CAST(d.[IdentificationCode] AS varbinary(max)) OR (i.[IdentificationCode] IS NULL AND d.[IdentificationCode] IS NOT NULL) OR (i.[IdentificationCode] IS NOT NULL AND d.[IdentificationCode] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 20;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentItem' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.identificationCode=' + i.[IdentificationCode]), i.[DocumentId], 20
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -42706,39 +42388,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_AssessmentScoreRangeLearningStandard_ReferentialIdentity]
-ON [edfi].[AssessmentScoreRangeLearningStandard]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 25;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentScoreRangeLearningStandard' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.scoreRangeId=' + i.[ScoreRangeId]), i.[DocumentId], 25
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AssessmentIdentifier_Unified]) OR UPDATE([Namespace_Unified]) OR UPDATE([ScoreRangeId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AssessmentIdentifier_Unified] AS varbinary(max)) <> CAST(d.[AssessmentIdentifier_Unified] AS varbinary(max)) OR (i.[AssessmentIdentifier_Unified] IS NULL AND d.[AssessmentIdentifier_Unified] IS NOT NULL) OR (i.[AssessmentIdentifier_Unified] IS NOT NULL AND d.[AssessmentIdentifier_Unified] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[ScoreRangeId] AS varbinary(max)) <> CAST(d.[ScoreRangeId] AS varbinary(max)) OR (i.[ScoreRangeId] IS NULL AND d.[ScoreRangeId] IS NOT NULL) OR (i.[ScoreRangeId] IS NOT NULL AND d.[ScoreRangeId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 25;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiAssessmentScoreRangeLearningStandard' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.scoreRangeId=' + i.[ScoreRangeId]), i.[DocumentId], 25
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_AssessmentScoreRangeLearningStandard_Stamp]
 ON [edfi].[AssessmentScoreRangeLearningStandard]
 AFTER INSERT, UPDATE, DELETE
@@ -42917,39 +42566,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_BalanceSheetDimension_ReferentialIdentity]
-ON [edfi].[BalanceSheetDimension]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 29;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiBalanceSheetDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 29
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 29;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiBalanceSheetDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 29
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_BalanceSheetDimension_Stamp]
 ON [edfi].[BalanceSheetDimension]
 AFTER INSERT, UPDATE, DELETE
@@ -43080,39 +42696,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[BalanceSheetDimension] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_BellSchedule_ReferentialIdentity]
-ON [edfi].[BellSchedule]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 32;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiBellSchedule' AS nvarchar(max)) + N'$.bellScheduleName=' + i.[BellScheduleName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 32
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BellScheduleName]) OR UPDATE([School_SchoolId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[BellScheduleName] AS varbinary(max)) <> CAST(d.[BellScheduleName] AS varbinary(max)) OR (i.[BellScheduleName] IS NULL AND d.[BellScheduleName] IS NOT NULL) OR (i.[BellScheduleName] IS NOT NULL AND d.[BellScheduleName] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 32;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiBellSchedule' AS nvarchar(max)) + N'$.bellScheduleName=' + i.[BellScheduleName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 32
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -43327,39 +42910,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_Calendar_ReferentialIdentity]
-ON [edfi].[Calendar]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 35;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCalendar' AS nvarchar(max)) + N'$.calendarCode=' + i.[CalendarCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 35
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([CalendarCode]) OR UPDATE([School_SchoolId]) OR UPDATE([SchoolYear_SchoolYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[CalendarCode] AS varbinary(max)) <> CAST(d.[CalendarCode] AS varbinary(max)) OR (i.[CalendarCode] IS NULL AND d.[CalendarCode] IS NOT NULL) OR (i.[CalendarCode] IS NOT NULL AND d.[CalendarCode] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 35;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCalendar' AS nvarchar(max)) + N'$.calendarCode=' + i.[CalendarCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 35
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_Calendar_Stamp]
 ON [edfi].[Calendar]
 AFTER INSERT, UPDATE, DELETE
@@ -43457,39 +43007,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_CalendarDate_ReferentialIdentity]
-ON [edfi].[CalendarDate]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 36;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCalendarDate' AS nvarchar(max)) + N'$.calendarReference.calendarCode=' + i.[Calendar_CalendarCode] + N'#' + N'$.calendarReference.schoolId=' + CAST(i.[Calendar_SchoolId] AS nvarchar(max)) + N'#' + N'$.calendarReference.schoolYear=' + CAST(i.[Calendar_SchoolYear] AS nvarchar(max)) + N'#' + N'$.date=' + CONVERT(nvarchar(10), i.[Date], 23)), i.[DocumentId], 36
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Calendar_CalendarCode]) OR UPDATE([Calendar_SchoolId]) OR UPDATE([Calendar_SchoolYear]) OR UPDATE([Date]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Calendar_CalendarCode] AS varbinary(max)) <> CAST(d.[Calendar_CalendarCode] AS varbinary(max)) OR (i.[Calendar_CalendarCode] IS NULL AND d.[Calendar_CalendarCode] IS NOT NULL) OR (i.[Calendar_CalendarCode] IS NOT NULL AND d.[Calendar_CalendarCode] IS NULL)) OR (i.[Calendar_SchoolId] <> d.[Calendar_SchoolId] OR (i.[Calendar_SchoolId] IS NULL AND d.[Calendar_SchoolId] IS NOT NULL) OR (i.[Calendar_SchoolId] IS NOT NULL AND d.[Calendar_SchoolId] IS NULL)) OR (i.[Calendar_SchoolYear] <> d.[Calendar_SchoolYear] OR (i.[Calendar_SchoolYear] IS NULL AND d.[Calendar_SchoolYear] IS NOT NULL) OR (i.[Calendar_SchoolYear] IS NOT NULL AND d.[Calendar_SchoolYear] IS NULL)) OR (i.[Date] <> d.[Date] OR (i.[Date] IS NULL AND d.[Date] IS NOT NULL) OR (i.[Date] IS NOT NULL AND d.[Date] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 36;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCalendarDate' AS nvarchar(max)) + N'$.calendarReference.calendarCode=' + i.[Calendar_CalendarCode] + N'#' + N'$.calendarReference.schoolId=' + CAST(i.[Calendar_SchoolId] AS nvarchar(max)) + N'#' + N'$.calendarReference.schoolYear=' + CAST(i.[Calendar_SchoolYear] AS nvarchar(max)) + N'#' + N'$.date=' + CONVERT(nvarchar(10), i.[Date], 23)), i.[DocumentId], 36
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -43679,39 +43196,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_ChartOfAccount_ReferentialIdentity]
-ON [edfi].[ChartOfAccount]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 40;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiChartOfAccount' AS nvarchar(max)) + N'$.accountIdentifier=' + i.[AccountIdentifier] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 40
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AccountIdentifier]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([FiscalYear_Unified]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(d.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND d.[AccountIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[FiscalYear_Unified] <> d.[FiscalYear_Unified] OR (i.[FiscalYear_Unified] IS NULL AND d.[FiscalYear_Unified] IS NOT NULL) OR (i.[FiscalYear_Unified] IS NOT NULL AND d.[FiscalYear_Unified] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 40;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiChartOfAccount' AS nvarchar(max)) + N'$.accountIdentifier=' + i.[AccountIdentifier] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 40
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_ChartOfAccount_Stamp]
 ON [edfi].[ChartOfAccount]
 AFTER INSERT, UPDATE, DELETE
@@ -43852,39 +43336,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_ClassPeriod_ReferentialIdentity]
-ON [edfi].[ClassPeriod]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 44;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiClassPeriod' AS nvarchar(max)) + N'$.classPeriodName=' + i.[ClassPeriodName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 44
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([ClassPeriodName]) OR UPDATE([School_SchoolId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[ClassPeriodName] AS varbinary(max)) <> CAST(d.[ClassPeriodName] AS varbinary(max)) OR (i.[ClassPeriodName] IS NULL AND d.[ClassPeriodName] IS NOT NULL) OR (i.[ClassPeriodName] IS NOT NULL AND d.[ClassPeriodName] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 44;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiClassPeriod' AS nvarchar(max)) + N'$.classPeriodName=' + i.[ClassPeriodName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 44
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_ClassPeriod_Stamp]
 ON [edfi].[ClassPeriod]
 AFTER INSERT, UPDATE, DELETE
@@ -44015,39 +43466,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[ClassPeriod] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_Cohort_ReferentialIdentity]
-ON [edfi].[Cohort]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 46;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCohort' AS nvarchar(max)) + N'$.cohortIdentifier=' + i.[CohortIdentifier] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 46
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([CohortIdentifier]) OR UPDATE([EducationOrganization_EducationOrganizationId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[CohortIdentifier] AS varbinary(max)) <> CAST(d.[CohortIdentifier] AS varbinary(max)) OR (i.[CohortIdentifier] IS NULL AND d.[CohortIdentifier] IS NOT NULL) OR (i.[CohortIdentifier] IS NOT NULL AND d.[CohortIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 46;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCohort' AS nvarchar(max)) + N'$.cohortIdentifier=' + i.[CohortIdentifier] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 46
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -44202,8 +43620,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[CommunityOrganizationId], N'Ed-Fi:CommunityOrganization'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[CommunityOrganizationId], 50, N'Ed-Fi:CommunityOrganization'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -44222,8 +43640,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[CommunityOrganizationId], N'Ed-Fi:CommunityOrganization'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[CommunityOrganizationId], 50, N'Ed-Fi:CommunityOrganization'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -44255,49 +43673,6 @@ BEGIN
     INSERT INTO [auth].[EducationOrganizationIdToEducationOrganizationId] ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
     SELECT new.[CommunityOrganizationId], new.[CommunityOrganizationId]
     FROM inserted new;
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_CommunityOrganization_ReferentialIdentity]
-ON [edfi].[CommunityOrganization]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 50;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityOrganization' AS nvarchar(max)) + N'$.communityOrganizationId=' + CAST(i.[CommunityOrganizationId] AS nvarchar(max))), i.[DocumentId], 50
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[CommunityOrganizationId] AS nvarchar(max))), i.[DocumentId], 95
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([CommunityOrganizationId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[CommunityOrganizationId] <> d.[CommunityOrganizationId] OR (i.[CommunityOrganizationId] IS NULL AND d.[CommunityOrganizationId] IS NOT NULL) OR (i.[CommunityOrganizationId] IS NOT NULL AND d.[CommunityOrganizationId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 50;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityOrganization' AS nvarchar(max)) + N'$.communityOrganizationId=' + CAST(i.[CommunityOrganizationId] AS nvarchar(max))), i.[DocumentId], 50
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[CommunityOrganizationId] AS nvarchar(max))), i.[DocumentId], 95
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
 END;
 GO
 
@@ -44683,8 +44058,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[CommunityProviderId], N'Ed-Fi:CommunityProvider'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[CommunityProviderId], 51, N'Ed-Fi:CommunityProvider'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -44703,8 +44078,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[CommunityProviderId], N'Ed-Fi:CommunityProvider'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[CommunityProviderId], 51, N'Ed-Fi:CommunityProvider'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -44848,49 +44223,6 @@ BEGIN
         WHEN NOT MATCHED BY TARGET THEN
             INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
             VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_CommunityProvider_ReferentialIdentity]
-ON [edfi].[CommunityProvider]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 51;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityProvider' AS nvarchar(max)) + N'$.communityProviderId=' + CAST(i.[CommunityProviderId] AS nvarchar(max))), i.[DocumentId], 51
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[CommunityProviderId] AS nvarchar(max))), i.[DocumentId], 95
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([CommunityProviderId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[CommunityProviderId] <> d.[CommunityProviderId] OR (i.[CommunityProviderId] IS NULL AND d.[CommunityProviderId] IS NOT NULL) OR (i.[CommunityProviderId] IS NOT NULL AND d.[CommunityProviderId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 51;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityProvider' AS nvarchar(max)) + N'$.communityProviderId=' + CAST(i.[CommunityProviderId] AS nvarchar(max))), i.[DocumentId], 51
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[CommunityProviderId] AS nvarchar(max))), i.[DocumentId], 95
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -45261,39 +44593,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_CommunityProviderLicense_ReferentialIdentity]
-ON [edfi].[CommunityProviderLicense]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 52;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityProviderLicense' AS nvarchar(max)) + N'$.communityProviderReference.communityProviderId=' + CAST(i.[CommunityProvider_CommunityProviderId] AS nvarchar(max)) + N'#' + N'$.licenseIdentifier=' + i.[LicenseIdentifier] + N'#' + N'$.licensingOrganization=' + i.[LicensingOrganization]), i.[DocumentId], 52
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([CommunityProvider_CommunityProviderId]) OR UPDATE([LicenseIdentifier]) OR UPDATE([LicensingOrganization]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[CommunityProvider_CommunityProviderId] <> d.[CommunityProvider_CommunityProviderId] OR (i.[CommunityProvider_CommunityProviderId] IS NULL AND d.[CommunityProvider_CommunityProviderId] IS NOT NULL) OR (i.[CommunityProvider_CommunityProviderId] IS NOT NULL AND d.[CommunityProvider_CommunityProviderId] IS NULL)) OR (CAST(i.[LicenseIdentifier] AS varbinary(max)) <> CAST(d.[LicenseIdentifier] AS varbinary(max)) OR (i.[LicenseIdentifier] IS NULL AND d.[LicenseIdentifier] IS NOT NULL) OR (i.[LicenseIdentifier] IS NOT NULL AND d.[LicenseIdentifier] IS NULL)) OR (CAST(i.[LicensingOrganization] AS varbinary(max)) <> CAST(d.[LicensingOrganization] AS varbinary(max)) OR (i.[LicensingOrganization] IS NULL AND d.[LicensingOrganization] IS NOT NULL) OR (i.[LicensingOrganization] IS NOT NULL AND d.[LicensingOrganization] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 52;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCommunityProviderLicense' AS nvarchar(max)) + N'$.communityProviderReference.communityProviderId=' + CAST(i.[CommunityProvider_CommunityProviderId] AS nvarchar(max)) + N'#' + N'$.licenseIdentifier=' + i.[LicenseIdentifier] + N'#' + N'$.licensingOrganization=' + i.[LicensingOrganization]), i.[DocumentId], 52
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_CommunityProviderLicense_Stamp]
 ON [edfi].[CommunityProviderLicense]
 AFTER INSERT, UPDATE, DELETE
@@ -45391,39 +44690,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_CompetencyObjective_ReferentialIdentity]
-ON [edfi].[CompetencyObjective]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 54;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCompetencyObjective' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objective=' + i.[Objective] + N'#' + N'$.objectiveGradeLevelDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ObjectiveGradeLevelDescriptor_DescriptorId]))), i.[DocumentId], 54
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Objective]) OR UPDATE([ObjectiveGradeLevelDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Objective] AS varbinary(max)) <> CAST(d.[Objective] AS varbinary(max)) OR (i.[Objective] IS NULL AND d.[Objective] IS NOT NULL) OR (i.[Objective] IS NOT NULL AND d.[Objective] IS NULL)) OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] <> d.[ObjectiveGradeLevelDescriptor_DescriptorId] OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL AND d.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL AND d.[ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 54;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCompetencyObjective' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objective=' + i.[Objective] + N'#' + N'$.objectiveGradeLevelDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ObjectiveGradeLevelDescriptor_DescriptorId]))), i.[DocumentId], 54
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -45535,39 +44801,6 @@ BEGIN
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[ObjectiveGradeLevelDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[ObjectiveGradeLevelDescriptor_DescriptorId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_Contact_ReferentialIdentity]
-ON [edfi].[Contact]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 55;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiContact' AS nvarchar(max)) + N'$.contactUniqueId=' + i.[ContactUniqueId]), i.[DocumentId], 55
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([ContactUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[ContactUniqueId] AS varbinary(max)) <> CAST(d.[ContactUniqueId] AS varbinary(max)) OR (i.[ContactUniqueId] IS NULL AND d.[ContactUniqueId] IS NOT NULL) OR (i.[ContactUniqueId] IS NOT NULL AND d.[ContactUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 55;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiContact' AS nvarchar(max)) + N'$.contactUniqueId=' + i.[ContactUniqueId]), i.[DocumentId], 55
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -46005,39 +45238,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_Course_ReferentialIdentity]
-ON [edfi].[Course]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 61;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourse' AS nvarchar(max)) + N'$.courseCode=' + i.[CourseCode] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 61
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([CourseCode]) OR UPDATE([EducationOrganization_EducationOrganizationId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[CourseCode] AS varbinary(max)) <> CAST(d.[CourseCode] AS varbinary(max)) OR (i.[CourseCode] IS NULL AND d.[CourseCode] IS NOT NULL) OR (i.[CourseCode] IS NOT NULL AND d.[CourseCode] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 61;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourse' AS nvarchar(max)) + N'$.courseCode=' + i.[CourseCode] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 61
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_Course_Stamp]
 ON [edfi].[Course]
 AFTER INSERT, UPDATE, DELETE
@@ -46362,39 +45562,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_CourseOffering_ReferentialIdentity]
-ON [edfi].[CourseOffering]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 67;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseOffering' AS nvarchar(max)) + N'$.localCourseCode=' + i.[LocalCourseCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionReference.sessionName=' + i.[Session_SessionName]), i.[DocumentId], 67
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([LocalCourseCode]) OR UPDATE([SchoolId_Unified]) OR UPDATE([Session_SchoolYear]) OR UPDATE([Session_SessionName]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[LocalCourseCode] AS varbinary(max)) <> CAST(d.[LocalCourseCode] AS varbinary(max)) OR (i.[LocalCourseCode] IS NULL AND d.[LocalCourseCode] IS NOT NULL) OR (i.[LocalCourseCode] IS NOT NULL AND d.[LocalCourseCode] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[Session_SchoolYear] <> d.[Session_SchoolYear] OR (i.[Session_SchoolYear] IS NULL AND d.[Session_SchoolYear] IS NOT NULL) OR (i.[Session_SchoolYear] IS NOT NULL AND d.[Session_SchoolYear] IS NULL)) OR (CAST(i.[Session_SessionName] AS varbinary(max)) <> CAST(d.[Session_SessionName] AS varbinary(max)) OR (i.[Session_SessionName] IS NULL AND d.[Session_SessionName] IS NOT NULL) OR (i.[Session_SessionName] IS NOT NULL AND d.[Session_SessionName] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 67;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseOffering' AS nvarchar(max)) + N'$.localCourseCode=' + i.[LocalCourseCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionReference.sessionName=' + i.[Session_SessionName]), i.[DocumentId], 67
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_CourseOffering_Stamp]
 ON [edfi].[CourseOffering]
 AFTER INSERT, UPDATE, DELETE
@@ -46613,39 +45780,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[CourseOffering] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_CourseTranscript_ReferentialIdentity]
-ON [edfi].[CourseTranscript]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 69;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseTranscript' AS nvarchar(max)) + N'$.courseAttemptResultDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[CourseAttemptResultDescriptor_DescriptorId])) + N'#' + N'$.courseReference.courseCode=' + i.[CourseCourse_CourseCode] + N'#' + N'$.courseReference.educationOrganizationId=' + CAST(i.[CourseCourse_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.educationOrganizationId=' + CAST(i.[StudentAcademicRecord_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.schoolYear=' + CAST(i.[StudentAcademicRecord_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.studentUniqueId=' + i.[StudentAcademicRecord_StudentUniqueId] + N'#' + N'$.studentAcademicRecordReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StudentAcademicRecord_TermDescriptor_DescriptorId]))), i.[DocumentId], 69
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([CourseAttemptResultDescriptor_DescriptorId]) OR UPDATE([CourseCourse_CourseCode]) OR UPDATE([CourseCourse_EducationOrganizationId]) OR UPDATE([StudentAcademicRecord_EducationOrganizationId]) OR UPDATE([StudentAcademicRecord_SchoolYear]) OR UPDATE([StudentAcademicRecord_StudentUniqueId]) OR UPDATE([StudentAcademicRecord_TermDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[CourseAttemptResultDescriptor_DescriptorId] <> d.[CourseAttemptResultDescriptor_DescriptorId] OR (i.[CourseAttemptResultDescriptor_DescriptorId] IS NULL AND d.[CourseAttemptResultDescriptor_DescriptorId] IS NOT NULL) OR (i.[CourseAttemptResultDescriptor_DescriptorId] IS NOT NULL AND d.[CourseAttemptResultDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[CourseCourse_CourseCode] AS varbinary(max)) <> CAST(d.[CourseCourse_CourseCode] AS varbinary(max)) OR (i.[CourseCourse_CourseCode] IS NULL AND d.[CourseCourse_CourseCode] IS NOT NULL) OR (i.[CourseCourse_CourseCode] IS NOT NULL AND d.[CourseCourse_CourseCode] IS NULL)) OR (i.[CourseCourse_EducationOrganizationId] <> d.[CourseCourse_EducationOrganizationId] OR (i.[CourseCourse_EducationOrganizationId] IS NULL AND d.[CourseCourse_EducationOrganizationId] IS NOT NULL) OR (i.[CourseCourse_EducationOrganizationId] IS NOT NULL AND d.[CourseCourse_EducationOrganizationId] IS NULL)) OR (i.[StudentAcademicRecord_EducationOrganizationId] <> d.[StudentAcademicRecord_EducationOrganizationId] OR (i.[StudentAcademicRecord_EducationOrganizationId] IS NULL AND d.[StudentAcademicRecord_EducationOrganizationId] IS NOT NULL) OR (i.[StudentAcademicRecord_EducationOrganizationId] IS NOT NULL AND d.[StudentAcademicRecord_EducationOrganizationId] IS NULL)) OR (i.[StudentAcademicRecord_SchoolYear] <> d.[StudentAcademicRecord_SchoolYear] OR (i.[StudentAcademicRecord_SchoolYear] IS NULL AND d.[StudentAcademicRecord_SchoolYear] IS NOT NULL) OR (i.[StudentAcademicRecord_SchoolYear] IS NOT NULL AND d.[StudentAcademicRecord_SchoolYear] IS NULL)) OR (CAST(i.[StudentAcademicRecord_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentAcademicRecord_StudentUniqueId] AS varbinary(max)) OR (i.[StudentAcademicRecord_StudentUniqueId] IS NULL AND d.[StudentAcademicRecord_StudentUniqueId] IS NOT NULL) OR (i.[StudentAcademicRecord_StudentUniqueId] IS NOT NULL AND d.[StudentAcademicRecord_StudentUniqueId] IS NULL)) OR (i.[StudentAcademicRecord_TermDescriptor_DescriptorId] <> d.[StudentAcademicRecord_TermDescriptor_DescriptorId] OR (i.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NULL AND d.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NOT NULL AND d.[StudentAcademicRecord_TermDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 69;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCourseTranscript' AS nvarchar(max)) + N'$.courseAttemptResultDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[CourseAttemptResultDescriptor_DescriptorId])) + N'#' + N'$.courseReference.courseCode=' + i.[CourseCourse_CourseCode] + N'#' + N'$.courseReference.educationOrganizationId=' + CAST(i.[CourseCourse_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.educationOrganizationId=' + CAST(i.[StudentAcademicRecord_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.schoolYear=' + CAST(i.[StudentAcademicRecord_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentAcademicRecordReference.studentUniqueId=' + i.[StudentAcademicRecord_StudentUniqueId] + N'#' + N'$.studentAcademicRecordReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StudentAcademicRecord_TermDescriptor_DescriptorId]))), i.[DocumentId], 69
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -47069,39 +46203,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_Credential_ReferentialIdentity]
-ON [edfi].[Credential]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 70;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCredential' AS nvarchar(max)) + N'$.credentialIdentifier=' + i.[CredentialIdentifier] + N'#' + N'$.stateOfIssueStateAbbreviationDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId]))), i.[DocumentId], 70
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([CredentialIdentifier]) OR UPDATE([StateOfIssueStateAbbreviationDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[CredentialIdentifier] AS varbinary(max)) <> CAST(d.[CredentialIdentifier] AS varbinary(max)) OR (i.[CredentialIdentifier] IS NULL AND d.[CredentialIdentifier] IS NOT NULL) OR (i.[CredentialIdentifier] IS NOT NULL AND d.[CredentialIdentifier] IS NULL)) OR (i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] <> d.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] OR (i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NULL AND d.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NOT NULL) OR (i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NOT NULL AND d.[StateOfIssueStateAbbreviationDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 70;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCredential' AS nvarchar(max)) + N'$.credentialIdentifier=' + i.[CredentialIdentifier] + N'#' + N'$.stateOfIssueStateAbbreviationDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StateOfIssueStateAbbreviationDescriptor_DescriptorId]))), i.[DocumentId], 70
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_Credential_Stamp]
 ON [edfi].[Credential]
 AFTER INSERT, UPDATE, DELETE
@@ -47327,39 +46428,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_CrisisEvent_ReferentialIdentity]
-ON [edfi].[CrisisEvent]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 75;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCrisisEvent' AS nvarchar(max)) + N'$.crisisEventName=' + i.[CrisisEventName]), i.[DocumentId], 75
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([CrisisEventName]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[CrisisEventName] AS varbinary(max)) <> CAST(d.[CrisisEventName] AS varbinary(max)) OR (i.[CrisisEventName] IS NULL AND d.[CrisisEventName] IS NOT NULL) OR (i.[CrisisEventName] IS NOT NULL AND d.[CrisisEventName] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 75;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiCrisisEvent' AS nvarchar(max)) + N'$.crisisEventName=' + i.[CrisisEventName]), i.[DocumentId], 75
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_CrisisEvent_Stamp]
 ON [edfi].[CrisisEvent]
 AFTER INSERT, UPDATE, DELETE
@@ -47445,39 +46513,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_DescriptorMapping_ReferentialIdentity]
-ON [edfi].[DescriptorMapping]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 79;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDescriptorMapping' AS nvarchar(max)) + N'$.mappedNamespace=' + i.[MappedNamespace] + N'#' + N'$.mappedValue=' + i.[MappedValue] + N'#' + N'$.namespace=' + i.[Namespace] + N'#' + N'$.value=' + i.[Value]), i.[DocumentId], 79
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([MappedNamespace]) OR UPDATE([MappedValue]) OR UPDATE([Namespace]) OR UPDATE([Value]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[MappedNamespace] AS varbinary(max)) <> CAST(d.[MappedNamespace] AS varbinary(max)) OR (i.[MappedNamespace] IS NULL AND d.[MappedNamespace] IS NOT NULL) OR (i.[MappedNamespace] IS NOT NULL AND d.[MappedNamespace] IS NULL)) OR (CAST(i.[MappedValue] AS varbinary(max)) <> CAST(d.[MappedValue] AS varbinary(max)) OR (i.[MappedValue] IS NULL AND d.[MappedValue] IS NOT NULL) OR (i.[MappedValue] IS NOT NULL AND d.[MappedValue] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(d.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND d.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND d.[Namespace] IS NULL)) OR (CAST(i.[Value] AS varbinary(max)) <> CAST(d.[Value] AS varbinary(max)) OR (i.[Value] IS NULL AND d.[Value] IS NOT NULL) OR (i.[Value] IS NOT NULL AND d.[Value] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 79;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDescriptorMapping' AS nvarchar(max)) + N'$.mappedNamespace=' + i.[MappedNamespace] + N'#' + N'$.mappedValue=' + i.[MappedValue] + N'#' + N'$.namespace=' + i.[Namespace] + N'#' + N'$.value=' + i.[Value]), i.[DocumentId], 79
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -47625,39 +46660,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[DescriptorMapping] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_DisciplineAction_ReferentialIdentity]
-ON [edfi].[DisciplineAction]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 86;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDisciplineAction' AS nvarchar(max)) + N'$.disciplineActionIdentifier=' + i.[DisciplineActionIdentifier] + N'#' + N'$.disciplineDate=' + CONVERT(nvarchar(10), i.[DisciplineDate], 23) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 86
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([DisciplineActionIdentifier]) OR UPDATE([DisciplineDate]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[DisciplineActionIdentifier] AS varbinary(max)) <> CAST(d.[DisciplineActionIdentifier] AS varbinary(max)) OR (i.[DisciplineActionIdentifier] IS NULL AND d.[DisciplineActionIdentifier] IS NOT NULL) OR (i.[DisciplineActionIdentifier] IS NOT NULL AND d.[DisciplineActionIdentifier] IS NULL)) OR (i.[DisciplineDate] <> d.[DisciplineDate] OR (i.[DisciplineDate] IS NULL AND d.[DisciplineDate] IS NOT NULL) OR (i.[DisciplineDate] IS NOT NULL AND d.[DisciplineDate] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 86;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDisciplineAction' AS nvarchar(max)) + N'$.disciplineActionIdentifier=' + i.[DisciplineActionIdentifier] + N'#' + N'$.disciplineDate=' + CONVERT(nvarchar(10), i.[DisciplineDate], 23) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 86
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -47893,39 +46895,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_DisciplineIncident_ReferentialIdentity]
-ON [edfi].[DisciplineIncident]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 89;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDisciplineIncident' AS nvarchar(max)) + N'$.incidentIdentifier=' + i.[IncidentIdentifier] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 89
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([IncidentIdentifier]) OR UPDATE([School_SchoolId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[IncidentIdentifier] AS varbinary(max)) <> CAST(d.[IncidentIdentifier] AS varbinary(max)) OR (i.[IncidentIdentifier] IS NULL AND d.[IncidentIdentifier] IS NOT NULL) OR (i.[IncidentIdentifier] IS NOT NULL AND d.[IncidentIdentifier] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 89;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiDisciplineIncident' AS nvarchar(max)) + N'$.incidentIdentifier=' + i.[IncidentIdentifier] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 89
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_DisciplineIncident_Stamp]
 ON [edfi].[DisciplineIncident]
 AFTER INSERT, UPDATE, DELETE
@@ -48132,39 +47101,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[DisciplineIncident] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_EducationContent_ReferentialIdentity]
-ON [edfi].[EducationContent]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 94;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationContent' AS nvarchar(max)) + N'$.contentIdentifier=' + i.[ContentIdentifier]), i.[DocumentId], 94
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([ContentIdentifier]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[ContentIdentifier] AS varbinary(max)) <> CAST(d.[ContentIdentifier] AS varbinary(max)) OR (i.[ContentIdentifier] IS NULL AND d.[ContentIdentifier] IS NOT NULL) OR (i.[ContentIdentifier] IS NOT NULL AND d.[ContentIdentifier] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 94;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationContent' AS nvarchar(max)) + N'$.contentIdentifier=' + i.[ContentIdentifier]), i.[DocumentId], 94
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -48531,39 +47467,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_EducationOrganizationInterventionPrescriptionAssociation_ReferentialIdentity]
-ON [edfi].[EducationOrganizationInterventionPrescriptionAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 99;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationInterventionPrescriptionAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionPrescriptionReference.educationOrganizationId=' + CAST(i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionPrescriptionReference.interventionPrescriptionIdentificationCode=' + i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode]), i.[DocumentId], 99
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([InterventionPrescriptionInterventionPrescription_EducationOrganizationId]) OR UPDATE([InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] <> d.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] OR (i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NULL AND d.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NOT NULL) OR (i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NOT NULL AND d.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] AS varbinary(max)) <> CAST(d.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] AS varbinary(max)) OR (i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NULL AND d.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NOT NULL) OR (i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NOT NULL AND d.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 99;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationInterventionPrescriptionAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionPrescriptionReference.educationOrganizationId=' + CAST(i.[InterventionPrescriptionInterventionPrescription_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionPrescriptionReference.interventionPrescriptionIdentificationCode=' + i.[InterventionPrescriptionInterventionPrescription_InterventionPrescriptionIdentificationCode]), i.[DocumentId], 99
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_EducationOrganizationInterventionPrescriptionAssociation_Stamp]
 ON [edfi].[EducationOrganizationInterventionPrescriptionAssociation]
 AFTER INSERT, UPDATE, DELETE
@@ -48682,8 +47585,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[EducationOrganizationNetworkId], N'Ed-Fi:EducationOrganizationNetwork'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[EducationOrganizationNetworkId], 100, N'Ed-Fi:EducationOrganizationNetwork'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -48702,8 +47605,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[EducationOrganizationNetworkId], N'Ed-Fi:EducationOrganizationNetwork'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[EducationOrganizationNetworkId], 100, N'Ed-Fi:EducationOrganizationNetwork'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -48735,49 +47638,6 @@ BEGIN
     INSERT INTO [auth].[EducationOrganizationIdToEducationOrganizationId] ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
     SELECT new.[EducationOrganizationNetworkId], new.[EducationOrganizationNetworkId]
     FROM inserted new;
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_EducationOrganizationNetwork_ReferentialIdentity]
-ON [edfi].[EducationOrganizationNetwork]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 100;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationNetwork' AS nvarchar(max)) + N'$.educationOrganizationNetworkId=' + CAST(i.[EducationOrganizationNetworkId] AS nvarchar(max))), i.[DocumentId], 100
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[EducationOrganizationNetworkId] AS nvarchar(max))), i.[DocumentId], 95
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganizationNetworkId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganizationNetworkId] <> d.[EducationOrganizationNetworkId] OR (i.[EducationOrganizationNetworkId] IS NULL AND d.[EducationOrganizationNetworkId] IS NOT NULL) OR (i.[EducationOrganizationNetworkId] IS NOT NULL AND d.[EducationOrganizationNetworkId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 100;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationNetwork' AS nvarchar(max)) + N'$.educationOrganizationNetworkId=' + CAST(i.[EducationOrganizationNetworkId] AS nvarchar(max))), i.[DocumentId], 100
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[EducationOrganizationNetworkId] AS nvarchar(max))), i.[DocumentId], 95
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
 END;
 GO
 
@@ -48915,39 +47775,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_EducationOrganizationNetworkAssociation_ReferentialIdentity]
-ON [edfi].[EducationOrganizationNetworkAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 101;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationNetworkAssociation' AS nvarchar(max)) + N'$.educationOrganizationNetworkReference.educationOrganizationNetworkId=' + CAST(i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] AS nvarchar(max)) + N'#' + N'$.memberEducationOrganizationReference.educationOrganizationId=' + CAST(i.[MemberEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 101
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganizationNetwork_EducationOrganizationNetworkId]) OR UPDATE([MemberEducationOrganization_EducationOrganizationId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] <> d.[EducationOrganizationNetwork_EducationOrganizationNetworkId] OR (i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NULL AND d.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NOT NULL) OR (i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NOT NULL AND d.[EducationOrganizationNetwork_EducationOrganizationNetworkId] IS NULL)) OR (i.[MemberEducationOrganization_EducationOrganizationId] <> d.[MemberEducationOrganization_EducationOrganizationId] OR (i.[MemberEducationOrganization_EducationOrganizationId] IS NULL AND d.[MemberEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[MemberEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[MemberEducationOrganization_EducationOrganizationId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 101;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationNetworkAssociation' AS nvarchar(max)) + N'$.educationOrganizationNetworkReference.educationOrganizationNetworkId=' + CAST(i.[EducationOrganizationNetwork_EducationOrganizationNetworkId] AS nvarchar(max)) + N'#' + N'$.memberEducationOrganizationReference.educationOrganizationId=' + CAST(i.[MemberEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 101
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -49276,39 +48103,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_EducationOrganizationPeerAssociation_ReferentialIdentity]
-ON [edfi].[EducationOrganizationPeerAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 102;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationPeerAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.peerEducationOrganizationReference.educationOrganizationId=' + CAST(i.[PeerEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 102
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([PeerEducationOrganization_EducationOrganizationId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[PeerEducationOrganization_EducationOrganizationId] <> d.[PeerEducationOrganization_EducationOrganizationId] OR (i.[PeerEducationOrganization_EducationOrganizationId] IS NULL AND d.[PeerEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[PeerEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[PeerEducationOrganization_EducationOrganizationId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 102;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganizationPeerAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.peerEducationOrganizationReference.educationOrganizationId=' + CAST(i.[PeerEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 102
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_EducationOrganizationPeerAssociation_Stamp]
 ON [edfi].[EducationOrganizationPeerAssociation]
 AFTER INSERT, UPDATE, DELETE
@@ -49421,8 +48215,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[EducationServiceCenterId], N'Ed-Fi:EducationServiceCenter'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[EducationServiceCenterId], 104, N'Ed-Fi:EducationServiceCenter'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -49441,8 +48235,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[EducationServiceCenterId], N'Ed-Fi:EducationServiceCenter'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[EducationServiceCenterId], 104, N'Ed-Fi:EducationServiceCenter'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -49586,49 +48380,6 @@ BEGIN
         WHEN NOT MATCHED BY TARGET THEN
             INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
             VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_EducationServiceCenter_ReferentialIdentity]
-ON [edfi].[EducationServiceCenter]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 104;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationServiceCenter' AS nvarchar(max)) + N'$.educationServiceCenterId=' + CAST(i.[EducationServiceCenterId] AS nvarchar(max))), i.[DocumentId], 104
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[EducationServiceCenterId] AS nvarchar(max))), i.[DocumentId], 95
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationServiceCenterId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationServiceCenterId] <> d.[EducationServiceCenterId] OR (i.[EducationServiceCenterId] IS NULL AND d.[EducationServiceCenterId] IS NOT NULL) OR (i.[EducationServiceCenterId] IS NOT NULL AND d.[EducationServiceCenterId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 104;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationServiceCenter' AS nvarchar(max)) + N'$.educationServiceCenterId=' + CAST(i.[EducationServiceCenterId] AS nvarchar(max))), i.[DocumentId], 104
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[EducationServiceCenterId] AS nvarchar(max))), i.[DocumentId], 95
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -49999,39 +48750,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_EvaluationRubricDimension_ReferentialIdentity]
-ON [edfi].[EvaluationRubricDimension]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 114;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEvaluationRubricDimension' AS nvarchar(max)) + N'$.evaluationRubricRating=' + CAST(i.[EvaluationRubricRating] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluationElement_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEvaluationElementTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationElementReference.programEvaluationTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationElementReference.programName=' + i.[ProgramEvaluationElement_ProgramName] + N'#' + N'$.programEvaluationElementReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 114
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EvaluationRubricRating]) OR UPDATE([ProgramEvaluationElement_ProgramEducationOrganizationId]) OR UPDATE([ProgramEvaluationElement_ProgramEvaluationElementTitle]) OR UPDATE([ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluationElement_ProgramEvaluationTitle]) OR UPDATE([ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluationElement_ProgramName]) OR UPDATE([ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EvaluationRubricRating] <> d.[EvaluationRubricRating] OR (i.[EvaluationRubricRating] IS NULL AND d.[EvaluationRubricRating] IS NOT NULL) OR (i.[EvaluationRubricRating] IS NOT NULL AND d.[EvaluationRubricRating] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramEducationOrganizationId] <> d.[ProgramEvaluationElement_ProgramEducationOrganizationId] OR (i.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NULL AND d.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NOT NULL AND d.[ProgramEvaluationElement_ProgramEducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationElement_ProgramEvaluationElementTitle] AS varbinary(max)) OR (i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NULL AND d.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NOT NULL AND d.[ProgramEvaluationElement_ProgramEvaluationElementTitle] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationElement_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationElement_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluationElement_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationElement_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramEvaluationElement_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluationElement_ProgramName] IS NULL AND d.[ProgramEvaluationElement_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramName] IS NOT NULL AND d.[ProgramEvaluationElement_ProgramName] IS NULL)) OR (i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 114;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEvaluationRubricDimension' AS nvarchar(max)) + N'$.evaluationRubricRating=' + CAST(i.[EvaluationRubricRating] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluationElement_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationElementReference.programEvaluationElementTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationElement_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationElementReference.programEvaluationTitle=' + i.[ProgramEvaluationElement_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationElementReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationElement_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationElementReference.programName=' + i.[ProgramEvaluationElement_ProgramName] + N'#' + N'$.programEvaluationElementReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 114
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_EvaluationRubricDimension_Stamp]
 ON [edfi].[EvaluationRubricDimension]
 AFTER INSERT, UPDATE, DELETE
@@ -50191,39 +48909,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_FeederSchoolAssociation_ReferentialIdentity]
-ON [edfi].[FeederSchoolAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 117;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFeederSchoolAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.feederSchoolReference.schoolId=' + CAST(i.[FeederSchool_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 117
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([FeederSchool_SchoolId]) OR UPDATE([School_SchoolId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[FeederSchool_SchoolId] <> d.[FeederSchool_SchoolId] OR (i.[FeederSchool_SchoolId] IS NULL AND d.[FeederSchool_SchoolId] IS NOT NULL) OR (i.[FeederSchool_SchoolId] IS NOT NULL AND d.[FeederSchool_SchoolId] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 117;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFeederSchoolAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.feederSchoolReference.schoolId=' + CAST(i.[FeederSchool_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 117
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_FeederSchoolAssociation_Stamp]
 ON [edfi].[FeederSchoolAssociation]
 AFTER INSERT, UPDATE, DELETE
@@ -50321,39 +49006,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_FunctionDimension_ReferentialIdentity]
-ON [edfi].[FunctionDimension]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 119;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFunctionDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 119
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 119;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFunctionDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 119
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -50493,39 +49145,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_FundDimension_ReferentialIdentity]
-ON [edfi].[FundDimension]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 120;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFundDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 120
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 120;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiFundDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 120
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_FundDimension_Stamp]
 ON [edfi].[FundDimension]
 AFTER INSERT, UPDATE, DELETE
@@ -50656,39 +49275,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[FundDimension] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_Grade_ReferentialIdentity]
-ON [edfi].[Grade]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 122;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGrade' AS nvarchar(max)) + N'$.gradeTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradeTypeDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.beginDate=' + CONVERT(nvarchar(10), i.[StudentSectionAssociation_BeginDate], 23) + N'#' + N'$.studentSectionAssociationReference.localCourseCode=' + i.[StudentSectionAssociation_LocalCourseCode] + N'#' + N'$.studentSectionAssociationReference.schoolId=' + CAST(i.[StudentSectionAssociation_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.schoolYear=' + CAST(i.[StudentSectionAssociation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.sectionIdentifier=' + i.[StudentSectionAssociation_SectionIdentifier] + N'#' + N'$.studentSectionAssociationReference.sessionName=' + i.[StudentSectionAssociation_SessionName] + N'#' + N'$.studentSectionAssociationReference.studentUniqueId=' + i.[StudentSectionAssociation_StudentUniqueId]), i.[DocumentId], 122
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([GradeTypeDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([SchoolId_Unified]) OR UPDATE([SchoolYear_Unified]) OR UPDATE([StudentSectionAssociation_BeginDate]) OR UPDATE([StudentSectionAssociation_LocalCourseCode]) OR UPDATE([StudentSectionAssociation_SectionIdentifier]) OR UPDATE([StudentSectionAssociation_SessionName]) OR UPDATE([StudentSectionAssociation_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[GradeTypeDescriptor_DescriptorId] <> d.[GradeTypeDescriptor_DescriptorId] OR (i.[GradeTypeDescriptor_DescriptorId] IS NULL AND d.[GradeTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradeTypeDescriptor_DescriptorId] IS NOT NULL AND d.[GradeTypeDescriptor_DescriptorId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(d.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> d.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND d.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND d.[SchoolYear_Unified] IS NULL)) OR (i.[StudentSectionAssociation_BeginDate] <> d.[StudentSectionAssociation_BeginDate] OR (i.[StudentSectionAssociation_BeginDate] IS NULL AND d.[StudentSectionAssociation_BeginDate] IS NOT NULL) OR (i.[StudentSectionAssociation_BeginDate] IS NOT NULL AND d.[StudentSectionAssociation_BeginDate] IS NULL)) OR (CAST(i.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_LocalCourseCode] AS varbinary(max)) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NULL AND d.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL) OR (i.[StudentSectionAssociation_LocalCourseCode] IS NOT NULL AND d.[StudentSectionAssociation_LocalCourseCode] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_SectionIdentifier] AS varbinary(max)) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NULL AND d.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL) OR (i.[StudentSectionAssociation_SectionIdentifier] IS NOT NULL AND d.[StudentSectionAssociation_SectionIdentifier] IS NULL)) OR (CAST(i.[StudentSectionAssociation_SessionName] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_SessionName] AS varbinary(max)) OR (i.[StudentSectionAssociation_SessionName] IS NULL AND d.[StudentSectionAssociation_SessionName] IS NOT NULL) OR (i.[StudentSectionAssociation_SessionName] IS NOT NULL AND d.[StudentSectionAssociation_SessionName] IS NULL)) OR (CAST(i.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentSectionAssociation_StudentUniqueId] AS varbinary(max)) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NULL AND d.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL) OR (i.[StudentSectionAssociation_StudentUniqueId] IS NOT NULL AND d.[StudentSectionAssociation_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 122;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGrade' AS nvarchar(max)) + N'$.gradeTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradeTypeDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.beginDate=' + CONVERT(nvarchar(10), i.[StudentSectionAssociation_BeginDate], 23) + N'#' + N'$.studentSectionAssociationReference.localCourseCode=' + i.[StudentSectionAssociation_LocalCourseCode] + N'#' + N'$.studentSectionAssociationReference.schoolId=' + CAST(i.[StudentSectionAssociation_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.schoolYear=' + CAST(i.[StudentSectionAssociation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentSectionAssociationReference.sectionIdentifier=' + i.[StudentSectionAssociation_SectionIdentifier] + N'#' + N'$.studentSectionAssociationReference.sessionName=' + i.[StudentSectionAssociation_SessionName] + N'#' + N'$.studentSectionAssociationReference.studentUniqueId=' + i.[StudentSectionAssociation_StudentUniqueId]), i.[DocumentId], 122
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -50902,39 +49488,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_GradebookEntry_ReferentialIdentity]
-ON [edfi].[GradebookEntry]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 126;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradebookEntry' AS nvarchar(max)) + N'$.gradebookEntryIdentifier=' + i.[GradebookEntryIdentifier] + N'#' + N'$.namespace=' + i.[Namespace]), i.[DocumentId], 126
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([GradebookEntryIdentifier]) OR UPDATE([Namespace]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[GradebookEntryIdentifier] AS varbinary(max)) <> CAST(d.[GradebookEntryIdentifier] AS varbinary(max)) OR (i.[GradebookEntryIdentifier] IS NULL AND d.[GradebookEntryIdentifier] IS NOT NULL) OR (i.[GradebookEntryIdentifier] IS NOT NULL AND d.[GradebookEntryIdentifier] IS NULL)) OR (CAST(i.[Namespace] AS varbinary(max)) <> CAST(d.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND d.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND d.[Namespace] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 126;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradebookEntry' AS nvarchar(max)) + N'$.gradebookEntryIdentifier=' + i.[GradebookEntryIdentifier] + N'#' + N'$.namespace=' + i.[Namespace]), i.[DocumentId], 126
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_GradebookEntry_Stamp]
 ON [edfi].[GradebookEntry]
 AFTER INSERT, UPDATE, DELETE
@@ -51069,39 +49622,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_GradingPeriod_ReferentialIdentity]
-ON [edfi].[GradingPeriod]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 128;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradingPeriod' AS nvarchar(max)) + N'$.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodName=' + i.[GradingPeriodName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 128
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodName]) OR UPDATE([School_SchoolId]) OR UPDATE([SchoolYear_SchoolYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[GradingPeriodDescriptor_DescriptorId] <> d.[GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodName] AS varbinary(max)) <> CAST(d.[GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodName] IS NULL AND d.[GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodName] IS NOT NULL AND d.[GradingPeriodName] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 128;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGradingPeriod' AS nvarchar(max)) + N'$.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodName=' + i.[GradingPeriodName] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max))), i.[DocumentId], 128
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_GradingPeriod_Stamp]
 ON [edfi].[GradingPeriod]
 AFTER INSERT, UPDATE, DELETE
@@ -51214,39 +49734,6 @@ BEGIN
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GradingPeriodDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[GradingPeriodDescriptor_DescriptorId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_GraduationPlan_ReferentialIdentity]
-ON [edfi].[GraduationPlan]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 130;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGraduationPlan' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.graduationPlanTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GraduationPlanTypeDescriptor_DescriptorId])) + N'#' + N'$.graduationSchoolYearTypeReference.schoolYear=' + CAST(i.[GraduationSchoolYear_GraduationSchoolYear] AS nvarchar(max))), i.[DocumentId], 130
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([GraduationPlanTypeDescriptor_DescriptorId]) OR UPDATE([GraduationSchoolYear_GraduationSchoolYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[GraduationPlanTypeDescriptor_DescriptorId] <> d.[GraduationPlanTypeDescriptor_DescriptorId] OR (i.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL AND d.[GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[GraduationPlanTypeDescriptor_DescriptorId] IS NOT NULL AND d.[GraduationPlanTypeDescriptor_DescriptorId] IS NULL)) OR (i.[GraduationSchoolYear_GraduationSchoolYear] <> d.[GraduationSchoolYear_GraduationSchoolYear] OR (i.[GraduationSchoolYear_GraduationSchoolYear] IS NULL AND d.[GraduationSchoolYear_GraduationSchoolYear] IS NOT NULL) OR (i.[GraduationSchoolYear_GraduationSchoolYear] IS NOT NULL AND d.[GraduationSchoolYear_GraduationSchoolYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 130;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGraduationPlan' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.graduationPlanTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GraduationPlanTypeDescriptor_DescriptorId])) + N'#' + N'$.graduationSchoolYearTypeReference.schoolYear=' + CAST(i.[GraduationSchoolYear_GraduationSchoolYear] AS nvarchar(max))), i.[DocumentId], 130
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -51587,39 +50074,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_Intervention_ReferentialIdentity]
-ON [edfi].[Intervention]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 147;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiIntervention' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionIdentificationCode=' + i.[InterventionIdentificationCode]), i.[DocumentId], 147
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([InterventionIdentificationCode]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionIdentificationCode] AS varbinary(max)) <> CAST(d.[InterventionIdentificationCode] AS varbinary(max)) OR (i.[InterventionIdentificationCode] IS NULL AND d.[InterventionIdentificationCode] IS NOT NULL) OR (i.[InterventionIdentificationCode] IS NOT NULL AND d.[InterventionIdentificationCode] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 147;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiIntervention' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionIdentificationCode=' + i.[InterventionIdentificationCode]), i.[DocumentId], 147
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -52024,39 +50478,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_InterventionPrescription_ReferentialIdentity]
-ON [edfi].[InterventionPrescription]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 150;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiInterventionPrescription' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionPrescriptionIdentificationCode=' + i.[InterventionPrescriptionIdentificationCode]), i.[DocumentId], 150
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([InterventionPrescriptionIdentificationCode]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) <> CAST(d.[InterventionPrescriptionIdentificationCode] AS varbinary(max)) OR (i.[InterventionPrescriptionIdentificationCode] IS NULL AND d.[InterventionPrescriptionIdentificationCode] IS NOT NULL) OR (i.[InterventionPrescriptionIdentificationCode] IS NOT NULL AND d.[InterventionPrescriptionIdentificationCode] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 150;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiInterventionPrescription' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionPrescriptionIdentificationCode=' + i.[InterventionPrescriptionIdentificationCode]), i.[DocumentId], 150
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_InterventionPrescription_Stamp]
 ON [edfi].[InterventionPrescription]
 AFTER INSERT, UPDATE, DELETE
@@ -52453,39 +50874,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[Intervention] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_InterventionStudy_ReferentialIdentity]
-ON [edfi].[InterventionStudy]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 151;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiInterventionStudy' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionStudyIdentificationCode=' + i.[InterventionStudyIdentificationCode]), i.[DocumentId], 151
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([InterventionStudyIdentificationCode]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[InterventionStudyIdentificationCode] AS varbinary(max)) <> CAST(d.[InterventionStudyIdentificationCode] AS varbinary(max)) OR (i.[InterventionStudyIdentificationCode] IS NULL AND d.[InterventionStudyIdentificationCode] IS NOT NULL) OR (i.[InterventionStudyIdentificationCode] IS NOT NULL AND d.[InterventionStudyIdentificationCode] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 151;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiInterventionStudy' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionStudyIdentificationCode=' + i.[InterventionStudyIdentificationCode]), i.[DocumentId], 151
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -52928,39 +51316,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_LearningStandard_ReferentialIdentity]
-ON [edfi].[LearningStandard]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 155;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLearningStandard' AS nvarchar(max)) + N'$.learningStandardId=' + i.[LearningStandardId]), i.[DocumentId], 155
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([LearningStandardId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[LearningStandardId] AS varbinary(max)) <> CAST(d.[LearningStandardId] AS varbinary(max)) OR (i.[LearningStandardId] IS NULL AND d.[LearningStandardId] IS NOT NULL) OR (i.[LearningStandardId] IS NOT NULL AND d.[LearningStandardId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 155;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLearningStandard' AS nvarchar(max)) + N'$.learningStandardId=' + i.[LearningStandardId]), i.[DocumentId], 155
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_LearningStandard_Stamp]
 ON [edfi].[LearningStandard]
 AFTER INSERT, UPDATE, DELETE
@@ -53129,39 +51484,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[LearningStandard] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_LearningStandardEquivalenceAssociation_ReferentialIdentity]
-ON [edfi].[LearningStandardEquivalenceAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 157;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLearningStandardEquivalenceAssociation' AS nvarchar(max)) + N'$.namespace=' + i.[Namespace] + N'#' + N'$.sourceLearningStandardReference.learningStandardId=' + i.[SourceLearningStandard_LearningStandardId] + N'#' + N'$.targetLearningStandardReference.learningStandardId=' + i.[TargetLearningStandard_LearningStandardId]), i.[DocumentId], 157
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Namespace]) OR UPDATE([SourceLearningStandard_LearningStandardId]) OR UPDATE([TargetLearningStandard_LearningStandardId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Namespace] AS varbinary(max)) <> CAST(d.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND d.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND d.[Namespace] IS NULL)) OR (CAST(i.[SourceLearningStandard_LearningStandardId] AS varbinary(max)) <> CAST(d.[SourceLearningStandard_LearningStandardId] AS varbinary(max)) OR (i.[SourceLearningStandard_LearningStandardId] IS NULL AND d.[SourceLearningStandard_LearningStandardId] IS NOT NULL) OR (i.[SourceLearningStandard_LearningStandardId] IS NOT NULL AND d.[SourceLearningStandard_LearningStandardId] IS NULL)) OR (CAST(i.[TargetLearningStandard_LearningStandardId] AS varbinary(max)) <> CAST(d.[TargetLearningStandard_LearningStandardId] AS varbinary(max)) OR (i.[TargetLearningStandard_LearningStandardId] IS NULL AND d.[TargetLearningStandard_LearningStandardId] IS NOT NULL) OR (i.[TargetLearningStandard_LearningStandardId] IS NOT NULL AND d.[TargetLearningStandard_LearningStandardId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 157;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLearningStandardEquivalenceAssociation' AS nvarchar(max)) + N'$.namespace=' + i.[Namespace] + N'#' + N'$.sourceLearningStandardReference.learningStandardId=' + i.[SourceLearningStandard_LearningStandardId] + N'#' + N'$.targetLearningStandardReference.learningStandardId=' + i.[TargetLearningStandard_LearningStandardId]), i.[DocumentId], 157
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -53344,39 +51666,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_LocalAccount_ReferentialIdentity]
-ON [edfi].[LocalAccount]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 164;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalAccount' AS nvarchar(max)) + N'$.accountIdentifier=' + i.[AccountIdentifier] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 164
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AccountIdentifier]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([FiscalYear_Unified]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AccountIdentifier] AS varbinary(max)) <> CAST(d.[AccountIdentifier] AS varbinary(max)) OR (i.[AccountIdentifier] IS NULL AND d.[AccountIdentifier] IS NOT NULL) OR (i.[AccountIdentifier] IS NOT NULL AND d.[AccountIdentifier] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[FiscalYear_Unified] <> d.[FiscalYear_Unified] OR (i.[FiscalYear_Unified] IS NULL AND d.[FiscalYear_Unified] IS NOT NULL) OR (i.[FiscalYear_Unified] IS NOT NULL AND d.[FiscalYear_Unified] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 164;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalAccount' AS nvarchar(max)) + N'$.accountIdentifier=' + i.[AccountIdentifier] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 164
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_LocalAccount_Stamp]
 ON [edfi].[LocalAccount]
 AFTER INSERT, UPDATE, DELETE
@@ -53517,39 +51806,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_LocalActual_ReferentialIdentity]
-ON [edfi].[LocalActual]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 165;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalActual' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 165
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AsOfDate]) OR UPDATE([LocalAccount_AccountIdentifier]) OR UPDATE([LocalAccount_EducationOrganizationId]) OR UPDATE([LocalAccount_FiscalYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AsOfDate] <> d.[AsOfDate] OR (i.[AsOfDate] IS NULL AND d.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND d.[AsOfDate] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(d.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND d.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND d.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> d.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND d.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND d.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> d.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND d.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND d.[LocalAccount_FiscalYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 165;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalActual' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 165
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_LocalActual_Stamp]
 ON [edfi].[LocalActual]
 AFTER INSERT, UPDATE, DELETE
@@ -53658,39 +51914,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_LocalBudget_ReferentialIdentity]
-ON [edfi].[LocalBudget]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 166;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalBudget' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 166
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AsOfDate]) OR UPDATE([LocalAccount_AccountIdentifier]) OR UPDATE([LocalAccount_EducationOrganizationId]) OR UPDATE([LocalAccount_FiscalYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AsOfDate] <> d.[AsOfDate] OR (i.[AsOfDate] IS NULL AND d.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND d.[AsOfDate] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(d.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND d.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND d.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> d.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND d.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND d.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> d.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND d.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND d.[LocalAccount_FiscalYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 166;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalBudget' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 166
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_LocalBudget_Stamp]
 ON [edfi].[LocalBudget]
 AFTER INSERT, UPDATE, DELETE
@@ -53794,39 +52017,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_LocalContractedStaff_ReferentialIdentity]
-ON [edfi].[LocalContractedStaff]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 167;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalContractedStaff' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 167
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AsOfDate]) OR UPDATE([LocalAccount_AccountIdentifier]) OR UPDATE([LocalAccount_EducationOrganizationId]) OR UPDATE([LocalAccount_FiscalYear]) OR UPDATE([Staff_StaffUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AsOfDate] <> d.[AsOfDate] OR (i.[AsOfDate] IS NULL AND d.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND d.[AsOfDate] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(d.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND d.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND d.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> d.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND d.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND d.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> d.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND d.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND d.[LocalAccount_FiscalYear] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 167;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalContractedStaff' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 167
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -53971,8 +52161,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[LocalEducationAgencyId], N'Ed-Fi:LocalEducationAgency'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[LocalEducationAgencyId], 168, N'Ed-Fi:LocalEducationAgency'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -53991,8 +52181,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[LocalEducationAgencyId], N'Ed-Fi:LocalEducationAgency'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[LocalEducationAgencyId], 168, N'Ed-Fi:LocalEducationAgency'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -54226,49 +52416,6 @@ BEGIN
         WHEN NOT MATCHED BY TARGET THEN
             INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
             VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_ReferentialIdentity]
-ON [edfi].[LocalEducationAgency]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 168;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalEducationAgency' AS nvarchar(max)) + N'$.localEducationAgencyId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 168
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 95
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([LocalEducationAgencyId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[LocalEducationAgencyId] <> d.[LocalEducationAgencyId] OR (i.[LocalEducationAgencyId] IS NULL AND d.[LocalEducationAgencyId] IS NOT NULL) OR (i.[LocalEducationAgencyId] IS NOT NULL AND d.[LocalEducationAgencyId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 168;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalEducationAgency' AS nvarchar(max)) + N'$.localEducationAgencyId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 168
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[LocalEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 95
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -54715,39 +52862,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_LocalEncumbrance_ReferentialIdentity]
-ON [edfi].[LocalEncumbrance]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 170;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalEncumbrance' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 170
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AsOfDate]) OR UPDATE([LocalAccount_AccountIdentifier]) OR UPDATE([LocalAccount_EducationOrganizationId]) OR UPDATE([LocalAccount_FiscalYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AsOfDate] <> d.[AsOfDate] OR (i.[AsOfDate] IS NULL AND d.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND d.[AsOfDate] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(d.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND d.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND d.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> d.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND d.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND d.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> d.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND d.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND d.[LocalAccount_FiscalYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 170;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalEncumbrance' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max))), i.[DocumentId], 170
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_LocalEncumbrance_Stamp]
 ON [edfi].[LocalEncumbrance]
 AFTER INSERT, UPDATE, DELETE
@@ -54851,39 +52965,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_LocalPayroll_ReferentialIdentity]
-ON [edfi].[LocalPayroll]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 171;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalPayroll' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 171
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AsOfDate]) OR UPDATE([LocalAccount_AccountIdentifier]) OR UPDATE([LocalAccount_EducationOrganizationId]) OR UPDATE([LocalAccount_FiscalYear]) OR UPDATE([Staff_StaffUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AsOfDate] <> d.[AsOfDate] OR (i.[AsOfDate] IS NULL AND d.[AsOfDate] IS NOT NULL) OR (i.[AsOfDate] IS NOT NULL AND d.[AsOfDate] IS NULL)) OR (CAST(i.[LocalAccount_AccountIdentifier] AS varbinary(max)) <> CAST(d.[LocalAccount_AccountIdentifier] AS varbinary(max)) OR (i.[LocalAccount_AccountIdentifier] IS NULL AND d.[LocalAccount_AccountIdentifier] IS NOT NULL) OR (i.[LocalAccount_AccountIdentifier] IS NOT NULL AND d.[LocalAccount_AccountIdentifier] IS NULL)) OR (i.[LocalAccount_EducationOrganizationId] <> d.[LocalAccount_EducationOrganizationId] OR (i.[LocalAccount_EducationOrganizationId] IS NULL AND d.[LocalAccount_EducationOrganizationId] IS NOT NULL) OR (i.[LocalAccount_EducationOrganizationId] IS NOT NULL AND d.[LocalAccount_EducationOrganizationId] IS NULL)) OR (i.[LocalAccount_FiscalYear] <> d.[LocalAccount_FiscalYear] OR (i.[LocalAccount_FiscalYear] IS NULL AND d.[LocalAccount_FiscalYear] IS NOT NULL) OR (i.[LocalAccount_FiscalYear] IS NOT NULL AND d.[LocalAccount_FiscalYear] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 171;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocalPayroll' AS nvarchar(max)) + N'$.asOfDate=' + CONVERT(nvarchar(10), i.[AsOfDate], 23) + N'#' + N'$.localAccountReference.accountIdentifier=' + i.[LocalAccount_AccountIdentifier] + N'#' + N'$.localAccountReference.educationOrganizationId=' + CAST(i.[LocalAccount_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.localAccountReference.fiscalYear=' + CAST(i.[LocalAccount_FiscalYear] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 171
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -55012,39 +53093,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_Location_ReferentialIdentity]
-ON [edfi].[Location]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 173;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocation' AS nvarchar(max)) + N'$.classroomIdentificationCode=' + i.[ClassroomIdentificationCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 173
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([ClassroomIdentificationCode]) OR UPDATE([School_SchoolId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[ClassroomIdentificationCode] AS varbinary(max)) <> CAST(d.[ClassroomIdentificationCode] AS varbinary(max)) OR (i.[ClassroomIdentificationCode] IS NULL AND d.[ClassroomIdentificationCode] IS NOT NULL) OR (i.[ClassroomIdentificationCode] IS NOT NULL AND d.[ClassroomIdentificationCode] IS NULL)) OR (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 173;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiLocation' AS nvarchar(max)) + N'$.classroomIdentificationCode=' + i.[ClassroomIdentificationCode] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max))), i.[DocumentId], 173
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_Location_Stamp]
 ON [edfi].[Location]
 AFTER INSERT, UPDATE, DELETE
@@ -55136,39 +53184,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_ObjectDimension_ReferentialIdentity]
-ON [edfi].[ObjectDimension]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 184;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiObjectDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 184
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 184;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiObjectDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 184
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -55304,39 +53319,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[ObjectDimension] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_ObjectiveAssessment_ReferentialIdentity]
-ON [edfi].[ObjectiveAssessment]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 185;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiObjectiveAssessment' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.identificationCode=' + i.[IdentificationCode]), i.[DocumentId], 185
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AssessmentIdentifier_Unified]) OR UPDATE([Namespace_Unified]) OR UPDATE([IdentificationCode]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AssessmentIdentifier_Unified] AS varbinary(max)) <> CAST(d.[AssessmentIdentifier_Unified] AS varbinary(max)) OR (i.[AssessmentIdentifier_Unified] IS NULL AND d.[AssessmentIdentifier_Unified] IS NOT NULL) OR (i.[AssessmentIdentifier_Unified] IS NOT NULL AND d.[AssessmentIdentifier_Unified] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[IdentificationCode] AS varbinary(max)) <> CAST(d.[IdentificationCode] AS varbinary(max)) OR (i.[IdentificationCode] IS NULL AND d.[IdentificationCode] IS NOT NULL) OR (i.[IdentificationCode] IS NOT NULL AND d.[IdentificationCode] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 185;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiObjectiveAssessment' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.identificationCode=' + i.[IdentificationCode]), i.[DocumentId], 185
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -55595,39 +53577,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_OpenStaffPosition_ReferentialIdentity]
-ON [edfi].[OpenStaffPosition]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 186;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOpenStaffPosition' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.requisitionNumber=' + i.[RequisitionNumber]), i.[DocumentId], 186
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([RequisitionNumber]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[RequisitionNumber] AS varbinary(max)) <> CAST(d.[RequisitionNumber] AS varbinary(max)) OR (i.[RequisitionNumber] IS NULL AND d.[RequisitionNumber] IS NOT NULL) OR (i.[RequisitionNumber] IS NOT NULL AND d.[RequisitionNumber] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 186;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOpenStaffPosition' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.requisitionNumber=' + i.[RequisitionNumber]), i.[DocumentId], 186
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_OpenStaffPosition_Stamp]
 ON [edfi].[OpenStaffPosition]
 AFTER INSERT, UPDATE, DELETE
@@ -55800,39 +53749,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_OperationalUnitDimension_ReferentialIdentity]
-ON [edfi].[OperationalUnitDimension]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 188;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOperationalUnitDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 188
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 188;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOperationalUnitDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 188
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_OperationalUnitDimension_Stamp]
 ON [edfi].[OperationalUnitDimension]
 AFTER INSERT, UPDATE, DELETE
@@ -55983,8 +53899,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[OrganizationDepartmentId], N'Ed-Fi:OrganizationDepartment'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[OrganizationDepartmentId], 189, N'Ed-Fi:OrganizationDepartment'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -56003,8 +53919,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[OrganizationDepartmentId], N'Ed-Fi:OrganizationDepartment'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[OrganizationDepartmentId], 189, N'Ed-Fi:OrganizationDepartment'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -56148,49 +54064,6 @@ BEGIN
         WHEN NOT MATCHED BY TARGET THEN
             INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
             VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_OrganizationDepartment_ReferentialIdentity]
-ON [edfi].[OrganizationDepartment]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 189;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOrganizationDepartment' AS nvarchar(max)) + N'$.organizationDepartmentId=' + CAST(i.[OrganizationDepartmentId] AS nvarchar(max))), i.[DocumentId], 189
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[OrganizationDepartmentId] AS nvarchar(max))), i.[DocumentId], 95
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([OrganizationDepartmentId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[OrganizationDepartmentId] <> d.[OrganizationDepartmentId] OR (i.[OrganizationDepartmentId] IS NULL AND d.[OrganizationDepartmentId] IS NOT NULL) OR (i.[OrganizationDepartmentId] IS NOT NULL AND d.[OrganizationDepartmentId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 189;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiOrganizationDepartment' AS nvarchar(max)) + N'$.organizationDepartmentId=' + CAST(i.[OrganizationDepartmentId] AS nvarchar(max))), i.[DocumentId], 189
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[OrganizationDepartmentId] AS nvarchar(max))), i.[DocumentId], 95
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -56563,39 +54436,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_Person_ReferentialIdentity]
-ON [edfi].[Person]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 195;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPerson' AS nvarchar(max)) + N'$.personId=' + i.[PersonId] + N'#' + N'$.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[SourceSystemDescriptor_DescriptorId]))), i.[DocumentId], 195
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([PersonId]) OR UPDATE([SourceSystemDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[PersonId] AS varbinary(max)) <> CAST(d.[PersonId] AS varbinary(max)) OR (i.[PersonId] IS NULL AND d.[PersonId] IS NOT NULL) OR (i.[PersonId] IS NOT NULL AND d.[PersonId] IS NULL)) OR (i.[SourceSystemDescriptor_DescriptorId] <> d.[SourceSystemDescriptor_DescriptorId] OR (i.[SourceSystemDescriptor_DescriptorId] IS NULL AND d.[SourceSystemDescriptor_DescriptorId] IS NOT NULL) OR (i.[SourceSystemDescriptor_DescriptorId] IS NOT NULL AND d.[SourceSystemDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 195;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPerson' AS nvarchar(max)) + N'$.personId=' + i.[PersonId] + N'#' + N'$.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[SourceSystemDescriptor_DescriptorId]))), i.[DocumentId], 195
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_Person_Stamp]
 ON [edfi].[Person]
 AFTER INSERT, UPDATE, DELETE
@@ -56696,39 +54536,6 @@ BEGIN
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[SourceSystemDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[SourceSystemDescriptor_DescriptorId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_PostSecondaryEvent_ReferentialIdentity]
-ON [edfi].[PostSecondaryEvent]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 199;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryEvent' AS nvarchar(max)) + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.postSecondaryEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PostSecondaryEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 199
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EventDate]) OR UPDATE([PostSecondaryEventCategoryDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EventDate] <> d.[EventDate] OR (i.[EventDate] IS NULL AND d.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND d.[EventDate] IS NULL)) OR (i.[PostSecondaryEventCategoryDescriptor_DescriptorId] <> d.[PostSecondaryEventCategoryDescriptor_DescriptorId] OR (i.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NULL AND d.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NOT NULL AND d.[PostSecondaryEventCategoryDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 199;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryEvent' AS nvarchar(max)) + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.postSecondaryEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PostSecondaryEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 199
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -56870,8 +54677,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[PostSecondaryInstitutionId], N'Ed-Fi:PostSecondaryInstitution'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[PostSecondaryInstitutionId], 201, N'Ed-Fi:PostSecondaryInstitution'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -56890,8 +54697,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[PostSecondaryInstitutionId], N'Ed-Fi:PostSecondaryInstitution'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[PostSecondaryInstitutionId], 201, N'Ed-Fi:PostSecondaryInstitution'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -56923,49 +54730,6 @@ BEGIN
     INSERT INTO [auth].[EducationOrganizationIdToEducationOrganizationId] ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
     SELECT new.[PostSecondaryInstitutionId], new.[PostSecondaryInstitutionId]
     FROM inserted new;
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_PostSecondaryInstitution_ReferentialIdentity]
-ON [edfi].[PostSecondaryInstitution]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 201;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryInstitution' AS nvarchar(max)) + N'$.postSecondaryInstitutionId=' + CAST(i.[PostSecondaryInstitutionId] AS nvarchar(max))), i.[DocumentId], 201
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[PostSecondaryInstitutionId] AS nvarchar(max))), i.[DocumentId], 95
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([PostSecondaryInstitutionId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[PostSecondaryInstitutionId] <> d.[PostSecondaryInstitutionId] OR (i.[PostSecondaryInstitutionId] IS NULL AND d.[PostSecondaryInstitutionId] IS NOT NULL) OR (i.[PostSecondaryInstitutionId] IS NOT NULL AND d.[PostSecondaryInstitutionId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 201;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiPostSecondaryInstitution' AS nvarchar(max)) + N'$.postSecondaryInstitutionId=' + CAST(i.[PostSecondaryInstitutionId] AS nvarchar(max))), i.[DocumentId], 201
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[PostSecondaryInstitutionId] AS nvarchar(max))), i.[DocumentId], 95
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
 END;
 GO
 
@@ -57373,39 +55137,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_Program_ReferentialIdentity]
-ON [edfi].[Program]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 208;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgram' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programName=' + i.[ProgramName] + N'#' + N'$.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 208
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramName]) OR UPDATE([ProgramTypeDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 208;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgram' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programName=' + i.[ProgramName] + N'#' + N'$.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 208
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_Program_Stamp]
 ON [edfi].[Program]
 AFTER INSERT, UPDATE, DELETE
@@ -57555,39 +55286,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_ProgramDimension_ReferentialIdentity]
-ON [edfi].[ProgramDimension]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 211;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 211
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 211;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 211
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_ProgramDimension_Stamp]
 ON [edfi].[ProgramDimension]
 AFTER INSERT, UPDATE, DELETE
@@ -57718,39 +55416,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[ProgramDimension] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_ProgramEvaluation_ReferentialIdentity]
-ON [edfi].[ProgramEvaluation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 212;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluation' AS nvarchar(max)) + N'$.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationTitle=' + i.[ProgramEvaluationTitle] + N'#' + N'$.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 212
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([ProgramEvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluationTitle]) OR UPDATE([ProgramEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 212;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluation' AS nvarchar(max)) + N'$.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationTitle=' + i.[ProgramEvaluationTitle] + N'#' + N'$.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 212
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -57897,39 +55562,6 @@ BEGIN
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[ProgramEvaluationPeriodDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DescriptorId] = i.[ProgramEvaluationTypeDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_ProgramEvaluationElement_ReferentialIdentity]
-ON [edfi].[ProgramEvaluationElement]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 213;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationElement' AS nvarchar(max)) + N'$.programEvaluationElementTitle=' + i.[ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 213
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([ProgramEvaluationElementTitle]) OR UPDATE([ProgramEducationOrganizationId_Unified]) OR UPDATE([ProgramEvaluationPeriodDescriptor_Unified_DescriptorId]) OR UPDATE([ProgramEvaluationTitle_Unified]) OR UPDATE([ProgramEvaluationTypeDescriptor_Unified_DescriptorId]) OR UPDATE([ProgramName_Unified]) OR UPDATE([ProgramTypeDescriptor_Unified_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[ProgramEvaluationElementTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationElementTitle] AS varbinary(max)) OR (i.[ProgramEvaluationElementTitle] IS NULL AND d.[ProgramEvaluationElementTitle] IS NOT NULL) OR (i.[ProgramEvaluationElementTitle] IS NOT NULL AND d.[ProgramEvaluationElementTitle] IS NULL)) OR (i.[ProgramEducationOrganizationId_Unified] <> d.[ProgramEducationOrganizationId_Unified] OR (i.[ProgramEducationOrganizationId_Unified] IS NULL AND d.[ProgramEducationOrganizationId_Unified] IS NOT NULL) OR (i.[ProgramEducationOrganizationId_Unified] IS NOT NULL AND d.[ProgramEducationOrganizationId_Unified] IS NULL)) OR (i.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] <> d.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] OR (i.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL AND d.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluationTitle_Unified] AS varbinary(max)) <> CAST(d.[ProgramEvaluationTitle_Unified] AS varbinary(max)) OR (i.[ProgramEvaluationTitle_Unified] IS NULL AND d.[ProgramEvaluationTitle_Unified] IS NOT NULL) OR (i.[ProgramEvaluationTitle_Unified] IS NOT NULL AND d.[ProgramEvaluationTitle_Unified] IS NULL)) OR (i.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] <> d.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] OR (i.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL AND d.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[ProgramEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL)) OR (CAST(i.[ProgramName_Unified] AS varbinary(max)) <> CAST(d.[ProgramName_Unified] AS varbinary(max)) OR (i.[ProgramName_Unified] IS NULL AND d.[ProgramName_Unified] IS NOT NULL) OR (i.[ProgramName_Unified] IS NOT NULL AND d.[ProgramName_Unified] IS NULL)) OR (i.[ProgramTypeDescriptor_Unified_DescriptorId] <> d.[ProgramTypeDescriptor_Unified_DescriptorId] OR (i.[ProgramTypeDescriptor_Unified_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_Unified_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 213;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationElement' AS nvarchar(max)) + N'$.programEvaluationElementTitle=' + i.[ProgramEvaluationElementTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 213
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -58160,39 +55792,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[ProgramEvaluation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_ProgramEvaluationObjective_ReferentialIdentity]
-ON [edfi].[ProgramEvaluationObjective]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 214;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationObjective' AS nvarchar(max)) + N'$.programEvaluationObjectiveTitle=' + i.[ProgramEvaluationObjectiveTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 214
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([ProgramEvaluationObjectiveTitle]) OR UPDATE([ProgramEvaluation_ProgramEducationOrganizationId]) OR UPDATE([ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluation_ProgramEvaluationTitle]) OR UPDATE([ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluation_ProgramName]) OR UPDATE([ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[ProgramEvaluationObjectiveTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluationObjectiveTitle] AS varbinary(max)) OR (i.[ProgramEvaluationObjectiveTitle] IS NULL AND d.[ProgramEvaluationObjectiveTitle] IS NOT NULL) OR (i.[ProgramEvaluationObjectiveTitle] IS NOT NULL AND d.[ProgramEvaluationObjectiveTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] <> d.[ProgramEvaluation_ProgramEducationOrganizationId] OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramName] IS NULL AND d.[ProgramEvaluation_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramName] IS NOT NULL AND d.[ProgramEvaluation_ProgramName] IS NULL)) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 214;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProgramEvaluationObjective' AS nvarchar(max)) + N'$.programEvaluationObjectiveTitle=' + i.[ProgramEvaluationObjectiveTitle] + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 214
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -58464,39 +56063,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_ProjectDimension_ReferentialIdentity]
-ON [edfi].[ProjectDimension]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 221;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProjectDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 221
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 221;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiProjectDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 221
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_ProjectDimension_Stamp]
 ON [edfi].[ProjectDimension]
 AFTER INSERT, UPDATE, DELETE
@@ -58627,39 +56193,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[ProjectDimension] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_ReportCard_ReferentialIdentity]
-ON [edfi].[ReportCard]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 234;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiReportCard' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 234
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([GradingPeriodGradingPeriod_SchoolId]) OR UPDATE([GradingPeriodGradingPeriod_SchoolYear]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(d.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolId] <> d.[GradingPeriodGradingPeriod_SchoolId] OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolYear] <> d.[GradingPeriodGradingPeriod_SchoolYear] OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 234;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiReportCard' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 234
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -58916,39 +56449,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_RestraintEvent_ReferentialIdentity]
-ON [edfi].[RestraintEvent]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 240;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiRestraintEvent' AS nvarchar(max)) + N'$.restraintEventIdentifier=' + i.[RestraintEventIdentifier] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 240
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([RestraintEventIdentifier]) OR UPDATE([SchoolId_Unified]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[RestraintEventIdentifier] AS varbinary(max)) <> CAST(d.[RestraintEventIdentifier] AS varbinary(max)) OR (i.[RestraintEventIdentifier] IS NULL AND d.[RestraintEventIdentifier] IS NOT NULL) OR (i.[RestraintEventIdentifier] IS NOT NULL AND d.[RestraintEventIdentifier] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 240;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiRestraintEvent' AS nvarchar(max)) + N'$.restraintEventIdentifier=' + i.[RestraintEventIdentifier] + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 240
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_RestraintEvent_Stamp]
 ON [edfi].[RestraintEvent]
 AFTER INSERT, UPDATE, DELETE
@@ -59152,8 +56652,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[SchoolId], N'Ed-Fi:School'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[SchoolId], 244, N'Ed-Fi:School'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -59172,8 +56672,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[SchoolId], N'Ed-Fi:School'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[SchoolId], 244, N'Ed-Fi:School'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -59317,49 +56817,6 @@ BEGIN
         WHEN NOT MATCHED BY TARGET THEN
             INSERT ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
             VALUES (source.[SourceEducationOrganizationId], source.[TargetEducationOrganizationId]);
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]
-ON [edfi].[School]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 244;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 244
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 95
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([SchoolId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 244;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchool' AS nvarchar(max)) + N'$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 244
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 95
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -59806,39 +57263,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_SchoolYearType_ReferentialIdentity]
-ON [edfi].[SchoolYearType]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 250;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchoolYearType' AS nvarchar(max)) + N'$.schoolYear=' + CAST(i.[SchoolYear] AS nvarchar(max))), i.[DocumentId], 250
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([SchoolYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[SchoolYear] <> d.[SchoolYear] OR (i.[SchoolYear] IS NULL AND d.[SchoolYear] IS NOT NULL) OR (i.[SchoolYear] IS NOT NULL AND d.[SchoolYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 250;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSchoolYearType' AS nvarchar(max)) + N'$.schoolYear=' + CAST(i.[SchoolYear] AS nvarchar(max))), i.[DocumentId], 250
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_SchoolYearType_Stamp]
 ON [edfi].[SchoolYearType]
 AFTER INSERT, UPDATE, DELETE
@@ -59924,39 +57348,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_Section_ReferentialIdentity]
-ON [edfi].[Section]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 251;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSection' AS nvarchar(max)) + N'$.courseOfferingReference.localCourseCode=' + i.[CourseOffering_LocalCourseCode] + N'#' + N'$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SchoolReferenceSchoolId] AS nvarchar(max)) + N'#' + N'$.courseOfferingReference.schoolYear=' + CAST(i.[CourseOffering_SchoolYear] AS nvarchar(max)) + N'#' + N'$.courseOfferingReference.sessionName=' + i.[CourseOffering_SessionName] + N'#' + N'$.sectionIdentifier=' + i.[SectionIdentifier]), i.[DocumentId], 251
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([CourseOffering_LocalCourseCode]) OR UPDATE([SchoolId_Unified]) OR UPDATE([CourseOffering_SchoolYear]) OR UPDATE([CourseOffering_SessionName]) OR UPDATE([SectionIdentifier]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[CourseOffering_LocalCourseCode] AS varbinary(max)) <> CAST(d.[CourseOffering_LocalCourseCode] AS varbinary(max)) OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[CourseOffering_SchoolYear] <> d.[CourseOffering_SchoolYear] OR (i.[CourseOffering_SchoolYear] IS NULL AND d.[CourseOffering_SchoolYear] IS NOT NULL) OR (i.[CourseOffering_SchoolYear] IS NOT NULL AND d.[CourseOffering_SchoolYear] IS NULL)) OR (CAST(i.[CourseOffering_SessionName] AS varbinary(max)) <> CAST(d.[CourseOffering_SessionName] AS varbinary(max)) OR (i.[CourseOffering_SessionName] IS NULL AND d.[CourseOffering_SessionName] IS NOT NULL) OR (i.[CourseOffering_SessionName] IS NOT NULL AND d.[CourseOffering_SessionName] IS NULL)) OR (CAST(i.[SectionIdentifier] AS varbinary(max)) <> CAST(d.[SectionIdentifier] AS varbinary(max)) OR (i.[SectionIdentifier] IS NULL AND d.[SectionIdentifier] IS NOT NULL) OR (i.[SectionIdentifier] IS NOT NULL AND d.[SectionIdentifier] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 251;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSection' AS nvarchar(max)) + N'$.courseOfferingReference.localCourseCode=' + i.[CourseOffering_LocalCourseCode] + N'#' + N'$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SchoolReferenceSchoolId] AS nvarchar(max)) + N'#' + N'$.courseOfferingReference.schoolYear=' + CAST(i.[CourseOffering_SchoolYear] AS nvarchar(max)) + N'#' + N'$.courseOfferingReference.sessionName=' + i.[CourseOffering_SessionName] + N'#' + N'$.sectionIdentifier=' + i.[SectionIdentifier]), i.[DocumentId], 251
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -60071,39 +57462,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_SectionAttendanceTakenEvent_ReferentialIdentity]
-ON [edfi].[SectionAttendanceTakenEvent]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 253;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSectionAttendanceTakenEvent' AS nvarchar(max)) + N'$.calendarDateReference.calendarCode=' + i.[CalendarDate_CalendarCode] + N'#' + N'$.calendarDateReference.date=' + CONVERT(nvarchar(10), i.[CalendarDate_Date], 23) + N'#' + N'$.calendarDateReference.schoolId=' + CAST(i.[CalendarDate_SchoolId] AS nvarchar(max)) + N'#' + N'$.calendarDateReference.schoolYear=' + CAST(i.[CalendarDate_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName]), i.[DocumentId], 253
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([CalendarDate_CalendarCode]) OR UPDATE([CalendarDate_Date]) OR UPDATE([SchoolId_Unified]) OR UPDATE([SchoolYear_Unified]) OR UPDATE([Section_LocalCourseCode]) OR UPDATE([Section_SectionIdentifier]) OR UPDATE([Section_SessionName]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[CalendarDate_CalendarCode] AS varbinary(max)) <> CAST(d.[CalendarDate_CalendarCode] AS varbinary(max)) OR (i.[CalendarDate_CalendarCode] IS NULL AND d.[CalendarDate_CalendarCode] IS NOT NULL) OR (i.[CalendarDate_CalendarCode] IS NOT NULL AND d.[CalendarDate_CalendarCode] IS NULL)) OR (i.[CalendarDate_Date] <> d.[CalendarDate_Date] OR (i.[CalendarDate_Date] IS NULL AND d.[CalendarDate_Date] IS NOT NULL) OR (i.[CalendarDate_Date] IS NOT NULL AND d.[CalendarDate_Date] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[SchoolYear_Unified] <> d.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND d.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND d.[SchoolYear_Unified] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(d.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND d.[Section_LocalCourseCode] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(d.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND d.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(d.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND d.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND d.[Section_SessionName] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 253;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSectionAttendanceTakenEvent' AS nvarchar(max)) + N'$.calendarDateReference.calendarCode=' + i.[CalendarDate_CalendarCode] + N'#' + N'$.calendarDateReference.date=' + CONVERT(nvarchar(10), i.[CalendarDate_Date], 23) + N'#' + N'$.calendarDateReference.schoolId=' + CAST(i.[CalendarDate_SchoolId] AS nvarchar(max)) + N'#' + N'$.calendarDateReference.schoolYear=' + CAST(i.[CalendarDate_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName]), i.[DocumentId], 253
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -60425,39 +57783,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_Session_ReferentialIdentity]
-ON [edfi].[Session]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 259;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSession' AS nvarchar(max)) + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionName=' + i.[SessionName]), i.[DocumentId], 259
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([School_SchoolId]) OR UPDATE([SchoolYear_SchoolYear]) OR UPDATE([SessionName]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[School_SchoolId] <> d.[School_SchoolId] OR (i.[School_SchoolId] IS NULL AND d.[School_SchoolId] IS NOT NULL) OR (i.[School_SchoolId] IS NOT NULL AND d.[School_SchoolId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL)) OR (CAST(i.[SessionName] AS varbinary(max)) <> CAST(d.[SessionName] AS varbinary(max)) OR (i.[SessionName] IS NULL AND d.[SessionName] IS NOT NULL) OR (i.[SessionName] IS NOT NULL AND d.[SessionName] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 259;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSession' AS nvarchar(max)) + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionName=' + i.[SessionName]), i.[DocumentId], 259
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_Session_Stamp]
 ON [edfi].[Session]
 AFTER INSERT, UPDATE, DELETE
@@ -60636,39 +57961,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_SourceDimension_ReferentialIdentity]
-ON [edfi].[SourceDimension]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 261;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSourceDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 261
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Code]) OR UPDATE([FiscalYear]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Code] AS varbinary(max)) <> CAST(d.[Code] AS varbinary(max)) OR (i.[Code] IS NULL AND d.[Code] IS NOT NULL) OR (i.[Code] IS NOT NULL AND d.[Code] IS NULL)) OR (i.[FiscalYear] <> d.[FiscalYear] OR (i.[FiscalYear] IS NULL AND d.[FiscalYear] IS NOT NULL) OR (i.[FiscalYear] IS NOT NULL AND d.[FiscalYear] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 261;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSourceDimension' AS nvarchar(max)) + N'$.code=' + i.[Code] + N'#' + N'$.fiscalYear=' + CAST(i.[FiscalYear] AS nvarchar(max))), i.[DocumentId], 261
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_SourceDimension_Stamp]
 ON [edfi].[SourceDimension]
 AFTER INSERT, UPDATE, DELETE
@@ -60803,39 +58095,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_Staff_ReferentialIdentity]
-ON [edfi].[Staff]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 266;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaff' AS nvarchar(max)) + N'$.staffUniqueId=' + i.[StaffUniqueId]), i.[DocumentId], 266
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([StaffUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[StaffUniqueId] AS varbinary(max)) <> CAST(d.[StaffUniqueId] AS varbinary(max)) OR (i.[StaffUniqueId] IS NULL AND d.[StaffUniqueId] IS NOT NULL) OR (i.[StaffUniqueId] IS NOT NULL AND d.[StaffUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 266;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaff' AS nvarchar(max)) + N'$.staffUniqueId=' + i.[StaffUniqueId]), i.[DocumentId], 266
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_Staff_Stamp]
 ON [edfi].[Staff]
 AFTER INSERT, UPDATE, DELETE
@@ -60921,39 +58180,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StaffAbsenceEvent_ReferentialIdentity]
-ON [edfi].[StaffAbsenceEvent]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 267;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffAbsenceEvent' AS nvarchar(max)) + N'$.absenceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AbsenceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 267
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AbsenceEventCategoryDescriptor_DescriptorId]) OR UPDATE([EventDate]) OR UPDATE([Staff_StaffUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AbsenceEventCategoryDescriptor_DescriptorId] <> d.[AbsenceEventCategoryDescriptor_DescriptorId] OR (i.[AbsenceEventCategoryDescriptor_DescriptorId] IS NULL AND d.[AbsenceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AbsenceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND d.[AbsenceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EventDate] <> d.[EventDate] OR (i.[EventDate] IS NULL AND d.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND d.[EventDate] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 267;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffAbsenceEvent' AS nvarchar(max)) + N'$.absenceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AbsenceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 267
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -61193,39 +58419,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StaffCohortAssociation_ReferentialIdentity]
-ON [edfi].[StaffCohortAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 269;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffCohortAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.cohortReference.cohortIdentifier=' + i.[Cohort_CohortIdentifier] + N'#' + N'$.cohortReference.educationOrganizationId=' + CAST(i.[Cohort_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 269
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([Cohort_CohortIdentifier]) OR UPDATE([Cohort_EducationOrganizationId]) OR UPDATE([Staff_StaffUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (CAST(i.[Cohort_CohortIdentifier] AS varbinary(max)) <> CAST(d.[Cohort_CohortIdentifier] AS varbinary(max)) OR (i.[Cohort_CohortIdentifier] IS NULL AND d.[Cohort_CohortIdentifier] IS NOT NULL) OR (i.[Cohort_CohortIdentifier] IS NOT NULL AND d.[Cohort_CohortIdentifier] IS NULL)) OR (i.[Cohort_EducationOrganizationId] <> d.[Cohort_EducationOrganizationId] OR (i.[Cohort_EducationOrganizationId] IS NULL AND d.[Cohort_EducationOrganizationId] IS NOT NULL) OR (i.[Cohort_EducationOrganizationId] IS NOT NULL AND d.[Cohort_EducationOrganizationId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 269;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffCohortAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.cohortReference.cohortIdentifier=' + i.[Cohort_CohortIdentifier] + N'#' + N'$.cohortReference.educationOrganizationId=' + CAST(i.[Cohort_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 269
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StaffCohortAssociation_Stamp]
 ON [edfi].[StaffCohortAssociation]
 AFTER INSERT, UPDATE, DELETE
@@ -61381,39 +58574,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StaffDisciplineIncidentAssociation_ReferentialIdentity]
-ON [edfi].[StaffDisciplineIncidentAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 270;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffDisciplineIncidentAssociation' AS nvarchar(max)) + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 270
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([DisciplineIncident_IncidentIdentifier]) OR UPDATE([DisciplineIncident_SchoolId]) OR UPDATE([Staff_StaffUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) <> CAST(d.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) OR (i.[DisciplineIncident_IncidentIdentifier] IS NULL AND d.[DisciplineIncident_IncidentIdentifier] IS NOT NULL) OR (i.[DisciplineIncident_IncidentIdentifier] IS NOT NULL AND d.[DisciplineIncident_IncidentIdentifier] IS NULL)) OR (i.[DisciplineIncident_SchoolId] <> d.[DisciplineIncident_SchoolId] OR (i.[DisciplineIncident_SchoolId] IS NULL AND d.[DisciplineIncident_SchoolId] IS NOT NULL) OR (i.[DisciplineIncident_SchoolId] IS NOT NULL AND d.[DisciplineIncident_SchoolId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 270;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffDisciplineIncidentAssociation' AS nvarchar(max)) + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 270
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StaffDisciplineIncidentAssociation_Stamp]
 ON [edfi].[StaffDisciplineIncidentAssociation]
 AFTER INSERT, UPDATE, DELETE
@@ -61563,39 +58723,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StaffEducationOrganizationAssignmentAssociation_ReferentialIdentity]
-ON [edfi].[StaffEducationOrganizationAssignmentAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 271;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationAssignmentAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffClassificationDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StaffClassificationDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 271
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([StaffClassificationDescriptor_DescriptorId]) OR UPDATE([StaffUniqueId_Unified]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[StaffClassificationDescriptor_DescriptorId] <> d.[StaffClassificationDescriptor_DescriptorId] OR (i.[StaffClassificationDescriptor_DescriptorId] IS NULL AND d.[StaffClassificationDescriptor_DescriptorId] IS NOT NULL) OR (i.[StaffClassificationDescriptor_DescriptorId] IS NOT NULL AND d.[StaffClassificationDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[StaffUniqueId_Unified] AS varbinary(max)) <> CAST(d.[StaffUniqueId_Unified] AS varbinary(max)) OR (i.[StaffUniqueId_Unified] IS NULL AND d.[StaffUniqueId_Unified] IS NOT NULL) OR (i.[StaffUniqueId_Unified] IS NOT NULL AND d.[StaffUniqueId_Unified] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 271;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationAssignmentAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffClassificationDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StaffClassificationDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 271
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StaffEducationOrganizationAssignmentAssociation_Stamp]
 ON [edfi].[StaffEducationOrganizationAssignmentAssociation]
 AFTER INSERT, UPDATE, DELETE
@@ -61717,39 +58844,6 @@ BEGIN
             INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[StaffUniqueId_Unified]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[StaffClassificationDescriptor_DescriptorId]
             INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[StaffUniqueId_Unified];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StaffEducationOrganizationContactAssociation_ReferentialIdentity]
-ON [edfi].[StaffEducationOrganizationContactAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 272;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationContactAssociation' AS nvarchar(max)) + N'$.contactTitle=' + i.[ContactTitle] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 272
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([ContactTitle]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Staff_StaffUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[ContactTitle] AS varbinary(max)) <> CAST(d.[ContactTitle] AS varbinary(max)) OR (i.[ContactTitle] IS NULL AND d.[ContactTitle] IS NOT NULL) OR (i.[ContactTitle] IS NOT NULL AND d.[ContactTitle] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 272;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationContactAssociation' AS nvarchar(max)) + N'$.contactTitle=' + i.[ContactTitle] + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 272
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -61938,39 +59032,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[StaffEducationOrganizationContactAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StaffEducationOrganizationEmploymentAssociation_ReferentialIdentity]
-ON [edfi].[StaffEducationOrganizationEmploymentAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 273;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationEmploymentAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.employmentStatusDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EmploymentStatusDescriptor_DescriptorId])) + N'#' + N'$.hireDate=' + CONVERT(nvarchar(10), i.[HireDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 273
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([EmploymentStatusDescriptor_DescriptorId]) OR UPDATE([HireDate]) OR UPDATE([Staff_StaffUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[EmploymentStatusDescriptor_DescriptorId] <> d.[EmploymentStatusDescriptor_DescriptorId] OR (i.[EmploymentStatusDescriptor_DescriptorId] IS NULL AND d.[EmploymentStatusDescriptor_DescriptorId] IS NOT NULL) OR (i.[EmploymentStatusDescriptor_DescriptorId] IS NOT NULL AND d.[EmploymentStatusDescriptor_DescriptorId] IS NULL)) OR (i.[HireDate] <> d.[HireDate] OR (i.[HireDate] IS NULL AND d.[HireDate] IS NOT NULL) OR (i.[HireDate] IS NOT NULL AND d.[HireDate] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 273;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffEducationOrganizationEmploymentAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.employmentStatusDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EmploymentStatusDescriptor_DescriptorId])) + N'#' + N'$.hireDate=' + CONVERT(nvarchar(10), i.[HireDate], 23) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 273
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -62329,39 +59390,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StaffLeave_ReferentialIdentity]
-ON [edfi].[StaffLeave]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 275;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffLeave' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.staffLeaveEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StaffLeaveEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 275
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([StaffLeaveEventCategoryDescriptor_DescriptorId]) OR UPDATE([Staff_StaffUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[StaffLeaveEventCategoryDescriptor_DescriptorId] <> d.[StaffLeaveEventCategoryDescriptor_DescriptorId] OR (i.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NULL AND d.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NOT NULL AND d.[StaffLeaveEventCategoryDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 275;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffLeave' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.staffLeaveEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[StaffLeaveEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 275
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StaffLeave_Stamp]
 ON [edfi].[StaffLeave]
 AFTER INSERT, UPDATE, DELETE
@@ -62554,39 +59582,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StaffProgramAssociation_ReferentialIdentity]
-ON [edfi].[StaffProgramAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 277;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 277
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Staff_StaffUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 277;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 277
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -62799,39 +59794,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StaffSchoolAssociation_ReferentialIdentity]
-ON [edfi].[StaffSchoolAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 278;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSchoolAssociation' AS nvarchar(max)) + N'$.programAssignmentDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramAssignmentDescriptor_DescriptorId])) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 278
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([ProgramAssignmentDescriptor_DescriptorId]) OR UPDATE([SchoolId_Unified]) OR UPDATE([Staff_StaffUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[ProgramAssignmentDescriptor_DescriptorId] <> d.[ProgramAssignmentDescriptor_DescriptorId] OR (i.[ProgramAssignmentDescriptor_DescriptorId] IS NULL AND d.[ProgramAssignmentDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramAssignmentDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramAssignmentDescriptor_DescriptorId] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 278;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSchoolAssociation' AS nvarchar(max)) + N'$.programAssignmentDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramAssignmentDescriptor_DescriptorId])) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 278
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StaffSchoolAssociation_Stamp]
 ON [edfi].[StaffSchoolAssociation]
 AFTER INSERT, UPDATE, DELETE
@@ -63024,39 +59986,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[StaffSchoolAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StaffSectionAssociation_ReferentialIdentity]
-ON [edfi].[StaffSectionAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 279;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSectionAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 279
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([Section_LocalCourseCode]) OR UPDATE([Section_SchoolId]) OR UPDATE([Section_SchoolYear]) OR UPDATE([Section_SectionIdentifier]) OR UPDATE([Section_SessionName]) OR UPDATE([Staff_StaffUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(d.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND d.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> d.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND d.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND d.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> d.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND d.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND d.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(d.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND d.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(d.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND d.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND d.[Section_SessionName] IS NULL)) OR (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 279;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStaffSectionAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId]), i.[DocumentId], 279
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -63326,8 +60255,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-        SELECT s.[DocumentId], s.[StateEducationAgencyId], N'Ed-Fi:StateEducationAgency'
+        INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[StateEducationAgencyId], 281, N'Ed-Fi:StateEducationAgency'
         FROM inserted s
         LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -63346,8 +60275,8 @@ BEGIN
             FROM [edfi].[EducationOrganizationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            SELECT s.[DocumentId], s.[StateEducationAgencyId], N'Ed-Fi:StateEducationAgency'
+            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[StateEducationAgencyId], 281, N'Ed-Fi:StateEducationAgency'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[EducationOrganizationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
@@ -63379,49 +60308,6 @@ BEGIN
     INSERT INTO [auth].[EducationOrganizationIdToEducationOrganizationId] ([SourceEducationOrganizationId], [TargetEducationOrganizationId])
     SELECT new.[StateEducationAgencyId], new.[StateEducationAgencyId]
     FROM inserted new;
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StateEducationAgency_ReferentialIdentity]
-ON [edfi].[StateEducationAgency]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 281;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStateEducationAgency' AS nvarchar(max)) + N'$.stateEducationAgencyId=' + CAST(i.[StateEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 281
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 95;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[StateEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 95
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([StateEducationAgencyId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[StateEducationAgencyId] <> d.[StateEducationAgencyId] OR (i.[StateEducationAgencyId] IS NULL AND d.[StateEducationAgencyId] IS NOT NULL) OR (i.[StateEducationAgencyId] IS NOT NULL AND d.[StateEducationAgencyId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 281;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStateEducationAgency' AS nvarchar(max)) + N'$.stateEducationAgencyId=' + CAST(i.[StateEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 281
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 95;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiEducationOrganization' AS nvarchar(max)) + N'$.educationOrganizationId=' + CAST(i.[StateEducationAgencyId] AS nvarchar(max))), i.[DocumentId], 95
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
 END;
 GO
 
@@ -63867,39 +60753,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_Student_ReferentialIdentity]
-ON [edfi].[Student]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 282;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudent' AS nvarchar(max)) + N'$.studentUniqueId=' + i.[StudentUniqueId]), i.[DocumentId], 282
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentUniqueId] AS varbinary(max)) OR (i.[StudentUniqueId] IS NULL AND d.[StudentUniqueId] IS NOT NULL) OR (i.[StudentUniqueId] IS NOT NULL AND d.[StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 282;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudent' AS nvarchar(max)) + N'$.studentUniqueId=' + i.[StudentUniqueId]), i.[DocumentId], 282
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_Student_Stamp]
 ON [edfi].[Student]
 AFTER INSERT, UPDATE, DELETE
@@ -63985,39 +60838,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentAcademicRecord_ReferentialIdentity]
-ON [edfi].[StudentAcademicRecord]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 283;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAcademicRecord' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[TermDescriptor_DescriptorId]))), i.[DocumentId], 283
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([SchoolYear_SchoolYear]) OR UPDATE([Student_StudentUniqueId]) OR UPDATE([TermDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL)) OR (i.[TermDescriptor_DescriptorId] <> d.[TermDescriptor_DescriptorId] OR (i.[TermDescriptor_DescriptorId] IS NULL AND d.[TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[TermDescriptor_DescriptorId] IS NOT NULL AND d.[TermDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 283;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAcademicRecord' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[TermDescriptor_DescriptorId]))), i.[DocumentId], 283
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -64339,39 +61159,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentAssessment_ReferentialIdentity]
-ON [edfi].[StudentAssessment]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 284;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessment' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.studentAssessmentIdentifier=' + i.[StudentAssessmentIdentifier] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 284
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Assessment_AssessmentIdentifier]) OR UPDATE([Assessment_Namespace]) OR UPDATE([StudentAssessmentIdentifier]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Assessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[Assessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[Assessment_AssessmentIdentifier] IS NULL AND d.[Assessment_AssessmentIdentifier] IS NOT NULL) OR (i.[Assessment_AssessmentIdentifier] IS NOT NULL AND d.[Assessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[Assessment_Namespace] AS varbinary(max)) <> CAST(d.[Assessment_Namespace] AS varbinary(max)) OR (i.[Assessment_Namespace] IS NULL AND d.[Assessment_Namespace] IS NOT NULL) OR (i.[Assessment_Namespace] IS NOT NULL AND d.[Assessment_Namespace] IS NULL)) OR (CAST(i.[StudentAssessmentIdentifier] AS varbinary(max)) <> CAST(d.[StudentAssessmentIdentifier] AS varbinary(max)) OR (i.[StudentAssessmentIdentifier] IS NULL AND d.[StudentAssessmentIdentifier] IS NOT NULL) OR (i.[StudentAssessmentIdentifier] IS NOT NULL AND d.[StudentAssessmentIdentifier] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 284;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessment' AS nvarchar(max)) + N'$.assessmentReference.assessmentIdentifier=' + i.[Assessment_AssessmentIdentifier] + N'#' + N'$.assessmentReference.namespace=' + i.[Assessment_Namespace] + N'#' + N'$.studentAssessmentIdentifier=' + i.[StudentAssessmentIdentifier] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 284
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentAssessment_Stamp]
 ON [edfi].[StudentAssessment]
 AFTER INSERT, UPDATE, DELETE
@@ -64529,39 +61316,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentAssessmentEducationOrganizationAssociation_ReferentialIdentity]
-ON [edfi].[StudentAssessmentEducationOrganizationAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 285;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentEducationOrganizationAssociation' AS nvarchar(max)) + N'$.educationOrganizationAssociationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId])) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentReference.assessmentIdentifier=' + i.[StudentAssessment_AssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.namespace=' + i.[StudentAssessment_Namespace] + N'#' + N'$.studentAssessmentReference.studentAssessmentIdentifier=' + i.[StudentAssessment_StudentAssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.studentUniqueId=' + i.[StudentAssessment_StudentUniqueId]), i.[DocumentId], 285
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganizationAssociationTypeDescriptor_DescriptorId]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([StudentAssessment_AssessmentIdentifier]) OR UPDATE([StudentAssessment_Namespace]) OR UPDATE([StudentAssessment_StudentAssessmentIdentifier]) OR UPDATE([StudentAssessment_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] <> d.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] OR (i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NULL AND d.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[EducationOrganizationAssociationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[StudentAssessment_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[StudentAssessment_AssessmentIdentifier] AS varbinary(max)) OR (i.[StudentAssessment_AssessmentIdentifier] IS NULL AND d.[StudentAssessment_AssessmentIdentifier] IS NOT NULL) OR (i.[StudentAssessment_AssessmentIdentifier] IS NOT NULL AND d.[StudentAssessment_AssessmentIdentifier] IS NULL)) OR (CAST(i.[StudentAssessment_Namespace] AS varbinary(max)) <> CAST(d.[StudentAssessment_Namespace] AS varbinary(max)) OR (i.[StudentAssessment_Namespace] IS NULL AND d.[StudentAssessment_Namespace] IS NOT NULL) OR (i.[StudentAssessment_Namespace] IS NOT NULL AND d.[StudentAssessment_Namespace] IS NULL)) OR (CAST(i.[StudentAssessment_StudentAssessmentIdentifier] AS varbinary(max)) <> CAST(d.[StudentAssessment_StudentAssessmentIdentifier] AS varbinary(max)) OR (i.[StudentAssessment_StudentAssessmentIdentifier] IS NULL AND d.[StudentAssessment_StudentAssessmentIdentifier] IS NOT NULL) OR (i.[StudentAssessment_StudentAssessmentIdentifier] IS NOT NULL AND d.[StudentAssessment_StudentAssessmentIdentifier] IS NULL)) OR (CAST(i.[StudentAssessment_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentAssessment_StudentUniqueId] AS varbinary(max)) OR (i.[StudentAssessment_StudentUniqueId] IS NULL AND d.[StudentAssessment_StudentUniqueId] IS NOT NULL) OR (i.[StudentAssessment_StudentUniqueId] IS NOT NULL AND d.[StudentAssessment_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 285;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentEducationOrganizationAssociation' AS nvarchar(max)) + N'$.educationOrganizationAssociationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EducationOrganizationAssociationTypeDescriptor_DescriptorId])) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentReference.assessmentIdentifier=' + i.[StudentAssessment_AssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.namespace=' + i.[StudentAssessment_Namespace] + N'#' + N'$.studentAssessmentReference.studentAssessmentIdentifier=' + i.[StudentAssessment_StudentAssessmentIdentifier] + N'#' + N'$.studentAssessmentReference.studentUniqueId=' + i.[StudentAssessment_StudentUniqueId]), i.[DocumentId], 285
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -64780,39 +61534,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentAssessmentRegistration_ReferentialIdentity]
-ON [edfi].[StudentAssessmentRegistration]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 286;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentRegistration' AS nvarchar(max)) + N'$.assessmentAdministrationReference.administrationIdentifier=' + i.[AssessmentAdministration_AdministrationIdentifier] + N'#' + N'$.assessmentAdministrationReference.assessmentIdentifier=' + i.[AssessmentAdministration_AssessmentIdentifier] + N'#' + N'$.assessmentAdministrationReference.assigningEducationOrganizationId=' + CAST(i.[AssessmentAdministration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.assessmentAdministrationReference.namespace=' + i.[AssessmentAdministration_Namespace] + N'#' + N'$.studentEducationOrganizationAssociationReference.educationOrganizationId=' + CAST(i.[StudentEducationOrganizationAssociation_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentEducationOrganizationAssociationReference.studentUniqueId=' + i.[StudentEducationOrganizationAssociation_StudentUniqueId]), i.[DocumentId], 286
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AssessmentAdministration_AdministrationIdentifier]) OR UPDATE([AssessmentAdministration_AssessmentIdentifier]) OR UPDATE([AssessmentAdministration_AssigningEducationOrganizationId]) OR UPDATE([AssessmentAdministration_Namespace]) OR UPDATE([StudentEducationOrganizationAssociation_EducationOrganizationId]) OR UPDATE([StudentUniqueId_Unified]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_AdministrationIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NULL AND d.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AdministrationIdentifier] IS NOT NULL AND d.[AssessmentAdministration_AdministrationIdentifier] IS NULL)) OR (CAST(i.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_AssessmentIdentifier] AS varbinary(max)) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NULL AND d.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL) OR (i.[AssessmentAdministration_AssessmentIdentifier] IS NOT NULL AND d.[AssessmentAdministration_AssessmentIdentifier] IS NULL)) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] <> d.[AssessmentAdministration_AssigningEducationOrganizationId] OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL AND d.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL) OR (i.[AssessmentAdministration_AssigningEducationOrganizationId] IS NOT NULL AND d.[AssessmentAdministration_AssigningEducationOrganizationId] IS NULL)) OR (CAST(i.[AssessmentAdministration_Namespace] AS varbinary(max)) <> CAST(d.[AssessmentAdministration_Namespace] AS varbinary(max)) OR (i.[AssessmentAdministration_Namespace] IS NULL AND d.[AssessmentAdministration_Namespace] IS NOT NULL) OR (i.[AssessmentAdministration_Namespace] IS NOT NULL AND d.[AssessmentAdministration_Namespace] IS NULL)) OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] <> d.[StudentEducationOrganizationAssociation_EducationOrganizationId] OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NULL AND d.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NOT NULL) OR (i.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NOT NULL AND d.[StudentEducationOrganizationAssociation_EducationOrganizationId] IS NULL)) OR (CAST(i.[StudentUniqueId_Unified] AS varbinary(max)) <> CAST(d.[StudentUniqueId_Unified] AS varbinary(max)) OR (i.[StudentUniqueId_Unified] IS NULL AND d.[StudentUniqueId_Unified] IS NOT NULL) OR (i.[StudentUniqueId_Unified] IS NOT NULL AND d.[StudentUniqueId_Unified] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 286;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentRegistration' AS nvarchar(max)) + N'$.assessmentAdministrationReference.administrationIdentifier=' + i.[AssessmentAdministration_AdministrationIdentifier] + N'#' + N'$.assessmentAdministrationReference.assessmentIdentifier=' + i.[AssessmentAdministration_AssessmentIdentifier] + N'#' + N'$.assessmentAdministrationReference.assigningEducationOrganizationId=' + CAST(i.[AssessmentAdministration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.assessmentAdministrationReference.namespace=' + i.[AssessmentAdministration_Namespace] + N'#' + N'$.studentEducationOrganizationAssociationReference.educationOrganizationId=' + CAST(i.[StudentEducationOrganizationAssociation_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentEducationOrganizationAssociationReference.studentUniqueId=' + i.[StudentEducationOrganizationAssociation_StudentUniqueId]), i.[DocumentId], 286
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentAssessmentRegistration_Stamp]
 ON [edfi].[StudentAssessmentRegistration]
 AFTER INSERT, UPDATE, DELETE
@@ -65014,39 +61735,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[StudentAssessmentRegistration] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentAssessmentRegistrationBatteryPartAssociation_ReferentialIdentity]
-ON [edfi].[StudentAssessmentRegistrationBatteryPartAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 287;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentRegistrationBatteryPartAssociation' AS nvarchar(max)) + N'$.assessmentBatteryPartReference.assessmentBatteryPartName=' + i.[AssessmentBatteryPart_AssessmentBatteryPartName] + N'#' + N'$.assessmentBatteryPartReference.assessmentIdentifier=' + i.[AssessmentBatteryPart_AssessmentIdentifier] + N'#' + N'$.assessmentBatteryPartReference.namespace=' + i.[AssessmentBatteryPart_Namespace] + N'#' + N'$.studentAssessmentRegistrationReference.administrationIdentifier=' + i.[StudentAssessmentRegistration_AdministrationIdentifier] + N'#' + N'$.studentAssessmentRegistrationReference.assessmentIdentifier=' + i.[StudentAssessmentRegistration_AssessmentIdentifier] + N'#' + N'$.studentAssessmentRegistrationReference.assigningEducationOrganizationId=' + CAST(i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentRegistrationReference.educationOrganizationId=' + CAST(i.[StudentAssessmentRegistration_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentRegistrationReference.namespace=' + i.[StudentAssessmentRegistration_Namespace] + N'#' + N'$.studentAssessmentRegistrationReference.studentUniqueId=' + i.[StudentAssessmentRegistration_StudentUniqueId]), i.[DocumentId], 287
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AssessmentBatteryPart_AssessmentBatteryPartName]) OR UPDATE([AssessmentIdentifier_Unified]) OR UPDATE([Namespace_Unified]) OR UPDATE([StudentAssessmentRegistration_AdministrationIdentifier]) OR UPDATE([StudentAssessmentRegistration_AssigningEducationOrganizationId]) OR UPDATE([StudentAssessmentRegistration_EducationOrganizationId]) OR UPDATE([StudentAssessmentRegistration_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[AssessmentBatteryPart_AssessmentBatteryPartName] AS varbinary(max)) <> CAST(d.[AssessmentBatteryPart_AssessmentBatteryPartName] AS varbinary(max)) OR (i.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NULL AND d.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NOT NULL) OR (i.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NOT NULL AND d.[AssessmentBatteryPart_AssessmentBatteryPartName] IS NULL)) OR (CAST(i.[AssessmentIdentifier_Unified] AS varbinary(max)) <> CAST(d.[AssessmentIdentifier_Unified] AS varbinary(max)) OR (i.[AssessmentIdentifier_Unified] IS NULL AND d.[AssessmentIdentifier_Unified] IS NOT NULL) OR (i.[AssessmentIdentifier_Unified] IS NOT NULL AND d.[AssessmentIdentifier_Unified] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[StudentAssessmentRegistration_AdministrationIdentifier] AS varbinary(max)) <> CAST(d.[StudentAssessmentRegistration_AdministrationIdentifier] AS varbinary(max)) OR (i.[StudentAssessmentRegistration_AdministrationIdentifier] IS NULL AND d.[StudentAssessmentRegistration_AdministrationIdentifier] IS NOT NULL) OR (i.[StudentAssessmentRegistration_AdministrationIdentifier] IS NOT NULL AND d.[StudentAssessmentRegistration_AdministrationIdentifier] IS NULL)) OR (i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] <> d.[StudentAssessmentRegistration_AssigningEducationOrganizationId] OR (i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NULL AND d.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NOT NULL) OR (i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NOT NULL AND d.[StudentAssessmentRegistration_AssigningEducationOrganizationId] IS NULL)) OR (i.[StudentAssessmentRegistration_EducationOrganizationId] <> d.[StudentAssessmentRegistration_EducationOrganizationId] OR (i.[StudentAssessmentRegistration_EducationOrganizationId] IS NULL AND d.[StudentAssessmentRegistration_EducationOrganizationId] IS NOT NULL) OR (i.[StudentAssessmentRegistration_EducationOrganizationId] IS NOT NULL AND d.[StudentAssessmentRegistration_EducationOrganizationId] IS NULL)) OR (CAST(i.[StudentAssessmentRegistration_StudentUniqueId] AS varbinary(max)) <> CAST(d.[StudentAssessmentRegistration_StudentUniqueId] AS varbinary(max)) OR (i.[StudentAssessmentRegistration_StudentUniqueId] IS NULL AND d.[StudentAssessmentRegistration_StudentUniqueId] IS NOT NULL) OR (i.[StudentAssessmentRegistration_StudentUniqueId] IS NOT NULL AND d.[StudentAssessmentRegistration_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 287;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentAssessmentRegistrationBatteryPartAssociation' AS nvarchar(max)) + N'$.assessmentBatteryPartReference.assessmentBatteryPartName=' + i.[AssessmentBatteryPart_AssessmentBatteryPartName] + N'#' + N'$.assessmentBatteryPartReference.assessmentIdentifier=' + i.[AssessmentBatteryPart_AssessmentIdentifier] + N'#' + N'$.assessmentBatteryPartReference.namespace=' + i.[AssessmentBatteryPart_Namespace] + N'#' + N'$.studentAssessmentRegistrationReference.administrationIdentifier=' + i.[StudentAssessmentRegistration_AdministrationIdentifier] + N'#' + N'$.studentAssessmentRegistrationReference.assessmentIdentifier=' + i.[StudentAssessmentRegistration_AssessmentIdentifier] + N'#' + N'$.studentAssessmentRegistrationReference.assigningEducationOrganizationId=' + CAST(i.[StudentAssessmentRegistration_AssigningEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentRegistrationReference.educationOrganizationId=' + CAST(i.[StudentAssessmentRegistration_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentAssessmentRegistrationReference.namespace=' + i.[StudentAssessmentRegistration_Namespace] + N'#' + N'$.studentAssessmentRegistrationReference.studentUniqueId=' + i.[StudentAssessmentRegistration_StudentUniqueId]), i.[DocumentId], 287
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -65392,8 +62080,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentCTEProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 288, N'Ed-Fi:StudentCTEProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -65412,54 +62100,11 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentCTEProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 288, N'Ed-Fi:StudentCTEProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentCTEProgramAssociation_ReferentialIdentity]
-ON [edfi].[StudentCTEProgramAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 288;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCTEProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 288
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 288;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCTEProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 288
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -65619,39 +62264,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentCohortAssociation_ReferentialIdentity]
-ON [edfi].[StudentCohortAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 290;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCohortAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.cohortReference.cohortIdentifier=' + i.[Cohort_CohortIdentifier] + N'#' + N'$.cohortReference.educationOrganizationId=' + CAST(i.[Cohort_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 290
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([Cohort_CohortIdentifier]) OR UPDATE([Cohort_EducationOrganizationId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (CAST(i.[Cohort_CohortIdentifier] AS varbinary(max)) <> CAST(d.[Cohort_CohortIdentifier] AS varbinary(max)) OR (i.[Cohort_CohortIdentifier] IS NULL AND d.[Cohort_CohortIdentifier] IS NOT NULL) OR (i.[Cohort_CohortIdentifier] IS NOT NULL AND d.[Cohort_CohortIdentifier] IS NULL)) OR (i.[Cohort_EducationOrganizationId] <> d.[Cohort_EducationOrganizationId] OR (i.[Cohort_EducationOrganizationId] IS NULL AND d.[Cohort_EducationOrganizationId] IS NOT NULL) OR (i.[Cohort_EducationOrganizationId] IS NOT NULL AND d.[Cohort_EducationOrganizationId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 290;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCohortAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.cohortReference.cohortIdentifier=' + i.[Cohort_CohortIdentifier] + N'#' + N'$.cohortReference.educationOrganizationId=' + CAST(i.[Cohort_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 290
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentCohortAssociation_Stamp]
 ON [edfi].[StudentCohortAssociation]
 AFTER INSERT, UPDATE, DELETE
@@ -65803,39 +62415,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[StudentCohortAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentCompetencyObjective_ReferentialIdentity]
-ON [edfi].[StudentCompetencyObjective]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 291;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCompetencyObjective' AS nvarchar(max)) + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.educationOrganizationId=' + CAST(i.[ObjectiveCompetencyObjective_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.objective=' + i.[ObjectiveCompetencyObjective_Objective] + N'#' + N'$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 291
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]) OR UPDATE([GradingPeriodGradingPeriod_GradingPeriodName]) OR UPDATE([GradingPeriodGradingPeriod_SchoolId]) OR UPDATE([GradingPeriodGradingPeriod_SchoolYear]) OR UPDATE([ObjectiveCompetencyObjective_EducationOrganizationId]) OR UPDATE([ObjectiveCompetencyObjective_Objective]) OR UPDATE([ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] <> d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) <> CAST(d.[GradingPeriodGradingPeriod_GradingPeriodName] AS varbinary(max)) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_GradingPeriodName] IS NOT NULL AND d.[GradingPeriodGradingPeriod_GradingPeriodName] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolId] <> d.[GradingPeriodGradingPeriod_SchoolId] OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolId] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolId] IS NULL)) OR (i.[GradingPeriodGradingPeriod_SchoolYear] <> d.[GradingPeriodGradingPeriod_SchoolYear] OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL) OR (i.[GradingPeriodGradingPeriod_SchoolYear] IS NOT NULL AND d.[GradingPeriodGradingPeriod_SchoolYear] IS NULL)) OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] <> d.[ObjectiveCompetencyObjective_EducationOrganizationId] OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NULL AND d.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NOT NULL AND d.[ObjectiveCompetencyObjective_EducationOrganizationId] IS NULL)) OR (CAST(i.[ObjectiveCompetencyObjective_Objective] AS varbinary(max)) <> CAST(d.[ObjectiveCompetencyObjective_Objective] AS varbinary(max)) OR (i.[ObjectiveCompetencyObjective_Objective] IS NULL AND d.[ObjectiveCompetencyObjective_Objective] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_Objective] IS NOT NULL AND d.[ObjectiveCompetencyObjective_Objective] IS NULL)) OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] <> d.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL AND d.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL) OR (i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NOT NULL AND d.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 291;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentCompetencyObjective' AS nvarchar(max)) + N'$.gradingPeriodReference.gradingPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId])) + N'#' + N'$.gradingPeriodReference.gradingPeriodName=' + i.[GradingPeriodGradingPeriod_GradingPeriodName] + N'#' + N'$.gradingPeriodReference.schoolId=' + CAST(i.[GradingPeriodGradingPeriod_SchoolId] AS nvarchar(max)) + N'#' + N'$.gradingPeriodReference.schoolYear=' + CAST(i.[GradingPeriodGradingPeriod_SchoolYear] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.educationOrganizationId=' + CAST(i.[ObjectiveCompetencyObjective_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.objectiveCompetencyObjectiveReference.objective=' + i.[ObjectiveCompetencyObjective_Objective] + N'#' + N'$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ObjectiveCompetencyObjective_ObjectiveGradeLevelDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 291
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -66075,39 +62654,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentContactAssociation_ReferentialIdentity]
-ON [edfi].[StudentContactAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 292;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentContactAssociation' AS nvarchar(max)) + N'$.contactReference.contactUniqueId=' + i.[Contact_ContactUniqueId] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 292
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Contact_ContactUniqueId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Contact_ContactUniqueId] AS varbinary(max)) <> CAST(d.[Contact_ContactUniqueId] AS varbinary(max)) OR (i.[Contact_ContactUniqueId] IS NULL AND d.[Contact_ContactUniqueId] IS NOT NULL) OR (i.[Contact_ContactUniqueId] IS NOT NULL AND d.[Contact_ContactUniqueId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 292;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentContactAssociation' AS nvarchar(max)) + N'$.contactReference.contactUniqueId=' + i.[Contact_ContactUniqueId] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 292
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentContactAssociation_Stamp]
 ON [edfi].[StudentContactAssociation]
 AFTER INSERT, UPDATE, DELETE
@@ -66217,39 +62763,6 @@ BEGIN
             INNER JOIN [edfi].[Student] oldPj1 ON oldPj1.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [edfi].[Contact] newPj0 ON newPj0.[ContactUniqueId] = i.[Contact_ContactUniqueId]
             INNER JOIN [edfi].[Student] newPj1 ON newPj1.[StudentUniqueId] = i.[Student_StudentUniqueId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentDisciplineIncidentBehaviorAssociation_ReferentialIdentity]
-ON [edfi].[StudentDisciplineIncidentBehaviorAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 293;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentBehaviorAssociation' AS nvarchar(max)) + N'$.behaviorDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[BehaviorDescriptor_DescriptorId])) + N'#' + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 293
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BehaviorDescriptor_DescriptorId]) OR UPDATE([DisciplineIncident_IncidentIdentifier]) OR UPDATE([DisciplineIncident_SchoolId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BehaviorDescriptor_DescriptorId] <> d.[BehaviorDescriptor_DescriptorId] OR (i.[BehaviorDescriptor_DescriptorId] IS NULL AND d.[BehaviorDescriptor_DescriptorId] IS NOT NULL) OR (i.[BehaviorDescriptor_DescriptorId] IS NOT NULL AND d.[BehaviorDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) <> CAST(d.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) OR (i.[DisciplineIncident_IncidentIdentifier] IS NULL AND d.[DisciplineIncident_IncidentIdentifier] IS NOT NULL) OR (i.[DisciplineIncident_IncidentIdentifier] IS NOT NULL AND d.[DisciplineIncident_IncidentIdentifier] IS NULL)) OR (i.[DisciplineIncident_SchoolId] <> d.[DisciplineIncident_SchoolId] OR (i.[DisciplineIncident_SchoolId] IS NULL AND d.[DisciplineIncident_SchoolId] IS NOT NULL) OR (i.[DisciplineIncident_SchoolId] IS NOT NULL AND d.[DisciplineIncident_SchoolId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 293;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentBehaviorAssociation' AS nvarchar(max)) + N'$.behaviorDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[BehaviorDescriptor_DescriptorId])) + N'#' + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 293
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -66457,39 +62970,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentDisciplineIncidentNonOffenderAssociation_ReferentialIdentity]
-ON [edfi].[StudentDisciplineIncidentNonOffenderAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 294;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentNonOffenderAssociation' AS nvarchar(max)) + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 294
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([DisciplineIncident_IncidentIdentifier]) OR UPDATE([DisciplineIncident_SchoolId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) <> CAST(d.[DisciplineIncident_IncidentIdentifier] AS varbinary(max)) OR (i.[DisciplineIncident_IncidentIdentifier] IS NULL AND d.[DisciplineIncident_IncidentIdentifier] IS NOT NULL) OR (i.[DisciplineIncident_IncidentIdentifier] IS NOT NULL AND d.[DisciplineIncident_IncidentIdentifier] IS NULL)) OR (i.[DisciplineIncident_SchoolId] <> d.[DisciplineIncident_SchoolId] OR (i.[DisciplineIncident_SchoolId] IS NULL AND d.[DisciplineIncident_SchoolId] IS NOT NULL) OR (i.[DisciplineIncident_SchoolId] IS NOT NULL AND d.[DisciplineIncident_SchoolId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 294;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentDisciplineIncidentNonOffenderAssociation' AS nvarchar(max)) + N'$.disciplineIncidentReference.incidentIdentifier=' + i.[DisciplineIncident_IncidentIdentifier] + N'#' + N'$.disciplineIncidentReference.schoolId=' + CAST(i.[DisciplineIncident_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 294
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentDisciplineIncidentNonOffenderAssociation_Stamp]
 ON [edfi].[StudentDisciplineIncidentNonOffenderAssociation]
 AFTER INSERT, UPDATE, DELETE
@@ -66639,39 +63119,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentEducationOrganizationAssessmentAccommodation_ReferentialIdentity]
-ON [edfi].[StudentEducationOrganizationAssessmentAccommodation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 295;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationAssessmentAccommodation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 295
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 295;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationAssessmentAccommodation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 295
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentEducationOrganizationAssessmentAccommodation_Stamp]
 ON [edfi].[StudentEducationOrganizationAssessmentAccommodation]
 AFTER INSERT, UPDATE, DELETE
@@ -66811,39 +63258,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[StudentEducationOrganizationAssessmentAccommodation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentEducationOrganizationAssociation_ReferentialIdentity]
-ON [edfi].[StudentEducationOrganizationAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 296;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 296
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 296;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 296
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -67675,39 +64089,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentEducationOrganizationResponsibilityAssociation_ReferentialIdentity]
-ON [edfi].[StudentEducationOrganizationResponsibilityAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 297;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationResponsibilityAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.responsibilityDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ResponsibilityDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 297
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ResponsibilityDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ResponsibilityDescriptor_DescriptorId] <> d.[ResponsibilityDescriptor_DescriptorId] OR (i.[ResponsibilityDescriptor_DescriptorId] IS NULL AND d.[ResponsibilityDescriptor_DescriptorId] IS NOT NULL) OR (i.[ResponsibilityDescriptor_DescriptorId] IS NOT NULL AND d.[ResponsibilityDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 297;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentEducationOrganizationResponsibilityAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.responsibilityDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ResponsibilityDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 297
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentEducationOrganizationResponsibilityAssociation_Stamp]
 ON [edfi].[StudentEducationOrganizationResponsibilityAssociation]
 AFTER INSERT, UPDATE, DELETE
@@ -67834,39 +64215,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentGradebookEntry_ReferentialIdentity]
-ON [edfi].[StudentGradebookEntry]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 298;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentGradebookEntry' AS nvarchar(max)) + N'$.gradebookEntryReference.gradebookEntryIdentifier=' + i.[GradebookEntry_GradebookEntryIdentifier] + N'#' + N'$.gradebookEntryReference.namespace=' + i.[GradebookEntry_Namespace] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 298
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([GradebookEntry_GradebookEntryIdentifier]) OR UPDATE([GradebookEntry_Namespace]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[GradebookEntry_GradebookEntryIdentifier] AS varbinary(max)) <> CAST(d.[GradebookEntry_GradebookEntryIdentifier] AS varbinary(max)) OR (i.[GradebookEntry_GradebookEntryIdentifier] IS NULL AND d.[GradebookEntry_GradebookEntryIdentifier] IS NOT NULL) OR (i.[GradebookEntry_GradebookEntryIdentifier] IS NOT NULL AND d.[GradebookEntry_GradebookEntryIdentifier] IS NULL)) OR (CAST(i.[GradebookEntry_Namespace] AS varbinary(max)) <> CAST(d.[GradebookEntry_Namespace] AS varbinary(max)) OR (i.[GradebookEntry_Namespace] IS NULL AND d.[GradebookEntry_Namespace] IS NOT NULL) OR (i.[GradebookEntry_Namespace] IS NOT NULL AND d.[GradebookEntry_Namespace] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 298;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentGradebookEntry' AS nvarchar(max)) + N'$.gradebookEntryReference.gradebookEntryIdentifier=' + i.[GradebookEntry_GradebookEntryIdentifier] + N'#' + N'$.gradebookEntryReference.namespace=' + i.[GradebookEntry_Namespace] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 298
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentGradebookEntry_Stamp]
 ON [edfi].[StudentGradebookEntry]
 AFTER INSERT, UPDATE, DELETE
@@ -67973,39 +64321,6 @@ BEGIN
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentHealth_ReferentialIdentity]
-ON [edfi].[StudentHealth]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 299;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHealth' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 299
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 299;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHealth' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 299
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -68284,8 +64599,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentHomelessProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 300, N'Ed-Fi:StudentHomelessProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -68304,54 +64619,11 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentHomelessProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 300, N'Ed-Fi:StudentHomelessProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentHomelessProgramAssociation_ReferentialIdentity]
-ON [edfi].[StudentHomelessProgramAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 300;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHomelessProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 300
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 300;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentHomelessProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 300
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -68549,39 +64821,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentInterventionAssociation_ReferentialIdentity]
-ON [edfi].[StudentInterventionAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 302;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAssociation' AS nvarchar(max)) + N'$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 302
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Intervention_EducationOrganizationId]) OR UPDATE([Intervention_InterventionIdentificationCode]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[Intervention_EducationOrganizationId] <> d.[Intervention_EducationOrganizationId] OR (i.[Intervention_EducationOrganizationId] IS NULL AND d.[Intervention_EducationOrganizationId] IS NOT NULL) OR (i.[Intervention_EducationOrganizationId] IS NOT NULL AND d.[Intervention_EducationOrganizationId] IS NULL)) OR (CAST(i.[Intervention_InterventionIdentificationCode] AS varbinary(max)) <> CAST(d.[Intervention_InterventionIdentificationCode] AS varbinary(max)) OR (i.[Intervention_InterventionIdentificationCode] IS NULL AND d.[Intervention_InterventionIdentificationCode] IS NOT NULL) OR (i.[Intervention_InterventionIdentificationCode] IS NOT NULL AND d.[Intervention_InterventionIdentificationCode] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 302;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAssociation' AS nvarchar(max)) + N'$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 302
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentInterventionAssociation_Stamp]
 ON [edfi].[StudentInterventionAssociation]
 AFTER INSERT, UPDATE, DELETE
@@ -68727,39 +64966,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[StudentInterventionAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentInterventionAttendanceEvent_ReferentialIdentity]
-ON [edfi].[StudentInterventionAttendanceEvent]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 303;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 303
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AttendanceEventCategoryDescriptor_DescriptorId]) OR UPDATE([EventDate]) OR UPDATE([Intervention_EducationOrganizationId]) OR UPDATE([Intervention_InterventionIdentificationCode]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> d.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EventDate] <> d.[EventDate] OR (i.[EventDate] IS NULL AND d.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND d.[EventDate] IS NULL)) OR (i.[Intervention_EducationOrganizationId] <> d.[Intervention_EducationOrganizationId] OR (i.[Intervention_EducationOrganizationId] IS NULL AND d.[Intervention_EducationOrganizationId] IS NOT NULL) OR (i.[Intervention_EducationOrganizationId] IS NOT NULL AND d.[Intervention_EducationOrganizationId] IS NULL)) OR (CAST(i.[Intervention_InterventionIdentificationCode] AS varbinary(max)) <> CAST(d.[Intervention_InterventionIdentificationCode] AS varbinary(max)) OR (i.[Intervention_InterventionIdentificationCode] IS NULL AND d.[Intervention_InterventionIdentificationCode] IS NOT NULL) OR (i.[Intervention_InterventionIdentificationCode] IS NOT NULL AND d.[Intervention_InterventionIdentificationCode] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 303;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentInterventionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.interventionReference.educationOrganizationId=' + CAST(i.[Intervention_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.interventionReference.interventionIdentificationCode=' + i.[Intervention_InterventionIdentificationCode] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 303
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -68912,8 +65118,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentLanguageInstructionProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 304, N'Ed-Fi:StudentLanguageInstructionProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -68932,54 +65138,11 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentLanguageInstructionProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 304, N'Ed-Fi:StudentLanguageInstructionProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentLanguageInstructionProgramAssociation_ReferentialIdentity]
-ON [edfi].[StudentLanguageInstructionProgramAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 304;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentLanguageInstructionProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 304
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 304;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentLanguageInstructionProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 304
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -69193,8 +65356,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentMigrantEducationProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 305, N'Ed-Fi:StudentMigrantEducationProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -69213,54 +65376,11 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentMigrantEducationProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 305, N'Ed-Fi:StudentMigrantEducationProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentMigrantEducationProgramAssociation_ReferentialIdentity]
-ON [edfi].[StudentMigrantEducationProgramAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 305;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentMigrantEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 305
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 305;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentMigrantEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 305
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -69436,8 +65556,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 306, N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -69456,54 +65576,11 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 306, N'Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentNeglectedOrDelinquentProgramAssociation_ReferentialIdentity]
-ON [edfi].[StudentNeglectedOrDelinquentProgramAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 306;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentNeglectedOrDelinquentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 306
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 306;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentNeglectedOrDelinquentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 306
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -69755,8 +65832,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 307, N'Ed-Fi:StudentProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -69775,54 +65852,11 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 307, N'Ed-Fi:StudentProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentProgramAssociation_ReferentialIdentity]
-ON [edfi].[StudentProgramAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 307;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 307
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 307;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 307
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -69982,39 +66016,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentProgramAttendanceEvent_ReferentialIdentity]
-ON [edfi].[StudentProgramAttendanceEvent]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 308;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 308
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AttendanceEventCategoryDescriptor_DescriptorId]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([EventDate]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> d.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[EventDate] <> d.[EventDate] OR (i.[EventDate] IS NULL AND d.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND d.[EventDate] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 308;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 308
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentProgramAttendanceEvent_Stamp]
 ON [edfi].[StudentProgramAttendanceEvent]
 AFTER INSERT, UPDATE, DELETE
@@ -70163,39 +66164,6 @@ BEGIN
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentProgramEvaluation_ReferentialIdentity]
-ON [edfi].[StudentProgramEvaluation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 309;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramEvaluation' AS nvarchar(max)) + N'$.evaluationDate=' + CONVERT(nvarchar(10), i.[EvaluationDate], 23) + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 309
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EvaluationDate]) OR UPDATE([ProgramEvaluation_ProgramEducationOrganizationId]) OR UPDATE([ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluation_ProgramEvaluationTitle]) OR UPDATE([ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([ProgramEvaluation_ProgramName]) OR UPDATE([ProgramEvaluation_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EvaluationDate] <> d.[EvaluationDate] OR (i.[EvaluationDate] IS NULL AND d.[EvaluationDate] IS NOT NULL) OR (i.[EvaluationDate] IS NOT NULL AND d.[EvaluationDate] IS NULL)) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] <> d.[ProgramEvaluation_ProgramEducationOrganizationId] OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEducationOrganizationId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEducationOrganizationId] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramEvaluationTitle] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTitle] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTitle] IS NULL)) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[ProgramEvaluation_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramEvaluation_ProgramName] AS varbinary(max)) OR (i.[ProgramEvaluation_ProgramName] IS NULL AND d.[ProgramEvaluation_ProgramName] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramName] IS NOT NULL AND d.[ProgramEvaluation_ProgramName] IS NULL)) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 309;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentProgramEvaluation' AS nvarchar(max)) + N'$.evaluationDate=' + CONVERT(nvarchar(10), i.[EvaluationDate], 23) + N'#' + N'$.programEvaluationReference.programEducationOrganizationId=' + CAST(i.[ProgramEvaluation_ProgramEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programEvaluationReference.programEvaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programEvaluationTitle=' + i.[ProgramEvaluation_ProgramEvaluationTitle] + N'#' + N'$.programEvaluationReference.programEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.programEvaluationReference.programName=' + i.[ProgramEvaluation_ProgramName] + N'#' + N'$.programEvaluationReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramEvaluation_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 309
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -70483,39 +66451,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolAssociation_ReferentialIdentity]
-ON [edfi].[StudentSchoolAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 310;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAssociation' AS nvarchar(max)) + N'$.entryDate=' + CONVERT(nvarchar(10), i.[EntryDate], 23) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 310
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EntryDate]) OR UPDATE([SchoolId_Unified]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EntryDate] <> d.[EntryDate] OR (i.[EntryDate] IS NULL AND d.[EntryDate] IS NOT NULL) OR (i.[EntryDate] IS NOT NULL AND d.[EntryDate] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 310;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAssociation' AS nvarchar(max)) + N'$.entryDate=' + CONVERT(nvarchar(10), i.[EntryDate], 23) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 310
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolAssociation_Stamp]
 ON [edfi].[StudentSchoolAssociation]
 AFTER INSERT, UPDATE, DELETE
@@ -70703,39 +66638,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolAttendanceEvent_ReferentialIdentity]
-ON [edfi].[StudentSchoolAttendanceEvent]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 311;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionReference.sessionName=' + i.[Session_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 311
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AttendanceEventCategoryDescriptor_DescriptorId]) OR UPDATE([EventDate]) OR UPDATE([SchoolId_Unified]) OR UPDATE([Session_SchoolYear]) OR UPDATE([Session_SessionName]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> d.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EventDate] <> d.[EventDate] OR (i.[EventDate] IS NULL AND d.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND d.[EventDate] IS NULL)) OR (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[Session_SchoolYear] <> d.[Session_SchoolYear] OR (i.[Session_SchoolYear] IS NULL AND d.[Session_SchoolYear] IS NOT NULL) OR (i.[Session_SchoolYear] IS NOT NULL AND d.[Session_SchoolYear] IS NULL)) OR (CAST(i.[Session_SessionName] AS varbinary(max)) <> CAST(d.[Session_SessionName] AS varbinary(max)) OR (i.[Session_SessionName] IS NULL AND d.[Session_SessionName] IS NOT NULL) OR (i.[Session_SessionName] IS NOT NULL AND d.[Session_SessionName] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 311;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolId=' + CAST(i.[Session_SchoolId] AS nvarchar(max)) + N'#' + N'$.sessionReference.schoolYear=' + CAST(i.[Session_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sessionReference.sessionName=' + i.[Session_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 311
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolAttendanceEvent_Stamp]
 ON [edfi].[StudentSchoolAttendanceEvent]
 AFTER INSERT, UPDATE, DELETE
@@ -70890,8 +66792,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 312, N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -70910,54 +66812,11 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 312, N'Ed-Fi:StudentSchoolFoodServiceProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolFoodServiceProgramAssociation_ReferentialIdentity]
-ON [edfi].[StudentSchoolFoodServiceProgramAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 312;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolFoodServiceProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 312
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 312;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSchoolFoodServiceProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 312
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -71133,8 +66992,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSection504ProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 313, N'Ed-Fi:StudentSection504ProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -71153,54 +67012,11 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSection504ProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 313, N'Ed-Fi:StudentSection504ProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentSection504ProgramAssociation_ReferentialIdentity]
-ON [edfi].[StudentSection504ProgramAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 313;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSection504ProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 313
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 313;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSection504ProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 313
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -71318,39 +67134,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[StudentSection504ProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentSectionAssociation_ReferentialIdentity]
-ON [edfi].[StudentSectionAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 314;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 314
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([Section_LocalCourseCode]) OR UPDATE([Section_SchoolId]) OR UPDATE([Section_SchoolYear]) OR UPDATE([Section_SectionIdentifier]) OR UPDATE([Section_SessionName]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(d.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND d.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> d.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND d.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND d.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> d.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND d.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND d.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(d.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND d.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(d.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND d.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND d.[Section_SessionName] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 314;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 314
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -71524,39 +67307,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[StudentSectionAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentSectionAttendanceEvent_ReferentialIdentity]
-ON [edfi].[StudentSectionAttendanceEvent]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 315;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 315
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AttendanceEventCategoryDescriptor_DescriptorId]) OR UPDATE([EventDate]) OR UPDATE([Section_LocalCourseCode]) OR UPDATE([Section_SchoolId]) OR UPDATE([Section_SchoolYear]) OR UPDATE([Section_SectionIdentifier]) OR UPDATE([Section_SessionName]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AttendanceEventCategoryDescriptor_DescriptorId] <> d.[AttendanceEventCategoryDescriptor_DescriptorId] OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL) OR (i.[AttendanceEventCategoryDescriptor_DescriptorId] IS NOT NULL AND d.[AttendanceEventCategoryDescriptor_DescriptorId] IS NULL)) OR (i.[EventDate] <> d.[EventDate] OR (i.[EventDate] IS NULL AND d.[EventDate] IS NOT NULL) OR (i.[EventDate] IS NOT NULL AND d.[EventDate] IS NULL)) OR (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(d.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND d.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> d.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND d.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND d.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> d.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND d.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND d.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(d.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND d.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(d.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND d.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND d.[Section_SessionName] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 315;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSectionAttendanceEvent' AS nvarchar(max)) + N'$.attendanceEventCategoryDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AttendanceEventCategoryDescriptor_DescriptorId])) + N'#' + N'$.eventDate=' + CONVERT(nvarchar(10), i.[EventDate], 23) + N'#' + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 315
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -71765,8 +67515,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSpecialEducationProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 316, N'Ed-Fi:StudentSpecialEducationProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -71785,54 +67535,11 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentSpecialEducationProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 316, N'Ed-Fi:StudentSpecialEducationProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentSpecialEducationProgramAssociation_ReferentialIdentity]
-ON [edfi].[StudentSpecialEducationProgramAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 316;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 316
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 316;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 316
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -72144,39 +67851,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentSpecialEducationProgramEligibilityAssociation_ReferentialIdentity]
-ON [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 317;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramEligibilityAssociation' AS nvarchar(max)) + N'$.consentToEvaluationReceivedDate=' + CONVERT(nvarchar(10), i.[ConsentToEvaluationReceivedDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 317
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([ConsentToEvaluationReceivedDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[ConsentToEvaluationReceivedDate] <> d.[ConsentToEvaluationReceivedDate] OR (i.[ConsentToEvaluationReceivedDate] IS NULL AND d.[ConsentToEvaluationReceivedDate] IS NOT NULL) OR (i.[ConsentToEvaluationReceivedDate] IS NOT NULL AND d.[ConsentToEvaluationReceivedDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 317;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentSpecialEducationProgramEligibilityAssociation' AS nvarchar(max)) + N'$.consentToEvaluationReceivedDate=' + CONVERT(nvarchar(10), i.[ConsentToEvaluationReceivedDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 317
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentSpecialEducationProgramEligibilityAssociation_Stamp]
 ON [edfi].[StudentSpecialEducationProgramEligibilityAssociation]
 AFTER INSERT, UPDATE, DELETE
@@ -72331,8 +68005,8 @@ BEGIN
             INNER JOIN inserted s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
         END
-        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentTitleIPartAProgramAssociation'
+        INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+        SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 318, N'Ed-Fi:StudentTitleIPartAProgramAssociation'
         FROM inserted s
         LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
         WHERE existing.[DocumentId] IS NULL;
@@ -72351,54 +68025,11 @@ BEGIN
             FROM [edfi].[GeneralStudentProgramAssociationIdentity] t
             INNER JOIN (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s ON t.[DocumentId] = s.[DocumentId]
             OPTION (KEEPFIXED PLAN);
-            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [Discriminator])
-            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], N'Ed-Fi:StudentTitleIPartAProgramAssociation'
+            INSERT INTO [edfi].[GeneralStudentProgramAssociationIdentity] ([DocumentId], [BeginDate], [EducationOrganization_EducationOrganizationId], [Program_EducationOrganizationId], [Program_ProgramName], [Program_ProgramTypeDescriptor_DescriptorId], [Student_StudentUniqueId], [ResourceKeyId], [Discriminator])
+            SELECT s.[DocumentId], s.[BeginDate], s.[EducationOrganization_EducationOrganizationId], s.[ProgramProgram_EducationOrganizationId], s.[ProgramProgram_ProgramName], s.[ProgramProgram_ProgramTypeDescriptor_DescriptorId], s.[Student_StudentUniqueId], 318, N'Ed-Fi:StudentTitleIPartAProgramAssociation'
             FROM (SELECT i.* FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId]) AS s
             LEFT JOIN [edfi].[GeneralStudentProgramAssociationIdentity] existing ON existing.[DocumentId] = s.[DocumentId]
             WHERE existing.[DocumentId] IS NULL;
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentTitleIPartAProgramAssociation_ReferentialIdentity]
-ON [edfi].[StudentTitleIPartAProgramAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 318;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTitleIPartAProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 318
-        FROM inserted i;
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 121;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramProgram_EducationOrganizationId]) OR UPDATE([ProgramProgram_ProgramName]) OR UPDATE([ProgramProgram_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[ProgramProgram_EducationOrganizationId] <> d.[ProgramProgram_EducationOrganizationId] OR (i.[ProgramProgram_EducationOrganizationId] IS NULL AND d.[ProgramProgram_EducationOrganizationId] IS NOT NULL) OR (i.[ProgramProgram_EducationOrganizationId] IS NOT NULL AND d.[ProgramProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramProgram_ProgramName] AS varbinary(max)) <> CAST(d.[ProgramProgram_ProgramName] AS varbinary(max)) OR (i.[ProgramProgram_ProgramName] IS NULL AND d.[ProgramProgram_ProgramName] IS NOT NULL) OR (i.[ProgramProgram_ProgramName] IS NOT NULL AND d.[ProgramProgram_ProgramName] IS NULL)) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] <> d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramProgram_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 318;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTitleIPartAProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 318
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 121;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiGeneralStudentProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.educationOrganizationId=' + CAST(i.[ProgramProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[ProgramProgram_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramProgram_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 121
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -72554,39 +68185,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[StudentTitleIPartAProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentTransportation_ReferentialIdentity]
-ON [edfi].[StudentTransportation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 319;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTransportation' AS nvarchar(max)) + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$.transportationEducationOrganizationReference.educationOrganizationId=' + CAST(i.[TransportationEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 319
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Student_StudentUniqueId]) OR UPDATE([TransportationEducationOrganization_EducationOrganizationId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL)) OR (i.[TransportationEducationOrganization_EducationOrganizationId] <> d.[TransportationEducationOrganization_EducationOrganizationId] OR (i.[TransportationEducationOrganization_EducationOrganizationId] IS NULL AND d.[TransportationEducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[TransportationEducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[TransportationEducationOrganization_EducationOrganizationId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 319;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiStudentTransportation' AS nvarchar(max)) + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId] + N'#' + N'$.transportationEducationOrganizationReference.educationOrganizationId=' + CAST(i.[TransportationEducationOrganization_EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 319
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -72810,39 +68408,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_Survey_ReferentialIdentity]
-ON [edfi].[Survey]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 322;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurvey' AS nvarchar(max)) + N'$.namespace=' + i.[Namespace] + N'#' + N'$.surveyIdentifier=' + i.[SurveyIdentifier]), i.[DocumentId], 322
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Namespace]) OR UPDATE([SurveyIdentifier]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Namespace] AS varbinary(max)) <> CAST(d.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND d.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND d.[Namespace] IS NULL)) OR (CAST(i.[SurveyIdentifier] AS varbinary(max)) <> CAST(d.[SurveyIdentifier] AS varbinary(max)) OR (i.[SurveyIdentifier] IS NULL AND d.[SurveyIdentifier] IS NOT NULL) OR (i.[SurveyIdentifier] IS NOT NULL AND d.[SurveyIdentifier] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 322;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurvey' AS nvarchar(max)) + N'$.namespace=' + i.[Namespace] + N'#' + N'$.surveyIdentifier=' + i.[SurveyIdentifier]), i.[DocumentId], 322
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_Survey_Stamp]
 ON [edfi].[Survey]
 AFTER INSERT, UPDATE, DELETE
@@ -72934,39 +68499,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_SurveyCourseAssociation_ReferentialIdentity]
-ON [edfi].[SurveyCourseAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 324;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyCourseAssociation' AS nvarchar(max)) + N'$.courseReference.courseCode=' + i.[Course_CourseCode] + N'#' + N'$.courseReference.educationOrganizationId=' + CAST(i.[Course_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 324
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Course_CourseCode]) OR UPDATE([Course_EducationOrganizationId]) OR UPDATE([Survey_Namespace]) OR UPDATE([Survey_SurveyIdentifier]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Course_CourseCode] AS varbinary(max)) <> CAST(d.[Course_CourseCode] AS varbinary(max)) OR (i.[Course_CourseCode] IS NULL AND d.[Course_CourseCode] IS NOT NULL) OR (i.[Course_CourseCode] IS NOT NULL AND d.[Course_CourseCode] IS NULL)) OR (i.[Course_EducationOrganizationId] <> d.[Course_EducationOrganizationId] OR (i.[Course_EducationOrganizationId] IS NULL AND d.[Course_EducationOrganizationId] IS NOT NULL) OR (i.[Course_EducationOrganizationId] IS NOT NULL AND d.[Course_EducationOrganizationId] IS NULL)) OR (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(d.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND d.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND d.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(d.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND d.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND d.[Survey_SurveyIdentifier] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 324;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyCourseAssociation' AS nvarchar(max)) + N'$.courseReference.courseCode=' + i.[Course_CourseCode] + N'#' + N'$.courseReference.educationOrganizationId=' + CAST(i.[Course_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 324
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -73075,39 +68607,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_SurveyProgramAssociation_ReferentialIdentity]
-ON [edfi].[SurveyProgramAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 326;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyProgramAssociation' AS nvarchar(max)) + N'$.programReference.educationOrganizationId=' + CAST(i.[Program_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[Program_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Program_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 326
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Program_EducationOrganizationId]) OR UPDATE([Program_ProgramName]) OR UPDATE([Program_ProgramTypeDescriptor_DescriptorId]) OR UPDATE([Survey_Namespace]) OR UPDATE([Survey_SurveyIdentifier]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[Program_EducationOrganizationId] <> d.[Program_EducationOrganizationId] OR (i.[Program_EducationOrganizationId] IS NULL AND d.[Program_EducationOrganizationId] IS NOT NULL) OR (i.[Program_EducationOrganizationId] IS NOT NULL AND d.[Program_EducationOrganizationId] IS NULL)) OR (CAST(i.[Program_ProgramName] AS varbinary(max)) <> CAST(d.[Program_ProgramName] AS varbinary(max)) OR (i.[Program_ProgramName] IS NULL AND d.[Program_ProgramName] IS NOT NULL) OR (i.[Program_ProgramName] IS NOT NULL AND d.[Program_ProgramName] IS NULL)) OR (i.[Program_ProgramTypeDescriptor_DescriptorId] <> d.[Program_ProgramTypeDescriptor_DescriptorId] OR (i.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[Program_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[Program_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[Program_ProgramTypeDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(d.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND d.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND d.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(d.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND d.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND d.[Survey_SurveyIdentifier] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 326;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyProgramAssociation' AS nvarchar(max)) + N'$.programReference.educationOrganizationId=' + CAST(i.[Program_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programReference.programName=' + i.[Program_ProgramName] + N'#' + N'$.programReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Program_ProgramTypeDescriptor_DescriptorId])) + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 326
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -73231,39 +68730,6 @@ BEGIN
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[Program_ProgramTypeDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[Program_ProgramTypeDescriptor_DescriptorId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_SurveyQuestion_ReferentialIdentity]
-ON [edfi].[SurveyQuestion]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 327;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyQuestion' AS nvarchar(max)) + N'$.questionCode=' + i.[QuestionCode] + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 327
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([QuestionCode]) OR UPDATE([Namespace_Unified]) OR UPDATE([SurveyIdentifier_Unified]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[QuestionCode] AS varbinary(max)) <> CAST(d.[QuestionCode] AS varbinary(max)) OR (i.[QuestionCode] IS NULL AND d.[QuestionCode] IS NOT NULL) OR (i.[QuestionCode] IS NOT NULL AND d.[QuestionCode] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(d.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND d.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND d.[SurveyIdentifier_Unified] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 327;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyQuestion' AS nvarchar(max)) + N'$.questionCode=' + i.[QuestionCode] + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 327
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -73405,39 +68871,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [edfi].[SurveyQuestion] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_SurveyQuestionResponse_ReferentialIdentity]
-ON [edfi].[SurveyQuestionResponse]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 328;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyQuestionResponse' AS nvarchar(max)) + N'$.surveyQuestionReference.namespace=' + i.[SurveyQuestion_Namespace] + N'#' + N'$.surveyQuestionReference.questionCode=' + i.[SurveyQuestion_QuestionCode] + N'#' + N'$.surveyQuestionReference.surveyIdentifier=' + i.[SurveyQuestion_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 328
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Namespace_Unified]) OR UPDATE([SurveyQuestion_QuestionCode]) OR UPDATE([SurveyIdentifier_Unified]) OR UPDATE([SurveyResponse_SurveyResponseIdentifier]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyQuestion_QuestionCode] AS varbinary(max)) <> CAST(d.[SurveyQuestion_QuestionCode] AS varbinary(max)) OR (i.[SurveyQuestion_QuestionCode] IS NULL AND d.[SurveyQuestion_QuestionCode] IS NOT NULL) OR (i.[SurveyQuestion_QuestionCode] IS NOT NULL AND d.[SurveyQuestion_QuestionCode] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(d.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND d.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND d.[SurveyIdentifier_Unified] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 328;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyQuestionResponse' AS nvarchar(max)) + N'$.surveyQuestionReference.namespace=' + i.[SurveyQuestion_Namespace] + N'#' + N'$.surveyQuestionReference.questionCode=' + i.[SurveyQuestion_QuestionCode] + N'#' + N'$.surveyQuestionReference.surveyIdentifier=' + i.[SurveyQuestion_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 328
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -73664,39 +69097,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_SurveyResponse_ReferentialIdentity]
-ON [edfi].[SurveyResponse]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 329;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponse' AS nvarchar(max)) + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier] + N'#' + N'$.surveyResponseIdentifier=' + i.[SurveyResponseIdentifier]), i.[DocumentId], 329
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Survey_Namespace]) OR UPDATE([Survey_SurveyIdentifier]) OR UPDATE([SurveyResponseIdentifier]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(d.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND d.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND d.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(d.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND d.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND d.[Survey_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponseIdentifier] IS NULL AND d.[SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponseIdentifier] IS NOT NULL AND d.[SurveyResponseIdentifier] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 329;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponse' AS nvarchar(max)) + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier] + N'#' + N'$.surveyResponseIdentifier=' + i.[SurveyResponseIdentifier]), i.[DocumentId], 329
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_SurveyResponse_Stamp]
 ON [edfi].[SurveyResponse]
 AFTER INSERT, UPDATE, DELETE
@@ -73794,39 +69194,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_SurveyResponseEducationOrganizationTargetAssociation_ReferentialIdentity]
-ON [edfi].[SurveyResponseEducationOrganizationTargetAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 330;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponseEducationOrganizationTargetAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 330
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([SurveyResponse_Namespace]) OR UPDATE([SurveyResponse_SurveyIdentifier]) OR UPDATE([SurveyResponse_SurveyResponseIdentifier]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[SurveyResponse_Namespace] AS varbinary(max)) <> CAST(d.[SurveyResponse_Namespace] AS varbinary(max)) OR (i.[SurveyResponse_Namespace] IS NULL AND d.[SurveyResponse_Namespace] IS NOT NULL) OR (i.[SurveyResponse_Namespace] IS NOT NULL AND d.[SurveyResponse_Namespace] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyIdentifier] IS NULL AND d.[SurveyResponse_SurveyIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyIdentifier] IS NOT NULL AND d.[SurveyResponse_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 330;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponseEducationOrganizationTargetAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 330
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -73935,39 +69302,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_SurveyResponseStaffTargetAssociation_ReferentialIdentity]
-ON [edfi].[SurveyResponseStaffTargetAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 331;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponseStaffTargetAssociation' AS nvarchar(max)) + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId] + N'#' + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 331
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Staff_StaffUniqueId]) OR UPDATE([SurveyResponse_Namespace]) OR UPDATE([SurveyResponse_SurveyIdentifier]) OR UPDATE([SurveyResponse_SurveyResponseIdentifier]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL)) OR (CAST(i.[SurveyResponse_Namespace] AS varbinary(max)) <> CAST(d.[SurveyResponse_Namespace] AS varbinary(max)) OR (i.[SurveyResponse_Namespace] IS NULL AND d.[SurveyResponse_Namespace] IS NOT NULL) OR (i.[SurveyResponse_Namespace] IS NOT NULL AND d.[SurveyResponse_Namespace] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyIdentifier] IS NULL AND d.[SurveyResponse_SurveyIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyIdentifier] IS NOT NULL AND d.[SurveyResponse_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 331;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveyResponseStaffTargetAssociation' AS nvarchar(max)) + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId] + N'#' + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 331
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -74128,39 +69462,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_SurveySection_ReferentialIdentity]
-ON [edfi].[SurveySection]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 332;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySection' AS nvarchar(max)) + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier] + N'#' + N'$.surveySectionTitle=' + i.[SurveySectionTitle]), i.[DocumentId], 332
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Survey_Namespace]) OR UPDATE([Survey_SurveyIdentifier]) OR UPDATE([SurveySectionTitle]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(d.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND d.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND d.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(d.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND d.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND d.[Survey_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveySectionTitle] AS varbinary(max)) <> CAST(d.[SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySectionTitle] IS NULL AND d.[SurveySectionTitle] IS NOT NULL) OR (i.[SurveySectionTitle] IS NOT NULL AND d.[SurveySectionTitle] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 332;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySection' AS nvarchar(max)) + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier] + N'#' + N'$.surveySectionTitle=' + i.[SurveySectionTitle]), i.[DocumentId], 332
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_SurveySection_Stamp]
 ON [edfi].[SurveySection]
 AFTER INSERT, UPDATE, DELETE
@@ -74258,39 +69559,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_SurveySectionAssociation_ReferentialIdentity]
-ON [edfi].[SurveySectionAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 333;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionAssociation' AS nvarchar(max)) + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 333
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Section_LocalCourseCode]) OR UPDATE([Section_SchoolId]) OR UPDATE([Section_SchoolYear]) OR UPDATE([Section_SectionIdentifier]) OR UPDATE([Section_SessionName]) OR UPDATE([Survey_Namespace]) OR UPDATE([Survey_SurveyIdentifier]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Section_LocalCourseCode] AS varbinary(max)) <> CAST(d.[Section_LocalCourseCode] AS varbinary(max)) OR (i.[Section_LocalCourseCode] IS NULL AND d.[Section_LocalCourseCode] IS NOT NULL) OR (i.[Section_LocalCourseCode] IS NOT NULL AND d.[Section_LocalCourseCode] IS NULL)) OR (i.[Section_SchoolId] <> d.[Section_SchoolId] OR (i.[Section_SchoolId] IS NULL AND d.[Section_SchoolId] IS NOT NULL) OR (i.[Section_SchoolId] IS NOT NULL AND d.[Section_SchoolId] IS NULL)) OR (i.[Section_SchoolYear] <> d.[Section_SchoolYear] OR (i.[Section_SchoolYear] IS NULL AND d.[Section_SchoolYear] IS NOT NULL) OR (i.[Section_SchoolYear] IS NOT NULL AND d.[Section_SchoolYear] IS NULL)) OR (CAST(i.[Section_SectionIdentifier] AS varbinary(max)) <> CAST(d.[Section_SectionIdentifier] AS varbinary(max)) OR (i.[Section_SectionIdentifier] IS NULL AND d.[Section_SectionIdentifier] IS NOT NULL) OR (i.[Section_SectionIdentifier] IS NOT NULL AND d.[Section_SectionIdentifier] IS NULL)) OR (CAST(i.[Section_SessionName] AS varbinary(max)) <> CAST(d.[Section_SessionName] AS varbinary(max)) OR (i.[Section_SessionName] IS NULL AND d.[Section_SessionName] IS NOT NULL) OR (i.[Section_SessionName] IS NOT NULL AND d.[Section_SessionName] IS NULL)) OR (CAST(i.[Survey_Namespace] AS varbinary(max)) <> CAST(d.[Survey_Namespace] AS varbinary(max)) OR (i.[Survey_Namespace] IS NULL AND d.[Survey_Namespace] IS NOT NULL) OR (i.[Survey_Namespace] IS NOT NULL AND d.[Survey_Namespace] IS NULL)) OR (CAST(i.[Survey_SurveyIdentifier] AS varbinary(max)) <> CAST(d.[Survey_SurveyIdentifier] AS varbinary(max)) OR (i.[Survey_SurveyIdentifier] IS NULL AND d.[Survey_SurveyIdentifier] IS NOT NULL) OR (i.[Survey_SurveyIdentifier] IS NOT NULL AND d.[Survey_SurveyIdentifier] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 333;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionAssociation' AS nvarchar(max)) + N'$.sectionReference.localCourseCode=' + i.[Section_LocalCourseCode] + N'#' + N'$.sectionReference.schoolId=' + CAST(i.[Section_SchoolId] AS nvarchar(max)) + N'#' + N'$.sectionReference.schoolYear=' + CAST(i.[Section_SchoolYear] AS nvarchar(max)) + N'#' + N'$.sectionReference.sectionIdentifier=' + i.[Section_SectionIdentifier] + N'#' + N'$.sectionReference.sessionName=' + i.[Section_SessionName] + N'#' + N'$.surveyReference.namespace=' + i.[Survey_Namespace] + N'#' + N'$.surveyReference.surveyIdentifier=' + i.[Survey_SurveyIdentifier]), i.[DocumentId], 333
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -74422,39 +69690,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [edfi].[TR_SurveySectionResponse_ReferentialIdentity]
-ON [edfi].[SurveySectionResponse]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 334;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponse' AS nvarchar(max)) + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier] + N'#' + N'$.surveySectionReference.namespace=' + i.[SurveySection_Namespace] + N'#' + N'$.surveySectionReference.surveyIdentifier=' + i.[SurveySection_SurveyIdentifier] + N'#' + N'$.surveySectionReference.surveySectionTitle=' + i.[SurveySection_SurveySectionTitle]), i.[DocumentId], 334
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Namespace_Unified]) OR UPDATE([SurveyIdentifier_Unified]) OR UPDATE([SurveyResponse_SurveyResponseIdentifier]) OR UPDATE([SurveySection_SurveySectionTitle]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(d.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND d.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND d.[SurveyIdentifier_Unified] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NULL)) OR (CAST(i.[SurveySection_SurveySectionTitle] AS varbinary(max)) <> CAST(d.[SurveySection_SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySection_SurveySectionTitle] IS NULL AND d.[SurveySection_SurveySectionTitle] IS NOT NULL) OR (i.[SurveySection_SurveySectionTitle] IS NOT NULL AND d.[SurveySection_SurveySectionTitle] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 334;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponse' AS nvarchar(max)) + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier] + N'#' + N'$.surveySectionReference.namespace=' + i.[SurveySection_Namespace] + N'#' + N'$.surveySectionReference.surveyIdentifier=' + i.[SurveySection_SurveyIdentifier] + N'#' + N'$.surveySectionReference.surveySectionTitle=' + i.[SurveySection_SurveySectionTitle]), i.[DocumentId], 334
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_SurveySectionResponse_Stamp]
 ON [edfi].[SurveySectionResponse]
 AFTER INSERT, UPDATE, DELETE
@@ -74558,39 +69793,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_SurveySectionResponseEducationOrganizationTargetAssociation_ReferentialIdentity]
-ON [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 335;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponseEducationOrganizationTargetAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveyResponseReferenceNamespace] + N'#' + N'$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier] + N'#' + N'$.surveySectionResponseReference.surveyResponseIdentifier=' + i.[SurveySectionResponse_SurveyResponseIdentifier] + N'#' + N'$.surveySectionResponseReference.surveySectionTitle=' + i.[SurveySectionResponse_SurveySectionTitle]), i.[DocumentId], 335
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([Namespace_Unified]) OR UPDATE([SurveyIdentifier_Unified]) OR UPDATE([SurveySectionResponse_SurveyResponseIdentifier]) OR UPDATE([SurveySectionResponse_SurveySectionTitle]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(d.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND d.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND d.[SurveyIdentifier_Unified] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL AND d.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL AND d.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) <> CAST(d.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NULL AND d.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL AND d.[SurveySectionResponse_SurveySectionTitle] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 335;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponseEducationOrganizationTargetAssociation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveyResponseReferenceNamespace] + N'#' + N'$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier] + N'#' + N'$.surveySectionResponseReference.surveyResponseIdentifier=' + i.[SurveySectionResponse_SurveyResponseIdentifier] + N'#' + N'$.surveySectionResponseReference.surveySectionTitle=' + i.[SurveySectionResponse_SurveySectionTitle]), i.[DocumentId], 335
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -74705,39 +69907,6 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [edfi].[TR_SurveySectionResponseStaffTargetAssociation_ReferentialIdentity]
-ON [edfi].[SurveySectionResponseStaffTargetAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 336;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponseStaffTargetAssociation' AS nvarchar(max)) + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId] + N'#' + N'$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveyResponseReferenceNamespace] + N'#' + N'$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier] + N'#' + N'$.surveySectionResponseReference.surveyResponseIdentifier=' + i.[SurveySectionResponse_SurveyResponseIdentifier] + N'#' + N'$.surveySectionResponseReference.surveySectionTitle=' + i.[SurveySectionResponse_SurveySectionTitle]), i.[DocumentId], 336
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Staff_StaffUniqueId]) OR UPDATE([Namespace_Unified]) OR UPDATE([SurveyIdentifier_Unified]) OR UPDATE([SurveySectionResponse_SurveyResponseIdentifier]) OR UPDATE([SurveySectionResponse_SurveySectionTitle]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Staff_StaffUniqueId] AS varbinary(max)) <> CAST(d.[Staff_StaffUniqueId] AS varbinary(max)) OR (i.[Staff_StaffUniqueId] IS NULL AND d.[Staff_StaffUniqueId] IS NOT NULL) OR (i.[Staff_StaffUniqueId] IS NOT NULL AND d.[Staff_StaffUniqueId] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(d.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND d.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND d.[SurveyIdentifier_Unified] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL AND d.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL AND d.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) <> CAST(d.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NULL AND d.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL AND d.[SurveySectionResponse_SurveySectionTitle] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 336;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiSurveySectionResponseStaffTargetAssociation' AS nvarchar(max)) + N'$.staffReference.staffUniqueId=' + i.[Staff_StaffUniqueId] + N'#' + N'$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveyResponseReferenceNamespace] + N'#' + N'$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier] + N'#' + N'$.surveySectionResponseReference.surveyResponseIdentifier=' + i.[SurveySectionResponse_SurveyResponseIdentifier] + N'#' + N'$.surveySectionResponseReference.surveySectionTitle=' + i.[SurveySectionResponse_SurveySectionTitle]), i.[DocumentId], 336
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -74861,39 +70030,6 @@ BEGIN
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [edfi].[Staff] oldPj0 ON oldPj0.[StaffUniqueId] = del.[Staff_StaffUniqueId]
             INNER JOIN [edfi].[Staff] newPj0 ON newPj0.[StaffUniqueId] = i.[Staff_StaffUniqueId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [tpdm].[TR_Candidate_ReferentialIdentity]
-ON [tpdm].[Candidate]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 354;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMCandidate' AS nvarchar(max)) + N'$.candidateIdentifier=' + i.[CandidateIdentifier]), i.[DocumentId], 354
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([CandidateIdentifier]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[CandidateIdentifier] AS varbinary(max)) <> CAST(d.[CandidateIdentifier] AS varbinary(max)) OR (i.[CandidateIdentifier] IS NULL AND d.[CandidateIdentifier] IS NOT NULL) OR (i.[CandidateIdentifier] IS NOT NULL AND d.[CandidateIdentifier] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 354;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMCandidate' AS nvarchar(max)) + N'$.candidateIdentifier=' + i.[CandidateIdentifier]), i.[DocumentId], 354
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -75137,39 +70273,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [tpdm].[Candidate] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [tpdm].[TR_CandidateEducatorPreparationProgramAssociation_ReferentialIdentity]
-ON [tpdm].[CandidateEducatorPreparationProgramAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 355;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMCandidateEducatorPreparationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.candidateReference.candidateIdentifier=' + i.[Candidate_CandidateIdentifier] + N'#' + N'$.educatorPreparationProgramReference.educationOrganizationId=' + CAST(i.[EducatorPreparationProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.educatorPreparationProgramReference.programName=' + i.[EducatorPreparationProgram_ProgramName] + N'#' + N'$.educatorPreparationProgramReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EducatorPreparationProgram_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 355
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([BeginDate]) OR UPDATE([Candidate_CandidateIdentifier]) OR UPDATE([EducatorPreparationProgram_EducationOrganizationId]) OR UPDATE([EducatorPreparationProgram_ProgramName]) OR UPDATE([EducatorPreparationProgram_ProgramTypeDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (CAST(i.[Candidate_CandidateIdentifier] AS varbinary(max)) <> CAST(d.[Candidate_CandidateIdentifier] AS varbinary(max)) OR (i.[Candidate_CandidateIdentifier] IS NULL AND d.[Candidate_CandidateIdentifier] IS NOT NULL) OR (i.[Candidate_CandidateIdentifier] IS NOT NULL AND d.[Candidate_CandidateIdentifier] IS NULL)) OR (i.[EducatorPreparationProgram_EducationOrganizationId] <> d.[EducatorPreparationProgram_EducationOrganizationId] OR (i.[EducatorPreparationProgram_EducationOrganizationId] IS NULL AND d.[EducatorPreparationProgram_EducationOrganizationId] IS NOT NULL) OR (i.[EducatorPreparationProgram_EducationOrganizationId] IS NOT NULL AND d.[EducatorPreparationProgram_EducationOrganizationId] IS NULL)) OR (CAST(i.[EducatorPreparationProgram_ProgramName] AS varbinary(max)) <> CAST(d.[EducatorPreparationProgram_ProgramName] AS varbinary(max)) OR (i.[EducatorPreparationProgram_ProgramName] IS NULL AND d.[EducatorPreparationProgram_ProgramName] IS NOT NULL) OR (i.[EducatorPreparationProgram_ProgramName] IS NOT NULL AND d.[EducatorPreparationProgram_ProgramName] IS NULL)) OR (i.[EducatorPreparationProgram_ProgramTypeDescriptor_DescriptorId] <> d.[EducatorPreparationProgram_ProgramTypeDescriptor_DescriptorId] OR (i.[EducatorPreparationProgram_ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[EducatorPreparationProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[EducatorPreparationProgram_ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[EducatorPreparationProgram_ProgramTypeDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 355;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMCandidateEducatorPreparationProgramAssociation' AS nvarchar(max)) + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.candidateReference.candidateIdentifier=' + i.[Candidate_CandidateIdentifier] + N'#' + N'$.educatorPreparationProgramReference.educationOrganizationId=' + CAST(i.[EducatorPreparationProgram_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.educatorPreparationProgramReference.programName=' + i.[EducatorPreparationProgram_ProgramName] + N'#' + N'$.educatorPreparationProgramReference.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EducatorPreparationProgram_ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 355
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -75715,39 +70818,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [tpdm].[TR_EducatorPreparationProgram_ReferentialIdentity]
-ON [tpdm].[EducatorPreparationProgram]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 360;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMEducatorPreparationProgram' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programName=' + i.[ProgramName] + N'#' + N'$.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 360
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([ProgramName]) OR UPDATE([ProgramTypeDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (CAST(i.[ProgramName] AS varbinary(max)) <> CAST(d.[ProgramName] AS varbinary(max)) OR (i.[ProgramName] IS NULL AND d.[ProgramName] IS NOT NULL) OR (i.[ProgramName] IS NOT NULL AND d.[ProgramName] IS NULL)) OR (i.[ProgramTypeDescriptor_DescriptorId] <> d.[ProgramTypeDescriptor_DescriptorId] OR (i.[ProgramTypeDescriptor_DescriptorId] IS NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[ProgramTypeDescriptor_DescriptorId] IS NOT NULL AND d.[ProgramTypeDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 360;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMEducatorPreparationProgram' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.programName=' + i.[ProgramName] + N'#' + N'$.programTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[ProgramTypeDescriptor_DescriptorId]))), i.[DocumentId], 360
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [tpdm].[TR_EducatorPreparationProgram_Stamp]
 ON [tpdm].[EducatorPreparationProgram]
 AFTER INSERT, UPDATE, DELETE
@@ -75893,39 +70963,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [tpdm].[EducatorPreparationProgram] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [tpdm].[TR_Evaluation_ReferentialIdentity]
-ON [tpdm].[Evaluation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 363;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMEvaluation' AS nvarchar(max)) + N'$.evaluationTitle=' + i.[EvaluationTitle] + N'#' + N'$.performanceEvaluationReference.educationOrganizationId=' + CAST(i.[PerformanceEvaluation_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.performanceEvaluationReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationReference.performanceEvaluationTitle=' + i.[PerformanceEvaluation_PerformanceEvaluationTitle] + N'#' + N'$.performanceEvaluationReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationReference.schoolYear=' + CAST(i.[PerformanceEvaluation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.performanceEvaluationReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluation_TermDescriptor_DescriptorId]))), i.[DocumentId], 363
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EvaluationTitle]) OR UPDATE([PerformanceEvaluation_EducationOrganizationId]) OR UPDATE([PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([PerformanceEvaluation_PerformanceEvaluationTitle]) OR UPDATE([PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([PerformanceEvaluation_SchoolYear]) OR UPDATE([PerformanceEvaluation_TermDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[EvaluationTitle] AS varbinary(max)) <> CAST(d.[EvaluationTitle] AS varbinary(max)) OR (i.[EvaluationTitle] IS NULL AND d.[EvaluationTitle] IS NOT NULL) OR (i.[EvaluationTitle] IS NOT NULL AND d.[EvaluationTitle] IS NULL)) OR (i.[PerformanceEvaluation_EducationOrganizationId] <> d.[PerformanceEvaluation_EducationOrganizationId] OR (i.[PerformanceEvaluation_EducationOrganizationId] IS NULL AND d.[PerformanceEvaluation_EducationOrganizationId] IS NOT NULL) OR (i.[PerformanceEvaluation_EducationOrganizationId] IS NOT NULL AND d.[PerformanceEvaluation_EducationOrganizationId] IS NULL)) OR (i.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId] <> d.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId] OR (i.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[PerformanceEvaluation_PerformanceEvaluationTitle] AS varbinary(max)) <> CAST(d.[PerformanceEvaluation_PerformanceEvaluationTitle] AS varbinary(max)) OR (i.[PerformanceEvaluation_PerformanceEvaluationTitle] IS NULL AND d.[PerformanceEvaluation_PerformanceEvaluationTitle] IS NOT NULL) OR (i.[PerformanceEvaluation_PerformanceEvaluationTitle] IS NOT NULL AND d.[PerformanceEvaluation_PerformanceEvaluationTitle] IS NULL)) OR (i.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] <> d.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] OR (i.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[PerformanceEvaluation_SchoolYear] <> d.[PerformanceEvaluation_SchoolYear] OR (i.[PerformanceEvaluation_SchoolYear] IS NULL AND d.[PerformanceEvaluation_SchoolYear] IS NOT NULL) OR (i.[PerformanceEvaluation_SchoolYear] IS NOT NULL AND d.[PerformanceEvaluation_SchoolYear] IS NULL)) OR (i.[PerformanceEvaluation_TermDescriptor_DescriptorId] <> d.[PerformanceEvaluation_TermDescriptor_DescriptorId] OR (i.[PerformanceEvaluation_TermDescriptor_DescriptorId] IS NULL AND d.[PerformanceEvaluation_TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[PerformanceEvaluation_TermDescriptor_DescriptorId] IS NOT NULL AND d.[PerformanceEvaluation_TermDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 363;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMEvaluation' AS nvarchar(max)) + N'$.evaluationTitle=' + i.[EvaluationTitle] + N'#' + N'$.performanceEvaluationReference.educationOrganizationId=' + CAST(i.[PerformanceEvaluation_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.performanceEvaluationReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationReference.performanceEvaluationTitle=' + i.[PerformanceEvaluation_PerformanceEvaluationTitle] + N'#' + N'$.performanceEvaluationReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationReference.schoolYear=' + CAST(i.[PerformanceEvaluation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.performanceEvaluationReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluation_TermDescriptor_DescriptorId]))), i.[DocumentId], 363
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -76078,39 +71115,6 @@ BEGIN
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DescriptorId] = i.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DescriptorId] = i.[PerformanceEvaluation_TermDescriptor_DescriptorId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [tpdm].[TR_EvaluationElement_ReferentialIdentity]
-ON [tpdm].[EvaluationElement]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 364;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMEvaluationElement' AS nvarchar(max)) + N'$.evaluationElementTitle=' + i.[EvaluationElementTitle] + N'#' + N'$.evaluationObjectiveReference.educationOrganizationId=' + CAST(i.[EvaluationObjective_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationObjectiveReference.evaluationObjectiveTitle=' + i.[EvaluationObjective_EvaluationObjectiveTitle] + N'#' + N'$.evaluationObjectiveReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveReference.evaluationTitle=' + i.[EvaluationObjective_EvaluationTitle] + N'#' + N'$.evaluationObjectiveReference.performanceEvaluationTitle=' + i.[EvaluationObjective_PerformanceEvaluationTitle] + N'#' + N'$.evaluationObjectiveReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjective_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveReference.schoolYear=' + CAST(i.[EvaluationObjective_SchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationObjectiveReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjective_TermDescriptor_DescriptorId]))), i.[DocumentId], 364
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EvaluationElementTitle]) OR UPDATE([EvaluationObjective_EducationOrganizationId]) OR UPDATE([EvaluationObjective_EvaluationObjectiveTitle]) OR UPDATE([EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([EvaluationObjective_EvaluationTitle]) OR UPDATE([EvaluationObjective_PerformanceEvaluationTitle]) OR UPDATE([EvaluationObjective_PerformanceEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([EvaluationObjective_SchoolYear]) OR UPDATE([EvaluationObjective_TermDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[EvaluationElementTitle] AS varbinary(max)) <> CAST(d.[EvaluationElementTitle] AS varbinary(max)) OR (i.[EvaluationElementTitle] IS NULL AND d.[EvaluationElementTitle] IS NOT NULL) OR (i.[EvaluationElementTitle] IS NOT NULL AND d.[EvaluationElementTitle] IS NULL)) OR (i.[EvaluationObjective_EducationOrganizationId] <> d.[EvaluationObjective_EducationOrganizationId] OR (i.[EvaluationObjective_EducationOrganizationId] IS NULL AND d.[EvaluationObjective_EducationOrganizationId] IS NOT NULL) OR (i.[EvaluationObjective_EducationOrganizationId] IS NOT NULL AND d.[EvaluationObjective_EducationOrganizationId] IS NULL)) OR (CAST(i.[EvaluationObjective_EvaluationObjectiveTitle] AS varbinary(max)) <> CAST(d.[EvaluationObjective_EvaluationObjectiveTitle] AS varbinary(max)) OR (i.[EvaluationObjective_EvaluationObjectiveTitle] IS NULL AND d.[EvaluationObjective_EvaluationObjectiveTitle] IS NOT NULL) OR (i.[EvaluationObjective_EvaluationObjectiveTitle] IS NOT NULL AND d.[EvaluationObjective_EvaluationObjectiveTitle] IS NULL)) OR (i.[EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId] <> d.[EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId] OR (i.[EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[EvaluationObjective_EvaluationTitle] AS varbinary(max)) <> CAST(d.[EvaluationObjective_EvaluationTitle] AS varbinary(max)) OR (i.[EvaluationObjective_EvaluationTitle] IS NULL AND d.[EvaluationObjective_EvaluationTitle] IS NOT NULL) OR (i.[EvaluationObjective_EvaluationTitle] IS NOT NULL AND d.[EvaluationObjective_EvaluationTitle] IS NULL)) OR (CAST(i.[EvaluationObjective_PerformanceEvaluationTitle] AS varbinary(max)) <> CAST(d.[EvaluationObjective_PerformanceEvaluationTitle] AS varbinary(max)) OR (i.[EvaluationObjective_PerformanceEvaluationTitle] IS NULL AND d.[EvaluationObjective_PerformanceEvaluationTitle] IS NOT NULL) OR (i.[EvaluationObjective_PerformanceEvaluationTitle] IS NOT NULL AND d.[EvaluationObjective_PerformanceEvaluationTitle] IS NULL)) OR (i.[EvaluationObjective_PerformanceEvaluationTypeDescriptor_DescriptorId] <> d.[EvaluationObjective_PerformanceEvaluationTypeDescriptor_DescriptorId] OR (i.[EvaluationObjective_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[EvaluationObjective_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[EvaluationObjective_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[EvaluationObjective_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[EvaluationObjective_SchoolYear] <> d.[EvaluationObjective_SchoolYear] OR (i.[EvaluationObjective_SchoolYear] IS NULL AND d.[EvaluationObjective_SchoolYear] IS NOT NULL) OR (i.[EvaluationObjective_SchoolYear] IS NOT NULL AND d.[EvaluationObjective_SchoolYear] IS NULL)) OR (i.[EvaluationObjective_TermDescriptor_DescriptorId] <> d.[EvaluationObjective_TermDescriptor_DescriptorId] OR (i.[EvaluationObjective_TermDescriptor_DescriptorId] IS NULL AND d.[EvaluationObjective_TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[EvaluationObjective_TermDescriptor_DescriptorId] IS NOT NULL AND d.[EvaluationObjective_TermDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 364;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMEvaluationElement' AS nvarchar(max)) + N'$.evaluationElementTitle=' + i.[EvaluationElementTitle] + N'#' + N'$.evaluationObjectiveReference.educationOrganizationId=' + CAST(i.[EvaluationObjective_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationObjectiveReference.evaluationObjectiveTitle=' + i.[EvaluationObjective_EvaluationObjectiveTitle] + N'#' + N'$.evaluationObjectiveReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveReference.evaluationTitle=' + i.[EvaluationObjective_EvaluationTitle] + N'#' + N'$.evaluationObjectiveReference.performanceEvaluationTitle=' + i.[EvaluationObjective_PerformanceEvaluationTitle] + N'#' + N'$.evaluationObjectiveReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjective_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveReference.schoolYear=' + CAST(i.[EvaluationObjective_SchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationObjectiveReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjective_TermDescriptor_DescriptorId]))), i.[DocumentId], 364
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -76276,39 +71280,6 @@ BEGIN
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DescriptorId] = i.[EvaluationObjective_PerformanceEvaluationTypeDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DescriptorId] = i.[EvaluationObjective_TermDescriptor_DescriptorId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [tpdm].[TR_EvaluationElementRating_ReferentialIdentity]
-ON [tpdm].[EvaluationElementRating]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 365;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMEvaluationElementRating' AS nvarchar(max)) + N'$.evaluationElementReference.educationOrganizationId=' + CAST(i.[EvaluationElement_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationElementReference.evaluationElementTitle=' + i.[EvaluationElement_EvaluationElementTitle] + N'#' + N'$.evaluationElementReference.evaluationObjectiveTitle=' + i.[EvaluationElement_EvaluationObjectiveTitle] + N'#' + N'$.evaluationElementReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationElement_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationElementReference.evaluationTitle=' + i.[EvaluationElement_EvaluationTitle] + N'#' + N'$.evaluationElementReference.performanceEvaluationTitle=' + i.[EvaluationElement_PerformanceEvaluationTitle] + N'#' + N'$.evaluationElementReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationElement_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationElementReference.schoolYear=' + CAST(i.[EvaluationElement_SchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationElementReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationElement_TermDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveRatingReference.educationOrganizationId=' + CAST(i.[EvaluationObjectiveRating_EvaluationObjectiveReferenceEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationObjectiveRatingReference.evaluationDate=' + CONVERT(nvarchar(19), i.[EvaluationObjectiveRating_EvaluationDate], 126) + N'Z' + N'#' + N'$.evaluationObjectiveRatingReference.evaluationObjectiveTitle=' + i.[EvaluationObjectiveRating_EvaluationObjectiveTitle] + N'#' + N'$.evaluationObjectiveRatingReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjectiveRating_EvaluationObjectiveReferenceEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveRatingReference.evaluationTitle=' + i.[EvaluationObjectiveRating_EvaluationObjectiveReferenceEvaluationTitle] + N'#' + N'$.evaluationObjectiveRatingReference.performanceEvaluationTitle=' + i.[EvaluationObjectiveRating_EvaluationObjectiveReferencePerformanceEvaluationTitle] + N'#' + N'$.evaluationObjectiveRatingReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjectiveRating_EvaluationObjectiveReferencePerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveRatingReference.personId=' + i.[EvaluationObjectiveRating_PersonId] + N'#' + N'$.evaluationObjectiveRatingReference.schoolYear=' + CAST(i.[EvaluationObjectiveRating_EvaluationObjectiveReferenceSchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationObjectiveRatingReference.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjectiveRating_SourceSystemDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveRatingReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjectiveRating_EvaluationObjectiveReferenceTermDescriptor_DescriptorId]))), i.[DocumentId], 365
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganizationId_Unified]) OR UPDATE([EvaluationElement_EvaluationElementTitle]) OR UPDATE([EvaluationObjectiveTitle_Unified]) OR UPDATE([EvaluationPeriodDescriptor_Unified_DescriptorId]) OR UPDATE([EvaluationTitle_Unified]) OR UPDATE([PerformanceEvaluationTitle_Unified]) OR UPDATE([PerformanceEvaluationTypeDescriptor_Unified_DescriptorId]) OR UPDATE([SchoolYear_Unified]) OR UPDATE([TermDescriptor_Unified_DescriptorId]) OR UPDATE([EvaluationObjectiveRating_EvaluationDate]) OR UPDATE([EvaluationObjectiveRating_PersonId]) OR UPDATE([EvaluationObjectiveRating_SourceSystemDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganizationId_Unified] <> d.[EducationOrganizationId_Unified] OR (i.[EducationOrganizationId_Unified] IS NULL AND d.[EducationOrganizationId_Unified] IS NOT NULL) OR (i.[EducationOrganizationId_Unified] IS NOT NULL AND d.[EducationOrganizationId_Unified] IS NULL)) OR (CAST(i.[EvaluationElement_EvaluationElementTitle] AS varbinary(max)) <> CAST(d.[EvaluationElement_EvaluationElementTitle] AS varbinary(max)) OR (i.[EvaluationElement_EvaluationElementTitle] IS NULL AND d.[EvaluationElement_EvaluationElementTitle] IS NOT NULL) OR (i.[EvaluationElement_EvaluationElementTitle] IS NOT NULL AND d.[EvaluationElement_EvaluationElementTitle] IS NULL)) OR (CAST(i.[EvaluationObjectiveTitle_Unified] AS varbinary(max)) <> CAST(d.[EvaluationObjectiveTitle_Unified] AS varbinary(max)) OR (i.[EvaluationObjectiveTitle_Unified] IS NULL AND d.[EvaluationObjectiveTitle_Unified] IS NOT NULL) OR (i.[EvaluationObjectiveTitle_Unified] IS NOT NULL AND d.[EvaluationObjectiveTitle_Unified] IS NULL)) OR (i.[EvaluationPeriodDescriptor_Unified_DescriptorId] <> d.[EvaluationPeriodDescriptor_Unified_DescriptorId] OR (i.[EvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL AND d.[EvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[EvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[EvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL)) OR (CAST(i.[EvaluationTitle_Unified] AS varbinary(max)) <> CAST(d.[EvaluationTitle_Unified] AS varbinary(max)) OR (i.[EvaluationTitle_Unified] IS NULL AND d.[EvaluationTitle_Unified] IS NOT NULL) OR (i.[EvaluationTitle_Unified] IS NOT NULL AND d.[EvaluationTitle_Unified] IS NULL)) OR (CAST(i.[PerformanceEvaluationTitle_Unified] AS varbinary(max)) <> CAST(d.[PerformanceEvaluationTitle_Unified] AS varbinary(max)) OR (i.[PerformanceEvaluationTitle_Unified] IS NULL AND d.[PerformanceEvaluationTitle_Unified] IS NOT NULL) OR (i.[PerformanceEvaluationTitle_Unified] IS NOT NULL AND d.[PerformanceEvaluationTitle_Unified] IS NULL)) OR (i.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] <> d.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] OR (i.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL AND d.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL)) OR (i.[SchoolYear_Unified] <> d.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND d.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND d.[SchoolYear_Unified] IS NULL)) OR (i.[TermDescriptor_Unified_DescriptorId] <> d.[TermDescriptor_Unified_DescriptorId] OR (i.[TermDescriptor_Unified_DescriptorId] IS NULL AND d.[TermDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[TermDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[TermDescriptor_Unified_DescriptorId] IS NULL)) OR (i.[EvaluationObjectiveRating_EvaluationDate] <> d.[EvaluationObjectiveRating_EvaluationDate] OR (i.[EvaluationObjectiveRating_EvaluationDate] IS NULL AND d.[EvaluationObjectiveRating_EvaluationDate] IS NOT NULL) OR (i.[EvaluationObjectiveRating_EvaluationDate] IS NOT NULL AND d.[EvaluationObjectiveRating_EvaluationDate] IS NULL)) OR (CAST(i.[EvaluationObjectiveRating_PersonId] AS varbinary(max)) <> CAST(d.[EvaluationObjectiveRating_PersonId] AS varbinary(max)) OR (i.[EvaluationObjectiveRating_PersonId] IS NULL AND d.[EvaluationObjectiveRating_PersonId] IS NOT NULL) OR (i.[EvaluationObjectiveRating_PersonId] IS NOT NULL AND d.[EvaluationObjectiveRating_PersonId] IS NULL)) OR (i.[EvaluationObjectiveRating_SourceSystemDescriptor_DescriptorId] <> d.[EvaluationObjectiveRating_SourceSystemDescriptor_DescriptorId] OR (i.[EvaluationObjectiveRating_SourceSystemDescriptor_DescriptorId] IS NULL AND d.[EvaluationObjectiveRating_SourceSystemDescriptor_DescriptorId] IS NOT NULL) OR (i.[EvaluationObjectiveRating_SourceSystemDescriptor_DescriptorId] IS NOT NULL AND d.[EvaluationObjectiveRating_SourceSystemDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 365;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMEvaluationElementRating' AS nvarchar(max)) + N'$.evaluationElementReference.educationOrganizationId=' + CAST(i.[EvaluationElement_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationElementReference.evaluationElementTitle=' + i.[EvaluationElement_EvaluationElementTitle] + N'#' + N'$.evaluationElementReference.evaluationObjectiveTitle=' + i.[EvaluationElement_EvaluationObjectiveTitle] + N'#' + N'$.evaluationElementReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationElement_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationElementReference.evaluationTitle=' + i.[EvaluationElement_EvaluationTitle] + N'#' + N'$.evaluationElementReference.performanceEvaluationTitle=' + i.[EvaluationElement_PerformanceEvaluationTitle] + N'#' + N'$.evaluationElementReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationElement_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationElementReference.schoolYear=' + CAST(i.[EvaluationElement_SchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationElementReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationElement_TermDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveRatingReference.educationOrganizationId=' + CAST(i.[EvaluationObjectiveRating_EvaluationObjectiveReferenceEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationObjectiveRatingReference.evaluationDate=' + CONVERT(nvarchar(19), i.[EvaluationObjectiveRating_EvaluationDate], 126) + N'Z' + N'#' + N'$.evaluationObjectiveRatingReference.evaluationObjectiveTitle=' + i.[EvaluationObjectiveRating_EvaluationObjectiveTitle] + N'#' + N'$.evaluationObjectiveRatingReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjectiveRating_EvaluationObjectiveReferenceEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveRatingReference.evaluationTitle=' + i.[EvaluationObjectiveRating_EvaluationObjectiveReferenceEvaluationTitle] + N'#' + N'$.evaluationObjectiveRatingReference.performanceEvaluationTitle=' + i.[EvaluationObjectiveRating_EvaluationObjectiveReferencePerformanceEvaluationTitle] + N'#' + N'$.evaluationObjectiveRatingReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjectiveRating_EvaluationObjectiveReferencePerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveRatingReference.personId=' + i.[EvaluationObjectiveRating_PersonId] + N'#' + N'$.evaluationObjectiveRatingReference.schoolYear=' + CAST(i.[EvaluationObjectiveRating_EvaluationObjectiveReferenceSchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationObjectiveRatingReference.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjectiveRating_SourceSystemDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveRatingReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjectiveRating_EvaluationObjectiveReferenceTermDescriptor_DescriptorId]))), i.[DocumentId], 365
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -76627,39 +71598,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [tpdm].[TR_EvaluationObjective_ReferentialIdentity]
-ON [tpdm].[EvaluationObjective]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 367;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMEvaluationObjective' AS nvarchar(max)) + N'$.evaluationObjectiveTitle=' + i.[EvaluationObjectiveTitle] + N'#' + N'$.evaluationReference.educationOrganizationId=' + CAST(i.[Evaluation_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Evaluation_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationReference.evaluationTitle=' + i.[Evaluation_EvaluationTitle] + N'#' + N'$.evaluationReference.performanceEvaluationTitle=' + i.[Evaluation_PerformanceEvaluationTitle] + N'#' + N'$.evaluationReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationReference.schoolYear=' + CAST(i.[Evaluation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Evaluation_TermDescriptor_DescriptorId]))), i.[DocumentId], 367
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EvaluationObjectiveTitle]) OR UPDATE([Evaluation_EducationOrganizationId]) OR UPDATE([Evaluation_EvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([Evaluation_EvaluationTitle]) OR UPDATE([Evaluation_PerformanceEvaluationTitle]) OR UPDATE([Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([Evaluation_SchoolYear]) OR UPDATE([Evaluation_TermDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[EvaluationObjectiveTitle] AS varbinary(max)) <> CAST(d.[EvaluationObjectiveTitle] AS varbinary(max)) OR (i.[EvaluationObjectiveTitle] IS NULL AND d.[EvaluationObjectiveTitle] IS NOT NULL) OR (i.[EvaluationObjectiveTitle] IS NOT NULL AND d.[EvaluationObjectiveTitle] IS NULL)) OR (i.[Evaluation_EducationOrganizationId] <> d.[Evaluation_EducationOrganizationId] OR (i.[Evaluation_EducationOrganizationId] IS NULL AND d.[Evaluation_EducationOrganizationId] IS NOT NULL) OR (i.[Evaluation_EducationOrganizationId] IS NOT NULL AND d.[Evaluation_EducationOrganizationId] IS NULL)) OR (i.[Evaluation_EvaluationPeriodDescriptor_DescriptorId] <> d.[Evaluation_EvaluationPeriodDescriptor_DescriptorId] OR (i.[Evaluation_EvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[Evaluation_EvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[Evaluation_EvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[Evaluation_EvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Evaluation_EvaluationTitle] AS varbinary(max)) <> CAST(d.[Evaluation_EvaluationTitle] AS varbinary(max)) OR (i.[Evaluation_EvaluationTitle] IS NULL AND d.[Evaluation_EvaluationTitle] IS NOT NULL) OR (i.[Evaluation_EvaluationTitle] IS NOT NULL AND d.[Evaluation_EvaluationTitle] IS NULL)) OR (CAST(i.[Evaluation_PerformanceEvaluationTitle] AS varbinary(max)) <> CAST(d.[Evaluation_PerformanceEvaluationTitle] AS varbinary(max)) OR (i.[Evaluation_PerformanceEvaluationTitle] IS NULL AND d.[Evaluation_PerformanceEvaluationTitle] IS NOT NULL) OR (i.[Evaluation_PerformanceEvaluationTitle] IS NOT NULL AND d.[Evaluation_PerformanceEvaluationTitle] IS NULL)) OR (i.[Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] <> d.[Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] OR (i.[Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[Evaluation_SchoolYear] <> d.[Evaluation_SchoolYear] OR (i.[Evaluation_SchoolYear] IS NULL AND d.[Evaluation_SchoolYear] IS NOT NULL) OR (i.[Evaluation_SchoolYear] IS NOT NULL AND d.[Evaluation_SchoolYear] IS NULL)) OR (i.[Evaluation_TermDescriptor_DescriptorId] <> d.[Evaluation_TermDescriptor_DescriptorId] OR (i.[Evaluation_TermDescriptor_DescriptorId] IS NULL AND d.[Evaluation_TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[Evaluation_TermDescriptor_DescriptorId] IS NOT NULL AND d.[Evaluation_TermDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 367;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMEvaluationObjective' AS nvarchar(max)) + N'$.evaluationObjectiveTitle=' + i.[EvaluationObjectiveTitle] + N'#' + N'$.evaluationReference.educationOrganizationId=' + CAST(i.[Evaluation_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Evaluation_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationReference.evaluationTitle=' + i.[Evaluation_EvaluationTitle] + N'#' + N'$.evaluationReference.performanceEvaluationTitle=' + i.[Evaluation_PerformanceEvaluationTitle] + N'#' + N'$.evaluationReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationReference.schoolYear=' + CAST(i.[Evaluation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Evaluation_TermDescriptor_DescriptorId]))), i.[DocumentId], 367
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [tpdm].[TR_EvaluationObjective_Stamp]
 ON [tpdm].[EvaluationObjective]
 AFTER INSERT, UPDATE, DELETE
@@ -76814,39 +71752,6 @@ BEGIN
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[Evaluation_EvaluationPeriodDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DescriptorId] = i.[Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj2 ON newDj2.[DescriptorId] = i.[Evaluation_TermDescriptor_DescriptorId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [tpdm].[TR_EvaluationObjectiveRating_ReferentialIdentity]
-ON [tpdm].[EvaluationObjectiveRating]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 368;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMEvaluationObjectiveRating' AS nvarchar(max)) + N'$.evaluationObjectiveReference.educationOrganizationId=' + CAST(i.[EvaluationObjective_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationObjectiveReference.evaluationObjectiveTitle=' + i.[EvaluationObjective_EvaluationObjectiveTitle] + N'#' + N'$.evaluationObjectiveReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveReference.evaluationTitle=' + i.[EvaluationObjective_EvaluationTitle] + N'#' + N'$.evaluationObjectiveReference.performanceEvaluationTitle=' + i.[EvaluationObjective_PerformanceEvaluationTitle] + N'#' + N'$.evaluationObjectiveReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjective_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveReference.schoolYear=' + CAST(i.[EvaluationObjective_SchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationObjectiveReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjective_TermDescriptor_DescriptorId])) + N'#' + N'$.evaluationRatingReference.educationOrganizationId=' + CAST(i.[EvaluationRating_EvaluationReferenceEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationRatingReference.evaluationDate=' + CONVERT(nvarchar(19), i.[EvaluationRating_EvaluationDate], 126) + N'Z' + N'#' + N'$.evaluationRatingReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationRating_EvaluationReferenceEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationRatingReference.evaluationTitle=' + i.[EvaluationRating_EvaluationTitle] + N'#' + N'$.evaluationRatingReference.performanceEvaluationTitle=' + i.[EvaluationRating_EvaluationReferencePerformanceEvaluationTitle] + N'#' + N'$.evaluationRatingReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationRating_EvaluationReferencePerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationRatingReference.personId=' + i.[EvaluationRating_PersonId] + N'#' + N'$.evaluationRatingReference.schoolYear=' + CAST(i.[EvaluationRating_EvaluationReferenceSchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationRatingReference.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationRating_SourceSystemDescriptor_DescriptorId])) + N'#' + N'$.evaluationRatingReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationRating_EvaluationReferenceTermDescriptor_DescriptorId]))), i.[DocumentId], 368
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganizationId_Unified]) OR UPDATE([EvaluationObjective_EvaluationObjectiveTitle]) OR UPDATE([EvaluationPeriodDescriptor_Unified_DescriptorId]) OR UPDATE([EvaluationTitle_Unified]) OR UPDATE([PerformanceEvaluationTitle_Unified]) OR UPDATE([PerformanceEvaluationTypeDescriptor_Unified_DescriptorId]) OR UPDATE([SchoolYear_Unified]) OR UPDATE([TermDescriptor_Unified_DescriptorId]) OR UPDATE([EvaluationRating_EvaluationDate]) OR UPDATE([EvaluationRating_PersonId]) OR UPDATE([EvaluationRating_SourceSystemDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganizationId_Unified] <> d.[EducationOrganizationId_Unified] OR (i.[EducationOrganizationId_Unified] IS NULL AND d.[EducationOrganizationId_Unified] IS NOT NULL) OR (i.[EducationOrganizationId_Unified] IS NOT NULL AND d.[EducationOrganizationId_Unified] IS NULL)) OR (CAST(i.[EvaluationObjective_EvaluationObjectiveTitle] AS varbinary(max)) <> CAST(d.[EvaluationObjective_EvaluationObjectiveTitle] AS varbinary(max)) OR (i.[EvaluationObjective_EvaluationObjectiveTitle] IS NULL AND d.[EvaluationObjective_EvaluationObjectiveTitle] IS NOT NULL) OR (i.[EvaluationObjective_EvaluationObjectiveTitle] IS NOT NULL AND d.[EvaluationObjective_EvaluationObjectiveTitle] IS NULL)) OR (i.[EvaluationPeriodDescriptor_Unified_DescriptorId] <> d.[EvaluationPeriodDescriptor_Unified_DescriptorId] OR (i.[EvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL AND d.[EvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[EvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[EvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL)) OR (CAST(i.[EvaluationTitle_Unified] AS varbinary(max)) <> CAST(d.[EvaluationTitle_Unified] AS varbinary(max)) OR (i.[EvaluationTitle_Unified] IS NULL AND d.[EvaluationTitle_Unified] IS NOT NULL) OR (i.[EvaluationTitle_Unified] IS NOT NULL AND d.[EvaluationTitle_Unified] IS NULL)) OR (CAST(i.[PerformanceEvaluationTitle_Unified] AS varbinary(max)) <> CAST(d.[PerformanceEvaluationTitle_Unified] AS varbinary(max)) OR (i.[PerformanceEvaluationTitle_Unified] IS NULL AND d.[PerformanceEvaluationTitle_Unified] IS NOT NULL) OR (i.[PerformanceEvaluationTitle_Unified] IS NOT NULL AND d.[PerformanceEvaluationTitle_Unified] IS NULL)) OR (i.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] <> d.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] OR (i.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL AND d.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL)) OR (i.[SchoolYear_Unified] <> d.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND d.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND d.[SchoolYear_Unified] IS NULL)) OR (i.[TermDescriptor_Unified_DescriptorId] <> d.[TermDescriptor_Unified_DescriptorId] OR (i.[TermDescriptor_Unified_DescriptorId] IS NULL AND d.[TermDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[TermDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[TermDescriptor_Unified_DescriptorId] IS NULL)) OR (i.[EvaluationRating_EvaluationDate] <> d.[EvaluationRating_EvaluationDate] OR (i.[EvaluationRating_EvaluationDate] IS NULL AND d.[EvaluationRating_EvaluationDate] IS NOT NULL) OR (i.[EvaluationRating_EvaluationDate] IS NOT NULL AND d.[EvaluationRating_EvaluationDate] IS NULL)) OR (CAST(i.[EvaluationRating_PersonId] AS varbinary(max)) <> CAST(d.[EvaluationRating_PersonId] AS varbinary(max)) OR (i.[EvaluationRating_PersonId] IS NULL AND d.[EvaluationRating_PersonId] IS NOT NULL) OR (i.[EvaluationRating_PersonId] IS NOT NULL AND d.[EvaluationRating_PersonId] IS NULL)) OR (i.[EvaluationRating_SourceSystemDescriptor_DescriptorId] <> d.[EvaluationRating_SourceSystemDescriptor_DescriptorId] OR (i.[EvaluationRating_SourceSystemDescriptor_DescriptorId] IS NULL AND d.[EvaluationRating_SourceSystemDescriptor_DescriptorId] IS NOT NULL) OR (i.[EvaluationRating_SourceSystemDescriptor_DescriptorId] IS NOT NULL AND d.[EvaluationRating_SourceSystemDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 368;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMEvaluationObjectiveRating' AS nvarchar(max)) + N'$.evaluationObjectiveReference.educationOrganizationId=' + CAST(i.[EvaluationObjective_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationObjectiveReference.evaluationObjectiveTitle=' + i.[EvaluationObjective_EvaluationObjectiveTitle] + N'#' + N'$.evaluationObjectiveReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjective_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveReference.evaluationTitle=' + i.[EvaluationObjective_EvaluationTitle] + N'#' + N'$.evaluationObjectiveReference.performanceEvaluationTitle=' + i.[EvaluationObjective_PerformanceEvaluationTitle] + N'#' + N'$.evaluationObjectiveReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjective_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationObjectiveReference.schoolYear=' + CAST(i.[EvaluationObjective_SchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationObjectiveReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationObjective_TermDescriptor_DescriptorId])) + N'#' + N'$.evaluationRatingReference.educationOrganizationId=' + CAST(i.[EvaluationRating_EvaluationReferenceEducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationRatingReference.evaluationDate=' + CONVERT(nvarchar(19), i.[EvaluationRating_EvaluationDate], 126) + N'Z' + N'#' + N'$.evaluationRatingReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationRating_EvaluationReferenceEvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationRatingReference.evaluationTitle=' + i.[EvaluationRating_EvaluationTitle] + N'#' + N'$.evaluationRatingReference.performanceEvaluationTitle=' + i.[EvaluationRating_EvaluationReferencePerformanceEvaluationTitle] + N'#' + N'$.evaluationRatingReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationRating_EvaluationReferencePerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationRatingReference.personId=' + i.[EvaluationRating_PersonId] + N'#' + N'$.evaluationRatingReference.schoolYear=' + CAST(i.[EvaluationRating_EvaluationReferenceSchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationRatingReference.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationRating_SourceSystemDescriptor_DescriptorId])) + N'#' + N'$.evaluationRatingReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationRating_EvaluationReferenceTermDescriptor_DescriptorId]))), i.[DocumentId], 368
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -77155,39 +72060,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [tpdm].[EvaluationObjectiveRating] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [tpdm].[TR_EvaluationRating_ReferentialIdentity]
-ON [tpdm].[EvaluationRating]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 370;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMEvaluationRating' AS nvarchar(max)) + N'$.evaluationDate=' + CONVERT(nvarchar(19), i.[EvaluationDate], 126) + N'Z' + N'#' + N'$.evaluationReference.educationOrganizationId=' + CAST(i.[Evaluation_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Evaluation_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationReference.evaluationTitle=' + i.[Evaluation_EvaluationTitle] + N'#' + N'$.evaluationReference.performanceEvaluationTitle=' + i.[Evaluation_PerformanceEvaluationTitle] + N'#' + N'$.evaluationReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationReference.schoolYear=' + CAST(i.[Evaluation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Evaluation_TermDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationRatingReference.educationOrganizationId=' + CAST(i.[PerformanceEvaluationRating_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.performanceEvaluationRatingReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluationRating_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationRatingReference.performanceEvaluationTitle=' + i.[PerformanceEvaluationRating_PerformanceEvaluationTitle] + N'#' + N'$.performanceEvaluationRatingReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluationRating_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationRatingReference.personId=' + i.[PerformanceEvaluationRating_PersonId] + N'#' + N'$.performanceEvaluationRatingReference.schoolYear=' + CAST(i.[PerformanceEvaluationRating_SchoolYear] AS nvarchar(max)) + N'#' + N'$.performanceEvaluationRatingReference.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluationRating_SourceSystemDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationRatingReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluationRating_TermDescriptor_DescriptorId]))), i.[DocumentId], 370
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EvaluationDate]) OR UPDATE([EducationOrganizationId_Unified]) OR UPDATE([EvaluationPeriodDescriptor_Unified_DescriptorId]) OR UPDATE([Evaluation_EvaluationTitle]) OR UPDATE([PerformanceEvaluationTitle_Unified]) OR UPDATE([PerformanceEvaluationTypeDescriptor_Unified_DescriptorId]) OR UPDATE([SchoolYear_Unified]) OR UPDATE([TermDescriptor_Unified_DescriptorId]) OR UPDATE([PerformanceEvaluationRating_PersonId]) OR UPDATE([PerformanceEvaluationRating_SourceSystemDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EvaluationDate] <> d.[EvaluationDate] OR (i.[EvaluationDate] IS NULL AND d.[EvaluationDate] IS NOT NULL) OR (i.[EvaluationDate] IS NOT NULL AND d.[EvaluationDate] IS NULL)) OR (i.[EducationOrganizationId_Unified] <> d.[EducationOrganizationId_Unified] OR (i.[EducationOrganizationId_Unified] IS NULL AND d.[EducationOrganizationId_Unified] IS NOT NULL) OR (i.[EducationOrganizationId_Unified] IS NOT NULL AND d.[EducationOrganizationId_Unified] IS NULL)) OR (i.[EvaluationPeriodDescriptor_Unified_DescriptorId] <> d.[EvaluationPeriodDescriptor_Unified_DescriptorId] OR (i.[EvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL AND d.[EvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[EvaluationPeriodDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[EvaluationPeriodDescriptor_Unified_DescriptorId] IS NULL)) OR (CAST(i.[Evaluation_EvaluationTitle] AS varbinary(max)) <> CAST(d.[Evaluation_EvaluationTitle] AS varbinary(max)) OR (i.[Evaluation_EvaluationTitle] IS NULL AND d.[Evaluation_EvaluationTitle] IS NOT NULL) OR (i.[Evaluation_EvaluationTitle] IS NOT NULL AND d.[Evaluation_EvaluationTitle] IS NULL)) OR (CAST(i.[PerformanceEvaluationTitle_Unified] AS varbinary(max)) <> CAST(d.[PerformanceEvaluationTitle_Unified] AS varbinary(max)) OR (i.[PerformanceEvaluationTitle_Unified] IS NULL AND d.[PerformanceEvaluationTitle_Unified] IS NOT NULL) OR (i.[PerformanceEvaluationTitle_Unified] IS NOT NULL AND d.[PerformanceEvaluationTitle_Unified] IS NULL)) OR (i.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] <> d.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] OR (i.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL AND d.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[PerformanceEvaluationTypeDescriptor_Unified_DescriptorId] IS NULL)) OR (i.[SchoolYear_Unified] <> d.[SchoolYear_Unified] OR (i.[SchoolYear_Unified] IS NULL AND d.[SchoolYear_Unified] IS NOT NULL) OR (i.[SchoolYear_Unified] IS NOT NULL AND d.[SchoolYear_Unified] IS NULL)) OR (i.[TermDescriptor_Unified_DescriptorId] <> d.[TermDescriptor_Unified_DescriptorId] OR (i.[TermDescriptor_Unified_DescriptorId] IS NULL AND d.[TermDescriptor_Unified_DescriptorId] IS NOT NULL) OR (i.[TermDescriptor_Unified_DescriptorId] IS NOT NULL AND d.[TermDescriptor_Unified_DescriptorId] IS NULL)) OR (CAST(i.[PerformanceEvaluationRating_PersonId] AS varbinary(max)) <> CAST(d.[PerformanceEvaluationRating_PersonId] AS varbinary(max)) OR (i.[PerformanceEvaluationRating_PersonId] IS NULL AND d.[PerformanceEvaluationRating_PersonId] IS NOT NULL) OR (i.[PerformanceEvaluationRating_PersonId] IS NOT NULL AND d.[PerformanceEvaluationRating_PersonId] IS NULL)) OR (i.[PerformanceEvaluationRating_SourceSystemDescriptor_DescriptorId] <> d.[PerformanceEvaluationRating_SourceSystemDescriptor_DescriptorId] OR (i.[PerformanceEvaluationRating_SourceSystemDescriptor_DescriptorId] IS NULL AND d.[PerformanceEvaluationRating_SourceSystemDescriptor_DescriptorId] IS NOT NULL) OR (i.[PerformanceEvaluationRating_SourceSystemDescriptor_DescriptorId] IS NOT NULL AND d.[PerformanceEvaluationRating_SourceSystemDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 370;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMEvaluationRating' AS nvarchar(max)) + N'$.evaluationDate=' + CONVERT(nvarchar(19), i.[EvaluationDate], 126) + N'Z' + N'#' + N'$.evaluationReference.educationOrganizationId=' + CAST(i.[Evaluation_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Evaluation_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationReference.evaluationTitle=' + i.[Evaluation_EvaluationTitle] + N'#' + N'$.evaluationReference.performanceEvaluationTitle=' + i.[Evaluation_PerformanceEvaluationTitle] + N'#' + N'$.evaluationReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Evaluation_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationReference.schoolYear=' + CAST(i.[Evaluation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Evaluation_TermDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationRatingReference.educationOrganizationId=' + CAST(i.[PerformanceEvaluationRating_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.performanceEvaluationRatingReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluationRating_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationRatingReference.performanceEvaluationTitle=' + i.[PerformanceEvaluationRating_PerformanceEvaluationTitle] + N'#' + N'$.performanceEvaluationRatingReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluationRating_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationRatingReference.personId=' + i.[PerformanceEvaluationRating_PersonId] + N'#' + N'$.performanceEvaluationRatingReference.schoolYear=' + CAST(i.[PerformanceEvaluationRating_SchoolYear] AS nvarchar(max)) + N'#' + N'$.performanceEvaluationRatingReference.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluationRating_SourceSystemDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationRatingReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluationRating_TermDescriptor_DescriptorId]))), i.[DocumentId], 370
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -77531,39 +72403,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [tpdm].[TR_FinancialAid_ReferentialIdentity]
-ON [tpdm].[FinancialAid]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 374;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMFinancialAid' AS nvarchar(max)) + N'$.aidTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AidTypeDescriptor_DescriptorId])) + N'#' + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 374
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([AidTypeDescriptor_DescriptorId]) OR UPDATE([BeginDate]) OR UPDATE([Student_StudentUniqueId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[AidTypeDescriptor_DescriptorId] <> d.[AidTypeDescriptor_DescriptorId] OR (i.[AidTypeDescriptor_DescriptorId] IS NULL AND d.[AidTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[AidTypeDescriptor_DescriptorId] IS NOT NULL AND d.[AidTypeDescriptor_DescriptorId] IS NULL)) OR (i.[BeginDate] <> d.[BeginDate] OR (i.[BeginDate] IS NULL AND d.[BeginDate] IS NOT NULL) OR (i.[BeginDate] IS NOT NULL AND d.[BeginDate] IS NULL)) OR (CAST(i.[Student_StudentUniqueId] AS varbinary(max)) <> CAST(d.[Student_StudentUniqueId] AS varbinary(max)) OR (i.[Student_StudentUniqueId] IS NULL AND d.[Student_StudentUniqueId] IS NOT NULL) OR (i.[Student_StudentUniqueId] IS NOT NULL AND d.[Student_StudentUniqueId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 374;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMFinancialAid' AS nvarchar(max)) + N'$.aidTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[AidTypeDescriptor_DescriptorId])) + N'#' + N'$.beginDate=' + CONVERT(nvarchar(10), i.[BeginDate], 23) + N'#' + N'$.studentReference.studentUniqueId=' + i.[Student_StudentUniqueId]), i.[DocumentId], 374
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [tpdm].[TR_FinancialAid_Stamp]
 ON [tpdm].[FinancialAid]
 AFTER INSERT, UPDATE, DELETE
@@ -77679,39 +72518,6 @@ BEGIN
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[Student_StudentUniqueId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[AidTypeDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[Student_StudentUniqueId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [tpdm].[TR_PerformanceEvaluation_ReferentialIdentity]
-ON [tpdm].[PerformanceEvaluation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 377;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMPerformanceEvaluation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationTitle=' + i.[PerformanceEvaluationTitle] + N'#' + N'$.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[TermDescriptor_DescriptorId]))), i.[DocumentId], 377
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EducationOrganization_EducationOrganizationId]) OR UPDATE([EvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([PerformanceEvaluationTitle]) OR UPDATE([PerformanceEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([SchoolYear_SchoolYear]) OR UPDATE([TermDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EducationOrganization_EducationOrganizationId] <> d.[EducationOrganization_EducationOrganizationId] OR (i.[EducationOrganization_EducationOrganizationId] IS NULL AND d.[EducationOrganization_EducationOrganizationId] IS NOT NULL) OR (i.[EducationOrganization_EducationOrganizationId] IS NOT NULL AND d.[EducationOrganization_EducationOrganizationId] IS NULL)) OR (i.[EvaluationPeriodDescriptor_DescriptorId] <> d.[EvaluationPeriodDescriptor_DescriptorId] OR (i.[EvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[EvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[EvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[EvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[PerformanceEvaluationTitle] AS varbinary(max)) <> CAST(d.[PerformanceEvaluationTitle] AS varbinary(max)) OR (i.[PerformanceEvaluationTitle] IS NULL AND d.[PerformanceEvaluationTitle] IS NOT NULL) OR (i.[PerformanceEvaluationTitle] IS NOT NULL AND d.[PerformanceEvaluationTitle] IS NULL)) OR (i.[PerformanceEvaluationTypeDescriptor_DescriptorId] <> d.[PerformanceEvaluationTypeDescriptor_DescriptorId] OR (i.[PerformanceEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[PerformanceEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[PerformanceEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[PerformanceEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[SchoolYear_SchoolYear] <> d.[SchoolYear_SchoolYear] OR (i.[SchoolYear_SchoolYear] IS NULL AND d.[SchoolYear_SchoolYear] IS NOT NULL) OR (i.[SchoolYear_SchoolYear] IS NOT NULL AND d.[SchoolYear_SchoolYear] IS NULL)) OR (i.[TermDescriptor_DescriptorId] <> d.[TermDescriptor_DescriptorId] OR (i.[TermDescriptor_DescriptorId] IS NULL AND d.[TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[TermDescriptor_DescriptorId] IS NOT NULL AND d.[TermDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 377;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMPerformanceEvaluation' AS nvarchar(max)) + N'$.educationOrganizationReference.educationOrganizationId=' + CAST(i.[EducationOrganization_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationTitle=' + i.[PerformanceEvaluationTitle] + N'#' + N'$.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.schoolYearTypeReference.schoolYear=' + CAST(i.[SchoolYear_SchoolYear] AS nvarchar(max)) + N'#' + N'$.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[TermDescriptor_DescriptorId]))), i.[DocumentId], 377
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;
@@ -77898,39 +72704,6 @@ BEGIN
             r.[ContentLastModifiedAt] = sysutcdatetime()
         FROM [tpdm].[PerformanceEvaluation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [tpdm].[TR_PerformanceEvaluationRating_ReferentialIdentity]
-ON [tpdm].[PerformanceEvaluationRating]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 378;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMPerformanceEvaluationRating' AS nvarchar(max)) + N'$.performanceEvaluationReference.educationOrganizationId=' + CAST(i.[PerformanceEvaluation_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.performanceEvaluationReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationReference.performanceEvaluationTitle=' + i.[PerformanceEvaluation_PerformanceEvaluationTitle] + N'#' + N'$.performanceEvaluationReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationReference.schoolYear=' + CAST(i.[PerformanceEvaluation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.performanceEvaluationReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluation_TermDescriptor_DescriptorId])) + N'#' + N'$.personReference.personId=' + i.[Person_PersonId] + N'#' + N'$.personReference.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Person_SourceSystemDescriptor_DescriptorId]))), i.[DocumentId], 378
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([PerformanceEvaluation_EducationOrganizationId]) OR UPDATE([PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([PerformanceEvaluation_PerformanceEvaluationTitle]) OR UPDATE([PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([PerformanceEvaluation_SchoolYear]) OR UPDATE([PerformanceEvaluation_TermDescriptor_DescriptorId]) OR UPDATE([Person_PersonId]) OR UPDATE([Person_SourceSystemDescriptor_DescriptorId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[PerformanceEvaluation_EducationOrganizationId] <> d.[PerformanceEvaluation_EducationOrganizationId] OR (i.[PerformanceEvaluation_EducationOrganizationId] IS NULL AND d.[PerformanceEvaluation_EducationOrganizationId] IS NOT NULL) OR (i.[PerformanceEvaluation_EducationOrganizationId] IS NOT NULL AND d.[PerformanceEvaluation_EducationOrganizationId] IS NULL)) OR (i.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId] <> d.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId] OR (i.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[PerformanceEvaluation_PerformanceEvaluationTitle] AS varbinary(max)) <> CAST(d.[PerformanceEvaluation_PerformanceEvaluationTitle] AS varbinary(max)) OR (i.[PerformanceEvaluation_PerformanceEvaluationTitle] IS NULL AND d.[PerformanceEvaluation_PerformanceEvaluationTitle] IS NOT NULL) OR (i.[PerformanceEvaluation_PerformanceEvaluationTitle] IS NOT NULL AND d.[PerformanceEvaluation_PerformanceEvaluationTitle] IS NULL)) OR (i.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] <> d.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] OR (i.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[PerformanceEvaluation_SchoolYear] <> d.[PerformanceEvaluation_SchoolYear] OR (i.[PerformanceEvaluation_SchoolYear] IS NULL AND d.[PerformanceEvaluation_SchoolYear] IS NOT NULL) OR (i.[PerformanceEvaluation_SchoolYear] IS NOT NULL AND d.[PerformanceEvaluation_SchoolYear] IS NULL)) OR (i.[PerformanceEvaluation_TermDescriptor_DescriptorId] <> d.[PerformanceEvaluation_TermDescriptor_DescriptorId] OR (i.[PerformanceEvaluation_TermDescriptor_DescriptorId] IS NULL AND d.[PerformanceEvaluation_TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[PerformanceEvaluation_TermDescriptor_DescriptorId] IS NOT NULL AND d.[PerformanceEvaluation_TermDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Person_PersonId] AS varbinary(max)) <> CAST(d.[Person_PersonId] AS varbinary(max)) OR (i.[Person_PersonId] IS NULL AND d.[Person_PersonId] IS NOT NULL) OR (i.[Person_PersonId] IS NOT NULL AND d.[Person_PersonId] IS NULL)) OR (i.[Person_SourceSystemDescriptor_DescriptorId] <> d.[Person_SourceSystemDescriptor_DescriptorId] OR (i.[Person_SourceSystemDescriptor_DescriptorId] IS NULL AND d.[Person_SourceSystemDescriptor_DescriptorId] IS NOT NULL) OR (i.[Person_SourceSystemDescriptor_DescriptorId] IS NOT NULL AND d.[Person_SourceSystemDescriptor_DescriptorId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 378;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMPerformanceEvaluationRating' AS nvarchar(max)) + N'$.performanceEvaluationReference.educationOrganizationId=' + CAST(i.[PerformanceEvaluation_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.performanceEvaluationReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluation_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationReference.performanceEvaluationTitle=' + i.[PerformanceEvaluation_PerformanceEvaluationTitle] + N'#' + N'$.performanceEvaluationReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluation_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.performanceEvaluationReference.schoolYear=' + CAST(i.[PerformanceEvaluation_SchoolYear] AS nvarchar(max)) + N'#' + N'$.performanceEvaluationReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[PerformanceEvaluation_TermDescriptor_DescriptorId])) + N'#' + N'$.personReference.personId=' + i.[Person_PersonId] + N'#' + N'$.personReference.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Person_SourceSystemDescriptor_DescriptorId]))), i.[DocumentId], 378
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
     END
 END;
 GO
@@ -78217,39 +72990,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [tpdm].[TR_RubricDimension_ReferentialIdentity]
-ON [tpdm].[RubricDimension]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 381;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMRubricDimension' AS nvarchar(max)) + N'$.evaluationElementReference.educationOrganizationId=' + CAST(i.[EvaluationElement_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationElementReference.evaluationElementTitle=' + i.[EvaluationElement_EvaluationElementTitle] + N'#' + N'$.evaluationElementReference.evaluationObjectiveTitle=' + i.[EvaluationElement_EvaluationObjectiveTitle] + N'#' + N'$.evaluationElementReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationElement_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationElementReference.evaluationTitle=' + i.[EvaluationElement_EvaluationTitle] + N'#' + N'$.evaluationElementReference.performanceEvaluationTitle=' + i.[EvaluationElement_PerformanceEvaluationTitle] + N'#' + N'$.evaluationElementReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationElement_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationElementReference.schoolYear=' + CAST(i.[EvaluationElement_SchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationElementReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationElement_TermDescriptor_DescriptorId])) + N'#' + N'$.rubricRating=' + CAST(i.[RubricRating] AS nvarchar(max))), i.[DocumentId], 381
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([EvaluationElement_EducationOrganizationId]) OR UPDATE([EvaluationElement_EvaluationElementTitle]) OR UPDATE([EvaluationElement_EvaluationObjectiveTitle]) OR UPDATE([EvaluationElement_EvaluationPeriodDescriptor_DescriptorId]) OR UPDATE([EvaluationElement_EvaluationTitle]) OR UPDATE([EvaluationElement_PerformanceEvaluationTitle]) OR UPDATE([EvaluationElement_PerformanceEvaluationTypeDescriptor_DescriptorId]) OR UPDATE([EvaluationElement_SchoolYear]) OR UPDATE([EvaluationElement_TermDescriptor_DescriptorId]) OR UPDATE([RubricRating]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[EvaluationElement_EducationOrganizationId] <> d.[EvaluationElement_EducationOrganizationId] OR (i.[EvaluationElement_EducationOrganizationId] IS NULL AND d.[EvaluationElement_EducationOrganizationId] IS NOT NULL) OR (i.[EvaluationElement_EducationOrganizationId] IS NOT NULL AND d.[EvaluationElement_EducationOrganizationId] IS NULL)) OR (CAST(i.[EvaluationElement_EvaluationElementTitle] AS varbinary(max)) <> CAST(d.[EvaluationElement_EvaluationElementTitle] AS varbinary(max)) OR (i.[EvaluationElement_EvaluationElementTitle] IS NULL AND d.[EvaluationElement_EvaluationElementTitle] IS NOT NULL) OR (i.[EvaluationElement_EvaluationElementTitle] IS NOT NULL AND d.[EvaluationElement_EvaluationElementTitle] IS NULL)) OR (CAST(i.[EvaluationElement_EvaluationObjectiveTitle] AS varbinary(max)) <> CAST(d.[EvaluationElement_EvaluationObjectiveTitle] AS varbinary(max)) OR (i.[EvaluationElement_EvaluationObjectiveTitle] IS NULL AND d.[EvaluationElement_EvaluationObjectiveTitle] IS NOT NULL) OR (i.[EvaluationElement_EvaluationObjectiveTitle] IS NOT NULL AND d.[EvaluationElement_EvaluationObjectiveTitle] IS NULL)) OR (i.[EvaluationElement_EvaluationPeriodDescriptor_DescriptorId] <> d.[EvaluationElement_EvaluationPeriodDescriptor_DescriptorId] OR (i.[EvaluationElement_EvaluationPeriodDescriptor_DescriptorId] IS NULL AND d.[EvaluationElement_EvaluationPeriodDescriptor_DescriptorId] IS NOT NULL) OR (i.[EvaluationElement_EvaluationPeriodDescriptor_DescriptorId] IS NOT NULL AND d.[EvaluationElement_EvaluationPeriodDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[EvaluationElement_EvaluationTitle] AS varbinary(max)) <> CAST(d.[EvaluationElement_EvaluationTitle] AS varbinary(max)) OR (i.[EvaluationElement_EvaluationTitle] IS NULL AND d.[EvaluationElement_EvaluationTitle] IS NOT NULL) OR (i.[EvaluationElement_EvaluationTitle] IS NOT NULL AND d.[EvaluationElement_EvaluationTitle] IS NULL)) OR (CAST(i.[EvaluationElement_PerformanceEvaluationTitle] AS varbinary(max)) <> CAST(d.[EvaluationElement_PerformanceEvaluationTitle] AS varbinary(max)) OR (i.[EvaluationElement_PerformanceEvaluationTitle] IS NULL AND d.[EvaluationElement_PerformanceEvaluationTitle] IS NOT NULL) OR (i.[EvaluationElement_PerformanceEvaluationTitle] IS NOT NULL AND d.[EvaluationElement_PerformanceEvaluationTitle] IS NULL)) OR (i.[EvaluationElement_PerformanceEvaluationTypeDescriptor_DescriptorId] <> d.[EvaluationElement_PerformanceEvaluationTypeDescriptor_DescriptorId] OR (i.[EvaluationElement_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NULL AND d.[EvaluationElement_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NOT NULL) OR (i.[EvaluationElement_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NOT NULL AND d.[EvaluationElement_PerformanceEvaluationTypeDescriptor_DescriptorId] IS NULL)) OR (i.[EvaluationElement_SchoolYear] <> d.[EvaluationElement_SchoolYear] OR (i.[EvaluationElement_SchoolYear] IS NULL AND d.[EvaluationElement_SchoolYear] IS NOT NULL) OR (i.[EvaluationElement_SchoolYear] IS NOT NULL AND d.[EvaluationElement_SchoolYear] IS NULL)) OR (i.[EvaluationElement_TermDescriptor_DescriptorId] <> d.[EvaluationElement_TermDescriptor_DescriptorId] OR (i.[EvaluationElement_TermDescriptor_DescriptorId] IS NULL AND d.[EvaluationElement_TermDescriptor_DescriptorId] IS NOT NULL) OR (i.[EvaluationElement_TermDescriptor_DescriptorId] IS NOT NULL AND d.[EvaluationElement_TermDescriptor_DescriptorId] IS NULL)) OR (i.[RubricRating] <> d.[RubricRating] OR (i.[RubricRating] IS NULL AND d.[RubricRating] IS NOT NULL) OR (i.[RubricRating] IS NOT NULL AND d.[RubricRating] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 381;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMRubricDimension' AS nvarchar(max)) + N'$.evaluationElementReference.educationOrganizationId=' + CAST(i.[EvaluationElement_EducationOrganizationId] AS nvarchar(max)) + N'#' + N'$.evaluationElementReference.evaluationElementTitle=' + i.[EvaluationElement_EvaluationElementTitle] + N'#' + N'$.evaluationElementReference.evaluationObjectiveTitle=' + i.[EvaluationElement_EvaluationObjectiveTitle] + N'#' + N'$.evaluationElementReference.evaluationPeriodDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationElement_EvaluationPeriodDescriptor_DescriptorId])) + N'#' + N'$.evaluationElementReference.evaluationTitle=' + i.[EvaluationElement_EvaluationTitle] + N'#' + N'$.evaluationElementReference.performanceEvaluationTitle=' + i.[EvaluationElement_PerformanceEvaluationTitle] + N'#' + N'$.evaluationElementReference.performanceEvaluationTypeDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationElement_PerformanceEvaluationTypeDescriptor_DescriptorId])) + N'#' + N'$.evaluationElementReference.schoolYear=' + CAST(i.[EvaluationElement_SchoolYear] AS nvarchar(max)) + N'#' + N'$.evaluationElementReference.termDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[EvaluationElement_TermDescriptor_DescriptorId])) + N'#' + N'$.rubricRating=' + CAST(i.[RubricRating] AS nvarchar(max))), i.[DocumentId], 381
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [tpdm].[TR_RubricDimension_Stamp]
 ON [tpdm].[RubricDimension]
 AFTER INSERT, UPDATE, DELETE
@@ -78497,39 +73237,6 @@ BEGIN
 END;
 GO
 
-CREATE OR ALTER TRIGGER [tpdm].[TR_SurveyResponsePersonTargetAssociation_ReferentialIdentity]
-ON [tpdm].[SurveyResponsePersonTargetAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 383;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMSurveyResponsePersonTargetAssociation' AS nvarchar(max)) + N'$.personReference.personId=' + i.[Person_PersonId] + N'#' + N'$.personReference.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Person_SourceSystemDescriptor_DescriptorId])) + N'#' + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 383
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Person_PersonId]) OR UPDATE([Person_SourceSystemDescriptor_DescriptorId]) OR UPDATE([SurveyResponse_Namespace]) OR UPDATE([SurveyResponse_SurveyIdentifier]) OR UPDATE([SurveyResponse_SurveyResponseIdentifier]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Person_PersonId] AS varbinary(max)) <> CAST(d.[Person_PersonId] AS varbinary(max)) OR (i.[Person_PersonId] IS NULL AND d.[Person_PersonId] IS NOT NULL) OR (i.[Person_PersonId] IS NOT NULL AND d.[Person_PersonId] IS NULL)) OR (i.[Person_SourceSystemDescriptor_DescriptorId] <> d.[Person_SourceSystemDescriptor_DescriptorId] OR (i.[Person_SourceSystemDescriptor_DescriptorId] IS NULL AND d.[Person_SourceSystemDescriptor_DescriptorId] IS NOT NULL) OR (i.[Person_SourceSystemDescriptor_DescriptorId] IS NOT NULL AND d.[Person_SourceSystemDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[SurveyResponse_Namespace] AS varbinary(max)) <> CAST(d.[SurveyResponse_Namespace] AS varbinary(max)) OR (i.[SurveyResponse_Namespace] IS NULL AND d.[SurveyResponse_Namespace] IS NOT NULL) OR (i.[SurveyResponse_Namespace] IS NOT NULL AND d.[SurveyResponse_Namespace] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponse_SurveyIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyIdentifier] IS NULL AND d.[SurveyResponse_SurveyIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyIdentifier] IS NOT NULL AND d.[SurveyResponse_SurveyIdentifier] IS NULL)) OR (CAST(i.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveyResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveyResponse_SurveyResponseIdentifier] IS NOT NULL AND d.[SurveyResponse_SurveyResponseIdentifier] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 383;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMSurveyResponsePersonTargetAssociation' AS nvarchar(max)) + N'$.personReference.personId=' + i.[Person_PersonId] + N'#' + N'$.personReference.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Person_SourceSystemDescriptor_DescriptorId])) + N'#' + N'$.surveyResponseReference.namespace=' + i.[SurveyResponse_Namespace] + N'#' + N'$.surveyResponseReference.surveyIdentifier=' + i.[SurveyResponse_SurveyIdentifier] + N'#' + N'$.surveyResponseReference.surveyResponseIdentifier=' + i.[SurveyResponse_SurveyResponseIdentifier]), i.[DocumentId], 383
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [tpdm].[TR_SurveyResponsePersonTargetAssociation_Stamp]
 ON [tpdm].[SurveyResponsePersonTargetAssociation]
 AFTER INSERT, UPDATE, DELETE
@@ -78648,39 +73355,6 @@ BEGIN
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[Person_SourceSystemDescriptor_DescriptorId]
             INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[Person_SourceSystemDescriptor_DescriptorId];
-        END
-    END
-END;
-GO
-
-CREATE OR ALTER TRIGGER [tpdm].[TR_SurveySectionResponsePersonTargetAssociation_ReferentialIdentity]
-ON [tpdm].[SurveySectionResponsePersonTargetAssociation]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 384;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMSurveySectionResponsePersonTargetAssociation' AS nvarchar(max)) + N'$.personReference.personId=' + i.[Person_PersonId] + N'#' + N'$.personReference.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Person_SourceSystemDescriptor_DescriptorId])) + N'#' + N'$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveyResponseReferenceNamespace] + N'#' + N'$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier] + N'#' + N'$.surveySectionResponseReference.surveyResponseIdentifier=' + i.[SurveySectionResponse_SurveyResponseIdentifier] + N'#' + N'$.surveySectionResponseReference.surveySectionTitle=' + i.[SurveySectionResponse_SurveySectionTitle]), i.[DocumentId], 384
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([Person_PersonId]) OR UPDATE([Person_SourceSystemDescriptor_DescriptorId]) OR UPDATE([Namespace_Unified]) OR UPDATE([SurveyIdentifier_Unified]) OR UPDATE([SurveySectionResponse_SurveyResponseIdentifier]) OR UPDATE([SurveySectionResponse_SurveySectionTitle]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (CAST(i.[Person_PersonId] AS varbinary(max)) <> CAST(d.[Person_PersonId] AS varbinary(max)) OR (i.[Person_PersonId] IS NULL AND d.[Person_PersonId] IS NOT NULL) OR (i.[Person_PersonId] IS NOT NULL AND d.[Person_PersonId] IS NULL)) OR (i.[Person_SourceSystemDescriptor_DescriptorId] <> d.[Person_SourceSystemDescriptor_DescriptorId] OR (i.[Person_SourceSystemDescriptor_DescriptorId] IS NULL AND d.[Person_SourceSystemDescriptor_DescriptorId] IS NOT NULL) OR (i.[Person_SourceSystemDescriptor_DescriptorId] IS NOT NULL AND d.[Person_SourceSystemDescriptor_DescriptorId] IS NULL)) OR (CAST(i.[Namespace_Unified] AS varbinary(max)) <> CAST(d.[Namespace_Unified] AS varbinary(max)) OR (i.[Namespace_Unified] IS NULL AND d.[Namespace_Unified] IS NOT NULL) OR (i.[Namespace_Unified] IS NOT NULL AND d.[Namespace_Unified] IS NULL)) OR (CAST(i.[SurveyIdentifier_Unified] AS varbinary(max)) <> CAST(d.[SurveyIdentifier_Unified] AS varbinary(max)) OR (i.[SurveyIdentifier_Unified] IS NULL AND d.[SurveyIdentifier_Unified] IS NOT NULL) OR (i.[SurveyIdentifier_Unified] IS NOT NULL AND d.[SurveyIdentifier_Unified] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) <> CAST(d.[SurveySectionResponse_SurveyResponseIdentifier] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL AND d.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL) OR (i.[SurveySectionResponse_SurveyResponseIdentifier] IS NOT NULL AND d.[SurveySectionResponse_SurveyResponseIdentifier] IS NULL)) OR (CAST(i.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) <> CAST(d.[SurveySectionResponse_SurveySectionTitle] AS varbinary(max)) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NULL AND d.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL) OR (i.[SurveySectionResponse_SurveySectionTitle] IS NOT NULL AND d.[SurveySectionResponse_SurveySectionTitle] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 384;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'TPDMSurveySectionResponsePersonTargetAssociation' AS nvarchar(max)) + N'$.personReference.personId=' + i.[Person_PersonId] + N'#' + N'$.personReference.sourceSystemDescriptor=' + LOWER((SELECT descriptor.[Namespace] + N'#' + descriptor.[CodeValue] FROM [dms].[Descriptor] descriptor WHERE descriptor.[DescriptorId] = i.[Person_SourceSystemDescriptor_DescriptorId])) + N'#' + N'$.surveySectionResponseReference.namespace=' + i.[SurveySectionResponse_SurveyResponseReferenceNamespace] + N'#' + N'$.surveySectionResponseReference.surveyIdentifier=' + i.[SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier] + N'#' + N'$.surveySectionResponseReference.surveyResponseIdentifier=' + i.[SurveySectionResponse_SurveyResponseIdentifier] + N'#' + N'$.surveySectionResponseReference.surveySectionTitle=' + i.[SurveySectionResponse_SurveySectionTitle]), i.[DocumentId], 384
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
         END
     END
 END;

@@ -307,7 +307,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/careerpathwaydescriptor#other");
+                .Be("uri://ed-fi.org/CareerPathwayDescriptor#Other");
         }
 
         [Test]
@@ -323,7 +323,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/competencyleveldescriptor#basic");
+                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#Basic");
         }
 
         [Test]
@@ -339,7 +339,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/competencyleveldescriptor#advanced");
+                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#Advanced");
         }
     }
 
@@ -458,7 +458,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/competencyleveldescriptor#basic");
+                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#Basic");
         }
 
         [Test]
@@ -474,7 +474,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/competencyleveldescriptor#advanced");
+                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#Advanced");
         }
     }
 
@@ -526,7 +526,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/competencyleveldescriptor#advanced");
+                .Be("uri://ed-fi.org/CompetencyLevelDescriptor#Advanced");
         }
     }
 
@@ -609,7 +609,7 @@ public class DescriptorExtractorTests
                 .Be(DocumentIdentity.DescriptorIdentityJsonPath);
             documentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/careerpathwaydescriptor#other");
+                .Be("uri://ed-fi.org/CareerPathwayDescriptor#Other");
         }
     }
 
@@ -711,7 +711,7 @@ public class DescriptorExtractorTests
         }
 
         [Test]
-        public void It_normalizes_COURSEGPAApplicabilityDescriptor_to_lowercase()
+        public void It_preserves_the_COURSEGPAApplicabilityDescriptor_casing()
         {
             var courseGpaDescriptor = Array.Find(
                 descriptorReferences,
@@ -722,11 +722,11 @@ public class DescriptorExtractorTests
             courseGpaDescriptor!
                 .DocumentIdentity.DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/coursegpaapplicabilitydescriptor#applicable");
+                .Be("uri://ed-fi.org/COURSEGPAApplicabilityDescriptor#Applicable");
         }
 
         [Test]
-        public void It_normalizes_academicSUBJECTDescriptor_to_lowercase()
+        public void It_preserves_the_academicSUBJECTDescriptor_casing()
         {
             var academicSubjectDescriptor = Array.Find(
                 descriptorReferences,
@@ -737,11 +737,11 @@ public class DescriptorExtractorTests
             academicSubjectDescriptor!
                 .DocumentIdentity.DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/academicsubjectdescriptor#mathematics");
+                .Be("uri://ed-fi.org/academicSUBJECTDescriptor#Mathematics");
         }
 
         [Test]
-        public void It_normalizes_MixedCASEDescriptor_to_lowercase()
+        public void It_preserves_the_MixedCASEDescriptor_casing()
         {
             var mixedCaseDescriptor = Array.Find(
                 descriptorReferences,
@@ -752,11 +752,11 @@ public class DescriptorExtractorTests
             mixedCaseDescriptor!
                 .DocumentIdentity.DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/mixedcasedescriptor#somevalue");
+                .Be("uri://ed-fi.org/MixedCASEDescriptor#SomeValue");
         }
 
         [Test]
-        public void It_normalizes_collection_descriptor_references_to_lowercase()
+        public void It_preserves_the_collection_descriptor_reference_casing()
         {
             var collectionDescriptors = descriptorReferences
                 .Where(r => r.ResourceInfo.ResourceName.Value == "CollectionMIXEDCaseDescriptor")
@@ -767,12 +767,12 @@ public class DescriptorExtractorTests
             collectionDescriptors[0]
                 .DocumentIdentity.DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/collectionmixedcasedescriptor#first");
+                .Be("uri://ed-fi.org/CollectionMIXEDCaseDescriptor#First");
 
             collectionDescriptors[1]
                 .DocumentIdentity.DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/collectionmixedcasedescriptor#second");
+                .Be("uri://ed-fi.org/CollectionMIXEDCaseDescriptor#Second");
         }
 
         [Test]
@@ -850,7 +850,7 @@ public class DescriptorExtractorTests
             _descriptorReferences[0]
                 .DocumentIdentity.DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/programtypedescriptor#stem");
+                .Be("uri://ed-fi.org/ProgramTypeDescriptor#STEM");
         }
 
         [Test]
@@ -863,7 +863,7 @@ public class DescriptorExtractorTests
             _descriptorReferences[1]
                 .DocumentIdentity.DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/programtypedescriptor#finearts");
+                .Be("uri://ed-fi.org/ProgramTypeDescriptor#FineArts");
         }
     }
 
@@ -927,7 +927,7 @@ public class DescriptorExtractorTests
             _descriptorReferences[0]
                 .DocumentIdentity.DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/programtypedescriptor#stem");
+                .Be("uri://ed-fi.org/ProgramTypeDescriptor#STEM");
         }
 
         [Test]
@@ -940,7 +940,7 @@ public class DescriptorExtractorTests
             _descriptorReferences[1]
                 .DocumentIdentity.DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/programtypedescriptor#finearts");
+                .Be("uri://ed-fi.org/ProgramTypeDescriptor#FineArts");
         }
     }
 
@@ -986,7 +986,7 @@ public class DescriptorExtractorTests
             _descriptorReferences[0]
                 .DocumentIdentity.DocumentIdentityElements[0]
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/academicsubjectdescriptor#mathematics");
+                .Be("uri://ed-fi.org/AcademicSubjectDescriptor#Mathematics");
         }
     }
 
@@ -1029,6 +1029,114 @@ public class DescriptorExtractorTests
                 .Be(
                     "Descriptor path '$.careerPathwayDescriptor' resolved to conflicting descriptor references."
                 );
+        }
+    }
+
+    [TestFixture(
+        """{"courseTitle":"Math","careerPathwayDescriptor":"uri://ed-fi.org/CareerPathwayDescriptor#Ot\u0000her"}""",
+        new[] { "$.careerPathwayDescriptor" }
+    )]
+    [TestFixture(
+        """{"courseTitle":"Math","competencyLevels":[{"competencyLevelDescriptor":"uri://ed-fi.org/CompetencyLevelDescriptor#Basic"},{"competencyLevelDescriptor":"uri://ed-fi.org/CompetencyLevelDescriptor#Adv\u0000anced"}]}""",
+        new[] { "$.competencyLevels[1].competencyLevelDescriptor" }
+    )]
+    [TestFixture(
+        """{"courseTitle":"Math","careerPathwayDescriptor":"\u0000","competencyLevels":[{"competencyLevelDescriptor":"uri://ed-fi.org/CompetencyLevelDescriptor#\u0000"}]}""",
+        new[] { "$.careerPathwayDescriptor", "$.competencyLevels[0].competencyLevelDescriptor" }
+    )]
+    [Parallelizable]
+    public class Given_Extracting_Descriptor_References_With_Nul_In_Schema_Path_Values(
+        string body,
+        string[] expectedPaths
+    ) : DescriptorExtractorTests
+    {
+        private ReferenceExtractionValidationException _exception = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ResourceSchema resourceSchema = BuildResourceSchema(BuildApiSchemaDocuments(), "slimCourses");
+
+            Action act = () =>
+                resourceSchema.ExtractRelationalDescriptors(
+                    CreateResourceInfo("SlimCourse"),
+                    CreateRelationalMappingSet(CreateResourceInfo("SlimCourse"), includeWritePlan: true),
+                    JsonNode.Parse(body)!,
+                    NullLogger.Instance
+                );
+
+            _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
+        }
+
+        [Test]
+        public void It_reports_every_offending_concrete_path_together()
+        {
+            _exception.ValidationFailures.Select(failure => failure.Path.Value).Should().Equal(expectedPaths);
+        }
+
+        [Test]
+        public void It_reports_the_descriptor_text_rule()
+        {
+            _exception
+                .ValidationFailures.Select(failure => failure.Message)
+                .Should()
+                .AllBe(DescriptorText.InvalidValueMessage);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Relational_Descriptor_References_With_Nul_At_A_Descriptor_Edge_Path
+        : DescriptorExtractorTests
+    {
+        private ReferenceExtractionValidationException _exception = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            ResourceSchema resourceSchema = BuildResourceSchema(
+                BuildRelationalReferenceDescriptorApiSchemaDocuments(),
+                "studentProgramAssociations"
+            );
+
+            Action act = () =>
+                resourceSchema.ExtractRelationalDescriptors(
+                    CreateResourceInfo("StudentProgramAssociation"),
+                    CreateRelationalReferenceDescriptorMappingSet(includeWritePlan: true),
+                    JsonNode.Parse(
+                        """
+                        {
+                            "associationIdentifier": "A-1",
+                            "programs": [
+                                {
+                                    "programReference": {
+                                        "programName": "STEM",
+                                        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#STEM"
+                                    }
+                                },
+                                {
+                                    "programReference": {
+                                        "programName": "Arts",
+                                        "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Fine\u0000Arts"
+                                    }
+                                }
+                            ]
+                        }
+                        """
+                    )!,
+                    NullLogger.Instance
+                );
+
+            _exception = act.Should().Throw<ReferenceExtractionValidationException>().Which;
+        }
+
+        [Test]
+        public void It_reports_the_concrete_descriptor_edge_path()
+        {
+            _exception
+                .ValidationFailures.Select(failure => failure.Path.Value)
+                .Should()
+                .Equal("$.programs[1].programReference.programTypeDescriptor");
         }
     }
 }

@@ -13,7 +13,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -38,6 +37,18 @@ file static class WriteSessionCommandStreamTestSupport
         ResourceVersion: new SemVer("1.0.0"),
         AllowIdentityUpdates: false
     );
+
+    public static readonly ResourceInfo AddressTypeDescriptorResourceInfo = new(
+        ProjectName: new ProjectName("Ed-Fi"),
+        ResourceName: new ResourceName("AddressTypeDescriptor"),
+        IsDescriptor: true,
+        ResourceVersion: new SemVer("1.0.0"),
+        AllowIdentityUpdates: false
+    );
+
+    /// <summary>The seeded descriptor that the create and POST-as-update requests reference.</summary>
+    public const string AddressTypeDescriptorUri =
+        NoProfileMultiBatchCollectionScenarios.OriginalAddressTypeDescriptorUri;
 
     public static ServiceProvider CreateServiceProvider()
     {
@@ -71,6 +82,52 @@ file static class WriteSessionCommandStreamTestSupport
     public static JsonNode CreateRequestBody(int addressCount) =>
         NoProfileMultiBatchCollectionScenarios.CreateCollectionRequestBody(addressCount);
 
+    /// <summary>
+    /// The School body with the seeded AddressType descriptor on its first address, so the write's first phase
+    /// has a resolvable natural-key lookup to embed.
+    /// </summary>
+    private static JsonNode CreateReferencingRequestBody(int addressCount)
+    {
+        var body = CreateRequestBody(addressCount);
+        body["addresses"]![0]!["addressTypeDescriptor"] = AddressTypeDescriptorUri;
+
+        return body;
+    }
+
+    private static DocumentIdentity AddressTypeDescriptorIdentity() =>
+        new([
+            new DocumentIdentityElement(
+                DocumentIdentity.DescriptorIdentityJsonPath,
+                AddressTypeDescriptorUri
+            ),
+        ]);
+
+    public static UpsertRequest CreateAddressTypeDescriptorUpsertRequest(MappingSet mappingSet) =>
+        new(
+            ResourceInfo: AddressTypeDescriptorResourceInfo,
+            DocumentInfo: new DocumentInfo(
+                DocumentIdentity: AddressTypeDescriptorIdentity(),
+                DocumentReferences: [],
+                DocumentReferenceArrays: [],
+                DescriptorReferences: [],
+                SuperclassIdentity: null
+            ),
+            MappingSet: mappingSet,
+            EdfiDoc: new JsonObject
+            {
+                ["namespace"] = "uri://ed-fi.org/AddressTypeDescriptor",
+                ["codeValue"] = "Physical",
+                ["shortDescription"] = "Physical",
+            },
+            Headers: [],
+            TraceId: new TraceId("write-session-stream-descriptor-seed"),
+            DocumentUuid: new DocumentUuid(Guid.NewGuid())
+        )
+        {
+            ActionAuthorization =
+                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+        };
+
     private static DocumentInfo CreateSchoolDocumentInfo()
     {
         var schoolIdentity = new DocumentIdentity([
@@ -79,7 +136,6 @@ file static class WriteSessionCommandStreamTestSupport
 
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -87,24 +143,40 @@ file static class WriteSessionCommandStreamTestSupport
         );
     }
 
+    /// <summary>
+    /// A School POST whose body and extracted descriptor references both carry the seeded AddressType
+    /// descriptor.
+    /// </summary>
     public static UpsertRequest CreateUpsertRequest(
         MappingSet mappingSet,
-        JsonNode edfiDoc,
+        int addressCount,
         DocumentUuid documentUuid,
-        string traceId
+        string traceId,
+        UpsertActionAuthorization? actionAuthorization = null
     ) =>
         new(
             ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: CreateSchoolDocumentInfo(),
+            DocumentInfo: CreateSchoolDocumentInfo() with
+            {
+                DescriptorReferences =
+                [
+                    new DescriptorReference(
+                        AddressTypeDescriptorResourceInfo,
+                        AddressTypeDescriptorIdentity(),
+                        new JsonPath("$.addresses[0].addressTypeDescriptor")
+                    ),
+                ],
+            },
             MappingSet: mappingSet,
-            EdfiDoc: edfiDoc,
+            EdfiDoc: CreateReferencingRequestBody(addressCount),
             Headers: [],
             TraceId: new TraceId(traceId),
             DocumentUuid: documentUuid
         )
         {
             ActionAuthorization =
-                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
+                actionAuthorization
+                ?? UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
         };
 
     public static UpdateRequest CreateUpdateRequest(
@@ -148,7 +220,6 @@ file static class WriteSessionCommandStreamTestSupport
                 return new DocumentReference(
                     programResourceInfo,
                     identity,
-                    ReferentialIdCalculator.ReferentialIdFrom(programResourceInfo, identity),
                     new JsonPath(
                         $"$._ext.sample.addresses[0]._ext.sample.sponsorReferences[{index}].programReference"
                     )
@@ -165,7 +236,7 @@ file static class WriteSessionCommandStreamTestSupport
             MappingSet: mappingSet,
             EdfiDoc: CreateRequestBody(0),
             Headers: [],
-            TraceId: new TraceId("mssql-write-session-tvp-reference-fallback"),
+            TraceId: new TraceId("mssql-write-session-reference-embedding"),
             DocumentUuid: documentUuid
         )
         {
@@ -181,33 +252,70 @@ file static class WriteSessionCommandStreamTestSupport
     public static WriteSessionCommandStreamSummary Summarize(
         RelationalWriteSessionCommandRecorder recorder
     ) =>
+        Summarize(
+            recorder.Commands,
+            recorder.CommandCount,
+            recorder.BeginCount,
+            recorder.CommitCount,
+            recorder.RollbackCount
+        );
+
+    /// <summary>
+    /// Classifies one recorded command on its own, with no transaction boundary, so a test can assert
+    /// what a single command of the stream carries.
+    /// </summary>
+    public static WriteSessionCommandStreamSummary SummarizeCommand(RecordedSessionCommand command) =>
+        Summarize([command], totalCommandCount: 1, beginCount: 0, commitCount: 0, rollbackCount: 0);
+
+    private static WriteSessionCommandStreamSummary Summarize(
+        IReadOnlyList<RecordedSessionCommand> commands,
+        int totalCommandCount,
+        int beginCount,
+        int commitCount,
+        int rollbackCount
+    ) =>
         new(
-            TotalCommandCount: recorder.CommandCount,
-            BeginCount: recorder.BeginCount,
-            CommitCount: recorder.CommitCount,
-            RollbackCount: recorder.RollbackCount,
-            ReferentialIdentityLookupCount: recorder.Commands.Count(command =>
-                command.CommandText.Contains("[dms].[ReferentialIdentity]", StringComparison.Ordinal)
-            ),
+            TotalCommandCount: totalCommandCount,
+            BeginCount: beginCount,
+            CommitCount: commitCount,
+            RollbackCount: rollbackCount,
             // The hydration batch reads the root table and its child collection together and modifies
             // neither. Touching several tables no longer separates it from persistence, because the DML
             // command co-batches every table's statements; being read-only still does. Matching on both
             // table names avoids depending on how the batch opens, which is not stable across dialects
             // or across hydration shapes: a keyset batch opens on its materialization, a single-document
             // fast-path batch opens on a SELECT.
-            HydrationBatchCount: recorder.Commands.Count(command =>
+            HydrationBatchCount: commands.Count(command =>
                 command.CommandText.Contains("[edfi].[School]", StringComparison.Ordinal)
                 && command.CommandText.Contains("[edfi].[SchoolAddress]", StringComparison.Ordinal)
                 && !ModifiesResourceTables(command.CommandText)
             ),
             // The PUT capture predicate is the only place the aliased dms.Document row filters on the
-            // external DocumentUuid; the POST capture reaches the same table through
-            // ReferentialIdentity. The parameter suffix is allocator-issued, so the match is on the
-            // stable prefix.
-            DocumentUuidLookupCount: recorder.Commands.Count(command =>
+            // external DocumentUuid; the POST capture filters on the resource's own natural key. The
+            // parameter suffix is allocator-issued, so the match is on the stable prefix.
+            DocumentUuidLookupCount: commands.Count(command =>
                 command.CommandText.Contains("d.[DocumentUuid] = @documentUuid", StringComparison.Ordinal)
+            ),
+            // Hydration also reads a bound key list through OPENJSON, but never one named for a lookup group.
+            NaturalKeyLookupCount: commands.Count(command =>
+                command.CommandText.Contains(NaturalKeyLookupMarker, StringComparison.Ordinal)
+            ),
+            NaturalKeyCaptureCount: commands.Count(command =>
+                command.CommandText.Contains(NaturalKeyCaptureMarker, StringComparison.Ordinal)
             )
         );
+
+    /// <summary>
+    /// The POST target capture binds each own-natural-key value as a plain scalar named <c>@nk{n}</c>. No other
+    /// statement uses that prefix, and the composite rewrite only suffixes the name, so the prefix survives.
+    /// </summary>
+    public const string NaturalKeyCaptureMarker = "@nk";
+
+    /// <summary>
+    /// A natural-key lookup group reads its bound JSON key list through a leftmost <c>OPENJSON</c> of a parameter
+    /// named <c>@g{groupOrdinal}_keys</c>. The composite rewrite only suffixes that name, so the prefix survives.
+    /// </summary>
+    public const string NaturalKeyLookupMarker = "OPENJSON(@g";
 
     /// <summary>
     /// Whether any statement in the command modifies a resource table. Scoped to the resource schemas
@@ -261,6 +369,10 @@ public abstract class MssqlWriteSessionCommandStreamFixtureTestBase
         await _database.ResetAsync();
         _serviceProvider = WriteSessionCommandStreamTestSupport.CreateServiceProvider();
         _recorder = _serviceProvider.GetRequiredService<RelationalWriteSessionCommandRecorder>();
+        await SeedAddressTypeDescriptorAsync();
+
+        // Only the scenario's own command stream is under characterization.
+        _recorder.Reset();
         await SetUpTestAsync();
     }
 
@@ -285,6 +397,18 @@ public abstract class MssqlWriteSessionCommandStreamFixtureTestBase
     }
 
     protected abstract Task SetUpTestAsync();
+
+    private async Task SeedAddressTypeDescriptorAsync()
+    {
+        using var scope = CreateSelectedScope();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        var result = await repository.UpsertDocument(
+            WriteSessionCommandStreamTestSupport.CreateAddressTypeDescriptorUpsertRequest(_mappingSet)
+        );
+
+        result.Should().BeOfType<UpsertResult.InsertSuccess>();
+    }
 
     private protected IServiceScope CreateSelectedScope()
     {
@@ -327,7 +451,7 @@ public class Given_A_Mssql_Write_Session_Command_Stream_For_A_Post_Create
         _result = await repository.UpsertDocument(
             WriteSessionCommandStreamTestSupport.CreateUpsertRequest(
                 _mappingSet,
-                WriteSessionCommandStreamTestSupport.CreateRequestBody(2),
+                addressCount: 2,
                 _schoolDocumentUuid,
                 "mssql-write-session-stream-create"
             )
@@ -349,7 +473,7 @@ public class Given_A_Mssql_Write_Session_Command_Stream_For_A_Post_Create
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
 [Category(MssqlCiShards.Shard4)]
-public class Given_A_Mssql_Production_First_Phase_With_A_Tvp_Reference_Lookup
+public class Given_A_Mssql_Production_First_Phase_With_A_Large_Reference_Lookup
     : MssqlWriteSessionCommandStreamFixtureTestBase
 {
     private static readonly DocumentUuid _schoolDocumentUuid = new(
@@ -367,23 +491,29 @@ public class Given_A_Mssql_Production_First_Phase_With_A_Tvp_Reference_Lookup
             WriteSessionCommandStreamTestSupport.CreateBulkReferenceUpsertRequest(
                 _mappingSet,
                 _schoolDocumentUuid,
-                MssqlReferenceLookupSmallListStrategy.BulkLookupThreshold
+                2000
             )
         );
     }
 
     [Test]
-    public void It_executes_capture_then_the_standalone_table_valued_lookup_in_the_same_transaction()
+    public void It_embeds_capture_and_all_lookups_in_one_production_command_with_one_json_parameter()
     {
+        // The table-valued lookup this replaced cost a second command at this size.
         _result.Should().BeOfType<UpsertResult.UpsertFailureReference>();
-        _recorder.ShouldHaveCommandCount(2);
+        _recorder.ShouldHaveCommandCount(1);
         _recorder
             .Commands[0]
             .CommandText.Should()
-            .Contain("[dms].[ReferentialIdentity]")
-            .And.NotContain("JOIN @referentialIds");
-        _recorder.Commands[1].CommandText.Should().Contain("FROM @referentialIds");
-        _recorder.Commands[1].Parameters.Should().ContainSingle();
+            .Contain(WriteSessionCommandStreamTestSupport.NaturalKeyLookupMarker);
+        _recorder
+            .Commands[0]
+            .Parameters.Should()
+            .ContainSingle(parameter => parameter.Name.StartsWith("@g", StringComparison.Ordinal))
+            .Which.Value.Should()
+            .BeOfType<string>();
+        // The capture's two parameters plus the one JSON key list, however many references it carries.
+        _recorder.Commands[0].Parameters.Should().HaveCount(3);
         _recorder.ShouldHaveTransactionBoundary(
             expectedBeginCount: 1,
             expectedCommitCount: 0,
@@ -420,11 +550,15 @@ public class Given_A_Mssql_Production_First_Phase_With_A_Small_Reference_Lookup
     }
 
     [Test]
-    public void It_embeds_capture_and_the_scalar_reference_lookup_in_one_production_command()
+    public void It_embeds_capture_and_the_natural_key_reference_lookup_in_one_production_command()
     {
         _result.Should().BeOfType<UpsertResult.UpsertFailureReference>();
         _recorder.ShouldHaveCommandCount(1);
-        _recorder.Commands[0].CommandText.Should().Contain("[dms].[ReferentialIdentity]");
+        _recorder
+            .Commands[0]
+            .CommandText.Should()
+            .Contain(WriteSessionCommandStreamTestSupport.NaturalKeyLookupMarker);
+        // The capture's two parameters plus the lookup group's JSON key list.
         _recorder.Commands[0].Parameters.Should().HaveCount(3);
         _recorder.ShouldHaveTransactionBoundary(
             expectedBeginCount: 1,
@@ -457,7 +591,7 @@ public class Given_A_Mssql_Write_Session_Command_Stream_For_A_Put_Update
             await createRepository.UpsertDocument(
                 WriteSessionCommandStreamTestSupport.CreateUpsertRequest(
                     _mappingSet,
-                    WriteSessionCommandStreamTestSupport.CreateRequestBody(2),
+                    addressCount: 2,
                     _schoolDocumentUuid,
                     "mssql-write-session-stream-update-seed"
                 )
@@ -514,7 +648,7 @@ public class Given_A_Mssql_Write_Session_Command_Stream_For_A_Post_As_Update
             await createRepository.UpsertDocument(
                 WriteSessionCommandStreamTestSupport.CreateUpsertRequest(
                     _mappingSet,
-                    WriteSessionCommandStreamTestSupport.CreateRequestBody(2),
+                    addressCount: 2,
                     _schoolDocumentUuid,
                     "mssql-write-session-stream-post-as-update-seed"
                 )
@@ -529,7 +663,7 @@ public class Given_A_Mssql_Write_Session_Command_Stream_For_A_Post_As_Update
         _result = await repository.UpsertDocument(
             WriteSessionCommandStreamTestSupport.CreateUpsertRequest(
                 _mappingSet,
-                WriteSessionCommandStreamTestSupport.CreateRequestBody(3),
+                addressCount: 3,
                 new DocumentUuid(Guid.Parse("2b2b2b2b-0000-0000-0000-0000000000ff")),
                 "mssql-write-session-stream-post-as-update"
             )
@@ -583,5 +717,106 @@ public class Given_A_Mssql_Write_Session_Command_Stream_For_A_Missing_Put_Target
     public void It_observes_the_missing_target_inside_the_transaction_and_rolls_back() =>
         WriteSessionCommandStreamScenarios.AssertMissingPutTargetStreamIsFullyObserved(
             WriteSessionCommandStreamTestSupport.Summarize(_recorder)
+        );
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
+public class Given_A_Mssql_Write_Session_Command_Stream_For_An_Ordered_Segments_Post_Create
+    : MssqlWriteSessionCommandStreamFixtureTestBase
+{
+    private static readonly DocumentUuid _schoolDocumentUuid = new(
+        Guid.Parse("2b2b2b2b-0000-0000-0000-000000000005")
+    );
+
+    private UpsertResult _result = null!;
+
+    protected override async Task SetUpTestAsync()
+    {
+        using var scope = CreateSelectedScope();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        _result = await repository.UpsertDocument(
+            WriteSessionCommandStreamTestSupport.CreateUpsertRequest(
+                _mappingSet,
+                addressCount: 2,
+                _schoolDocumentUuid,
+                "mssql-write-session-stream-ordered-create",
+                UpsertActionAuthorizationTestSupport.CreateOnlyWithNoFurtherAuthorizationRequired
+            )
+        );
+    }
+
+    [Test]
+    public void It_creates_the_document() => _result.Should().BeOfType<UpsertResult.InsertSuccess>();
+
+    [Test]
+    public void It_keeps_the_ordered_segments_round_trips_with_the_capture_alone_first() =>
+        WriteSessionCommandStreamScenarios.AssertOrderedSegmentsPostStreamIsFullyObserved(
+            WriteSessionCommandStreamTestSupport.Summarize(_recorder),
+            WriteSessionCommandStreamTestSupport.SummarizeCommand(_recorder.Commands[0]),
+            expectedTotalCommandCount: 3,
+            expectedHydrationBatchCount: 0
+        );
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
+public class Given_A_Mssql_Write_Session_Command_Stream_For_An_Ordered_Segments_Post_As_Update
+    : MssqlWriteSessionCommandStreamFixtureTestBase
+{
+    private static readonly DocumentUuid _schoolDocumentUuid = new(
+        Guid.Parse("2b2b2b2b-0000-0000-0000-000000000006")
+    );
+
+    private UpsertResult _result = null!;
+
+    protected override async Task SetUpTestAsync()
+    {
+        using (var createScope = CreateSelectedScope())
+        {
+            var createRepository =
+                createScope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+            await createRepository.UpsertDocument(
+                WriteSessionCommandStreamTestSupport.CreateUpsertRequest(
+                    _mappingSet,
+                    addressCount: 2,
+                    _schoolDocumentUuid,
+                    "mssql-write-session-stream-ordered-post-as-update-seed"
+                )
+            );
+        }
+
+        _recorder.Reset();
+
+        using var scope = CreateSelectedScope();
+        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
+
+        _result = await repository.UpsertDocument(
+            WriteSessionCommandStreamTestSupport.CreateUpsertRequest(
+                _mappingSet,
+                addressCount: 3,
+                new DocumentUuid(Guid.Parse("2b2b2b2b-0000-0000-0000-0000000000fe")),
+                "mssql-write-session-stream-ordered-post-as-update",
+                UpsertActionAuthorizationTestSupport.UpdateOnlyWithNoFurtherAuthorizationRequired
+            )
+        );
+    }
+
+    [Test]
+    public void It_updates_the_existing_document() => _result.Should().BeOfType<UpsertResult.UpdateSuccess>();
+
+    [Test]
+    public void It_keeps_the_ordered_segments_round_trips_with_the_capture_alone_first() =>
+        WriteSessionCommandStreamScenarios.AssertOrderedSegmentsPostStreamIsFullyObserved(
+            WriteSessionCommandStreamTestSupport.Summarize(_recorder),
+            WriteSessionCommandStreamTestSupport.SummarizeCommand(_recorder.Commands[0]),
+            expectedTotalCommandCount: 4,
+            expectedHydrationBatchCount: 1
         );
 }

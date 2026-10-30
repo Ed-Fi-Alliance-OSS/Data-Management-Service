@@ -1546,25 +1546,6 @@ internal static class NestedCollectionsFixture
                 new TriggerKindParameters.DocumentStamping(),
                 StampTargetTable: schoolTableName
             ),
-            // ReferentialIdentityMaintenance on root table
-            new(
-                new DbTriggerName("TR_School_ReferentialIdentity"),
-                schoolTableName,
-                [documentIdColumn],
-                [schoolIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    1,
-                    "Ed-Fi",
-                    "School",
-                    [
-                        new IdentityElementMapping(
-                            schoolIdColumn,
-                            "$.schoolId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ]
-                )
-            ),
         ];
 
         return new DerivedRelationalModelSet(
@@ -1603,6 +1584,7 @@ internal static class PolymorphicAbstractFixture
         var schema = new DbSchemaName("edfi");
         var documentIdColumn = new DbColumnName("DocumentId");
         var discriminatorColumn = new DbColumnName("Discriminator");
+        var resourceKeyIdColumn = new DbColumnName("ResourceKeyId");
         var organizationIdColumn = new DbColumnName("EducationOrganizationId");
 
         // Abstract resource
@@ -1643,6 +1625,14 @@ internal static class PolymorphicAbstractFixture
                     TargetResource: null
                 ),
                 new DbColumnModel(
+                    resourceKeyIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
                     discriminatorColumn,
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, MaxLength: 50),
@@ -1654,10 +1644,10 @@ internal static class PolymorphicAbstractFixture
             [
                 // FK from abstract identity table to dms.Document (as created by BuildIdentityTableConstraints)
                 new TableConstraint.ForeignKey(
-                    "FK_EducationOrganizationIdentity_Document",
-                    [documentIdColumn],
+                    "FK_EducationOrganizationIdentity_DocumentResourceKey",
+                    [documentIdColumn, resourceKeyIdColumn],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
-                    [documentIdColumn],
+                    [documentIdColumn, resourceKeyIdColumn],
                     ReferentialAction.Cascade,
                     ReferentialAction.NoAction
                 ),
@@ -1745,6 +1735,7 @@ internal static class PolymorphicAbstractFixture
         [
             new(documentIdColumn, new RelationalScalarType(ScalarKind.Int64), null, null),
             new(organizationIdColumn, new RelationalScalarType(ScalarKind.Int32), null, null),
+            new(resourceKeyIdColumn, new RelationalScalarType(ScalarKind.Int16), null, null),
             new(discriminatorColumn, new RelationalScalarType(ScalarKind.String, MaxLength: 50), null, null),
         ];
 
@@ -1754,6 +1745,7 @@ internal static class PolymorphicAbstractFixture
             [
                 new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
                 new AbstractUnionViewProjectionExpression.SourceColumn(organizationIdColumn),
+                new AbstractUnionViewProjectionExpression.Int16Literal(schoolResourceKey.ResourceKeyId),
                 new AbstractUnionViewProjectionExpression.StringLiteral("Ed-Fi:School"),
             ]
         );
@@ -1764,6 +1756,7 @@ internal static class PolymorphicAbstractFixture
             [
                 new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
                 new AbstractUnionViewProjectionExpression.SourceColumn(organizationIdColumn),
+                new AbstractUnionViewProjectionExpression.Int16Literal(leaResourceKey.ResourceKeyId),
                 new AbstractUnionViewProjectionExpression.StringLiteral("Ed-Fi:LocalEducationAgency"),
             ]
         );
@@ -1798,18 +1791,6 @@ internal static class PolymorphicAbstractFixture
         );
 
         // Triggers
-        var superclassAlias = new SuperclassAliasInfo(
-            1,
-            "Ed-Fi",
-            "EducationOrganization",
-            [
-                new IdentityElementMapping(
-                    organizationIdColumn,
-                    "$.educationOrganizationId",
-                    new RelationalScalarType(ScalarKind.Int32)
-                ),
-            ]
-        );
 
         List<DbTriggerInfo> triggers =
         [
@@ -1831,27 +1812,8 @@ internal static class PolymorphicAbstractFixture
                 new TriggerKindParameters.AbstractIdentityMaintenance(
                     identityTableName,
                     [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                    leaResourceKey.ResourceKeyId,
                     "Ed-Fi:LocalEducationAgency"
-                )
-            ),
-            // ReferentialIdentityMaintenance on LEA
-            new(
-                new DbTriggerName("TR_LocalEducationAgency_ReferentialIdentity"),
-                leaTableName,
-                [documentIdColumn],
-                [organizationIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    3,
-                    "Ed-Fi",
-                    "LocalEducationAgency",
-                    [
-                        new IdentityElementMapping(
-                            organizationIdColumn,
-                            "$.educationOrganizationId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ],
-                    superclassAlias
                 )
             ),
             // DocumentStamping on School root (with identity projection)
@@ -1872,27 +1834,8 @@ internal static class PolymorphicAbstractFixture
                 new TriggerKindParameters.AbstractIdentityMaintenance(
                     identityTableName,
                     [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                    schoolResourceKey.ResourceKeyId,
                     "Ed-Fi:School"
-                )
-            ),
-            // ReferentialIdentityMaintenance on School
-            new(
-                new DbTriggerName("TR_School_ReferentialIdentity"),
-                schoolTableName,
-                [documentIdColumn],
-                [organizationIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    2,
-                    "Ed-Fi",
-                    "School",
-                    [
-                        new IdentityElementMapping(
-                            organizationIdColumn,
-                            "$.educationOrganizationId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ],
-                    superclassAlias
                 )
             ),
         ];
@@ -2166,25 +2109,6 @@ internal static class ExtensionMappingFixture
                 new TriggerKindParameters.DocumentStamping(),
                 StampTargetTable: schoolTableName
             ),
-            // ReferentialIdentityMaintenance on root table
-            new(
-                new DbTriggerName("TR_School_ReferentialIdentity"),
-                schoolTableName,
-                [documentIdColumn],
-                [schoolIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    1,
-                    "Ed-Fi",
-                    "School",
-                    [
-                        new IdentityElementMapping(
-                            schoolIdColumn,
-                            "$.schoolId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ]
-                )
-            ),
         ];
 
         return new DerivedRelationalModelSet(
@@ -2412,7 +2336,6 @@ internal static class FkSupportIndexFixture
 /// - Computed column definitions (PERSISTED for MSSQL, GENERATED ALWAYS AS ... STORED for PostgreSQL)
 /// - UPDATE() guards in MSSQL triggers reference the canonical stored column, not aliases
 /// - Propagation trigger SET targets reference canonical stored columns, not aliases
-/// - Identity hash expressions in ReferentialIdentity triggers read alias columns from inserted/NEW
 /// - FK constraints use the DocumentId FK columns (not identity alias columns)
 /// </summary>
 internal static class KeyUnificationFixture
@@ -2624,25 +2547,6 @@ internal static class KeyUnificationFixture
                 new TriggerKindParameters.DocumentStamping(),
                 StampTargetTable: schoolTableName
             ),
-            // ReferentialIdentityMaintenance on School
-            new(
-                new DbTriggerName("TR_School_ReferentialIdentity"),
-                schoolTableName,
-                [documentIdColumn],
-                [schoolIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    1,
-                    "Ed-Fi",
-                    "School",
-                    [
-                        new IdentityElementMapping(
-                            schoolIdColumn,
-                            "$.schoolId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ]
-                )
-            ),
             // ── CourseRegistration triggers ──
             // DocumentStamping on CourseRegistration root (identity projection = canonical columns)
             new(
@@ -2652,42 +2556,6 @@ internal static class KeyUnificationFixture
                 regIdentityProjectionColumns,
                 new TriggerKindParameters.DocumentStamping(),
                 StampTargetTable: regTableName
-            ),
-            // ReferentialIdentityMaintenance on CourseRegistration
-            // IdentityElements use alias columns (readable from inserted/NEW for hash computation).
-            // IdentityProjectionColumns use canonical stored columns (for UPDATE guards).
-            new(
-                new DbTriggerName("TR_CourseRegistration_ReferentialIdentity"),
-                regTableName,
-                [documentIdColumn],
-                regIdentityProjectionColumns,
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    2,
-                    "Ed-Fi",
-                    "CourseRegistration",
-                    [
-                        new IdentityElementMapping(
-                            courseOfferingSchoolIdColumn,
-                            "$.courseOfferingReference.schoolId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                        new IdentityElementMapping(
-                            localCourseCodeColumn,
-                            "$.courseOfferingReference.localCourseCode",
-                            new RelationalScalarType(ScalarKind.String)
-                        ),
-                        new IdentityElementMapping(
-                            schoolSchoolIdColumn,
-                            "$.schoolReference.schoolId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                        new IdentityElementMapping(
-                            registrationDateColumn,
-                            "$.registrationDate",
-                            new RelationalScalarType(ScalarKind.Date)
-                        ),
-                    ]
-                )
             ),
         ];
 
@@ -2739,6 +2607,7 @@ internal static class AuthEdOrgHierarchyFixture
         var schema = new DbSchemaName("edfi");
         var documentIdColumn = new DbColumnName("DocumentId");
         var discriminatorColumn = new DbColumnName("Discriminator");
+        var resourceKeyIdColumn = new DbColumnName("ResourceKeyId");
         var organizationIdColumn = new DbColumnName("EducationOrganizationId");
         var seaParentIdColumn = new DbColumnName("StateEducationAgency_EducationOrganizationId");
 
@@ -2780,6 +2649,14 @@ internal static class AuthEdOrgHierarchyFixture
                     TargetResource: null
                 ),
                 new DbColumnModel(
+                    resourceKeyIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
                     discriminatorColumn,
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, MaxLength: 50),
@@ -2790,10 +2667,10 @@ internal static class AuthEdOrgHierarchyFixture
             ],
             [
                 new TableConstraint.ForeignKey(
-                    "FK_EducationOrganizationIdentity_Document",
-                    [documentIdColumn],
+                    "FK_EducationOrganizationIdentity_DocumentResourceKey",
+                    [documentIdColumn, resourceKeyIdColumn],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
-                    [documentIdColumn],
+                    [documentIdColumn, resourceKeyIdColumn],
                     ReferentialAction.Cascade,
                     ReferentialAction.NoAction
                 ),
@@ -2892,6 +2769,7 @@ internal static class AuthEdOrgHierarchyFixture
         [
             new(documentIdColumn, new RelationalScalarType(ScalarKind.Int64), null, null),
             new(organizationIdColumn, new RelationalScalarType(ScalarKind.Int32), null, null),
+            new(resourceKeyIdColumn, new RelationalScalarType(ScalarKind.Int16), null, null),
             new(discriminatorColumn, new RelationalScalarType(ScalarKind.String, MaxLength: 50), null, null),
         ];
 
@@ -2901,6 +2779,7 @@ internal static class AuthEdOrgHierarchyFixture
             [
                 new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
                 new AbstractUnionViewProjectionExpression.SourceColumn(organizationIdColumn),
+                new AbstractUnionViewProjectionExpression.Int16Literal(leaResourceKey.ResourceKeyId),
                 new AbstractUnionViewProjectionExpression.StringLiteral("Ed-Fi:LocalEducationAgency"),
             ]
         );
@@ -2911,6 +2790,7 @@ internal static class AuthEdOrgHierarchyFixture
             [
                 new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
                 new AbstractUnionViewProjectionExpression.SourceColumn(organizationIdColumn),
+                new AbstractUnionViewProjectionExpression.Int16Literal(seaResourceKey.ResourceKeyId),
                 new AbstractUnionViewProjectionExpression.StringLiteral("Ed-Fi:StateEducationAgency"),
             ]
         );
@@ -2957,18 +2837,6 @@ internal static class AuthEdOrgHierarchyFixture
         var authHierarchy = new AuthEdOrgHierarchy([leaEntity, seaEntity]);
 
         // Standard triggers
-        var superclassAlias = new SuperclassAliasInfo(
-            1,
-            "Ed-Fi",
-            "EducationOrganization",
-            [
-                new IdentityElementMapping(
-                    organizationIdColumn,
-                    "$.educationOrganizationId",
-                    new RelationalScalarType(ScalarKind.Int32)
-                ),
-            ]
-        );
 
         List<DbTriggerInfo> triggers =
         [
@@ -2990,27 +2858,8 @@ internal static class AuthEdOrgHierarchyFixture
                 new TriggerKindParameters.AbstractIdentityMaintenance(
                     identityTableName,
                     [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                    leaResourceKey.ResourceKeyId,
                     "Ed-Fi:LocalEducationAgency"
-                )
-            ),
-            // ReferentialIdentityMaintenance on LEA
-            new(
-                new DbTriggerName("TR_LocalEducationAgency_ReferentialIdentity"),
-                leaTableName,
-                [documentIdColumn],
-                [organizationIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    2,
-                    "Ed-Fi",
-                    "LocalEducationAgency",
-                    [
-                        new IdentityElementMapping(
-                            organizationIdColumn,
-                            "$.educationOrganizationId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ],
-                    superclassAlias
                 )
             ),
             // Auth hierarchy triggers for LEA (hierarchical: INSERT + UPDATE + DELETE)
@@ -3062,27 +2911,8 @@ internal static class AuthEdOrgHierarchyFixture
                 new TriggerKindParameters.AbstractIdentityMaintenance(
                     identityTableName,
                     [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                    seaResourceKey.ResourceKeyId,
                     "Ed-Fi:StateEducationAgency"
-                )
-            ),
-            // ReferentialIdentityMaintenance on SEA
-            new(
-                new DbTriggerName("TR_StateEducationAgency_ReferentialIdentity"),
-                seaTableName,
-                [documentIdColumn],
-                [organizationIdColumn],
-                new TriggerKindParameters.ReferentialIdentityMaintenance(
-                    3,
-                    "Ed-Fi",
-                    "StateEducationAgency",
-                    [
-                        new IdentityElementMapping(
-                            organizationIdColumn,
-                            "$.educationOrganizationId",
-                            new RelationalScalarType(ScalarKind.Int32)
-                        ),
-                    ],
-                    superclassAlias
                 )
             ),
             // Auth hierarchy triggers for SEA (leaf: INSERT + DELETE)

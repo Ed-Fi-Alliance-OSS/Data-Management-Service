@@ -69,92 +69,6 @@ public class Given_InMemoryRelationalCommandExecutor
     }
 }
 
-[TestFixture]
-public class Given_RelationalReferenceResolverAdapter
-{
-    private static readonly QualifiedResourceName _requestResource = new("Ed-Fi", "Student");
-
-    [Test]
-    public async Task It_can_drive_reference_resolution_without_repository_wiring()
-    {
-        var documentReferentialId = new ReferentialId(Guid.NewGuid());
-        var descriptorReferentialId = new ReferentialId(Guid.NewGuid());
-        var executor = new InMemoryRelationalCommandExecutor([
-            new InMemoryRelationalCommandExecution([
-                InMemoryRelationalResultSet.Create(
-                    RelationalAccessTestData.CreateRow(
-                        ("ReferentialId", documentReferentialId.Value),
-                        ("DocumentId", 101L),
-                        ("ResourceKeyId", (short)11),
-                        ("ReferentialIdentityResourceKeyId", (short)11),
-                        ("DescriptorId", null),
-                        ("VerificationIdentityKey", "$.schoolId=255901")
-                    ),
-                    RelationalAccessTestData.CreateRow(
-                        ("ReferentialId", descriptorReferentialId.Value),
-                        ("DocumentId", 202L),
-                        ("ResourceKeyId", (short)13),
-                        ("ReferentialIdentityResourceKeyId", (short)13),
-                        ("DescriptorId", 17),
-                        (
-                            "VerificationIdentityKey",
-                            "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
-                        )
-                    )
-                ),
-            ]),
-        ]);
-        var sut = new ReferenceResolver(new TestRelationalReferenceResolverAdapter(executor));
-
-        var result = await sut.ResolveAsync(
-            new ReferenceResolverRequest(
-                MappingSet: RelationalAccessTestData.CreateMappingSet(_requestResource),
-                RequestResource: _requestResource,
-                DocumentReferences:
-                [
-                    RelationalAccessTestData.CreateDocumentReference(
-                        documentReferentialId,
-                        "$.schoolReference"
-                    ),
-                    RelationalAccessTestData.CreateDocumentReference(
-                        documentReferentialId,
-                        "$.educationOrganizationReference"
-                    ),
-                ],
-                DescriptorReferences:
-                [
-                    RelationalAccessTestData.CreateDescriptorReference(
-                        descriptorReferentialId,
-                        "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
-                        "$.schoolTypeDescriptor"
-                    ),
-                ]
-            )
-        );
-
-        executor.Commands.Should().ContainSingle();
-        executor.Commands[0].CommandText.Should().Be("test lookup");
-        executor
-            .Commands[0]
-            .Parameters.Select(parameter => parameter.Value)
-            .Should()
-            .Equal(documentReferentialId.Value, descriptorReferentialId.Value);
-
-        result
-            .SuccessfulDocumentReferencesByPath.Keys.Should()
-            .Equal(new JsonPath("$.schoolReference"), new JsonPath("$.educationOrganizationReference"));
-        result
-            .SuccessfulDocumentReferencesByPath[new JsonPath("$.schoolReference")]
-            .DocumentId.Should()
-            .Be(101L);
-        result.DocumentReferenceOccurrences.Should().HaveCount(2);
-        result
-            .SuccessfulDescriptorReferencesByPath[new JsonPath("$.schoolTypeDescriptor")]
-            .DocumentId.Should()
-            .Be(202L);
-    }
-}
-
 internal sealed record BatchReadResult(
     IReadOnlyList<int> Values,
     bool MovedToSecondResultSet,
@@ -431,33 +345,6 @@ internal sealed class InMemoryRelationalCommandReader(IReadOnlyList<InMemoryRela
             : _resultSets[_resultSetIndex];
 }
 
-internal sealed class TestRelationalReferenceResolverAdapter(IRelationalCommandExecutor commandExecutor)
-    : IReferenceResolverAdapter
-{
-    private readonly IRelationalCommandExecutor _commandExecutor =
-        commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
-
-    public Task<IReadOnlyList<ReferenceLookupResult>> ResolveAsync(
-        ReferenceLookupRequest request,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        var parameters = request
-            .ReferentialIds.Select(
-                (referentialId, ordinal) => new RelationalParameter($"@p{ordinal}", referentialId.Value)
-            )
-            .ToArray();
-
-        return _commandExecutor.ExecuteReaderAsync(
-            new RelationalCommand("test lookup", parameters),
-            ReferenceLookupResultReader.ReadAsync,
-            cancellationToken
-        );
-    }
-}
-
 internal static class RelationalAccessTestData
 {
     private static readonly QualifiedResourceName _schoolResource = new("Ed-Fi", "School");
@@ -663,7 +550,7 @@ internal static class RelationalAccessTestData
         );
     }
 
-    public static DocumentReference CreateDocumentReference(ReferentialId referentialId, string path) =>
+    public static DocumentReference CreateDocumentReference(string path) =>
         new(
             ResourceInfo: new BaseResourceInfo(
                 ProjectName: new ProjectName("Ed-Fi"),
@@ -673,104 +560,10 @@ internal static class RelationalAccessTestData
             DocumentIdentity: new DocumentIdentity([
                 new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
             ]),
-            ReferentialId: referentialId,
             Path: new JsonPath(path)
         );
 
-    public static ReferenceLookupRequestEntry CreateSchoolLookup(ReferentialId referentialId) =>
-        CreateLookup(
-            _schoolResource,
-            referentialId,
-            new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
-            isDescriptor: false
-        );
-
-    public static ReferenceLookupRequestEntry CreateEducationOrganizationLookup(
-        ReferentialId referentialId
-    ) =>
-        CreateLookup(
-            _educationOrganizationResource,
-            referentialId,
-            new DocumentIdentity([
-                new DocumentIdentityElement(new JsonPath("$.educationOrganizationId"), "255901"),
-            ]),
-            isDescriptor: false
-        );
-
-    public static ReferenceLookupRequestEntry CreateSchoolTypeDescriptorLookup(
-        ReferentialId referentialId,
-        string uri = "uri://ed-fi.org/SchoolTypeDescriptor#Alternative"
-    ) =>
-        CreateLookup(
-            _schoolTypeDescriptorResource,
-            referentialId,
-            new DocumentIdentity([
-                new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
-            ]),
-            isDescriptor: true
-        );
-
-    public static ReferenceLookupRequestEntry CreateMeetingLookup(
-        ReferentialId referentialId,
-        string meetingDateTime = "2025-03-05T13:30:45Z"
-    ) =>
-        CreateLookup(
-            _meetingResource,
-            referentialId,
-            new DocumentIdentity([
-                new DocumentIdentityElement(new JsonPath("$.meetingDateTime"), meetingDateTime),
-            ]),
-            isDescriptor: false
-        );
-
-    public static ReferenceLookupRequestEntry CreateDecimalKeyLookup(
-        ReferentialId referentialId,
-        string decimalKey = "1.5"
-    ) =>
-        CreateLookup(
-            _decimalKeyResource,
-            referentialId,
-            new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.decimalKey"), decimalKey)]),
-            isDescriptor: false
-        );
-
-    public static ReferenceLookupRequestEntry CreateStudentAcademicRecordLookup(
-        ReferentialId referentialId,
-        string termDescriptor = "uri://ed-fi.org/termdescriptor#fall"
-    ) =>
-        CreateLookup(
-            _studentAcademicRecordResource,
-            referentialId,
-            new DocumentIdentity([
-                new DocumentIdentityElement(
-                    new JsonPath("$.educationOrganizationReference.educationOrganizationId"),
-                    "255901"
-                ),
-                new DocumentIdentityElement(new JsonPath("$.schoolYearTypeReference.schoolYear"), "2026"),
-                new DocumentIdentityElement(new JsonPath("$.studentReference.studentUniqueId"), "10001"),
-                new DocumentIdentityElement(new JsonPath("$.termDescriptor"), termDescriptor),
-            ]),
-            isDescriptor: false
-        );
-
-    public static ReferenceLookupRequestEntry CreateSchoolClassificationLookup(
-        ReferentialId referentialId,
-        string schoolTypeDescriptor = "uri://ed-fi.org/schooltypedescriptor#alternative"
-    ) =>
-        CreateLookup(
-            _schoolClassificationResource,
-            referentialId,
-            new DocumentIdentity([
-                new DocumentIdentityElement(new JsonPath("$.schoolTypeDescriptor"), schoolTypeDescriptor),
-            ]),
-            isDescriptor: false
-        );
-
-    public static DescriptorReference CreateDescriptorReference(
-        ReferentialId referentialId,
-        string uri,
-        string path
-    ) =>
+    public static DescriptorReference CreateDescriptorReference(string uri, string path) =>
         new(
             ResourceInfo: new BaseResourceInfo(
                 ProjectName: new ProjectName("Ed-Fi"),
@@ -780,7 +573,6 @@ internal static class RelationalAccessTestData
             DocumentIdentity: new DocumentIdentity([
                 new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
             ]),
-            ReferentialId: referentialId,
             Path: new JsonPath(path)
         );
 
@@ -933,21 +725,5 @@ internal static class RelationalAccessTestData
                 new AbstractUnionViewProjectionExpression.SourceColumn(new DbColumnName("DocumentId")),
                 new AbstractUnionViewProjectionExpression.SourceColumn(new DbColumnName(identityColumnName)),
             ]
-        );
-
-    private static ReferenceLookupRequestEntry CreateLookup(
-        QualifiedResourceName requestedResource,
-        ReferentialId referentialId,
-        DocumentIdentity requestedIdentity,
-        bool isDescriptor
-    ) =>
-        new(
-            referentialId,
-            requestedResource,
-            requestedIdentity,
-            ReferenceLookupVerificationSupport.BuildExpectedVerificationIdentityKey(
-                requestedIdentity,
-                normalizeDescriptorValues: isDescriptor
-            )
         );
 }

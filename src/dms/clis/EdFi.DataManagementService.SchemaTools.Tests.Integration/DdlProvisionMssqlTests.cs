@@ -174,21 +174,6 @@ public class Given_A_Fresh_Mssql_Database_Provisioned_With_Create_Database_Flag
     }
 
     [Test]
-    public void It_creates_the_uuidv5_function()
-    {
-        using var connection = new SqlConnection(
-            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
-        );
-        connection.Open();
-
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT OBJECT_ID(N'dms.uuidv5', N'FN');";
-        var result = command.ExecuteScalar();
-        result.Should().NotBeNull("the dms.uuidv5 function should exist after provisioning");
-        result.Should().NotBe(DBNull.Value, "the dms.uuidv5 function should exist after provisioning");
-    }
-
-    [Test]
     public void It_seeds_effective_schema_row()
     {
         using var connection = new SqlConnection(
@@ -1242,15 +1227,13 @@ public class Given_Mssql_ResourceKey_Table_Dropped_After_Provisioning
             createDatabase: true
         );
 
-        // Drop FK constraints that reference ResourceKey, then drop the table
+        // Drop the FK constraint that references ResourceKey, then drop the table
         using (var connection = new SqlConnection(connectionString))
         {
             connection.Open();
             using var command = connection.CreateCommand();
             command.CommandText = """
-                ALTER TABLE [dms].[Descriptor] DROP CONSTRAINT [FK_Descriptor_ResourceKey];
                 ALTER TABLE [dms].[Document] DROP CONSTRAINT [FK_Document_ResourceKey];
-                ALTER TABLE [dms].[ReferentialIdentity] DROP CONSTRAINT [FK_ReferentialIdentity_ResourceKey];
                 DROP TABLE [dms].[ResourceKey];
                 """;
             command.ExecuteNonQuery();

@@ -5,8 +5,11 @@
 Draft.
 
 This document is the data-model deep dive for `overview.md`. Descriptor storage below
-reflects the current DMS-1404 RI baseline. Later natural-key proposals remain identified
-as future work and do not change this story's equality or platform contract.
+reflects the DMS-1404 compact baseline; reference resolution and descriptor filters use the
+natural-key probes, resource POST upserts use the own-natural-key capture, and descriptor writes
+use the lowered-URI descriptor probe with stored-wins identity. Later natural-key
+proposals remain identified as future work and do not change this story's equality or platform
+contract.
 
 - Overview: [overview.md](overview.md)
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
@@ -127,11 +130,12 @@ CREATE INDEX IX_Document_CreatedByOwnershipTokenId
 
 Notes:
 
-- `DocumentUuid` remains stable across identity updates. Current POST matching and reference
-  resolution use RI; the generated natural-key probes described in
-  [natural-key-resolution.md](natural-key-resolution.md) belong to later stories.
+- `DocumentUuid` remains stable across identity updates. Resource POST matching uses the
+  own-natural-key capture, and reference resolution uses the natural-key probes described in
+  [natural-key-resolution.md](natural-key-resolution.md); descriptor POSTs match through the
+  lowered-URI descriptor probe (§2).
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
-- `dms.Document` deliberately carries no `(ResourceKeyId, DocumentId)` resource-type scan index. Descriptor paging roots on `dms.Descriptor` via its denormalized `ResourceKeyId` (see §2), while document UUID probes retain their existing path. Descriptor document/type agreement is trigger-enforced in the current RI baseline; the composite document/resource candidate-key proposal belongs to the later natural-key workstream. `FK_Document_ResourceKey` needs no referencing-side index because resource-key seeds are immutable at runtime.
+- `dms.Document` deliberately carries no `(ResourceKeyId, DocumentId)` resource-type scan index. Descriptor paging roots on `dms.Descriptor` via its denormalized `ResourceKeyId` (see §2), while document UUID probes retain their existing path. `FK_Descriptor_DocumentResourceKey` enforces descriptor document/type agreement through `UX_Document_DocumentId_ResourceKeyId`. `FK_Document_ResourceKey` needs no referencing-side index because resource-key seeds are immutable at runtime.
 - `dms.Document` has no `(ContentVersion, DocumentId)` projector-discovery index. Durable
   projection work is paged through `dms.DocumentProjectionWork`; explicit baseline,
   rebuild, and scrub scans use the `DocumentId` primary-key order.
@@ -190,7 +194,7 @@ CREATE SEQUENCE dms.CollectionItemIdSequence
 Descriptors remain documents, with a shared table whose independently allocated `int`
 `DescriptorId` is the physical primary key. Its unique, non-null `bigint` `DocumentId`
 associates the row with its owning document. Resource descriptor FKs use the compact key;
-UUIDs, document-level RI, locks, concurrency, paging, cache work, and restamping use the
+UUIDs, locks, concurrency, paging, cache work, and restamping use the
 owning document key. Neither allocator narrows or reuses the other's values, and an update
 allocates neither key again.
 
@@ -211,14 +215,12 @@ CREATE TABLE "dms"."Descriptor" (
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DescriptorId"),
     CONSTRAINT "UX_Descriptor_DocumentId" UNIQUE ("DocumentId"),
-    CONSTRAINT "FK_Descriptor_Document" FOREIGN KEY ("DocumentId")
-        REFERENCES "dms"."Document" ("DocumentId") ON DELETE RESTRICT,
-    CONSTRAINT "FK_Descriptor_ResourceKey" FOREIGN KEY ("ResourceKeyId")
-        REFERENCES "dms"."ResourceKey" ("ResourceKeyId") ON DELETE NO ACTION
+    CONSTRAINT "FK_Descriptor_DocumentResourceKey" FOREIGN KEY ("DocumentId", "ResourceKeyId")
+        REFERENCES "dms"."Document" ("DocumentId", "ResourceKeyId") ON DELETE RESTRICT
 );
 
-CREATE UNIQUE INDEX "UX_Descriptor_ResourceKeyId_Uri"
-    ON "dms"."Descriptor" ("ResourceKeyId", ("Namespace" || '#' || "CodeValue"));
+CREATE UNIQUE INDEX "UX_Descriptor_UriLowered_ResourceKeyId"
+    ON "dms"."Descriptor" (lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8"), "ResourceKeyId");
 
 CREATE INDEX "IX_Descriptor_ResourceKeyId_DocumentId"
     ON "dms"."Descriptor" ("ResourceKeyId", "DocumentId");
@@ -245,40 +247,44 @@ CREATE TABLE [dms].[Descriptor] (
     [EffectiveBeginDate] date NULL,
     [EffectiveEndDate] date NULL,
     [Uri] AS ([Namespace] + N'#' + [CodeValue]),
+    [UriLowered] AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS),
     [ContentVersion] bigint NOT NULL DEFAULT 0,
     [ContentLastModifiedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DescriptorId]),
     CONSTRAINT [UX_Descriptor_DocumentId] UNIQUE ([DocumentId]),
-    CONSTRAINT [FK_Descriptor_Document] FOREIGN KEY ([DocumentId])
-        REFERENCES [dms].[Document] ([DocumentId]) ON DELETE NO ACTION,
-    CONSTRAINT [FK_Descriptor_ResourceKey] FOREIGN KEY ([ResourceKeyId])
-        REFERENCES [dms].[ResourceKey] ([ResourceKeyId]) ON DELETE NO ACTION
+    CONSTRAINT [FK_Descriptor_DocumentResourceKey] FOREIGN KEY ([DocumentId], [ResourceKeyId])
+        REFERENCES [dms].[Document] ([DocumentId], [ResourceKeyId]) ON DELETE NO ACTION
 );
 
-CREATE UNIQUE INDEX [UX_Descriptor_ResourceKeyId_Uri]
-    ON [dms].[Descriptor] ([ResourceKeyId], [Uri]);
+CREATE UNIQUE INDEX [UX_Descriptor_UriLowered_ResourceKeyId]
+    ON [dms].[Descriptor] ([UriLowered], [ResourceKeyId]);
 CREATE INDEX [IX_Descriptor_ResourceKeyId_DocumentId]
     ON [dms].[Descriptor] ([ResourceKeyId], [DocumentId]);
 CREATE INDEX [IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId]
     ON [dms].[Descriptor] ([ResourceKeyId], [ContentVersion], [DocumentId]);
 ```
 
-Both providers retain the single-column document FK with `RESTRICT` on PostgreSQL
-and `NO ACTION` on SQL Server, and the `NO ACTION` resource-key catalog FK. The descriptor stamping trigger rejects a type key that differs
-from the owning document on insert/update. The computed URI is
-non-persisted: its index holds the URI without duplicating it in the base row. On SQL Server
-the stored `Namespace` and `CodeValue` carry the DMS identity collation
-(`SQL_Latin1_General_CP1_CI_AS`), which the computed URI inherits; PostgreSQL keeps the
-database-default collation. Uniqueness compares the unlowered whole URI within `ResourceKeyId`,
-so distinct component pairs producing the same string cannot form separate identities. There is
-no component-wise unique key, `UriLowered`, or `LOWER` in the unique expression. SQL Server
+Both providers reference the owning document through the composite
+`FK_Descriptor_DocumentResourceKey (DocumentId, ResourceKeyId)`, with `RESTRICT` on PostgreSQL and
+`NO ACTION` on SQL Server. It is the safety net for the descriptor-first delete order and rejects a
+type key that differs from the owning document's. The computed URI columns are
+non-persisted: the index holds the lowered URI without duplicating it in the base row, and the
+unindexed `Uri` reconstructs the whole URI. On SQL Server the stored `Namespace` and `CodeValue`
+carry the DMS identity collation (`SQL_Latin1_General_CP1_CI_AS`), which the computed URI inherits;
+PostgreSQL keeps the database-default collation. `UX_Descriptor_UriLowered_ResourceKeyId`, the only
+descriptor URI index, enforces lowered whole-URI uniqueness within `ResourceKeyId`, so neither case
+variants nor distinct component pairs producing the same string can form separate identities; there
+is no component-wise unique key.
+Case folding is engine-owned: PostgreSQL folds under the pinned `pg_c_utf8` collation rather than
+the database default, and SQL Server keys the non-persisted `UriLowered`, computed from the stored
+components under the DMS identity collation. PostgreSQL has no `UriLowered` column. SQL Server
 provisioning and runtime writes need the effective indexed-computation SET options described
 in [ddl-generation.md](ddl-generation.md#descriptor-storage-and-runtime-session-options).
 
 `ResourceKeyId` is denormalized from `dms.Document` in the insert transaction and remains
 immutable. It is the descriptor-type authority, qualified by project/resource through
-`dms.ResourceKey`; the same URI may belong to different types or projects. The stamping
-trigger's document/resource check prevents drift. Descriptor paging roots on the descriptor-only
+`dms.ResourceKey`; the same URI may belong to different types or projects. The composite
+`FK_Descriptor_DocumentResourceKey` prevents drift. Descriptor paging roots on the descriptor-only
 `(ResourceKeyId, DocumentId)` index; change-window paging uses
 `(ResourceKeyId, ContentVersion, DocumentId)`. No descriptor discriminator column or
 discriminator/content-version index remains. Abstract identity discriminators and union-view
@@ -287,37 +293,42 @@ discriminator output retain their existing columns and behavior.
 The effective date columns remain part of the descriptor field contract, as in legacy ODS.
 DMS uses one shared descriptor table without per-descriptor marker tables.
 
-Descriptor references and identity resolution (current RI runtime):
+Descriptor references and identity resolution (natural-key resolution):
 
 - Resource tables' stored `DescriptorFk` values are `Int32` and their FKs target
   `dms.Descriptor(DescriptorId)` with existing `NO ACTION` deletion protection. This includes
   copied document-reference identities, collections, extensions and canonical unified columns.
   Abstract identity/union projections retain compatible `Int32` values without adding new
   direct descriptor FK requirements to those projections.
-- Resolution still probes `dms.ReferentialIdentity` and joins the owning document and descriptor
-  to return both `int DescriptorId` and `long DocumentId` in the same command. Stored descriptor
-  joins and query parameters use the compact key; document/RI operations use `DocumentId`.
-- Existing RI hashing and witness checks reconstruct `Namespace + '#' + CodeValue` and keep
-  each path's current transformations and comparisons. Original-case response URIs reconstruct
-  from the same stored components. Incoming references remain whole strings: this change does
-  not split on `#`, trim components, or introduce validation or Unicode normalization.
+- Resolution probes `UX_Descriptor_UriLowered_ResourceKeyId` with the raw URI folded in SQL and
+  returns both `int DescriptorId` and `long DocumentId` in the same
+  command. Stored descriptor joins and query parameters use the compact key; document
+  operations use `DocumentId`.
+- Descriptor POST detects its target with the same probe: the request's whole URI against
+  `UX_Descriptor_UriLowered_ResourceKeyId` for the descriptor's own `ResourceKeyId`, projecting
+  both keys and binding the owning `DocumentId`. PUT addresses its target by document UUID and
+  uses the probe only for its identity verdict (below).
+- C# never case-folds a descriptor URI. Original-case response URIs reconstruct
+  `Namespace + '#' + CodeValue` from the stored components. Incoming references remain whole strings: they are not split on `#`,
+  trimmed or Unicode-normalized. Descriptor identity components and reference values containing
+  NUL or an unpaired surrogate are rejected with a path-attributed 400.
 
-The [natural-key workstream](natural-key-resolution.md) owns later lowered-URI probes,
-RI removal, equality/validation changes, platform upgrades, and stored-wins semantics.
-Those proposals are not the DMS-1404 runtime contract.
+Descriptor update semantics (stored wins):
 
-Descriptor update semantics:
-
-- An authorized POST matched through RI preserves both IDs and applies incoming namespace/code
-  components, including casing changes. Provider equality alone does not prove an RI match;
-  existing conflict behavior remains.
-- PUT compares the incoming and reconstructed stored whole URI ordinally. Different text,
-  including a case-only change, returns 400 for immutable identity without changing stamps.
-  Different component pairs producing exactly the same whole URI pass that guard and persist.
-- Namespace and code value are independently compared representation fields. Accepted component
-  changes, descriptive changes and date changes receive normal stamps/ETags. An unchanged POST
-  returns HTTP 200 and an unchanged PUT returns HTTP 204; both preserve IDs, ETag, content stamps,
-  and change-query state. `ResourceKeyId` and both keys remain immutable.
+- A POST matched by the probe is an update of that descriptor. The stored `Namespace` and
+  `CodeValue` are bound before the proposed-namespace authorization check and the DML, so a
+  case-variant re-POST, a SQL Server collation alias (for example `ß`/`ss`) or a component
+  re-split that reconstructs the same URI keeps the stored components. Both IDs are preserved.
+- PUT follows the database's descriptor-identity verdict. An ordinally equal whole URI is
+  unchanged without a probe; otherwise the probe decides, and the identity is unchanged only
+  when it resolves to the locked document. An unchanged identity (casing, SQL Server collation
+  aliases, re-split components) keeps the stored components; a different identity returns 400
+  for immutable identity without changing stamps.
+- Identity equality is that engine verdict. The descriptive fields (`shortDescription`,
+  `description`, `effectiveBeginDate`, `effectiveEndDate`) compare ordinally. Descriptive and
+  date changes receive normal stamps/ETags. An unchanged POST, including a casing-only re-POST,
+  returns HTTP 200 and an unchanged PUT returns HTTP 204; both preserve IDs, ETag, content
+  stamps, and change-query state. `ResourceKeyId` and both keys remain immutable.
 - Descriptor endpoint query fields map to shared descriptor columns with root-table-only semantics, including `namespace`, `codeValue`, `shortDescription`, `description`, `effectiveBeginDate`, and `effectiveEndDate`.
 - Stable compact FKs are not rewritten by descriptor metadata updates.
 
@@ -326,7 +337,9 @@ Descriptor history uses shared `tracked_changes_edfi.Descriptor` with `ResourceK
 old/new namespace and code-value snapshots. `(ResourceKeyId, ChangeVersion)` indexes history
 windows. There is no live-owner FK, so tombstones retain their type and identity after deletion.
 Resource history joins descriptor-valued identities through the compact key before capturing
-components; authorization and recreation checks keep their existing comparisons.
+components. Recreation checks and custom-view descriptor comparisons use the lowered whole URI plus
+`ResourceKeyId`, the descriptor identity the write path uses (see
+[change-queries.md](change-queries.md)); namespace authorization is unchanged.
 
 At the historical DMS-1404 handoff, both document stamp columns were authoritative and mirrored
 onto descriptors. In the combined DMS-1401 schema, only `ContentVersion` is mirrored from
@@ -888,7 +901,7 @@ Typical structure:
 
 - `DocumentId BIGINT` **PK/FK** → `dms.Document(DocumentId)` ON DELETE RESTRICT (PostgreSQL) / ON DELETE NO ACTION (SQL Server)
   - This foreign key is a referential-integrity safety net, not the primary deletion path. The DMS write path deletes the concrete resource row before deleting the corresponding `dms.Document` row (within the same transaction) so that the resource's `_Stamp` trigger can read `DocumentUuid` and `ContentVersion` from `dms.Document` before the parent row is removed. See [change-queries.md](change-queries.md) §"Cascade-ordering requirement for deletes" for the trigger-side rationale.
-  - The delete action is the relational model's `ReferentialAction.Restrict` (manifest `on_delete: "Restrict"`), the single-probe check on both engines, and the same rule applies to `dms.Descriptor`. It replaced `ON DELETE CASCADE` (DMS-1268): because the root row is already gone, the cascade never had anything to delete, but SQL Server compiles every root table's cascade into the `dms.Document` DELETE plan (hundreds of tables, 16x slower on the volume test), and PostgreSQL's `NO ACTION` would re-check the parent key before probing each referencing table (two statements per foreign key per delete). With RESTRICT / NO ACTION a direct `DELETE FROM dms.Document` that still has a live root row fails instead of silently cascading. The cascade-maintained tables keep `ON DELETE CASCADE`: `dms.DocumentCache`, `dms.DocumentProjectionWork`, `dms.ReferentialIdentity`, the abstract identity tables, and the child collection and extension tables.
+  - The delete action is the relational model's `ReferentialAction.Restrict` (manifest `on_delete: "Restrict"`), the single-probe check on both engines, and the same rule applies to `dms.Descriptor`. It replaced `ON DELETE CASCADE` (DMS-1268): because the root row is already gone, the cascade never had anything to delete, but SQL Server compiles every root table's cascade into the `dms.Document` DELETE plan (hundreds of tables, 16x slower on the volume test), and PostgreSQL's `NO ACTION` would re-check the parent key before probing each referencing table (two statements per foreign key per delete). With RESTRICT / NO ACTION a direct `DELETE FROM dms.Document` that still has a live root row fails instead of silently cascading. The cascade-maintained tables keep `ON DELETE CASCADE`: `dms.DocumentCache`, `dms.DocumentProjectionWork`, the abstract identity tables, and the child collection and extension tables.
   - The decision record [0001-document-safety-net-foreign-key-delete-action.md](data-model/0001-document-safety-net-foreign-key-delete-action.md) assesses the alternatives (dropping the keys, asynchronous purge, replica-role deletes, partitioning, hand-rolled RI), records the measurements, and states the condition under which the question is reopened.
 - Natural key columns (from `identityJsonPaths`) → **API-semantic** unique constraint derived from the identity endpoint bindings.
   - Scalar identity elements map to scalar path/binding columns.
@@ -1326,7 +1339,7 @@ Object names are deterministic and derived from the owning table plus purpose to
 - Foreign keys: `FK_{TableName}_{Token}`, where `Token` is:
   - `Document` for single-column `(DocumentId)` FKs to `dms.Document`
   - `DocumentResourceKey` for composite `(DocumentId, ResourceKeyId)` FKs to
-    `dms.Document(DocumentId, ResourceKeyId)` (later abstract identity invariant proposal; current descriptors use separate document/catalog FKs and trigger validation)
+    `dms.Document(DocumentId, ResourceKeyId)` (current descriptors use separate document/catalog FKs and trigger validation)
   - `{DescriptorBaseName}` for descriptor FKs (no `_DescriptorId` suffix)
   - `{ReferenceBaseName}` for single-column reference FKs
   - `{ReferenceBaseName}_RefKey` for composite reference FKs (storage identity columns + document id; canonicalized under key unification)

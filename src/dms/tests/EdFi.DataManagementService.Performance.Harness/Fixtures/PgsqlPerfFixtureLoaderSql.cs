@@ -53,15 +53,6 @@ public static class PgsqlPerfFixtureLoaderSql
             RETURNING "DescriptorId";
             """;
 
-    /// <summary>
-    /// The production descriptor write inserts one referential-identity row per descriptor;
-    /// reference validation resolves descriptor URIs against it.
-    /// </summary>
-    public const string DescriptorReferentialIdentityInsertSql = $"""
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES (@{PerfFixtureLoaderParameters.DescriptorReferentialId}, @{PerfFixtureLoaderParameters.DescriptorDocumentId}, @{PerfFixtureLoaderParameters.ResourceKeyId});
-        """;
-
     public const string DocumentInsertSql = $"""
         INSERT INTO "dms"."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId")
         OVERRIDING SYSTEM VALUE

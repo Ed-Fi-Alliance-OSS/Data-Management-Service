@@ -706,10 +706,10 @@ public class Given_A_Host_Using_The_Relational_Backend
 
     private sealed class CapturingRelationalWriteTargetLookupService : IRelationalWriteTargetLookupService
     {
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
-            ReferentialId referentialId,
+            string descriptorUri,
             DocumentUuid candidateDocumentUuid,
             CancellationToken cancellationToken = default
         )
@@ -771,11 +771,9 @@ public class Given_A_Host_Using_The_Relational_Backend
             return new ResolvedReferenceSet(
                 SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
                 SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-                LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
+                DocumentReferences: new ResolvedDocumentReferenceMapFactory().Create([]),
                 InvalidDocumentReferences: [],
-                InvalidDescriptorReferences: [],
-                DocumentReferenceOccurrences: [],
-                DescriptorReferenceOccurrences: []
+                InvalidDescriptorReferences: []
             );
         }
 

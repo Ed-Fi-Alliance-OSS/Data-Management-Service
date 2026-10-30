@@ -62,13 +62,13 @@ public abstract record RelationalWriteTargetContext
 public abstract record RelationalWriteTargetRequest
 {
     /// <summary>
-    /// POST may create a brand-new document or update an existing document resolved by referential id.
+    /// POST may create a brand-new document or update an existing document resolved by its own natural key.
     /// </summary>
-    /// <param name="ReferentialId">The natural-identity lookup key for POST upsert semantics.</param>
+    /// <param name="DocumentIdentity">The request's natural identity, captured against the own natural key.</param>
     /// <param name="CandidateDocumentUuid">
     /// The caller-reserved document uuid to use when lookup resolves to a new document.
     /// </param>
-    public sealed record Post(ReferentialId ReferentialId, DocumentUuid CandidateDocumentUuid)
+    public sealed record Post(DocumentIdentity DocumentIdentity, DocumentUuid CandidateDocumentUuid)
         : RelationalWriteTargetRequest;
 
     /// <summary>
@@ -224,7 +224,7 @@ public sealed record FlatteningInput
     /// When true, the shared flattener enforces that no two collection candidates under
     /// the same parent collection scope share a storage-collapsed semantic identity.
     /// Two identities collapse-equal when they are equal under
-    /// <see cref="ObjectValueArrayComparer"/> after the storage-NULL convention is applied
+    /// <see cref="CollectionSemanticIdentityEquality.RawValues"/> after the storage-NULL convention is applied
     /// (a missing identity property and an explicit JSON <c>null</c> both materialize to
     /// <c>null</c> in the values array). The no-profile executor sets this so request
     /// shapes that the relational storage model cannot represent distinctly are rejected

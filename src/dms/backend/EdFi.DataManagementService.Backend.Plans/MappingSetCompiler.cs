@@ -136,6 +136,8 @@ public sealed class MappingSetCompiler
             }
         }
 
+        var naturalKeyProbes = NaturalKeyProbeCompiler.Compile(modelSet);
+
         return new MappingSet(
             Key: key,
             Model: modelSet,
@@ -149,6 +151,8 @@ public sealed class MappingSetCompiler
             QueryCapabilitiesByResource = queryCapabilitiesByResource.ToFrozenDictionary(),
             DescriptorQueryCapabilitiesByResource =
                 descriptorQueryCapabilitiesByResource.ToFrozenDictionary(),
+            NaturalKeyProbeTargets = naturalKeyProbes.Targets,
+            OwnNaturalKeyProbesByResource = naturalKeyProbes.OwnKeys,
         };
     }
 }

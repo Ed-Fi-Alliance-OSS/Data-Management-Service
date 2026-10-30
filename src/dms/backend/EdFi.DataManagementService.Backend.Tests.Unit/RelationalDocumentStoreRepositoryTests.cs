@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
+using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FakeItEasy;
 using FluentAssertions;
@@ -8533,6 +8534,73 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .MustNotHaveHappened();
     }
 
+    // A malformed descriptor filter is a client error, answered like Core's own query-validation 400s:
+    // before custom-view validation, resolution and page work.
+    [Test]
+    public async Task It_rejects_a_malformed_descriptor_filter_without_validating_custom_views_or_resolving()
+    {
+        var mappingSet = CreateQuerySupportedMappingSet(
+            _schoolResourceInfo,
+            CreateSupportedQueryField(
+                "schoolCategoryDescriptor",
+                "$.schoolCategoryDescriptor",
+                "string",
+                new RelationalQueryFieldTarget.DescriptorIdColumn(
+                    new DbColumnName("SchoolCategoryDescriptorId"),
+                    new QualifiedResourceName("Ed-Fi", "SchoolCategoryDescriptor")
+                )
+            )
+        );
+        var queryRequest = CreateQueryRequest(
+            mappingSet,
+            [
+                CreateQueryElement(
+                    "schoolCategoryDescriptor",
+                    "$.schoolCategoryDescriptor",
+                    "uri://ed-fi.org/SchoolCategoryDescriptor#\0",
+                    "string"
+                ),
+            ],
+            totalCount: true,
+            authorizationStrategyEvaluators:
+            [
+                CreateAuthorizationStrategyEvaluator("SchoolWithCustomAuthorization"),
+            ]
+        );
+
+        var result = await _sut.QueryDocuments(queryRequest);
+
+        result
+            .Should()
+            .BeOfType<QueryResult.QueryFailureValidation>()
+            .Which.ValidationFailures.Should()
+            .Equal(
+                new WriteValidationFailure(
+                    new JsonPath("$.schoolCategoryDescriptor"),
+                    DescriptorText.InvalidValueMessage
+                )
+            );
+        A.CallTo(() =>
+                _commandExecutor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<bool>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
+        A.CallTo(() =>
+                _documentHydrator.HydrateAsync(
+                    A<ResourceReadPlan>._,
+                    A<PageKeysetSpec>._,
+                    A<HydrationExecutionOptions>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
     [Test]
     public async Task It_validates_custom_views_before_empty_page_planning_success_for_queries()
     {
@@ -9604,7 +9672,9 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
             .TargetRequest.Should()
-            .BeEquivalentTo(new RelationalWriteTargetRequest.Post(documentInfo.ReferentialId, documentUuid));
+            .BeEquivalentTo(
+                new RelationalWriteTargetRequest.Post(documentInfo.DocumentIdentity, documentUuid)
+            );
         _capturedExecutorRequest
             .WritePlan.Model.Resource.Should()
             .Be(new QualifiedResourceName("Ed-Fi", "School"));
@@ -9673,7 +9743,9 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         _capturedExecutorRequest.OperationKind.Should().Be(RelationalWriteOperationKind.Post);
         _capturedExecutorRequest
             .TargetRequest.Should()
-            .BeEquivalentTo(new RelationalWriteTargetRequest.Post(documentInfo.ReferentialId, documentUuid));
+            .BeEquivalentTo(
+                new RelationalWriteTargetRequest.Post(documentInfo.DocumentIdentity, documentUuid)
+            );
         _capturedExecutorRequest.ExistingDocumentReadPlan.Should().BeSameAs(expectedReadPlan);
         _capturedExecutorRequest.SelectedBody.Should().BeSameAs(requestBody);
         _capturedExecutorRequest.TraceId.Should().Be(traceId);
@@ -11969,7 +12041,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             .Should()
             .OnlyContain(targetRequest =>
                 targetRequest.Equals(
-                    new RelationalWriteTargetRequest.Post(documentInfo.ReferentialId, documentUuid)
+                    new RelationalWriteTargetRequest.Post(documentInfo.DocumentIdentity, documentUuid)
                 )
             );
         A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
@@ -12206,7 +12278,7 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         );
         var invalidDescriptorReference = DescriptorReferenceFailure.From(
             descriptorReference,
-            DescriptorReferenceFailureReason.DescriptorTypeMismatch
+            DescriptorReferenceFailureReason.Missing
         );
 
         A.CallTo(() => _writeExecutor.ExecuteAsync(A<RelationalWriteExecutorInput>._, A<CancellationToken>._))
@@ -15027,7 +15099,6 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             DocumentIdentity: new DocumentIdentity([
                 new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
             ]),
-            ReferentialId: new ReferentialId(Guid.NewGuid()),
             DocumentReferences: documentReferences ?? [],
             DocumentReferenceArrays: [],
             DescriptorReferences: descriptorReferences ?? [],
@@ -15062,7 +15133,6 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
             DocumentIdentity: new DocumentIdentity([
                 new DocumentIdentityElement(new JsonPath("$.localEducationAgencyId"), "255901"),
             ]),
-            ReferentialId: new ReferentialId(Guid.NewGuid()),
             Path: new JsonPath(path)
         );
     }
@@ -15075,7 +15145,6 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
                 new DocumentIdentityElement(new JsonPath("$.namespace"), "uri://sample"),
                 new DocumentIdentityElement(new JsonPath("$.codeValue"), "SchoolCategory#Charter"),
             ]),
-            ReferentialId: new ReferentialId(Guid.NewGuid()),
             Path: new JsonPath(path)
         );
     }
@@ -16874,17 +16943,12 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         successfulDescriptorReferences ??= [];
         invalidDescriptorReferences ??= [];
 
-        return new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: successfulDescriptorReferences.ToDictionary(
+        return ResolvedReferenceSets.Create(
+            successfulDescriptorReferencesByPath: successfulDescriptorReferences.ToDictionary(
                 static reference => reference.Reference.Path,
                 static reference => reference
             ),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: invalidDescriptorReferences,
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            invalidDescriptorReferences: invalidDescriptorReferences
         );
     }
 

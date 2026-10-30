@@ -65,23 +65,5 @@
       }
     }
   ],
-  "extensionRows": [],
-  "referentialIdentityRows": [
-    {
-      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000013101",
-      "documentId": 973101,
-      "resourceKeyId": 244,
-      "values": {
-        "schoolId": 255904
-      }
-    },
-    {
-      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000013201",
-      "documentId": 973201,
-      "resourceKeyId": 57,
-      "values": {
-        "uri": "uri://ed-fi.org/AddressTypeDescriptor#Physical"
-      }
-    }
-  ]
+  "extensionRows": []
 }

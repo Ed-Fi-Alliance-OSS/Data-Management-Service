@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Telemetry;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -123,6 +124,10 @@ internal class QueryRequestHandler(
                 ContentType: "application/problem+json"
             ),
             QueryFailureKnownError => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
+            QueryFailureValidation failure => ValidationErrorFactory.CreateValidationErrorResponse(
+                ValidationErrorFactory.BuildWriteValidationErrors(failure.ValidationFailures),
+                requestInfo.FrontendRequest.TraceId
+            ),
             UnknownFailure failure => CreateUnknownFailureResponse(
                 _logger,
                 requestInfo,
@@ -168,6 +173,11 @@ internal class QueryRequestHandler(
             ),
             QueryFailureRetryable => FailureClassification(
                 CollectionPagingTelemetryLabel.RetryExhaustedOutcome
+            ),
+            // A query value the backend's own validation rejected is the same kind of client error as a
+            // middleware rejection, so it is counted with them.
+            QueryFailureValidation => FailureClassification(
+                CollectionPagingTelemetryLabel.ValidationRejectedOutcome
             ),
             // A known error reports query terms that evaded validation, and the bounded outcome set has
             // no value of its own for it. It is counted as an unclassified backend failure rather than
