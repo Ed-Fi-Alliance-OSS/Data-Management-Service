@@ -69,7 +69,7 @@ The `/oauth/token_info` endpoint provides comprehensive information about an OAu
 | `namespace_prefixes[]` | JWT Token | `namespacePrefixes` claim | - |
 | `education_organizations[]` | JWT Token + Database | `educationOrganizationIds` claim | DMS Document table (name, type, hierarchy) |
 | `assigned_profiles[]`* | Database | - | Profile + ApplicationProfile tables |
-| `claim_set.name` | JWT Token | `scope` claim | - |
+| `claim_set.name` | JWT Token + Claim set metadata | `scope` claim values, resolved to one claim set (see [Claim set name selection](#claim-set-name-selection)) | Tenant claim-set metadata (the selected name) |
 | `resources[]` | Database + Metadata API | - | ClaimsHierarchy → AuthorizationMetadata → ClaimSet claims |
 | `services[]` | Database (ResourceClaims) | - | Claims filtered by service prefix pattern (e.g., `http://ed-fi.org/identity/claims/services/*`) |
 
@@ -96,6 +96,35 @@ The `/oauth/token_info` endpoint provides comprehensive information about an OAu
   model where services are stored as ResourceClaims in the security database alongside
   regular resource claims. See the [Ed-Fi ODS Implementation repository](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS-Implementation)
   for reference implementations.
+
+## Claim set name selection
+
+`claim_set.name` is **not** a direct copy of the token's `scope`. The token's `scope`
+may hold several values, as one space-separated string or as an array. The endpoint
+splits every `scope` claim on ASCII space, removes empty entries, and matches the
+values against the claim-set names in the requesting tenant's metadata
+(case-insensitive). The name reported is the one claim set that matched. The rules
+are in
+[Claim-Set Selection from Token Scopes](../../docs/ROLES-SCOPES.md#claim-set-selection-from-token-scopes).
+
+- One recognized claim set: `claim_set.name` is that claim set. When only one
+  spelling occurs in the token, the token's spelling is reported. When several case
+  variants of the same claim set occur, the name as stored in the metadata is
+  reported, so the result does not depend on scope order. Other scopes, such as
+  `profile`, never appear in the name. `resources[]` and `services[]` come from that
+  claim set.
+- No recognized claim set (missing, empty, or only unrecognized scopes, including a
+  comma-joined value such as `Alpha,Beta`, which is one literal value): `401`
+  `Unauthorized`, `The client's ClaimSet was not found.` This is unchanged.
+- More than one recognized claim set: `403` with the error
+  `The token identifies multiple claim sets.` No claim set is chosen and permissions
+  are never combined.
+- Duplicate matching names in the metadata: `500` security configuration error.
+
+The selection happens on each request, against the requesting tenant's metadata, and
+outside the cached token validation. The same token can therefore report a different
+claim set after a metadata change or when presented to another tenant. Metadata changes
+follow the existing cache lifetimes and are not immediate revocation.
 
 ## Example 1: OpenIddict Token (DMS Config Service)
 
@@ -190,7 +219,7 @@ The `/oauth/token_info` endpoint provides comprehensive information about an OAu
 | `education_organizations[1].type` | `"edfi.LocalEducationAgency"` | Ed-Fi ODS query | Enriched from database |
 | `education_organizations[1].education_service_center_id` | `255950` | Ed-Fi ODS query | Parent ESC from hierarchy |
 | `assigned_profiles[0]` | `"Assessment-Profile-Read-Only"` | ApplicationProfile query | Queried from Profile tables |
-| `claim_set.name` | `"E2E-RelationshipsWithEdOrgsOnlyClaimSet"` | JWT `scope` claim | Direct extraction |
+| `claim_set.name` | `"E2E-RelationshipsWithEdOrgsOnlyClaimSet"` | JWT `scope` claim | The one claim set the token's scope values name in the tenant's metadata (see [Claim set name selection](#claim-set-name-selection)) |
 | `resources[]` | Array of resources | ClaimSet hierarchy query | Built from claim set configuration |
 | `services[]` | Array of services | ResourceClaims query | Filtered by service claim name prefix |
 
@@ -300,7 +329,7 @@ The `/oauth/token_info` endpoint provides comprehensive information about an OAu
 | `education_organizations[1].type` | `"edfi.LocalEducationAgency"` | DMS Document.ResourceName | From document metadata |
 | `education_organizations[1].education_service_center_id` | `255950` | DMS EducationOrganizationHierarchy | Parent ESC from hierarchy |
 | `assigned_profiles[0]` | `"Student-Profile-Full-Access"` | ApplicationProfile query | Queried from Profile tables |
-| `claim_set.name` | `"EdFiSandbox"` | JWT `scope` claim | Direct extraction |
+| `claim_set.name` | `"EdFiSandbox"` | JWT `scope` claim | The one claim set the token's scope values name in the tenant's metadata (see [Claim set name selection](#claim-set-name-selection)) |
 | `resources[]` | Array of resources | ClaimSet hierarchy query | Built from EdFiSandbox claim set |
 | `services[]` | Array of services | ResourceClaims query | Filtered by service claim name prefix |
 

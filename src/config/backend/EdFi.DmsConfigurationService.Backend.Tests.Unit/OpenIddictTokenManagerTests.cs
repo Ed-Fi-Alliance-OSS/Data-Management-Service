@@ -175,14 +175,16 @@ public class OpenIddictTokenManagerTests
 
     /// <summary>
     /// Issues a signed JWT with the test issuer/audience and the supplied claims. The "kid"
-    /// header is emitted from the signing key so the validator can resolve the public key.
+    /// header is emitted from the signing key so the validator can resolve the public key. The token is signed with
+    /// <paramref name="algorithm"/>, RS256 as issued unless a test names another.
     /// </summary>
     private static string CreateSignedToken(
         RsaSecurityKey signingKey,
         IEnumerable<Claim> claims,
         bool expired = false,
         string? issuer = null,
-        string? audience = null
+        string? audience = null,
+        string algorithm = SecurityAlgorithms.RsaSha256
     )
     {
         var now = DateTime.UtcNow;
@@ -192,7 +194,7 @@ public class OpenIddictTokenManagerTests
             claims: claims,
             notBefore: expired ? now.AddMinutes(-15) : now.AddMinutes(-5),
             expires: expired ? now.AddMinutes(-10) : now.AddMinutes(10),
-            signingCredentials: new SigningCredentials(signingKey, SecurityAlgorithms.RsaSha256)
+            signingCredentials: new SigningCredentials(signingKey, algorithm)
         );
         return new JwtSecurityTokenHandler().WriteToken(jwt);
     }
@@ -4422,7 +4424,8 @@ public class OpenIddictTokenManagerTests
         RsaSecurityKey signingKey,
         Guid jti,
         string clientId,
-        string iat = "1700000000"
+        string iat = "1700000000",
+        string algorithm = SecurityAlgorithms.RsaSha256
     ) =>
         CreateSignedToken(
             signingKey,
@@ -4433,7 +4436,8 @@ public class OpenIddictTokenManagerTests
                 new Claim("scope", "edfi_admin_api/full_access"),
                 new Claim(JwtRegisteredClaimNames.Sub, clientId),
                 new Claim(JwtRegisteredClaimNames.Iat, iat),
-            }
+            },
+            algorithm: algorithm
         );
 
     [TestFixture]
@@ -5902,5 +5906,245 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_does_not_load_the_full_application() =>
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+    // The scopes an issued token carries are written as one OAuth space-delimited string (RFC 6749
+    // section 3.3) in the signed JWT, the token response and introspection alike. These fixtures
+    // issue a real signed JWT through GetAccessTokenAsync over a fake client and token store, then
+    // read the scope back from each of those three places.
+
+    private const string ScopeClientId = "scope-client";
+
+    private sealed record IssuedScopes(string Jwt, string Response, string Introspected);
+
+    private async Task<IssuedScopes> IssueScopesAsync(string[] registeredScopes, string? requestedScope)
+    {
+        Guid applicationId = Guid.NewGuid();
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(ScopeClientId))
+            .Returns(
+                new ApplicationInfo
+                {
+                    Id = applicationId,
+                    ClientId = ScopeClientId,
+                    ClientSecret = "hashed-secret",
+                    IsApproved = true,
+                    ProtocolMappers = "[]",
+                    Scopes = registeredScopes,
+                    Permissions = registeredScopes,
+                }
+            );
+        A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, "hashed-secret")).Returns(true);
+        A.CallTo(() => _tokenRepository.GetClientRolesAsync(applicationId)).Returns([]);
+        StubActiveKeyPair();
+
+        // The fake token store: it keeps what the manager stored, and reports exactly those tokens valid
+        // for the application that stored them.
+        HashSet<Guid> storedTokenIds = [];
+        A.CallTo(() =>
+                _tokenRepository.StoreTokenAsync(
+                    A<Guid>._,
+                    A<Guid>._,
+                    A<string>._,
+                    A<DateTimeOffset>._,
+                    A<int>._
+                )
+            )
+            .ReturnsLazily(
+                (Guid tokenId, Guid _, string _, DateTimeOffset _, int _) =>
+                {
+                    storedTokenIds.Add(tokenId);
+                    return TokenStoreOutcome.Stored;
+                }
+            );
+        A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, A<Guid>._))
+            .ReturnsLazily(
+                (Guid tokenId, Guid owner) =>
+                    owner == applicationId && storedTokenIds.Contains(tokenId) ? "valid" : null
+            );
+
+        List<KeyValuePair<string, string>> credentials =
+        [
+            new("client_id", ScopeClientId),
+            new("client_secret", CallerSecret),
+        ];
+        if (requestedScope is not null)
+        {
+            credentials.Add(new("scope", requestedScope));
+        }
+
+        OpenIddictTokenManager manager = CreateMintingTokenManager();
+        TokenResult result = await manager.GetAccessTokenAsync(credentials);
+
+        using System.Text.Json.JsonDocument response = System.Text.Json.JsonDocument.Parse(
+            result.Should().BeOfType<TokenResult.Success>().Subject.Token
+        );
+        string accessToken = response.RootElement.GetProperty("access_token").GetString()!;
+        string responseScope = response.RootElement.GetProperty("scope").GetString()!;
+        string jwtScope = new JwtSecurityTokenHandler()
+            .ReadJwtToken(accessToken)
+            .Claims.Single(claim => claim.Type == "scope")
+            .Value;
+
+        TokenIntrospectionResult introspection = await manager.IntrospectTokenAsync(
+            IntrospectionRequestFor(ScopeClientId, accessToken),
+            CancellationToken.None
+        );
+        string introspectedScope = introspection
+            .Should()
+            .BeOfType<TokenIntrospectionResult.Active>()
+            .Subject.Token.Scope;
+
+        return new IssuedScopes(jwtScope, responseScope, introspectedScope);
+    }
+
+    [TestFixture("Alpha Beta", "Alpha Beta")]
+    [TestFixture("ungranted", "Alpha Beta Gamma")]
+    [TestFixture(null, "Alpha Beta Gamma")]
+    [TestFixture("Alpha,Beta", "Alpha Beta")]
+    [TestFixture("alpha BETA", "alpha BETA")]
+    [TestFixture("Beta", "Beta")]
+    public class Given_Multiple_Granted_Scopes(string? requestedScope, string expectedScope)
+        : OpenIddictTokenManagerTests
+    {
+        private IssuedScopes _issued = null!;
+
+        [SetUp]
+        public async Task Act() =>
+            _issued = await IssueScopesAsync(["Alpha", "Beta", "Gamma"], requestedScope);
+
+        [Test]
+        public void It_signs_the_scopes_into_the_jwt_separated_by_spaces() =>
+            _issued.Jwt.Should().Be(expectedScope);
+
+        [Test]
+        public void It_returns_the_scopes_in_the_token_response_separated_by_spaces() =>
+            _issued.Response.Should().Be(expectedScope);
+
+        [Test]
+        public void It_introspects_the_scopes_separated_by_spaces() =>
+            _issued.Introspected.Should().Be(expectedScope);
+    }
+
+    [TestFixture(null)]
+    [TestFixture("Alpha")]
+    [TestFixture("ungranted")]
+    public class Given_A_Single_Granted_Scope(string? requestedScope) : OpenIddictTokenManagerTests
+    {
+        private IssuedScopes _issued = null!;
+
+        [SetUp]
+        public async Task Act() => _issued = await IssueScopesAsync(["Alpha"], requestedScope);
+
+        [Test]
+        public void It_signs_the_scope_into_the_jwt() => _issued.Jwt.Should().Be("Alpha");
+
+        [Test]
+        public void It_returns_the_scope_in_the_token_response() => _issued.Response.Should().Be("Alpha");
+
+        [Test]
+        public void It_introspects_the_scope() => _issued.Introspected.Should().Be("Alpha");
+    }
+
+    // AC8: the verification helper accepts RS256 only, and every manager operation that verifies through it inherits
+    // that. Each fixture signs with the trusted active key a token whose issuer, audience, lifetime, client_id and
+    // stored-valid jti are all acceptable, so the algorithm is the only difference between the control and the
+    // disallowed fixtures.
+
+    private sealed record AlgorithmOperations(
+        bool Validated,
+        TokenIntrospectionResult Introspected,
+        TokenRevocationResult Revoked,
+        Guid Jti
+    );
+
+    /// <summary>
+    /// Validates, introspects and then revokes, as the token's owner, one token signed with
+    /// <paramref name="algorithm"/> by the active key, whose jti the store reports valid and would revoke.
+    /// </summary>
+    private async Task<AlgorithmOperations> RunOperationsOnATokenSignedWithAsync(string algorithm)
+    {
+        var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+        StubActivePublicKey(keyId, publicKeySpki);
+        StubAuthenticatedCaller(OwnerClientId);
+
+        Guid jti = Guid.NewGuid();
+        A.CallTo(() => _tokenRepository.GetTokenStatusAsync(jti)).Returns("valid");
+        A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(jti, _callerApplicationId))
+            .Returns("valid");
+        A.CallTo(() => _tokenRepository.RevokeTokenAsync(jti, _callerApplicationId)).Returns(true);
+        string token = CreateIntrospectableToken(signingKey, jti, OwnerClientId, algorithm: algorithm);
+
+        OpenIddictTokenManager manager = CreateConfiguredTokenManager();
+        bool validated = await manager.ValidateTokenAsync(token);
+        TokenIntrospectionResult introspected = await manager.IntrospectTokenAsync(
+            IntrospectionRequestFor(OwnerClientId, token),
+            CancellationToken.None
+        );
+        TokenRevocationResult revoked = await manager.RevokeTokenAsync(
+            RevocationRequestFor(OwnerClientId, token),
+            CancellationToken.None
+        );
+        return new AlgorithmOperations(validated, introspected, revoked, jti);
+    }
+
+    [TestFixture(SecurityAlgorithms.RsaSha512)]
+    [TestFixture(SecurityAlgorithms.RsaSsaPssSha256)]
+    public class Given_A_Trusted_Key_With_A_Disallowed_Algorithm(string algorithm)
+        : OpenIddictTokenManagerTests
+    {
+        private AlgorithmOperations _operations = null!;
+
+        [SetUp]
+        public async Task Act() => _operations = await RunOperationsOnATokenSignedWithAsync(algorithm);
+
+        [Test]
+        public void It_rejects_the_token_on_validation() => _operations.Validated.Should().BeFalse();
+
+        [Test]
+        public void It_reports_the_token_inactive_on_introspection() =>
+            _operations.Introspected.Should().BeOfType<TokenIntrospectionResult.Inactive>();
+
+        [Test]
+        public void It_gives_revocation_its_completed_answer() =>
+            _operations.Revoked.Should().BeOfType<TokenRevocationResult.Completed>();
+
+        [Test]
+        public void It_never_mutates_the_revoke_store() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
+
+        // Rejected at verification, before either status gate.
+        [Test]
+        public void It_never_reads_the_token_status()
+        {
+            A.CallTo(() => _tokenRepository.GetTokenStatusAsync(A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, A<Guid>._))
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_A_Trusted_Key_With_The_Allowed_Algorithm : OpenIddictTokenManagerTests
+    {
+        private AlgorithmOperations _operations = null!;
+
+        [SetUp]
+        public async Task Act() =>
+            _operations = await RunOperationsOnATokenSignedWithAsync(SecurityAlgorithms.RsaSha256);
+
+        [Test]
+        public void It_accepts_the_token_on_validation() => _operations.Validated.Should().BeTrue();
+
+        [Test]
+        public void It_reports_the_token_active_on_introspection() =>
+            _operations.Introspected.Should().BeOfType<TokenIntrospectionResult.Active>();
+
+        [Test]
+        public void It_gives_revocation_its_completed_answer() =>
+            _operations.Revoked.Should().BeOfType<TokenRevocationResult.Completed>();
+
+        [Test]
+        public void It_revokes_the_token_for_the_authenticated_application() =>
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_operations.Jti, _callerApplicationId))
+                .MustHaveHappenedOnceExactly();
     }
 }

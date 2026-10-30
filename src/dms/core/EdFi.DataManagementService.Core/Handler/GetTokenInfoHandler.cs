@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -131,20 +132,64 @@ internal partial class GetTokenInfoHandler(
             requestInfo.FrontendRequest.Tenant,
             requestInfo.RequestCancellationToken
         );
-        var clientClaimSet = claimSets.FindClaimSetByName(requestInfo.ClientAuthorizations.ClaimSetName);
+        string scopeForLogging = LoggingSanitizer.SanitizeFreeTextForLogging(
+            string.Join(' ', ClaimSetResolver.GetCandidates(requestInfo.ClientAuthorizations)),
+            maxLength: 1024
+        );
+        ClaimSet clientClaimSet;
 
-        if (clientClaimSet == null)
+        switch (ClaimSetResolver.Resolve(requestInfo.ClientAuthorizations, claimSets))
         {
-            requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: 401,
-                Body: FailureResponse.ForUnauthorized(
-                    traceId: requestInfo.FrontendRequest.TraceId,
-                    error: "Unauthorized",
-                    description: "The client's ClaimSet was not found."
-                ),
-                Headers: []
-            );
-            return;
+            case ClaimSetResolution.Success resolved:
+                // A request-local copy: the authenticated record may be shared through the JWT cache.
+                requestInfo.ClientAuthorizations = requestInfo.ClientAuthorizations with
+                {
+                    ClaimSetName = resolved.ClaimSetName,
+                };
+                clientClaimSet = resolved.ClaimSet;
+                break;
+            case ClaimSetResolution.Ambiguous:
+                logger.LogInformation(
+                    "GetTokenInfoHandler: The token identifies multiple claim sets. Scope: {Scope} - {TraceId}",
+                    scopeForLogging,
+                    LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
+                );
+                requestInfo.FrontendResponse = ClaimSetResolutionResponses.Ambiguous(
+                    requestInfo.FrontendRequest.TraceId
+                );
+                return;
+            case ClaimSetResolution.InvalidMetadata invalidMetadata:
+                logger.LogError(
+                    "GetTokenInfoHandler: The security metadata contains duplicate claim-set names: {DuplicateNames}. Tenant: {Tenant}; CorrelationId: {CorrelationId}",
+                    LoggingSanitizer.SanitizeFreeTextForLogging(
+                        string.Join(' ', invalidMetadata.DuplicateNames),
+                        maxLength: 1024
+                    ),
+                    LoggingSanitizer.SanitizeInternalValueForLogging(requestInfo.FrontendRequest.Tenant),
+                    LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
+                );
+                requestInfo.FrontendResponse = ClaimSetResolutionResponses.InvalidMetadata(
+                    requestInfo.FrontendRequest.TraceId
+                );
+                return;
+            case ClaimSetResolution.NoMatch:
+                logger.LogInformation(
+                    "GetTokenInfoHandler: No ClaimSet matching Scope {Scope} - {TraceId}",
+                    scopeForLogging,
+                    LoggingSanitizer.SanitizeCorrelationId(requestInfo.FrontendRequest.TraceId.Value)
+                );
+                requestInfo.FrontendResponse = new FrontendResponse(
+                    StatusCode: 401,
+                    Body: FailureResponse.ForUnauthorized(
+                        traceId: requestInfo.FrontendRequest.TraceId,
+                        error: "Unauthorized",
+                        description: "The client's ClaimSet was not found."
+                    ),
+                    Headers: []
+                );
+                return;
+            default:
+                throw new UnreachableException("Unknown claim-set resolution result.");
         }
 
         // Get application context to find ApplicationId

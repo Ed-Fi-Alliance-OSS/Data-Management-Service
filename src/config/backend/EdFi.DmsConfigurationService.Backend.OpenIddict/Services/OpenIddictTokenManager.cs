@@ -244,7 +244,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     if (validScopes.Length == 0)
                     {
                         // If no valid scopes, use the application's default permissions
-                        listOfScopes = string.Join(",", allowedScopes);
+                        listOfScopes = string.Join(" ", allowedScopes);
                         _logger.LogWarning(
                             "No valid requested scopes found, using application defaults: {ListOfScopes}",
                             LoggingUtility.SanitizeForLog(listOfScopes)
@@ -252,13 +252,13 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     }
                     else
                     {
-                        listOfScopes = string.Join(",", validScopes);
+                        listOfScopes = string.Join(" ", validScopes);
                     }
                 }
                 else
                 {
                     // No scope requested, use application's default permissions
-                    listOfScopes = string.Join(",", applicationInfo.Permissions ?? Array.Empty<string>());
+                    listOfScopes = string.Join(" ", applicationInfo.Permissions ?? Array.Empty<string>());
                     _logger.LogInformation(
                         "No scope requested, using application defaults: {ListOfScopes}",
                         LoggingUtility.SanitizeForLog(listOfScopes)

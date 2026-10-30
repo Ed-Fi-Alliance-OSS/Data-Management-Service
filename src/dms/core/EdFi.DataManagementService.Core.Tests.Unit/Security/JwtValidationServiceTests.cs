@@ -65,7 +65,7 @@ public class JwtValidationServiceTests
         return (service, configurationManager, options, logger, tokenHandler, signingKey);
     }
 
-    private static string CreateTestToken(
+    internal static string CreateTestToken(
         Claim[] claims,
         string issuer,
         string audience,
@@ -1273,6 +1273,220 @@ public class JwtValidationServiceTests
         public void It_falls_back_to_a_derived_non_empty_token_id()
         {
             _clientAuthorizations!.TokenId.Should().NotBeNullOrEmpty();
+        }
+    }
+
+    /// <summary>
+    /// Validates a signed token whose payload carries the given claims and returns what a request
+    /// would see, so extraction is exercised through real signature validation.
+    /// </summary>
+    private static async Task<(
+        ClaimsPrincipal? Principal,
+        ClientAuthorizations? ClientAuthorizations
+    )> ValidateSignedClaims(params Claim[] claims)
+    {
+        var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService();
+
+        A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+            .Returns(Task.FromResult(CreateMetadata(TestAuthority, signingKey)));
+
+        string token = CreateTestToken(
+            claims,
+            TestAuthority,
+            options.Value.Audience,
+            signingKey,
+            tokenHandler
+        );
+
+        return await service.ValidateAndExtractClientAuthorizationsAsync(token, CancellationToken.None);
+    }
+
+    private static Claim[] ScopeClaims(string claimValues) =>
+        [
+            .. claimValues
+                .Split('|', StringSplitOptions.RemoveEmptyEntries)
+                .Select(value => new Claim("scope", value)),
+        ];
+
+    /// <summary>
+    /// Each '|'-separated entry is one signed scope claim value, so several entries model a JWT
+    /// scope array and an entry containing spaces models a space-separated scope string.
+    /// </summary>
+    [TestFixture("profile|Alpha", "profile|Alpha", "")]
+    [TestFixture("Alpha|profile", "Alpha|profile", "")]
+    [TestFixture("profile Alpha", "profile|Alpha", "")]
+    [TestFixture("profile Alpha|Alpha", "profile|Alpha", "")]
+    [TestFixture("Alpha|profile Alpha", "Alpha|profile", "")]
+    [TestFixture("profile|Alpha Beta", "profile|Alpha|Beta", "")]
+    [TestFixture("Alpha|alpha", "Alpha|alpha", "")]
+    [TestFixture("Alpha  Beta", "Alpha|Beta", "")]
+    [TestFixture("edfi-admin", "edfi-admin", "edfi-admin")]
+    [TestFixture("Alpha|Alpha", "Alpha", "Alpha")]
+    [TestFixture("Alpha Alpha", "Alpha", "Alpha")]
+    [TestFixture("Alpha,Beta", "Alpha,Beta", "Alpha,Beta")]
+    [TestFixture("Alpha\tBeta", "Alpha\tBeta", "Alpha\tBeta")]
+    [Parallelizable]
+    public class Given_Signed_Scope_Values(
+        string signedScopeClaims,
+        string expectedScopeValues,
+        string expectedClaimSetName
+    ) : JwtValidationServiceTests
+    {
+        private ClaimsPrincipal? _principal;
+        private ClientAuthorizations? _clientAuthorizations;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_principal, _clientAuthorizations) = await ValidateSignedClaims([
+                new Claim("jti", "scope-token-id"),
+                new Claim("client_id", "scope-client-id"),
+                .. ScopeClaims(signedScopeClaims),
+                new Claim("namespacePrefixes", "uri://ed-fi.org,uri://tpdm.ed-fi.org"),
+                new Claim("educationOrganizationIds", "123,456"),
+                new Claim("dataStoreIds", "1,2"),
+            ]);
+        }
+
+        [Test]
+        public void It_returns_a_valid_principal() => _principal.Should().NotBeNull();
+
+        [Test]
+        public void It_collects_every_distinct_scope_value_in_first_observed_order() =>
+            _clientAuthorizations!
+                .ScopeValues.Should()
+                .Equal(expectedScopeValues.Split('|', StringSplitOptions.RemoveEmptyEntries));
+
+        [Test]
+        public void It_keeps_the_claim_set_name_only_for_one_distinct_scope_value() =>
+            _clientAuthorizations!.ClaimSetName.Should().Be(expectedClaimSetName);
+
+        [Test]
+        public void It_preserves_the_token_and_client_identifiers()
+        {
+            _clientAuthorizations!.TokenId.Should().Be("scope-token-id");
+            _clientAuthorizations.ClientId.Should().Be("scope-client-id");
+        }
+
+        [Test]
+        public void It_preserves_the_independent_comma_separated_claims()
+        {
+            _clientAuthorizations!
+                .NamespacePrefixes.Select(prefix => prefix.Value)
+                .Should()
+                .Equal("uri://ed-fi.org", "uri://tpdm.ed-fi.org");
+            _clientAuthorizations.EducationOrganizationIds.Select(id => id.Value).Should().Equal(123L, 456L);
+            _clientAuthorizations.DataStoreIds.Select(id => id.Value).Should().Equal(1L, 2L);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Signed_Token_Without_Scope_Values : JwtValidationServiceTests
+    {
+        private ClaimsPrincipal? _principal;
+        private ClientAuthorizations? _clientAuthorizations;
+
+        [SetUp]
+        public async Task Setup() =>
+            (_principal, _clientAuthorizations) = await ValidateSignedClaims(new Claim("jti", "no-scope"));
+
+        [Test]
+        public void It_returns_a_valid_principal() => _principal.Should().NotBeNull();
+
+        [Test]
+        public void It_carries_no_scope_values() => _clientAuthorizations!.ScopeValues.Should().BeEmpty();
+
+        [Test]
+        public void It_leaves_the_claim_set_name_empty() =>
+            _clientAuthorizations!.ClaimSetName.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Signed_Token_With_Only_Blank_Scope_Values : JwtValidationServiceTests
+    {
+        private ClaimsPrincipal? _principal;
+        private ClientAuthorizations? _clientAuthorizations;
+
+        [SetUp]
+        public async Task Setup() =>
+            (_principal, _clientAuthorizations) = await ValidateSignedClaims(
+                new Claim("scope", "   "),
+                new Claim("scope", "")
+            );
+
+        [Test]
+        public void It_returns_a_valid_principal() => _principal.Should().NotBeNull();
+
+        [Test]
+        public void It_carries_no_scope_values() => _clientAuthorizations!.ScopeValues.Should().BeEmpty();
+
+        [Test]
+        public void It_leaves_the_claim_set_name_empty() =>
+            _clientAuthorizations!.ClaimSetName.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracted_Scope_Values_Are_Cached : JwtValidationServiceTests
+    {
+        private ClientAuthorizations _first = null!;
+        private ClientAuthorizations _second = null!;
+        private Action _mutateFirst = null!;
+        private Action _mutateSecond = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (service, configurationManager, options, _, tokenHandler, signingKey) = CreateService();
+
+            A.CallTo(() => configurationManager.GetConfigurationAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult(CreateMetadata(TestAuthority, signingKey)));
+
+            string token = CreateTestToken(
+                [new Claim("jti", "cached-scope-token"), .. ScopeClaims("profile|Alpha")],
+                TestAuthority,
+                options.Value.Audience,
+                signingKey,
+                tokenHandler
+            );
+
+            _first = (
+                await service.ValidateAndExtractClientAuthorizationsAsync(token, CancellationToken.None)
+            ).ClientAuthorizations!;
+
+            _mutateFirst = () => ((IList<string>)_first.ScopeValues).Add("injected");
+
+            // The first call populated the cache, so the second returns the cached facts. Validate
+            // after a mutation attempt to show it cannot change what later requests observe.
+            try
+            {
+                _mutateFirst();
+            }
+            catch (NotSupportedException)
+            {
+                // Expected: asserted below.
+            }
+
+            _second = (
+                await service.ValidateAndExtractClientAuthorizationsAsync(token, CancellationToken.None)
+            ).ClientAuthorizations!;
+            _mutateSecond = () => ((IList<string>)_second.ScopeValues).Add("injected");
+        }
+
+        [Test]
+        public void It_serves_the_second_validation_from_the_cache() => _second.Should().BeSameAs(_first);
+
+        [Test]
+        public void It_retains_the_original_scope_values() =>
+            _second.ScopeValues.Should().Equal("profile", "Alpha");
+
+        [Test]
+        public void It_rejects_mutation_through_an_IList_cast()
+        {
+            _mutateFirst.Should().Throw<NotSupportedException>();
+            _mutateSecond.Should().Throw<NotSupportedException>();
         }
     }
 

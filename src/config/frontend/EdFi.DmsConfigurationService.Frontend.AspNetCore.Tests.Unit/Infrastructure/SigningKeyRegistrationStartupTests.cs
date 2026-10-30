@@ -5,15 +5,22 @@
 
 using System.Collections.Generic;
 using System.Net;
+using System.Security.Claims;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
+using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FluentAssertions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
@@ -58,6 +65,56 @@ public class SigningKeyRegistrationStartupTests
                 .Select(service => service.GetType()),
         ];
 
+    /// <summary>What the registered scope handler and configured policies decide for tokens whose scope is an array.</summary>
+    private sealed record ScopeEvaluation(
+        int ScopeHandlerRegistrations,
+        bool ScopeLastWithRole,
+        bool ScopeLastWithoutRole,
+        bool RoleWithoutScope
+    );
+
+    /// <summary>
+    /// Evaluates the configured service-role and read-only-or-admin scope policies through the real
+    /// <see cref="IAuthorizationService"/>, for a principal whose scope claims arrive as the elements of a signed scope
+    /// array, with the required scope last.
+    /// </summary>
+    private static async Task<ScopeEvaluation> EvaluateScopePoliciesAsync(
+        WebApplicationFactory<Program> factory
+    )
+    {
+        IdentitySettings identity = factory.Services.GetRequiredService<IOptions<IdentitySettings>>().Value;
+        IAuthorizationService authorization = factory.Services.GetRequiredService<IAuthorizationService>();
+        Claim[] scopes = [new("scope", "unrelated"), new("scope", AuthorizationScopes.ReadOnlyScope.Name)];
+        Claim role = new(identity.RoleClaimType, identity.ConfigServiceRole);
+
+        async Task<bool> AuthorizedAsync(params Claim[] claims)
+        {
+            ClaimsPrincipal user = new(new ClaimsIdentity(claims, "Test"));
+            foreach (
+                string policy in new[]
+                {
+                    SecurityConstants.ServicePolicy,
+                    AuthorizationScopePolicies.ReadOnlyOrAdminScopePolicy,
+                }
+            )
+            {
+                if (!(await authorization.AuthorizeAsync(user, policy)).Succeeded)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        return new ScopeEvaluation(
+            factory.Services.GetServices<IAuthorizationHandler>().OfType<ScopePolicyHandler>().Count(),
+            await AuthorizedAsync([.. scopes, role]),
+            await AuthorizedAsync(scopes),
+            await AuthorizedAsync(role)
+        );
+    }
+
     [TestFixture]
     public class Given_the_self_contained_identity_provider_at_startup
     {
@@ -73,6 +130,7 @@ public class SigningKeyRegistrationStartupTests
         private int _configurationManagerRegistrations;
         private SigningKeyBearerEvents _bearerEvents = null!;
         private int _bearerEventsRegistrations;
+        private ScopeEvaluation _scopes = null!;
 
         [SetUp]
         public async Task Act()
@@ -95,6 +153,7 @@ public class SigningKeyRegistrationStartupTests
                 .Count();
             _bearerEvents = _factory.Services.GetRequiredService<SigningKeyBearerEvents>();
             _bearerEventsRegistrations = _factory.Services.GetServices<SigningKeyBearerEvents>().Count();
+            _scopes = await EvaluateScopePoliciesAsync(_factory);
         }
 
         [TearDown]
@@ -138,6 +197,21 @@ public class SigningKeyRegistrationStartupTests
         [Test]
         public void It_shares_one_bearer_events_instance() =>
             _factory.Services.GetRequiredService<SigningKeyBearerEvents>().Should().BeSameAs(_bearerEvents);
+
+        [Test]
+        public void It_registers_one_scope_handler() => _scopes.ScopeHandlerRegistrations.Should().Be(1);
+
+        [Test]
+        public void It_authorizes_a_scope_array_ending_in_the_required_scope_with_the_configured_role() =>
+            _scopes.ScopeLastWithRole.Should().BeTrue();
+
+        [Test]
+        public void It_denies_the_scope_array_without_the_configured_role() =>
+            _scopes.ScopeLastWithoutRole.Should().BeFalse();
+
+        [Test]
+        public void It_denies_the_configured_role_without_the_scope() =>
+            _scopes.RoleWithoutScope.Should().BeFalse();
     }
 
     [TestFixture]
@@ -201,9 +275,10 @@ public class SigningKeyRegistrationStartupTests
         private ISigningKeySource? _source;
         private SigningKeyConfigurationManager? _configurationManager;
         private SigningKeyBearerEvents? _bearerEvents;
+        private ScopeEvaluation _scopes = null!;
 
         [SetUp]
-        public void Act()
+        public async Task Act()
         {
             _factory = CreateFactory(
                 new Dictionary<string, string> { ["AppSettings:IdentityProvider"] = "keycloak" }
@@ -213,6 +288,7 @@ public class SigningKeyRegistrationStartupTests
             _source = _factory.Services.GetService<ISigningKeySource>();
             _configurationManager = _factory.Services.GetService<SigningKeyConfigurationManager>();
             _bearerEvents = _factory.Services.GetService<SigningKeyBearerEvents>();
+            _scopes = await EvaluateScopePoliciesAsync(_factory);
         }
 
         [TearDown]
@@ -232,5 +308,20 @@ public class SigningKeyRegistrationStartupTests
 
         [Test]
         public void It_registers_no_bearer_events() => _bearerEvents.Should().BeNull();
+
+        [Test]
+        public void It_registers_one_scope_handler() => _scopes.ScopeHandlerRegistrations.Should().Be(1);
+
+        [Test]
+        public void It_authorizes_a_scope_array_ending_in_the_required_scope_with_the_configured_role() =>
+            _scopes.ScopeLastWithRole.Should().BeTrue();
+
+        [Test]
+        public void It_denies_the_scope_array_without_the_configured_role() =>
+            _scopes.ScopeLastWithoutRole.Should().BeFalse();
+
+        [Test]
+        public void It_denies_the_configured_role_without_the_scope() =>
+            _scopes.RoleWithoutScope.Should().BeFalse();
     }
 }
