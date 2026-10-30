@@ -2344,6 +2344,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("WHERE del.[DescriptorId] IS NULL;");
     }
 
+    private const string DescriptorStampClock =
+        "DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID(); DECLARE @stampedAt datetime2(7) = CASE WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7)) END; IF @stampedAt IS NULL BEGIN SET @stampedAt = sysutcdatetime(); EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt; EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId; END";
+
     /// <summary>
     /// Only the descriptor INSERT firing (empty deleted set) initializes the creation time, from the
     /// same captured value as the initial last-modified time; update and delete firings keep the
@@ -2361,7 +2364,9 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         triggerBody
             .Should()
             .Contain(
-                "IF EXISTS (SELECT 1 FROM @stamped) BEGIN IF EXISTS (SELECT 1 FROM deleted) BEGIN UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = sysutcdatetime() FROM [dms].[Descriptor] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END ELSE BEGIN DECLARE @createdAt datetime2(7) = sysutcdatetime(); UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = @createdAt, r.[ContentCreatedAt] = @createdAt FROM [dms].[Descriptor] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END END"
+                "IF EXISTS (SELECT 1 FROM @stamped) BEGIN "
+                    + DescriptorStampClock
+                    + " IF EXISTS (SELECT 1 FROM deleted) BEGIN UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = @stampedAt FROM [dms].[Descriptor] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END ELSE BEGIN UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = @stampedAt, r.[ContentCreatedAt] = @stampedAt FROM [dms].[Descriptor] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END END"
             );
         triggerBody.Split("[ContentCreatedAt]", StringSplitOptions.None).Length.Should().Be(2);
     }
@@ -2373,7 +2378,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         _ddl.Should().Contain("OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped");
         _ddl.Should().Contain("UPDATE r");
         _ddl.Should().Contain("SET r.[ContentVersion] = s.[ContentVersion],");
-        _ddl.Should().Contain("r.[ContentLastModifiedAt] = sysutcdatetime()");
+        _ddl.Should().Contain("r.[ContentLastModifiedAt] = @stampedAt");
         _ddl.Should().Contain("FROM [dms].[Descriptor] r");
         // FORCESEEK is a table hint on the mirror target, so the join still terminates the statement.
         _ddl.Should().Contain("FROM [dms].[Descriptor] r WITH (FORCESEEK)");

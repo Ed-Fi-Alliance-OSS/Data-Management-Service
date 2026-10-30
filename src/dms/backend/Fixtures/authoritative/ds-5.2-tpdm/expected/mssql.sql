@@ -635,21 +635,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [dms].[Descriptor] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [dms].[Descriptor] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -41384,21 +41394,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[AcademicWeek] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[AcademicWeek] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -41526,21 +41546,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[AccountabilityRating] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[AccountabilityRating] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -41674,21 +41704,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Assessment] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Assessment] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -41775,9 +41815,20 @@ BEGIN
     INNER JOIN [edfi].[Assessment] stampTarget ON stampTarget.[DocumentId] = a.[Assessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Assessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -41854,21 +41905,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[AssessmentAdministration] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[AssessmentAdministration] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -41967,9 +42028,20 @@ BEGIN
     INNER JOIN [edfi].[AssessmentAdministration] stampTarget ON stampTarget.[DocumentId] = a.[AssessmentAdministration_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[AssessmentAdministration] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -42046,21 +42118,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[AssessmentAdministrationParticipation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[AssessmentAdministrationParticipation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -42165,9 +42247,20 @@ BEGIN
     INNER JOIN [edfi].[AssessmentAdministrationParticipation] stampTarget ON stampTarget.[DocumentId] = a.[AssessmentAdministrationParticipation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[AssessmentAdministrationParticipation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -42203,9 +42296,20 @@ BEGIN
     INNER JOIN [edfi].[AssessmentAdministration] stampTarget ON stampTarget.[DocumentId] = a.[AssessmentAdministration_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[AssessmentAdministration] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -42241,9 +42345,20 @@ BEGIN
     INNER JOIN [edfi].[Assessment] stampTarget ON stampTarget.[DocumentId] = a.[Assessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Assessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -42279,9 +42394,20 @@ BEGIN
     INNER JOIN [edfi].[Assessment] stampTarget ON stampTarget.[DocumentId] = a.[Assessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Assessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -42358,21 +42484,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[AssessmentBatteryPart] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[AssessmentBatteryPart] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -42465,9 +42601,20 @@ BEGIN
     INNER JOIN [edfi].[AssessmentBatteryPart] stampTarget ON stampTarget.[DocumentId] = a.[AssessmentBatteryPart_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[AssessmentBatteryPart] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -42503,9 +42650,20 @@ BEGIN
     INNER JOIN [edfi].[Assessment] stampTarget ON stampTarget.[DocumentId] = a.[Assessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Assessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -42582,21 +42740,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[AssessmentItem] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[AssessmentItem] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -42689,9 +42857,20 @@ BEGIN
     INNER JOIN [edfi].[AssessmentItem] stampTarget ON stampTarget.[DocumentId] = a.[AssessmentItem_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[AssessmentItem] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -42727,9 +42906,20 @@ BEGIN
     INNER JOIN [edfi].[AssessmentItem] stampTarget ON stampTarget.[DocumentId] = a.[AssessmentItem_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[AssessmentItem] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -42765,9 +42955,20 @@ BEGIN
     INNER JOIN [edfi].[Assessment] stampTarget ON stampTarget.[DocumentId] = a.[Assessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Assessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -42803,9 +43004,20 @@ BEGIN
     INNER JOIN [edfi].[Assessment] stampTarget ON stampTarget.[DocumentId] = a.[Assessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Assessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -42841,9 +43053,20 @@ BEGIN
     INNER JOIN [edfi].[Assessment] stampTarget ON stampTarget.[DocumentId] = a.[Assessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Assessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -42879,9 +43102,20 @@ BEGIN
     INNER JOIN [edfi].[Assessment] stampTarget ON stampTarget.[DocumentId] = a.[Assessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Assessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -42917,9 +43151,20 @@ BEGIN
     INNER JOIN [edfi].[Assessment] stampTarget ON stampTarget.[DocumentId] = a.[Assessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Assessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -42955,9 +43200,20 @@ BEGIN
     INNER JOIN [edfi].[Assessment] stampTarget ON stampTarget.[DocumentId] = a.[Assessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Assessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -43034,21 +43290,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[AssessmentScoreRangeLearningStandard] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[AssessmentScoreRangeLearningStandard] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -43141,9 +43407,20 @@ BEGIN
     INNER JOIN [edfi].[AssessmentScoreRangeLearningStandard] stampTarget ON stampTarget.[DocumentId] = a.[AssessmentScoreRangeLearningStandard_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[AssessmentScoreRangeLearningStandard] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -43179,9 +43456,20 @@ BEGIN
     INNER JOIN [edfi].[Assessment] stampTarget ON stampTarget.[DocumentId] = a.[Assessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Assessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -43258,21 +43546,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[BalanceSheetDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[BalanceSheetDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -43359,9 +43657,20 @@ BEGIN
     INNER JOIN [edfi].[BalanceSheetDimension] stampTarget ON stampTarget.[DocumentId] = a.[BalanceSheetDimension_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[BalanceSheetDimension] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -43438,21 +43747,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[BellSchedule] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[BellSchedule] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -43539,9 +43858,20 @@ BEGIN
     INNER JOIN [edfi].[BellSchedule] stampTarget ON stampTarget.[DocumentId] = a.[BellSchedule_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[BellSchedule] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -43577,9 +43907,20 @@ BEGIN
     INNER JOIN [edfi].[BellSchedule] stampTarget ON stampTarget.[DocumentId] = a.[BellSchedule_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[BellSchedule] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -43615,9 +43956,20 @@ BEGIN
     INNER JOIN [edfi].[BellSchedule] stampTarget ON stampTarget.[DocumentId] = a.[BellSchedule_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[BellSchedule] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -43694,21 +44046,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Calendar] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Calendar] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -43842,21 +44204,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[CalendarDate] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[CalendarDate] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -43955,9 +44327,20 @@ BEGIN
     INNER JOIN [edfi].[CalendarDate] stampTarget ON stampTarget.[DocumentId] = a.[CalendarDate_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CalendarDate] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -43993,9 +44376,20 @@ BEGIN
     INNER JOIN [edfi].[Calendar] stampTarget ON stampTarget.[DocumentId] = a.[Calendar_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Calendar] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -44072,21 +44466,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[ChartOfAccount] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[ChartOfAccount] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -44179,9 +44583,20 @@ BEGIN
     INNER JOIN [edfi].[ChartOfAccount] stampTarget ON stampTarget.[DocumentId] = a.[ChartOfAccount_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ChartOfAccount] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -44258,21 +44673,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[ClassPeriod] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[ClassPeriod] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -44359,9 +44784,20 @@ BEGIN
     INNER JOIN [edfi].[ClassPeriod] stampTarget ON stampTarget.[DocumentId] = a.[ClassPeriod_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ClassPeriod] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -44438,21 +44874,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Cohort] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Cohort] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -44539,9 +44985,20 @@ BEGIN
     INNER JOIN [edfi].[Cohort] stampTarget ON stampTarget.[DocumentId] = a.[Cohort_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Cohort] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -44700,21 +45157,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -44767,9 +45234,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityOrganization] stampTarget ON stampTarget.[DocumentId] = a.[CommunityOrganization_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -44805,9 +45283,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityOrganization] stampTarget ON stampTarget.[DocumentId] = a.[CommunityOrganization_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -44843,9 +45332,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityOrganization] stampTarget ON stampTarget.[DocumentId] = a.[CommunityOrganization_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -44881,9 +45381,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityOrganization] stampTarget ON stampTarget.[DocumentId] = a.[CommunityOrganization_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -44919,9 +45430,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityOrganization] stampTarget ON stampTarget.[DocumentId] = a.[CommunityOrganization_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -44957,9 +45479,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityOrganization] stampTarget ON stampTarget.[DocumentId] = a.[CommunityOrganization_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -44995,9 +45528,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityOrganization] stampTarget ON stampTarget.[DocumentId] = a.[CommunityOrganization_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -45033,9 +45577,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityOrganization] stampTarget ON stampTarget.[DocumentId] = a.[CommunityOrganization_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityOrganization] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -45307,21 +45862,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -45374,9 +45939,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityProvider] stampTarget ON stampTarget.[DocumentId] = a.[CommunityProvider_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -45412,9 +45988,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityProvider] stampTarget ON stampTarget.[DocumentId] = a.[CommunityProvider_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -45450,9 +46037,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityProvider] stampTarget ON stampTarget.[DocumentId] = a.[CommunityProvider_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -45488,9 +46086,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityProvider] stampTarget ON stampTarget.[DocumentId] = a.[CommunityProvider_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -45526,9 +46135,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityProvider] stampTarget ON stampTarget.[DocumentId] = a.[CommunityProvider_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -45564,9 +46184,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityProvider] stampTarget ON stampTarget.[DocumentId] = a.[CommunityProvider_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -45602,9 +46233,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityProvider] stampTarget ON stampTarget.[DocumentId] = a.[CommunityProvider_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -45640,9 +46282,20 @@ BEGIN
     INNER JOIN [edfi].[CommunityProvider] stampTarget ON stampTarget.[DocumentId] = a.[CommunityProvider_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CommunityProvider] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -45719,21 +46372,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[CommunityProviderLicense] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[CommunityProviderLicense] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -45867,21 +46530,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[CompetencyObjective] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[CompetencyObjective] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -46024,21 +46697,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Contact] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Contact] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -46119,9 +46802,20 @@ BEGIN
     INNER JOIN [edfi].[Contact] stampTarget ON stampTarget.[DocumentId] = a.[Contact_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Contact] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -46157,9 +46851,20 @@ BEGIN
     INNER JOIN [edfi].[Contact] stampTarget ON stampTarget.[DocumentId] = a.[Contact_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Contact] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -46195,9 +46900,20 @@ BEGIN
     INNER JOIN [edfi].[Contact] stampTarget ON stampTarget.[DocumentId] = a.[Contact_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Contact] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -46233,9 +46949,20 @@ BEGIN
     INNER JOIN [edfi].[Contact] stampTarget ON stampTarget.[DocumentId] = a.[Contact_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Contact] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -46271,9 +46998,20 @@ BEGIN
     INNER JOIN [edfi].[Contact] stampTarget ON stampTarget.[DocumentId] = a.[Contact_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Contact] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -46309,9 +47047,20 @@ BEGIN
     INNER JOIN [edfi].[Contact] stampTarget ON stampTarget.[DocumentId] = a.[Contact_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Contact] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -46347,9 +47096,20 @@ BEGIN
     INNER JOIN [edfi].[Contact] stampTarget ON stampTarget.[DocumentId] = a.[Contact_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Contact] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -46385,9 +47145,20 @@ BEGIN
     INNER JOIN [edfi].[Contact] stampTarget ON stampTarget.[DocumentId] = a.[Contact_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Contact] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -46423,9 +47194,20 @@ BEGIN
     INNER JOIN [edfi].[Contact] stampTarget ON stampTarget.[DocumentId] = a.[Contact_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Contact] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -46502,21 +47284,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Course] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Course] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -46603,9 +47395,20 @@ BEGIN
     INNER JOIN [edfi].[Course] stampTarget ON stampTarget.[DocumentId] = a.[Course_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Course] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -46641,9 +47444,20 @@ BEGIN
     INNER JOIN [edfi].[Course] stampTarget ON stampTarget.[DocumentId] = a.[Course_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Course] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -46679,9 +47493,20 @@ BEGIN
     INNER JOIN [edfi].[Course] stampTarget ON stampTarget.[DocumentId] = a.[Course_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Course] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -46717,9 +47542,20 @@ BEGIN
     INNER JOIN [edfi].[Course] stampTarget ON stampTarget.[DocumentId] = a.[Course_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Course] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -46755,9 +47591,20 @@ BEGIN
     INNER JOIN [edfi].[Course] stampTarget ON stampTarget.[DocumentId] = a.[Course_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Course] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -46793,9 +47640,20 @@ BEGIN
     INNER JOIN [edfi].[Course] stampTarget ON stampTarget.[DocumentId] = a.[Course_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Course] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -46872,21 +47730,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[CourseOffering] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[CourseOffering] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -46985,9 +47853,20 @@ BEGIN
     INNER JOIN [edfi].[CourseOffering] stampTarget ON stampTarget.[DocumentId] = a.[CourseOffering_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CourseOffering] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -47023,9 +47902,20 @@ BEGIN
     INNER JOIN [edfi].[CourseOffering] stampTarget ON stampTarget.[DocumentId] = a.[CourseOffering_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CourseOffering] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -47061,9 +47951,20 @@ BEGIN
     INNER JOIN [edfi].[CourseOffering] stampTarget ON stampTarget.[DocumentId] = a.[CourseOffering_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CourseOffering] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -47140,21 +48041,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -47298,9 +48209,20 @@ BEGIN
     INNER JOIN [edfi].[CourseTranscript] stampTarget ON stampTarget.[DocumentId] = a.[CourseTranscript_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -47336,9 +48258,20 @@ BEGIN
     INNER JOIN [edfi].[CourseTranscript] stampTarget ON stampTarget.[DocumentId] = a.[CourseTranscript_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -47374,9 +48307,20 @@ BEGIN
     INNER JOIN [edfi].[CourseTranscript] stampTarget ON stampTarget.[DocumentId] = a.[CourseTranscript_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -47412,9 +48356,20 @@ BEGIN
     INNER JOIN [edfi].[CourseTranscript] stampTarget ON stampTarget.[DocumentId] = a.[CourseTranscript_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -47450,9 +48405,20 @@ BEGIN
     INNER JOIN [edfi].[CourseTranscript] stampTarget ON stampTarget.[DocumentId] = a.[CourseTranscript_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -47488,9 +48454,20 @@ BEGIN
     INNER JOIN [edfi].[CourseTranscript] stampTarget ON stampTarget.[DocumentId] = a.[CourseTranscript_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -47526,9 +48503,20 @@ BEGIN
     INNER JOIN [edfi].[CourseTranscript] stampTarget ON stampTarget.[DocumentId] = a.[CourseTranscript_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[CourseTranscript] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -47605,21 +48593,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Credential] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Credential] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -47721,9 +48719,20 @@ BEGIN
     INNER JOIN [edfi].[Credential] stampTarget ON stampTarget.[DocumentId] = a.[Credential_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Credential] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -47759,9 +48768,20 @@ BEGIN
     INNER JOIN [edfi].[Credential] stampTarget ON stampTarget.[DocumentId] = a.[Credential_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Credential] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -47797,9 +48817,20 @@ BEGIN
     INNER JOIN [edfi].[Credential] stampTarget ON stampTarget.[DocumentId] = a.[Credential_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Credential] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -47876,21 +48907,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[CrisisEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[CrisisEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -48012,21 +49053,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[DescriptorMapping] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[DescriptorMapping] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -48125,9 +49176,20 @@ BEGIN
     INNER JOIN [edfi].[DescriptorMapping] stampTarget ON stampTarget.[DocumentId] = a.[DescriptorMapping_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[DescriptorMapping] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -48204,21 +49266,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[DisciplineAction] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[DisciplineAction] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -48326,9 +49398,20 @@ BEGIN
     INNER JOIN [edfi].[DisciplineAction] stampTarget ON stampTarget.[DocumentId] = a.[DisciplineAction_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[DisciplineAction] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -48364,9 +49447,20 @@ BEGIN
     INNER JOIN [edfi].[DisciplineAction] stampTarget ON stampTarget.[DocumentId] = a.[DisciplineAction_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[DisciplineAction] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -48402,9 +49496,20 @@ BEGIN
     INNER JOIN [edfi].[DisciplineAction] stampTarget ON stampTarget.[DocumentId] = a.[DisciplineAction_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[DisciplineAction] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -48481,21 +49586,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[DisciplineIncident] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[DisciplineIncident] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -48582,9 +49697,20 @@ BEGIN
     INNER JOIN [edfi].[DisciplineIncident] stampTarget ON stampTarget.[DocumentId] = a.[DisciplineIncident_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[DisciplineIncident] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -48620,9 +49746,20 @@ BEGIN
     INNER JOIN [edfi].[DisciplineIncident] stampTarget ON stampTarget.[DocumentId] = a.[DisciplineIncident_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[DisciplineIncident] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -48658,9 +49795,20 @@ BEGIN
     INNER JOIN [edfi].[DisciplineIncident] stampTarget ON stampTarget.[DocumentId] = a.[DisciplineIncident_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[DisciplineIncident] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -48737,21 +49885,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[EducationContent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[EducationContent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -48838,9 +49996,20 @@ BEGIN
     INNER JOIN [edfi].[EducationContent] stampTarget ON stampTarget.[DocumentId] = a.[EducationContent_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationContent] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -48876,9 +50045,20 @@ BEGIN
     INNER JOIN [edfi].[EducationContent] stampTarget ON stampTarget.[DocumentId] = a.[EducationContent_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationContent] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -48914,9 +50094,20 @@ BEGIN
     INNER JOIN [edfi].[EducationContent] stampTarget ON stampTarget.[DocumentId] = a.[EducationContent_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationContent] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -48952,9 +50143,20 @@ BEGIN
     INNER JOIN [edfi].[EducationContent] stampTarget ON stampTarget.[DocumentId] = a.[EducationContent_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationContent] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -48990,9 +50192,20 @@ BEGIN
     INNER JOIN [edfi].[EducationContent] stampTarget ON stampTarget.[DocumentId] = a.[EducationContent_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationContent] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -49028,9 +50241,20 @@ BEGIN
     INNER JOIN [edfi].[EducationContent] stampTarget ON stampTarget.[DocumentId] = a.[EducationContent_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationContent] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -49066,9 +50290,20 @@ BEGIN
     INNER JOIN [edfi].[EducationContent] stampTarget ON stampTarget.[DocumentId] = a.[EducationContent_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationContent] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -49145,21 +50380,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[EducationOrganizationInterventionPrescriptionAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[EducationOrganizationInterventionPrescriptionAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -49375,21 +50620,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -49442,9 +50697,20 @@ BEGIN
     INNER JOIN [edfi].[EducationOrganizationNetwork] stampTarget ON stampTarget.[DocumentId] = a.[EducationOrganizationNetwork_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -49480,9 +50746,20 @@ BEGIN
     INNER JOIN [edfi].[EducationOrganizationNetwork] stampTarget ON stampTarget.[DocumentId] = a.[EducationOrganizationNetwork_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -49559,21 +50836,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[EducationOrganizationNetworkAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[EducationOrganizationNetworkAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -49660,9 +50947,20 @@ BEGIN
     INNER JOIN [edfi].[EducationOrganizationNetwork] stampTarget ON stampTarget.[DocumentId] = a.[EducationOrganizationNetwork_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -49698,9 +50996,20 @@ BEGIN
     INNER JOIN [edfi].[EducationOrganizationNetwork] stampTarget ON stampTarget.[DocumentId] = a.[EducationOrganizationNetwork_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -49736,9 +51045,20 @@ BEGIN
     INNER JOIN [edfi].[EducationOrganizationNetwork] stampTarget ON stampTarget.[DocumentId] = a.[EducationOrganizationNetwork_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -49774,9 +51094,20 @@ BEGIN
     INNER JOIN [edfi].[EducationOrganizationNetwork] stampTarget ON stampTarget.[DocumentId] = a.[EducationOrganizationNetwork_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -49812,9 +51143,20 @@ BEGIN
     INNER JOIN [edfi].[EducationOrganizationNetwork] stampTarget ON stampTarget.[DocumentId] = a.[EducationOrganizationNetwork_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -49850,9 +51192,20 @@ BEGIN
     INNER JOIN [edfi].[EducationOrganizationNetwork] stampTarget ON stampTarget.[DocumentId] = a.[EducationOrganizationNetwork_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationOrganizationNetwork] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -49929,21 +51282,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[EducationOrganizationPeerAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[EducationOrganizationPeerAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -50266,21 +51629,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -50333,9 +51706,20 @@ BEGIN
     INNER JOIN [edfi].[EducationServiceCenter] stampTarget ON stampTarget.[DocumentId] = a.[EducationServiceCenter_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -50371,9 +51755,20 @@ BEGIN
     INNER JOIN [edfi].[EducationServiceCenter] stampTarget ON stampTarget.[DocumentId] = a.[EducationServiceCenter_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -50409,9 +51804,20 @@ BEGIN
     INNER JOIN [edfi].[EducationServiceCenter] stampTarget ON stampTarget.[DocumentId] = a.[EducationServiceCenter_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -50447,9 +51853,20 @@ BEGIN
     INNER JOIN [edfi].[EducationServiceCenter] stampTarget ON stampTarget.[DocumentId] = a.[EducationServiceCenter_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -50485,9 +51902,20 @@ BEGIN
     INNER JOIN [edfi].[EducationServiceCenter] stampTarget ON stampTarget.[DocumentId] = a.[EducationServiceCenter_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -50523,9 +51951,20 @@ BEGIN
     INNER JOIN [edfi].[EducationServiceCenter] stampTarget ON stampTarget.[DocumentId] = a.[EducationServiceCenter_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -50561,9 +52000,20 @@ BEGIN
     INNER JOIN [edfi].[EducationServiceCenter] stampTarget ON stampTarget.[DocumentId] = a.[EducationServiceCenter_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -50599,9 +52049,20 @@ BEGIN
     INNER JOIN [edfi].[EducationServiceCenter] stampTarget ON stampTarget.[DocumentId] = a.[EducationServiceCenter_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[EducationServiceCenter] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -50678,21 +52139,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[EvaluationRubricDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[EvaluationRubricDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -50883,21 +52354,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[FeederSchoolAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[FeederSchoolAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -51031,21 +52512,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[FunctionDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[FunctionDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -51132,9 +52623,20 @@ BEGIN
     INNER JOIN [edfi].[FunctionDimension] stampTarget ON stampTarget.[DocumentId] = a.[FunctionDimension_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[FunctionDimension] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -51211,21 +52713,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[FundDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[FundDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -51312,9 +52824,20 @@ BEGIN
     INNER JOIN [edfi].[FundDimension] stampTarget ON stampTarget.[DocumentId] = a.[FundDimension_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[FundDimension] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -51391,21 +52914,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Grade] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Grade] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -51567,9 +53100,20 @@ BEGIN
     INNER JOIN [edfi].[Grade] stampTarget ON stampTarget.[DocumentId] = a.[Grade_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Grade] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -51646,21 +53190,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[GradebookEntry] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[GradebookEntry] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -51747,9 +53301,20 @@ BEGIN
     INNER JOIN [edfi].[GradebookEntry] stampTarget ON stampTarget.[DocumentId] = a.[GradebookEntry_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[GradebookEntry] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -51826,21 +53391,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[GradingPeriod] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[GradingPeriod] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -51989,21 +53564,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -52105,9 +53690,20 @@ BEGIN
     INNER JOIN [edfi].[GraduationPlan] stampTarget ON stampTarget.[DocumentId] = a.[GraduationPlan_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52143,9 +53739,20 @@ BEGIN
     INNER JOIN [edfi].[GraduationPlan] stampTarget ON stampTarget.[DocumentId] = a.[GraduationPlan_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52181,9 +53788,20 @@ BEGIN
     INNER JOIN [edfi].[GraduationPlan] stampTarget ON stampTarget.[DocumentId] = a.[GraduationPlan_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52219,9 +53837,20 @@ BEGIN
     INNER JOIN [edfi].[GraduationPlan] stampTarget ON stampTarget.[DocumentId] = a.[GraduationPlan_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52257,9 +53886,20 @@ BEGIN
     INNER JOIN [edfi].[GraduationPlan] stampTarget ON stampTarget.[DocumentId] = a.[GraduationPlan_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52295,9 +53935,20 @@ BEGIN
     INNER JOIN [edfi].[GraduationPlan] stampTarget ON stampTarget.[DocumentId] = a.[GraduationPlan_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[GraduationPlan] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52374,21 +54025,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Intervention] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Intervention] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -52475,9 +54136,20 @@ BEGIN
     INNER JOIN [edfi].[Intervention] stampTarget ON stampTarget.[DocumentId] = a.[Intervention_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Intervention] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52513,9 +54185,20 @@ BEGIN
     INNER JOIN [edfi].[Intervention] stampTarget ON stampTarget.[DocumentId] = a.[Intervention_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Intervention] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52551,9 +54234,20 @@ BEGIN
     INNER JOIN [edfi].[Intervention] stampTarget ON stampTarget.[DocumentId] = a.[Intervention_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Intervention] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52589,9 +54283,20 @@ BEGIN
     INNER JOIN [edfi].[Intervention] stampTarget ON stampTarget.[DocumentId] = a.[Intervention_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Intervention] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52627,9 +54332,20 @@ BEGIN
     INNER JOIN [edfi].[Intervention] stampTarget ON stampTarget.[DocumentId] = a.[Intervention_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Intervention] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52665,9 +54381,20 @@ BEGIN
     INNER JOIN [edfi].[Intervention] stampTarget ON stampTarget.[DocumentId] = a.[Intervention_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Intervention] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52703,9 +54430,20 @@ BEGIN
     INNER JOIN [edfi].[Intervention] stampTarget ON stampTarget.[DocumentId] = a.[Intervention_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Intervention] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52741,9 +54479,20 @@ BEGIN
     INNER JOIN [edfi].[Intervention] stampTarget ON stampTarget.[DocumentId] = a.[Intervention_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Intervention] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52820,21 +54569,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -52921,9 +54680,20 @@ BEGIN
     INNER JOIN [edfi].[InterventionPrescription] stampTarget ON stampTarget.[DocumentId] = a.[InterventionPrescription_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52959,9 +54729,20 @@ BEGIN
     INNER JOIN [edfi].[InterventionPrescription] stampTarget ON stampTarget.[DocumentId] = a.[InterventionPrescription_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -52997,9 +54778,20 @@ BEGIN
     INNER JOIN [edfi].[InterventionPrescription] stampTarget ON stampTarget.[DocumentId] = a.[InterventionPrescription_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53035,9 +54827,20 @@ BEGIN
     INNER JOIN [edfi].[InterventionPrescription] stampTarget ON stampTarget.[DocumentId] = a.[InterventionPrescription_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53073,9 +54876,20 @@ BEGIN
     INNER JOIN [edfi].[InterventionPrescription] stampTarget ON stampTarget.[DocumentId] = a.[InterventionPrescription_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53111,9 +54925,20 @@ BEGIN
     INNER JOIN [edfi].[InterventionPrescription] stampTarget ON stampTarget.[DocumentId] = a.[InterventionPrescription_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53149,9 +54974,20 @@ BEGIN
     INNER JOIN [edfi].[InterventionPrescription] stampTarget ON stampTarget.[DocumentId] = a.[InterventionPrescription_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[InterventionPrescription] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53187,9 +55023,20 @@ BEGIN
     INNER JOIN [edfi].[Intervention] stampTarget ON stampTarget.[DocumentId] = a.[Intervention_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Intervention] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53266,21 +55113,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -53367,9 +55224,20 @@ BEGIN
     INNER JOIN [edfi].[InterventionStudy] stampTarget ON stampTarget.[DocumentId] = a.[InterventionStudy_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53405,9 +55273,20 @@ BEGIN
     INNER JOIN [edfi].[InterventionStudy] stampTarget ON stampTarget.[DocumentId] = a.[InterventionStudy_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53443,9 +55322,20 @@ BEGIN
     INNER JOIN [edfi].[InterventionStudy] stampTarget ON stampTarget.[DocumentId] = a.[InterventionStudy_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53481,9 +55371,20 @@ BEGIN
     INNER JOIN [edfi].[InterventionStudy] stampTarget ON stampTarget.[DocumentId] = a.[InterventionStudy_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53519,9 +55420,20 @@ BEGIN
     INNER JOIN [edfi].[InterventionStudy] stampTarget ON stampTarget.[DocumentId] = a.[InterventionStudy_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53557,9 +55469,20 @@ BEGIN
     INNER JOIN [edfi].[InterventionStudy] stampTarget ON stampTarget.[DocumentId] = a.[InterventionStudy_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53595,9 +55518,20 @@ BEGIN
     INNER JOIN [edfi].[InterventionStudy] stampTarget ON stampTarget.[DocumentId] = a.[InterventionStudy_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53633,9 +55567,20 @@ BEGIN
     INNER JOIN [edfi].[InterventionStudy] stampTarget ON stampTarget.[DocumentId] = a.[InterventionStudy_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[InterventionStudy] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53671,9 +55616,20 @@ BEGIN
     INNER JOIN [edfi].[Intervention] stampTarget ON stampTarget.[DocumentId] = a.[Intervention_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Intervention] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53750,21 +55706,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[LearningStandard] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[LearningStandard] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -53851,9 +55817,20 @@ BEGIN
     INNER JOIN [edfi].[LearningStandard] stampTarget ON stampTarget.[DocumentId] = a.[LearningStandard_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[LearningStandard] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53889,9 +55866,20 @@ BEGIN
     INNER JOIN [edfi].[LearningStandard] stampTarget ON stampTarget.[DocumentId] = a.[LearningStandard_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[LearningStandard] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -53968,21 +55956,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[LearningStandardEquivalenceAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[LearningStandardEquivalenceAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -54075,9 +56073,20 @@ BEGIN
     INNER JOIN [edfi].[LearningStandard] stampTarget ON stampTarget.[DocumentId] = a.[LearningStandard_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[LearningStandard] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -54113,9 +56122,20 @@ BEGIN
     INNER JOIN [edfi].[LearningStandard] stampTarget ON stampTarget.[DocumentId] = a.[LearningStandard_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[LearningStandard] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -54192,21 +56212,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[LocalAccount] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[LocalAccount] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -54299,9 +56329,20 @@ BEGIN
     INNER JOIN [edfi].[LocalAccount] stampTarget ON stampTarget.[DocumentId] = a.[LocalAccount_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[LocalAccount] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -54378,21 +56419,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[LocalActual] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[LocalActual] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -54532,21 +56583,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[LocalBudget] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[LocalBudget] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -54686,21 +56747,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[LocalContractedStaff] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[LocalContractedStaff] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -55140,21 +57211,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -55207,9 +57288,20 @@ BEGIN
     INNER JOIN [edfi].[LocalEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[LocalEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -55245,9 +57337,20 @@ BEGIN
     INNER JOIN [edfi].[LocalEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[LocalEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -55283,9 +57386,20 @@ BEGIN
     INNER JOIN [edfi].[LocalEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[LocalEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -55321,9 +57435,20 @@ BEGIN
     INNER JOIN [edfi].[LocalEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[LocalEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -55359,9 +57484,20 @@ BEGIN
     INNER JOIN [edfi].[LocalEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[LocalEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -55397,9 +57533,20 @@ BEGIN
     INNER JOIN [edfi].[LocalEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[LocalEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -55435,9 +57582,20 @@ BEGIN
     INNER JOIN [edfi].[LocalEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[LocalEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -55473,9 +57631,20 @@ BEGIN
     INNER JOIN [edfi].[LocalEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[LocalEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -55511,9 +57680,20 @@ BEGIN
     INNER JOIN [edfi].[LocalEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[LocalEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -55549,9 +57729,20 @@ BEGIN
     INNER JOIN [edfi].[LocalEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[LocalEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[LocalEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -55628,21 +57819,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[LocalEncumbrance] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[LocalEncumbrance] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -55782,21 +57983,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[LocalPayroll] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[LocalPayroll] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -55951,21 +58162,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Location] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Location] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -56093,21 +58314,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[ObjectDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[ObjectDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -56194,9 +58425,20 @@ BEGIN
     INNER JOIN [edfi].[ObjectDimension] stampTarget ON stampTarget.[DocumentId] = a.[ObjectDimension_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ObjectDimension] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -56273,21 +58515,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[ObjectiveAssessment] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[ObjectiveAssessment] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -56380,9 +58632,20 @@ BEGIN
     INNER JOIN [edfi].[ObjectiveAssessment] stampTarget ON stampTarget.[DocumentId] = a.[ObjectiveAssessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ObjectiveAssessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -56418,9 +58681,20 @@ BEGIN
     INNER JOIN [edfi].[ObjectiveAssessment] stampTarget ON stampTarget.[DocumentId] = a.[ObjectiveAssessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ObjectiveAssessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -56456,9 +58730,20 @@ BEGIN
     INNER JOIN [edfi].[ObjectiveAssessment] stampTarget ON stampTarget.[DocumentId] = a.[ObjectiveAssessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ObjectiveAssessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -56494,9 +58779,20 @@ BEGIN
     INNER JOIN [edfi].[ObjectiveAssessment] stampTarget ON stampTarget.[DocumentId] = a.[ObjectiveAssessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ObjectiveAssessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -56573,21 +58869,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[OpenStaffPosition] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[OpenStaffPosition] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -56674,9 +58980,20 @@ BEGIN
     INNER JOIN [edfi].[OpenStaffPosition] stampTarget ON stampTarget.[DocumentId] = a.[OpenStaffPosition_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[OpenStaffPosition] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -56712,9 +59029,20 @@ BEGIN
     INNER JOIN [edfi].[OpenStaffPosition] stampTarget ON stampTarget.[DocumentId] = a.[OpenStaffPosition_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[OpenStaffPosition] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -56791,21 +59119,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[OperationalUnitDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[OperationalUnitDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -56892,9 +59230,20 @@ BEGIN
     INNER JOIN [edfi].[OperationalUnitDimension] stampTarget ON stampTarget.[DocumentId] = a.[OperationalUnitDimension_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[OperationalUnitDimension] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -57166,21 +59515,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -57235,9 +59594,20 @@ BEGIN
     INNER JOIN [edfi].[OrganizationDepartment] stampTarget ON stampTarget.[DocumentId] = a.[OrganizationDepartment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -57273,9 +59643,20 @@ BEGIN
     INNER JOIN [edfi].[OrganizationDepartment] stampTarget ON stampTarget.[DocumentId] = a.[OrganizationDepartment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -57311,9 +59692,20 @@ BEGIN
     INNER JOIN [edfi].[OrganizationDepartment] stampTarget ON stampTarget.[DocumentId] = a.[OrganizationDepartment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -57349,9 +59741,20 @@ BEGIN
     INNER JOIN [edfi].[OrganizationDepartment] stampTarget ON stampTarget.[DocumentId] = a.[OrganizationDepartment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -57387,9 +59790,20 @@ BEGIN
     INNER JOIN [edfi].[OrganizationDepartment] stampTarget ON stampTarget.[DocumentId] = a.[OrganizationDepartment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -57425,9 +59839,20 @@ BEGIN
     INNER JOIN [edfi].[OrganizationDepartment] stampTarget ON stampTarget.[DocumentId] = a.[OrganizationDepartment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -57463,9 +59888,20 @@ BEGIN
     INNER JOIN [edfi].[OrganizationDepartment] stampTarget ON stampTarget.[DocumentId] = a.[OrganizationDepartment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -57501,9 +59937,20 @@ BEGIN
     INNER JOIN [edfi].[OrganizationDepartment] stampTarget ON stampTarget.[DocumentId] = a.[OrganizationDepartment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[OrganizationDepartment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -57580,21 +60027,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Person] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Person] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -57731,21 +60188,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[PostSecondaryEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[PostSecondaryEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -57979,21 +60446,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -58046,9 +60523,20 @@ BEGIN
     INNER JOIN [edfi].[PostSecondaryInstitution] stampTarget ON stampTarget.[DocumentId] = a.[PostSecondaryInstitution_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -58084,9 +60572,20 @@ BEGIN
     INNER JOIN [edfi].[PostSecondaryInstitution] stampTarget ON stampTarget.[DocumentId] = a.[PostSecondaryInstitution_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -58122,9 +60621,20 @@ BEGIN
     INNER JOIN [edfi].[PostSecondaryInstitution] stampTarget ON stampTarget.[DocumentId] = a.[PostSecondaryInstitution_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -58160,9 +60670,20 @@ BEGIN
     INNER JOIN [edfi].[PostSecondaryInstitution] stampTarget ON stampTarget.[DocumentId] = a.[PostSecondaryInstitution_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -58198,9 +60719,20 @@ BEGIN
     INNER JOIN [edfi].[PostSecondaryInstitution] stampTarget ON stampTarget.[DocumentId] = a.[PostSecondaryInstitution_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -58236,9 +60768,20 @@ BEGIN
     INNER JOIN [edfi].[PostSecondaryInstitution] stampTarget ON stampTarget.[DocumentId] = a.[PostSecondaryInstitution_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -58274,9 +60817,20 @@ BEGIN
     INNER JOIN [edfi].[PostSecondaryInstitution] stampTarget ON stampTarget.[DocumentId] = a.[PostSecondaryInstitution_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -58312,9 +60866,20 @@ BEGIN
     INNER JOIN [edfi].[PostSecondaryInstitution] stampTarget ON stampTarget.[DocumentId] = a.[PostSecondaryInstitution_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -58350,9 +60915,20 @@ BEGIN
     INNER JOIN [edfi].[PostSecondaryInstitution] stampTarget ON stampTarget.[DocumentId] = a.[PostSecondaryInstitution_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[PostSecondaryInstitution] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -58429,21 +61005,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Program] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Program] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -58545,9 +61131,20 @@ BEGIN
     INNER JOIN [edfi].[Program] stampTarget ON stampTarget.[DocumentId] = a.[Program_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Program] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -58624,21 +61221,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[ProgramDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[ProgramDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -58725,9 +61332,20 @@ BEGIN
     INNER JOIN [edfi].[ProgramDimension] stampTarget ON stampTarget.[DocumentId] = a.[ProgramDimension_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ProgramDimension] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -58804,21 +61422,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[ProgramEvaluation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[ProgramEvaluation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -58997,21 +61625,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[ProgramEvaluationElement] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[ProgramEvaluationElement] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -59155,9 +61793,20 @@ BEGIN
     INNER JOIN [edfi].[ProgramEvaluationElement] stampTarget ON stampTarget.[DocumentId] = a.[ProgramEvaluationElement_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ProgramEvaluationElement] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -59193,9 +61842,20 @@ BEGIN
     INNER JOIN [edfi].[ProgramEvaluation] stampTarget ON stampTarget.[DocumentId] = a.[ProgramEvaluation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ProgramEvaluation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -59272,21 +61932,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[ProgramEvaluationObjective] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[ProgramEvaluationObjective] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -59430,9 +62100,20 @@ BEGIN
     INNER JOIN [edfi].[ProgramEvaluationObjective] stampTarget ON stampTarget.[DocumentId] = a.[ProgramEvaluationObjective_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ProgramEvaluationObjective] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -59468,9 +62149,20 @@ BEGIN
     INNER JOIN [edfi].[Program] stampTarget ON stampTarget.[DocumentId] = a.[Program_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Program] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -59506,9 +62198,20 @@ BEGIN
     INNER JOIN [edfi].[Program] stampTarget ON stampTarget.[DocumentId] = a.[Program_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Program] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -59585,21 +62288,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[ProjectDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[ProjectDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -59686,9 +62399,20 @@ BEGIN
     INNER JOIN [edfi].[ProjectDimension] stampTarget ON stampTarget.[DocumentId] = a.[ProjectDimension_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ProjectDimension] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -59765,21 +62489,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[ReportCard] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[ReportCard] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -59908,9 +62642,20 @@ BEGIN
     INNER JOIN [edfi].[ReportCard] stampTarget ON stampTarget.[DocumentId] = a.[ReportCard_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ReportCard] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -59946,9 +62691,20 @@ BEGIN
     INNER JOIN [edfi].[ReportCard] stampTarget ON stampTarget.[DocumentId] = a.[ReportCard_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ReportCard] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -59984,9 +62740,20 @@ BEGIN
     INNER JOIN [edfi].[ReportCard] stampTarget ON stampTarget.[DocumentId] = a.[ReportCard_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ReportCard] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -60063,21 +62830,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[RestraintEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[RestraintEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -60179,9 +62956,20 @@ BEGIN
     INNER JOIN [edfi].[RestraintEvent] stampTarget ON stampTarget.[DocumentId] = a.[RestraintEvent_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[RestraintEvent] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -60217,9 +63005,20 @@ BEGIN
     INNER JOIN [edfi].[RestraintEvent] stampTarget ON stampTarget.[DocumentId] = a.[RestraintEvent_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[RestraintEvent] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -60491,21 +63290,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[School] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[School] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -60558,9 +63367,20 @@ BEGIN
     INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[School_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[School] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -60596,9 +63416,20 @@ BEGIN
     INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[School_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[School] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -60634,9 +63465,20 @@ BEGIN
     INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[School_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[School] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -60672,9 +63514,20 @@ BEGIN
     INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[School_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[School] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -60710,9 +63563,20 @@ BEGIN
     INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[School_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[School] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -60748,9 +63612,20 @@ BEGIN
     INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[School_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[School] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -60786,9 +63661,20 @@ BEGIN
     INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[School_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[School] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -60824,9 +63710,20 @@ BEGIN
     INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[School_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[School] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -60862,9 +63759,20 @@ BEGIN
     INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[School_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[School] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -60900,9 +63808,20 @@ BEGIN
     INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[School_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[School] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -60979,21 +63898,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[SchoolYearType] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[SchoolYearType] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -61115,21 +64044,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Section] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Section] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -61275,21 +64214,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[SectionAttendanceTakenEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[SectionAttendanceTakenEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -61406,9 +64355,20 @@ BEGIN
     INNER JOIN [edfi].[Section] stampTarget ON stampTarget.[DocumentId] = a.[Section_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Section] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -61444,9 +64404,20 @@ BEGIN
     INNER JOIN [edfi].[Section] stampTarget ON stampTarget.[DocumentId] = a.[Section_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Section] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -61482,9 +64453,20 @@ BEGIN
     INNER JOIN [edfi].[Section] stampTarget ON stampTarget.[DocumentId] = a.[Section_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Section] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -61520,9 +64502,20 @@ BEGIN
     INNER JOIN [edfi].[Section] stampTarget ON stampTarget.[DocumentId] = a.[Section_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Section] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -61558,9 +64551,20 @@ BEGIN
     INNER JOIN [edfi].[Section] stampTarget ON stampTarget.[DocumentId] = a.[Section_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Section] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -61637,21 +64641,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Session] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Session] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -61744,9 +64758,20 @@ BEGIN
     INNER JOIN [edfi].[Session] stampTarget ON stampTarget.[DocumentId] = a.[Session_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Session] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -61782,9 +64807,20 @@ BEGIN
     INNER JOIN [edfi].[Session] stampTarget ON stampTarget.[DocumentId] = a.[Session_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Session] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -61861,21 +64897,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[SourceDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[SourceDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -61962,9 +65008,20 @@ BEGIN
     INNER JOIN [edfi].[SourceDimension] stampTarget ON stampTarget.[DocumentId] = a.[SourceDimension_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[SourceDimension] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -62041,21 +65098,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Staff] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Staff] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -62177,21 +65244,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StaffAbsenceEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StaffAbsenceEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -62302,9 +65379,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -62340,9 +65428,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -62378,9 +65477,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -62457,21 +65567,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StaffCohortAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StaffCohortAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -62579,9 +65699,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -62658,21 +65789,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StaffDisciplineIncidentAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StaffDisciplineIncidentAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -62774,9 +65915,20 @@ BEGIN
     INNER JOIN [edfi].[StaffDisciplineIncidentAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StaffDisciplineIncidentAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StaffDisciplineIncidentAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -62853,21 +66005,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StaffEducationOrganizationAssignmentAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StaffEducationOrganizationAssignmentAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -63025,21 +66187,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StaffEducationOrganizationContactAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StaffEducationOrganizationContactAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -63141,9 +66313,20 @@ BEGIN
     INNER JOIN [edfi].[StaffEducationOrganizationContactAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StaffEducationOrganizationContactAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StaffEducationOrganizationContactAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -63179,9 +66362,20 @@ BEGIN
     INNER JOIN [edfi].[StaffEducationOrganizationContactAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StaffEducationOrganizationContactAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StaffEducationOrganizationContactAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -63258,21 +66452,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StaffEducationOrganizationEmploymentAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StaffEducationOrganizationEmploymentAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -63389,9 +66593,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -63427,9 +66642,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -63465,9 +66691,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -63503,9 +66740,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -63541,9 +66789,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -63579,9 +66838,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -63658,21 +66928,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StaffLeave] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StaffLeave] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -63783,9 +67063,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -63821,9 +67112,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -63900,21 +67202,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StaffProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StaffProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -64037,9 +67349,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -64075,9 +67398,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -64154,21 +67488,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StaffSchoolAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StaffSchoolAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -64279,9 +67623,20 @@ BEGIN
     INNER JOIN [edfi].[StaffSchoolAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StaffSchoolAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StaffSchoolAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -64317,9 +67672,20 @@ BEGIN
     INNER JOIN [edfi].[StaffSchoolAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StaffSchoolAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StaffSchoolAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -64396,21 +67762,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StaffSectionAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StaffSectionAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -64536,9 +67912,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -64574,9 +67961,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -64612,9 +68010,20 @@ BEGIN
     INNER JOIN [edfi].[Staff] stampTarget ON stampTarget.[DocumentId] = a.[Staff_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Staff] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -64773,21 +68182,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -64840,9 +68259,20 @@ BEGIN
     INNER JOIN [edfi].[StateEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[StateEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -64878,9 +68308,20 @@ BEGIN
     INNER JOIN [edfi].[StateEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[StateEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -64916,9 +68357,20 @@ BEGIN
     INNER JOIN [edfi].[StateEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[StateEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -64954,9 +68406,20 @@ BEGIN
     INNER JOIN [edfi].[StateEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[StateEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -64992,9 +68455,20 @@ BEGIN
     INNER JOIN [edfi].[StateEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[StateEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -65030,9 +68504,20 @@ BEGIN
     INNER JOIN [edfi].[StateEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[StateEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -65068,9 +68553,20 @@ BEGIN
     INNER JOIN [edfi].[StateEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[StateEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -65106,9 +68602,20 @@ BEGIN
     INNER JOIN [edfi].[StateEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[StateEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -65144,9 +68651,20 @@ BEGIN
     INNER JOIN [edfi].[StateEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[StateEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -65182,9 +68700,20 @@ BEGIN
     INNER JOIN [edfi].[StateEducationAgency] stampTarget ON stampTarget.[DocumentId] = a.[StateEducationAgency_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StateEducationAgency] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -65261,21 +68790,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Student] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Student] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -65397,21 +68936,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -65528,9 +69077,20 @@ BEGIN
     INNER JOIN [edfi].[StudentAcademicRecord] stampTarget ON stampTarget.[DocumentId] = a.[StudentAcademicRecord_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -65566,9 +69126,20 @@ BEGIN
     INNER JOIN [edfi].[StudentAcademicRecord] stampTarget ON stampTarget.[DocumentId] = a.[StudentAcademicRecord_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -65604,9 +69175,20 @@ BEGIN
     INNER JOIN [edfi].[StudentAcademicRecord] stampTarget ON stampTarget.[DocumentId] = a.[StudentAcademicRecord_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -65642,9 +69224,20 @@ BEGIN
     INNER JOIN [edfi].[StudentAcademicRecord] stampTarget ON stampTarget.[DocumentId] = a.[StudentAcademicRecord_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -65680,9 +69273,20 @@ BEGIN
     INNER JOIN [edfi].[StudentAcademicRecord] stampTarget ON stampTarget.[DocumentId] = a.[StudentAcademicRecord_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentAcademicRecord] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -65759,21 +69363,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -65887,9 +69501,20 @@ BEGIN
     INNER JOIN [edfi].[StudentAssessment] stampTarget ON stampTarget.[DocumentId] = a.[StudentAssessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -65966,21 +69591,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentAssessmentEducationOrganizationAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentAssessmentEducationOrganizationAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -66109,9 +69744,20 @@ BEGIN
     INNER JOIN [edfi].[StudentAssessment] stampTarget ON stampTarget.[DocumentId] = a.[StudentAssessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -66147,9 +69793,20 @@ BEGIN
     INNER JOIN [edfi].[StudentAssessment] stampTarget ON stampTarget.[DocumentId] = a.[StudentAssessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -66226,21 +69883,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentAssessmentRegistration] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentAssessmentRegistration] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -66360,9 +70027,20 @@ BEGIN
     INNER JOIN [edfi].[StudentAssessmentRegistration] stampTarget ON stampTarget.[DocumentId] = a.[StudentAssessmentRegistration_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentAssessmentRegistration] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -66398,9 +70076,20 @@ BEGIN
     INNER JOIN [edfi].[StudentAssessmentRegistration] stampTarget ON stampTarget.[DocumentId] = a.[StudentAssessmentRegistration_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentAssessmentRegistration] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -66477,21 +70166,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -66617,9 +70316,20 @@ BEGIN
     INNER JOIN [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentAssessmentRegistrationBatteryPartAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentAssessmentRegistrationBatteryPartAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -66655,9 +70365,20 @@ BEGIN
     INNER JOIN [edfi].[StudentAssessment] stampTarget ON stampTarget.[DocumentId] = a.[StudentAssessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -66693,9 +70414,20 @@ BEGIN
     INNER JOIN [edfi].[StudentAssessment] stampTarget ON stampTarget.[DocumentId] = a.[StudentAssessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -66731,9 +70463,20 @@ BEGIN
     INNER JOIN [edfi].[StudentAssessment] stampTarget ON stampTarget.[DocumentId] = a.[StudentAssessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -66769,9 +70512,20 @@ BEGIN
     INNER JOIN [edfi].[StudentAssessment] stampTarget ON stampTarget.[DocumentId] = a.[StudentAssessment_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentAssessment] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -66904,21 +70658,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentCTEProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentCTEProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -66987,9 +70751,20 @@ BEGIN
     INNER JOIN [edfi].[StudentCTEProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentCTEProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentCTEProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -67025,9 +70800,20 @@ BEGIN
     INNER JOIN [edfi].[StudentCTEProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentCTEProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentCTEProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -67104,21 +70890,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentCohortAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentCohortAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -67226,9 +71022,20 @@ BEGIN
     INNER JOIN [edfi].[StudentCohortAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentCohortAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentCohortAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -67305,21 +71112,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentCompetencyObjective] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentCompetencyObjective] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -67469,9 +71286,20 @@ BEGIN
     INNER JOIN [edfi].[StudentCompetencyObjective] stampTarget ON stampTarget.[DocumentId] = a.[StudentCompetencyObjective_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentCompetencyObjective] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -67507,9 +71335,20 @@ BEGIN
     INNER JOIN [edfi].[StudentCompetencyObjective] stampTarget ON stampTarget.[DocumentId] = a.[StudentCompetencyObjective_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentCompetencyObjective] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -67586,21 +71425,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentContactAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentContactAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -67746,21 +71595,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentDisciplineIncidentBehaviorAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentDisciplineIncidentBehaviorAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -67877,9 +71736,20 @@ BEGIN
     INNER JOIN [edfi].[StudentDisciplineIncidentBehaviorAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentDisciplineIncidentBehaviorAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentDisciplineIncidentBehaviorAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -67915,9 +71785,20 @@ BEGIN
     INNER JOIN [edfi].[StudentDisciplineIncidentBehaviorAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentDisciplineIncidentBehaviorAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentDisciplineIncidentBehaviorAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -67994,21 +71875,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentDisciplineIncidentNonOffenderAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentDisciplineIncidentNonOffenderAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -68110,9 +72001,20 @@ BEGIN
     INNER JOIN [edfi].[StudentDisciplineIncidentNonOffenderAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentDisciplineIncidentNonOffenderAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentDisciplineIncidentNonOffenderAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -68189,21 +72091,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentEducationOrganizationAssessmentAccommodation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentEducationOrganizationAssessmentAccommodation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -68299,9 +72211,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssessmentAccommodation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssessmentAccommodation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssessmentAccommodation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -68378,21 +72301,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -68488,9 +72421,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -68526,9 +72470,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -68564,9 +72519,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -68602,9 +72568,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -68640,9 +72617,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -68678,9 +72666,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -68716,9 +72715,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -68754,9 +72764,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -68792,9 +72813,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -68830,9 +72862,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -68868,9 +72911,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -68906,9 +72960,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -68944,9 +73009,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -68982,9 +73058,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -69020,9 +73107,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -69058,9 +73156,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -69096,9 +73205,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -69134,9 +73254,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -69172,9 +73303,20 @@ BEGIN
     INNER JOIN [edfi].[StudentEducationOrganizationAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentEducationOrganizationAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentEducationOrganizationAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -69251,21 +73393,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentEducationOrganizationResponsibilityAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentEducationOrganizationResponsibilityAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -69423,21 +73575,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentGradebookEntry] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentGradebookEntry] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -69580,21 +73742,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentHealth] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentHealth] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -69690,9 +73862,20 @@ BEGIN
     INNER JOIN [edfi].[StudentHealth] stampTarget ON stampTarget.[DocumentId] = a.[StudentHealth_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentHealth] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -69728,9 +73911,20 @@ BEGIN
     INNER JOIN [edfi].[StudentHealth] stampTarget ON stampTarget.[DocumentId] = a.[StudentHealth_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentHealth] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -69766,9 +73960,20 @@ BEGIN
     INNER JOIN [edfi].[StudentHealth] stampTarget ON stampTarget.[DocumentId] = a.[StudentHealth_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentHealth] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -69804,9 +74009,20 @@ BEGIN
     INNER JOIN [edfi].[StudentHealth] stampTarget ON stampTarget.[DocumentId] = a.[StudentHealth_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentHealth] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -69939,21 +74155,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentHomelessProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentHomelessProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -70022,9 +74248,20 @@ BEGIN
     INNER JOIN [edfi].[StudentHomelessProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentHomelessProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentHomelessProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -70060,9 +74297,20 @@ BEGIN
     INNER JOIN [edfi].[StudentHomelessProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentHomelessProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentHomelessProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -70098,9 +74346,20 @@ BEGIN
     INNER JOIN [edfi].[Student] stampTarget ON stampTarget.[DocumentId] = a.[Student_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Student] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -70177,21 +74436,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentInterventionAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentInterventionAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -70293,9 +74562,20 @@ BEGIN
     INNER JOIN [edfi].[StudentInterventionAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentInterventionAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentInterventionAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -70372,21 +74652,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentInterventionAttendanceEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentInterventionAttendanceEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -70606,21 +74896,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentLanguageInstructionProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentLanguageInstructionProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -70689,9 +74989,20 @@ BEGIN
     INNER JOIN [edfi].[StudentLanguageInstructionProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentLanguageInstructionProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentLanguageInstructionProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -70727,9 +75038,20 @@ BEGIN
     INNER JOIN [edfi].[StudentLanguageInstructionProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentLanguageInstructionProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentLanguageInstructionProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -70765,9 +75087,20 @@ BEGIN
     INNER JOIN [edfi].[StudentLanguageInstructionProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentLanguageInstructionProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentLanguageInstructionProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -70900,21 +75233,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentMigrantEducationProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentMigrantEducationProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -70983,9 +75326,20 @@ BEGIN
     INNER JOIN [edfi].[StudentMigrantEducationProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentMigrantEducationProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentMigrantEducationProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -71021,9 +75375,20 @@ BEGIN
     INNER JOIN [edfi].[StudentMigrantEducationProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentMigrantEducationProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentMigrantEducationProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -71156,21 +75521,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -71239,9 +75614,20 @@ BEGIN
     INNER JOIN [edfi].[StudentNeglectedOrDelinquentProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentNeglectedOrDelinquentProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -71277,9 +75663,20 @@ BEGIN
     INNER JOIN [edfi].[StudentNeglectedOrDelinquentProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentNeglectedOrDelinquentProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentNeglectedOrDelinquentProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -71315,9 +75712,20 @@ BEGIN
     INNER JOIN [edfi].[Student] stampTarget ON stampTarget.[DocumentId] = a.[Student_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Student] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -71353,9 +75761,20 @@ BEGIN
     INNER JOIN [edfi].[Student] stampTarget ON stampTarget.[DocumentId] = a.[Student_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Student] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -71488,21 +75907,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -71571,9 +76000,20 @@ BEGIN
     INNER JOIN [edfi].[StudentProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -71609,9 +76049,20 @@ BEGIN
     INNER JOIN [edfi].[StudentProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -71688,21 +76139,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentProgramAttendanceEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentProgramAttendanceEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -71887,21 +76348,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentProgramEvaluation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentProgramEvaluation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -72060,9 +76531,20 @@ BEGIN
     INNER JOIN [edfi].[StudentProgramEvaluation] stampTarget ON stampTarget.[DocumentId] = a.[StudentProgramEvaluation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentProgramEvaluation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -72098,9 +76580,20 @@ BEGIN
     INNER JOIN [edfi].[StudentProgramEvaluation] stampTarget ON stampTarget.[DocumentId] = a.[StudentProgramEvaluation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentProgramEvaluation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -72136,9 +76629,20 @@ BEGIN
     INNER JOIN [edfi].[StudentProgramEvaluation] stampTarget ON stampTarget.[DocumentId] = a.[StudentProgramEvaluation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentProgramEvaluation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -72215,21 +76719,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentSchoolAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentSchoolAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -72331,9 +76845,20 @@ BEGIN
     INNER JOIN [edfi].[StudentSchoolAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentSchoolAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentSchoolAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -72369,9 +76894,20 @@ BEGIN
     INNER JOIN [edfi].[StudentSchoolAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentSchoolAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentSchoolAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -72448,21 +76984,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentSchoolAttendanceEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentSchoolAttendanceEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -72688,21 +77234,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentSchoolFoodServiceProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentSchoolFoodServiceProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -72771,9 +77327,20 @@ BEGIN
     INNER JOIN [edfi].[StudentSchoolFoodServiceProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentSchoolFoodServiceProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentSchoolFoodServiceProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -72809,9 +77376,20 @@ BEGIN
     INNER JOIN [edfi].[StudentSchoolFoodServiceProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentSchoolFoodServiceProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentSchoolFoodServiceProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -72944,21 +77522,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentSection504ProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentSection504ProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -73027,9 +77615,20 @@ BEGIN
     INNER JOIN [edfi].[StudentSection504ProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentSection504ProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentSection504ProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -73106,21 +77705,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentSectionAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentSectionAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -73246,9 +77855,20 @@ BEGIN
     INNER JOIN [edfi].[StudentSectionAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentSectionAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentSectionAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -73325,21 +77945,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentSectionAttendanceEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentSectionAttendanceEvent] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -73480,9 +78110,20 @@ BEGIN
     INNER JOIN [edfi].[StudentSectionAttendanceEvent] stampTarget ON stampTarget.[DocumentId] = a.[StudentSectionAttendanceEvent_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentSectionAttendanceEvent] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -73615,21 +78256,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -73698,9 +78349,20 @@ BEGIN
     INNER JOIN [edfi].[StudentSpecialEducationProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentSpecialEducationProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -73736,9 +78398,20 @@ BEGIN
     INNER JOIN [edfi].[StudentSpecialEducationProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentSpecialEducationProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -73774,9 +78447,20 @@ BEGIN
     INNER JOIN [edfi].[StudentSpecialEducationProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentSpecialEducationProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -73812,9 +78496,20 @@ BEGIN
     INNER JOIN [edfi].[StudentSpecialEducationProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentSpecialEducationProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -73850,9 +78545,20 @@ BEGIN
     INNER JOIN [edfi].[StudentSpecialEducationProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentSpecialEducationProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -73888,9 +78594,20 @@ BEGIN
     INNER JOIN [edfi].[StudentSpecialEducationProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentSpecialEducationProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentSpecialEducationProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -73967,21 +78684,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentSpecialEducationProgramEligibilityAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentSpecialEducationProgramEligibilityAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -74207,21 +78934,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentTitleIPartAProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentTitleIPartAProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -74290,9 +79027,20 @@ BEGIN
     INNER JOIN [edfi].[StudentTitleIPartAProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentTitleIPartAProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentTitleIPartAProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -74328,9 +79076,20 @@ BEGIN
     INNER JOIN [edfi].[StudentTitleIPartAProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[StudentTitleIPartAProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentTitleIPartAProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -74407,21 +79166,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[StudentTransportation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[StudentTransportation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -74517,9 +79286,20 @@ BEGIN
     INNER JOIN [edfi].[StudentTransportation] stampTarget ON stampTarget.[DocumentId] = a.[StudentTransportation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentTransportation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -74555,9 +79335,20 @@ BEGIN
     INNER JOIN [edfi].[StudentTransportation] stampTarget ON stampTarget.[DocumentId] = a.[StudentTransportation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[StudentTransportation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -74593,9 +79384,20 @@ BEGIN
     INNER JOIN [edfi].[Student] stampTarget ON stampTarget.[DocumentId] = a.[Student_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Student] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -74672,21 +79474,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Survey] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Survey] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -74814,21 +79626,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[SurveyCourseAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[SurveyCourseAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -74968,21 +79790,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[SurveyProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[SurveyProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -75137,21 +79969,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[SurveyQuestion] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[SurveyQuestion] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -75244,9 +80086,20 @@ BEGIN
     INNER JOIN [edfi].[SurveyQuestion] stampTarget ON stampTarget.[DocumentId] = a.[SurveyQuestion_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[SurveyQuestion] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -75323,21 +80176,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[SurveyQuestionResponse] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[SurveyQuestionResponse] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -75436,9 +80299,20 @@ BEGIN
     INNER JOIN [edfi].[SurveyQuestion] stampTarget ON stampTarget.[DocumentId] = a.[SurveyQuestion_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[SurveyQuestion] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -75474,9 +80348,20 @@ BEGIN
     INNER JOIN [edfi].[SurveyQuestionResponse] stampTarget ON stampTarget.[DocumentId] = a.[SurveyQuestionResponse_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[SurveyQuestionResponse] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -75512,9 +80397,20 @@ BEGIN
     INNER JOIN [edfi].[SurveyQuestionResponse] stampTarget ON stampTarget.[DocumentId] = a.[SurveyQuestionResponse_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[SurveyQuestionResponse] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -75591,21 +80487,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[SurveyResponse] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[SurveyResponse] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -75739,21 +80645,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[SurveyResponseEducationOrganizationTargetAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[SurveyResponseEducationOrganizationTargetAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -75893,21 +80809,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[SurveyResponseStaffTargetAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[SurveyResponseStaffTargetAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -76015,9 +80941,20 @@ BEGIN
     INNER JOIN [edfi].[SurveyResponse] stampTarget ON stampTarget.[DocumentId] = a.[SurveyResponse_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[SurveyResponse] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -76094,21 +81031,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[SurveySection] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[SurveySection] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -76242,21 +81189,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[SurveySectionAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[SurveySectionAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -76414,21 +81371,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[SurveySectionResponse] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[SurveySectionResponse] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -76568,21 +81535,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[SurveySectionResponseEducationOrganizationTargetAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -76728,21 +81705,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[SurveySectionResponseStaffTargetAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[SurveySectionResponseStaffTargetAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -76897,21 +81884,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [tpdm].[Candidate] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [tpdm].[Candidate] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -76992,9 +81989,20 @@ BEGIN
     INNER JOIN [tpdm].[Candidate] stampTarget ON stampTarget.[DocumentId] = a.[Candidate_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[Candidate] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77030,9 +82038,20 @@ BEGIN
     INNER JOIN [tpdm].[Candidate] stampTarget ON stampTarget.[DocumentId] = a.[Candidate_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[Candidate] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77068,9 +82087,20 @@ BEGIN
     INNER JOIN [tpdm].[Candidate] stampTarget ON stampTarget.[DocumentId] = a.[Candidate_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[Candidate] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77106,9 +82136,20 @@ BEGIN
     INNER JOIN [tpdm].[Candidate] stampTarget ON stampTarget.[DocumentId] = a.[Candidate_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[Candidate] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77185,21 +82226,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [tpdm].[CandidateEducatorPreparationProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [tpdm].[CandidateEducatorPreparationProgramAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -77313,9 +82364,20 @@ BEGIN
     INNER JOIN [tpdm].[CandidateEducatorPreparationProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[CandidateEducatorPreparationProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[CandidateEducatorPreparationProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77351,9 +82413,20 @@ BEGIN
     INNER JOIN [tpdm].[CandidateEducatorPreparationProgramAssociation] stampTarget ON stampTarget.[DocumentId] = a.[CandidateEducatorPreparationProgramAssociation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[CandidateEducatorPreparationProgramAssociation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77389,9 +82462,20 @@ BEGIN
     INNER JOIN [tpdm].[Candidate] stampTarget ON stampTarget.[DocumentId] = a.[Candidate_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[Candidate] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77427,9 +82511,20 @@ BEGIN
     INNER JOIN [tpdm].[Candidate] stampTarget ON stampTarget.[DocumentId] = a.[Candidate_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[Candidate] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77465,9 +82560,20 @@ BEGIN
     INNER JOIN [tpdm].[Candidate] stampTarget ON stampTarget.[DocumentId] = a.[Candidate_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[Candidate] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77503,9 +82609,20 @@ BEGIN
     INNER JOIN [tpdm].[Candidate] stampTarget ON stampTarget.[DocumentId] = a.[Candidate_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[Candidate] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77541,9 +82658,20 @@ BEGIN
     INNER JOIN [tpdm].[Candidate] stampTarget ON stampTarget.[DocumentId] = a.[Candidate_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[Candidate] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77579,9 +82707,20 @@ BEGIN
     INNER JOIN [tpdm].[Candidate] stampTarget ON stampTarget.[DocumentId] = a.[Candidate_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[Candidate] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77617,9 +82756,20 @@ BEGIN
     INNER JOIN [tpdm].[Candidate] stampTarget ON stampTarget.[DocumentId] = a.[Candidate_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[Candidate] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77655,9 +82805,20 @@ BEGIN
     INNER JOIN [edfi].[Credential] stampTarget ON stampTarget.[DocumentId] = a.[DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Credential] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77693,9 +82854,20 @@ BEGIN
     INNER JOIN [edfi].[Credential] stampTarget ON stampTarget.[DocumentId] = a.[Credential_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[Credential] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77772,21 +82944,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [tpdm].[EducatorPreparationProgram] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [tpdm].[EducatorPreparationProgram] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -77888,9 +83070,20 @@ BEGIN
     INNER JOIN [tpdm].[EducatorPreparationProgram] stampTarget ON stampTarget.[DocumentId] = a.[EducatorPreparationProgram_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[EducatorPreparationProgram] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -77967,21 +83160,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [tpdm].[Evaluation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [tpdm].[Evaluation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -78166,21 +83369,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [tpdm].[EvaluationElement] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [tpdm].[EvaluationElement] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -78377,21 +83590,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [tpdm].[EvaluationElementRating] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [tpdm].[EvaluationElementRating] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -78619,9 +83842,20 @@ BEGIN
     INNER JOIN [tpdm].[EvaluationElementRating] stampTarget ON stampTarget.[DocumentId] = a.[EvaluationElementRating_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[EvaluationElementRating] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -78657,9 +83891,20 @@ BEGIN
     INNER JOIN [tpdm].[EvaluationElement] stampTarget ON stampTarget.[DocumentId] = a.[EvaluationElement_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[EvaluationElement] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -78736,21 +83981,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [tpdm].[EvaluationObjective] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [tpdm].[EvaluationObjective] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -78941,21 +84196,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [tpdm].[EvaluationObjectiveRating] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [tpdm].[EvaluationObjectiveRating] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -79177,9 +84442,20 @@ BEGIN
     INNER JOIN [tpdm].[EvaluationObjective] stampTarget ON stampTarget.[DocumentId] = a.[EvaluationObjective_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[EvaluationObjective] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -79215,9 +84491,20 @@ BEGIN
     INNER JOIN [tpdm].[EvaluationObjectiveRating] stampTarget ON stampTarget.[DocumentId] = a.[EvaluationObjectiveRating_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[EvaluationObjectiveRating] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -79294,21 +84581,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [tpdm].[EvaluationRating] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [tpdm].[EvaluationRating] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -79524,9 +84821,20 @@ BEGIN
     INNER JOIN [tpdm].[Evaluation] stampTarget ON stampTarget.[DocumentId] = a.[Evaluation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[Evaluation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -79562,9 +84870,20 @@ BEGIN
     INNER JOIN [tpdm].[EvaluationRating] stampTarget ON stampTarget.[DocumentId] = a.[EvaluationRating_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[EvaluationRating] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -79600,9 +84919,20 @@ BEGIN
     INNER JOIN [tpdm].[EvaluationRating] stampTarget ON stampTarget.[DocumentId] = a.[EvaluationRating_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[EvaluationRating] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -79679,21 +85009,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [tpdm].[FinancialAid] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [tpdm].[FinancialAid] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -79845,21 +85185,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [tpdm].[PerformanceEvaluation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [tpdm].[PerformanceEvaluation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -79997,9 +85347,20 @@ BEGIN
     INNER JOIN [tpdm].[PerformanceEvaluation] stampTarget ON stampTarget.[DocumentId] = a.[PerformanceEvaluation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[PerformanceEvaluation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -80076,21 +85437,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [tpdm].[PerformanceEvaluationRating] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [tpdm].[PerformanceEvaluationRating] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -80249,9 +85620,20 @@ BEGIN
     INNER JOIN [tpdm].[PerformanceEvaluation] stampTarget ON stampTarget.[DocumentId] = a.[PerformanceEvaluation_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[PerformanceEvaluation] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -80287,9 +85669,20 @@ BEGIN
     INNER JOIN [tpdm].[PerformanceEvaluationRating] stampTarget ON stampTarget.[DocumentId] = a.[PerformanceEvaluationRating_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[PerformanceEvaluationRating] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -80325,9 +85718,20 @@ BEGIN
     INNER JOIN [tpdm].[PerformanceEvaluationRating] stampTarget ON stampTarget.[DocumentId] = a.[PerformanceEvaluationRating_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [tpdm].[PerformanceEvaluationRating] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -80404,21 +85808,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [tpdm].[RubricDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [tpdm].[RubricDimension] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -80580,9 +85994,20 @@ BEGIN
     INNER JOIN [edfi].[School] stampTarget ON stampTarget.[DocumentId] = a.[DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[School] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -80618,9 +86043,20 @@ BEGIN
     INNER JOIN [edfi].[SurveyResponse] stampTarget ON stampTarget.[DocumentId] = a.[DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[SurveyResponse] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -80697,21 +86133,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [tpdm].[SurveyResponsePersonTargetAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [tpdm].[SurveyResponsePersonTargetAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
@@ -80866,21 +86312,31 @@ BEGIN
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [tpdm].[SurveySectionResponsePersonTargetAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [tpdm].[SurveySectionResponsePersonTargetAssociation] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END

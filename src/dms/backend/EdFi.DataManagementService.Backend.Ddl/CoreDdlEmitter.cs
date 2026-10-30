@@ -1840,14 +1840,13 @@ public sealed class CoreDdlEmitter
 
     /// <summary>
     /// Emits the descriptor owner-stamp UPDATE that copies captured document versions onto
-    /// <c>dms.Descriptor</c>. <paramref name="lastModifiedAtExpression"/> supplies the timestamp; when
-    /// <paramref name="setCreatedAt"/> is true the same expression initializes <c>ContentCreatedAt</c>.
+    /// <c>dms.Descriptor</c> and stamps them from the transaction-stable <see cref="MssqlStampClock"/>;
+    /// when <paramref name="setCreatedAt"/> is true the same value initializes <c>ContentCreatedAt</c>.
     /// </summary>
     private void EmitMssqlDescriptorOwnerStampUpdate(
         SqlWriter writer,
         string descriptorTable,
         string quotedDocumentKeyColumn,
-        string lastModifiedAtExpression,
         bool setCreatedAt
     )
     {
@@ -1860,14 +1859,14 @@ public sealed class CoreDdlEmitter
         writer.Append("    r.");
         writer.Append(Quote("ContentLastModifiedAt"));
         writer.Append(" = ");
-        writer.Append(lastModifiedAtExpression);
+        writer.Append(MssqlStampClock.Variable);
         if (setCreatedAt)
         {
             writer.AppendLine(",");
             writer.Append("    r.");
             writer.Append(Quote("ContentCreatedAt"));
             writer.Append(" = ");
-            writer.Append(lastModifiedAtExpression);
+            writer.Append(MssqlStampClock.Variable);
         }
         writer.AppendLine();
         writer.Append("FROM ");
@@ -2049,9 +2048,10 @@ public sealed class CoreDdlEmitter
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
-                // Only an INSERT firing has an empty deleted set. The column defaults and this AFTER
-                // trigger read the clock separately, so the insert branch assigns both timestamps from
-                // one captured value.
+                // One value per transaction, matching the resource owner stamps.
+                MssqlStampClock.Emit(writer);
+                // Only an INSERT firing has an empty deleted set. The column defaults read the clock
+                // separately from this AFTER trigger, so the insert branch overwrites both timestamps.
                 writer.AppendLine("IF EXISTS (SELECT 1 FROM deleted)");
                 writer.AppendLine("BEGIN");
                 using (writer.Indent())
@@ -2060,7 +2060,6 @@ public sealed class CoreDdlEmitter
                         writer,
                         descriptorTable,
                         quotedDocumentKeyColumn,
-                        "sysutcdatetime()",
                         setCreatedAt: false
                     );
                 }
@@ -2069,12 +2068,10 @@ public sealed class CoreDdlEmitter
                 writer.AppendLine("BEGIN");
                 using (writer.Indent())
                 {
-                    writer.AppendLine("DECLARE @createdAt datetime2(7) = sysutcdatetime();");
                     EmitMssqlDescriptorOwnerStampUpdate(
                         writer,
                         descriptorTable,
                         quotedDocumentKeyColumn,
-                        "@createdAt",
                         setCreatedAt: true
                     );
                 }

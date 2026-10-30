@@ -1331,7 +1331,9 @@ CREATE INDEX [IX_Student_ContentVersion] ON [edfi].[Student] ([ContentVersion]);
 
 PostgreSQL is the same shape with `DEFAULT 0` and `now()` defaults and `timestamp with time zone` column types.
 
-The `ContentCreatedAt` default only satisfies `NOT NULL` before the stamping trigger runs. On SQL Server the default and the `AFTER` trigger each read `sysutcdatetime()` separately, so the root and descriptor insert firings overwrite both timestamps from one captured value (see the trigger excerpt below). PostgreSQL's `now()` is the transaction start time, so its root `BEFORE` trigger and descriptor `AFTER` trigger assign both columns the same value.
+The `ContentCreatedAt` default only satisfies `NOT NULL` before the stamping trigger runs. On SQL Server the default reads `sysutcdatetime()` separately from the `AFTER` trigger, so the root and descriptor insert firings overwrite both timestamps from one value (see the trigger excerpt below). PostgreSQL's `now()` is the transaction start time, so its root `BEFORE` trigger and descriptor `AFTER` trigger assign both columns the same value.
+
+Every SQL Server owner stamp takes its timestamp from a transaction-stable clock, matching PostgreSQL's `now()`: the first stamp in a transaction reads `sysutcdatetime()` and stores it in the session context keyed by `CURRENT_TRANSACTION_ID()`, and later stamps in that transaction reuse it. A creating write inserts the root and then its child and `_ext` rows as later statements; without the shared value, their restamps would leave the root's `ContentLastModifiedAt` later than its `ContentCreatedAt`.
 
 The mirror `ContentVersion` default is a non-null sentinel, not a real change-version allocation. The production write path always goes through the `*_Stamp` trigger. Root-resource and descriptor inserts copy the existing document version initialized by its default and initialize the owner timestamp. Updates, deletes, child writes, and `_ext` writes allocate a fresh `dms.Document.ContentVersion` and mirror that captured value to surviving owners while generating their timestamps. A deleted root/descriptor has no owner timestamp to update; its allocated version still feeds history.
 
@@ -1461,28 +1463,39 @@ BEGIN
     -- nesting limit where RECURSIVE_TRIGGERS is ON. Invariant 7: FORCESEEK forbids a scan of the
     -- mirror table, which a table-variable cardinality estimate would otherwise permit.
     --
+    -- @stampedAt is one value per transaction (the transaction-stable clock described above).
     -- Root and descriptor triggers split the owner stamp by firing kind. Update and delete
-    -- firings never assign ContentCreatedAt. An insert firing (empty deleted) captures one
-    -- clock value for both timestamps, because the column defaults read the clock separately.
+    -- firings never assign ContentCreatedAt. An insert firing (empty deleted) assigns both
+    -- timestamps, because the column defaults read the clock separately.
     -- Child / _ext triggers keep only the first UPDATE: their insert firings stamp an existing
     -- root and must never touch its creation time.
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         IF EXISTS (SELECT 1 FROM deleted)
         BEGIN
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = sysutcdatetime()
+                r.[ContentLastModifiedAt] = @stampedAt
             FROM [edfi].[Grade] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END
         ELSE
         BEGIN
-            DECLARE @createdAt datetime2(7) = sysutcdatetime();
             UPDATE r
             SET r.[ContentVersion] = s.[ContentVersion],
-                r.[ContentLastModifiedAt] = @createdAt,
-                r.[ContentCreatedAt] = @createdAt
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
             FROM [edfi].[Grade] r WITH (FORCESEEK)
             INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
         END

@@ -883,7 +883,6 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Triggers
 
             triggerBody.Should().Contain("UPDATE r");
             triggerBody.Should().NotContain("ContentCreatedAt");
-            triggerBody.Should().NotContain("@createdAt");
         }
     }
 
@@ -1493,7 +1492,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
             StringComparison.Ordinal
         );
         var mirrorSetLastModifiedStart = triggerBody.IndexOf(
-            "r.[ContentLastModifiedAt] = sysutcdatetime()",
+            "r.[ContentLastModifiedAt] = @stampedAt",
             StringComparison.Ordinal
         );
         var mirrorFromStart = triggerBody.IndexOf("FROM [edfi].[School] r", StringComparison.Ordinal);
@@ -1885,9 +1884,13 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         triggerBody
             .Should()
             .Contain(
-                "IF EXISTS (SELECT 1 FROM @stamped) BEGIN IF EXISTS (SELECT 1 FROM deleted) BEGIN UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = sysutcdatetime() FROM [edfi].[School] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END ELSE BEGIN DECLARE @createdAt datetime2(7) = sysutcdatetime(); UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = @createdAt, r.[ContentCreatedAt] = @createdAt FROM [edfi].[School] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END END"
+                "IF EXISTS (SELECT 1 FROM @stamped) BEGIN "
+                    + StampClock
+                    + " IF EXISTS (SELECT 1 FROM deleted) BEGIN UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = @stampedAt FROM [edfi].[School] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END ELSE BEGIN UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = @stampedAt, r.[ContentCreatedAt] = @stampedAt FROM [edfi].[School] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END END"
             );
         triggerBody.Split("[ContentCreatedAt]", StringSplitOptions.None).Length.Should().Be(2);
+        // The shared transaction clock is the trigger's only clock read.
+        triggerBody.Split("sysutcdatetime()", StringSplitOptions.None).Length.Should().Be(2);
     }
 
     [Test]
@@ -1896,13 +1899,19 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_DocumentStamping
         var triggerBody = GetStampTriggerBody("SchoolAddress");
 
         triggerBody.Should().NotContain("ContentCreatedAt");
-        triggerBody.Should().NotContain("@createdAt");
+        // A child stamp in the creating transaction reuses the root insert's clock value.
+        triggerBody.Split("sysutcdatetime()", StringSplitOptions.None).Length.Should().Be(2);
         CollapseWhitespace(triggerBody)
             .Should()
             .Contain(
-                "IF EXISTS (SELECT 1 FROM @stamped) BEGIN UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = sysutcdatetime() FROM [edfi].[School] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END"
+                "IF EXISTS (SELECT 1 FROM @stamped) BEGIN "
+                    + StampClock
+                    + " UPDATE r SET r.[ContentVersion] = s.[ContentVersion], r.[ContentLastModifiedAt] = @stampedAt FROM [edfi].[School] r WITH (FORCESEEK) INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId]; END"
             );
     }
+
+    private const string StampClock =
+        "DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID(); DECLARE @stampedAt datetime2(7) = CASE WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7)) END; IF @stampedAt IS NULL BEGIN SET @stampedAt = sysutcdatetime(); EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt; EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId; END";
 
     private static string CollapseWhitespace(string value) =>
         string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));

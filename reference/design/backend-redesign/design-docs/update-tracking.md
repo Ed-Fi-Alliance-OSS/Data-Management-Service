@@ -177,6 +177,12 @@ When a document’s **representation changes**, in the same transaction:
 - generate authoritative `ContentLastModifiedAt` on that owner (`now()` on PostgreSQL,
   `SYSUTCDATETIME()` on SQL Server). No document timestamp is read or written.
 
+Every owner timestamp written in one transaction uses one value. PostgreSQL's `now()` is the
+transaction start time. SQL Server reads `SYSUTCDATETIME()` at the transaction's first stamp,
+stores it in the session context keyed by `CURRENT_TRANSACTION_ID()`, and every later stamp in
+that transaction reuses it; a new transaction never matches the stored key, so it reads the clock
+again.
+
 When a document’s **identity projection changes**, the change is stamped through the representation
 rules above when it changes stored resource state. No additional `dms.Document` columns are written
 for identity tracking.
@@ -188,11 +194,12 @@ The `dms.Document` default allocates one new `ChangeVersionSequence` value per i
 Inserting its resource root or descriptor copies that existing version without a second allocation
 and initializes the authoritative owner timestamp in UTC. The same owner insertion sets
 `ContentCreatedAt` and the initial `ContentLastModifiedAt` from one database timestamp, so the two
-values are equal on a newly created owner: PostgreSQL assigns both from the transaction-stable
-`now()`, and SQL Server's insert firing assigns both from one captured `SYSUTCDATETIME()` value.
-Column defaults and triggers MUST NOT read the clock separately for the two columns. Both rows are
-created in one transaction. Child/extension inserts change an existing representation and allocate
-a fresh version normally; they never set the root's `ContentCreatedAt`.
+values are equal on a newly created owner. Column defaults and triggers MUST NOT read the clock
+separately for the two columns. Both rows are created in one transaction. Child/extension inserts
+change an existing representation and allocate a fresh version normally; they never set the root's
+`ContentCreatedAt`. When they run in the creating transaction, their restamp of
+`ContentLastModifiedAt` reuses the transaction's timestamp (see "Stamp updates"), so a resource
+created with child or `_ext` rows still commits with the two values equal on both engines.
 
 A constant default (e.g., `DEFAULT 1`) is not compatible with the uniqueness/monotonicity requirements for `ChangeVersion` and MUST NOT be treated as correct initialization.
 

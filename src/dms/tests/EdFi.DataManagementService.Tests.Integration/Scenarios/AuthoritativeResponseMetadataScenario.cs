@@ -135,6 +135,37 @@ internal static class AuthoritativeResponseMetadataScenario
         JsonNode.DeepEquals(restampedBody, postedBody).Should().BeTrue("restamping changes metadata only");
     }
 
+    public static async Task It_keeps_creation_and_last_modified_equal_when_a_post_inserts_child_rows(
+        ApiIntegrationHarness harness
+    )
+    {
+        Resource schoolType = await CreateAsync(harness, descriptor: true);
+        string schoolTypeUri = $"{schoolType.Body["namespace"]}#{schoolType.Body["codeValue"]}";
+        // The choices row is a child table insert after the root insert in the same creating write.
+        Resource item = await PostAsync(
+            harness,
+            Items,
+            new JsonObject
+            {
+                ["itemCode"] = Guid.NewGuid().ToString("N")[..20],
+                ["schoolTypeDescriptor"] = schoolTypeUri,
+                ["displayName"] = "Created with a child row",
+                ["namespace"] = "uri://ed-fi.org/DMS-1401/items",
+                ["choices"] = new JsonArray(
+                    new JsonObject { ["choiceCode"] = "C1", ["schoolTypeDescriptor"] = schoolTypeUri }
+                ),
+            },
+            "edfi",
+            "CompactDescriptorItem"
+        );
+
+        Stamp stamp = await ReadStampAsync(harness, item);
+        stamp
+            .CreatedAt.Should()
+            .Be(stamp.ModifiedAt, "child stamps in the creating write reuse the root insert's timestamp");
+        await AssertReadsAsync(harness, item, stamp);
+    }
+
     public static async Task It_starts_a_new_creation_time_when_a_deleted_resource_is_recreated(
         ApiIntegrationHarness harness,
         bool descriptor

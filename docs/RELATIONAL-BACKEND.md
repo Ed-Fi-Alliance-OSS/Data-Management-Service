@@ -549,7 +549,10 @@ mirrors `ContentVersion`. **Stamping triggers** maintain those stamps in one tra
 child/extension and identity-cascade changes; `dms.Document` has no last-modified timestamp.
 No-op writes preserve stamps. Document insertion allocates the initial version and owner insertion
 copies it while generating its timestamp. Owner insertion also sets `ContentCreatedAt` from that
-same timestamp; it is not a stamp, and every later write preserves it. Document locks, optimistic concurrency and projection
+same timestamp; it is not a stamp, and every later write preserves it. Every stamp written in one
+transaction uses one timestamp on both engines (PostgreSQL's `now()`; on SQL Server, the first
+stamp's `sysutcdatetime()` reading, kept in the session context for that transaction), so child
+and `_ext` rows inserted by the creating write leave the two values equal. Document locks, optimistic concurrency and projection
 enqueueing remain version-only. Those triggers
 also populate per-resource **tracked-change tables** that live under a per-project schema named
 `tracked_changes_<projectSchema>` (for example the `tracked_changes_edfi` schema), recording the

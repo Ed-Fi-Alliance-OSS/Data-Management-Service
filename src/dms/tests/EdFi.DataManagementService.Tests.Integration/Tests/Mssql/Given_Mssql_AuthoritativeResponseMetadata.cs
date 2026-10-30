@@ -42,6 +42,12 @@ public sealed class Given_Mssql_AuthoritativeResponseMetadata : MssqlApiIntegrat
             descriptor
         );
 
+    [Test]
+    public Task It_keeps_creation_and_last_modified_equal_when_a_post_inserts_child_rows() =>
+        AuthoritativeResponseMetadataScenario.It_keeps_creation_and_last_modified_equal_when_a_post_inserts_child_rows(
+            Harness
+        );
+
     [TestCase(false)]
     [TestCase(true)]
     public Task It_starts_a_new_creation_time_when_a_deleted_resource_is_recreated(bool descriptor) =>

@@ -1751,16 +1751,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     }
 
     /// <summary>
-    /// Emits the owner-stamp UPDATE that copies captured document versions onto the owner rows.
-    /// <paramref name="lastModifiedAtExpression"/> supplies the timestamp; when
-    /// <paramref name="setCreatedAt"/> is true the same expression initializes <c>ContentCreatedAt</c>.
+    /// Emits the owner-stamp UPDATE that copies captured document versions onto the owner rows and
+    /// stamps them from the transaction-stable <see cref="MssqlStampClock"/>; when
+    /// <paramref name="setCreatedAt"/> is true the same value initializes <c>ContentCreatedAt</c>.
     /// </summary>
-    private void EmitMssqlOwnerStampUpdate(
-        SqlWriter writer,
-        string mirrorStampTarget,
-        string lastModifiedAtExpression,
-        bool setCreatedAt
-    )
+    private void EmitMssqlOwnerStampUpdate(SqlWriter writer, string mirrorStampTarget, bool setCreatedAt)
     {
         writer.AppendLine("UPDATE r");
         writer.Append("SET r.");
@@ -1771,14 +1766,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append("    r.");
         writer.Append(Quote(ContentLastModifiedAtColumn));
         writer.Append(" = ");
-        writer.Append(lastModifiedAtExpression);
+        writer.Append(MssqlStampClock.Variable);
         if (setCreatedAt)
         {
             writer.AppendLine(",");
             writer.Append("    r.");
             writer.Append(Quote(ContentCreatedAtColumn));
             writer.Append(" = ");
-            writer.Append(lastModifiedAtExpression);
+            writer.Append(MssqlStampClock.Variable);
         }
         writer.AppendLine();
         writer.Append("FROM ");
@@ -1983,36 +1978,33 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
+            // One value per transaction, so the child and _ext stamps of a creating write keep the
+            // root's ContentLastModifiedAt equal to the ContentCreatedAt its insert firing set.
+            MssqlStampClock.Emit(writer);
             if (isRootDocumentStampingTrigger)
             {
                 // Only a root INSERT firing creates the owner row, and its deleted set is empty. The
-                // column defaults and this AFTER trigger read the clock separately, so the insert branch
-                // assigns both timestamps from one captured value. Child and _ext INSERT firings also
-                // have an empty deleted set but stamp an existing root, so they never take this branch.
+                // column defaults read the clock separately from this AFTER trigger, so the insert
+                // branch overwrites both timestamps. Child and _ext INSERT firings also have an empty
+                // deleted set but stamp an existing root, so they never take this branch.
                 writer.AppendLine("IF EXISTS (SELECT 1 FROM deleted)");
                 writer.AppendLine("BEGIN");
                 using (writer.Indent())
                 {
-                    EmitMssqlOwnerStampUpdate(
-                        writer,
-                        mirrorStampTarget,
-                        "sysutcdatetime()",
-                        setCreatedAt: false
-                    );
+                    EmitMssqlOwnerStampUpdate(writer, mirrorStampTarget, setCreatedAt: false);
                 }
                 writer.AppendLine("END");
                 writer.AppendLine("ELSE");
                 writer.AppendLine("BEGIN");
                 using (writer.Indent())
                 {
-                    writer.AppendLine("DECLARE @createdAt datetime2(7) = sysutcdatetime();");
-                    EmitMssqlOwnerStampUpdate(writer, mirrorStampTarget, "@createdAt", setCreatedAt: true);
+                    EmitMssqlOwnerStampUpdate(writer, mirrorStampTarget, setCreatedAt: true);
                 }
                 writer.AppendLine("END");
             }
             else
             {
-                EmitMssqlOwnerStampUpdate(writer, mirrorStampTarget, "sysutcdatetime()", setCreatedAt: false);
+                EmitMssqlOwnerStampUpdate(writer, mirrorStampTarget, setCreatedAt: false);
             }
         }
         writer.AppendLine("END");
