@@ -153,10 +153,8 @@ error format. No response echoes a credential value.
 | 6 | No `Authorization` header, and a body `client_id` or `client_secret` longer than 2048 characters | `400` | `Bad Request` | `client_id and client_secret must each be at most 2048 characters` |
 | 7 | A `grant_type` other than `client_credentials`, including a JSON `null` | `400` | `Bad Request` | `Unsupported grant type` |
 
-"Basic header" here means what DMS has always accepted as one: an `Authorization` header that
-contains `basic` anywhere, in any letter case. That test is unchanged, so no caller that
-authenticates with a Basic header sees a difference. See
-[Known limitations](#known-limitations) for what it means for other schemes.
+For the current definition of "Basic header", see the
+[DMS-1495 amendment](#amendment-exact-basic-scheme-dms-1495).
 
 Rule 2 matches the ODS/API, which takes a present `Authorization` header's value even when it is
 empty, fails to split it into a scheme and a parameter, and answers `400 invalid_request` before it
@@ -254,27 +252,23 @@ wrong secret in the body gets the same `401` as a wrong secret in a Basic header
   `The Authorization header must not be empty` instead of `Malformed Authorization header`.
 - A JSON body with `"grant_type": null` used to get a `500`. It now gets
   `400 Unsupported grant type`.
-- A header that contains `basic` but isn't a valid `Authorization` value, such as
-  `Basicxyz:secret` or two `Authorization` headers joined as `Basic X,Basic Y`, used to get a
-  `500`, and the error log quoted the whole header. It now gets
-  `400 Malformed Authorization header`, and the header isn't logged.
+- A genuine Basic header that isn't a valid `Authorization` value, such as `Basic X,Basic Y`,
+  used to get a `500`, and the error log quoted the whole header. It now gets
+  `400 Malformed Authorization header`, and the header isn't logged. For non-Basic values, see
+  the [DMS-1495 amendment](#amendment-exact-basic-scheme-dms-1495).
 - `scope` handling hasn't changed.
 - Callers that use a Basic header see no change in what reaches the upstream.
 
 ## Known limitations
 
-DMS still recognizes a Basic header by the substring `basic`, not by its scheme token. A header
-with another scheme that happens to contain `basic`, such as `Digest username="basic-user"` or a
-`Bearer` token whose encoded payload contains those letters, counts as a Basic header. Such a
-header is forwarded upstream as before, or rejected as mixed when the body also has credentials,
-rather than getting rule 3's `401 invalid_client`. The ODS/API would answer `401`. The test stays
-as it is so that no existing Basic-header caller sees a change.
+The former scheme-recognition limitation is superseded by the
+[DMS-1495 amendment](#amendment-exact-basic-scheme-dms-1495).
 
 DMS doesn't copy the ODS/API's two-part check on the `Authorization` header. The ODS/API splits a
 non-empty header on spaces and answers `400 invalid_request` unless there are exactly two parts,
 before it looks at the scheme
 ([L56-L62](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/e453cd2cad8a0653c65453948d3d235aec7c517c/Application/EdFi.Ods.Api/Controllers/TokenController.cs#L56-L62)).
-DMS answers `401 invalid_client` instead for any such header without `basic` in it: a bare
+DMS answers `401 invalid_client` instead for any such header whose scheme isn't `Basic`: a bare
 `Bearer`, a header with three or more parts such as `Bearer a b`, and any real `Digest` header,
 such as `Digest username="a", realm="b", nonce="c"`, which always has several parts. A request that
 fails on the ODS/API fails on DMS too, with a different status. DMS follows the ticket's rule that
@@ -288,6 +282,43 @@ body in its message, which can include the secret. Left to the framework, that t
 `Debug` log in production and the `Error` log, with a `500`, in `Development`. What the `400`
 should carry, and whether it should match the ODS/API, is still open.
 
+## Amendment: exact Basic scheme (DMS-1495)
+
+**Date:** 2026-10-27
+
+DMS now recognizes a Basic header by its scheme token rather than by the substring `basic`. It
+skips leading whitespace, reads the whole run of characters up to the first whitespace character
+or the end of the value, and compares that run with `Basic` ordinally, ignoring letter case. It
+doesn't decode or validate the credentials, and it forwards a recognized header exactly as sent.
+
+Every header whose scheme token isn't `Basic` now gets rule 3's `401 invalid_client`, before rules
+4 to 7, whatever the body holds. That includes headers that only contain the letters, such as
+`Bearer xbasicx` or `Digest username="basic-user"`, and headers whose scheme merely starts with
+them, such as `BasicX value`, `Basicxyz:secret` or `Basic,Basic value`. So body credentials don't
+rescue such a request, and an unsupported grant type doesn't change the answer.
+
+This deliberately changes the answer to some inputs. A header such as `Bearer xbasicx` used to be
+forwarded upstream, or rejected as mixed beside body credentials. `Basicxyz:secret` used to get
+`400 Malformed Authorization header`; it now gets `401 invalid_client`, the answer DMS gives
+every scheme other than Basic. The ODS/API would answer this one-part value `400` under its
+two-part check, which DMS doesn't copy (see [Known limitations](#known-limitations)). A header
+whose scheme is genuinely Basic but whose value `HttpHeaders.Add` can't parse, such as
+`Basic X,Basic Y`, still gets `400 Malformed Authorization header` after the grant type check,
+and the header still isn't logged. Callers that authenticate with a genuine Basic header, in any
+letter case, see no change.
+
+The comma cases differ because scheme recognition precedes header-value validation. In
+`Basic,Basic Y`, the whole leading run is `Basic,Basic`, so it is rejected as non-Basic before
+header addition. In `Basic X,Basic Y`, the leading run is `Basic`, so header addition rejects the
+malformed parameter. This preserves the early rejection of every unequal scheme token without
+adding a separate malformed-scheme rule or moving credential validation ahead of grant validation.
+The resource API's `AuthorizationHeaderParser` instead validates Bearer grammar and distinguishes
+malformed headers from unknown schemes; the token proxy reuses only its scheme-scanning approach.
+Both comma forms are rejected locally without forwarding or logging the header.
+
+The rest of this decision, including body credentials, the order of rules 1 to 7 and the
+normalization to Basic at the proxy, is unchanged.
+
 ## Tests
 
 - `OAuthManagerTests` (Core) covers each rule, including an empty or whitespace-only header, a
@@ -298,7 +329,8 @@ should carry, and whether it should match the ODS/API, is still open.
   and the length cap at 2048 and 2049 characters for each field. A fixture for each adjacent pair
   of rules 3 to 7 makes a reordering of those checks fail. It also covers the
   upstream header and form body, the special-character round trip, and the absence of secrets
-  from the log.
+  from the log. It also covers the scheme boundaries and precedence in the
+  [DMS-1495 amendment](#amendment-exact-basic-scheme-dms-1495).
 - `TokenRequestCredentialsTests` (Core) covers the empty-means-omitted normalization and which
   values count as a second mechanism.
 - `TokenEndpointModuleTests` (frontend) covers form and JSON extraction, empty form and JSON fields
