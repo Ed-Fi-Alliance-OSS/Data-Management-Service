@@ -333,6 +333,15 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_emit_the_descriptor_creation_timestamp_after_the_last_modified_timestamp()
+    {
+        _ddl.Should().Contain("\"ContentCreatedAt\" timestamp with time zone NOT NULL DEFAULT now()");
+
+        var columns = DescriptorTableColumnExtractor.ExtractPgColumns(_ddl).ToList();
+        columns.IndexOf("ContentCreatedAt").Should().Be(columns.IndexOf("ContentLastModifiedAt") + 1);
+    }
+
+    [Test]
     public void It_should_include_resource_key_id_in_descriptor_table()
     {
         // Denormalized from dms.Document so descriptor paging can root on dms.Descriptor.
@@ -357,6 +366,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
 
         document.Should().Contain("\"ContentVersion\" bigint NOT NULL DEFAULT nextval");
         document.Should().NotContain("ContentLastModifiedAt");
+        document.Should().NotContain("ContentCreatedAt");
         document.Split("ChangeVersionSequence", StringSplitOptions.None).Length.Should().Be(2);
     }
 
@@ -1049,7 +1059,7 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         // a migration backfill UPDATE of that column must not bump stamps.
         // FK_Descriptor_DocumentResourceKey, not the trigger, rejects values that diverge from
         // dms.Document.
-        string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
+        string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt", "ContentCreatedAt"];
         string[] immutableColumns = ["DescriptorId", "DocumentId", "ResourceKeyId"];
         var columns = DescriptorTableColumnExtractor.ExtractPgColumns(_ddl);
         columns.Should().NotBeEmpty("Descriptor CREATE TABLE block must be parseable");
@@ -1670,6 +1680,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
 
         document.Should().Contain("[ContentVersion] bigint NOT NULL");
         document.Should().NotContain("ContentLastModifiedAt");
+        document.Should().NotContain("ContentCreatedAt");
         document.Split("ChangeVersionSequence", StringSplitOptions.None).Length.Should().Be(2);
     }
 
@@ -1681,6 +1692,18 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
             .Contain(
                 "[ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime())"
             );
+    }
+
+    [Test]
+    public void It_should_emit_the_descriptor_creation_timestamp_after_the_last_modified_timestamp()
+    {
+        _ddl.Should()
+            .Contain(
+                "[ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentCreatedAt] DEFAULT (sysutcdatetime())"
+            );
+
+        var columns = DescriptorTableColumnExtractor.ExtractMssqlColumns(_ddl).Select(c => c.Name).ToList();
+        columns.IndexOf("ContentCreatedAt").Should().Be(columns.IndexOf("ContentLastModifiedAt") + 1);
     }
 
     // ── MSSQL named default constraints ─────────────────────────────
@@ -2306,6 +2329,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
 
         triggerBody.Should().NotContain("UPDATE([ContentVersion])");
         triggerBody.Should().NotContain("UPDATE([ContentLastModifiedAt])");
+        triggerBody.Should().NotContain("UPDATE([ContentCreatedAt])");
         triggerBody.Should().NotContain("UPDATE([ResourceKeyId])");
         triggerBody.Should().NotContain("UPDATE([DescriptorId])");
         triggerBody.Should().NotContain("UPDATE([DocumentId])");
@@ -2362,7 +2386,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
         // a migration backfill UPDATE of that column must not bump stamps.
         // FK_Descriptor_DocumentResourceKey, not the trigger, rejects values that diverge from
         // dms.Document.
-        string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt"];
+        string[] stampColumns = ["ContentVersion", "ContentLastModifiedAt", "ContentCreatedAt"];
         string[] immutableColumns = ["DescriptorId", "DocumentId", "ResourceKeyId"];
         var descriptorTriggerBody = ExtractMssqlTriggerBody(_ddl, "TR_Descriptor_Stamp_Document");
         var columns = DescriptorTableColumnExtractor.ExtractMssqlColumns(_ddl);

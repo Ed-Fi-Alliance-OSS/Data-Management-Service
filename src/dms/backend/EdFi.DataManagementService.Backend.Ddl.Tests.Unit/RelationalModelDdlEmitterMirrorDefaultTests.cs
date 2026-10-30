@@ -45,6 +45,17 @@ public class Given_RelationalModelDdlEmitter_With_LongNamed_Root_And_Mirror_Colu
     }
 
     [Test]
+    public void It_should_emit_the_authoritative_root_creation_timestamp_on_both_dialects()
+    {
+        _mssqlDdl
+            .Should()
+            .MatchRegex(
+                @"\[ContentCreatedAt\] datetime2\(7\) NOT NULL CONSTRAINT \[[^\]]+\] DEFAULT \(sysutcdatetime\(\)\)"
+            );
+        _pgsqlDdl.Should().Contain("\"ContentCreatedAt\" timestamp with time zone NOT NULL DEFAULT now()");
+    }
+
+    [Test]
     public void It_should_keep_every_emitted_identifier_within_the_mssql_length_limit()
     {
         var maxLength = new MssqlDialectRules().MaxIdentifierLength;
@@ -70,6 +81,29 @@ public class Given_RelationalModelDdlEmitter_With_LongNamed_Root_And_Mirror_Colu
         // The full DF_<120-char-table>_ContentLastModifiedAt name is 144 characters; emission must shorten
         // it rather than emit it verbatim.
         _mssqlDdl.Should().NotContain($"DF_{_longTableName}_ContentLastModifiedAt");
+    }
+
+    [Test]
+    public void It_should_shorten_the_creation_default_constraint_name_to_a_distinct_name()
+    {
+        var maxLength = new MssqlDialectRules().MaxIdentifierLength;
+        var createdAtName = MssqlDefaultConstraintName("ContentCreatedAt");
+        var lastModifiedAtName = MssqlDefaultConstraintName("ContentLastModifiedAt");
+
+        createdAtName.Should().NotBe($"DF_{_longTableName}_ContentCreatedAt");
+        createdAtName.Length.Should().BeLessThanOrEqualTo(maxLength);
+        createdAtName.Should().NotBe(lastModifiedAtName);
+    }
+
+    private string MssqlDefaultConstraintName(string columnName)
+    {
+        var match = Regex.Match(
+            _mssqlDdl,
+            $@"\[{columnName}\] datetime2\(7\) NOT NULL CONSTRAINT \[(?<name>[^\]]+)\] DEFAULT"
+        );
+
+        match.Success.Should().BeTrue($"the {columnName} column must carry a named default");
+        return match.Groups["name"].Value;
     }
 
     private static DerivedRelationalModelSet BuildLongNamedRootModelSet(SqlDialect dialect)
@@ -107,6 +141,17 @@ public class Given_RelationalModelDdlEmitter_With_LongNamed_Root_And_Mirror_Colu
                 new DbColumnModel(
                     new DbColumnName("ContentLastModifiedAt"),
                     ColumnKind.AuthoritativeContentLastModifiedAt,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
+                new DbColumnModel(
+                    new DbColumnName("ContentCreatedAt"),
+                    ColumnKind.AuthoritativeContentCreatedAt,
                     new RelationalScalarType(ScalarKind.DateTime),
                     IsNullable: false,
                     SourceJsonPath: null,
@@ -183,6 +228,7 @@ public class Given_RelationalModelDdlEmitter_With_Resource_Stamping_Trigger_And_
     {
         _pgsqlDdl.Should().NotContain("OLD.\"ContentVersion\" IS DISTINCT FROM");
         _pgsqlDdl.Should().NotContain("OLD.\"ContentLastModifiedAt\" IS DISTINCT FROM");
+        _pgsqlDdl.Should().NotContain("OLD.\"ContentCreatedAt\" IS DISTINCT FROM");
     }
 
     private static DerivedRelationalModelSet BuildStampingTriggerModelSet(SqlDialect dialect)
@@ -231,6 +277,17 @@ public class Given_RelationalModelDdlEmitter_With_Resource_Stamping_Trigger_And_
                 new DbColumnModel(
                     new DbColumnName("ContentLastModifiedAt"),
                     ColumnKind.AuthoritativeContentLastModifiedAt,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
+                new DbColumnModel(
+                    new DbColumnName("ContentCreatedAt"),
+                    ColumnKind.AuthoritativeContentCreatedAt,
                     new RelationalScalarType(ScalarKind.DateTime),
                     IsNullable: false,
                     SourceJsonPath: null,
