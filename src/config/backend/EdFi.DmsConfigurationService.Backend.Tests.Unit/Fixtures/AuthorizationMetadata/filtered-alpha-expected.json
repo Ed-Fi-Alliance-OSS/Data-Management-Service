@@ -1,0 +1,26 @@
+[
+  {
+    "claimSetName": "Alpha",
+    "claims": [
+      {
+        "name": "Zebra",
+        "authorizationId": 1
+      }
+    ],
+    "authorizations": [
+      {
+        "id": 1,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "RootRead"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

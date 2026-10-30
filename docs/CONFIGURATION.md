@@ -325,7 +325,7 @@ The following parameters apply to the Configuration Service (`appsettings.json`)
 | IdentityProvider             | Specifies the authentication provider. Valid values are `keycloak` and `self-contained`. Default: `self-contained`                                                                                        |
 | MultiTenancy                 | When `true`, enables multi-tenancy support in the Configuration Service. Default: `false`                                                                                                                 |
 | PathBase                     | Segment of the URL to use as base for all requests.                                                                                                                                                       |
-| TokenRequestTimeoutSeconds   | Timeout in seconds for token requests. Default: `30`                                                                                                                                                      |
+| TokenRequestTimeoutSeconds   | Timeout budget in seconds for calls to Keycloak in `keycloak` mode. `/connect/token` gets one budget for the whole Keycloak call. `/connect/introspect` gets one budget for Keycloak's response headers and another for reading the body, so it can wait up to twice the value. `/connect/revoke` gets the same two plus one for the admin-API client-type lookup that precedes the revocation call, so it can wait up to three times the value. Default: `30` |
 | ReverseProxy:UseForwardedHeaders | When `true`, the application respects reverse proxy `X-Forwarded-*` headers for URL generation, but only from trusted sources configured in `ReverseProxy`. Default: `false`. See [Reverse Proxy and Forwarded Headers](#reverse-proxy-and-forwarded-headers). |
 | ReverseProxy:KnownProxies    | Comma-separated list of exact trusted reverse-proxy IP addresses (IPv4 or IPv6) whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.5,10.0.0.6`                                                  |
 | ReverseProxy:KnownNetworks   | Comma-separated list of trusted reverse-proxy networks in CIDR notation whose `X-Forwarded-*` headers are honored. Used only when `ReverseProxy:UseForwardedHeaders` is `true`. Example: `10.0.0.0/8,172.16.0.0/12`                                                  |
@@ -805,7 +805,8 @@ budgets apply, and a request must fit both:
   [forwarded headers](#reverse-proxy-and-forwarded-headers) from trusted proxies are applied. A native
   IPv6 address counts against its /64. Requests whose address is unknown share one budget.
 - **Per source address and `client_id` pair**, for `/connect/token`, `/connect/revoke` and authenticated
-  `/connect/introspect` requests (self-contained mode), spent just before the client secret is verified.
+  `/connect/introspect` requests, under either identity provider, spent just before the client secret is
+  verified (by Keycloak under `keycloak`).
   A request rejected earlier (malformed form, unsupported grant type, missing token) does not spend it.
   For counting, case, accents, character width, kana type and
   trailing padding are ignored. This conservatively merges common SQL Server lookup aliases on every
@@ -817,8 +818,8 @@ budgets apply, and a request must fit both:
 
 Token, revocation and authenticated introspection credentials accept a `client_id` of at most
 1024 UTF-16 code units, including padding, with either Basic or form authentication. Longer IDs
-receive an Ed-Fi validation `400` on `/connect/token`. Revocation and authenticated introspection
-return OAuth `invalid_client`: `401` with a Basic challenge for Basic authentication, `400` otherwise.
+receive OAuth `invalid_client` on all three routes: `401` with a Basic challenge for Basic
+authentication, `400` otherwise.
 These checks precede client-budget processing or authentication. This bounds client-key processing and
 prevents oversized aliases from obtaining a separate budget. The validation limit also applies when
 rate limiting is disabled.
@@ -901,10 +902,18 @@ container address alone does not attribute those requests. Do not trust the enti
 
 ### Rejection response
 
-A refused request receives `429 Too Many Requests` with a `Retry-After` header: the limiter's
-recommended delay rounded up to whole seconds, omitted if the limiter supplies none. All four
-`/connect/*` routes, including `/connect/revoke`, answer with an Ed-Fi problem-details body served as
-`application/problem+json`. Its `correlationId` is the request's trace identifier:
+A refused request receives `429 Too Many Requests` with a `Retry-After` header: the limiter's recommended delay rounded up to whole seconds, omitted if the limiter supplies none.
+The body follows the route's own error contract.
+`/connect/token`, `/connect/revoke` and `/connect/introspect` answer in the OAuth error format of RFC 6749 §5.2, served as `application/json`:
+
+```json
+{
+  "error": "temporarily_unavailable",
+  "error_description": "The number of allowed requests has been exceeded. Retry the request later."
+}
+```
+
+`/connect/register` answers with an Ed-Fi problem-details body served as `application/problem+json`, whose `correlationId` is the request's trace identifier:
 
 ```json
 {
@@ -918,11 +927,11 @@ recommended delay rounded up to whole seconds, omitted if the limiter supplies n
 }
 ```
 
-`/connect/revoke` keeps its OAuth error format for other statuses (see
-[CS-AUTH](../reference/design/configuration-service/CS-AUTH.md#token-revocation)).
+[CS-AUTH](../reference/design/configuration-service/CS-AUTH.md#token-endpoints) describes every route's other errors.
 
-This `429` is distinct from the active-token limit's `429`
-(`urn:ed-fi:management-api:security:authentication:too-many-tokens`), which is unchanged.
+The rate-limit `429` of `/connect/token` is distinct from its active-token limit `429`.
+Both carry `temporarily_unavailable`, but the active-token limit's `error_description` is `Too many access tokens have been requested (limit is N). Access tokens should be reused until they expire.`
+The DMS `/oauth/token` proxy tells the two apart by that description.
 
 ## Plugins
 
@@ -1204,7 +1213,7 @@ The `RateLimit` object should have the following parameters.
 
 ### Rejection response
 
-A rejected request receives a `429 Too Many Requests` response with a
+A rejected non-token request receives a `429 Too Many Requests` response with a
 `Retry-After` header and an Ed-Fi problem-details body served as
 `application/problem+json`. `Retry-After` carries the limiter-supplied
 recommended retry delay, rounded up to whole seconds. It is a suggested
@@ -1218,6 +1227,15 @@ present, otherwise from the server-generated trace identifier — the same
 selection, and the same
 [normalization](./LOGGING.md#correlation-id-normalization), the API's other
 error responses use.
+
+For a supported-content-type `POST /oauth/token` endpoint, including qualified
+routes, the limiter instead returns `application/json` with
+`error: temporarily_unavailable` and a fixed `error_description`. The same
+limiter-supplied `Retry-After` rule applies. The normalized correlation ID is in
+`X-Correlation-ID`, percent-encoded with UTF-8; decode it once to find the log
+entry. See the [token error contract](../reference/adr-oauth-token-errors-DMS-1606.md).
+
+Example non-token rejection:
 
 ```json
 {
@@ -1400,7 +1418,7 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 | `IdentitySettings.EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
 | `IdentitySettings.TokenCleanup.Enabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
 | `IdentitySettings.TokenCleanup.IntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
-| `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of recognized Configuration Service admin scopes. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and a `Too Many Tokens` problem response of type `urn:ed-fi:management-api:security:authentication:too-many-tokens`; the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |
+| `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of recognized Configuration Service admin scopes. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and the OAuth error `temporarily_unavailable` (see below); the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |
 | `IdentitySettings.ClientSecretHashingIterations` | Number of PBKDF2-SHA256 iterations used to hash and verify client secrets (self-contained only). Must be greater than zero; startup fails otherwise. Default: `210000`. Set in Docker Compose through `CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS`, which also sets the count `setup-openiddict.ps1` hashes bootstrap client secrets with. | _(not used)_ | `210000` |
 
 > **Before upgrading an existing deployment:** a positive limit takes effect immediately, so an Ed-Fi API client
@@ -1441,18 +1459,25 @@ tokens should revoke each one as it finishes with it rather than letting it sit 
 This only helps a caller that still has the token string — one that has lost track of its tokens,
 after a crash loop for instance, has to wait for them to expire.
 
-The Configuration Service's `/connect/token` rejects a grant beyond the limit with type
-`urn:ed-fi:management-api:security:authentication:too-many-tokens`; every Configuration Service
-problem type uses the Management API prefix.
+The Configuration Service's `/connect/token` rejects a grant beyond the limit with HTTP 429 in the
+OAuth error format of RFC 6749 section 5.2:
+`{"error":"temporarily_unavailable","error_description":"Too many access tokens have been requested (limit is N). Access tokens should be reused until they expire."}`.
+It no longer answers in problem details, as the rest of the Configuration Service's Management API
+does, because `/connect/token` is an OAuth endpoint.
 
-DMS `/oauth/token` retains its canonical HTTP 429 contract for limited clients: DMS's own type
-`urn:ed-fi:api:security:authentication:too-many-tokens`, title `Too Many Tokens`, and message
+DMS `/oauth/token` returns HTTP 429 as `application/json` with
+`error: temporarily_unavailable` and the following `error_description` for limited clients:
 `Too many access tokens have been requested (limit is {n}). Access tokens should be reused until they expire.`
-DMS parses the Configuration Service response, under either the `urn:ed-fi:management-api:` type
-or the `urn:ed-fi:api:` type an earlier Configuration Service returns, and rebuilds its external
-response as before. Upgrade DMS before, or together with, the Configuration Service: an earlier
-DMS does not recognize the new type and answers a generic 429 of type
-`urn:ed-fi:api:too-many-requests` without the limit message.
+DMS parses the Configuration Service response, under the OAuth body above or under either problem
+type an earlier Configuration Service returns, `urn:ed-fi:management-api:` or `urn:ed-fi:api:`, and
+rebuilds its external response using the positive integer limit alone. Token errors carry no
+problem-details `type` or `title`; their normalized correlation ID is UTF-8 percent-encoded in
+`X-Correlation-ID`. Decode that header once to find the matching log entry. See the
+[token error contract](../reference/adr-oauth-token-errors-DMS-1606.md).
+Upgrade DMS before, or together with, the Configuration Service: an 8.1 pre-release DMS does not
+recognize the OAuth body and answers a generic 429 of type `urn:ed-fi:api:too-many-requests`
+without the limit message, and DMS 8.0.0 answers any upstream 429 with a 502 whose `detail`
+carries the Configuration Service's body.
 
 > **Changing `ClientSecretHashingIterations` invalidates existing client secrets.** The iteration
 > count is not stored with a hashed secret, so verification always derives at the currently

@@ -6,7 +6,7 @@ the representative acceptance oracle tracked in `OdsSecurityMetadata/README.md`.
 
 The element mapping was checked against the [pinned ODS SQL Server export script](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS-Implementation/blob/5bca6615e1ce06b84a87e8512cfbe69a1249dd9a/SecurityMetadata/Export/MsSql/Security-Metadata-to-XML.sql)
 and the existing CMS contract at
-`src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/JsonSchemaForClaims.json`.
+`src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/JsonSchemaForClaims.json`.
 
 | Export structure | CMS document mapping |
 | --- | --- |
@@ -52,7 +52,7 @@ accepted; every nonempty value, including whitespace, is rejected because the CM
 claims contract cannot represent it. Unknown content is rejected before mapping,
 including policy on hierarchy-only nodes. `claimId` remains recognized metadata.
 
-Every converted document passes the existing backend `ClaimsValidator` and its
+Every converted document passes the shared `ClaimsValidator` and its
 embedded schema before return. `invalid-generated-actions.xml` has one valid grant
 and a second reference with empty actions: it passes export structure and global
 completeness checks but fails the real CMS schema's `minItems`. Tests compare the
@@ -64,3 +64,11 @@ Command tests exercise the actual CLI parsing/handler and process paths, includi
 validate-before-write behavior, forced overwrite protection, and XML decoding.
 These examples do not establish broader export-format support or runtime strategy
 compatibility.
+
+The schema and bundled 5.2/6.1 bases belong to `EdFi.DmsConfigurationService.Claims`,
+not the Backend assembly. The project links `ds52-claims.json` from
+`src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds52/Claims.json`;
+keep that source authoritative. Composition and resolver fixtures are linked from
+the existing Backend unit-test project; do not copy or regenerate their oracles.
+See the [tool workflow](../../EdFi.DmsConfigurationService.SecurityMetadataTools/README.md)
+and [fixture audit](OdsSecurityMetadata/README.md) before updating inputs.

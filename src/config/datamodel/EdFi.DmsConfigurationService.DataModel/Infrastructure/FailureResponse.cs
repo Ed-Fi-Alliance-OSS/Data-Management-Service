@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -12,9 +13,6 @@ namespace EdFi.DmsConfigurationService.DataModel.Infrastructure;
 
 public static class FailureResponse
 {
-    private const string TooManyRequestsDetail =
-        "The number of allowed requests has been exceeded. Retry the request later.";
-
     private static readonly JsonSerializerOptions _serializerOptions = new()
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
@@ -22,7 +20,6 @@ public static class FailureResponse
 
     private static readonly string _typePrefix = "urn:ed-fi:management-api";
     private static readonly string _unauthorizedType = $"{_typePrefix}:security:authentication";
-    private static readonly string _tooManyTokensType = $"{_unauthorizedType}:too-many-tokens";
     private static readonly string _tooManyRequestsType = $"{_typePrefix}:too-many-requests";
     private static readonly string _forbiddenType = $"{_typePrefix}:security:authorization";
     private static readonly string _badRequestTypePrefix = $"{_typePrefix}:bad-request";
@@ -75,40 +72,55 @@ public static class FailureResponse
         );
 
     /// <summary>
-    /// 429 response for a client that already holds the configured maximum number of active access
-    /// tokens. The limit is named in <c>errors</c> so the caller can see what it is up against.
+    /// The <c>error</c> of the CMS <c>/connect/token</c> 429. The DMS <c>/oauth/token</c> proxy's 429
+    /// parser (<c>OAuthManager</c> in <c>src/dms</c>) believes a token-limit answer only with this code
+    /// and <see cref="TooManyTokensMessage"/>'s sentence, and DMS's <c>OAuthManagerTests</c> builds its
+    /// envelope from both, so changing either here fails the DMS unit suite.
     /// </summary>
-    /// <remarks>
-    /// The <c>errors</c> message text is a cross-service contract, not merely wording: the DMS
-    /// <c>/oauth/token</c> proxy's 429 parser (<c>OAuthManager</c> in <c>src/dms</c>) reads the limit
-    /// back out of it and rebuilds its own message from the number. Changing the text here without
-    /// changing that parser leaves DMS answering a generic rate-limit 429 instead of the token-limit
-    /// one. DMS's <c>OAuthManagerTests</c> feeds this method's output through that parser, so a
-    /// reword here fails the DMS unit suite. Reword this text and the DMS parser has to be reworded
-    /// in the same change.
-    /// </remarks>
-    public static JsonNode ForTooManyTokens(int limit, string correlationId) =>
-        CreateBaseJsonObject(
-            detail: "The caller has authenticated too many times in too short of a time period.",
-            type: _tooManyTokensType,
-            title: "Too Many Tokens",
-            status: 429,
-            correlationId: correlationId,
-            errors:
-            [
-                $"Too many access tokens have been requested (limit is {limit}). Access tokens should be reused until they expire.",
-            ]
+    public const string TooManyTokensError = "temporarily_unavailable";
+
+    /// <summary>
+    /// The <c>error</c> of the <c>/connect/*</c> rate-limit 429 on <c>/connect/token</c>,
+    /// <c>/connect/revoke</c> and <c>/connect/introspect</c>. RFC 6749 §5.2 defines no rate-limit code,
+    /// so it is the <c>temporarily_unavailable</c> of §4.1.2.1, as for the token limit.
+    /// </summary>
+    public const string TooManyRequestsError = "temporarily_unavailable";
+
+    /// <summary>
+    /// The text of the <c>/connect/*</c> rate-limit 429: the <c>detail</c> of the problem details on
+    /// <c>/connect/register</c>, and the <c>error_description</c> of the OAuth error on the other three
+    /// routes. It is the text DMS uses for its own rate-limit rejection. The DMS <c>/oauth/token</c>
+    /// proxy (<c>OAuthManager</c> in <c>src/dms</c>) recognizes the rate-limit answer by it, and DMS's
+    /// <c>OAuthManagerTests</c> builds its envelope from it.
+    /// </summary>
+    public const string TooManyRequestsMessage =
+        "The number of allowed requests has been exceeded. Retry the request later.";
+
+    /// <summary>
+    /// The canonical token-limit sentence, formatted with the culture-invariant limit. This is the one
+    /// copy of the cross-service text: the CMS <c>/connect/token</c> endpoint returns it as the
+    /// <c>error_description</c> of its 429, and the DMS <c>/oauth/token</c> proxy's 429 parser
+    /// (<c>OAuthManager</c> in <c>src/dms</c>) reads the limit back out of it and rebuilds its own
+    /// message from the number. Rewording it means rewording that parser in the same change; DMS's
+    /// <c>OAuthManagerTests</c> feeds this method's output through the parser, so a reword here
+    /// fails the DMS unit suite.
+    /// </summary>
+    public static string TooManyTokensMessage(int limit) =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"Too many access tokens have been requested (limit is {limit}). Access tokens should be reused until they expire."
         );
 
     /// <summary>
-    /// 429 response for a request refused by the <c>/connect/*</c> rate limiter (DMS-1482). The type
-    /// mirrors DMS's established <c>urn:ed-fi:api:too-many-requests</c>, and the detail is the text DMS
-    /// uses for its own rate-limit rejection. Distinct from <see cref="ForTooManyTokens"/>, which is the
+    /// 429 response for a <c>/connect/register</c> request refused by the <c>/connect/*</c> rate limiter
+    /// (DMS-1482); the other three routes answer the OAuth form of the same rejection. The type mirrors
+    /// DMS's established <c>urn:ed-fi:api:too-many-requests</c>, and the detail is
+    /// <see cref="TooManyRequestsMessage"/>. Distinct from <see cref="TooManyTokensMessage"/>, which is the
     /// active-token cap and whose text DMS parses.
     /// </summary>
     public static JsonNode ForTooManyRequests(string correlationId) =>
         CreateBaseJsonObject(
-            detail: TooManyRequestsDetail,
+            detail: TooManyRequestsMessage,
             type: _tooManyRequestsType,
             title: "Too Many Requests",
             status: 429,
@@ -206,6 +218,16 @@ public static class FailureResponse
             []
         );
 
+    public static JsonNode ForEducationOrganizationScopeConflict(string detail, string correlationId) =>
+        CreateBaseJsonObject(
+            detail: detail,
+            type: $"{_conflictTypePrefix}:education-organization-scope",
+            title: "Education Organization Scope Conflict",
+            status: 409,
+            correlationId: correlationId,
+            []
+        );
+
     public static JsonNode ForUnresolvedReference(string detail, string correlationId) =>
         CreateBaseJsonObject(
             detail: detail,
@@ -256,6 +278,28 @@ public static class FailureResponse
             correlationId: correlationId,
             errors: errors
         );
+
+    /// <summary>
+    /// 502 <c>urn:ed-fi:management-api:bad-gateway:partial-sync</c>: the Application change is saved,
+    /// but the synchronization of the API clients in <paramref name="apiClientIds"/> with the identity
+    /// provider is not confirmed, so they remain pending until a later request completes it. A listed
+    /// client's provider update may have failed, or may have succeeded with its completion unrecorded.
+    /// </summary>
+    public static JsonNode ForPartialSync(int[] apiClientIds, string correlationId)
+    {
+        JsonObject response = CreateBaseJsonObject(
+            detail: apiClientIds.Length == 1
+                ? "The Application change is saved, but 1 API client is still pending synchronization with the identity provider. Send the same request again to retry it."
+                : $"The Application change is saved, but {apiClientIds.Length} API clients are still pending synchronization with the identity provider. Send the same request again to retry them.",
+            type: $"{_badGatewayTypePrefix}:partial-sync",
+            title: "Bad Gateway",
+            status: 502,
+            correlationId: correlationId,
+            errors: []
+        );
+        response["apiClientIds"] = JsonSerializer.SerializeToNode(apiClientIds, _serializerOptions);
+        return response;
+    }
 
     public static JsonNode ForUnknown(string correlationId) =>
         CreateBaseJsonObject(

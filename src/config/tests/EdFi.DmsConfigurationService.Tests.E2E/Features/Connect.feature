@@ -214,7 +214,7 @@ Feature: Connect endpoints
                   | client_secret | wrong                      |
                   | grant_type    | client_credentials         |
                   | scope         | edfi_admin_api/full_access |
-             Then it should respond with 401
+             Then it should respond with 400
               And the response headers include
                   """
                   {
@@ -222,19 +222,8 @@ Feature: Connect endpoints
                     "Pragma": "no-cache"
                   }
                   """
-              And the response body is
-                  """
-                  {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type":"urn:ed-fi:management-api:security:authentication",
-                    "title":"Authentication Failed",
-                    "status":401,
-                    "validationErrors":{},
-                     "errors": [
-                        "invalid_client. Invalid client or Invalid client credentials"
-                        ]
-                  }
-                  """
+              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
+              And the response header "WWW-Authenticate" is not present
 
         Scenario: 06 Verify token creation with invalid client_id value
              When a Form URL Encoded POST request is made to "/connect/register" with
@@ -256,17 +245,29 @@ Feature: Connect endpoints
                   | client_secret | S3cr3t!SuperLongSecretKeyWith$peci@lChar123456 |
                   | grant_type    | client_credentials                             |
                   | scope         | edfi_admin_api/full_access                     |
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
+              And the response header "WWW-Authenticate" is not present
+
+        Scenario: 07 An unknown client attempting HTTP Basic receives a 401 with a challenge
+             When a token is requested using HTTP Basic auth with client "unknown-{scenarioRunId}" and secret "wrong"
              Then it should respond with 401
-              And the response body is
+              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
+              And the response headers include
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type":"urn:ed-fi:management-api:security:authentication",
-                    "title":"Authentication Failed",
-                    "status":401,
-                    "validationErrors":{},
-                     "errors": [
-                        "invalid_client. Invalid client or Invalid client credentials"
-                        ]
+                    "WWW-Authenticate": "Basic realm=\"EdFi.DmsConfigurationService\""
                   }
                   """
+
+        Scenario: 08 An unsupported grant_type is rejected as unsupported_grant_type
+             When a token is requested with grant_type "password" using the system credentials
+             Then it should respond with 400
+              And the response is the OAuth error "unsupported_grant_type" with description "The specified grant type is not supported."
+              And the response header "WWW-Authenticate" is not present
+
+        Scenario: 09 A missing grant_type is rejected as invalid_request
+             When a token is requested without a grant_type using the system credentials
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_request" with description "The grant_type parameter is missing."
+              And the response header "WWW-Authenticate" is not present

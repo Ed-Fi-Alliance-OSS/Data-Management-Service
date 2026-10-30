@@ -5,14 +5,16 @@
 
 using System.Globalization;
 using System.Threading.RateLimiting;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 /// <summary>
 /// The 429 answer for a <c>/connect/*</c> request refused by <see cref="ConnectRateLimiter"/>, shared by
-/// the source gate (middleware) and the client gate (handlers) through <see cref="Create"/>
-/// so both answer with Ed-Fi problem details, including on routes whose other errors use the OAuth
-/// contract. DMS-1482 requires this format specifically for rate-limit rejections.
+/// the source gate (middleware) and the client gate (handlers) through <see cref="Create"/>, so both
+/// answer in the route's own error contract: the OAuth format on the routes that carry
+/// <see cref="OAuthErrorContractMetadata"/> (token, revocation and introspection), and Ed-Fi problem
+/// details on <c>/connect/register</c>.
 /// </summary>
 internal static class ConnectRateLimitRejection
 {
@@ -48,6 +50,12 @@ internal static class ConnectRateLimitRejection
             );
         }
 
-        return FailureResults.TooManyRequests(context.TraceIdentifier);
+        return context.GetEndpoint()?.Metadata.GetMetadata<OAuthErrorContractMetadata>() is null
+            ? FailureResults.TooManyRequests(context.TraceIdentifier)
+            : OAuthErrorResponseWriter.Create(
+                StatusCodes.Status429TooManyRequests,
+                FailureResponse.TooManyRequestsError,
+                FailureResponse.TooManyRequestsMessage
+            );
     }
 }

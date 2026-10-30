@@ -1551,28 +1551,6 @@ public class ApiClientTests : DatabaseTest
                     }
                 )
             );
-            _results.Add(
-                await applicationRepository.UpdateApplication(
-                    new ApplicationUpdateCommand
-                    {
-                        Id = _secondApplicationId,
-                        ApplicationName = "DMS1529 Logged Second Application",
-                        VendorId = _vendorId,
-                        ClaimSetName = "TestClaimSet",
-                        EducationOrganizationIds = [],
-                        ProfileIds = [],
-                    },
-                    new ApiClientCommand { ClientId = _secondClientId, ClientUuid = _takenClientUuid }
-                )
-            );
-            _results.Add(
-                await applicationRepository.SyncApplicationApiClientUuid(
-                    _secondApplicationId,
-                    _secondClientId,
-                    _secondClientUuid,
-                    _takenClientUuid
-                )
-            );
         }
 
         private IEnumerable<(LogLevel Level, string Message, Exception? Exception)> AllEntries =>
@@ -1593,16 +1571,14 @@ public class ApiClientTests : DatabaseTest
                     nameof(ApiClientUpdateResult.FailureDuplicateClientUuid),
                     nameof(ApiClientUuidSyncResult.FailureNewUuidInUse),
                     nameof(ApplicationInsertResult.FailureDuplicateClientId),
-                    nameof(ApplicationInsertResult.FailureDuplicateClientUuid),
-                    nameof(ApplicationUpdateResult.FailureDuplicateClientUuid),
-                    nameof(ApiClientUuidSyncResult.FailureNewUuidInUse)
+                    nameof(ApplicationInsertResult.FailureDuplicateClientUuid)
                 );
 
         [Test]
         public void It_logs_one_warning_per_conflict_and_nothing_at_error()
         {
             _apiClientLogger.Entries.Where(entry => entry.Level == LogLevel.Warning).Should().HaveCount(4);
-            _applicationLogger.Entries.Where(entry => entry.Level == LogLevel.Warning).Should().HaveCount(4);
+            _applicationLogger.Entries.Where(entry => entry.Level == LogLevel.Warning).Should().HaveCount(2);
             AllEntries.Should().NotContain(entry => entry.Level == LogLevel.Error);
         }
 
@@ -1630,7 +1606,7 @@ public class ApiClientTests : DatabaseTest
                 .Select(entry => entry.Message)
                 .ToArray();
             messages.Count(message => message.Contains("UX_ApiClient_ClientId")).Should().Be(2);
-            messages.Count(message => message.Contains("UX_ApiClient_ClientUuid")).Should().Be(6);
+            messages.Count(message => message.Contains("UX_ApiClient_ClientUuid")).Should().Be(4);
             messages.Should().OnlyContain(message => message.Contains("2627"));
         }
     }

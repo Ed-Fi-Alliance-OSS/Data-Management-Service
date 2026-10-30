@@ -1,0 +1,13 @@
+{
+  "claimSets": [
+    {
+      "claimSetName": "Zoo",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "Alpha",
+      "isSystemReserved": false
+    }
+  ],
+  "claimsHierarchy": []
+}

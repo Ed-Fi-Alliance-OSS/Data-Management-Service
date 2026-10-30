@@ -29,6 +29,11 @@
     <ItemGroup>
         <!-- The secret resolution proofs decrypt what the Configuration Service returns with its own encryption service. -->
         <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
+        <!-- The DMS-1642 fan-out measurement calls the real identity provider repositories directly. -->
+        <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Keycloak\EdFi.DmsConfigurationService.Backend.Keycloak.csproj" />
+        <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend.OpenIddict\EdFi.DmsConfigurationService.Backend.OpenIddict.csproj" />
+        <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Postgresql\EdFi.DmsConfigurationService.Backend.Postgresql.csproj" />
+        <ProjectReference Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Mssql\EdFi.DmsConfigurationService.Backend.Mssql.csproj" />
         <!-- Build the CLI independently; its runtime closure is staged below, outside the test host's graph. -->
         <ProjectReference
             Include="..\..\clis\EdFi.DmsConfigurationService.SecurityMetadataTools\EdFi.DmsConfigurationService.SecurityMetadataTools.csproj"

@@ -958,7 +958,7 @@ echo "data store re-saved -> HTTP 204"
 #     `CMSReadOnlyAccess` by default, and the restore replaced `dmscs.OpenIddict*` with the PRODUCER's
 #     rows -- so the `CMSReadOnlyAccess` row now in the database stores a hash of the producer's
 #     secret, which is not published. DMS presents your `DMS_CONFIGURATION_SERVICE_CLIENT_SECRET` on every call
-#     to the Configuration Service, so unless your secret is byte-identical to one you have never seen, the Configuration Service answers 401 and
+#     to the Configuration Service, so unless your secret is byte-identical to one you have never seen, the Configuration Service rejects DMS's token request and
 #     DMS cannot read claim sets or authorization metadata. There is no way to check whether you got
 #     lucky, so this step is unconditional.
 #
@@ -1178,7 +1178,7 @@ Then resume at step 5. In a fresh shell, first re-run the three assignments at t
 | Install your own OpenIddict key (step 7) | everyone | the shipped private key is encrypted with the producer's identity key; without this no token mints |
 | Rotate `SourceIdentity` (step 8) | everyone standing up a new data store | a restored copied backup is an independent writable data store and must not share a source identity with the producer |
 | Register admin client, re-save data store (step 9) | everyone | the shipped `dmscs` connection string is producer-local and encrypted with the producer's database key |
-| Recreate DMS's Configuration Service client (step 10) | everyone | the shipped `CMSReadOnlyAccess` row hashes the producer's secret, so DMS gets 401 from the Configuration Service with yours |
+| Recreate DMS's Configuration Service client (step 10) | everyone | the shipped `CMSReadOnlyAccess` row hashes the producer's secret, so the Configuration Service rejects DMS's token request with yours |
 | Create your own DMS API client (step 12) | everyone who reads data | the shipped vendor/application/client rows are the producer's and their secrets are not published |
 | Restart DMS rather than re-provisioning | anyone who saw a 503 | first-use validation failures are cached for the process lifetime |
 

@@ -17,10 +17,11 @@ public sealed record KeycloakPublicClient(string ClientUuid, string ClientId, st
 /// <item>a confidential observer client that only introspects; its credentials are held here and
 /// are never sent to <c>/connect/revoke</c>;</item>
 /// <item>a client scope with an audience mapper that puts the observer into the <c>aud</c> of every
-/// observed access token, because Keycloak 26.4.12 and later refuse introspection to a client absent
-/// from <c>aud</c> (§9.1.4 correction 2). It is attached to the existing clients whose tokens the
-/// scenarios observe and detached again on disposal; it stays out of the token's <c>scope</c> claim
-/// so the Configuration Service's own scope checks see the same value as without it;</item>
+/// observed access token, because Keycloak from upstream 26.6.2 (the Red Hat build's 26.4.12) answers
+/// <c>active:false</c> to an introspecting client absent from <c>aud</c> (§9.1.4 correction 2). It is attached to the
+/// existing clients whose tokens the scenarios observe and detached again on disposal; it stays out of
+/// the token's <c>scope</c> claim so the Configuration Service's own scope checks see the same value
+/// as without it;</item>
 /// <item>public clients with a user, one per scenario that asks for one. Each resource is tracked from
 /// the moment Keycloak creates it, whether or not the rest of the setup succeeds, and leaves tracking
 /// only once it has been deleted, so a deletion that fails is retried at feature teardown and one that

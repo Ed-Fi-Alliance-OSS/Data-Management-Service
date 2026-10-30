@@ -11,7 +11,8 @@ namespace EdFi.DmsConfigurationService.Backend;
 /// owns request shape and the HTTP status and challenge rules.
 /// <see cref="TokenIntrospectionResult.Inactive"/> covers every token outcome, a token issued to
 /// another client included, so the answer is never an oracle. One method rather than a separate
-/// authentication step because the endpoint must never see stored client secrets. See
+/// authentication step because the endpoint must never see stored client secrets, and because
+/// Keycloak authenticates the caller inside the delegated introspection request. See
 /// reference/design/configuration-service/CS-AUTH.md.
 /// </summary>
 public interface ITokenIntrospectionManager
@@ -34,8 +35,14 @@ public sealed record TokenIntrospectionRequest(
 );
 
 /// <summary>
-/// The claims of an active token that the caller owns. <paramref name="Exp"/> and
+/// The claims of an active token that the caller owns. <paramref name="Scope"/> is space-delimited
+/// and empty when the token has no scope. <paramref name="Exp"/> and
 /// <paramref name="Iat"/> are Unix seconds so the endpoint can emit JSON integers.
+/// <paramref name="Aud"/> holds every audience in the provider's order and is empty when the token
+/// has none; the endpoint emits a single audience as a string and several as an array (RFC 7662
+/// §2.2). The record compares <paramref name="Aud"/> by reference, so compare instances member by
+/// member. <paramref name="TokenType"/> is the access token's type as RFC 7662 §2.2 <c>token_type</c>
+/// reports it: <c>Bearer</c>, or <c>DPoP</c> for a DPoP-bound access token (RFC 9449 §6.2).
 /// </summary>
 public sealed record IntrospectedToken(
     string ClientId,
@@ -43,16 +50,20 @@ public sealed record IntrospectedToken(
     long Exp,
     long Iat,
     string? Sub,
-    string? Aud,
-    string? Iss
+    IReadOnlyList<string> Aud,
+    string? Iss,
+    string TokenType
 );
 
 /// <summary>
 /// The outcome of one introspection attempt. A failure that prevents authenticating the caller is
 /// kept apart from the authentication and token outcomes, so it is never answered as rejected
-/// credentials. Once the caller is authenticated, every token outcome is
-/// <see cref="Inactive"/>, including a token that could not be decided because a dependency
-/// failed.
+/// credentials. A request the provider rejects before judging the caller is
+/// <see cref="InvalidRequest"/>, answered neither as rejected credentials nor as an outage. Once the
+/// caller is authenticated, every token outcome is <see cref="Inactive"/>, including, under the
+/// self-contained provider, a token that could not be decided because a dependency failed. Under
+/// Keycloak, an answer that does not tell a malformed token from Keycloak's own failure is
+/// <see cref="TemporarilyUnavailable"/>.
 /// </summary>
 public abstract record TokenIntrospectionResult
 {
@@ -70,15 +81,23 @@ public abstract record TokenIntrospectionResult
     public sealed record Inactive : TokenIntrospectionResult;
 
     /// <summary>
-    /// The caller failed client authentication, for example an unknown client, a wrong secret or an
-    /// unapproved client.
+    /// The caller failed client authentication, for example an unknown client, a wrong secret, an
+    /// unapproved client or a public client.
     /// </summary>
     public sealed record InvalidClient : TokenIntrospectionResult;
 
     /// <summary>
+    /// The provider rejected the request shape for a reason the endpoint could not pre-empt, before
+    /// it judged the caller: under Keycloak, a form value over its form attribute limit.
+    /// </summary>
+    public sealed record InvalidRequest : TokenIntrospectionResult;
+
+    /// <summary>
     /// An operational failure that prevented authenticating the caller, such as a client store that
-    /// could not be read, so the request was not judged. <paramref name="Reason"/> is a fixed
-    /// boundary label for logs only and never carries caller or provider content.
+    /// could not be read, so the request was not judged. Under Keycloak one provider call both
+    /// authenticates and decides, so a provider timeout, outage or unrecognized answer is this too.
+    /// <paramref name="Reason"/> is a fixed boundary label for logs only and never carries caller or
+    /// provider content.
     /// </summary>
     public sealed record TemporarilyUnavailable(string Reason) : TokenIntrospectionResult;
 }

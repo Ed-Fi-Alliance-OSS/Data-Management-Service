@@ -33,10 +33,9 @@ public static class ProfileValidationUtils
     {
         try
         {
-            var doc = new XmlDocument();
-            doc.LoadXml(xml);
+            var doc = LoadProfileDocument(xml);
             var node = doc.DocumentElement;
-            return node != null && node.Name == "Profile" && node.GetAttribute("name") == profileName;
+            return node is not null && node.Name == "Profile" && node.GetAttribute("name") == profileName;
         }
         catch
         {
@@ -100,10 +99,9 @@ public static class ProfileValidationUtils
     {
         try
         {
-            var doc = new XmlDocument();
-            doc.LoadXml(xml);
+            var doc = LoadProfileDocument(xml);
             var resources = doc.DocumentElement?.GetElementsByTagName("Resource");
-            return resources != null && resources.Count > 0;
+            return resources is not null && resources.Count > 0;
         }
         catch
         {
@@ -120,17 +118,16 @@ public static class ProfileValidationUtils
     {
         try
         {
-            var doc = new XmlDocument();
-            doc.LoadXml(xml);
+            var doc = LoadProfileDocument(xml);
             var resources = doc.DocumentElement?.GetElementsByTagName("Resource");
-            if (resources == null)
+            if (resources is null)
             {
                 return false;
             }
             foreach (XmlNode node in resources)
             {
                 if (
-                    node.Attributes?["name"] == null
+                    node.Attributes?["name"] is null
                     || string.IsNullOrWhiteSpace(node.Attributes?["name"]?.Value ?? string.Empty)
                 )
                 {
@@ -143,5 +140,26 @@ public static class ProfileValidationUtils
         {
             return false;
         }
+    }
+
+    /// <summary>
+    /// Loads Profile XML into a DOM, rejecting any document that declares a DTD before entity
+    /// declarations or references are processed. Throws on DTDs and on malformed XML; callers
+    /// map that to a false result.
+    /// </summary>
+    private static XmlDocument LoadProfileDocument(string xml)
+    {
+        // XmlTextReader rather than XmlReader.Create: the factory reader normalizes attribute
+        // whitespace, which would change how literal tab/CR/LF in profile names compare.
+        var doc = new XmlDocument();
+        using var stringReader = new StringReader(xml);
+        using var reader = new XmlTextReader(stringReader, doc.NameTable)
+        {
+            DtdProcessing = DtdProcessing.Prohibit,
+            XmlResolver = null,
+            Normalization = false,
+        };
+        doc.Load(reader);
+        return doc;
     }
 }

@@ -49,9 +49,10 @@ public static class KeycloakServiceExtensions
         services.AddSingleton<IUnapprovalTokenRevocation, NoOpUnapprovalTokenRevocation>();
         services.AddTransient<ITokenManager, KeycloakTokenManager>();
 
-        // Transient, not singleton: the manager depends on the scoped KeycloakContext and
-        // IKeycloakClientFacade (DMS-1327 D-12).
+        // Transient, not singleton: the managers depend on the scoped KeycloakContext, and the
+        // revocation manager on the scoped IKeycloakClientFacade too (DMS-1327 D-12).
         services.AddTransient<ITokenRevocationManager, KeycloakTokenRevocationManager>();
+        services.AddTransient<ITokenIntrospectionManager, KeycloakTokenIntrospectionManager>();
 
         return services;
     }

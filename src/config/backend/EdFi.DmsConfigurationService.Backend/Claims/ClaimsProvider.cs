@@ -3,11 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
+using EdFi.DmsConfigurationService.Claims;
+using EdFi.DmsConfigurationService.DataModel;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -44,7 +45,7 @@ public class ClaimsOptions
     /// <summary>
     /// Default Ed-Fi Data Standard version used when none is configured.
     /// </summary>
-    public const string DefaultDataStandardVersion = "5.2";
+    public const string DefaultDataStandardVersion = BundledClaimsProvider.DefaultDataStandardVersion;
 
     /// <summary>
     /// The source for loading claims configuration
@@ -177,7 +178,7 @@ public class ClaimsProvider(
     {
         lock (_reloadLock)
         {
-            if (_claimsNodes == null)
+            if (_claimsNodes is null)
             {
                 // Initial load
                 ClaimsLoadResult loadResult = LoadClaimsFromSource();
@@ -192,7 +193,7 @@ public class ClaimsProvider(
                     );
                 }
 
-                if (loadResult.Nodes == null)
+                if (loadResult.Nodes is null)
                 {
                     ClaimsFailure failure = new(
                         "Configuration",
@@ -278,7 +279,7 @@ public class ClaimsProvider(
         if (string.IsNullOrWhiteSpace(claimsOptions.Value.ClaimsDirectory))
         {
             ClaimsFailure failure = new("Configuration", "No ClaimsDirectory configuration is set");
-            logger.LogError(failure.Message);
+            logger.LogError("{Message}", LoggingUtility.SanitizeForLog(failure.Message));
             return new ClaimsLoadResult(null, [failure]);
         }
 
@@ -287,7 +288,7 @@ public class ClaimsProvider(
         if (!Directory.Exists(claimsDirectory))
         {
             ClaimsFailure failure = new("FileSystem", $"The directory {claimsDirectory} does not exist");
-            logger.LogError(failure.Message);
+            logger.LogError("{Message}", LoggingUtility.SanitizeForLog(failure.Message));
             return new ClaimsLoadResult(null, [failure]);
         }
 
@@ -314,7 +315,7 @@ public class ClaimsProvider(
             }
 
             // Apply fragment composition if base claims loaded successfully
-            if (baseClaimsResult.Nodes != null)
+            if (baseClaimsResult.Nodes is not null)
             {
                 logger.LogInformation("Applying fragment composition to base claims");
                 ClaimsLoadResult compositionResult = claimsFragmentComposer.ComposeClaimsFromFragments(
@@ -328,12 +329,15 @@ public class ClaimsProvider(
                     // Log failures but continue with base claims
                     foreach (ClaimsFailure failure in compositionResult.Failures)
                     {
-                        logger.LogWarning("Fragment composition failure: {Message}", failure.Message);
+                        logger.LogWarning(
+                            "Fragment composition failure: {Message}",
+                            LoggingUtility.SanitizeForLog(failure.Message)
+                        );
                     }
                     return baseClaimsResult;
                 }
 
-                if (compositionResult.Nodes != null)
+                if (compositionResult.Nodes is not null)
                 {
                     logger.LogInformation("Fragment composition completed successfully");
                     return compositionResult;
@@ -350,13 +354,13 @@ public class ClaimsProvider(
                 null,
                 ex
             );
-            logger.LogError(ex, failure.Message);
+            logger.LogError(ex, "{Message}", LoggingUtility.SanitizeForLog(failure.Message));
             return new ClaimsLoadResult(null, [failure]);
         }
         catch (IOException ex)
         {
             ClaimsFailure failure = new("IOError", "Failed to read claims fragment files", null, ex);
-            logger.LogError(ex, failure.Message);
+            logger.LogError(ex, "{Message}", LoggingUtility.SanitizeForLog(failure.Message));
             return new ClaimsLoadResult(null, [failure]);
         }
         catch (InvalidOperationException ex)
@@ -367,7 +371,7 @@ public class ClaimsProvider(
                 null,
                 ex
             );
-            logger.LogError(ex, failure.Message);
+            logger.LogError(ex, "{Message}", LoggingUtility.SanitizeForLog(failure.Message));
             return new ClaimsLoadResult(null, [failure]);
         }
     }
@@ -389,7 +393,7 @@ public class ClaimsProvider(
                 "FileSystem",
                 $"No Claims.json file found in directory {claimsDirectory}"
             );
-            logger.LogError(failure.Message);
+            logger.LogError("{Message}", LoggingUtility.SanitizeForLog(failure.Message));
             return new ClaimsLoadResult(null, [failure]);
         }
 
@@ -399,36 +403,39 @@ public class ClaimsProvider(
                 "Configuration",
                 $"Multiple Claims.json files found in directory {claimsDirectory}"
             );
-            logger.LogError(failure.Message);
+            logger.LogError("{Message}", LoggingUtility.SanitizeForLog(failure.Message));
             return new ClaimsLoadResult(null, [failure]);
         }
 
         try
         {
-            logger.LogInformation("Loading Claims.json file: {FilePath}", claimsFiles[0]);
+            logger.LogInformation(
+                "Loading Claims.json file: {FilePath}",
+                LoggingUtility.SanitizeForLog(claimsFiles[0])
+            );
             string fileContent = File.ReadAllText(claimsFiles[0]);
 
             JsonNode? claimsJson = JsonNode.Parse(fileContent);
-            if (claimsJson == null)
+            if (claimsJson is null)
             {
                 ClaimsFailure failure = new(
                     "ParseError",
                     $"Unable to parse Claims.json file at '{claimsFiles[0]}' - parsed to null"
                 );
-                logger.LogError(failure.Message);
+                logger.LogError("{Message}", LoggingUtility.SanitizeForLog(failure.Message));
                 return new ClaimsLoadResult(null, [failure]);
             }
 
             JsonNode? claimSetsNode = claimsJson["claimSets"];
             JsonNode? claimsHierarchyNode = claimsJson["claimsHierarchy"];
 
-            if (claimSetsNode == null || claimsHierarchyNode == null)
+            if (claimSetsNode is null || claimsHierarchyNode is null)
             {
                 ClaimsFailure failure = new(
                     "Configuration",
                     "Claims.json missing required properties (claimSets or claimsHierarchy)"
                 );
-                logger.LogError(failure.Message);
+                logger.LogError("{Message}", LoggingUtility.SanitizeForLog(failure.Message));
                 return new ClaimsLoadResult(null, [failure]);
             }
 
@@ -437,134 +444,45 @@ public class ClaimsProvider(
         catch (JsonException ex)
         {
             ClaimsFailure failure = new("JsonError", "Invalid JSON format in Claims.json", null, ex);
-            logger.LogError(ex, failure.Message);
+            logger.LogError(ex, "{Message}", LoggingUtility.SanitizeForLog(failure.Message));
             return new ClaimsLoadResult(null, [failure]);
         }
         catch (FileNotFoundException ex)
         {
             ClaimsFailure failure = new("FileNotFound", "Claims.json file not found", null, ex);
-            logger.LogError(ex, failure.Message);
+            logger.LogError(ex, "{Message}", LoggingUtility.SanitizeForLog(failure.Message));
             return new ClaimsLoadResult(null, [failure]);
         }
         catch (IOException ex)
         {
             ClaimsFailure failure = new("IOError", "Failed to read Claims.json file", null, ex);
-            logger.LogError(ex, failure.Message);
+            logger.LogError(ex, "{Message}", LoggingUtility.SanitizeForLog(failure.Message));
             return new ClaimsLoadResult(null, [failure]);
         }
     }
 
     /// <summary>
-    /// Gets the assembly to use for embedded resource loading
-    /// </summary>
-    protected virtual Assembly GetAssemblyForEmbeddedResource()
-    {
-        return Assembly.GetExecutingAssembly();
-    }
-
-    /// <summary>
-    /// Resolves the configured Ed-Fi Data Standard version, falling back to the default when unset.
-    /// </summary>
-    private string ResolveDataStandardVersion()
-    {
-        string version = claimsOptions.Value.DataStandardVersion;
-        return string.IsNullOrWhiteSpace(version) ? ClaimsOptions.DefaultDataStandardVersion : version.Trim();
-    }
-
-    /// <summary>
-    /// Builds the embedded resource name for a data standard version. Version "5.2" maps to the
-    /// Claims/Standards/ds52/ folder, preserving the historical DS 5.2 base claims.
-    /// </summary>
-    private static string EmbeddedClaimsResourceName(Assembly assembly, string dataStandardVersion)
-    {
-        string folder = "ds" + dataStandardVersion.Replace(".", "");
-        return $"{assembly.GetName().Name}.Claims.Standards.{folder}.Claims.json";
-    }
-
-    /// <summary>
-    /// Loads claims from assembly
+    /// Loads the shared bundled policy and preserves CMS logging and failure handling.
     /// </summary>
     private ClaimsLoadResult LoadClaimsFromAssembly()
     {
-        try
+        ClaimsLoadResult result = BundledClaimsProvider.Load(claimsOptions.Value.DataStandardVersion);
+        foreach (ClaimsFailure failure in result.Failures)
         {
-            Assembly assembly = GetAssemblyForEmbeddedResource();
-            string dataStandardVersion = ResolveDataStandardVersion();
-            string resourceName = EmbeddedClaimsResourceName(assembly, dataStandardVersion);
+            logger.LogError(failure.Exception, "{Message}", LoggingUtility.SanitizeForLog(failure.Message));
+        }
 
-            using Stream? stream = assembly.GetManifestResourceStream(resourceName);
-            if (stream == null)
-            {
-                ClaimsFailure failure = new(
-                    "Configuration",
-                    $"Could not load embedded Claims.json for data standard version '{dataStandardVersion}' (resource '{resourceName}')"
-                );
-                logger.LogError(failure.Message);
-                return new ClaimsLoadResult(null, [failure]);
-            }
-
-            using StreamReader reader = new(stream);
-            string jsonContent = reader.ReadToEnd();
-
-            JsonNode? claimsJson = JsonNode.Parse(jsonContent);
-            if (claimsJson == null)
-            {
-                ClaimsFailure failure = new(
-                    "ParseError",
-                    "Unable to parse assembly-bundled Claims.json file"
-                );
-                logger.LogError(failure.Message);
-                return new ClaimsLoadResult(null, [failure]);
-            }
-
-            JsonNode? claimSetsNode = claimsJson["claimSets"];
-            JsonNode? claimsHierarchyNode = claimsJson["claimsHierarchy"];
-
-            if (claimSetsNode == null || claimsHierarchyNode == null)
-            {
-                ClaimsFailure failure = new(
-                    "Configuration",
-                    "Assembly Claims.json missing required properties"
-                );
-                logger.LogError(failure.Message);
-                return new ClaimsLoadResult(null, [failure]);
-            }
-
+        if (result.Failures.Count == 0)
+        {
             logger.LogInformation(
                 "Loaded embedded Claims.json for data standard version {DataStandardVersion}",
-                dataStandardVersion
+                LoggingUtility.SanitizeForLog(
+                    BundledClaimsProvider.ResolveDataStandardVersion(claimsOptions.Value.DataStandardVersion)
+                )
             );
+        }
 
-            return new ClaimsLoadResult(new ClaimsDocument(claimSetsNode, claimsHierarchyNode), []);
-        }
-        catch (JsonException ex)
-        {
-            ClaimsFailure failure = new("JsonError", "Invalid JSON format in embedded Claims.json", null, ex);
-            logger.LogError(ex, failure.Message);
-            return new ClaimsLoadResult(null, [failure]);
-        }
-        catch (IOException ex)
-        {
-            ClaimsFailure failure = new(
-                "IOError",
-                "Failed to read embedded Claims.json from assembly",
-                null,
-                ex
-            );
-            logger.LogError(ex, failure.Message);
-            return new ClaimsLoadResult(null, [failure]);
-        }
-        catch (InvalidOperationException ex)
-        {
-            ClaimsFailure failure = new(
-                "ResourceError",
-                "Embedded Claims.json resource not found in assembly",
-                null,
-                ex
-            );
-            logger.LogError(ex, failure.Message);
-            return new ClaimsLoadResult(null, [failure]);
-        }
+        return result;
     }
 
     /// <summary>
@@ -592,13 +510,13 @@ public class ClaimsProvider(
             JsonNode? hierarchyNode = JsonNode.Parse(hierarchyJson);
 
             // Check for null parsing results
-            if (claimSetsNode == null)
+            if (claimSetsNode is null)
             {
                 failures.Add(new ClaimsFailure("Validation", "ClaimSets node parsed to null", null));
                 return new ClaimsLoadStatus(false, failures);
             }
 
-            if (hierarchyNode == null)
+            if (hierarchyNode is null)
             {
                 failures.Add(new ClaimsFailure("Validation", "ClaimsHierarchy node parsed to null", null));
                 return new ClaimsLoadStatus(false, failures);
@@ -624,8 +542,8 @@ public class ClaimsProvider(
                 {
                     logger.LogError(
                         "Validation error at path '{FailurePath}': {FailureMessages}",
-                        error.FailurePath.Value,
-                        string.Join(", ", error.FailureMessages)
+                        LoggingUtility.SanitizeForLog(error.FailurePath.Value),
+                        LoggingUtility.SanitizeForLog(string.Join(", ", error.FailureMessages))
                     );
 
                     failures.Add(

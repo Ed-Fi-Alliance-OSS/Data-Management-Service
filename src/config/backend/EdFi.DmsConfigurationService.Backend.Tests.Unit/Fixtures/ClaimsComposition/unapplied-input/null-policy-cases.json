@@ -1,0 +1,291 @@
+[
+  {
+    "name": "non-parent-null-only",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false,
+          "authorizationStrategyOverridesForCRUD": [
+            null
+          ]
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "NullPolicyEntry",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].authorizationStrategyOverridesForCRUD[0]"
+      },
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-mixed",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false,
+          "authorizationStrategyOverridesForCRUD": [
+            null,
+            {
+              "actionName": "Read",
+              "authorizationStrategies": [
+                {
+                  "name": "Applied"
+                }
+              ]
+            },
+            null,
+            {
+              "actionName": "Update"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "non-parent-mixed.json",
+    "diagnostics": [
+      {
+        "code": "NullPolicyEntry",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].authorizationStrategyOverridesForCRUD[0]"
+      },
+      {
+        "code": "NullPolicyEntry",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].authorizationStrategyOverridesForCRUD[2]"
+      },
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false,
+          "authorizationStrategyOverridesForCRUD": []
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  },
+  {
+    "name": "parent-null-only",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "_defaultAuthorizationStrategiesForCrud": [
+            null
+          ]
+        }
+      ]
+    },
+    "expected": "new-parent.json",
+    "diagnostics": [
+      {
+        "code": "NullPolicyEntry",
+        "claimName": "edfi/new",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0]._defaultAuthorizationStrategiesForCrud[0]"
+      }
+    ]
+  },
+  {
+    "name": "parent-mixed",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "_defaultAuthorizationStrategiesForCrud": [
+            null,
+            {
+              "actionName": "Read",
+              "authorizationStrategies": [
+                {
+                  "name": "Applied"
+                }
+              ]
+            },
+            null,
+            {
+              "actionName": "Update",
+              "authorizationStrategies": [
+                {
+                  "name": "Second"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "parent-mixed.json",
+    "diagnostics": [
+      {
+        "code": "NullPolicyEntry",
+        "claimName": "edfi/new",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0]._defaultAuthorizationStrategiesForCrud[0]"
+      },
+      {
+        "code": "NullPolicyEntry",
+        "claimName": "edfi/new",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0]._defaultAuthorizationStrategiesForCrud[2]"
+      }
+    ]
+  },
+  {
+    "name": "parent-empty",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true,
+          "_defaultAuthorizationStrategiesForCrud": []
+        }
+      ]
+    },
+    "expected": "new-parent.json",
+    "diagnostics": []
+  },
+  {
+    "name": "parent-absent",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/new",
+          "isParent": true
+        }
+      ]
+    },
+    "expected": "new-parent.json",
+    "diagnostics": []
+  },
+  {
+    "name": "matched-parent-null-ignored-values",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": true,
+          "claimSets": [
+            null
+          ],
+          "_defaultAuthorizationStrategiesForCrud": [
+            {
+              "actionName": "Read",
+              "authorizationStrategies": [
+                null
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].claimSets"
+      },
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0]._defaultAuthorizationStrategiesForCrud"
+      }
+    ]
+  },
+  {
+    "name": "non-parent-null-ignored-values",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/student",
+          "isParent": false,
+          "claimSets": [
+            null
+          ]
+        }
+      ]
+    },
+    "expected": "registered.json",
+    "diagnostics": [
+      {
+        "code": "UnappliedPolicyField",
+        "claimName": "edfi/student",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].claimSets"
+      },
+      {
+        "code": "ClaimSetRegistered",
+        "claimName": "",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.name"
+      }
+    ]
+  }
+]

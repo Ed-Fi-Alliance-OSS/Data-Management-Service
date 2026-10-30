@@ -91,9 +91,9 @@ Feature: Metadata endpoints
                   | null is rejected                  |
                   | caller's tenant                   |
               And the response body contains OpenAPI specification
-                  | Field                                                                                  | Value |
-                  | paths./v3/apiClients.post.requestBody.content.application/json.example.dataStoreIds     | []    |
-                  | paths./v3/apiClients/{id}.put.requestBody.content.application/json.example.dataStoreIds | []    |
+                  | Field                                                                                                   | Value |
+                  | paths./v3/apiClients.post.requestBody.content.application/json.examples.inherit.value.dataStoreIds      | []    |
+                  | paths./v3/apiClients/{id}.put.requestBody.content.application/json.examples.keepScope.value.dataStoreIds | []    |
 
         # Single-tenant only: on a multi-tenant stack the list holds every tenant, and Tenants.feature creates
         # tenants. An empty list alone does not mean multi-tenancy is off (DMS-1508 AC4).

@@ -128,76 +128,10 @@ public abstract class ConsistencyOperationTestBase : DatabaseTest
 }
 
 [TestFixture]
-public class Given_an_application_update_state_read : ConsistencyOperationTestBase
-{
-    private ApplicationUpdateStateResult _result = null!;
-
-    [SetUp]
-    public async Task Act() =>
-        _result = await _applicationRepository.GetApplicationUpdateState(_applicationId, _clientId);
-
-    [Test]
-    public void It_returns_the_application_scalars()
-    {
-        var state = ((ApplicationUpdateStateResult.Success)_result).State;
-        state.ApplicationName.Should().Be("Consistency Test Application");
-        state.ClaimSetName.Should().Be("ConsistencyClaimSet");
-    }
-
-    [Test]
-    public void It_returns_the_vendor_reference()
-    {
-        var state = ((ApplicationUpdateStateResult.Success)_result).State;
-        state.VendorId.Should().Be(_vendorId);
-    }
-
-    [Test]
-    public void It_returns_the_mapping_sets()
-    {
-        var state = ((ApplicationUpdateStateResult.Success)_result).State;
-        state.EducationOrganizationIds.Should().BeEquivalentTo([100L, 200L]);
-        state.ProfileIds.Should().Equal(_profileId);
-    }
-
-    [Test]
-    public void It_returns_the_selected_clients_identity()
-    {
-        var state = ((ApplicationUpdateStateResult.Success)_result).State;
-        state.ClientId.Should().Be(_clientId);
-        state.ClientUuid.Should().Be(_clientUuid);
-        state.IsApproved.Should().BeTrue();
-    }
-
-    [Test]
-    public void It_returns_only_the_selected_clients_data_stores()
-    {
-        // The aggregate read unions data stores across every client; the update state must
-        // carry exactly the selected client's set.
-        var state = ((ApplicationUpdateStateResult.Success)_result).State;
-        state.ClientDataStoreIds.Should().Equal(_dataStoreId1);
-    }
-}
-
-[TestFixture]
-public class Given_an_application_update_state_read_for_a_missing_application : ConsistencyOperationTestBase
-{
-    private ApplicationUpdateStateResult _result = null!;
-
-    [SetUp]
-    public async Task Act() =>
-        _result = await _applicationRepository.GetApplicationUpdateState(999999, _clientId);
-
-    [Test]
-    public void It_returns_not_exists() =>
-        _result.Should().BeOfType<ApplicationUpdateStateResult.FailureNotExists>();
-}
-
-[TestFixture]
-public class Given_an_application_update_state_read_during_an_uncommitted_update
-    : ConsistencyOperationTestBase
+public class Given_an_application_sync_state_read_during_an_uncommitted_update : ConsistencyOperationTestBase
 {
     private bool _completedWhileWriterHeldLock;
-    private ApplicationUpdateStateResult _result = null!;
+    private ApplicationSyncStateResult _result = null!;
 
     [SetUp]
     public async Task Act()
@@ -209,9 +143,8 @@ public class Given_an_application_update_state_read_during_an_uncommitted_update
             writer
         );
 
-        Task<ApplicationUpdateStateResult> reading = _applicationRepository.GetApplicationUpdateState(
-            _applicationId,
-            _clientId
+        Task<ApplicationSyncStateResult> reading = _applicationRepository.GetApplicationSyncState(
+            _applicationId
         );
         await Task.Delay(300);
         _completedWhileWriterHeldLock = reading.IsCompleted;
@@ -225,22 +158,18 @@ public class Given_an_application_update_state_read_during_an_uncommitted_update
 
     [Test]
     public void It_reads_the_committed_state() =>
-        ((ApplicationUpdateStateResult.Success)_result)
-            .State.ApplicationName.Should()
-            .Be("Changed In Flight");
+        ((ApplicationSyncStateResult.Success)_result).State.ApplicationName.Should().Be("Changed In Flight");
 }
 
 [TestFixture]
-public class Given_an_application_update_of_a_multi_client_application : ConsistencyOperationTestBase
+public class Given_an_application_save_of_a_multi_client_application : ConsistencyOperationTestBase
 {
-    private Guid _newClientUuid;
-    private ApplicationUpdateResult _result = null!;
+    private ApplicationSaveResult _result = null!;
 
     [SetUp]
     public async Task Act()
     {
-        _newClientUuid = Guid.NewGuid();
-        _result = await _applicationRepository.UpdateApplication(
+        _result = await _applicationRepository.SaveApplication(
             new ApplicationUpdateCommand
             {
                 Id = _applicationId,
@@ -249,28 +178,26 @@ public class Given_an_application_update_of_a_multi_client_application : Consist
                 ClaimSetName = "UpdatedClaimSet",
                 EducationOrganizationIds = [300],
                 ProfileIds = [_profileId],
-            },
-            new() { ClientId = _clientId, ClientUuid = _newClientUuid }
+            }
         );
     }
 
     [Test]
-    public void It_succeeds() => _result.Should().BeOfType<ApplicationUpdateResult.Success>();
+    public void It_succeeds() => _result.Should().BeOfType<ApplicationSaveResult.Success>();
 
     [Test]
-    public async Task It_keeps_each_clients_data_store_assignment()
+    public void It_keeps_each_clients_data_store_assignment()
     {
-        var firstState = await _applicationRepository.GetApplicationUpdateState(_applicationId, _clientId);
-        var secondState = await _applicationRepository.GetApplicationUpdateState(
-            _applicationId,
-            _secondClientId
-        );
+        // The rename marks both clients, so the save returns each with its own data store set.
+        ApplicationSyncPendingClient[] clients = _result
+            .Should()
+            .BeOfType<ApplicationSaveResult.Success>()
+            .Subject.State.PendingClients;
 
-        ((ApplicationUpdateStateResult.Success)firstState)
-            .State.ClientDataStoreIds.Should()
-            .Equal(_dataStoreId1);
-        ((ApplicationUpdateStateResult.Success)secondState)
-            .State.ClientDataStoreIds.Should()
+        clients.Single(client => client.ClientId == _clientId).DataStoreIds.Should().Equal(_dataStoreId1);
+        clients
+            .Single(client => client.ClientId == _secondClientId)
+            .DataStoreIds.Should()
             .Equal(_dataStoreId2);
     }
 
@@ -296,174 +223,11 @@ public class Given_an_application_update_of_a_multi_client_application : Consist
     }
 
     [Test]
-    public async Task It_updates_only_the_selected_clients_uuid()
+    public async Task It_keeps_every_clients_uuid()
     {
-        (await ReadStoredClientUuidAsync(_clientId)).Should().Be(_newClientUuid);
+        (await ReadStoredClientUuidAsync(_clientId)).Should().Be(_clientUuid);
         (await ReadStoredClientUuidAsync(_secondClientId)).Should().Be(_secondClientUuid);
     }
-}
-
-[TestFixture]
-public class Given_a_client_uuid_sync_with_the_expected_stored_value : ConsistencyOperationTestBase
-{
-    private Guid _newUuid;
-    private ApiClientUuidSyncResult _result = null!;
-    private Guid _storedUuid;
-
-    [SetUp]
-    public async Task Act()
-    {
-        _newUuid = Guid.NewGuid();
-        _result = await _applicationRepository.SyncApplicationApiClientUuid(
-            _applicationId,
-            _clientId,
-            _clientUuid,
-            _newUuid
-        );
-        _storedUuid = await ReadStoredClientUuidAsync(_clientId);
-    }
-
-    [Test]
-    public void It_returns_success() => _result.Should().BeOfType<ApiClientUuidSyncResult.Success>();
-
-    [Test]
-    public void It_persists_the_new_uuid() => _storedUuid.Should().Be(_newUuid);
-}
-
-[TestFixture]
-public class Given_a_client_uuid_sync_that_was_already_applied : ConsistencyOperationTestBase
-{
-    private ApiClientUuidSyncResult _result = null!;
-    private Guid _storedUuid;
-
-    [SetUp]
-    public async Task Act()
-    {
-        _result = await _applicationRepository.SyncApplicationApiClientUuid(
-            _applicationId,
-            _clientId,
-            Guid.NewGuid(),
-            _clientUuid
-        );
-        _storedUuid = await ReadStoredClientUuidAsync(_clientId);
-    }
-
-    [Test]
-    public void It_returns_already_applied() =>
-        _result.Should().BeOfType<ApiClientUuidSyncResult.AlreadyApplied>();
-
-    [Test]
-    public void It_leaves_the_stored_uuid_unchanged() => _storedUuid.Should().Be(_clientUuid);
-}
-
-[TestFixture]
-public class Given_a_client_uuid_sync_against_a_stale_row : ConsistencyOperationTestBase
-{
-    private ApiClientUuidSyncResult _result = null!;
-    private Guid _storedUuid;
-
-    [SetUp]
-    public async Task Act()
-    {
-        _result = await _applicationRepository.SyncApplicationApiClientUuid(
-            _applicationId,
-            _clientId,
-            Guid.NewGuid(),
-            Guid.NewGuid()
-        );
-        _storedUuid = await ReadStoredClientUuidAsync(_clientId);
-    }
-
-    [Test]
-    public void It_returns_stale_state() =>
-        _result.Should().BeOfType<ApiClientUuidSyncResult.FailureStaleState>();
-
-    [Test]
-    public void It_does_not_overwrite_the_stored_uuid() => _storedUuid.Should().Be(_clientUuid);
-}
-
-[TestFixture]
-public class Given_a_client_uuid_sync_for_a_missing_row_with_an_unreferenced_uuid
-    : ConsistencyOperationTestBase
-{
-    private ApiClientUuidSyncResult _result = null!;
-
-    [SetUp]
-    public async Task Act() =>
-        _result = await _applicationRepository.SyncApplicationApiClientUuid(
-            _applicationId,
-            "no-such-client",
-            Guid.NewGuid(),
-            Guid.NewGuid()
-        );
-
-    [Test]
-    public void It_reports_the_missing_row_as_safe_to_delete() =>
-        _result.Should().BeOfType<ApiClientUuidSyncResult.FailureNotExistsSafeToDelete>();
-}
-
-[TestFixture]
-public class Given_a_client_uuid_sync_for_a_missing_row_with_a_referenced_uuid : ConsistencyOperationTestBase
-{
-    private ApiClientUuidSyncResult _result = null!;
-
-    [SetUp]
-    public async Task Act() =>
-        // The "new" UUID is already stored on the second client, so deletion is unsafe.
-        _result = await _applicationRepository.SyncApplicationApiClientUuid(
-            _applicationId,
-            "no-such-client",
-            Guid.NewGuid(),
-            _secondClientUuid
-        );
-
-    [Test]
-    public void It_reports_the_missing_row_without_deletion_permission() =>
-        _result.Should().BeOfType<ApiClientUuidSyncResult.FailureNotExists>();
-}
-
-[TestFixture]
-public class Given_a_client_uuid_sync_blocked_by_a_concurrent_writer : ConsistencyOperationTestBase
-{
-    private Guid _interloperUuid;
-    private bool _completedWhileWriterHeldLock;
-    private ApiClientUuidSyncResult _result = null!;
-    private Guid _storedUuid;
-
-    [SetUp]
-    public async Task Act()
-    {
-        _interloperUuid = Guid.NewGuid();
-        await using var writer = await Connection!.BeginTransactionAsync();
-        await Connection.ExecuteAsync(
-            """UPDATE dmscs.ApiClient SET ClientUuid = @Uuid WHERE ClientId = @ClientId;""",
-            new { Uuid = _interloperUuid, ClientId = _clientId },
-            writer
-        );
-
-        Task<ApiClientUuidSyncResult> syncing = _applicationRepository.SyncApplicationApiClientUuid(
-            _applicationId,
-            _clientId,
-            _clientUuid,
-            Guid.NewGuid()
-        );
-        await Task.Delay(300);
-        _completedWhileWriterHeldLock = syncing.IsCompleted;
-
-        await writer.CommitAsync();
-        _result = await syncing;
-        _storedUuid = await ReadStoredClientUuidAsync(_clientId);
-    }
-
-    [Test]
-    public void It_waits_for_the_concurrent_writer() => _completedWhileWriterHeldLock.Should().BeFalse();
-
-    [Test]
-    public void It_returns_stale_state() =>
-        _result.Should().BeOfType<ApiClientUuidSyncResult.FailureStaleState>();
-
-    [Test]
-    public void It_preserves_the_concurrent_writers_value() => _storedUuid.Should().Be(_interloperUuid);
 }
 
 [TestFixture]
@@ -709,70 +473,6 @@ public class Given_an_api_client_uuid_sync_blocked_by_a_concurrent_writer : Cons
     public void It_preserves_the_concurrent_writers_value() => _storedUuid.Should().Be(_interloperUuid);
 }
 
-[TestFixture]
-public class Given_a_second_writer_during_an_application_state_read : ConsistencyOperationTestBase
-{
-    private bool _writerCompletedWhileReadHeldLock;
-    private ApplicationUpdateStateResult _readResult = null!;
-    private string _finalClaimSetName = null!;
-
-    [SetUp]
-    public async Task Act()
-    {
-        // Holding the client row makes the state read pause after it has locked the
-        // Application row, so a second writer must queue behind that held lock.
-        await using var clientRowHolder = await Connection!.BeginTransactionAsync();
-        await Connection.ExecuteAsync(
-            """SELECT Id FROM dmscs.ApiClient WITH (UPDLOCK, HOLDLOCK) WHERE ClientId = @ClientId;""",
-            new { ClientId = _clientId },
-            clientRowHolder
-        );
-
-        Task<ApplicationUpdateStateResult> reading = _applicationRepository.GetApplicationUpdateState(
-            _applicationId,
-            _clientId
-        );
-        await Task.Delay(300);
-
-        Task<int> writing = WriteClaimSetNameAsync();
-        await Task.Delay(300);
-        _writerCompletedWhileReadHeldLock = writing.IsCompleted;
-
-        await clientRowHolder.RollbackAsync();
-        _readResult = await reading;
-        await writing;
-
-        _finalClaimSetName = (
-            await Connection.ExecuteScalarAsync<string>(
-                """SELECT ClaimSetName FROM dmscs.Application WHERE Id = @Id;""",
-                new { Id = _applicationId }
-            )
-        )!;
-    }
-
-    private async Task<int> WriteClaimSetNameAsync()
-    {
-        await using var writerConnection = await OpenConnectionAsync();
-        return await writerConnection.ExecuteAsync(
-            """UPDATE dmscs.Application SET ClaimSetName = 'Written After Lock' WHERE Id = @Id;""",
-            new { Id = _applicationId }
-        );
-    }
-
-    [Test]
-    public void It_blocks_the_writer_until_the_read_completes() =>
-        _writerCompletedWhileReadHeldLock.Should().BeFalse();
-
-    [Test]
-    public void It_reads_the_pre_writer_state() =>
-        ((ApplicationUpdateStateResult.Success)_readResult)
-            .State.ClaimSetName.Should()
-            .Be("ConsistencyClaimSet");
-
-    [Test]
-    public void It_applies_the_writer_afterwards() => _finalClaimSetName.Should().Be("Written After Lock");
-}
-
 /// <summary>
 /// Pauses the uuid sync inside its transaction, after the lock-taking read, by blocking the
 /// first audit-timestamp call the UPDATE parameters make.
@@ -871,76 +571,6 @@ public class Given_a_second_writer_during_an_api_client_uuid_sync : ConsistencyO
     public void It_applies_the_writer_afterwards() => _finalName.Should().Be("Interloper");
 }
 
-[TestFixture]
-public class Given_a_second_writer_during_an_application_client_uuid_sync : ConsistencyOperationTestBase
-{
-    private Guid _newUuid;
-    private bool _writerCompletedWhileSyncHeldLock;
-    private ApiClientUuidSyncResult _syncResult = null!;
-    private Guid _storedUuid;
-    private string _finalFirstClientName = null!;
-
-    [SetUp]
-    public async Task Act()
-    {
-        _newUuid = Guid.NewGuid();
-        var barrier = new BarrierAuditContext();
-        IApplicationRepository pausingRepository = new ApplicationRepository(
-            MssqlTestConfiguration.DatabaseOptions,
-            NullLogger<ApplicationRepository>.Instance,
-            barrier,
-            new TenantContextProvider()
-        );
-
-        Task<ApiClientUuidSyncResult> syncing = pausingRepository.SyncApplicationApiClientUuid(
-            _applicationId,
-            _clientId,
-            _clientUuid,
-            _newUuid
-        );
-        (await barrier.WaitUntilEnteredAsync()).Should().BeTrue();
-
-        Task<int> writing = WriteFirstClientNameAsync();
-        await Task.Delay(300);
-        _writerCompletedWhileSyncHeldLock = writing.IsCompleted;
-
-        barrier.ReleaseBarrier();
-        _syncResult = await syncing;
-        await writing;
-
-        _storedUuid = await ReadStoredClientUuidAsync(_clientId);
-        _finalFirstClientName = (
-            await Connection!.ExecuteScalarAsync<string>(
-                """SELECT Name FROM dmscs.ApiClient WHERE ClientId = @ClientId;""",
-                new { ClientId = _clientId }
-            )
-        )!;
-    }
-
-    private async Task<int> WriteFirstClientNameAsync()
-    {
-        await using var writerConnection = await OpenConnectionAsync();
-        return await writerConnection.ExecuteAsync(
-            """UPDATE dmscs.ApiClient SET Name = 'Interloper Two' WHERE ClientId = @ClientId;""",
-            new { ClientId = _clientId }
-        );
-    }
-
-    [Test]
-    public void It_blocks_the_writer_while_the_sync_transaction_is_open() =>
-        _writerCompletedWhileSyncHeldLock.Should().BeFalse();
-
-    [Test]
-    public void It_completes_the_sync()
-    {
-        _syncResult.Should().BeOfType<ApiClientUuidSyncResult.Success>();
-        _storedUuid.Should().Be(_newUuid);
-    }
-
-    [Test]
-    public void It_applies_the_writer_afterwards() => _finalFirstClientName.Should().Be("Interloper Two");
-}
-
 public abstract class ForeignTenantOperationTestBase : ConsistencyOperationTestBase
 {
     protected int _foreignApplicationId;
@@ -1011,26 +641,16 @@ public abstract class ForeignTenantOperationTestBase : ConsistencyOperationTestB
 [TestFixture]
 public class Given_consistency_operations_against_a_foreign_tenant_aggregate : ForeignTenantOperationTestBase
 {
-    private ApplicationUpdateStateResult _stateResult = null!;
+    private ApplicationSyncStateResult _stateResult = null!;
     private ApiClientResolutionResult _resolutionResult = null!;
-    private ApiClientUuidSyncResult _applicationSyncResult = null!;
     private ApiClientUuidSyncResult _apiClientSyncResult = null!;
     private Guid _foreignStoredUuid;
 
     [SetUp]
     public async Task Act()
     {
-        _stateResult = await _applicationRepository.GetApplicationUpdateState(
-            _foreignApplicationId,
-            _foreignClientId
-        );
+        _stateResult = await _applicationRepository.GetApplicationSyncState(_foreignApplicationId);
         _resolutionResult = await _apiClientRepository.GetApiClientResolutionState(_foreignClientRowId);
-        _applicationSyncResult = await _applicationRepository.SyncApplicationApiClientUuid(
-            _foreignApplicationId,
-            _foreignClientId,
-            _foreignClientUuid,
-            Guid.NewGuid()
-        );
         _apiClientSyncResult = await _apiClientRepository.SyncApiClientUuid(
             _foreignClientRowId,
             _foreignClientUuid,
@@ -1041,18 +661,15 @@ public class Given_consistency_operations_against_a_foreign_tenant_aggregate : F
 
     [Test]
     public void It_hides_the_foreign_application_state() =>
-        _stateResult.Should().BeOfType<ApplicationUpdateStateResult.FailureNotExists>();
+        _stateResult.Should().BeOfType<ApplicationSyncStateResult.FailureNotExists>();
 
     [Test]
     public void It_hides_the_foreign_api_client_state() =>
         _resolutionResult.Should().BeOfType<ApiClientResolutionResult.FailureNotExists>();
 
     [Test]
-    public void It_reports_the_invisible_sync_targets_with_fresh_uuids_as_safe_to_delete()
-    {
-        _applicationSyncResult.Should().BeOfType<ApiClientUuidSyncResult.FailureNotExistsSafeToDelete>();
+    public void It_reports_the_invisible_sync_target_with_a_fresh_uuid_as_safe_to_delete() =>
         _apiClientSyncResult.Should().BeOfType<ApiClientUuidSyncResult.FailureNotExistsSafeToDelete>();
-    }
 
     [Test]
     public void It_leaves_the_foreign_rows_unchanged() => _foreignStoredUuid.Should().Be(_foreignClientUuid);
@@ -1061,7 +678,6 @@ public class Given_consistency_operations_against_a_foreign_tenant_aggregate : F
 [TestFixture]
 public class Given_a_uuid_referenced_only_by_a_foreign_tenant : ForeignTenantOperationTestBase
 {
-    private ApiClientUuidSyncResult _applicationSyncResult = null!;
     private ApiClientUuidSyncResult _apiClientSyncResult = null!;
     private ApiClientUuidReferenceResult _referenceResult = null!;
 
@@ -1070,12 +686,6 @@ public class Given_a_uuid_referenced_only_by_a_foreign_tenant : ForeignTenantOpe
     {
         // The reference check protecting a provider-level deletion is deliberately
         // cross-tenant: a UUID stored only by another tenant must still forbid deletion.
-        _applicationSyncResult = await _applicationRepository.SyncApplicationApiClientUuid(
-            _applicationId,
-            "no-such-client",
-            Guid.NewGuid(),
-            _foreignClientUuid
-        );
         _apiClientSyncResult = await _apiClientRepository.SyncApiClientUuid(
             999999,
             Guid.NewGuid(),
@@ -1083,10 +693,6 @@ public class Given_a_uuid_referenced_only_by_a_foreign_tenant : ForeignTenantOpe
         );
         _referenceResult = await _apiClientRepository.HasApiClientUuidReference(_foreignClientUuid);
     }
-
-    [Test]
-    public void It_forbids_deletion_from_the_application_sync() =>
-        _applicationSyncResult.Should().BeOfType<ApiClientUuidSyncResult.FailureNotExists>();
 
     [Test]
     public void It_forbids_deletion_from_the_api_client_sync() =>
@@ -1169,7 +775,6 @@ public class Given_a_second_writer_during_an_api_client_resolution_read : Consis
 public class Given_a_sync_to_a_uuid_another_api_client_holds : ConsistencyOperationTestBase
 {
     private ApiClientUuidSyncResult _apiClientSyncResult = null!;
-    private ApiClientUuidSyncResult _applicationSyncResult = null!;
     private Guid _secondStoredUuid;
     private Guid _firstStoredUuid;
 
@@ -1181,12 +786,6 @@ public class Given_a_sync_to_a_uuid_another_api_client_holds : ConsistencyOperat
             _secondClientUuid,
             _clientUuid
         );
-        _applicationSyncResult = await _applicationRepository.SyncApplicationApiClientUuid(
-            _applicationId,
-            _secondClientId,
-            _secondClientUuid,
-            _clientUuid
-        );
         _secondStoredUuid = await ReadStoredClientUuidAsync(_secondClientId);
         _firstStoredUuid = await ReadStoredClientUuidAsync(_clientId);
     }
@@ -1194,10 +793,6 @@ public class Given_a_sync_to_a_uuid_another_api_client_holds : ConsistencyOperat
     [Test]
     public void It_classifies_the_api_client_sync_as_a_uuid_in_use() =>
         _apiClientSyncResult.Should().BeOfType<ApiClientUuidSyncResult.FailureNewUuidInUse>();
-
-    [Test]
-    public void It_classifies_the_application_sync_as_a_uuid_in_use() =>
-        _applicationSyncResult.Should().BeOfType<ApiClientUuidSyncResult.FailureNewUuidInUse>();
 
     [Test]
     public void It_leaves_both_rows_unchanged()
@@ -1215,7 +810,6 @@ public class Given_a_sync_to_a_uuid_another_api_client_holds : ConsistencyOperat
 public class Given_a_sync_to_a_uuid_held_by_a_foreign_tenant : ForeignTenantOperationTestBase
 {
     private ApiClientUuidSyncResult _apiClientSyncResult = null!;
-    private ApiClientUuidSyncResult _applicationSyncResult = null!;
     private Guid _secondStoredUuid;
     private Guid _foreignStoredUuid;
 
@@ -1227,12 +821,6 @@ public class Given_a_sync_to_a_uuid_held_by_a_foreign_tenant : ForeignTenantOper
             _secondClientUuid,
             _foreignClientUuid
         );
-        _applicationSyncResult = await _applicationRepository.SyncApplicationApiClientUuid(
-            _applicationId,
-            _secondClientId,
-            _secondClientUuid,
-            _foreignClientUuid
-        );
         _secondStoredUuid = await ReadStoredClientUuidAsync(_secondClientId);
         _foreignStoredUuid = await ReadStoredClientUuidAsync(_foreignClientId);
     }
@@ -1240,10 +828,6 @@ public class Given_a_sync_to_a_uuid_held_by_a_foreign_tenant : ForeignTenantOper
     [Test]
     public void It_classifies_the_api_client_sync_as_a_uuid_in_use() =>
         _apiClientSyncResult.Should().BeOfType<ApiClientUuidSyncResult.FailureNewUuidInUse>();
-
-    [Test]
-    public void It_classifies_the_application_sync_as_a_uuid_in_use() =>
-        _applicationSyncResult.Should().BeOfType<ApiClientUuidSyncResult.FailureNewUuidInUse>();
 
     [Test]
     public void It_leaves_both_tenants_rows_unchanged()

@@ -380,7 +380,7 @@ function Get-CmsToken {
         Application creation through `Add-Application` writes to `dmscs.application` /
         `dmscs.openiddictapplication`, but OpenIddict's runtime view of the application store
         catches up asynchronously. The first OAuth grant immediately after `Add-Application`
-        typically returns 401 ("Invalid client or Invalid client credentials") on a cold stack
+        typically fails ("Invalid client or Invalid client credentials") on a cold stack
         before settling. This helper closes that race by polling `/connect/token` until the
         grant succeeds, so callers of `New-SeedLoaderCredentials` and similar receive credentials
         that are usable on first call.
@@ -1923,7 +1923,7 @@ function New-SeedLoaderCredentials {
 
     # Close the OpenIddict CDC race: on a cold stack the just-created application is in the DB
     # but not yet surfaced into OpenIddict's runtime application store, so the first OAuth grant
-    # returns 401. Polling /connect/token confirms the client is usable before we hand
+    # fails. Polling /connect/token confirms the client is usable before we hand
     # credentials back to the caller.
     Wait-CmsClientAvailable -CmsUrl $CmsUrl -ClientId $result.Key -ClientSecret $result.Secret
 

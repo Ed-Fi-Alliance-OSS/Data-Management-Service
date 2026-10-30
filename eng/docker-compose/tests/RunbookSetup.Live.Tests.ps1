@@ -194,7 +194,8 @@ REVERT;
             $tool = Join-Path $script:repo "src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/$configuration/net10.0/api-schema-tools"
             $code = (Get-CdcRunbookCode $observation).Replace('api-schema-tools', "& '$tool'").Replace('<retained-settings-path>', $entry.SettingsPath).Replace('<original-state-root>', $statePath).Replace('--maximum-passes 20', '--maximum-passes 2')
             $observed = Invoke-CdcRunbookScript -Id $observation -Code $code -FixtureRoot $script:fixture
-            $output = $observed.StandardOutput | ConvertFrom-Json
+            $output = $observed.StandardOutput | ConvertFrom-Json -AsHashtable
+            Save-CdcRunbookStatusObservation -Output $output
             $observed.ExitCode | Should -Be 1
             $output.exitCode | Should -Be $observed.ExitCode
             $output.operation | Should -Be $(if ($observation -like '*watch') { 'watch' } else { 'status' })

@@ -125,8 +125,8 @@ ownership, but it also means the status code carries no confirmation. **Incident
 must not treat `200 OK` as proof that a leaked credential was contained** — confirm with
 `POST /connect/introspect` (self-contained) authenticated as the token's owner, which reports `{"active": false}` once
 revocation has taken effect (or when it could not decide the token because a key or token-status store failed, which it
-logs as the Error `Token validation could not reach a decision`), or with Keycloak's own introspection endpoint in
-`keycloak` mode (see the Keycloak section below). A `503` is not a "not revoked" answer
+logs as the Error `Token validation could not reach a decision`), or in `keycloak` mode as the Keycloak section below
+describes. A `503` is not a "not revoked" answer
 either: it means the outcome could not be confirmed, and the caller should retry (which is
 safe) and confirm the same way.
 
@@ -247,10 +247,12 @@ then:
 
 Revocation at Keycloak does not change the stateless posture above: Configuration Service and DMS validate
 Keycloak tokens locally and keep accepting a revoked token until it expires (plus their
-clock skew). Confirm a revocation through Keycloak's introspection endpoint with a
-confidential client that is in the token's audience (from Keycloak 26.4.12, per Red Hat's
-migration guide, and observed on 26.7.5, any other client is answered `active:false`) —
-Configuration Service `/connect/introspect` cannot observe Keycloak tokens (it makes no credential checks in that mode and answers `{"active": false}`). Details: [CS-AUTH.md § Token revocation](../reference/design/configuration-service/CS-AUTH.md#token-revocation).
+clock skew).
+Confirm a revocation through Keycloak's introspection endpoint with a confidential client that is in the token's audience (from Keycloak 26.6.2, the Red Hat build of Keycloak 26.4.12, and observed on 26.7.5, any other client is answered `active:false`).
+Configuration Service `/connect/introspect`, authenticated as the token's owner, passes the owner's credentials to that same endpoint and describes only the owner's access tokens.
+Every Keycloak client the Configuration Service creates is in its own tokens' audience, so such a client can confirm the revocation of its own token there too.
+On Keycloak 26.6.2 or later, a token whose `aud` lacks the owner's client id, such as one issued to a client created by an earlier version before the client was updated through the Configuration Service or given the same audience mapper, is answered `{"active": false}` even while live, so check the token's `aud` before relying on that answer.
+Details: [CS-AUTH.md § Token revocation](../reference/design/configuration-service/CS-AUTH.md#token-revocation).
 
 ## `jti` handling matrix
 
@@ -435,8 +437,15 @@ The behaviors above are exercised by automated tests:
   decoding. Ordering is pinned too: a request with neither credentials nor a `token`
   field gets `400 invalid_request`, since the request-shape check runs first. Every error
   is checked against the **OAuth error contract**, and pipeline fixtures show an
-  unexpected fault is `500 server_error` in the same format while `/connect/token` keeps
-  the Ed-Fi contract. A further fixture
+  unexpected fault is `500 server_error` in the same format. `/connect/token` answers in
+  the same contract (DMS-1491).
+  The `TokenErrorRequest` fixtures in the same file cover an unsupported or missing `grant_type` (`Given_a_token_request_with_an_unsupported_grant_type`, `Given_a_token_request_without_a_grant_type_but_with_valid_credentials`), a JSON body, a repeated parameter or `Authorization` header (`Given_a_token_request_with_a_repeated_parameter`, including an empty copy, and `Given_a_token_request_with_two_authorization_headers`), a malformed form payload, a Bearer header, and missing, empty or whitespace-only client credentials, with the request-shape check before the credential check, plus a token manager that faults (`500 server_error`).
+  Form credentials get `400` with no `WWW-Authenticate` challenge, and an HTTP Basic header without usable credentials gets `401` with the challenge.
+  The `ManagerOutcomeRequest` family drives the token manager and identity provider outcomes: the client authentication failures, always `invalid_client` with the fixed description even for a Keycloak public client (`Given_the_identity_provider_rejects_a_public_client`), the unknown-failure `500` and the `502 server_error` answers, a provider `403` among them, each run in both the Basic-attempted and form-credential variants, and the `429` and `409` `temporarily_unavailable` answers run with HTTP Basic beside their form-credential fixtures in `TokenEndpointTests`, which shows only a client authentication failure carries the challenge.
+  Provider pass-through is pinned case by case: only the Keycloak `invalid_scope` description reaches the caller, and only with one of the six RFC 6749 section 5.2 token codes, matched case-sensitively, in a complete structured body, with every character one section 5.2 allows (for example `Given_the_identity_provider_matches_error_codes_case_sensitively`, `Given_a_provider_body_with_an_extra_member`, `Given_a_provider_body_whose_description_is_not_a_string` and `Given_the_identity_provider_rejects_the_scope_with_a_description_outside_the_oauth_character_set`); everything else takes the fixed text, and the `error` is always the service's own.
+  The DMS proxy side is pinned in `OAuthManagerTests.cs`: `Given_the_Client_Credentials_Are_Invalid` shows an upstream OAuth `401` body keeps its `error` and `error_description` in the DMS answer, `Given_A_Token_Limit_Rejection_In_The_OAuth_Envelope_Built_By_The_Configuration_Service` builds the token-limit body from the CMS DataModel's own code and sentence, and `Given_A_Deviating_OAuth_Envelope_429` shows a deviating envelope degrades to the generic `429`.
+  The `/connect/*` rate-limit `429` is pinned in the OAuth format on token, revoke and introspect at both gates, by `IdentityModuleRateLimitTests` for the client gate and `ConnectRateLimitPipelineTests.Given_a_connect_route_over_the_source_limit` for the source gate, where `/connect/register` keeps the Ed-Fi body; `Given_A_Configuration_Service_Rate_Limit_Response_In_The_OAuth_Format` builds the DMS-side body from the CMS DataModel's own code and text.
+  A further fixture
   drives the **canonical-casing path end to end over HTTP**: the repository resolves a
   mis-cased `client_id` the way SQL Server's collation does, and the token minted under
   the canonical spelling is still revoked — the case that would otherwise be a silent

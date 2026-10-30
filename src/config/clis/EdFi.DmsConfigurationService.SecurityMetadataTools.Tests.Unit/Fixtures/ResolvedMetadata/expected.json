@@ -1,0 +1,138 @@
+[
+  {
+    "claimSetName": "Empty",
+    "claims": [],
+    "authorizations": []
+  },
+  {
+    "claimSetName": "Zulu",
+    "claims": [
+      {
+        "name": "urn:Zulu",
+        "authorizationId": 1
+      }
+    ],
+    "authorizations": [
+      {
+        "id": 1,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "Zulu"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "claimSetName": "zoo",
+    "claims": [
+      {
+        "name": "urn:Z-reverse",
+        "authorizationId": 6
+      },
+      {
+        "name": "urn:a-forward",
+        "authorizationId": 5
+      },
+      {
+        "name": "urn:actions",
+        "authorizationId": 3
+      },
+      {
+        "name": "urn:duplicate",
+        "authorizationId": 6
+      },
+      {
+        "name": "urn:no-strategies",
+        "authorizationId": 4
+      },
+      {
+        "name": "urn:z-empty",
+        "authorizationId": 2
+      }
+    ],
+    "authorizations": [
+      {
+        "id": 2,
+        "actions": []
+      },
+      {
+        "id": 3,
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "z"
+              },
+              {
+                "name": "A"
+              },
+              {
+                "name": "z"
+              }
+            ]
+          },
+          {
+            "name": "Zed",
+            "authorizationStrategies": []
+          },
+          {
+            "name": "apple",
+            "authorizationStrategies": []
+          },
+          {
+            "name": "update",
+            "authorizationStrategies": []
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": []
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "First"
+              },
+              {
+                "name": "Second"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "Second"
+              },
+              {
+                "name": "First"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

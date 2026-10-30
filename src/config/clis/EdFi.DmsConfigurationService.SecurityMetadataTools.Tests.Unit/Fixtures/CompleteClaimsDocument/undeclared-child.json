@@ -1,0 +1,54 @@
+{
+  "claimSets": [
+    {
+      "claimSetName": "ReviewSet",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "EmptySet",
+      "isSystemReserved": true
+    }
+  ],
+  "claimsHierarchy": [
+    {
+      "name": "urn:root",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "reviewset",
+          "actions": [
+            {
+              "name": "Read"
+            }
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "name": "urn:leaf",
+          "claimSets": [
+            {
+              "name": "MissingSet",
+              "actions": [
+                {
+                  "name": "Read"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

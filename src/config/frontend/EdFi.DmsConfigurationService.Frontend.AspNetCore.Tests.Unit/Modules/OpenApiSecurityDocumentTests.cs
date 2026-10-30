@@ -362,8 +362,8 @@ public class OpenApiSecurityDocumentTests
     }
 
     /// <summary>
-    /// Under Keycloak no introspection manager is registered and introspection makes no credential
-    /// check, so only revocation is described as requiring client credentials.
+    /// Under Keycloak both revocation and introspection authenticate their caller with client
+    /// credentials, delegated to Keycloak, so both are described the same way as under self-contained.
     /// </summary>
     [TestFixture]
     public class Given_the_document_of_a_keycloak_host
@@ -380,13 +380,9 @@ public class OpenApiSecurityDocumentTests
         public void TearDown() => _document.Dispose();
 
         [Test]
-        public void It_requires_client_credentials_on_revocation_only() =>
+        public void It_requires_client_credentials_on_revocation_and_introspection() =>
             OperationsRequiringClientCredentials(_document)
                 .Should()
-                .Equal("POST /connect/revoke/{contextPath}");
-
-        [Test]
-        public void It_marks_introspection_with_an_empty_requirement() =>
-            OperationsWithEmptySecurity(_document).Should().Contain("POST /connect/introspect/{contextPath}");
+                .Equal("POST /connect/introspect/{contextPath}", "POST /connect/revoke/{contextPath}");
     }
 }

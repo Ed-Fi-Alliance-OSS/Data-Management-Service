@@ -14,9 +14,9 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
 /// <summary>
-/// DMS-1327 D-12, registration half: Keycloak mode registers the Keycloak revocation manager with a
-/// lifetime compatible with the scoped <see cref="KeycloakContext"/>. The provider validates scopes,
-/// so a singleton registration capturing the scoped context would fail to resolve.
+/// DMS-1327 D-12, registration half: Keycloak mode registers the Keycloak revocation and introspection
+/// managers with a lifetime compatible with the scoped <see cref="KeycloakContext"/>. The provider
+/// validates scopes, so a singleton registration capturing the scoped context would fail to resolve.
 /// </summary>
 public class KeycloakServiceExtensionsTests
 {
@@ -26,6 +26,7 @@ public class KeycloakServiceExtensionsTests
         private ServiceCollection _services = null!;
         private ServiceProvider _provider = null!;
         private ITokenRevocationManager? _resolved;
+        private ITokenIntrospectionManager _resolvedIntrospection = null!;
 
         [SetUp]
         public void Setup()
@@ -44,6 +45,7 @@ public class KeycloakServiceExtensionsTests
 
             using IServiceScope scope = _provider.CreateScope();
             _resolved = scope.ServiceProvider.GetService<ITokenRevocationManager>();
+            _resolvedIntrospection = scope.ServiceProvider.GetRequiredService<ITokenIntrospectionManager>();
         }
 
         [TearDown]
@@ -78,5 +80,17 @@ public class KeycloakServiceExtensionsTests
             _services
                 .Should()
                 .ContainSingle(descriptor => descriptor.ServiceType == typeof(IUnapprovalTokenRevocation));
+
+        [Test]
+        public void It_resolves_the_keycloak_introspection_manager_in_a_request_scope() =>
+            _resolvedIntrospection.Should().BeOfType<KeycloakTokenIntrospectionManager>();
+
+        [Test]
+        public void It_registers_the_introspection_manager_as_transient() =>
+            _services
+                .Should()
+                .ContainSingle(descriptor => descriptor.ServiceType == typeof(ITokenIntrospectionManager))
+                .Which.Lifetime.Should()
+                .Be(ServiceLifetime.Transient);
     }
 }

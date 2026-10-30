@@ -213,6 +213,14 @@ follow directly:
 - **Client-facing documentation** belongs in the separate Ed-Fi documentation repository, not
   this one.
 
+## Update 2026-10-26 (DMS-1491)
+
+The Configuration Service `/connect/token` endpoint now answers every failure in the RFC 6749 §5.2 format, with `error` and `error_description` at the root of the body, and sends the `WWW-Authenticate: Basic` challenge on a `401` when HTTP Basic was attempted.
+The `401` pass-through row above therefore applies to the Configuration Service as well as to Keycloak: the proxy no longer falls back to `UnauthorizedFallbackDetail` for a Configuration Service rejection.
+The `429` arm also accepts the Configuration Service's OAuth token-limit body, an `error` of `temporarily_unavailable` with the canonical limit sentence as `error_description`, in addition to the two problem-details types.
+It is still rebuilt from the parsed integer limit alone, and any deviation from the canonical shape still falls back to the generic rate-limit contract.
+The decisions above are unchanged.
+
 ## Known deviations and open items
 
 Both are pre-existing on `main` and were deliberately left outside the scope of the branch that
@@ -269,3 +277,13 @@ first three was introduced by the fix for the one before it.
 - RFC 6749 §5.2 — OAuth 2.0 error response (`error`, `error_description`, `error_uri`)
 - `src/dms/core/EdFi.DataManagementService.Core/OAuth/OAuthManager.cs` — implementation
 - `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OAuth/OAuthManagerTests.cs` — coverage
+
+## DMS-1606 token error contract supersession
+
+**Added 2026-10-20:** [ADR DMS-1606](./adr-oauth-token-errors-DMS-1606.md) supersedes the old
+problem-details response fields and JSON `correlationId` channel for DMS token failures. DMS now
+returns the OAuth `error` / `error_description` object and the once-decodable
+`X-Correlation-ID` response header. The selected-summary Information policy for unusable provider
+401 details remains authoritative; DMS-1606 closes DMS-1549 by applying it to malformed and
+non-object 401 bodies. Existing bounded/sanitized 502 warning and transport error behavior remain
+unchanged and continue to be governed by DMS-1550.

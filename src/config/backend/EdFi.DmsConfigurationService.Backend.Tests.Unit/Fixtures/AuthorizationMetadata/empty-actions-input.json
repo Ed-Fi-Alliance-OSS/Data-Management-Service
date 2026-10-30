@@ -1,0 +1,75 @@
+{
+  "claimSets": [
+    {
+      "claimSetName": "NoActions",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "Empty",
+      "isSystemReserved": false
+    }
+  ],
+  "claimsHierarchy": [
+    {
+      "name": "root",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NotAGrant"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "NoActions",
+          "actions": []
+        }
+      ],
+      "claims": [
+        {
+          "name": "InheritedEmpty"
+        }
+      ]
+    },
+    {
+      "name": "DirectEmpty",
+      "claimSets": [
+        {
+          "name": "NoActions",
+          "actions": []
+        }
+      ]
+    },
+    {
+      "name": "OmittedActions",
+      "claimSets": [
+        {
+          "name": "NoActions"
+        }
+      ]
+    },
+    {
+      "name": "Undeclared",
+      "claimSets": [
+        {
+          "name": "NotInCatalog",
+          "actions": [
+            {
+              "name": "Read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "NotReturned"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

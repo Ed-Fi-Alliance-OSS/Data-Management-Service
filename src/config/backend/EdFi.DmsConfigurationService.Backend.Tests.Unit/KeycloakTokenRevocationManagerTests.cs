@@ -42,7 +42,7 @@ public class KeycloakTokenRevocationManagerTests
     protected RecordingHandler _handler = null!;
     protected IKeycloakClientFacade _facade = null!;
     protected IHttpClientFactory _httpClientFactory = null!;
-    protected CapturingLogger<KeycloakTokenRevocationManager> _logger = null!;
+    protected KeycloakCapturingLogger<KeycloakTokenRevocationManager> _logger = null!;
     protected List<string> _events = null!;
     protected TimeSpan _clientTimeout = TimeSpan.FromSeconds(30);
 
@@ -51,8 +51,11 @@ public class KeycloakTokenRevocationManagerTests
     {
         _events = [];
         _clientTimeout = TimeSpan.FromSeconds(30);
-        _logger = new CapturingLogger<KeycloakTokenRevocationManager>();
-        _handler = new RecordingHandler(_events, (_, _) => Task.FromResult(Response(200, "")));
+        _logger = new KeycloakCapturingLogger<KeycloakTokenRevocationManager>();
+        _handler = new RecordingHandler(
+            (_, _) => Task.FromResult(Response(200, "")),
+            () => _events.Add("revoke")
+        );
         _facade = A.Fake<IKeycloakClientFacade>();
         _httpClientFactory = A.Fake<IHttpClientFactory>();
         A.CallTo(() => _httpClientFactory.CreateClient(A<string>._))
@@ -71,11 +74,12 @@ public class KeycloakTokenRevocationManagerTests
     protected Task<TokenRevocationResult> Revoke(
         TokenTypeHint hint = TokenTypeHint.None,
         CancellationToken cancellationToken = default,
-        string clientSecret = CallerSecret
+        string clientSecret = CallerSecret,
+        string clientId = CallerClientId
     ) =>
         CreateManager()
             .RevokeTokenAsync(
-                new TokenRevocationRequest(CallerClientId, clientSecret, Token, hint),
+                new TokenRevocationRequest(clientId, clientSecret, Token, hint),
                 cancellationToken
             );
 
@@ -220,6 +224,15 @@ public class KeycloakTokenRevocationManagerTests
         public void It_sends_no_authorization_header() =>
             _handler.Requests[0].Authorization.Should().BeNull();
 
+        /// <summary>
+        /// Keycloak 26.1.4 answers a form value over its limit with 413 without reading the rest of the
+        /// request and keeps the connection open, so the next request on it gets no answer; a connection
+        /// used once is never handed to another caller.
+        /// </summary>
+        [Test]
+        public void It_asks_for_the_connection_to_be_closed_after_the_answer() =>
+            _handler.Requests[0].ConnectionClose.Should().BeTrue();
+
         [Test]
         public void It_never_sends_the_service_credentials()
         {
@@ -336,6 +349,153 @@ public class KeycloakTokenRevocationManagerTests
 
         [Test]
         public void It_sends_no_revoke_request() => _handler.Requests.Should().BeEmpty();
+    }
+
+    protected const string LongClientIdSentinel = "LONG-CLIENT-ID-SENTINEL";
+
+    /// <summary>A client id of <paramref name="length"/> characters that starts with a sentinel.</summary>
+    protected static string ClientIdOfLength(int length) =>
+        LongClientIdSentinel + new string('c', length - LongClientIdSentinel.Length);
+
+    /// <summary>
+    /// A client id of <paramref name="codePoints"/> code points that starts with a sentinel and goes on
+    /// with a character outside the Basic Multilingual Plane, two UTF-16 code units each.
+    /// </summary>
+    protected static string SupplementaryClientIdOf(int codePoints) =>
+        LongClientIdSentinel
+        + string.Concat(Enumerable.Repeat("\U0001F600", codePoints - LongClientIdSentinel.Length));
+
+    /// <summary>
+    /// Keycloak keeps a client id in a 255-character column, which PostgreSQL counts in code points
+    /// (observed on 26.7.5: 255 code points outside the Basic Multilingual Plane, 510 UTF-16 code units,
+    /// are stored).
+    /// </summary>
+    public static IEnumerable<TestFixtureData> ClientIdsOfKeycloaksMaximumLength()
+    {
+        yield return new TestFixtureData(ClientIdOfLength(255)).SetArgDisplayNames("255 characters");
+        yield return new TestFixtureData(SupplementaryClientIdOf(255)).SetArgDisplayNames(
+            "255 code points outside the Basic Multilingual Plane"
+        );
+    }
+
+    /// <summary>A client id Keycloak can hold still goes through the client-type lookup.</summary>
+    [TestFixtureSource(
+        typeof(KeycloakTokenRevocationManagerTests),
+        nameof(ClientIdsOfKeycloaksMaximumLength)
+    )]
+    public class Given_a_client_id_of_keycloaks_maximum_length(string clientId)
+        : KeycloakTokenRevocationManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            GateAnswers(ConfidentialClient(clientId));
+            _result = await Revoke(clientId: clientId);
+        }
+
+        [Test]
+        public void It_reads_the_client_type() =>
+            A.CallTo(() =>
+                    _facade.GetClientsByClientIdAsync(
+                        A<string>._,
+                        clientId,
+                        A<TimeSpan>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_revokes() => _handler.Requests.Should().ContainSingle();
+
+        [Test]
+        public void It_completes() => _result.Should().Be(new TokenRevocationResult.Completed());
+    }
+
+    /// <summary>
+    /// Each client id with what the admin API answers its client-type lookup: no client just past the
+    /// maximum, whether counted in characters or in code points, and 414 once the id makes the lookup
+    /// URL too long (past 32718 characters).
+    /// </summary>
+    public static IEnumerable<TestFixtureData> ClientIdsLongerThanKeycloaksMaximum()
+    {
+        yield return new TestFixtureData(ClientIdOfLength(256), null).SetArgDisplayNames("256 characters");
+        yield return new TestFixtureData(SupplementaryClientIdOf(256), null).SetArgDisplayNames(
+            "256 code points outside the Basic Multilingual Plane"
+        );
+        yield return new TestFixtureData(
+            ClientIdOfLength(32719),
+            FlurlStatusException(414)
+        ).SetArgDisplayNames("too long for the lookup URL");
+    }
+
+    /// <summary>
+    /// A longer client id names no Keycloak client, so it is refused without the client-type lookup or
+    /// the revoke request, and the caller-sized value never reaches a log.
+    /// </summary>
+    [TestFixtureSource(
+        typeof(KeycloakTokenRevocationManagerTests),
+        nameof(ClientIdsLongerThanKeycloaksMaximum)
+    )]
+    public class Given_a_client_id_longer_than_keycloaks_maximum(string clientId, Exception? lookupFailure)
+        : KeycloakTokenRevocationManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            if (lookupFailure is null)
+            {
+                GateAnswers();
+            }
+            else
+            {
+                GateThrows(lookupFailure);
+            }
+
+            _result = await Revoke(clientId: clientId);
+        }
+
+        [Test]
+        public void It_is_an_invalid_client() =>
+            _result.Should().Be(new TokenRevocationResult.InvalidClient());
+
+        [Test]
+        public void It_reads_no_client_type() =>
+            A.CallTo(() =>
+                    _facade.GetClientsByClientIdAsync(
+                        A<string>._,
+                        A<string>._,
+                        A<TimeSpan>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_sends_no_revoke_request() => _handler.Requests.Should().BeEmpty();
+
+        [Test]
+        public void It_logs_the_refusal_once_at_information() =>
+            _logger
+                .Entries.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<KeycloakCapturedLogEntry>(entry =>
+                    entry.Level == LogLevel.Information
+                    && entry.Message
+                        == "Revocation refused: the client id is longer than any Keycloak client id"
+                );
+
+        [Test]
+        public void It_logs_neither_the_client_id_the_token_nor_the_secret()
+        {
+            _logger.AllText().Should().NotContain(LongClientIdSentinel);
+            AssertNoDisclosure();
+        }
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -764,6 +924,12 @@ public class KeycloakTokenRevocationManagerTests
             """{"error":"invalid_request","error_description":"x","error_description":"Unmatching clients"}""",
             Unavailable("unparseable")
         );
+        yield return Case(
+            "400 duplicated member that is never read",
+            400,
+            """{"error":"invalid_request","x":1,"x":2,"error_description":"Unmatching clients"}""",
+            new TokenRevocationResult.Completed()
+        );
 
         // Every other status.
         yield return Case(
@@ -833,6 +999,206 @@ public class KeycloakTokenRevocationManagerTests
             KeycloakTokenRevocationManager
                 .OwnershipMismatchDescription.Should()
                 .Be(OwnershipMismatchDescriptionFromEvidence);
+    }
+
+    /// <summary>
+    /// Keycloak's answer to a form value over its form attribute limit (128 KiB by default), recorded on
+    /// 26.1.4 and 26.7.5 with valid and wrong credentials alike: it rejects the body before it
+    /// authenticates the caller.
+    /// </summary>
+    protected const string FormLimitAnswer = """{"error":"HTTP 413 Request Entity Too Large"}""";
+
+    public static IEnumerable<TestFixtureData> TooLargeAnswers()
+    {
+        yield return new TestFixtureData(FormLimitAnswer).SetArgDisplayNames("recorded body");
+        yield return new TestFixtureData("").SetArgDisplayNames("empty body");
+        yield return new TestFixtureData($"<html><body>{Sentinel}</body></html>").SetArgDisplayNames(
+            "HTML body"
+        );
+        yield return new TestFixtureData(
+            OAuthError("invalid_client", "Invalid client or Invalid client credentials")
+        ).SetArgDisplayNames("an authentication error body");
+        yield return new TestFixtureData(
+            new string(' ', KeycloakTokenRevocationManager.MaxResponseBodyBytes + 1)
+        ).SetArgDisplayNames("a body over the read cap");
+    }
+
+    /// <summary>
+    /// The caller chose the oversized value, and Keycloak rejected it before judging the caller, so the
+    /// status alone decides the answer: neither an outage nor rejected credentials, whatever the body.
+    /// </summary>
+    [TestFixtureSource(typeof(KeycloakTokenRevocationManagerTests), nameof(TooLargeAnswers))]
+    public class Given_keycloak_rejects_the_revoke_request_as_too_large(string body)
+        : KeycloakTokenRevocationManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            KeycloakAnswers(() => Response(413, body));
+            _result = await Revoke();
+        }
+
+        [Test]
+        public void It_is_an_invalid_request() =>
+            _result.Should().Be(new TokenRevocationResult.InvalidRequest());
+
+        [Test]
+        public void It_had_passed_the_client_type_gate_before_the_revoke_request() =>
+            _events.Should().Equal("client-type-read", "revoke");
+
+        [Test]
+        public void It_logs_the_rejection_once_at_information() =>
+            _logger
+                .Entries.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<KeycloakCapturedLogEntry>(entry =>
+                    entry.Level == LogLevel.Information
+                    && entry.Message
+                        == "Keycloak rejected a revocation request as too large (HTTP 413) before authenticating the caller"
+                );
+
+        [Test]
+        public void It_logs_no_client_id_field() =>
+            _logger
+                .Entries.SelectMany(entry => entry.State)
+                .Should()
+                .NotContain(pair => pair.Key == "ClientId");
+
+        [Test]
+        public void It_logs_no_failure() =>
+            _logger.Entries.Should().NotContain(entry => entry.Level >= LogLevel.Warning);
+
+        [Test]
+        public void It_logs_neither_the_token_the_secret_nor_the_body() => AssertNoDisclosure();
+    }
+
+    public static IEnumerable<TestFixtureData> UnreadTooLargeBodies()
+    {
+        yield return new TestFixtureData(false).SetArgDisplayNames("a readable body");
+        yield return new TestFixtureData(true).SetArgDisplayNames("a body that fails when read");
+    }
+
+    /// <summary>
+    /// The status alone decides a 413, so its body is never read: one that fails while being read is
+    /// still the caller's invalid request, not a lost response.
+    /// </summary>
+    [TestFixtureSource(typeof(KeycloakTokenRevocationManagerTests), nameof(UnreadTooLargeBodies))]
+    public class Given_keycloak_rejects_the_revoke_request_as_too_large_with_a_body_left_unread(
+        bool failsWhenRead
+    ) : KeycloakTokenRevocationManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+        private ProbeStream _stream = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            byte[] body = Encoding.UTF8.GetBytes(FormLimitAnswer);
+            _stream = failsWhenRead
+                ? ProbeStream.Failing(new IOException(Sentinel), body)
+                : new ProbeStream(body);
+            KeycloakAnswers(() => Response(413, new StreamContent(_stream)));
+            _result = await Revoke();
+        }
+
+        [TearDown]
+        public void DisposeStream() => _stream.Dispose();
+
+        [Test]
+        public void It_is_an_invalid_request() =>
+            _result.Should().Be(new TokenRevocationResult.InvalidRequest());
+
+        [Test]
+        public void It_does_not_read_the_body() => _stream.WasRead.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// The client-type gate runs before the revoke request, so a token over Keycloak's form limit from
+    /// a client id Keycloak does not hold is answered at the gate and never reaches the 413.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_unknown_client_id_with_a_token_over_keycloaks_form_limit
+        : KeycloakTokenRevocationManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            GateAnswers();
+            KeycloakAnswers(() => Response(413, FormLimitAnswer));
+            _result = await CreateManager()
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest(
+                        CallerClientId,
+                        CallerSecret,
+                        new string('a', 400_000),
+                        TokenTypeHint.None
+                    ),
+                    CancellationToken.None
+                );
+        }
+
+        [Test]
+        public void It_is_an_invalid_client() =>
+            _result.Should().Be(new TokenRevocationResult.InvalidClient());
+
+        [Test]
+        public void It_looks_up_the_client() =>
+            A.CallTo(() =>
+                    _facade.GetClientsByClientIdAsync(
+                        "edfi",
+                        CallerClientId,
+                        A<TimeSpan>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_sends_no_revoke_request() => _events.Should().Equal("client-type-read");
+    }
+
+    /// <summary>
+    /// Keycloak authenticated no one, so the rejection is logged without the caller's client id, even
+    /// one of the longest length Keycloak can hold.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_long_client_id_whose_revoke_request_keycloak_rejects_as_too_large
+        : KeycloakTokenRevocationManagerTests
+    {
+        private TokenRevocationResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            GateAnswers(ConfidentialClient(ClientIdOfLength(255)));
+            KeycloakAnswers(() => Response(413, FormLimitAnswer));
+            _result = await Revoke(clientId: ClientIdOfLength(255));
+        }
+
+        [Test]
+        public void It_reached_the_revoke_request() => _handler.Requests.Should().ContainSingle();
+
+        [Test]
+        public void It_is_an_invalid_request() =>
+            _result.Should().Be(new TokenRevocationResult.InvalidRequest());
+
+        [Test]
+        public void It_logs_the_rejection_once_at_information() =>
+            _logger.Entries.Should().ContainSingle().Which.Level.Should().Be(LogLevel.Information);
+
+        [Test]
+        public void It_logs_neither_the_client_id_the_token_nor_the_secret() =>
+            _logger
+                .AllText()
+                .Should()
+                .NotContain(LongClientIdSentinel)
+                .And.NotContain(Token)
+                .And.NotContain(CallerSecret);
     }
 
     [TestFixture]
@@ -1023,6 +1389,13 @@ public class KeycloakTokenRevocationManagerTests
             400,
             """{"error":"invalid_client","\u0065rror":"invalid_request","error_description":"Unmatching clients"}""",
             unparseable
+        );
+        // A member that is not a string reads as absent, so the strings inside an array are never decoded.
+        yield return Case(
+            "400 lone surrogate inside an array description",
+            400,
+            """{"error":"invalid_request","error_description":["\uD800"]}""",
+            new TokenRevocationResult.InvalidRequest()
         );
     }
 
@@ -1488,204 +1861,5 @@ public class KeycloakTokenRevocationManagerTests
         }
 
         return text.ToString();
-    }
-
-    protected sealed record RecordedRequest(
-        HttpMethod Method,
-        Uri? Uri,
-        string? Authorization,
-        string? ContentType,
-        IReadOnlyList<KeyValuePair<string, string>> Form,
-        string RawText
-    );
-
-    /// <summary>Records each request, including its form body, before handing it to <see cref="Respond"/>.</summary>
-    protected sealed class RecordingHandler(
-        List<string> events,
-        Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> respond
-    ) : HttpMessageHandler
-    {
-        public List<RecordedRequest> Requests { get; } = [];
-
-        public Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> Respond { get; set; } =
-            respond;
-
-        protected override async Task<HttpResponseMessage> SendAsync(
-            HttpRequestMessage request,
-            CancellationToken cancellationToken
-        )
-        {
-            string body = request.Content is null
-                ? ""
-                : await request.Content.ReadAsStringAsync(cancellationToken);
-            List<KeyValuePair<string, string>> form =
-            [
-                .. body.Split('&', StringSplitOptions.RemoveEmptyEntries)
-                    .Select(pair => pair.Split('=', 2))
-                    .Select(parts => new KeyValuePair<string, string>(
-                        WebUtility.UrlDecode(parts[0]),
-                        WebUtility.UrlDecode(parts.Length > 1 ? parts[1] : "")
-                    )),
-            ];
-            Requests.Add(
-                new RecordedRequest(
-                    request.Method,
-                    request.RequestUri,
-                    request.Headers.Authorization?.ToString(),
-                    request.Content?.Headers.ContentType?.MediaType,
-                    form,
-                    $"{request.RequestUri} {request.Headers} {request.Content?.Headers} {body}"
-                )
-            );
-            events.Add("revoke");
-            return await Respond(request, cancellationToken);
-        }
-    }
-
-    /// <summary>A non-seekable body that records whether it was read and can fail or stall on demand.</summary>
-    protected sealed class ProbeStream(
-        byte[] data,
-        Exception? failure = null,
-        bool stall = false,
-        Action? onRead = null
-    ) : Stream
-    {
-        private int _position;
-
-        public bool WasRead { get; private set; }
-
-        public static ProbeStream Failing(Exception failure, byte[]? before = null) =>
-            new(before ?? [], failure);
-
-        public static ProbeStream Stalling(Action? onRead = null) => new([], stall: true, onRead: onRead);
-
-        public override async ValueTask<int> ReadAsync(
-            Memory<byte> buffer,
-            CancellationToken cancellationToken = default
-        )
-        {
-            WasRead = true;
-            onRead?.Invoke();
-            if (_position < data.Length)
-            {
-                int count = Math.Min(buffer.Length, data.Length - _position);
-                data.AsMemory(_position, count).CopyTo(buffer);
-                _position += count;
-                return count;
-            }
-
-            if (stall)
-            {
-                await Task.Delay(Timeout.Infinite, cancellationToken);
-            }
-
-            if (failure is not null)
-            {
-                throw failure;
-            }
-
-            return 0;
-        }
-
-        public override int Read(byte[] buffer, int offset, int count) =>
-            ReadAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
-
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => throw new NotSupportedException();
-
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override void Flush() { }
-
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-
-        public override void SetLength(long value) => throw new NotSupportedException();
-
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-    }
-
-    protected sealed record CapturedLogEntry(
-        LogLevel Level,
-        string Message,
-        IReadOnlyList<KeyValuePair<string, object?>> State,
-        IReadOnlyList<object?> Scopes,
-        Exception? Exception
-    );
-
-    /// <summary>
-    /// Records every field a sink could write: the rendered message, every state value, every active
-    /// scope and the attached exception with its inner chain (D-15).
-    /// </summary>
-    protected sealed class CapturingLogger<T> : ILogger<T>
-    {
-        private readonly List<object?> _scopes = [];
-
-        public List<CapturedLogEntry> Entries { get; } = [];
-
-        public IDisposable BeginScope<TState>(TState state)
-            where TState : notnull
-        {
-            _scopes.Add(state);
-            return new ScopeExit(() => _scopes.Remove(state));
-        }
-
-        public bool IsEnabled(LogLevel logLevel) => true;
-
-        public void Log<TState>(
-            LogLevel logLevel,
-            EventId eventId,
-            TState state,
-            Exception? exception,
-            Func<TState, Exception?, string> formatter
-        ) =>
-            Entries.Add(
-                new CapturedLogEntry(
-                    logLevel,
-                    formatter(state, exception),
-                    state is IEnumerable<KeyValuePair<string, object?>> pairs ? [.. pairs] : [],
-                    [.. _scopes],
-                    exception
-                )
-            );
-
-        public string AllText()
-        {
-            var text = new StringBuilder();
-            foreach (CapturedLogEntry entry in Entries)
-            {
-                text.AppendLine(entry.Message);
-                foreach (KeyValuePair<string, object?> pair in entry.State)
-                {
-                    text.AppendLine(pair.Value?.ToString());
-                }
-
-                foreach (object? scope in entry.Scopes)
-                {
-                    text.AppendLine(scope?.ToString());
-                }
-
-                for (
-                    Exception? current = entry.Exception;
-                    current is not null;
-                    current = current.InnerException
-                )
-                {
-                    text.AppendLine(current.ToString());
-                }
-            }
-
-            return text.ToString();
-        }
-
-        private sealed class ScopeExit(Action exit) : IDisposable
-        {
-            public void Dispose() => exit();
-        }
     }
 }

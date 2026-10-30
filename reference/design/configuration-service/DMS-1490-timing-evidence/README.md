@@ -7,6 +7,9 @@ that placeholder once, at startup. This page records the timing evidence for the
 observer could ask: can an absent client id still be told apart from an existing one by response
 time?
 
+> **Superseded by DMS-1491:** the answer is now the OAuth `invalid_client` error of RFC 6749 §5.2: `400` for form credentials, which the collector sends, and `401` with the `Basic` challenge for HTTP Basic.
+> The measurements below were taken on the earlier 401 problem-details answer, and every arm still receives one identical answer.
+
 The raw samples, run logs, analysis outputs and the analysis scripts, `analyze_timing.py` and
 `diagnostics.py`, are not kept in the repository. They are in one archive, where the scripts travel
 with the fixtures their self-tests read; see [Where the data is](#where-the-data-is).

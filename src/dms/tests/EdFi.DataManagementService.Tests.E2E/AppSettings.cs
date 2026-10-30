@@ -50,6 +50,9 @@ public static class AppSettings
     /// </summary>
     public static string DmsContainerName => _settings.DmsContainerName;
 
+    // An explicit host JSON log file replaces Docker logs for token correlation assertions.
+    public static string DmsLogFilePath => _settings.DmsLogFilePath;
+
     public static int MaxRequestBodySizeMegabytes => _settings.MaxRequestBodySizeMegabytes;
 
     internal static AppSettingsValues Create(IConfiguration configuration)
@@ -64,6 +67,7 @@ public static class AppSettings
             GetString(configuration, nameof(DataStoreConnectionString), string.Empty),
             GetString(configuration, nameof(DataStoreSnapshotConnectionString), string.Empty),
             GetString(configuration, nameof(DmsContainerName), DefaultDmsContainerName),
+            GetString(configuration, nameof(DmsLogFilePath), string.Empty),
             GetInt(configuration, nameof(MaxRequestBodySizeMegabytes), DefaultMaxRequestBodySizeMegabytes)
         );
     }
@@ -102,5 +106,6 @@ internal sealed record AppSettingsValues(
     string DataStoreConnectionString,
     string DataStoreSnapshotConnectionString,
     string DmsContainerName,
+    string DmsLogFilePath,
     int MaxRequestBodySizeMegabytes
 );

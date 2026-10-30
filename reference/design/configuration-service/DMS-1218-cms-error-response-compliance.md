@@ -187,6 +187,8 @@ Classifications: **True contradiction**, **Ambiguity**, **Stale baseline**, **In
 
 **OAuth.** Self-contained (OpenIddict) authentication failures use the distinct, service-owned `TokenResult.FailureAuthentication(Error, ErrorDescription)` → `FailureResults.Authentication` path, which answers `invalid_client` with the shared description for an unknown client, a wrong secret and an unapproved client alike; untrusted Keycloak/provider/transport content still goes through the strict parser above (INV-46). **[Corrected 2026-10-26, DMS-1490]** — INV-46 below records the contract as it was then, with `unauthorized_client` for an invalid secret. DMS-1490 replaced that with `invalid_client` (RFC 6749 §5.2), so the error code no longer tells an existing client id from an absent one. Under Keycloak, a `401` whose `error` is `invalid_client` or `unauthorized_client` gets that same service-owned answer instead of being parsed; every other Keycloak answer keeps the parser.
 
+> **Superseded by [DMS-1491](https://edfi.atlassian.net/browse/DMS-1491):** `/connect/token` answers every failure in the RFC 6749 section 5.2 OAuth error format, `FailureResults.Authentication` and the other token-only `FailureResults` helpers are removed, and a failed client authentication is `invalid_client` whatever code the token manager reports. See `reference/design/configuration-service/CS-AUTH.md` (`/connect/token` failures).
+
 ---
 
 ## 10. Required response contract (target)
@@ -497,6 +499,8 @@ Existing method signatures preserved (additive overloads only).
 ---
 
 ## 16. OAuth/OIDC error strategy and interoperability risk
+
+> **Superseded by [DMS-1491](https://edfi.atlassian.net/browse/DMS-1491):** INV-16 is reversed: `/connect/token` answers in the `{error,error_description}` format of RFC 6749 section 5.2, as `/connect/revoke` and `/connect/introspect` do. See `reference/design/configuration-service/CS-AUTH.md` (`/connect/token` failures).
 
 **[ARCH/D-04] Decision: convert all CMS-generated OAuth/OIDC non-success responses to the Ed-Fi contract.** No product exception exists, so the ticket's "or documented exception" branch does not apply.
 

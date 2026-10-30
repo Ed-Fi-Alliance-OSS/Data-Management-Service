@@ -90,25 +90,14 @@ public partial class StepDefinitions(
         _lastClientId = key;
         _lastClientSecret = secret;
 
-        var urlEncodedData = new Dictionary<string, string>
+        if (playwrightContext.ApiRequestContext is not null)
         {
-            { "client_id", key },
-            { "client_secret", secret },
-            { "grant_type", "client_credentials" },
-            { "scope", scope },
-        };
-        var content = new FormUrlEncodedContent(urlEncodedData);
-        APIRequestContextOptions? options = new()
-        {
-            Headers = new Dictionary<string, string>
-            {
-                { "Content-Type", "application/x-www-form-urlencoded" },
-            },
-            Data = await content.ReadAsStringAsync(),
-        };
-        if (playwrightContext.ApiRequestContext != null)
-        {
-            _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
+            _apiResponse = await CmsTestRequests.GetClientAccessTokenAsync(
+                playwrightContext.ApiRequestContext,
+                key,
+                secret,
+                scope
+            );
         }
     }
 
@@ -166,6 +155,7 @@ public partial class StepDefinitions(
     #endregion
 
     [When("a PUT request is made to {string} with")]
+    [Given("a PUT request is made to {string} with")]
     public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
     {
         url = await ReplaceIdsAsync(url);
@@ -353,18 +343,22 @@ public partial class StepDefinitions(
     /// </summary>
     public async Task PostVerbatimBodyAsync(string url, string body)
     {
-        _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync(
+        _apiResponse = await CmsTestRequests.PostVerbatimBodyAsync(
+            playwrightContext.ApiRequestContext!,
             url,
-            new() { Headers = _authHeaders, Data = body }
-        )!;
+            _token,
+            body
+        );
     }
 
     /// <summary>POSTs file bytes without decoding, reserialization or placeholder substitution.</summary>
     public async Task PostVerbatimBodyAsync(string url, byte[] body)
     {
-        _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync(
+        _apiResponse = await CmsTestRequests.PostVerbatimBodyAsync(
+            playwrightContext.ApiRequestContext!,
             url,
-            new() { Headers = _authHeaders, DataByte = body }
+            _token,
+            body
         );
     }
 
@@ -453,6 +447,7 @@ public partial class StepDefinitions(
     }
 
     [When("a DELETE request is made to {string}")]
+    [Given("a DELETE request is made to {string}")]
     public async Task WhenADELETERequestIsMadeTo(string url)
     {
         url = await ReplaceIdsAsync(url);
@@ -901,6 +896,20 @@ public partial class StepDefinitions(
         _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
     }
 
+    /// <summary>
+    /// Unlike the step above, the captured client becomes the scenario's current client: its key and
+    /// secret are what the "current client" and "its owner" steps authenticate with, and the token
+    /// issued to it is the current token.
+    /// </summary>
+    [When("the credentials captured as {string} obtain the current token with scope {string}")]
+    public async Task WhenTheCredentialsCapturedAsObtainTheCurrentToken(string slot, string scope)
+    {
+        _credentialSlots.Should().ContainKey(slot, $"credentials should have been captured as '{slot}'");
+        (string key, string secret) = _credentialSlots[slot];
+        await GetClientAccessToken(key, secret, scope);
+        await TokenReceived();
+    }
+
     [Then("the token has an empty dataStoreIds claim")]
     public async Task ThenTheTokenHasAnEmptyDataStoreIdsClaim()
     {
@@ -982,6 +991,80 @@ public partial class StepDefinitions(
                 { "grant_type", "client_credentials" },
             }
         );
+        APIRequestContextOptions options = new()
+        {
+            Headers = new Dictionary<string, string>
+            {
+                { "Content-Type", "application/x-www-form-urlencoded" },
+            },
+            Data = await content.ReadAsStringAsync(),
+        };
+        _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
+    }
+
+    // A secret over Keycloak's form attribute limit, so Keycloak refuses the request with 413 before it
+    // authenticates anyone. The current client and token are left as they were.
+    [When("a token is requested by the system client with a {int}-character client secret")]
+    public async Task WhenATokenIsRequestedByTheSystemClientWithAClientSecretOfALength(int length)
+    {
+        await PostSystemFormTokenRequest(
+            new Dictionary<string, string>
+            {
+                { "client_id", SystemClientId },
+                { "client_secret", new string('A', length) },
+                { "grant_type", "client_credentials" },
+                { "scope", "edfi_admin_api/full_access" },
+            }
+        );
+    }
+
+    [When("a token is requested using HTTP Basic auth with client {string} and secret {string}")]
+    public async Task WhenATokenIsRequestedUsingHttpBasicAuthWithClientAndSecret(
+        string clientId,
+        string secret
+    )
+    {
+        await PostBasicTokenRequest(
+            clientId.Replace("{scenarioRunId}", scenarioContext["ScenarioRunId"].ToString()),
+            secret,
+            new Dictionary<string, string>
+            {
+                { "grant_type", "client_credentials" },
+                { "scope", "edfi_admin_api/full_access" },
+            }
+        );
+    }
+
+    [When("a token is requested with grant_type {string} using the system credentials")]
+    public async Task WhenATokenIsRequestedWithGrantTypeUsingTheSystemCredentials(string grantType)
+    {
+        await PostSystemFormTokenRequest(
+            new Dictionary<string, string>
+            {
+                { "client_id", SystemClientId },
+                { "client_secret", SystemClientSecret },
+                { "grant_type", grantType },
+                { "scope", "edfi_admin_api/full_access" },
+            }
+        );
+    }
+
+    [When("a token is requested without a grant_type using the system credentials")]
+    public async Task WhenATokenIsRequestedWithoutAGrantTypeUsingTheSystemCredentials()
+    {
+        await PostSystemFormTokenRequest(
+            new Dictionary<string, string>
+            {
+                { "client_id", SystemClientId },
+                { "client_secret", SystemClientSecret },
+                { "scope", "edfi_admin_api/full_access" },
+            }
+        );
+    }
+
+    private async Task PostSystemFormTokenRequest(Dictionary<string, string> form)
+    {
+        var content = new FormUrlEncodedContent(form);
         APIRequestContextOptions options = new()
         {
             Headers = new Dictionary<string, string>

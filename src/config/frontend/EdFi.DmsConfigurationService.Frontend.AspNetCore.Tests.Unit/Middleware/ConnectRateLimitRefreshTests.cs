@@ -125,7 +125,7 @@ public class ConnectRateLimitRefreshTests
         }
 
         [Test]
-        public void It_throttles_public_failed_attempts() => _publicStatuses.Should().Equal(401, 401, 429);
+        public void It_throttles_public_failed_attempts() => _publicStatuses.Should().Equal(400, 400, 429);
 
         [Test]
         public void It_allows_the_private_refresh_for_the_same_identity() =>

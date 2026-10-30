@@ -8,7 +8,6 @@ using System.Net.Http.Headers;
 using System.Text;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.DataModel.Model.Register;
-using EdFi.DmsConfigurationService.DataModel.Model.Token;
 using FakeItEasy;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -65,7 +64,6 @@ internal static class ConnectRateLimitTestHost
             builder.ConfigureServices(collection =>
             {
                 collection.AddSingleton<IStartupFilter, RemoteIpStartupFilter>();
-                collection.AddTransient(_ => new TokenRequest.Validator());
                 collection.AddTransient(_ => new RegisterRequest.Validator());
                 ITokenManager tokens = tokenManager ?? SucceedingTokenManager();
                 collection.AddTransient(_ => tokens);

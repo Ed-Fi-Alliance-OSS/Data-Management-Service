@@ -39,6 +39,7 @@ public class KeycloakTokenManagerTests
     {
         protected TokenResult _result = null!;
         protected List<KeyValuePair<string, string>> _postedForm = [];
+        protected bool _connectionClose;
         protected Exception? _thrown;
 
         protected abstract HttpResponseMessage Answer();
@@ -48,6 +49,7 @@ public class KeycloakTokenManagerTests
         {
             using var handler = new StubHandler(async request =>
             {
+                _connectionClose = request.Headers.ConnectionClose == true;
                 string body = await request.Content!.ReadAsStringAsync();
                 _postedForm =
                 [
@@ -283,5 +285,9 @@ public class KeycloakTokenManagerTests
         [Test]
         public void It_posts_exactly_the_given_form_fields_in_order() =>
             _postedForm.Should().Equal(_credentials);
+
+        [Test]
+        public void It_asks_for_the_connection_to_be_closed_after_the_answer() =>
+            _connectionClose.Should().BeTrue();
     }
 }

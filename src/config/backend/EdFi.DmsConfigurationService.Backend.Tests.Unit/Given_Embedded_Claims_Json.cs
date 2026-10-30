@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Claims;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using FakeItEasy;
@@ -736,7 +737,7 @@ public class Given_Embedded_Claims_Json
 
     private static JsonObject LoadEmbeddedClaims(string standardFolder = "ds52")
     {
-        Assembly assembly = typeof(ClaimsProvider).Assembly;
+        Assembly assembly = typeof(BundledClaimsProvider).Assembly;
         string resourceName = $"{assembly.GetName().Name}.Claims.Standards.{standardFolder}.Claims.json";
 
         using Stream stream =

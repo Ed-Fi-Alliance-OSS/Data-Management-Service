@@ -72,6 +72,40 @@ Any run can be narrowed with `-TestFilter 'Category=@<tag>'`. Common tags:
 | `Category!=@PostgresqlOnly`         | Excludes the PostgreSQL-only variant of an engine-paired scenario. Every SQL Server run adds it. |
 | `Category=@StandardVersion-6_1`     | The DS 6.1 version-coupled scenarios (XSD metadata, Discovery, and a datastore round-trip smoke that proves a public data-plane request reaches the DS 6.1 datastore); run only against a DS 6.1 stack (`-DataStandardVersion 6.1`). |
 | `Category=@DocumentCacheHostedHappyPath` | The hosted DocumentCache fixture; run only with `-EnvironmentOverlayFile './.env.document-cache.e2e'`. |
+| `Category=@TokenContractProxy` | DMS-1606 provider-response fixtures; run only through the dedicated proxy launcher below. |
+| `Category=@TokenContractQualified` | DMS-1606 root and qualified token-route controls; run only through the dedicated proxy launcher below. |
+
+Ordinary `E2ETest` runs, including runs with explicit filters, exclude `@TokenContractProxy` and
+`@TokenContractQualified`. These scenarios intentionally fail with launcher guidance if selected
+without their test-only proxy, and they are excluded from the ordinary CI shards.
+
+### DMS-1606 OAuth token error contract
+
+The provider-failure fixtures use a closed test-only proxy. It forwards ordinary client IDs to the
+selected real identity provider and returns fixed responses only for the reserved `dms1606-*`
+fixture IDs. The launcher builds and starts that proxy on the existing `dms` Docker network, derives
+an endpoint-only overlay, runs the token contract scenarios, retains a separate TRX file for the
+root and qualified route passes, then removes only its Compose project resources and restarts DMS
+with the original environment. It never removes the shared `dms` network.
+
+The launcher holds an exclusive file handle for the run, including cleanup. Its `active.lock`
+file remains on disk; file existence does not indicate an active run. Normal exit or forced
+termination releases ownership, so the next launcher can reuse the file. Do not delete it while
+a launcher is running.
+
+```pwsh
+pwsh ./eng/docker-compose/tests/oauth-token-contract/Invoke-TokenContractE2E.ps1 `
+  -IdentityProvider self-contained `
+  -DatabaseEngine postgresql `
+  -EnvironmentFile './.env.e2e' `
+  -Configuration Release
+```
+
+Use `-IdentityProvider keycloak` to exercise the Keycloak endpoint, or `-DatabaseEngine mssql` for
+the SQL Server lane. The launcher accepts `-SkipDockerBuild` and `-UsePrebuiltOutput` when the local
+DMS and configuration service artifacts/images are already prepared. Docker, Compose, PowerShell 7,
+and the .NET 10 SDK are required. Results are retained as
+`TestResults/token-contract-root.trx` and `TestResults/token-contract-qualified.trx`.
 
 ```pwsh
 # Data Standard 6.1 focused run (add -DataStandardVersion 6.1). The DS 6.1 PostgreSQL lane
@@ -107,6 +141,12 @@ The DocumentCache filter writes
 
 To debug the API while running the tests, change `ApiUrl` in `SearchContainerSetup.cs` to
 `http://localhost:5198/` and run `EdFi.DataManagementService.Frontend.AspNetCore` in debug mode.
+
+Set `AppSettings__DmsLogFilePath` for the test process to the absolute path of the running
+API's current JSON log file (the default file sink writes `logs/.log` with a daily date suffix).
+Token error assertions use this file instead of Docker logs to verify response-to-log
+correlation. The file must exist and remain the active log file during the run; update the path
+after daily rollover. Leave the setting unset for the normal container workflow.
 
 > [!WARNING]
 > Your database tables are truncated after each feature file runs. Double-check your
@@ -144,6 +184,10 @@ coverage is owned by separate DMS-1289 workflows and is not part of these lanes.
 `build-dms.ps1 E2ETest` is the supported path. For interactive debugging you can prepare only
 the stack and then run `dotnet test` yourself, but the test process configuration must align
 with the running, provisioned stack.
+
+For ordinary direct runs, include `(Category!=@TokenContractProxy)&(Category!=@TokenContractQualified)`
+in `--filter`, combined with the engine exclusions above. Direct `dotnet test` does not apply the
+build script's fixture exclusions. Use the dedicated launcher for provider-fixture scenarios.
 
 The setup wrapper starts infra + Configuration Service, configures the E2E data store,
 provisions the E2E database, and starts DMS:

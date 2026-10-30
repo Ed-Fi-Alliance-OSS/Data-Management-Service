@@ -1,0 +1,19 @@
+{
+  "claimSets": [],
+  "claimsHierarchy": [
+    {
+      "name": "Uncatalogued",
+      "claimSets": [
+        {
+          "name": "Missing",
+          "actions": [
+            {
+              "name": "Read",
+              "authorizationStrategyOverrides": []
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

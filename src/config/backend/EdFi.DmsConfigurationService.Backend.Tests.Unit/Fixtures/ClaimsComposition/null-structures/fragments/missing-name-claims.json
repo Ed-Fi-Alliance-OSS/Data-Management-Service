@@ -1,0 +1,10 @@
+{
+  "name": "Policy\nName",
+  "resourceClaims": [
+    {
+      "name": "edfi/domain",
+      "isParent": true
+    },
+    {}
+  ]
+}

@@ -586,8 +586,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     Exp: exp,
                     Iat: iat,
                     Sub: ClaimValue(jwtToken, JwtRegisteredClaimNames.Sub),
-                    Aud: ClaimValue(jwtToken, JwtRegisteredClaimNames.Aud),
-                    Iss: ClaimValue(jwtToken, JwtRegisteredClaimNames.Iss)
+                    // Every minted token carries exactly one audience (JwtTokenGenerator).
+                    Aud: ClaimValue(jwtToken, JwtRegisteredClaimNames.Aud) is { } audience ? [audience] : [],
+                    Iss: ClaimValue(jwtToken, JwtRegisteredClaimNames.Iss),
+                    TokenType: "Bearer"
                 )
             );
         }
