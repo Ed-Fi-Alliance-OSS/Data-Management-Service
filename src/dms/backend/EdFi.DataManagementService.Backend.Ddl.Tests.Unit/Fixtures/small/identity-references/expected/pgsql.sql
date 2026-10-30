@@ -228,6 +228,7 @@ CREATE TABLE IF NOT EXISTS "dms"."Descriptor"
     "EffectiveEndDate" date NULL,
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DescriptorId")
 );
 
@@ -650,7 +651,7 @@ BEGIN
             WHERE "DocumentId" = NEW."DocumentId"
         )
         UPDATE "dms"."Descriptor" r
-        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = stamped."ContentVersion", "ContentLastModifiedAt" = now(), "ContentCreatedAt" = now()
         FROM stamped
         WHERE r."DocumentId" = stamped."DocumentId";
     ELSIF TG_OP = 'UPDATE' THEN
@@ -962,6 +963,7 @@ CREATE SCHEMA IF NOT EXISTS "tracked_changes_edfi";
 CREATE TABLE IF NOT EXISTS "edfi"."DateTimeKeyResource"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EventTimestamp" timestamp with time zone NOT NULL,
@@ -972,6 +974,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DateTimeKeyResource"
 CREATE TABLE IF NOT EXISTS "edfi"."DecimalKeyResource"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "DecimalKey" numeric(9,2) NOT NULL,
@@ -983,6 +986,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DecimalKeyResource"
 CREATE TABLE IF NOT EXISTS "edfi"."DecimalRefResource"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "DecimalKeyReference_DocumentId" bigint NOT NULL,
@@ -996,6 +1000,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."DecimalRefResource"
 CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentChildResource"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EdOrgDependentResourceReference_DocumentId" bigint NOT NULL,
@@ -1010,6 +1015,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentChildResource"
 CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentResource"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganization_DocumentId" bigint NOT NULL,
@@ -1024,6 +1030,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."EdOrgDependentResource"
 CREATE TABLE IF NOT EXISTS "edfi"."KeyUnifiedResource"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "StudentUniqueId_Unified" varchar(32) NOT NULL,
@@ -1043,6 +1050,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."KeyUnifiedResource"
 CREATE TABLE IF NOT EXISTS "edfi"."ResourceA"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "StudentReference_DocumentId" bigint NOT NULL,
@@ -1057,6 +1065,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ResourceA"
 CREATE TABLE IF NOT EXISTS "edfi"."ResourceB"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "StudentReference_DocumentId" bigint NOT NULL,
@@ -1071,6 +1080,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."ResourceB"
 CREATE TABLE IF NOT EXISTS "edfi"."School"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "EducationOrganizationId" integer NOT NULL,
@@ -1084,6 +1094,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."School"
 CREATE TABLE IF NOT EXISTS "edfi"."Student"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "FirstName" varchar(75) NOT NULL,
@@ -1096,6 +1107,7 @@ CREATE TABLE IF NOT EXISTS "edfi"."Student"
 CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
 (
     "DocumentId" bigint NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "SchoolReference_DocumentId" bigint NOT NULL,
@@ -1684,6 +1696,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -1753,6 +1766,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -1824,6 +1838,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -1901,6 +1916,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -1980,6 +1996,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -2059,6 +2076,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -2142,6 +2160,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -2217,6 +2236,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -2339,6 +2359,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -2391,6 +2412,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -2462,6 +2484,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
