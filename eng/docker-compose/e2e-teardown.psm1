@@ -46,6 +46,8 @@ $script:KnownLocalImageNames = @('ed-fi-api-local', 'ed-fi-api-config-local')
 # succeeds as a no-op.
 $script:TeardownPrimitiveScripts = @('start-local-dms.ps1', 'start-published-dms.ps1')
 
+Import-Module (Join-Path $PSScriptRoot 'cdc-cleanup-diagnostics.psm1')
+
 function Get-E2ETeardownPlan {
     <#
     .SYNOPSIS
@@ -183,7 +185,9 @@ function Remove-KnownLocalImage {
 
     $imageId = docker images -q $ImageName 2>$null
     if ($imageId -and $PSCmdlet.ShouldProcess($ImageName, "Remove locally-built image")) {
-        docker rmi $ImageName -f 2>&1 | Out-Null
+        Invoke-CdcCleanupStep -Step ImageRemoval -Command docker -NativeCommand -Action {
+            docker rmi $ImageName -f 2>&1 | Out-Null
+        }
         if ($LASTEXITCODE -ne 0) {
             throw "Failed to remove locally-built image '$ImageName' (docker rmi exit code $LASTEXITCODE)."
         }
@@ -220,7 +224,10 @@ function Invoke-E2EEngineAwareTeardown {
     $teardownFailures = @()
     foreach ($step in $plan.TeardownSteps) {
         try {
-            Invoke-ComposeProjectTeardown -StartScript $step.StartScript -StartParameters $step.StartParameters
+            $cleanupStep = if ($step.StartScript.EndsWith('start-local-dms.ps1')) { 'LocalProjectTeardown' } else { 'PublishedProjectTeardown' }
+            Invoke-CdcCleanupStep -Step $cleanupStep -Action {
+                Invoke-ComposeProjectTeardown -StartScript $step.StartScript -StartParameters $step.StartParameters
+            }
         }
         catch {
             $teardownFailures += $_.Exception.Message
@@ -236,8 +243,10 @@ function Invoke-E2EEngineAwareTeardown {
     # deleting the workspace another still-running project depends on, and the throw above preserves it
     # whenever any down failed.
     Import-Module (Join-Path $PSScriptRoot 'e2e-cdc.psm1')
-    Remove-E2ECdcApiFile -ComposeRoot $plan.ComposeRoot
-    Remove-E2EBootstrapWorkspace -BootstrapWorkspacePath $plan.BootstrapWorkspacePath
+    Invoke-CdcCleanupStep -Step BootstrapCleanup -Action {
+        Remove-E2ECdcApiFile -ComposeRoot $plan.ComposeRoot
+        Remove-E2EBootstrapWorkspace -BootstrapWorkspacePath $plan.BootstrapWorkspacePath
+    }
 
     if (-not $SkipLocalImageRemoval) {
         foreach ($imageName in $plan.KnownLocalImageNames) {

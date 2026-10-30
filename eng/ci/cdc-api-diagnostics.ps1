@@ -122,3 +122,101 @@ function Write-CdcApiRuntimeInput {
     }
     $snapshot | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $Path
 }
+
+
+# Every cleanup field is reconstructed at export; no private prose or resource names are copied.
+function Get-CdcApiCleanupDiagnostic {
+    param([string] $PrivateDirectory, [string] $InvocationId)
+    $safe = [ordered]@{ Availability = 'Missing'; Steps = @(); ChildFailures = @()
+        Process = @{}; RemainingResources = @{ Availability = 'Missing' } }
+    $path = Join-Path $PrivateDirectory 'cleanup-events.jsonl'
+    if (Test-Path -LiteralPath $path) {
+        try {
+            if ((Get-Item -LiteralPath $path).Length -gt 262144) { $safe.Availability = 'Oversized' }
+            else {
+                $lines = @([IO.File]::ReadAllLines($path))
+                $header = $lines[0] | ConvertFrom-Json -AsHashtable
+                if ($header['InvocationId'] -cne $InvocationId) { $safe.Availability = 'IdentityMismatch' }
+                else {
+                    $safe.Availability = if ($lines.Count -gt 129) { 'Partial' } else { 'Available' }
+                    $steps = @('Cleanup', 'OwnershipValidation', 'DeploymentValidation', 'ResourceInventory', 'GovernedTeardown', 'PartialTeardown',
+                        'LocalProjectTeardown', 'PublishedProjectTeardown', 'ControllerRetirement', 'WorkerVerification',
+                        'ComposeTeardown', 'RuntimeCleanup', 'BootstrapCleanup', 'ImageRemoval', 'ResourceVerification', 'StateCleanup')
+                    $safe.Steps = @(foreach ($line in ($lines | Select-Object -Skip 1 -First 128)) {
+                        # A killed child can leave a partial final line; retain earlier checkpoints.
+                        try {
+                            $item = $line | ConvertFrom-Json -AsHashtable -DateKind String
+                            if ($item -isnot [Collections.IDictionary] -or $item['Step'] -cnotin $steps -or
+                                $item['Status'] -cnotin @('Running', 'Passed', 'Failed')) { continue }
+                            $entry = [ordered]@{ Step = $item['Step']; Status = $item['Status']
+                                Command = ConvertTo-CdcApiEnum $item['Command'] @('PowerShell', 'docker', 'api-schema-tools') }
+                            if ($item['StartedUtc'] -is [string] -and $item['StartedUtc'] -cmatch '\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{7}\+00:00\z') {
+                                $entry.StartedUtc = $item['StartedUtc']
+                            }
+                            if (($item['ElapsedMilliseconds'] -is [long] -or $item['ElapsedMilliseconds'] -is [int]) -and $item['ElapsedMilliseconds'] -ge 0) {
+                                $entry.ElapsedMilliseconds = $item['ElapsedMilliseconds']
+                            }
+                            if ($item['ExitCode'] -is [int] -or $item['ExitCode'] -is [long]) { $entry.ExitCode = $item['ExitCode'] }
+                            if ($item['Failure'] -is [Collections.IDictionary]) { $entry.Failure = ConvertTo-CdcRunbookDiagnostic $item['Failure'] -Child }
+                            $entry
+                        } catch { $safe.Availability = 'Partial' }
+                    })
+                }
+            }
+        } catch { $safe.Availability = 'Invalid' }
+    }
+    # Separate process evidence survives even when cleanup times out before its finally block.
+    foreach ($name in @('cleanup-process.json', 'cleanup-remaining.json')) {
+        $file = Join-Path $PrivateDirectory $name
+        if (-not (Test-Path -LiteralPath $file)) { continue }
+        try {
+            if ((Get-Item -LiteralPath $file).Length -gt 16384) { continue }
+            $value = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json -AsHashtable
+            if ($value['InvocationId'] -cne $InvocationId) { continue }
+            if ($name -eq 'cleanup-process.json') { $safe.Process = ConvertTo-CdcRunbookDiagnostic $value -Child }
+            else {
+                $safe.RemainingResources = [ordered]@{ Availability = ConvertTo-CdcApiEnum $value['Availability'] @('Available', 'Partial') }
+                foreach ($kind in @('container', 'volume', 'network')) {
+                    $count = $value[$kind]
+                    if (($count -is [int] -or $count -is [long]) -and $count -ge 0 -and $count -le 1000) {
+                        $safe.RemainingResources[$kind] = $count
+                    }
+                }
+            }
+        } catch { # Leave missing evidence explicit; never substitute zero for a failed probe.
+            continue
+        }
+    }
+    $childPath = Join-Path $PrivateDirectory 'cleanup-child-failures.json'
+    if ($safe.Availability -in @('Available', 'Partial') -and (Test-Path -LiteralPath $childPath)) {
+        try {
+            if ((Get-Item -LiteralPath $childPath).Length -le 32768) {
+                $children = Get-Content -LiteralPath $childPath -Raw | ConvertFrom-Json -AsHashtable -NoEnumerate
+                $safe.ChildFailures = @($children | Select-Object -First 8 | Where-Object {
+                    $_ -is [Collections.IDictionary]
+                } | ForEach-Object { ConvertTo-CdcRunbookDiagnostic $_ -Child })
+            }
+        } catch { # Checkpoints and process status remain useful without nested controller evidence.
+            $safe.ChildFailures = @()
+        }
+    }
+    return $safe
+}
+
+function Write-CdcApiRemainingResource {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Private diagnostic file only.')]
+    param([string] $PrivateDirectory, [string] $InvocationId)
+    $snapshot = [ordered]@{ InvocationId = $InvocationId; Availability = 'Available' }
+    try {
+        Import-Module (Join-Path $PSScriptRoot '../docker-compose/env-utility.psm1') -DisableNameChecking
+        foreach ($kind in @('container', 'volume', 'network')) {
+            try {
+                $prefix = if ($kind -eq 'container') { @('ps', '-aq') } else { @($kind, 'ls', '-q') }
+                $probe = Invoke-NativeCommandWithInput -FilePath docker -ArgumentList ($prefix + @('--filter', 'label=com.docker.compose.project=dms-local')) -InputText '' -TimeoutSeconds 10
+                if ($probe.ExitCode -ne 0 -or $probe.FailureKind -ne 'None') { throw 'Resource probe failed.' }
+                $snapshot[$kind] = @($probe.StandardOutput -split '\r?\n' | Where-Object { $_.Trim().Length -gt 0 }).Count
+            } catch { $snapshot.Availability = 'Partial' }
+        }
+        $snapshot | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $PrivateDirectory 'cleanup-remaining.json') -ErrorAction Stop
+    } catch { Write-Warning 'CDC_API_CLEANUP_RESOURCE_DIAGNOSTICS_UNAVAILABLE' }
+}

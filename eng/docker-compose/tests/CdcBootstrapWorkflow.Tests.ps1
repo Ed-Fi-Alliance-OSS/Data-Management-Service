@@ -20,7 +20,7 @@ Describe 'CDC bootstrap wrapper phase contract' {
         $script:sandbox = Join-Path $TestDrive 'wrapper'
         New-Item -ItemType Directory $script:sandbox | Out-Null
         Copy-Item (Join-Path $script:composeRoot '*.yml') $script:sandbox
-        foreach ($name in @('bootstrap-local-dms.ps1', 'bootstrap-published-dms.ps1', 'bootstrap-wrapper.psm1')) {
+        foreach ($name in @('bootstrap-local-dms.ps1', 'bootstrap-published-dms.ps1', 'bootstrap-wrapper.psm1', 'cdc-cleanup-diagnostics.psm1')) {
             Copy-Item (Join-Path $script:composeRoot $name) $script:sandbox
         }
         @'
