@@ -398,6 +398,7 @@ public class IdentityModule : IEndpointModule
                 TemporarilyUnavailableCode,
                 ConcurrentTokenRequestsDescription
             ),
+            TokenResult.FailureInvalidScope => InvalidScope(),
             TokenResult.FailureIdentityProvider failureIdentityProvider => IdentityProviderTokenFailure(
                 logger,
                 httpContext,
@@ -1306,6 +1307,17 @@ public class IdentityModule : IEndpointModule
 
     private static IResult InvalidRequest(string errorDescription) =>
         OAuthErrorResponseWriter.Create(StatusCodes.Status400BadRequest, "invalid_request", errorDescription);
+
+    /// <summary>
+    /// RFC 6749 §5.2 answer for a self-contained scope rejection. The description is fixed and
+    /// service-owned, never caller content.
+    /// </summary>
+    private static IResult InvalidScope() =>
+        OAuthErrorResponseWriter.Create(
+            StatusCodes.Status400BadRequest,
+            "invalid_scope",
+            InvalidScopeDescription
+        );
 
     /// <summary>
     /// The RFC 6749 §5.2 response for a token, revocation or introspection caller that failed client

@@ -51,10 +51,10 @@ scope.
 ### Self-Contained Token Issuance
 
 In `self-contained` mode, a new access token carries its granted scopes separated by
-single spaces. This applies to all three issuance paths: the requested scopes the
-client holds, the client's registered scopes when none of the requested scopes is
-held, and the client's registered scopes when no scope is requested. The token
-response `scope` and the signed JWT `scope` describe the same granted values.
+single spaces. This applies to both issuance paths: the requested scopes the client
+holds, and the client's registered scopes when no scope is requested. A request that
+names none of the client's scopes is rejected with `invalid_scope` and issues no token.
+The token response `scope` and the signed JWT `scope` describe the same granted values.
 
 A token *request* may list the requested scopes separated by commas or spaces.
 Issued tokens retain their scope values and delimiters until they expire;

@@ -64,14 +64,34 @@ An omitted or empty `scope` is treated as absent, as RFC 6749 section 3.2 requir
 Keycloak then issues the client's default client scopes.
 The `self-contained` provider issues the scopes registered for the client.
 
+In `self-contained` mode, any other `scope` value is split on spaces and commas, and each value is compared with the client's registered scopes, ignoring case.
+A `scope` that names none of them answers `400` with the RFC 6749 section 5.2 error body, served as `application/json`, and no token is issued or stored:
+
+```json
+{"error":"invalid_scope","error_description":"The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."}
+```
+
+This includes a value made only of spaces or commas, which is supplied and therefore not absent, and any `scope` sent by a client with no registered scopes.
+The client credentials are checked first, so a wrong secret still answers `invalid_client` whatever the `scope`.
+The answer carries no `correlationId` and no `WWW-Authenticate` header.
+It used to succeed with every scope registered for the client.
+
+A `scope` that names some of the client's registered scopes succeeds with only those, as RFC 6749 section 3.3 permits.
+Requested values the client does not hold are dropped, and so are registered scopes it did not request.
+The granted scopes keep the spelling and order of the request, and duplicates are not removed.
+
+A successful token response carries a `scope` member that lists the granted scopes separated by spaces, as RFC 6749 section 3.3 defines, for example `"scope":"edfi_admin_api/full_access edfi_admin_api/readonly_access"`.
+In `self-contained` mode the member is present whenever at least one scope is granted; it is omitted for a client with no registered scopes that omitted `scope`, because RFC 6749 section 3.3 defines no empty scope value.
+Under Keycloak it is the `scope` Keycloak returns, passed through unchanged, and it is omitted when Keycloak returns none.
+The `scope` claim in a `self-contained` access token lists the same granted scopes, also separated by spaces (see below).
+
 Under Keycloak, a requested scope that Keycloak rejects answers `400 invalid_scope` in the OAuth error format, for example with the `error_description` `Invalid scopes: edfi_admin_api/readonly_access`.
 It used to answer `502`, and then `400` in problem details.
 Other Keycloak failures keep their status: a failed connection, a 5xx or any other `400` error code answers `502`, now as `server_error`, and a name-resolution failure or a timeout answers `500`.
 A `client_secret` or `scope` longer than Keycloak's form attribute limit (128 KiB by default) also answers `502` `server_error`: CMS accepts form values up to 4 MiB, and Keycloak rejects the request with `413`.
 Each token request to Keycloak closes its connection after the answer, as revocation and introspection requests do (see [Responses](#responses)), so such a request does not stall the next one.
-The `self-contained` provider does not reject an ungranted scope: it issues the requested scopes the client holds, and the client's registered scopes when it holds none of them.
 
-The `self-contained` provider joins the scopes it grants with single spaces, in all three cases: the requested scopes the client holds, the client's registered scopes when none of the requested scopes is held, and the client's registered scopes when no scope is requested.
+The `self-contained` provider joins the scopes it grants with single spaces, in both cases that issue a token: the requested scopes the client holds, and the client's registered scopes when no scope is requested.
 The token response `scope` and the signed JWT `scope` describe the same granted values.
 The token request parser accepts a requested scope list separated by commas or spaces. Issued tokens retain their scope values and delimiters until they expire; clients must request a new token to obtain the current issuance format.
 
@@ -97,6 +117,7 @@ Responses produced before the endpoint is selected, such as the `405` for anothe
 | A parameter or the `Authorization` header sent more than once | `400` | `invalid_request` |
 | `grant_type` missing or empty | `400` | `invalid_request` |
 | Unsupported `grant_type` | `400` | `unsupported_grant_type` |
+| `self-contained`: a `scope` naming none of the client's registered scopes (see [Token Endpoints](#token-endpoints)) | `400` | `invalid_scope` |
 | Keycloak rejected the requested scope | `400` | `invalid_scope` |
 | Source or source-plus-client rate limit exceeded | `429` with `Retry-After` | `temporarily_unavailable`, with the fixed rate-limit description (see [Token Endpoints](#token-endpoints)) |
 | Token limit reached | `429` | `temporarily_unavailable`, with the canonical limit sentence as `error_description` |

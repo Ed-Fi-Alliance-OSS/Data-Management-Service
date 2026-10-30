@@ -3517,7 +3517,10 @@ public class OpenIddictTokenManagerTests
     /// A token manager whose only non-default setting is the per-client token limit, so a test
     /// asserting on that number is asserting on a configured value rather than on the default.
     /// </summary>
-    private OpenIddictTokenManager CreateTokenManagerWithTokenLimit(int limit) =>
+    private OpenIddictTokenManager CreateTokenManagerWithTokenLimit(
+        int limit,
+        ILogger<OpenIddictTokenManager>? logger = null
+    ) =>
         NewTokenManager(
             // EncryptionKey has to be set for the database signing-key path to run at all; the
             // faked repository ignores its value.
@@ -3527,7 +3530,8 @@ public class OpenIddictTokenManagerTests
                 Audience = TestAudience,
                 EncryptionKey = "test-encryption-key",
                 BearerTokenPerClientLimit = limit,
-            }
+            },
+            logger
         );
 
     /// <summary>
@@ -3733,13 +3737,10 @@ public class OpenIddictTokenManagerTests
         public void It_returns_a_success_result() => _result.Should().BeOfType<TokenResult.Success>();
     }
 
-    [TestFixture(true, "")]
-    [TestFixture(true, "EdFiSandbox")]
+    // Rows whose registered scopes include the requested admin scope: the token is issued, and the
+    // limit decision comes from the registered scopes, never from the request.
     [TestFixture(true, "edfi_admin_api/full_access,EdFiSandbox")]
     [TestFixture(true, "EDFI_ADMIN_API/full_access")]
-    [TestFixture(true, "edfi_admin_api")]
-    [TestFixture(true, "edfi_admin_api/sis")]
-    [TestFixture(true, "edfi_admin_api/")]
     [TestFixture(true, "edfi_admin_api/full_access,edfi_admin_api/sis")]
     [TestFixture(false, "edfi_admin_api/full_access")]
     public class Given_GetAccessTokenAsync_WhenTheApplicationDoesNotQualifyForExemption(
@@ -3771,6 +3772,441 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_preserves_successful_authentication() =>
             _result.Should().BeOfType<TokenResult.Success>();
+    }
+
+    // Registered scopes that do not qualify for exemption, issued through the defaults of an omitted
+    // scope: the configured limit applies. The empty row guards the nonempty-scopes requirement,
+    // since every element of an empty set is trivially an admin scope.
+    [TestFixture("")]
+    [TestFixture("EdFiSandbox")]
+    [TestFixture("edfi_admin_api")]
+    [TestFixture("edfi_admin_api/sis")]
+    [TestFixture("edfi_admin_api/")]
+    public class Given_GetAccessTokenAsync_WithoutAScopeWhenTheRegisteredScopesDoNotQualifyForExemption(
+        string registeredScopes
+    ) : OpenIddictTokenManagerTests
+    {
+        private StoredTokenCall _call = null!;
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient(
+                hasNoApiClientRow: true,
+                scopes: registeredScopes.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            );
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => _call = call);
+
+            _result = await CreateTokenManagerWithTokenLimit(1).GetAccessTokenAsync(GrantCredentials());
+        }
+
+        [Test]
+        public void It_passes_the_configured_limit() => _call.MaxActiveTokens.Should().Be(1);
+
+        [Test]
+        public void It_preserves_successful_authentication() =>
+            _result.Should().BeOfType<TokenResult.Success>();
+    }
+
+    // Rows whose registered scopes do not include the requested admin scope. Before DMS-1492 the
+    // empty intersection fell back to the registered scopes and the token was stored under the
+    // configured limit; now the request is refused before the store, where the limit is applied,
+    // so asking for an admin scope can never reach an exemption decision at all.
+    [TestFixture("")]
+    [TestFixture("EdFiSandbox")]
+    [TestFixture("edfi_admin_api")]
+    [TestFixture("edfi_admin_api/sis")]
+    [TestFixture("edfi_admin_api/")]
+    public class Given_GetAccessTokenAsync_WhenANonExemptApplicationRequestsAnAdminScopeItDoesNotHold(
+        string registeredScopes
+    ) : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient(
+                hasNoApiClientRow: true,
+                scopes: registeredScopes.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            );
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
+            var credentials = GrantCredentials();
+            // A request cannot make an API or mixed-scope credential exempt by asking for admin scopes.
+            credentials.Add(new("scope", "edfi_admin_api/full_access"));
+
+            _result = await CreateTokenManagerWithTokenLimit(1).GetAccessTokenAsync(credentials);
+        }
+
+        [Test]
+        public void It_rejects_the_scope() => _result.Should().BeOfType<TokenResult.FailureInvalidScope>();
+
+        [Test]
+        public void It_never_reaches_the_store_where_the_limit_is_applied() => StoreMustNotHaveHappened();
+    }
+
+    // DMS-1492: a non-empty scope that grants nothing is rejected before the signing key is read and
+    // before anything is minted or stored; an omitted or empty scope keeps the registered defaults.
+    // The response and the access token scope claim both report the granted set space-delimited
+    // (RFC 6749 section 3.3).
+
+    private const string FullAccessScope = "edfi_admin_api/full_access";
+    private const string ReadOnlyScope = "edfi_admin_api/readonly_access";
+    private const string AuthMetadataScope = "edfi_admin_api/authMetadata_readonly_access";
+
+    private static List<KeyValuePair<string, string>> GrantCredentialsWithScope(string scope)
+    {
+        var credentials = GrantCredentials();
+        credentials.Add(new("scope", scope));
+        return credentials;
+    }
+
+    private void StoreMustNotHaveHappened() =>
+        A.CallTo(() =>
+                _tokenRepository.StoreTokenAsync(
+                    A<Guid>._,
+                    A<Guid>._,
+                    A<string>._,
+                    A<DateTimeOffset>._,
+                    A<int>._
+                )
+            )
+            .MustNotHaveHappened();
+
+    private void StoreMustHaveHappenedOnce() =>
+        A.CallTo(() =>
+                _tokenRepository.StoreTokenAsync(
+                    A<Guid>._,
+                    A<Guid>._,
+                    A<string>._,
+                    A<DateTimeOffset>._,
+                    A<int>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+
+    private void SigningKeyMustNotHaveBeenRead() =>
+        A.CallTo(() => _tokenRepository.GetActivePrivateKeyAsync(A<string>._)).MustNotHaveHappened();
+
+    /// <summary>
+    /// A grantable client holding <paramref name="registeredScopes"/> asks for <paramref name="requestedScope"/>
+    /// and is refused: the typed rejection, and nothing read, minted or stored.
+    /// </summary>
+    public abstract class ScopeRejection(string[] registeredScopes, string requestedScope)
+        : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        protected ILogger<OpenIddictTokenManager> Logger { get; private set; } = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient(scopes: registeredScopes);
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
+            Logger = A.Fake<ILogger<OpenIddictTokenManager>>();
+
+            _result = await CreateTokenManagerWithTokenLimit(3, Logger)
+                .GetAccessTokenAsync(GrantCredentialsWithScope(requestedScope));
+        }
+
+        [Test]
+        public void It_returns_an_invalid_scope_failure() =>
+            _result.Should().BeOfType<TokenResult.FailureInvalidScope>();
+
+        [Test]
+        public void It_does_not_return_a_token() => _result.Should().NotBeOfType<TokenResult.Success>();
+
+        [Test]
+        public void It_does_not_read_the_signing_key() => SigningKeyMustNotHaveBeenRead();
+
+        [Test]
+        public void It_does_not_store_a_token() => StoreMustNotHaveHappened();
+
+        /// <summary>The structured values of the single warning the rejection wrote.</summary>
+        protected IReadOnlyDictionary<string, object?> RejectionWarningValues() =>
+            Fake.GetCalls(Logger)
+                .Where(call =>
+                    call.Method.Name == nameof(ILogger.Log)
+                    && call.GetArgument<LogLevel>(0) == LogLevel.Warning
+                )
+                .Select(call => call.Arguments[2])
+                .OfType<IEnumerable<KeyValuePair<string, object?>>>()
+                .Single()
+                .ToDictionary(pair => pair.Key, pair => pair.Value);
+    }
+
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithNoRequestedScopeHeld()
+        : ScopeRejection([ReadOnlyScope], "bogus other");
+
+    // The rejection warning logs the requested value with its commas shown as the separators they
+    // are, and with line breaks and other control characters stripped so it cannot forge a line.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithACommaDelimitedScopeNoneHeldAndControlCharacters()
+        : ScopeRejection([ReadOnlyScope], CommaDelimitedScope)
+    {
+        private const string CommaDelimitedScope = "bogus,other\r\nforged\u0007";
+
+        [Test]
+        public void It_logs_the_sanitized_values_separated() =>
+            RejectionWarningValues()["RequestedScopePrefix"].Should().Be("bogus otherforged");
+
+        [Test]
+        public void It_logs_the_original_length() =>
+            RejectionWarningValues()["RequestedScopeOriginalLength"].Should().Be(CommaDelimitedScope.Length);
+
+        [Test]
+        public void It_logs_the_client_id() =>
+            RejectionWarningValues()["ClientId"].Should().Be(GrantClientId);
+    }
+
+    // The form accepts values of several MiB, so the warning carries only a bounded prefix of the
+    // value, cut before sanitizing, beside the length of the whole value. The comma that ends the
+    // prefix is the last code unit kept; nothing after it reaches the log.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithAnOversizedScopeNoneHeld()
+        : ScopeRejection([ReadOnlyScope], OversizedScope)
+    {
+        private const string BeyondCutoff = "beyond-the-cutoff";
+        private static readonly string OversizedScope =
+            new string('x', 255) + "," + BeyondCutoff + new string('y', 4096);
+
+        [Test]
+        public void It_logs_exactly_the_first_256_code_units() =>
+            RejectionWarningValues()["RequestedScopePrefix"].Should().Be(new string('x', 255) + " ");
+
+        [Test]
+        public void It_logs_the_length_of_the_whole_value() =>
+            RejectionWarningValues()["RequestedScopeOriginalLength"].Should().Be(4369);
+
+        [Test]
+        public void It_logs_nothing_beyond_the_cutoff() =>
+            AllLoggedText(Logger).Should().NotContain(BeyondCutoff);
+    }
+
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithAScopeRequestedByAClientHoldingNoScopes()
+        : ScopeRejection([], ReadOnlyScope);
+
+    // A supplied value that names no scope token is not an omitted parameter (RFC 6749 section 3.2),
+    // and it grants nothing, so it is invalid_scope rather than the defaults it used to receive.
+    [TestFixture("   ")]
+    [TestFixture(",")]
+    [TestFixture(" , ")]
+    public class Given_GetAccessTokenAsync_WithAScopeThatNamesNoToken(string scope)
+        : ScopeRejection([ReadOnlyScope], scope);
+
+    // Authentication is judged before the scope, so a bad secret answers as a bad secret whatever
+    // the scope says, and still nothing is read, minted or stored.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithAnUnheldScopeAndAWrongSecret : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient(false, ReadOnlyScope);
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
+
+            _result = await CreateTokenManagerWithTokenLimit(3)
+                .GetAccessTokenAsync([
+                    new("client_id", GrantClientId),
+                    new("client_secret", "not-the-secret"),
+                    new("scope", "bogus"),
+                ]);
+        }
+
+        [Test]
+        public void It_returns_an_authentication_failure_not_an_invalid_scope() =>
+            _result.Should().BeOfType<TokenResult.FailureAuthentication>();
+
+        [Test]
+        public void It_does_not_read_the_signing_key() => SigningKeyMustNotHaveBeenRead();
+
+        [Test]
+        public void It_does_not_store_a_token() => StoreMustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// A grantable client holding <paramref name="registeredScopes"/> sends <paramref name="credentials"/>
+    /// and receives a token whose response <c>scope</c> and <c>scope</c> claim both carry exactly
+    /// <paramref name="expectedGrantedScopes"/>, in that order and spelling.
+    /// </summary>
+    public abstract class ScopeGrant(
+        string[] registeredScopes,
+        Func<List<KeyValuePair<string, string>>> credentials,
+        string[] expectedGrantedScopes
+    ) : OpenIddictTokenManagerTests
+    {
+        protected TokenResult Result { get; private set; } = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient(scopes: registeredScopes);
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
+
+            Result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(credentials());
+        }
+
+        [Test]
+        public void It_returns_a_success_result() => Result.Should().BeOfType<TokenResult.Success>();
+
+        [Test]
+        public void It_reports_the_granted_scopes_space_delimited_in_the_response() =>
+            ResponseScopeOf(Result).Should().Be(string.Join(" ", expectedGrantedScopes));
+
+        [Test]
+        public void It_carries_the_granted_scopes_space_delimited_in_the_token() =>
+            ScopeClaimOf(Result).Should().Be(string.Join(" ", expectedGrantedScopes));
+
+        [Test]
+        public void It_grants_the_same_set_in_the_response_and_the_token()
+        {
+            string[] responseSet = ResponseScopeOf(Result).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            string[] claimSet = ScopeClaimOf(Result).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            responseSet.Should().Equal(expectedGrantedScopes);
+            claimSet.Should().Equal(expectedGrantedScopes);
+        }
+
+        [Test]
+        public void It_stores_the_token_once() => StoreMustHaveHappenedOnce();
+    }
+
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithoutAScope()
+        : ScopeGrant([FullAccessScope, ReadOnlyScope], GrantCredentials, [FullAccessScope, ReadOnlyScope]);
+
+    // The endpoint never forwards an empty scope, but the manager treats one as omitted all the same.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithAnEmptyScope()
+        : ScopeGrant(
+            [FullAccessScope, ReadOnlyScope],
+            () => GrantCredentialsWithScope(""),
+            [FullAccessScope, ReadOnlyScope]
+        );
+
+    // A client with no registered scopes that omits scope is still issued a token, but the granted
+    // set is empty and RFC 6749 section 3.3 defines no empty scope value, so the response carries
+    // no scope while the token's claim is unchanged.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithoutAScopeForAClientHoldingNoScopes
+        : OpenIddictTokenManagerTests
+    {
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            // No scopes: the client is registered with no permissions.
+            ArrangeGrantableClient();
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
+
+            _result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(GrantCredentials());
+        }
+
+        [Test]
+        public void It_returns_a_success_result() => _result.Should().BeOfType<TokenResult.Success>();
+
+        [Test]
+        public void It_reports_no_scope_in_the_response()
+        {
+            System.Text.Json.JsonElement body = System
+                .Text.Json.JsonDocument.Parse(_result.Should().BeOfType<TokenResult.Success>().Subject.Token)
+                .RootElement;
+            (body.TryGetProperty("scope", out System.Text.Json.JsonElement scope) ? scope.GetString() : null)
+                .Should()
+                .BeNull();
+        }
+
+        [Test]
+        public void It_keeps_the_empty_scope_claim_in_the_token() => ScopeClaimOf(_result).Should().BeEmpty();
+
+        [Test]
+        public void It_stores_the_token_once() => StoreMustHaveHappenedOnce();
+    }
+
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithAllRequestedScopesHeld()
+        : ScopeGrant(
+            [FullAccessScope, ReadOnlyScope],
+            () => GrantCredentialsWithScope($"{FullAccessScope} {ReadOnlyScope}"),
+            [FullAccessScope, ReadOnlyScope]
+        );
+
+    // The matching is case-insensitive and the requested spelling is what is issued, as before
+    // DMS-1492: a client registered with one casing and asking in another keeps getting the casing
+    // it asked for.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithARequestedSpellingDifferingFromTheRegisteredOne()
+        : ScopeGrant(
+            ["EDFI_ADMIN_API/full_access"],
+            () => GrantCredentialsWithScope(FullAccessScope),
+            [FullAccessScope]
+        );
+
+    // A comma separates scopes as a space does.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithACommaSeparatedScope()
+        : ScopeGrant(
+            [FullAccessScope, ReadOnlyScope],
+            () => GrantCredentialsWithScope($"{FullAccessScope},{ReadOnlyScope}"),
+            [FullAccessScope, ReadOnlyScope]
+        );
+
+    // The grant follows the requested order, not the registered one.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithScopesRequestedInReverseRegisteredOrder()
+        : ScopeGrant(
+            [FullAccessScope, ReadOnlyScope],
+            () => GrantCredentialsWithScope($"{ReadOnlyScope} {FullAccessScope}"),
+            [ReadOnlyScope, FullAccessScope]
+        );
+
+    // A repeated held scope is granted as many times as it is requested.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithAHeldScopeRequestedTwice()
+        : ScopeGrant(
+            [FullAccessScope, ReadOnlyScope],
+            () => GrantCredentialsWithScope($"{FullAccessScope} {ReadOnlyScope} {FullAccessScope}"),
+            [FullAccessScope, ReadOnlyScope, FullAccessScope]
+        );
+
+    // A partial request succeeds with the intersection only: the unheld value is dropped and the
+    // held-but-unrequested one is not added, in both representations.
+    [TestFixture(
+        $"{FullAccessScope},{ReadOnlyScope},{AuthMetadataScope}",
+        $"{FullAccessScope} {ReadOnlyScope} bogus",
+        $"{FullAccessScope},{ReadOnlyScope}"
+    )]
+    [TestFixture($"{FullAccessScope},{ReadOnlyScope}", $"{FullAccessScope} bogus", FullAccessScope)]
+    public class Given_GetAccessTokenAsync_WithAPartiallyHeldScope(
+        string registeredScopes,
+        string requestedScope,
+        string expectedGrantedScopes
+    )
+        : ScopeGrant(
+            registeredScopes.Split(','),
+            () => GrantCredentialsWithScope(requestedScope),
+            expectedGrantedScopes.Split(',')
+        )
+    {
+        [Test]
+        public void It_grants_neither_the_unheld_nor_the_unrequested_scope()
+        {
+            string[] unrequested = registeredScopes
+                .Split(',')
+                .Except(requestedScope.Split(' '), StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            string[] responseSet = ResponseScopeOf(Result).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            string[] claimSet = ScopeClaimOf(Result).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            responseSet.Should().NotContain("bogus").And.NotContain(unrequested);
+            claimSet.Should().NotContain("bogus").And.NotContain(unrequested);
+        }
     }
 
     [TestFixture]
@@ -3929,6 +4365,20 @@ public class OpenIddictTokenManagerTests
             .Text.Json.JsonDocument.Parse(result.Should().BeOfType<TokenResult.Success>().Subject.Token)
             .RootElement.GetProperty("access_token")
             .GetString()!;
+
+    /// <summary>The <c>scope</c> member of a success result's response body.</summary>
+    private static string ResponseScopeOf(TokenResult result) =>
+        System
+            .Text.Json.JsonDocument.Parse(result.Should().BeOfType<TokenResult.Success>().Subject.Token)
+            .RootElement.GetProperty("scope")
+            .GetString()!;
+
+    /// <summary>The <c>scope</c> claim of a success result's access token.</summary>
+    private static string ScopeClaimOf(TokenResult result) =>
+        new JwtSecurityTokenHandler()
+            .ReadJwtToken(AccessTokenOf(result))
+            .Claims.Single(claim => claim.Type == "scope")
+            .Value;
 
     // 2.2-a: keys are projected from the snapshot, so a second read is served from memory. Before DMS-1556 every call
     // read the key table.
@@ -5998,7 +6448,6 @@ public class OpenIddictTokenManagerTests
     }
 
     [TestFixture("Alpha Beta", "Alpha Beta")]
-    [TestFixture("ungranted", "Alpha Beta Gamma")]
     [TestFixture(null, "Alpha Beta Gamma")]
     [TestFixture("Alpha,Beta", "Alpha Beta")]
     [TestFixture("alpha BETA", "alpha BETA")]
@@ -6027,7 +6476,6 @@ public class OpenIddictTokenManagerTests
 
     [TestFixture(null)]
     [TestFixture("Alpha")]
-    [TestFixture("ungranted")]
     public class Given_A_Single_Granted_Scope(string? requestedScope) : OpenIddictTokenManagerTests
     {
         private IssuedScopes _issued = null!;

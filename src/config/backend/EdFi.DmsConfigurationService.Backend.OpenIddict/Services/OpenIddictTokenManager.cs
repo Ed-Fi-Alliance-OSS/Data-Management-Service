@@ -56,6 +56,13 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         private readonly string _placeholderHash = placeholderHash.Hash;
 
         /// <summary>
+        /// The most UTF-16 code units of a rejected scope value written to the invalid_scope warning.
+        /// The form accepts values far larger than any real scope list, so the warning carries this
+        /// prefix and the value's original length rather than the whole value.
+        /// </summary>
+        private const int LoggedScopePrefixLength = 256;
+
+        /// <summary>
         /// Static helper to validate a JWT token and check its revocation status using a service provider.
         /// This allows easy integration into authentication middleware or endpoint handlers.
         /// </summary>
@@ -226,44 +233,59 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     LoggingUtility.SanitizeForLog(applicationInfo.DisplayName)
                 );
 
-                // Determine scopes to include in token
-                string listOfScopes;
-                if (!string.IsNullOrEmpty(scope))
+                // Determine the scopes to grant. An omitted or empty scope receives the application's
+                // registered permissions (RFC 6749 section 3.3). A non-empty scope is narrowed to the
+                // requested values the application holds, in the requested spelling and order; when
+                // that leaves nothing, including a value that names no scope at all, the request is
+                // rejected as invalid_scope (section 5.2) rather than widened to the defaults.
+                string[] allowedScopes = applicationInfo.Permissions ?? [];
+                string[] grantedScopes;
+                if (string.IsNullOrEmpty(scope))
                 {
-                    // Validate requested scopes against application's permitted scopes
-                    var requestedScopes = scope.Split(
-                        new[] { ' ', ',' },
-                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
+                    // No scope requested, use application's default permissions
+                    grantedScopes = allowedScopes;
+                    _logger.LogInformation(
+                        "No scope requested, using application defaults: {ListOfScopes}",
+                        LoggingUtility.SanitizeForLog(string.Join(" ", grantedScopes))
                     );
-                    var allowedScopes = applicationInfo.Permissions ?? Array.Empty<string>();
-                    // Only include scopes that are both requested AND allowed
-                    var validScopes = requestedScopes
-                        .Where(s => allowedScopes.Contains(s, StringComparer.OrdinalIgnoreCase))
-                        .ToArray();
-
-                    if (validScopes.Length == 0)
-                    {
-                        // If no valid scopes, use the application's default permissions
-                        listOfScopes = string.Join(" ", allowedScopes);
-                        _logger.LogWarning(
-                            "No valid requested scopes found, using application defaults: {ListOfScopes}",
-                            LoggingUtility.SanitizeForLog(listOfScopes)
-                        );
-                    }
-                    else
-                    {
-                        listOfScopes = string.Join(" ", validScopes);
-                    }
                 }
                 else
                 {
-                    // No scope requested, use application's default permissions
-                    listOfScopes = string.Join(" ", applicationInfo.Permissions ?? Array.Empty<string>());
-                    _logger.LogInformation(
-                        "No scope requested, using application defaults: {ListOfScopes}",
-                        LoggingUtility.SanitizeForLog(listOfScopes)
+                    string[] requestedScopes = scope.Split(
+                        [' ', ','],
+                        StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries
                     );
+                    // Only include scopes that are both requested AND allowed
+                    grantedScopes = requestedScopes
+                        .Where(s => allowedScopes.Contains(s, StringComparer.OrdinalIgnoreCase))
+                        .ToArray();
+
+                    if (grantedScopes.Length == 0)
+                    {
+                        // Returned before the canonical client id, the signing key, the mint and the
+                        // store are touched, so a rejected request leaves no token behind.
+                        // The prefix is cut before it is sanitized, so a large value is never copied
+                        // whole, and its commas become spaces so the separators survive the sanitizer.
+                        _logger.LogWarning(
+                            "Client {ClientId} requested a scope it does not hold; answering invalid_scope. "
+                                + "Requested scope prefix: {RequestedScopePrefix} (sanitized; original length "
+                                + "{RequestedScopeOriginalLength})",
+                            LoggingUtility.SanitizeForLog(clientId),
+                            LoggingUtility.SanitizeForLog(
+                                scope[..Math.Min(scope.Length, LoggedScopePrefixLength)].Replace(',', ' ')
+                            ),
+                            scope.Length
+                        );
+                        return new TokenResult.FailureInvalidScope();
+                    }
                 }
+
+                // The access token scope claim and the response report the same granted set space-delimited,
+                // as RFC 6749 section 3.3 defines the scope parameter. That definition requires at least
+                // one scope token, so an empty granted set is reported as no scope at all, which the
+                // response leaves out.
+                string listOfScopes = string.Join(" ", grantedScopes);
+                string? responseScope = grantedScopes.Length == 0 ? null : listOfScopes;
 
                 // Mint from the stored client id, not the one the caller typed, so that every
                 // token issued to a client carries one identity. This single argument feeds the
@@ -323,7 +345,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     expires_in = expiresIn,
                     refresh_expires_in = 0,
                     token_type = "Bearer",
-                    scope = listOfScopes,
+                    scope = responseScope,
                 };
 
                 // Return as JSON string
