@@ -1155,7 +1155,16 @@ public enum ColumnKind
     /// Not client-writable; SourceJsonPath and TargetResource are null. See <c>change-queries.md</c>
     /// §"Concrete-resource version mirror and authoritative timestamp".
     /// </summary>
-    AuthoritativeContentLastModifiedAt
+    AuthoritativeContentLastModifiedAt,
+
+    /// <summary>
+    /// Creation time of the current resource lifetime, on the concrete root resource table (and on
+    /// <c>dms.Descriptor</c>). Set by the owner's stamping trigger on insert, from the same timestamp
+    /// as the initial <c>AuthoritativeContentLastModifiedAt</c>, and preserved by every later write.
+    /// Not client-writable; excluded from reconstitution and from representation diffs.
+    /// SourceJsonPath and TargetResource are null. See <c>update-tracking.md</c> §"Creation time".
+    /// </summary>
+    AuthoritativeContentCreatedAt
 }
 
 /// <summary>
@@ -1383,7 +1392,7 @@ public abstract record ColumnStorage
 /// A table column description used for both DDL and runtime binding.
 /// </summary>
 /// <param name="ColumnName">Physical column name.</param>
-/// <param name="Kind">Semantic kind (Scalar, CollectionKey, DocumentFk, DescriptorFk, Ordinal, ParentKeyPart, MirroredContentVersion, AuthoritativeContentLastModifiedAt).</param>
+/// <param name="Kind">Semantic kind (Scalar, CollectionKey, DocumentFk, DescriptorFk, Ordinal, ParentKeyPart, MirroredContentVersion, AuthoritativeContentLastModifiedAt, AuthoritativeContentCreatedAt).</param>
 /// <param name="ScalarType">Scalar type definition for Kind=Scalar; otherwise null.</param>
 /// <param name="IsNullable">Whether the column can be null (DDL + parameter binding).</param>
 /// <param name="SourceJsonPath">
@@ -1410,7 +1419,7 @@ public sealed record DbColumnModel(
     ColumnKind Kind,
     RelationalScalarType? ScalarType,
     bool IsNullable,
-    JsonPathExpression? SourceJsonPath,            // null for derived columns (CollectionKey/ParentKey/Ordinal/MirroredContentVersion/AuthoritativeContentLastModifiedAt)
+    JsonPathExpression? SourceJsonPath,            // null for derived columns (CollectionKey/ParentKey/Ordinal/MirroredContentVersion/AuthoritativeContentLastModifiedAt/AuthoritativeContentCreatedAt)
     QualifiedResourceName? TargetResource,         // for DocumentFk / DescriptorFk
     ColumnStorage Storage,
     bool UsesSqlServerIdentityCollation = false
@@ -1827,7 +1836,7 @@ public sealed record KeysetTableContract(
 
 When `DbTableModel.KeyUnificationClasses` is non-empty:
 
-- `TableWritePlan.ColumnBindings` (and emitted `INSERT`/`UPDATE` column lists) MUST include only stored/writable columns. Any column whose `DbColumnModel.Storage` is `UnifiedAlias(...)` MUST be excluded. Columns whose `Kind` is `MirroredContentVersion` or `AuthoritativeContentLastModifiedAt` MUST also be excluded — they are server-stamped by the resource's `*_Stamp` trigger and rely on their DDL defaults for INSERT, never on a client-supplied value.
+- `TableWritePlan.ColumnBindings` (and emitted `INSERT`/`UPDATE` column lists) MUST include only stored/writable columns. Any column whose `DbColumnModel.Storage` is `UnifiedAlias(...)` MUST be excluded. Columns whose `Kind` is `MirroredContentVersion`, `AuthoritativeContentLastModifiedAt` or `AuthoritativeContentCreatedAt` MUST also be excluded — they are server-stamped by the resource's `*_Stamp` trigger and rely on their DDL defaults for INSERT, never on a client-supplied value.
 - Canonical storage columns and synthetic `..._Present` presence-flag columns MUST be bound as `WriteValueSource.Precomputed`.
 - `TableWritePlan.KeyUnificationPlans` MUST be emitted for every `KeyUnificationClass` to compute canonical values and synthetic presence flags during row materialization.
 - Fail fast: the plan compiler MUST reject any plan that attempts to write a `UnifiedAlias` column, or that leaves a `Precomputed` binding without exactly one corresponding `KeyUnificationWritePlan`.

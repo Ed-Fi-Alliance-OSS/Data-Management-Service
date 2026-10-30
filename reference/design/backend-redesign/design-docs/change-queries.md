@@ -1290,11 +1290,11 @@ Because typical ODS deployments rotate per school year, ODS does not automate th
 
 #### Concrete-resource version mirror and authoritative timestamp
 
-Each `ConcreteResourceModel` with `StorageKind = RelationalTables` has a `ContentVersion` mirror and an authoritative `ContentLastModifiedAt` on its root table. The shared `dms.Descriptor` table has the same two columns. The `*_Stamp` triggers copy the document version and generate the owner timestamp in the same transaction; `dms.Document` has no `ContentLastModifiedAt`.
+Each `ConcreteResourceModel` with `StorageKind = RelationalTables` has a `ContentVersion` mirror, an authoritative `ContentLastModifiedAt` and a creation-time `ContentCreatedAt` on its root table. The shared `dms.Descriptor` table has the same three columns. The `*_Stamp` triggers copy the document version and generate the owner timestamp in the same transaction, and an owner insert sets `ContentCreatedAt` and the initial `ContentLastModifiedAt` from one timestamp; `dms.Document` has neither timestamp. `ContentCreatedAt` is not a representation stamp; [update-tracking.md](update-tracking.md) §"Creation time (normative)" defines its lifetime rules.
 
 These owner stamps let SQL-side integrators (and the existing ODS-shaped community tooling, including the API Publisher and dashboard datastores) read change-version and last-modified per row without joining `dms.Document`, and let live resource and descriptor endpoints serve `?minChangeVersion=X&maxChangeVersion=Y` as a single-table range seek.
 
-**Scope** — receive the columns and a supporting index:
+**Scope** — receive the columns and a supporting `ContentVersion` index (`ContentCreatedAt` is not indexed):
 
 - Every `ConcreteResourceModel` whose `StorageKind = RelationalTables`, regardless of project schema. This includes core resource roots (`edfi.Student`, `edfi.School`, …) and extension-project resource roots (`tpdm.Candidate`, …); they are all roots of root resources.
 - The shared descriptor table `dms.Descriptor`.
@@ -1302,17 +1302,17 @@ These owner stamps let SQL-side integrators (and the existing ODS-shaped communi
 Do not receive the columns:
 
 - Child / collection tables (`edfi.SchoolAddress`, …). No independent endpoint and no window-filter consumer.
-- `*Extension` resource-extension tables (`tpdm.ContactExtension`, …). Not new resources; the `DocumentId` is shared with the base document, so the base root carries their version mirror and authoritative timestamp.
+- `*Extension` resource-extension tables (`tpdm.ContactExtension`, …). Not new resources; the `DocumentId` is shared with the base document, so the base root carries their version mirror, authoritative timestamp and creation time.
 - Abstract-resource union views. The columns surface through the underlying concrete root tables.
 
 **Invariants:**
 
-1. `dms.Document.ContentVersion` remains the lock/concurrency and enqueue authority; the root/descriptor owns its timestamp. Stamps are server-maintained by defaults, `*_Stamp` triggers and the explicit representation-restamp utility; the relational write path MUST NOT include `ContentVersion` or `ContentLastModifiedAt` in client-writable column projections.
+1. `dms.Document.ContentVersion` remains the lock/concurrency and enqueue authority; the root/descriptor owns its timestamp. Stamps are server-maintained by defaults, `*_Stamp` triggers and the explicit representation-restamp utility; the relational write path MUST NOT include `ContentVersion`, `ContentLastModifiedAt` or `ContentCreatedAt` in client-writable column projections.
 2. For every committed transaction, `<root>.ContentVersion = dms.Document.ContentVersion` for the same `DocumentId`; the authoritative owner timestamp and representation must belong to that version. This also applies to `dms.Descriptor`, joined by its unique `DocumentId`, not its compact `DescriptorId`.
-3. For representation-changing updates and deletes, a trigger fire allocates exactly one `dms.ChangeVersionSequence` value per affected document and writes it to both `dms.Document` and the mirror, captured via `OUTPUT` (SQL Server) / `RETURNING` (PostgreSQL). Root-resource and descriptor inserts are the exception: `dms.Document` defaults allocate the initial content stamp before the root/descriptor row is inserted, and the root/descriptor insert trigger copies that existing version and initializes its own UTC timestamp without allocating another content version. Owner timestamps are generated directly on the surviving root/descriptor, never captured from `dms.Document`. `NEXT VALUE FOR` MUST NOT be invoked a second time for the same document in the same fire.
+3. For representation-changing updates and deletes, a trigger fire allocates exactly one `dms.ChangeVersionSequence` value per affected document and writes it to both `dms.Document` and the mirror, captured via `OUTPUT` (SQL Server) / `RETURNING` (PostgreSQL). Root-resource and descriptor inserts are the exception: `dms.Document` defaults allocate the initial content stamp before the root/descriptor row is inserted, and the root/descriptor insert trigger copies that existing version and initializes its own UTC timestamp and creation time without allocating another content version. Owner timestamps are generated directly on the surviving root/descriptor, never captured from `dms.Document`. `NEXT VALUE FOR` MUST NOT be invoked a second time for the same document in the same fire.
 4. There is no separate document-level identity counter; identity-projection changes are handled by the key-change workset and do not add extra mirrored document columns.
-5. The `affectedDocs` CTE inside each `*_Stamp` trigger MUST exclude rows whose `inserted` / `deleted` images differ **only** in the two content stamp columns (`ContentVersion`, `ContentLastModifiedAt`). This tightens the existing "no-op updates are not representation changes" rule from [update-tracking.md](update-tracking.md) §"Stamping rules" and is the mechanism that keeps nested-trigger fire safe when a child / `_ext` trigger writes the root stamps.
-6. On SQL Server, the root-resource and descriptor content stamps MUST be **skipped outright** — not merely evaluated to an empty workset — when the firing cannot change anything. Invariant 5 makes the workset empty; it does not stop the optimizer from resolving the join against `dms.Document` to discover that, and that resolution takes update locks on rows the statement will never modify. The guard is `IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE(<stored column>) OR …)`, which closes two cases in one predicate: a pure `INSERT`, where both `affectedDocs` branches require a matching `deleted` row; and a stamp-only re-firing, where `deleted` is non-empty but no stored column appears in the `SET` clause. `UPDATE(column)` is a **performance pre-filter only** — it reports SET-clause membership, not value change — so it MUST range over exactly the stored columns the invariant-5 value diff uses, and that diff remains authoritative. The child / `_ext` shape is deliberately unguarded: its inserted-side branch legitimately matches pure inserts, because a new collection row must stamp its root document.
+5. The `affectedDocs` CTE inside each `*_Stamp` trigger MUST exclude rows whose `inserted` / `deleted` images differ **only** in the owner metadata columns (`ContentVersion`, `ContentLastModifiedAt`, `ContentCreatedAt`): the generated value diff omits all three. This tightens the existing "no-op updates are not representation changes" rule from [update-tracking.md](update-tracking.md) §"Stamping rules" and is the mechanism that keeps nested-trigger fire safe when a child / `_ext` trigger writes the root stamps.
+6. On SQL Server, the root-resource and descriptor content stamps MUST be **skipped outright** — not merely evaluated to an empty workset — when the firing cannot change anything. Invariant 5 makes the workset empty; it does not stop the optimizer from resolving the join against `dms.Document` to discover that, and that resolution takes update locks on rows the statement will never modify. The guard is `IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE(<stored column>) OR …)`, which closes two cases in one predicate: a pure `INSERT`, where both `affectedDocs` branches require a matching `deleted` row; and a stamp-only re-firing, where `deleted` is non-empty but no stored column appears in the `SET` clause. `UPDATE(column)` is a **performance pre-filter only** — it reports SET-clause membership, not value change — so it MUST range over exactly the stored columns the invariant-5 value diff uses (never the three owner metadata columns), and that diff remains authoritative. The child / `_ext` shape is deliberately unguarded: its inserted-side branch legitimately matches pure inserts, because a new collection row must stamp its root document.
 7. On SQL Server, the owner stamp `UPDATE` MUST retain `WITH (FORCESEEK)`. It joins the owner table to a table variable; without the hint, the fixed cardinality estimate can permit a scan and take update locks across untouched owners. The target needs an index whose leading key is the joined `DocumentId`. Ordinary roots provide that primary key; the compact descriptor provides a unique document-association index even though its primary key is `DescriptorId`. Preserve that access path and the existing projection-work locking strategy. A missing usable index makes the hint fail with error 8622; changing the primary key alone is no reason to remove this protection.
 
 **MSSQL column additions** — illustrated on `edfi.Student`:
@@ -1321,13 +1321,17 @@ Do not receive the columns:
 ALTER TABLE [edfi].[Student]
     ADD [ContentVersion] bigint NOT NULL
         CONSTRAINT DF_Student_ContentVersion DEFAULT 0,
+    [ContentCreatedAt] datetime2(7) NOT NULL
+        CONSTRAINT DF_Student_ContentCreatedAt DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL
         CONSTRAINT DF_Student_ContentLastModifiedAt DEFAULT (sysutcdatetime());
 
 CREATE INDEX [IX_Student_ContentVersion] ON [edfi].[Student] ([ContentVersion]);
 ```
 
-PostgreSQL is the same shape with `DEFAULT 0` and `now()` defaults and a `timestamp with time zone` column type.
+PostgreSQL is the same shape with `DEFAULT 0` and `now()` defaults and `timestamp with time zone` column types.
+
+The `ContentCreatedAt` default only satisfies `NOT NULL` before the stamping trigger runs. On SQL Server the default and the `AFTER` trigger each read `sysutcdatetime()` separately, so the root and descriptor insert firings overwrite both timestamps from one captured value (see the trigger excerpt below). PostgreSQL's `now()` is the transaction start time, so its root `BEFORE` trigger and descriptor `AFTER` trigger assign both columns the same value.
 
 The mirror `ContentVersion` default is a non-null sentinel, not a real change-version allocation. The production write path always goes through the `*_Stamp` trigger. Root-resource and descriptor inserts copy the existing document version initialized by its default and initialize the owner timestamp. Updates, deletes, child writes, and `_ext` writes allocate a fresh `dms.Document.ContentVersion` and mirror that captured value to surviving owners while generating their timestamps. A deleted root/descriptor has no owner timestamp to update; its allocated version still feeds history.
 
@@ -1360,7 +1364,7 @@ probes retain component comparisons and must not be described as lowered-URI ind
 
 **Compiled-mapping-set additions** (defined in [compiled-mapping-set.md](compiled-mapping-set.md)):
 
-- The per-resource derivation pass that builds `ConcreteResourceModel.RelationalModel` adds two synthesized columns to the root `DbTableModel` whenever `StorageKind = RelationalTables`. Their `ColumnKind` is `MirroredContentVersion` and `AuthoritativeContentLastModifiedAt` respectively (defined in [flattening-reconstitution.md](flattening-reconstitution.md)). `SourceJsonPath` and `TargetResource` are null. The write-path `TableWritePlan.ColumnBindings` exclusion rule (also defined in [flattening-reconstitution.md](flattening-reconstitution.md)) keeps them out of client-writable column lists; dialect emitters render the correct DDL defaults for each kind (`0` for `MirroredContentVersion`, current-UTC for `AuthoritativeContentLastModifiedAt`).
+- The per-resource derivation pass that builds `ConcreteResourceModel.RelationalModel` adds three synthesized columns to the root `DbTableModel` whenever `StorageKind = RelationalTables`. Their `ColumnKind` is `MirroredContentVersion`, `AuthoritativeContentLastModifiedAt` and `AuthoritativeContentCreatedAt` respectively (defined in [flattening-reconstitution.md](flattening-reconstitution.md)). `SourceJsonPath` and `TargetResource` are null. The write-path `TableWritePlan.ColumnBindings` exclusion rule (also defined in [flattening-reconstitution.md](flattening-reconstitution.md)) keeps them out of client-writable column lists, and read hydration omits them from reconstituted JSON; dialect emitters render the correct DDL defaults for each kind (`0` for `MirroredContentVersion`, current-UTC for `AuthoritativeContentLastModifiedAt` and `AuthoritativeContentCreatedAt`).
 - For `StorageKind = SharedDescriptorTable`, the columns are added by the core DDL pass that owns `dms.Descriptor`, not by the per-resource pass, because `dms.Descriptor` is a core table.
 - `DeriveIndexInventoryPass` adds one `IX_<Table>_ContentVersion` per in-scope root table and
   `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` for live descriptor
@@ -1456,13 +1460,32 @@ BEGIN
     -- so without it this self-UPDATE re-fires the trigger on an empty workset and recurses to the
     -- nesting limit where RECURSIVE_TRIGGERS is ON. Invariant 7: FORCESEEK forbids a scan of the
     -- mirror table, which a table-variable cardinality estimate would otherwise permit.
+    --
+    -- Root and descriptor triggers split the owner stamp by firing kind. Update and delete
+    -- firings never assign ContentCreatedAt. An insert firing (empty deleted) captures one
+    -- clock value for both timestamps, because the column defaults read the clock separately.
+    -- Child / _ext triggers keep only the first UPDATE: their insert firings stamp an existing
+    -- root and must never touch its creation time.
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = sysutcdatetime()
-        FROM [edfi].[Grade] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = sysutcdatetime()
+            FROM [edfi].[Grade] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            DECLARE @createdAt datetime2(7) = sysutcdatetime();
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @createdAt,
+                r.[ContentCreatedAt] = @createdAt
+            FROM [edfi].[Grade] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
 
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
@@ -1619,6 +1642,7 @@ The FK from the resource row to `dms.Document` (see [data-model.md](data-model.m
 The emitted `dms.Descriptor_Stamp` trigger follows the same document-owned convention. It pairs
 descriptor updates by the stable compact `DescriptorId`, captures/stamps the owning `DocumentId`,
 and copies `ContentVersion` while generating authoritative `ContentLastModifiedAt` on the descriptor through that document association.
+Its insert path also sets `ContentCreatedAt` from the same timestamp; its update path never assigns it.
 Descriptor component updates stamp content but do not emit delete/key-change history rows; unchanged
 bodies preserve stamps and history. These are the combined DMS-1401 timestamp-ownership rules.
 
@@ -2337,7 +2361,7 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 - ChangeTracking key-change rows using the owning `DbTriggerInfo.IdentityProjectionColumns` workset, including key-unification cases where canonical storage columns change without direct alias-column updates, and presence-only alias changes do not emit key-change rows when the canonical identity storage values are unchanged.
 - `ReadChangesAuthorizationViewInfo` union arms for current/current, current/tracked, tracked/current, and tracked/tracked association combinations.
 - Manifest output for tracked-change tables, triggers, and ReadChanges authorization views so SQL generation tests are checking renderer behavior, not hidden semantic compilation in the DDL emitter.
-- Version mirror and authoritative timestamp columns (`ContentVersion`, `ContentLastModifiedAt`) tagged with `ColumnKind.MirroredContentVersion` and `ColumnKind.AuthoritativeContentLastModifiedAt` on every `ConcreteResourceModel` with `StorageKind = RelationalTables`, including extension-project resources; absent on `StorageKind = SharedDescriptorTable` resources (the columns live on `dms.Descriptor` instead, added by the core DDL pass).
+- Version mirror, authoritative timestamp and creation-time columns (`ContentVersion`, `ContentLastModifiedAt`, `ContentCreatedAt`) tagged with `ColumnKind.MirroredContentVersion`, `ColumnKind.AuthoritativeContentLastModifiedAt` and `ColumnKind.AuthoritativeContentCreatedAt` on every `ConcreteResourceModel` with `StorageKind = RelationalTables`, including extension-project resources; absent on `StorageKind = SharedDescriptorTable` resources (the columns live on `dms.Descriptor` instead, added by the core DDL pass).
 - `IX_<Table>_ContentVersion` per in-scope root in `IndexesInCreateOrder` (single-column), plus
   `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` with key columns in the order
   `[ResourceKeyId, ContentVersion, DocumentId]` for live descriptor change-version-windowed page

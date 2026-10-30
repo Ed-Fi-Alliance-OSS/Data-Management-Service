@@ -71,6 +71,12 @@ Each persisted document maintains two representation stamps in the same transact
   UTC timestamp, whose provider precision is retained in storage and whose whole-second UTC
   formatting supplies `_lastModifiedDate`. `dms.Document` does not store this timestamp.
 
+The same owner also stores `<root>.ContentCreatedAt` (or `dms.Descriptor.ContentCreatedAt`), the
+UTC creation time of the current resource lifetime. It is owner metadata, not a representation
+stamp: it is set once when the owner row is inserted and follows the rules in "Creation time
+(normative)" below. Child/collection tables, `_ext` tables, `dms.Document` and
+`dms.DocumentCache` do not store it.
+
 Note: `dms.Document` also carries metadata used by other subsystems (e.g., `CreatedByOwnershipTokenId` for ownership-based authorization; see `auth.md`). Update-tracking rules defined in this document are unchanged by those additional columns.
 
 These are the source of truth for:
@@ -152,7 +158,8 @@ A document's full resource-state representation changes when any of the followin
 - any referenced document’s identity values embedded in the representation change, which is realized as an FK cascade update to the document’s stored reference identity storage columns (canonical under key unification; see [key-unification.md](key-unification.md)).
 
 A successful update request that results in **no persisted row changes** is **not** a representation change. In that
-case, `ContentVersion` and `ContentLastModifiedAt` MUST remain unchanged.
+case, `ContentVersion` and `ContentLastModifiedAt` MUST remain unchanged. `ContentCreatedAt` never
+changes on update (see "Creation time" below).
 
 ### What counts as an identity projection change?
 
@@ -179,8 +186,13 @@ for identity tracking.
 Inserting a new document is a representation change (and also an identity projection change).
 The `dms.Document` default allocates one new `ChangeVersionSequence` value per inserted row.
 Inserting its resource root or descriptor copies that existing version without a second allocation
-and initializes the authoritative owner timestamp in UTC. Both rows are created in one transaction.
-Child/extension inserts change an existing representation and allocate a fresh version normally.
+and initializes the authoritative owner timestamp in UTC. The same owner insertion sets
+`ContentCreatedAt` and the initial `ContentLastModifiedAt` from one database timestamp, so the two
+values are equal on a newly created owner: PostgreSQL assigns both from the transaction-stable
+`now()`, and SQL Server's insert firing assigns both from one captured `SYSUTCDATETIME()` value.
+Column defaults and triggers MUST NOT read the clock separately for the two columns. Both rows are
+created in one transaction. Child/extension inserts change an existing representation and allocate
+a fresh version normally; they never set the root's `ContentCreatedAt`.
 
 A constant default (e.g., `DEFAULT 1`) is not compatible with the uniqueness/monotonicity requirements for `ChangeVersion` and MUST NOT be treated as correct initialization.
 
@@ -192,6 +204,22 @@ Notes:
 - For watermark-only compatibility, allocating stamps must be **per-document**, not “one stamp for the whole statement”:
   - when a trigger stamps N `dms.Document` rows, it MUST allocate N distinct `ChangeVersionSequence` values (one per affected `DocumentId`).
   - SQL Server: do **not** assign `NEXT VALUE FOR dms.ChangeVersionSequence` to a variable and reuse it; use `NEXT VALUE FOR dms.ChangeVersionSequence` directly in the set-based `UPDATE` that stamps `dms.Document` (and dedupe `DocumentId`s so each document is updated once per trigger execution).
+
+### Creation time (normative)
+
+`ContentCreatedAt` on the resource root or `dms.Descriptor` records when the current resource
+lifetime began:
+
+- It is set only by owner insertion, as described in "Initialization on insert" above. A
+  client-supplied or directly inserted value is overwritten by the stamping trigger.
+- It never changes during the resource's lifetime. PUT, POST-as-update, root/child/extension
+  changes, reference-identity cascades, no-op writes and representation restamping all preserve it.
+- It takes no part in no-op or representation comparisons. A change to `ContentCreatedAt` alone is
+  not a representation change: it allocates no `ContentVersion`, leaves `ContentLastModifiedAt`
+  unchanged and writes no tracked-change row.
+- It is not client-writable and does not appear in resource JSON, `_etag` or `_lastModifiedDate`.
+- Deleting a resource ends its lifetime. Recreating the same natural key creates a new document and
+  owner row with a new `ContentCreatedAt`.
 
 ### Projection work follows every committed content stamp
 

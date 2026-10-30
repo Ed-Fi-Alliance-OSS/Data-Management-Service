@@ -139,11 +139,13 @@ Notes:
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
   - `dms.Document.ContentVersion` advances when the document's full resource-state representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases). It remains the universal lock/concurrency and projection-enqueue authority.
   - The root resource table (or `dms.Descriptor`) mirrors `ContentVersion` and owns the authoritative `ContentLastModifiedAt`; `dms.Document` has no timestamp column of that name. Both stamps change in the same transaction. Document insertion allocates the initial version; owner insertion copies it and initializes the owner timestamp.
+  - The same owner stores `ContentCreatedAt`, the creation time of the current resource lifetime. Owner insertion sets it from the same database timestamp as the initial `ContentLastModifiedAt`; later writes, cascades, no-ops and restamps preserve it, and it never allocates a version or tracked change. It is not client-writable and not in resource JSON. Delete and recreate starts a new lifetime with a new value.
   - Identity-projection changes that alter the stored representation are reflected through the same content stamps.
   - API `_lastModifiedDate` and per-item `ChangeVersion` are served from these stored stamps. `_lastModifiedDate` uses the existing DMS whole-second UTC `yyyy-MM-ddTHH:mm:ssZ` formatter, discarding fractional seconds without rounding. API `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
-- `dms.Document` has no creation-time column. The former `CreatedAt` was removed without
-  replacement (DMS-1403). The DMS API data path did not use this column; removing it does not
-  change API fields, ETags, change queries, or authorization decisions.
+- `dms.Document` has no creation-time column. The former `CreatedAt` was removed (DMS-1403). The
+  DMS API data path did not use this column; removing it does not change API fields, ETags,
+  change queries, or authorization decisions. Resource creation time lives on the owner as
+  `ContentCreatedAt` (the resource root or `dms.Descriptor`; see the update-tracking bullets above).
 - Time semantics: store timestamps as UTC instants at provider precision. In PostgreSQL, use `timestamp with time zone`; in SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`). Public `_lastModifiedDate` formatting is the whole-second UTC representation defined above.
 - Authorization is addressed separately in [auth.md](auth.md).
 
@@ -209,6 +211,7 @@ CREATE TABLE "dms"."Descriptor" (
     "EffectiveEndDate" date NULL,
     "ContentVersion" bigint NOT NULL DEFAULT 0,
     "ContentLastModifiedAt" timestamp with time zone NOT NULL DEFAULT now(),
+    "ContentCreatedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_Descriptor" PRIMARY KEY ("DescriptorId"),
     CONSTRAINT "UX_Descriptor_DocumentId" UNIQUE ("DocumentId"),
     CONSTRAINT "FK_Descriptor_Document" FOREIGN KEY ("DocumentId")
@@ -247,6 +250,7 @@ CREATE TABLE [dms].[Descriptor] (
     [Uri] AS ([Namespace] + N'#' + [CodeValue]),
     [ContentVersion] bigint NOT NULL DEFAULT 0,
     [ContentLastModifiedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
+    [ContentCreatedAt] datetime2(7) NOT NULL DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DescriptorId]),
     CONSTRAINT [UX_Descriptor_DocumentId] UNIQUE ([DocumentId]),
     CONSTRAINT [FK_Descriptor_Document] FOREIGN KEY ([DocumentId])
