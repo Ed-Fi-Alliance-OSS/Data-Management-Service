@@ -325,10 +325,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                     return new TokenResult.FailureLockTimeout();
                 }
 
-                if (outcome == TokenStoreOutcome.ClientNotFound)
+                if (outcome is TokenStoreOutcome.ClientNotFound or TokenStoreOutcome.ClientChanged)
                 {
-                    // The application row was deleted between the lookup above and the store, so
-                    // answer exactly as the unknown-client case above answers.
+                    // The application row was deleted, its secret reset, or the client un-approved
+                    // between the lookup above and the store, so answer exactly as the unknown-client
+                    // and wrong-secret cases above answer.
                     return new TokenResult.FailureAuthentication(
                         InvalidClientError,
                         "Invalid client or Invalid client credentials"
@@ -1115,12 +1116,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
             int maxActiveTokens = applicationInfo.IsTokenLimitExempt
                 ? -1
                 : _identityOptions.Value.BearerTokenPerClientLimit;
+            // The stored hash LoadAuthenticatedApplicationAsync matched against the verified secret.
+            // The store refuses the grant when it no longer matches under the application row lock.
+            string authenticatedStoredSecret = applicationInfo.ClientSecret ?? string.Empty;
             TokenStoreOutcome outcome = await _tokenRepository.StoreTokenAsync(
                 tokenId,
                 applicationInfo.Id,
                 clientId,
                 expiration,
-                maxActiveTokens
+                maxActiveTokens,
+                authenticatedStoredSecret
             );
 
             return (outcome, tokenString);

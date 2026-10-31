@@ -147,6 +147,76 @@ Reading stored status directly is not a substitute either: an expired target tok
 its stored status rather than being marked `revoked`, so a `valid` reading in
 `dmscs.OpenIddictToken` or an admin status view does not mean the token is still usable.
 
+#### Credential reset, client deletion and un-approval revoke outstanding tokens
+
+Three client lifecycle operations mark every outstanding self-contained token of the affected
+client `revoked`, in the same database transaction that makes the change (DMS-1493):
+
+| Operation | Endpoints | The client's tokens are revoked when |
+|---|---|---|
+| Credential reset | `PUT /v3/apiClients/{id}/reset-credential`, `PUT /v3/applications/{id}/reset-credential` | the new secret is committed |
+| Client deletion | `DELETE /v3/apiClients/{id}`, and `DELETE /v3/applications/{id}` for each client of the application | the client is deleted from the identity provider |
+| Un-approval | `PUT /v3/apiClients/{id}` with `isApproved: false` | `isApproved = false` is committed |
+
+Once the operation has answered success, the next Configuration Service request that presents one
+of those tokens is rejected with `401`, because the per-request status check no longer finds it
+`valid`. Tokens of clients the operation does not target do not change: a client-level operation
+leaves the application's other clients alone, while deleting an application targets every client
+it has.
+
+- **A grant racing the operation is revoked or refused.** Every token grant for a client takes the
+  same database row lock as these operations and, while holding it, re-checks that the client
+  still exists, still has the secret the grant authenticated with, and is still approved. A grant
+  that stored its token before the operation has that token revoked by it. A grant that reaches
+  the store after the operation and is stale — it authenticated with the secret the reset
+  replaced, its client was deleted, or its client is still un-approved — is answered
+  `invalid_client`, exactly as a wrong secret is, and stores nothing. A new grant with the new
+  secret after a reset, or after the client is approved again, is not stale and succeeds.
+- **Re-approval does not revive tokens.** Approving the client again lets it obtain new tokens;
+  the tokens revoked by the un-approval stay revoked.
+- **All or nothing.** The change and the revocation commit together or not at all. If the
+  revocation fails before the commit, the operation rolls back: the new secret, the deletion or
+  the approval change is not persisted either, and the request fails. A success answer confirms
+  the commit. An error or a response that never arrives does not establish the outcome, because
+  the transaction may have committed before the failure was reported. Confirm the client's token
+  state, or retry: retrying is safe, and a retried reset issues another new secret.
+
+**Residual DMS window.** DMS does not consult token status (see
+[DMS resource API](#dms-resource-api--stateless-bearer-validation-no-app-side-replay-cache)), so it
+keeps accepting a revoked token until the token's `exp` plus `JwtAuthentication:ClockSkewSeconds`
+(default 30 seconds). With the default self-contained token lifetime
+(`IdentitySettings:TokenExpirationMinutes`, 30 minutes), a token stays usable at DMS for up to 30
+minutes 30 seconds after it was issued, however soon after issuance its client was reset, deleted
+or un-approved. This is the same window that follows `/connect/revoke`; a shorter token lifetime
+shortens it.
+
+**Tokens that were never marked revoked.** Only an operation performed by a Configuration Service
+that includes DMS-1493 marks tokens revoked. A token of a client that was reset, deleted or
+un-approved before that version was deployed is still `valid` in the token store. The
+Configuration Service accepts it until its `exp` plus the Configuration Service's fixed 5-minute
+clock skew (up to 35 minutes after issuance with the default lifetime). DMS accepts it until `exp`
+plus `ClockSkewSeconds`, as above. These are two separate bounds. Repeating the reset or the
+un-approval revokes such tokens. A client already deleted from the Configuration Service cannot be
+addressed through the API again, so its tokens are left to expire. Every such token expires within
+one token lifetime, plus the applicable clock skew, of the deployment.
+
+**Keycloak mode.** The same operations regenerate the client's secret, delete the client, or
+disable it at Keycloak, so the old credentials stop obtaining new tokens. The Configuration Service
+stores no Keycloak tokens, and neither it nor DMS asks Keycloak about a token on each request, so a
+Keycloak token issued before the operation is accepted by the Configuration Service until `exp`
+plus 5 minutes and by DMS until `exp` plus `ClockSkewSeconds`.
+
+**Grants for one client are serialized.** Because every grant takes the client's row lock,
+concurrent grants for the same client queue behind one another. This holds also when the per-client
+token limit is disabled (`IdentitySettings:BearerTokenPerClientLimit` below 1) and for clients
+exempt from the limit, which previously stored tokens without the lock. A grant that cannot obtain
+the lock within 5 seconds is answered `409` and can be retried, on both engines. A grant chosen as
+a deadlock victim is answered `409` on SQL Server, and `500` on PostgreSQL. Different clients do
+not share this per-client lock.
+
+The transaction order of each operation, the logging and the confirmation procedure are in
+[CS-AUTH.md § Lifecycle revocation](../reference/design/configuration-service/CS-AUTH.md#lifecycle-revocation).
+
 ### Keycloak / external IdP — delegated to the IdP
 
 When tokens are issued by Keycloak or another external IdP, DMS and the Configuration Service validate
@@ -206,6 +276,11 @@ token is otherwise validly signed and unexpired.
 | Manipulated signature | Rejected | Rejected |
 | Revoked token reused | Not detected app-side (see compensating controls) | Rejected |
 | Externally-issued token, revocation unverifiable | Not detected app-side (see compensating controls) | Not detected app-side (Keycloak scheme) |
+| Self-contained token issued before its client was reset, deleted or un-approved, operation after DMS-1493 was deployed | Accepted until `exp` + `ClockSkewSeconds` (residual DMS window) | **Rejected** (`401`) on the next request |
+| Self-contained token issued before its client was reset, deleted or un-approved, operation before DMS-1493 was deployed | Accepted until `exp` + `ClockSkewSeconds` | Accepted until `exp` + 5 minutes (never marked revoked) |
+| Self-contained token grant racing a reset, deletion or un-approval | Not applicable (DMS issues no tokens) | Stored before the operation and revoked by it; after it, refused with `invalid_client` when stale (old secret, deleted client, client still un-approved) |
+| Self-contained token granted with the new secret after a reset, or after re-approval | Accepted until it expires | Accepted until revoked or expired (a new token, not a revived one) |
+| Earlier self-contained token after the client is re-approved | Accepted until `exp` + `ClockSkewSeconds` | **Rejected** (stays `revoked`) |
 
 ## Compensating controls for IdP-dependent gaps
 
@@ -249,7 +324,11 @@ externally-issued tokens), the following compensating controls bound the risk:
   status check plus `/connect/revoke` provide immediate revocation for
   self-contained tokens. Revocation is itself an authenticated, ownership-checked
   operation: a client can revoke only its own tokens, so the control cannot be
-  turned into a denial-of-service against other clients.
+  turned into a denial-of-service against other clients. Credential reset, client
+  deletion and un-approval revoke every token of the client in the transaction that
+  makes the change, so they also cut off a compromised client's outstanding tokens at
+  the Configuration Service, though not at DMS (see
+  [Credential reset, client deletion and un-approval revoke outstanding tokens](#credential-reset-client-deletion-and-un-approval-revoke-outstanding-tokens)).
 - **No sensitive-detail leakage on failure.** DMS authentication failures return
   a fixed `application/problem+json` `401` body — `type`
   `urn:ed-fi:api:security:authentication`, `title` `Authentication Failed`,
@@ -394,10 +473,37 @@ The behaviors above are exercised by automated tests:
   including one where the framework's exception middleware logs, never puts the
   exception's message, inner exception or `Data` into any log record, while an aborted
   request stays a cancellation.
+- The Configuration Service, lifecycle revocation (DMS-1493) —
+  `EdFi.DmsConfigurationService.Backend.Tests.Unit`: `OpenIddictClientRepositoryTests.cs` pins the
+  transaction order of credential reset (secret hashed before the transaction, secret written,
+  tokens revoked, commit) and of deletion (application deleted, tokens revoked, commit, also when
+  no application row was deleted); a reset of a missing client revokes nothing and rolls back, and
+  a throwing revocation commits nothing. `OpenIddictUnapprovalTokenRevocationTests.cs` pins that
+  the un-approval participant locks the application row and then revokes in the caller's
+  transaction, revokes when the row is absent, and leaves commit and rollback to the caller, and
+  that the Keycloak participant does nothing. `OpenIddictTokenManagerTests.cs` pins that a grant
+  passes the stored secret it authenticated against to the store, and that a store refused on
+  re-validation is answered exactly as a vanished client is. In
+  `EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit`,
+  `Configuration/TokenRevocationStartupTests.cs` boots each datastore and identity-provider
+  combination and asserts that the API client repository receives that provider's participant,
+  and that a missing participant registration fails resolution instead of skipping revocation.
 - The Configuration Service — `EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration` and
   `Backend.Mssql.Tests.Integration` (`OpenIddictDataRepositoryTests.cs`): the revocation
   `UPDATE` changes only a row stored for the caller's application, and a second revocation
   changes nothing and keeps the original `RedemptionDate`, on both engines.
+
+  For lifecycle revocation, the same files and `ApiClientTests.cs` cover, on both engines: the
+  bulk revocation (scoped to one application, idempotent, undone with its transaction) and the
+  application-row lock; grants that wait for the lock and refuse a changed secret, an un-approved
+  client or a deleted client, with the token limit enforced and disabled; reset, deletion and
+  un-approval through the real repositories (the client's tokens revoked, another client's
+  untouched, an update that keeps the client approved and a repeated un-approval changing nothing,
+  re-approval reviving nothing); concurrency fixtures in which a grant that commits while the
+  operation waits for the lock has its token revoked, a grant with the old state after the
+  operation is refused, and a stale grant blocked behind the open operation is refused once it commits;
+  and rollback fixtures in which a failing revocation or a failing `ApiClient` update leaves the
+  secret, the application rows, the approval and the tokens unchanged.
 
 **End-to-end tests**
 
@@ -422,6 +528,16 @@ The behaviors above are exercised by automated tests:
   confidential observer client whose credentials are never submitted for revocation,
   and public clients (no secret, an arbitrary form secret, an arbitrary Basic secret) are
   refused with their token still active.
+- The Configuration Service — `EdFi.DmsConfigurationService.Tests.E2E/Features/ClientLifecycleRevocation.feature`
+  (self-contained only; scenarios 01–03 also run in the SQL Server lane): a client's token
+  answers `403` on `GET /v3/vendors` while valid (authenticated but not authorized) and `401`
+  once revoked. Client credential reset rejects both of the client's earlier tokens, leaves another
+  client's token valid, accepts a token obtained with the new secret, and introspection with the
+  new credentials reports the earlier token inactive. Client deletion also refuses the old
+  credentials with `invalid_client`. Un-approval refuses new grants; after re-approval the earlier
+  tokens stay rejected and a new token is accepted. Application credential reset rejects the
+  application's earlier token, and deleting an application with several clients rejects every
+  captured token of its clients while another application's token stays valid.
 - The Configuration Service — `EdFi.DmsConfigurationService.Tests.E2E/Keycloak/KeycloakRevocationCharacterizationTests.cs`:
   Keycloak's own revocation endpoint characterized row by row (status, `error`,
   `error_description`, token state before and after), the evidence the Configuration Service mapping is

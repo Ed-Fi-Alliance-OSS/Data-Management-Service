@@ -31,6 +31,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             services.AddSigningKeyServices();
             services.AddSingleton<IOpenIddictDataRepository, OpenIddictDataRepository>();
             services.AddSingleton<IIdentityProviderRepository, OpenIddictClientRepository>();
+            services.AddSingleton<IUnapprovalTokenRevocation, OpenIddictUnapprovalTokenRevocation>();
             services.AddSingleton<IOpenIddictTokenRepository, OpenIddictTokenRepository>();
             services.AddSingleton<OpenIddictTokenManager>();
             services.AddSingleton<ITokenManager, OpenIddictTokenManager>();
@@ -90,6 +91,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             services.AddSigningKeyServices();
 
             services.AddSingleton<IIdentityProviderRepository, OpenIddictClientRepository>();
+            services.AddSingleton<IUnapprovalTokenRevocation, OpenIddictUnapprovalTokenRevocation>();
             services.AddSingleton<IOpenIddictTokenRepository, OpenIddictTokenRepository>();
             services.AddSingleton<ITokenManager, OpenIddictTokenManager>();
             services.AddSingleton<ITokenRevocationManager, OpenIddictTokenManager>();

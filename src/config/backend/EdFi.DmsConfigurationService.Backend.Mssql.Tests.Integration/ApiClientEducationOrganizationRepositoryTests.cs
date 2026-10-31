@@ -5,6 +5,7 @@
 
 using System.Data;
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -76,7 +77,8 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
             MssqlTestConfiguration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
             new TestAuditContext(),
-            tenantContextProvider
+            tenantContextProvider,
+            new NoOpUnapprovalTokenRevocation()
         );
 
         var vendorResult = await new VendorRepository(
@@ -647,7 +649,8 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<ApiClientRepository>.Instance,
                 new TestAuditContext(),
-                new TenantContextProvider()
+                new TenantContextProvider(),
+                new NoOpUnapprovalTokenRevocation()
             ).DeleteApiClient(SecondNarrowedClientId);
         }
 
@@ -688,7 +691,8 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<ApiClientRepository>.Instance,
                 new TestAuditContext(),
-                otherTenant
+                otherTenant,
+                new NoOpUnapprovalTokenRevocation()
             ).DeleteApiClient(SecondNarrowedClientId);
         }
 
@@ -1237,7 +1241,8 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<ApiClientRepository>.Instance,
                 new TestAuditContext(),
-                otherTenant
+                otherTenant,
+                new NoOpUnapprovalTokenRevocation()
             );
 
             await SeedAsync(await CreateTenantProviderAsync("Owner"));

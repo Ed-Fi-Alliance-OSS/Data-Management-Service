@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -28,7 +29,8 @@ public abstract class ConsistencyOperationTestBase : DatabaseTest
         MssqlTestConfiguration.DatabaseOptions,
         NullLogger<ApiClientRepository>.Instance,
         new TestAuditContext(),
-        new TenantContextProvider()
+        new TenantContextProvider(),
+        new NoOpUnapprovalTokenRevocation()
     );
 
     protected int _vendorId;
@@ -517,7 +519,8 @@ public class Given_a_second_writer_during_an_api_client_uuid_sync : ConsistencyO
             MssqlTestConfiguration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
             barrier,
-            new TenantContextProvider()
+            new TenantContextProvider(),
+            new NoOpUnapprovalTokenRevocation()
         );
 
         Task<ApiClientUuidSyncResult> syncing = pausingRepository.SyncApiClientUuid(

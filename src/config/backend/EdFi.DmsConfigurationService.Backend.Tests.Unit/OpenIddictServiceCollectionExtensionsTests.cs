@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.SigningKeys;
 using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
@@ -526,6 +527,52 @@ public class OpenIddictServiceCollectionExtensionsTests
 
         [Test]
         public void It_registers_one_bearer_events() => Count(typeof(SigningKeyBearerEvents)).Should().Be(1);
+    }
+
+    // DMS-1493 D-3: every self-contained store registration supplies the OpenIddict un-approval
+    // participant that the CMS API client repository requires; there is no optional fallback.
+    [TestFixture("postgresql")]
+    [TestFixture("postgresql-jwt-settings")]
+    [TestFixture("mssql")]
+    public class Given_a_self_contained_store_registration(string registration)
+    {
+        private ServiceCollection _services = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["IdentitySettings:Authority"] = "http://localhost",
+                        ["IdentitySettings:Audience"] = "account",
+                    }
+                )
+                .Build();
+            _services = [];
+            _ = registration switch
+            {
+                "postgresql" => _services.AddPostgresOpenIddictStores(configuration, "http://localhost"),
+                "postgresql-jwt-settings" => _services.AddPostgresOpenIddictStores(
+                    configuration,
+                    "http://localhost",
+                    new JwtSettings { Issuer = "http://localhost", Audience = "account" }
+                ),
+                _ => _services.AddMssqlOpenIddictStores(configuration, "http://localhost"),
+            };
+        }
+
+        [Test]
+        public void It_registers_the_openiddict_unapproval_token_revocation_as_a_singleton() =>
+            _services
+                .Should()
+                .ContainSingle(descriptor => descriptor.ServiceType == typeof(IUnapprovalTokenRevocation))
+                .Which.Should()
+                .Match<ServiceDescriptor>(descriptor =>
+                    descriptor.ImplementationType == typeof(OpenIddictUnapprovalTokenRevocation)
+                    && descriptor.Lifetime == ServiceLifetime.Singleton
+                );
     }
 
     [TestFixture]

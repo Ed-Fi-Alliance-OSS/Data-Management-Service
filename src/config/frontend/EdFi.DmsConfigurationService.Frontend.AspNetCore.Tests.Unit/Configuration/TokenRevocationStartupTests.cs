@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Sockets;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
@@ -16,6 +17,7 @@ using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
@@ -128,6 +130,156 @@ public class TokenRevocationStartupTests
         [Test]
         public void It_makes_no_identity_provider_request() =>
             _boot.ProviderConnectionsAtStartup.Should().Be(0);
+    }
+
+    /// <summary>
+    /// Every datastore and identity provider combination the host supports. <see cref="Shapes"/>
+    /// stays the revocation fixtures' set; the un-approval wiring is pinned across all four.
+    /// </summary>
+    public static readonly object[] DatastoreAndProviderShapes =
+    [
+        new object[] { "self-contained", "postgresql" },
+        new object[] { "self-contained", "mssql" },
+        new object[] { "keycloak", "postgresql" },
+        new object[] { "keycloak", "mssql" },
+    ];
+
+    private static Type ApiClientRepositoryOf(string datastore) =>
+        datastore == "mssql"
+            ? typeof(Backend.Mssql.Repositories.ApiClientRepository)
+            : typeof(Backend.Postgresql.Repositories.ApiClientRepository);
+
+    /// <summary>
+    /// DMS-1493 D-3: the API client repository requires an un-approval participant, and each
+    /// composition <c>Program</c> builds supplies its provider's: self-contained the OpenIddict one,
+    /// Keycloak the explicit no-op. Nothing is replaced; the registrations are only read. This
+    /// resolves through the overloads <c>Program</c> calls (the default PostgreSQL one, MSSQL and
+    /// Keycloak). The PostgreSQL <c>JwtSettings</c> overload has no production caller and is pinned
+    /// only by its descriptor test.
+    /// </summary>
+    [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(DatastoreAndProviderShapes))]
+    public class Given_a_boot_of_each_datastore_and_identity_provider(string provider, string datastore)
+    {
+        private RevocationBoot _boot = null!;
+        private List<ServiceDescriptor> _participantRegistrations = [];
+
+        private static Type UnapprovalParticipantOf(string provider) =>
+            provider == "keycloak"
+                ? typeof(NoOpUnapprovalTokenRevocation)
+                : typeof(OpenIddictUnapprovalTokenRevocation);
+
+        /// <summary>
+        /// The participant a repository was constructed with. A primary-constructor parameter has no
+        /// accessor, so it is read from the single instance field of the participant type that the
+        /// compiler generates for it.
+        /// </summary>
+        private static object? ParticipantHeldBy(IApiClientRepository repository) =>
+            repository
+                .GetType()
+                .GetFields(BindingFlags.Instance | BindingFlags.NonPublic)
+                .Should()
+                .ContainSingle(field => field.FieldType == typeof(IUnapprovalTokenRevocation))
+                .Subject.GetValue(repository);
+
+        [OneTimeSetUp]
+        public void OneTimeSetUp() =>
+            _boot = RevocationBoot.Run(
+                provider,
+                datastore,
+                services =>
+                    _participantRegistrations = services
+                        .Where(descriptor => descriptor.ServiceType == typeof(IUnapprovalTokenRevocation))
+                        .ToList()
+            );
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown() => _boot.Dispose();
+
+        [Test]
+        public void It_starts() => _boot.StartupException.Should().BeNull();
+
+        [Test]
+        public void It_registers_only_the_providers_participant_as_a_singleton()
+        {
+            ServiceDescriptor registration = _participantRegistrations.Should().ContainSingle().Subject;
+            registration.ImplementationType.Should().Be(UnapprovalParticipantOf(provider));
+            registration.Lifetime.Should().Be(ServiceLifetime.Singleton);
+        }
+
+        [Test]
+        public void It_resolves_the_providers_participant()
+        {
+            using IServiceScope scope = _boot.Factory.Services.CreateScope();
+            scope
+                .ServiceProvider.GetRequiredService<IUnapprovalTokenRevocation>()
+                .Should()
+                .BeOfType(UnapprovalParticipantOf(provider));
+        }
+
+        [Test]
+        public void It_resolves_the_datastores_api_client_repository()
+        {
+            using IServiceScope scope = _boot.Factory.Services.CreateScope();
+            scope
+                .ServiceProvider.GetRequiredService<IApiClientRepository>()
+                .Should()
+                .BeOfType(ApiClientRepositoryOf(datastore));
+        }
+
+        [Test]
+        public void It_constructs_the_api_client_repository_with_the_resolved_participant()
+        {
+            using IServiceScope scope = _boot.Factory.Services.CreateScope();
+            IApiClientRepository repository =
+                scope.ServiceProvider.GetRequiredService<IApiClientRepository>();
+            IUnapprovalTokenRevocation participant =
+                scope.ServiceProvider.GetRequiredService<IUnapprovalTokenRevocation>();
+
+            ParticipantHeldBy(repository)
+                .Should()
+                .BeOfType(UnapprovalParticipantOf(provider))
+                .And.BeSameAs(participant);
+        }
+    }
+
+    /// <summary>
+    /// The participant is a required constructor dependency with no fallback, so a composition
+    /// missing it cannot construct the API client repository: an un-approval fails rather than
+    /// skipping revocation.
+    /// </summary>
+    [TestFixtureSource(typeof(TokenRevocationStartupTests), nameof(DatastoreAndProviderShapes))]
+    public class Given_a_boot_of_each_datastore_and_identity_provider_with_no_unapproval_participant(
+        string provider,
+        string datastore
+    )
+    {
+        private RevocationBoot _boot = null!;
+
+        [OneTimeSetUp]
+        public void OneTimeSetUp() =>
+            _boot = RevocationBoot.Run(
+                provider,
+                datastore,
+                services => services.RemoveAll<IUnapprovalTokenRevocation>()
+            );
+
+        [OneTimeTearDown]
+        public void OneTimeTearDown() => _boot.Dispose();
+
+        [Test]
+        public void It_fails_to_resolve_the_api_client_repository_naming_the_missing_participant()
+        {
+            using IServiceScope scope = _boot.Factory.Services.CreateScope();
+            Action resolve = () => scope.ServiceProvider.GetRequiredService<IApiClientRepository>();
+
+            resolve
+                .Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage(
+                    $"Unable to resolve service for type '{typeof(IUnapprovalTokenRevocation).FullName}' "
+                        + $"while attempting to activate '{ApiClientRepositoryOf(datastore).FullName}'."
+                );
+        }
     }
 
     /// <summary>
@@ -1557,7 +1709,8 @@ public class TokenRevocationStartupTests
                         ApplicationId,
                         A<string>._,
                         A<DateTimeOffset>._,
-                        A<int>._
+                        A<int>._,
+                        A<string>._
                     )
                 )
                 .Returns(TokenStoreOutcome.Stored);

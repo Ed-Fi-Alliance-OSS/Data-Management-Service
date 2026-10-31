@@ -166,7 +166,8 @@ Only an exception that the exception handler answers carries the `TraceId` respo
 `POST /connect/revoke` authenticates the caller, then revokes the named token only if
 it belongs to that caller. The design, its evidence and the per-step verification are in
 [DMS-1327](./DMS-1327-cms-token-revocation.md); this section is the operator and client
-reference.
+reference. Credential reset, client deletion and un-approval revoke a client's tokens without a
+revocation request; see [Lifecycle revocation](#lifecycle-revocation).
 
 ### Two credentials per request
 
@@ -432,6 +433,161 @@ path:
 If the token still reports active, the revocation did not take effect and the credential
 is still live. Treat containment as incomplete until the validation path confirms it.
 
+### Lifecycle revocation
+
+In `self-contained` mode, credential reset, client deletion and un-approval revoke every
+outstanding token of the client inside the transaction that makes the change (DMS-1493). Once the
+operation has answered success, CMS rejects those tokens with `401` on the next request. DMS keeps
+accepting them until they expire (see [Propagation and clock skew](#propagation-and-clock-skew)).
+Revocation marks the token rows `revoked` and sets `RedemptionDate`, as `/connect/revoke` does.
+Rows already revoked keep their first `RedemptionDate`, and the expired-token sweep removes rows
+later. Tokens of clients the operation does not target do not change: a client-level operation
+leaves the application's other clients alone, while deleting an application targets every client
+it has.
+
+`keycloak` mode is unchanged. CMS stores no Keycloak tokens, so these operations revoke nothing:
+they regenerate the secret, delete the client, or disable it at Keycloak, and Keycloak tokens
+issued before them stay usable at CMS and DMS until they expire.
+
+#### One lock serializes grants and lifecycle changes
+
+Every token grant and every lifecycle operation takes the same lock, the client's
+`dmscs.OpenIddictApplication` row (`FOR UPDATE` on PostgreSQL, `UPDLOCK, HOLDLOCK` on SQL Server),
+and holds it until its transaction ends:
+
+- A **grant** locks the row first and waits for it at most 5 seconds. A lock-wait timeout
+  answers `409` (`temporarily_unavailable`, retriable) on both engines. A grant chosen as a
+  deadlock victim answers `409` on SQL Server only; on PostgreSQL the deadlock reaches the token
+  endpoint's generic failure path and answers `500`. In a separate statement after the lock is
+  granted, it reads the stored client secret and the client's approval: approved when every
+  `dmscs.ApiClient` row under the client's `ClientId` is approved, or when there is none. It stores
+  the token only when the row exists, the stored secret equals the hash the grant authenticated
+  against, and the client is approved. The secret is compared ordinally in code, so SQL Server's
+  case-insensitive default collation cannot weaken the check. Otherwise it stores nothing and
+  answers `invalid_client`, exactly as a wrong secret is answered. When the active-token limit is
+  enforced, the count is checked in the same transaction.
+- A **lifecycle operation** takes the lock with its first statement on the
+  `dmscs.OpenIddictApplication` row, and makes both the change and the revocation before it
+  commits. Un-approval takes CMS `dmscs.Application` locks before it (see
+  [Transaction order per operation](#transaction-order-per-operation)).
+
+The grant applies the lock and the re-validation whatever `IdentitySettings:BearerTokenPerClientLimit`
+is, including the disabled setting (below 1) and clients exempt from the limit, which previously
+inserted their tokens without a transaction or a lock. Grants for one client therefore serialize;
+grants for different clients do not share this per-client lock.
+
+The re-validation is a separate statement because on PostgreSQL a statement that waits for a row
+lock sees the locked row as committed by the transaction it waited for, but reads everything else
+from the snapshot it took before waiting. A new statement takes a new snapshot.
+
+Two transactions holding the same row lock cannot overlap. A grant either stored its token before
+the operation took the lock, and the operation's revocation catches the token, or it re-validates
+after the operation committed and sees the committed state. A grant that authenticated with the
+secret the reset replaced, or whose client was deleted or is still un-approved, is refused. A grant
+that authenticated with the new secret after a reset, or that runs after the client is approved
+again, passes the same checks and stores a new token; no token issued before the operation stays
+`valid`. The number of concurrent grants and how long they take do not matter, and the grant's
+credential check before the lock may be arbitrarily stale.
+
+#### Transaction order per operation
+
+| Operation | Transaction | Order |
+| --- | --- | --- |
+| Credential reset | `OpenIddictClientRepository.ResetCredentialsAsync` | The new secret is generated and hashed before the transaction. `UPDATE OpenIddictApplication SET ClientSecret` takes the lock; with no row the transaction rolls back, nothing is revoked, and the result is `FailureClientNotFound`. The client's tokens are revoked. Commit, then log. |
+| Client deletion | `OpenIddictClientRepository.DeleteClientAsync` | `DELETE OpenIddictApplication` takes the lock; the client's scope and role rows cascade. The client's tokens are revoked, also when no row was deleted. Commit, then log. The result is `FailureClientNotFound` when no row was deleted. |
+| Un-approval | CMS `ApiClientRepository.UpdateApiClient`, when the command carries `IsApproved = false` | 1. CMS `dmscs.Application` locks: SQL Server share-locks the client's current and target Application rows (`HOLDLOCK`) in one statement on every update; PostgreSQL share-locks the target Application row (`FOR SHARE`) only when the update completes an identity provider sync. 2. A tenant-scoped read returns the stored `ClientUuid` and holds no lock past the statement. 3. The un-approval participant locks the client's `dmscs.OpenIddictApplication` row and revokes the client's tokens. 4. The `dmscs.ApiClient` row lock (`XLOCK, HOLDLOCK` on SQL Server, `FOR UPDATE` on PostgreSQL). 5. `UPDATE dmscs.ApiClient SET IsApproved = false, …`, the client's education organization rows when the update requests a scope or moves the client to another Application, then the data-store mappings. Commit. |
+
+`PUT /v3/applications/{id}/reset-credential` and `DELETE /v3/applications/{id}` reach the same
+provider methods for the application's clients.
+
+Un-approval takes the `dmscs.OpenIddictApplication` lock after the CMS `dmscs.Application` locks
+and before the `dmscs.ApiClient` row lock:
+
+- **Before the `ApiClient` row lock.** A grant holds the `dmscs.OpenIddictApplication` lock while it
+  reads the client's approval from `dmscs.ApiClient`. On SQL Server that read waits for the
+  `ApiClient` row lock, so taking the row lock first could deadlock with a grant. On PostgreSQL the
+  read does not wait, and the order is kept the same.
+- **After the `Application` locks.** No grant reads `dmscs.Application`, so this order adds no cycle
+  with a grant. The tenant-scoped `ClientUuid` read joins `dmscs.Application`. Before those locks, on
+  SQL Server, it could wait on an uncommitted claim set rename while holding the `ApiClient` row that
+  the rename marks next.
+
+Un-approval revokes in the transaction that writes `dmscs.ApiClient.IsApproved` because that
+column is what a grant re-validates. Revoking in a provider transaction of its own would let a
+complete grant run between the provider commit and the CMS commit.
+
+- The participant is `IUnapprovalTokenRevocation`: `OpenIddictUnapprovalTokenRevocation` in
+  `self-contained` mode and `NoOpUnapprovalTokenRevocation`, which revokes nothing, in `keycloak`
+  mode. Each provider's service registration registers its own. `ApiClientRepository` takes it as
+  a constructor dependency, so a missing registration fails resolution of the repository instead
+  of silently skipping revocation.
+- It runs on every update that carries `isApproved: false`, not only on the change from approved,
+  so repeating an un-approval re-runs the revocation and leaves already revoked rows alone.
+- Re-approval (`isApproved: true`) runs no revocation and sets nothing back to `valid`. New
+  grants pass re-validation once the approval is committed; earlier tokens stay revoked.
+- The provider's `UpdateClientAsync` still ignores `isApproved` in `self-contained` mode. In
+  `keycloak` mode it sets the Keycloak client's `Enabled`.
+
+#### Failures, retries and lost acknowledgements
+
+The change and the revocation are durable together or not at all: no operation commits a reset,
+deletion or un-approval without its revocation. An exception before the commit rolls both back,
+and the request fails.
+
+A success answer confirms the commit. An error or a response that never arrives does not: the
+transaction may have committed before its acknowledgement was lost or the failure was reported, so
+the outcome is unknown until it is confirmed (see
+[Confirming a lifecycle revocation](#confirming-a-lifecycle-revocation)) or the request is
+retried. The revocation is idempotent, so a retry is safe and converges. A retried reset issues
+another new secret, since the secret of a lost response never reached the caller.
+
+#### Orphaned tokens
+
+Token rows have no foreign key to the application, so tokens can outlive their application row.
+Provider deletion therefore revokes the tokens stored under the client's id even when no
+application row was deleted, commits that, and reports `FailureClientNotFound`, which the delete
+workflows treat as the client already being gone. This is cleanup inside a deletion that can still
+be addressed: a `DELETE /v3/apiClients/{id}` retried after its provider step succeeded and its
+database step failed (the `dmscs.ApiClient` row still exists), or an application deletion retried
+after it stopped partway. It does not reach a client already gone from CMS: once its
+`dmscs.ApiClient` row is deleted, `DELETE /v3/apiClients/{id}` answers `404` without reaching the
+provider. The un-approval participant likewise revokes when the application row is absent, and
+logs that at Information. A credential reset of a missing application row changes nothing.
+
+#### Logging
+
+| Event | Level | Message |
+| --- | --- | --- |
+| Reset or deletion committed | Information | `Revoked {Count} outstanding tokens for client {ClientUuid}`, written after the commit |
+| Un-approval participant ran | Information | `Marked {Count} outstanding tokens for client {ClientUuid} revoked in the pending un-approval transaction; a rollback preserves their previous state` |
+| Un-approval with no application row | Information | `No identity provider application exists for client {ClientUuid}; its stored tokens are marked revoked in the pending un-approval transaction regardless` |
+| Grant refused on re-validation | Debug | `Refused to store a token for application {ApplicationId}: re-validation under the application row lock failed ({RefusalReason})`, where the reason is `missing`, `secret` or `approval` |
+| Grant lock wait timed out (both engines), or grant chosen as a deadlock victim (SQL Server); answered `409` | Warning | `Timed out waiting for, or deadlocked on, a database lock while storing a token grant for client {ClientId}` |
+| Grant chosen as a deadlock victim (PostgreSQL); answered `500` | Error | `Unknown error while retrieving access token`, with the exception |
+
+The un-approval messages are written inside the CMS transaction, before it commits: they record a
+pending change, and a rollback undoes it. A success answer confirms that the un-approval
+committed. After an error or a lost response the outcome is unknown, and these messages cannot
+settle it either way: confirm the outcome or retry (see
+[Failures, retries and lost acknowledgements](#failures-retries-and-lost-acknowledgements)).
+Client identifiers are sanitized, and no secret, secret hash or token is logged.
+
+#### Confirming a lifecycle revocation
+
+The operation answers success only after its transaction commits. After an error or a lost
+response, or whenever a token's state must be observed:
+
+- A protected CMS request with one of the client's earlier tokens answers `401`.
+- After a credential reset, `POST /connect/introspect` authenticated with the **new** credentials
+  reports an earlier token `{"active": false}`. The old credentials no longer authenticate.
+- After a deletion or an un-approval, the client can no longer authenticate to
+  `/connect/introspect` (`invalid_client`), so use the protected request.
+- `GET /v3/apiClients/{id}` shows only the client's current approval setting. It cannot settle
+  whether an un-approval's revocation committed: `isApproved` may already have been `false`, for
+  example after an un-approval made before DMS-1493 was deployed, whose tokens were never revoked,
+  and it stays `false` when a repeated un-approval fails and rolls back. Confirm the cutoff with
+  the protected request above, or retry the un-approval until it answers success.
+
 ### Propagation and clock skew
 
 Revocation changes the provider's state immediately, but not every consumer consults that
@@ -446,6 +602,20 @@ state:
 Per-request introspection is deliberately not added (see
 [OWASP-AUTH-COVERAGE.md](../../../docs/OWASP-AUTH-COVERAGE.md)); short token lifetimes bound
 the window.
+
+[Lifecycle revocation](#lifecycle-revocation) propagates the same way:
+
+| Token issued before its client was reset, deleted or un-approved | CMS protected endpoints | DMS resource API |
+| --- | --- | --- |
+| `self-contained`, operation performed after DMS-1493 was deployed | Rejected on the next request | **Accepted until `exp` + `JwtAuthentication:ClockSkewSeconds`** (default 30 s) |
+| `self-contained`, operation performed before DMS-1493 was deployed (never marked revoked) | **Accepted until `exp` + 5 minutes** | Accepted until `exp` + `ClockSkewSeconds` |
+| `keycloak` (secret regenerated, client deleted or disabled at Keycloak) | **Accepted until `exp` + 5 minutes** | Accepted until `exp` + `ClockSkewSeconds` |
+
+With the default lifetime (`IdentitySettings:TokenExpirationMinutes`, 30 minutes), the DMS bound
+is 30 minutes 30 seconds after issuance, and the CMS bound for a token never marked revoked is 35
+minutes. The two bounds are separate: each applies only to its own consumer. Repeating the reset
+or the un-approval of a client handled before DMS-1493 was deployed revokes its remaining tokens;
+a client already deleted cannot be addressed again, and its tokens are left to expire.
 
 ### `503 temporarily_unavailable`: retry and confirm
 
@@ -545,8 +715,19 @@ using `VerifySecretAsync`.
   three times that setting (two when Keycloak answers `200`) before CMS answers `503`.
 - **Basic decoding differs from `/connect/token`.** See [Request rules](#request-rules).
 - **Propagation.** Revoked Keycloak tokens stay usable at CMS and DMS until they expire, and
-  revoked `self-contained` tokens stay usable at DMS until they expire (see
+  revoked `self-contained` tokens, including those revoked by credential reset, client deletion
+  and un-approval, stay usable at DMS until they expire (see
   [Propagation and clock skew](#propagation-and-clock-skew)).
+- **Tokens from before lifecycle revocation.** A client reset, deleted or un-approved before
+  DMS-1493 was deployed keeps `valid` tokens, accepted by CMS until `exp` + 5 minutes. Repeating
+  the reset or the un-approval revokes them; a deleted client's tokens are left to expire.
+- **Lifecycle operations in `keycloak` mode revoke nothing** at CMS or DMS; tokens issued before
+  them stay usable until they expire.
+- **Grants for one client serialize.** Every grant takes the client's application row lock,
+  including with the token limit disabled and for limit-exempt clients, so heavy same-client
+  contention can answer `409` after the 5-second lock wait. A deadlock victim answers `409` on
+  SQL Server and `500` on PostgreSQL. Grants for different clients do not share this per-client
+  lock.
 - **Untested token types.** Offline tokens and Keycloak refresh-token revocation through CMS
   end to end are not exercised by the CMS test suites (see
   [Supported token types](#supported-token-types-and-their-effects)).

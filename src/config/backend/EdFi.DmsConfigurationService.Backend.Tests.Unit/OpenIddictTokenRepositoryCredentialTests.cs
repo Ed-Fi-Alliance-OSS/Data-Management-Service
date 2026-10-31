@@ -112,7 +112,8 @@ public class OpenIddictTokenRepositoryCredentialTests
                         A<Guid>._,
                         A<string>._,
                         A<DateTimeOffset>._,
-                        A<int>._
+                        A<int>._,
+                        A<string>._
                     )
                 )
                 .Returns(TokenStoreOutcome.Stored);
