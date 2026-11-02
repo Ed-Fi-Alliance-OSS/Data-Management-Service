@@ -67,7 +67,7 @@ public class Given_A_PostgresqlRelationalPutAuthorizationTests_With_A_Synthetic_
                 ),
             _context.ReadAuthorizationRootChildSideEffectStateAsync,
             _context.CountDocumentRowsAsync,
-            _context.CountReferentialIdentityRowsForAuthorizationRootChildAsync
+            _context.CountAuthorizationRootChildRowsByNaturalKeyAsync
         );
 
     [OneTimeSetUp]
@@ -710,7 +710,7 @@ public class Given_A_PostgresqlRelationalPostAsUpdateAuthorizationTests_With_A_S
                 ),
             _context.ReadAuthorizationRootChildSideEffectStateAsync,
             _context.CountDocumentRowsAsync,
-            _context.CountReferentialIdentityRowsForAuthorizationRootChildAsync
+            _context.CountAuthorizationRootChildRowsByNaturalKeyAsync
         );
 
     [OneTimeSetUp]

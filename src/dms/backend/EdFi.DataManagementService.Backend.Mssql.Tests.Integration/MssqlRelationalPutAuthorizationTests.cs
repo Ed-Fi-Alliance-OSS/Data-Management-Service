@@ -74,7 +74,7 @@ public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg
                 ),
             _context.ReadAuthorizationRootChildSideEffectStateAsync,
             _context.CountDocumentRowsAsync,
-            _context.CountReferentialIdentityRowsForAuthorizationRootChildAsync
+            _context.CountAuthorizationRootChildRowsByNaturalKeyAsync
         );
 
     [OneTimeSetUp]
@@ -1447,7 +1447,7 @@ public class Given_A_MssqlRelationalPostAsUpdateAuthorizationTests_With_A_Synthe
                 ),
             _context.ReadAuthorizationRootChildSideEffectStateAsync,
             _context.CountDocumentRowsAsync,
-            _context.CountReferentialIdentityRowsForAuthorizationRootChildAsync
+            _context.CountAuthorizationRootChildRowsByNaturalKeyAsync
         );
 
     [OneTimeSetUp]
