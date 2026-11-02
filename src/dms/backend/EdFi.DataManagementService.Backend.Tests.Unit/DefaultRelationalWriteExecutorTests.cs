@@ -1231,10 +1231,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_defers_a_profile_missing_document_reference_until_proposed_authorization()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
@@ -1285,13 +1282,7 @@ public class Given_Default_Relational_Write_Executor
         var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
-            documentReferences:
-            [
-                RelationalAccessTestData.CreateDocumentReference(
-                    new ReferentialId(Guid.NewGuid()),
-                    "$.schoolReference"
-                ),
-            ],
+            documentReferences: [RelationalAccessTestData.CreateDocumentReference("$.schoolReference")],
             selectedBody: writableBody
         );
         var profileContext = BuildVisiblePresentRootProfileWriteContext(writableBody, request.WritePlan);
@@ -1394,7 +1385,6 @@ public class Given_Default_Relational_Write_Executor
     public async Task It_defers_profile_missing_collection_references_until_proposed_authorization()
     {
         var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
             "$.addresses[0].schoolReference"
         );
         var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
@@ -1536,10 +1526,7 @@ public class Given_Default_Relational_Write_Executor
     {
         // With a root-level missing reference deferred, the profile merge runs first, so its creatability
         // rejection precedes the reference failure — the same order the no-profile path already uses.
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
@@ -1584,7 +1571,6 @@ public class Given_Default_Relational_Write_Executor
     )
     {
         var descriptorReference = RelationalAccessTestData.CreateDescriptorReference(
-            new ReferentialId(Guid.NewGuid()),
             "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
             "$.schoolTypeDescriptor"
         );
@@ -1593,13 +1579,7 @@ public class Given_Default_Relational_Write_Executor
             RelationalWriteOperationKind.Post,
             descriptorReferences: [descriptorReference],
             documentReferences: missingSchool
-                ?
-                [
-                    RelationalAccessTestData.CreateDocumentReference(
-                        new ReferentialId(Guid.NewGuid()),
-                        "$.schoolReference"
-                    ),
-                ]
+                ? [RelationalAccessTestData.CreateDocumentReference("$.schoolReference")]
                 : [],
             selectedBody: writableBody
         );

@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Tests.Unit.Profile.ProfileTestDoubles;
@@ -672,10 +671,7 @@ internal static class DeferredMissingSchoolReferenceLookups
                 InvalidDocumentReferences =
                 [
                     DocumentReferenceFailure.From(
-                        RelationalAccessTestData.CreateDocumentReference(
-                            new ReferentialId(Guid.NewGuid()),
-                            ReferencePath
-                        ),
+                        RelationalAccessTestData.CreateDocumentReference(ReferencePath),
                         DocumentReferenceFailureReason.Missing
                     ),
                 ],

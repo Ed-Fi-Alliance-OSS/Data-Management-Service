@@ -489,7 +489,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 {
                     // Retain a real null identity so another real duplicate is still rejected.
                     // Deferred-only collisions cannot reach collection merge or DML.
-                    presenceAwareTracker![presenceAwareKey!] = trackerEntry;
+                    presenceAwareTracker![semanticIdentityInOrder] = trackerEntry;
                 }
 
                 var childParentKeyParts = RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
