@@ -25,6 +25,17 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
     private const long MissingOwnerDocumentId = 970003;
     private static readonly Guid DocumentGuid = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     private static readonly DateTimeOffset LastModifiedAt = new(2026, 7, 30, 14, 15, 16, TimeSpan.Zero);
+
+    // timestamptz keeps whole microseconds.
+    private static readonly DateTimeOffset ContentCreatedAt = new DateTimeOffset(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        TimeSpan.Zero
+    ).AddTicks(1_234_560);
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
 
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
@@ -57,7 +68,8 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
 
                 CREATE TABLE edfi."School" (
                     "DocumentId" bigint PRIMARY KEY,
-                    "ContentLastModifiedAt" timestamptz NOT NULL
+                    "ContentLastModifiedAt" timestamptz NOT NULL,
+                    "ContentCreatedAt" timestamptz NOT NULL
                 );
 
                 INSERT INTO dms."Document" (
@@ -81,8 +93,8 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
                     223
                 );
 
-                INSERT INTO edfi."School" ("DocumentId", "ContentLastModifiedAt")
-                VALUES (970001, '2026-07-30T14:15:16Z');
+                INSERT INTO edfi."School" ("DocumentId", "ContentLastModifiedAt", "ContentCreatedAt")
+                VALUES (970001, '2026-07-30T14:15:16Z', '2001-02-03T04:05:06.123456Z');
                 """
             );
         }
@@ -134,6 +146,19 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
     }
 
     [Test]
+    public void It_reads_the_exact_authoritative_root_creation_timestamp()
+    {
+        var metadata = _foundResult
+            .Should()
+            .BeOfType<DocumentCacheSourceMetadataReadResult.Found>()
+            .Subject.Metadata;
+
+        metadata.ContentCreatedAt.Should().Be(ContentCreatedAt);
+        metadata.ContentCreatedAt.Offset.Should().Be(TimeSpan.Zero);
+        metadata.ContentCreatedAt.Should().NotBe(metadata.ContentLastModifiedAt);
+    }
+
+    [Test]
     public void It_returns_missing_source_when_the_document_row_is_absent()
     {
         _missingResult.Should().BeSameAs(DocumentCacheSourceMetadataReadResult.MissingSource.Instance);
@@ -149,6 +174,7 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
         missing.Metadata.DocumentId.Should().Be(MissingOwnerDocumentId);
         missing.Metadata.ContentVersion.Should().Be(223);
         missing.Metadata.ContentLastModifiedAt.Should().BeNull();
+        missing.Metadata.ContentCreatedAt.Should().BeNull();
     }
 
     private static DocumentCacheMaterializationRequest CreateRequest(long documentId) =>

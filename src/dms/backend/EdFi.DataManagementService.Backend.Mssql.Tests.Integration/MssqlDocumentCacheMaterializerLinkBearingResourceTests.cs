@@ -112,6 +112,7 @@ public class Given_Mssql_DocumentCacheMaterializer_LinkBearingResource
                 success.Candidate.ResourceVersion,
                 success.Candidate.ContentVersion,
                 success.Candidate.LastModifiedAt,
+                success.Candidate.ContentCreatedAt,
                 success.Candidate.StreamEtag,
                 success.Candidate.DocumentJson
             ),

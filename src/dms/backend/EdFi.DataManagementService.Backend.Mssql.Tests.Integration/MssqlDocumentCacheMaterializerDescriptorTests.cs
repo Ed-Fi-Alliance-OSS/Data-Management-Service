@@ -29,6 +29,15 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
 
     private static readonly Guid DescriptorDocumentGuid = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-000000000301");
     private static readonly DateTimeOffset LastModifiedAt = new(2026, 7, 30, 14, 15, 16, TimeSpan.Zero);
+    private static readonly DateTimeOffset ContentCreatedAt = new DateTimeOffset(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        TimeSpan.Zero
+    ).AddTicks(1_234_567);
     private string _databaseName = null!;
     private string _connectionString = null!;
     private MappingSet _mappingSet = null!;
@@ -67,6 +76,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     [DocumentId] bigint NOT NULL UNIQUE REFERENCES [dms].[Document] ([DocumentId]) ON DELETE CASCADE,
                     [ResourceKeyId] smallint NOT NULL,
                     [ContentLastModifiedAt] datetimeoffset NOT NULL,
+                    [ContentCreatedAt] datetime2(7) NOT NULL,
                     [Namespace] varchar(255) NOT NULL,
                     [CodeValue] varchar(50) NOT NULL,
                     [ShortDescription] varchar(75) NOT NULL,
@@ -94,6 +104,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     [DocumentId],
                     [ResourceKeyId],
                     [ContentLastModifiedAt],
+                    [ContentCreatedAt],
                     [Namespace],
                     [CodeValue],
                     [ShortDescription],
@@ -105,6 +116,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
                     5000970301,
                     13,
                     '2026-07-30T14:15:16+00:00',
+                    '2001-02-03T04:05:06.1234567',
                     'uri://ed-fi.org/SchoolTypeDescriptor',
                     'Alternative',
                     'Alternative',
@@ -162,6 +174,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
         success.Candidate.ResourceVersion.Should().Be("1.0");
         success.Candidate.ContentVersion.Should().Be(ContentVersion);
         success.Candidate.LastModifiedAt.Should().Be(LastModifiedAt);
+        success.Candidate.ContentCreatedAt.Should().Be(ContentCreatedAt);
         success.Candidate.StreamEtag.Should().Be("222-01234567.j._.n.i");
 
         var documentJson = success.Candidate.DocumentJson;
@@ -194,31 +207,192 @@ public class Given_Mssql_DocumentCacheMaterializer_Descriptor
         await using var command = new SqlCommand(sql, connection);
         await command.ExecuteNonQueryAsync();
     }
+}
 
-    private sealed class ThrowingDocumentHydrator : IDocumentHydrator
+/// <summary>
+/// The descriptor owner is keyed by its DocumentId. These DescriptorId values are swapped against the
+/// DocumentIds, so an owner read keyed by DescriptorId would return the other row's creation timestamp.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+[Category(MssqlCiShards.Shard4)]
+public class Given_Mssql_DocumentCacheMaterializer_Descriptor_With_Crossed_Descriptor_And_Document_Ids
+{
+    private const long MaterializedDocumentId = 2;
+
+    // Owned by DocumentId 2 (DescriptorId 1).
+    private static readonly DateTimeOffset CreatedAtA = new DateTimeOffset(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        TimeSpan.Zero
+    ).AddTicks(1_234_567);
+
+    // Owned by DocumentId 1 (DescriptorId 2).
+    private static readonly DateTimeOffset CreatedAtB = new DateTimeOffset(
+        2002,
+        3,
+        4,
+        5,
+        6,
+        7,
+        TimeSpan.Zero
+    ).AddTicks(6_543_210);
+
+    private string _databaseName = null!;
+    private DocumentCacheMaterializationResult _result = null!;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
     {
-        public Task<HydratedPage> HydrateAsync(
-            ResourceReadPlan plan,
-            PageKeysetSpec keyset,
-            HydrationExecutionOptions executionOptions,
-            CancellationToken ct
-        ) => throw new NotSupportedException("Descriptor materialization must not use ordinary hydration.");
+        MssqlConnectionStringGuard.RequireConfiguredForCiOrSkipLocally(
+            "MSSQL connection string not configured."
+        );
+
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        MssqlTestDatabaseHelper.CreateDatabase(_databaseName);
+        var connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
+        var mappingSet = DocumentCacheMaterializerDescriptorMappingSet.Create(SqlDialect.Mssql);
+
+        await using (var connection = new SqlConnection(connectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = new SqlCommand(
+                """
+                IF NOT EXISTS (SELECT * FROM sys.schemas WHERE name = 'dms') EXEC('CREATE SCHEMA [dms]');
+
+                CREATE TABLE [dms].[Document] (
+                    [DocumentId] bigint NOT NULL CONSTRAINT [PK_Document] PRIMARY KEY,
+                    [DocumentUuid] uniqueidentifier NOT NULL,
+                    [ResourceKeyId] smallint NOT NULL,
+                    [CreatedByOwnershipTokenId] smallint NULL,
+                    [ContentVersion] bigint NOT NULL
+                );
+
+                CREATE TABLE [dms].[Descriptor] (
+                    [DescriptorId] int NOT NULL CONSTRAINT [PK_Descriptor] PRIMARY KEY,
+                    [DocumentId] bigint NOT NULL UNIQUE REFERENCES [dms].[Document] ([DocumentId]) ON DELETE CASCADE,
+                    [ResourceKeyId] smallint NOT NULL,
+                    [ContentLastModifiedAt] datetimeoffset NOT NULL,
+                    [ContentCreatedAt] datetime2(7) NOT NULL,
+                    [Namespace] varchar(255) NOT NULL,
+                    [CodeValue] varchar(50) NOT NULL,
+                    [ShortDescription] varchar(75) NOT NULL,
+                    [Description] varchar(1024) NULL,
+                    [EffectiveBeginDate] date NULL,
+                    [EffectiveEndDate] date NULL
+                );
+
+                INSERT INTO [dms].[Document] ([DocumentId], [DocumentUuid], [ResourceKeyId], [ContentVersion])
+                VALUES
+                    (1, 'aaaaaaaa-bbbb-cccc-dddd-000000000001', 13, 11),
+                    (2, 'aaaaaaaa-bbbb-cccc-dddd-000000000002', 13, 12);
+
+                INSERT INTO [dms].[Descriptor] (
+                    [DescriptorId], [DocumentId], [ResourceKeyId], [ContentLastModifiedAt], [ContentCreatedAt],
+                    [Namespace], [CodeValue], [ShortDescription]
+                )
+                VALUES
+                    (1, 2, 13, '2026-07-30T14:15:16+00:00', '2001-02-03T04:05:06.1234567',
+                        'uri://ed-fi.org/SchoolTypeDescriptor', 'OwnedByDocumentTwo', 'OwnedByDocumentTwo'),
+                    (2, 1, 13, '2026-07-30T14:15:16+00:00', '2002-03-04T05:06:07.6543210',
+                        'uri://ed-fi.org/SchoolTypeDescriptor', 'OwnedByDocumentOne', 'OwnedByDocumentOne');
+                """,
+                connection
+            );
+            await command.ExecuteNonQueryAsync();
+        }
+
+        var materializationDataStore = new AmbientDocumentCacheMaterializationDataStore(
+            new MssqlRelationalCommandExecutor(
+                async cancellationToken =>
+                {
+                    var connection = new SqlConnection(connectionString);
+                    await connection.OpenAsync(cancellationToken);
+                    return (DbConnection)connection;
+                },
+                NullLogger<MssqlRelationalCommandExecutor>.Instance
+            ),
+            new ThrowingDocumentHydrator()
+        );
+        var sut = new DocumentCacheMaterializer(
+            new DocumentCacheSourceMetadataReader(materializationDataStore),
+            new DocumentCacheDescriptorHydrator(materializationDataStore),
+            materializationDataStore,
+            new ThrowingReadMaterializer(),
+            new ServedEtagComposer()
+        );
+
+        _result = await sut.MaterializeAsync(
+            new DocumentCacheMaterializationRequest(
+                new DocumentCacheMaterializationTargetContext(
+                    new DocumentCacheProjectionTargetKey("tenant-a", new DataStoreId(7)),
+                    mappingSet,
+                    DocumentCacheMaterializationTargetValidation.EffectiveSchemaAndResourceKeySeedValidated
+                ),
+                MaterializedDocumentId,
+                selectedRequiredContentVersion: 12,
+                DocumentCacheMaterializationPurpose.Fixture,
+                CancellationToken.None
+            )
+        );
     }
 
-    private sealed class ThrowingReadMaterializer : IRelationalReadMaterializer
+    [OneTimeTearDown]
+    public void OneTimeTearDown()
     {
-        public JsonNode Materialize(RelationalReadMaterializationRequest request) =>
-            throw new NotSupportedException(
-                "Descriptor materialization must not use ordinary materialization."
-            );
-
-        public IReadOnlyList<MaterializedDocument> MaterializePage(
-            RelationalReadPageMaterializationRequest request
-        ) =>
-            throw new NotSupportedException(
-                "Descriptor materialization tests use single-document Materialize."
-            );
-
-        public void StripReferenceLinks(JsonNode document, ResourceReadPlan readPlan) { }
+        if (_databaseName is not null && MssqlTestDatabaseHelper.IsConfigured())
+        {
+            MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+        }
     }
+
+    [Test]
+    public void It_copies_the_creation_timestamp_of_the_row_owned_by_the_document_id()
+    {
+        var candidate = _result
+            .Should()
+            .BeOfType<DocumentCacheMaterializationResult.Success>()
+            .Subject.Candidate;
+
+        candidate.DocumentId.Should().Be(MaterializedDocumentId);
+        candidate.ContentCreatedAt.Should().Be(CreatedAtA);
+        candidate.ContentCreatedAt.Should().NotBe(CreatedAtB);
+    }
+
+    [Test]
+    public void It_reads_the_descriptor_body_from_the_same_owner_row()
+    {
+        var candidate = _result
+            .Should()
+            .BeOfType<DocumentCacheMaterializationResult.Success>()
+            .Subject.Candidate;
+
+        candidate.DocumentJson["codeValue"]!.GetValue<string>().Should().Be("OwnedByDocumentTwo");
+    }
+}
+
+file sealed class ThrowingDocumentHydrator : IDocumentHydrator
+{
+    public Task<HydratedPage> HydrateAsync(
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
+        CancellationToken ct
+    ) => throw new NotSupportedException("Descriptor materialization must not use ordinary hydration.");
+}
+
+file sealed class ThrowingReadMaterializer : IRelationalReadMaterializer
+{
+    public JsonNode Materialize(RelationalReadMaterializationRequest request) =>
+        throw new NotSupportedException("Descriptor materialization must not use ordinary materialization.");
+
+    public IReadOnlyList<MaterializedDocument> MaterializePage(
+        RelationalReadPageMaterializationRequest request
+    ) => throw new NotSupportedException("Descriptor materialization tests use single-document Materialize.");
+
+    public void StripReferenceLinks(JsonNode document, ResourceReadPlan readPlan) { }
 }

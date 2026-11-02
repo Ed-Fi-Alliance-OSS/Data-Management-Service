@@ -6,6 +6,7 @@
   "resourceVersion": "1.0",
   "contentVersion": 222,
   "lastModifiedAt": "2026-07-30T14:15:16Z",
+  "contentCreatedAt": "2025-03-04T05:06:01.654321Z",
   "streamEtag": "222-01234567.j._.n.i",
   "documentJson": {
     "namespace": "uri://ed-fi.org/SchoolTypeDescriptor",

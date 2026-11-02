@@ -77,10 +77,11 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
             EXEC('CREATE SCHEMA [edfi]');
             CREATE TABLE [edfi].[School] (
                 [DocumentId] bigint PRIMARY KEY,
-                [ContentLastModifiedAt] datetimeoffset NOT NULL
+                [ContentLastModifiedAt] datetimeoffset NOT NULL,
+                [ContentCreatedAt] datetime2(7) NOT NULL
             );
-            INSERT INTO [edfi].[School] ([DocumentId], [ContentLastModifiedAt])
-            VALUES (980101, '2026-07-30T14:15:16+00:00');
+            INSERT INTO [edfi].[School] ([DocumentId], [ContentLastModifiedAt], [ContentCreatedAt])
+            VALUES (980101, '2026-07-30T14:15:16+00:00', '2001-02-03T04:05:06.1234567');
             """
         );
     }
@@ -106,6 +107,29 @@ public class Given_Mssql_DocumentCacheMaterializer_Coherence
                 """
                 UPDATE [dms].[Document]
                 SET [ContentVersion] = 223
+                WHERE [DocumentId] = 980101;
+                """
+            );
+        });
+
+        var result = await sut.MaterializeAsync(CreateRequest(_mappingSet));
+
+        result.Should().BeSameAs(DocumentCacheMaterializationResult.SourceChangedDuringHydration.Instance);
+    }
+
+    [Test]
+    public async Task It_returns_source_changed_when_owner_creation_time_changes_before_the_final_coherence_read()
+    {
+        // Only the creation timestamp changes, by one 100 ns tick; version and last-modified stay put.
+        var sut = CreateMaterializer(async () =>
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+            await ExecuteSql(
+                connection,
+                """
+                UPDATE [edfi].[School]
+                SET [ContentCreatedAt] = '2001-02-03T04:05:06.1234568'
                 WHERE [DocumentId] = 980101;
                 """
             );
