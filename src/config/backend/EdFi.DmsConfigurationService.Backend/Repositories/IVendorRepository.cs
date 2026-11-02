@@ -24,7 +24,8 @@ public interface IVendorRepository
     /// inserted under the vendor, or an ApiClient inserted into or moved onto one of its
     /// applications, either committed before the read and is seen by it, or waits until the
     /// deletion has finished. Any other client leaves every row in place and returns
-    /// <see cref="VendorDeleteResult.FailureClientsChanged"/>.
+    /// <see cref="VendorDeleteResult.FailureClientsChanged"/>, as does a SQL Server transaction
+    /// chosen as a deadlock victim.
     /// </summary>
     Task<VendorDeleteResult> DeleteVendor(int id, IReadOnlyCollection<VendorApiClient> cleanedClients);
 
@@ -158,7 +159,9 @@ public record VendorDeleteResult
     public record FailureNotExists() : VendorDeleteResult();
 
     /// <summary>
-    /// The vendor now owns an ApiClient outside the set the caller cleaned up; nothing was deleted
+    /// The vendor transaction rolled back and deleted no vendor row: the vendor owns an ApiClient
+    /// outside the set the caller cleaned up, or, on SQL Server, the transaction was chosen as a
+    /// deadlock victim. A retry is safe.
     /// </summary>
     public record FailureClientsChanged() : VendorDeleteResult();
 

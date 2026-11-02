@@ -660,9 +660,10 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             await connection.OpenAsync();
             // Ownership and status are predicates of the single statement rather than a prior read,
             // so no interleaving can revoke another application's token, and a repeat changes no
-            // row and keeps the original RedemptionDate.
+            // row and keeps the original RedemptionDate. RedemptionDate has no time zone, so the
+            // timestamp is converted to UTC explicitly rather than written in session-local time.
             var result = await connection.ExecuteAsync(
-                "UPDATE \"dmscs\".\"OpenIddictToken\" SET \"Status\" = 'revoked', \"RedemptionDate\" = CURRENT_TIMESTAMP WHERE \"Id\" = @Id AND \"ApplicationId\" = @ApplicationId AND \"Status\" <> 'revoked'",
+                "UPDATE \"dmscs\".\"OpenIddictToken\" SET \"Status\" = 'revoked', \"RedemptionDate\" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC' WHERE \"Id\" = @Id AND \"ApplicationId\" = @ApplicationId AND \"Status\" <> 'revoked'",
                 new { Id = tokenId, ApplicationId = applicationId }
             );
             return result > 0;

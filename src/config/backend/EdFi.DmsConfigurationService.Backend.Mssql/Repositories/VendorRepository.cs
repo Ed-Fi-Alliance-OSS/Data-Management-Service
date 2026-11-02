@@ -23,6 +23,11 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
         ITenantContextProvider tenantContextProvider
     ) : IVendorRepository
     {
+        /// <summary>
+        /// "Transaction (Process ID ...) was deadlocked ... and has been chosen as the deadlock victim."
+        /// </summary>
+        private const int DeadlockVictimErrorNumber = 1205;
+
         private TenantContext TenantContext => tenantContextProvider.Context;
 
         private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
@@ -487,6 +492,15 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
                 return affectedRows > 0
                     ? new VendorDeleteResult.Success()
                     : new VendorDeleteResult.FailureNotExists();
+            }
+            catch (SqlException ex) when (ex.Number == DeadlockVictimErrorNumber)
+            {
+                // Either participant of a deadlock can be the victim, for example a client creation
+                // whose uncommitted row the client read waits on while the creation waits on these
+                // locks. The vendor transaction rolled back, so the delete can be retried.
+                logger.LogWarning(ex, "Delete vendor transaction was chosen as a deadlock victim");
+                await RollbackSafelyAsync(transaction);
+                return new VendorDeleteResult.FailureClientsChanged();
             }
             catch (Exception ex)
             {

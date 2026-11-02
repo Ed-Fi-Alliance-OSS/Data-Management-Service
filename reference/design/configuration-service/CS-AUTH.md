@@ -523,8 +523,12 @@ application validates that application, with a lock (`FOR KEY SHARE` on PostgreS
 on SQL Server) that conflicts with steps 1 and 2. A creation that wrote its row before those steps
 holds that lock, or the uncommitted row, until it commits, and steps 1 to 3 wait for it and then
 see its client. A creation that arrives after them waits for the deletion and then fails on the
-missing vendor or application; on SQL Server it can instead end as the deadlock victim. Either
-way, no client leaves the CMS without having been deleted from the provider. Each step is its own
+missing vendor or application. On SQL Server the creation and the deletion can instead deadlock,
+and SQL Server can choose either one as the victim. A creation chosen as the victim fails. A
+deletion chosen as the victim rolls back its transaction, so no vendor row is deleted, and reports
+`FailureClientsChanged`, which the request answers with the retriable `409`; the provider deletions
+the request made before it stay committed, and a retry is safe. Either way, no client leaves the
+CMS without having been deleted from the provider. Each step is its own
 statement, so on PostgreSQL the read after a lock sees what committed while the lock waited. On
 SQL Server the application read selects a column outside the `(VendorId, ApplicationName)` index,
 so the lock reaches the clustered rows that the foreign key check reads.
@@ -571,6 +575,15 @@ deleted from the provider, with its tokens revoked, while its CMS rows survive. 
 or vendor with several clients, some clients may be deleted from the provider and others not. A
 provider failure stops the request before the CMS delete, so the surviving rows are the work list
 for a retry, which treats the clients already deleted as done.
+
+A reset, provider deletion or un-approval transaction can be chosen as a deadlock victim, and
+then the request currently answers `500` on both engines; only the vendor row deletion described
+above maps a deadlock to `409`. The bulk revocation updates every unrevoked token row of the
+client, expired rows included, while the expired-token sweep deletes expired rows, so the two can
+touch the same rows. Whether they deadlock depends on execution plans and interleaving; no such
+deadlock has been reproduced. The failed per-client transaction rolls back, while provider
+deletions that committed earlier in a multi-client deletion request stay committed. Mapping these
+deadlocks to a retriable response is deferred.
 
 A success answer confirms the commit. An error or a response that never arrives does not: the
 transaction may have committed before its acknowledgement was lost or the failure was reported, so

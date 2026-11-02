@@ -993,21 +993,50 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     // DMS-1327 D-08: revocation is one UPDATE constrained by token id, the stored ApplicationId,
     // and an unrevoked status. These fixtures pin each predicate against the real engine.
 
+    /// <summary>
+    /// The repository opens its own connections, so it is given a connection string whose session
+    /// time zone is fourteen hours ahead of UTC. The revocation is bracketed by the database
+    /// clock read in UTC before and after it, so a redemption date written in session-local time
+    /// falls fourteen hours outside the bracket without depending on how fast the statements run.
+    /// </summary>
     [TestFixture]
     public class Given_RevokeTokenAsync_By_The_Owning_Application : OpenIddictDataRepositoryTests
     {
+        private const string SessionTimeZone = "Pacific/Kiritimati";
+
         private OpenIddictDataRepository _repository = null!;
         private Guid _tokenId;
         private DateTime? _redemptionDateBefore;
         private bool _result;
+        private string _repositorySessionTimeZone = null!;
+        private DateTime _utcBeforeRevocation;
+        private DateTime _utcAfterRevocation;
 
         [SetUp]
         public async Task Setup()
         {
+            string connectionString = new NpgsqlConnectionStringBuilder(
+                Configuration.DatabaseOptions.Value.DatabaseConnection
+            )
+            {
+                Timezone = SessionTimeZone,
+            }.ConnectionString;
             _repository = new OpenIddictDataRepository(
-                Configuration.DatabaseOptions,
+                Options.Create(
+                    new DatabaseOptions
+                    {
+                        DatabaseConnection = connectionString,
+                        EncryptionKey = Configuration.DatabaseOptions.Value.EncryptionKey,
+                    }
+                ),
                 NullLogger<OpenIddictDataRepository>.Instance
             );
+            await using (NpgsqlConnection sessionProbe = new(connectionString))
+            {
+                await sessionProbe.OpenAsync();
+                _repositorySessionTimeZone =
+                    await sessionProbe.ExecuteScalarAsync<string>("SELECT current_setting('TimeZone')") ?? "";
+            }
             Guid applicationId = await RegisterApplicationAsync(
                 _repository,
                 $"revoke-owner-{Guid.NewGuid():N}"
@@ -1023,7 +1052,9 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             );
             _redemptionDateBefore = await RedemptionDateAsync(_tokenId);
 
+            _utcBeforeRevocation = await DatabaseUtcNowAsync();
             _result = await _repository.RevokeTokenAsync(_tokenId, applicationId);
+            _utcAfterRevocation = await DatabaseUtcNowAsync();
         }
 
         [Test]
@@ -1038,6 +1069,25 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         {
             _redemptionDateBefore.Should().BeNull();
             (await RedemptionDateAsync(_tokenId)).Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_revokes_through_a_session_whose_time_zone_is_not_utc() =>
+            _repositorySessionTimeZone.Should().Be(SessionTimeZone);
+
+        [Test]
+        public async Task It_stores_the_redemption_date_in_utc() =>
+            (await RedemptionDateAsync(_tokenId))
+                .Should()
+                .BeOnOrAfter(_utcBeforeRevocation)
+                .And.BeOnOrBefore(_utcAfterRevocation);
+
+        private async Task<DateTime> DatabaseUtcNowAsync()
+        {
+            await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+            return await connection.ExecuteScalarAsync<DateTime>(
+                "SELECT clock_timestamp() AT TIME ZONE 'UTC'"
+            );
         }
     }
 

@@ -187,6 +187,12 @@ every client it has.
   never arrives does not establish the outcome, because a transaction may have committed before
   the failure was reported. Confirm the client's token state, or retry: retrying is safe, and a
   retried reset issues another new secret.
+- **Deadlocks in lifecycle operations currently answer `500`.** A credential reset, provider
+  deletion or un-approval whose transaction is chosen as a deadlock victim (for example against the
+  expired-token sweep, since revocation also updates expired, unrevoked rows) answers `500` on both
+  engines. That client's transaction rolls back; in a multi-client deletion, provider deletions
+  that committed earlier stay committed. Confirm or retry as above. Mapping these deadlocks to a
+  retriable response is deferred.
 
 **Residual DMS window.** DMS does not consult token status (see
 [DMS resource API](#dms-resource-api--stateless-bearer-validation-no-app-side-replay-cache)), so it
@@ -223,8 +229,11 @@ clients, so a client created under the vendor at the same time cannot be removed
 being deleted from the provider. Such a client is either one the deletion sees, and the vendor
 deletion then deletes nothing and answers `409` (a retry deletes the new client from the provider
 too), or one whose creation waits for the deletion and then fails because its vendor or
-application is gone. This covers a new application under the vendor and a new client on any of its
-applications, including one that had no client.
+application is gone. On SQL Server the creation and the deletion can instead deadlock, and SQL
+Server can choose either one as the victim: a creation chosen as the victim fails, and a vendor
+deletion chosen as the victim deletes no vendor row and answers `409`, so it can be retried safely.
+Provider deletions the request made before that stay committed. This covers a new application
+under the vendor and a new client on any of its applications, including one that had no client.
 
 **Keycloak mode.** The same operations regenerate the client's secret, delete the client, or
 disable it at Keycloak, so the old credentials stop obtaining new tokens. The Configuration Service

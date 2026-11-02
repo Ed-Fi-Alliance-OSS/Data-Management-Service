@@ -916,9 +916,10 @@ public class VendorModule : IEndpointModule
     ///
     /// Those locks do not cover an application created under the vendor, or a client added to
     /// one of its applications that had none, so the vendor row is deleted only when every client
-    /// the cascade would remove is one this request deleted from the provider. Otherwise nothing
-    /// is deleted and the request answers a retriable conflict; a retry reads the new clients and
-    /// deletes them from the provider too.
+    /// the cascade would remove is one this request deleted from the provider. Otherwise, or when
+    /// SQL Server chooses the vendor transaction as a deadlock victim, that transaction rolls back
+    /// and the request answers a retriable conflict; the provider clients this request already
+    /// deleted stay deleted, and a retry reads the current clients and deletes them too.
     ///
     /// Any provider failure returns before the database is mutated, so the surviving vendor and
     /// its ApiClient rows remain the work list for a retry. Provider clients deleted by an earlier
@@ -961,7 +962,7 @@ public class VendorModule : IEndpointModule
                     return VendorNotFound(id, httpContext);
                 case VendorDeleteResult.FailureClientsChanged:
                     logger.LogWarning(
-                        "Vendor {Id} gained an API client during its deletion; nothing was deleted",
+                        "The vendor row deletion for Vendor {Id} rolled back because its API clients changed or it lost a deadlock; provider clients already deleted stay deleted",
                         id
                     );
                     return RetriableConflict(httpContext);

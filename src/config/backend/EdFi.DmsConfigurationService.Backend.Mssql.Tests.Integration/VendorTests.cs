@@ -921,7 +921,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
                     transaction
                 );
 
-            private static async Task<VendorApiClient> InsertClientAsync(
+            protected static async Task<VendorApiClient> InsertClientAsync(
                 SqlConnection connection,
                 SqlTransaction? transaction,
                 int applicationId,
@@ -1141,6 +1141,69 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
             {
                 (await VendorExistsAsync()).Should().BeFalse();
                 (await ClientCountAsync(_cleanedClient.ClientUuid, _concurrentClientUuid)).Should().Be(0);
+            }
+        }
+
+        /// <summary>
+        /// The guarded delete loses a deadlock to a client creation. The creation's uncommitted
+        /// client parks the delete at its client read while the delete holds the application
+        /// locks, and the creation's next client then waits on those locks, closing the cycle.
+        /// The creation runs at high deadlock priority so the engine ends the delete, which must
+        /// roll back and report the retriable result rather than an unknown failure. The delete
+        /// can only finish before the creation commits by being ended as the victim; the bound
+        /// turns a missing cycle into a failure instead of a hang.
+        /// </summary>
+        [TestFixture]
+        public class Given_a_guarded_vendor_delete_chosen_as_a_deadlock_victim : GuardedDeleteTests
+        {
+            private VendorDeleteResult _result = null!;
+            private Guid _secondConcurrentClientUuid;
+
+            [SetUp]
+            public async Task Act()
+            {
+                await using SqlConnection creator = await OpenConnectionAsync();
+                await creator.ExecuteAsync("SET DEADLOCK_PRIORITY HIGH;");
+                await using SqlTransaction creatorTransaction = (SqlTransaction)
+                    await creator.BeginTransactionAsync();
+                await CreateConcurrentClientAsync(
+                    ConcurrentCreation.ClientInClientlessApplication,
+                    creator,
+                    creatorTransaction
+                );
+
+                Task<VendorDeleteResult> delete = DeleteAsync();
+                await WaitUntilBlockedAsync(delete, creator.ServerProcessId, null);
+
+                _secondConcurrentClientUuid = Guid.NewGuid();
+                await InsertClientAsync(
+                    creator,
+                    creatorTransaction,
+                    _clientlessApplicationId,
+                    "Second Concurrent Client",
+                    _secondConcurrentClientUuid
+                );
+                _result = await delete.WaitAsync(TimeSpan.FromSeconds(60));
+                await creatorTransaction.CommitAsync();
+            }
+
+            [Test]
+            public void It_reports_the_retriable_clients_changed_result() =>
+                _result.Should().BeOfType<VendorDeleteResult.FailureClientsChanged>();
+
+            [Test]
+            public async Task It_rolls_the_delete_back_and_keeps_every_client()
+            {
+                (await VendorExistsAsync()).Should().BeTrue();
+                (
+                    await ClientCountAsync(
+                        _cleanedClient.ClientUuid,
+                        _concurrentClientUuid,
+                        _secondConcurrentClientUuid
+                    )
+                )
+                    .Should()
+                    .Be(3);
             }
         }
     }
