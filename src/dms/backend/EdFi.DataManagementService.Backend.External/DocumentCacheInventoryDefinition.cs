@@ -55,6 +55,7 @@ public static class DocumentCacheInventoryDefinition
         public static readonly DbColumnName ContentVersion = new("ContentVersion");
         public static readonly DbColumnName StreamEtag = new("StreamEtag");
         public static readonly DbColumnName LastModifiedAt = new("LastModifiedAt");
+        public static readonly DbColumnName ContentCreatedAt = new("ContentCreatedAt");
         public static readonly DbColumnName DocumentJson = new("DocumentJson");
         public static readonly DbColumnName ComputedAt = new("ComputedAt");
     }
