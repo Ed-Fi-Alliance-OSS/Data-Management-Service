@@ -284,20 +284,116 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
     }
 
     [Test]
-    public async Task It_returns_403_before_deferred_missing_reference_when_proposed_edorg_value_is_missing()
+    public async Task It_returns_no_relationship_before_deferred_missing_reference_when_the_supplied_school_is_unresolved()
     {
-        var seed = CreateRootChildSeed(
+        // DMS-1659: a supplied School that does not exist is denied exactly like an existing School the
+        // caller has no relationship with, so the response cannot reveal which one it was.
+        var missingSeed = CreateRootChildSeed(
             "ffffffff-0000-0000-0000-000000000003",
             103,
             "missing-reference",
             999,
             []
         );
+        var unrelatedSeed = CreateRootChildSeed(
+            "ffffffff-0000-0000-0000-000000000013",
+            113,
+            "unrelated-reference",
+            300,
+            []
+        );
 
-        var result = await PostRootChildAsync(seed);
+        var missingResult = await PostRootChildAsync(missingSeed);
+        var unrelatedResult = await PostRootChildAsync(unrelatedSeed);
 
-        AssertRelationshipDenied(result, RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing);
+        var missingFailure = AssertSingleNoRelationshipSubject(missingResult);
+        var unrelatedFailure = AssertSingleNoRelationshipSubject(unrelatedResult);
+        missingFailure.Should().BeEquivalentTo(unrelatedFailure, options => options.WithStrictOrdering());
+        await AssertNoCreateSideEffectsAsync(missingSeed);
+        await AssertNoCreateSideEffectsAsync(unrelatedSeed);
+    }
+
+    [Test]
+    public async Task It_denies_an_unresolved_school_equal_to_a_caller_claim_as_no_relationship()
+    {
+        // The unresolved reference is bound as null, so a supplied id that happens to equal a claim does not
+        // authorize through direct claim equality; it is still the no-relationship denial.
+        var seed = CreateRootChildSeed(
+            "ffffffff-0000-0000-0000-000000000014",
+            114,
+            "missing-reference-equal-to-claim",
+            999,
+            []
+        );
+
+        var result = await _context.UpsertAuthorizationRootChildAsync(
+            seed,
+            [ClaimEducationOrganizationId, 999],
+            RelationshipAuthorizationCrudTestSupport.EdOrgOnlyStrategyNames
+        );
+
+        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>().Subject;
+        failure
+            .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+            .Select(static subject => subject.FailureKind)
+            .Should()
+            .Equal(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         await AssertNoCreateSideEffectsAsync(seed);
+    }
+
+    [Test]
+    public async Task It_denies_an_unresolved_school_under_inverted_filtering_as_no_relationship()
+    {
+        var seed = CreateRootChildSeed(
+            "ffffffff-0000-0000-0000-000000000015",
+            115,
+            "inverted-missing-reference",
+            999,
+            []
+        );
+
+        var result = await PostRootChildAsync(
+            seed,
+            RelationshipAuthorizationCrudTestSupport.InvertedEdOrgOnlyStrategyNames
+        );
+
+        AssertSingleNoRelationshipSubject(result);
+        await AssertNoCreateSideEffectsAsync(seed);
+    }
+
+    [Test]
+    public async Task Given_A_Custom_View_Strategy_It_Denies_A_Create_Whose_Proposed_School_Is_Unresolved_Like_An_Excluded_School()
+    {
+        var missingSeed = CreateRootChildSeed(
+            "ffffffff-0000-0000-0000-000000000603",
+            603,
+            "custom-view-missing-create",
+            999,
+            []
+        );
+        var excludedSeed = CreateRootChildSeed(
+            "ffffffff-0000-0000-0000-000000000604",
+            604,
+            "custom-view-excluded-create",
+            200,
+            []
+        );
+
+        var missingResult = await PostRootChildAsync(missingSeed, _customViewStrategy);
+        var excludedResult = await PostRootChildAsync(excludedSeed, _customViewStrategy);
+
+        var missingFailure = missingResult
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureCustomViewNotAuthorized>()
+            .Subject.CustomViewFailure;
+        var excludedFailure = excludedResult
+            .Should()
+            .BeOfType<UpsertResult.UpsertFailureCustomViewNotAuthorized>()
+            .Subject.CustomViewFailure;
+        missingFailure.FailureKind.Should().Be(CustomViewAuthorizationFailureKind.NoMatchingRow);
+        missingFailure.Should().BeEquivalentTo(excludedFailure, options => options.WithStrictOrdering());
+        await AssertNoCreateSideEffectsAsync(missingSeed);
+        await AssertNoCreateSideEffectsAsync(excludedSeed);
     }
 
     [Test]
@@ -507,9 +603,11 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
     }
 
     [Test]
-    public async Task It_returns_403_before_deferred_people_missing_reference_when_proposed_value_is_missing()
+    public async Task It_returns_no_relationship_before_deferred_people_missing_reference_when_the_supplied_first_hop_is_unresolved()
     {
-        var seed = CreateAuthorizationStudentAcademicRecordSeed(
+        // The transitive People subject's first-hop anchor is the supplied StudentAcademicRecord reference.
+        // An unresolved first hop answers like an existing record whose student the caller cannot reach.
+        var missingSeed = CreateAuthorizationStudentAcademicRecordSeed(
             "cccccccc-0000-0000-0000-000000000205",
             205,
             "people-missing-reference",
@@ -518,15 +616,111 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
         {
             StudentUniqueId = "missing-student",
         };
+        var unrelatedSeed = CreateAuthorizationStudentAcademicRecordSeed(
+            "cccccccc-0000-0000-0000-000000000215",
+            215,
+            "people-unrelated-reference",
+            _unauthorizedStudentAcademicRecordSeed
+        );
 
-        var result = await PostStudentAcademicRecordAsync(seed);
+        var missingResult = await PostStudentAcademicRecordAsync(missingSeed);
+        var unrelatedResult = await PostStudentAcademicRecordAsync(unrelatedSeed);
 
         AssertPeopleRelationshipDenied(
-            result,
-            RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing,
+            missingResult,
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship,
             [ClaimEducationOrganizationId]
         );
-        await AssertNoPeopleCreateSideEffectsAsync(seed);
+        AssertPeopleRelationshipDenied(
+            unrelatedResult,
+            RelationshipAuthorizationSubjectFailureKind.NoRelationship,
+            [ClaimEducationOrganizationId]
+        );
+        await AssertNoPeopleCreateSideEffectsAsync(missingSeed);
+        await AssertNoPeopleCreateSideEffectsAsync(unrelatedSeed);
+    }
+
+    [Test]
+    public async Task It_denies_an_unresolved_direct_person_reference_as_no_relationship()
+    {
+        var seed = new AuthorizationStudentSchoolSeed(
+            new DocumentUuid(Guid.Parse("cccccccc-0000-0000-0000-000000000208")),
+            208,
+            "people-only-direct-missing",
+            100,
+            "missing-direct-student"
+        );
+
+        var result = await PostStudentSchoolAsync(
+            seed,
+            RelationshipAuthorizationCrudTestSupport.PeopleOnlyStrategyNames
+        );
+
+        AssertDirectStudentRelationshipDenied(
+            result,
+            RelationshipAuthorizationCrudTestSupport.RelationshipsWithPeopleOnly
+        );
+        await AssertNoStudentSchoolCreateSideEffectsAsync(seed);
+    }
+
+    [Test]
+    public async Task It_denies_an_unresolved_direct_person_with_an_authorized_school_in_a_mixed_and_strategy()
+    {
+        // EdOrgsAndPeople AND-composes the School and the Student; the School authorizes, so the only
+        // failed subject is the unresolved Student.
+        var seed = new AuthorizationStudentSchoolSeed(
+            new DocumentUuid(Guid.Parse("cccccccc-0000-0000-0000-000000000209")),
+            209,
+            "mixed-direct-missing",
+            100,
+            "missing-mixed-student"
+        );
+
+        var result = await PostStudentSchoolAsync(
+            seed,
+            RelationshipAuthorizationCrudTestSupport.EdOrgAndPeopleStrategyNames
+        );
+
+        AssertDirectStudentRelationshipDenied(
+            result,
+            RelationshipAuthorizationCrudTestSupport.RelationshipsWithEdOrgsAndPeople
+        );
+        await AssertNoStudentSchoolCreateSideEffectsAsync(seed);
+    }
+
+    [Test]
+    public async Task It_reports_every_or_strategy_for_an_unresolved_direct_person()
+    {
+        var seed = new AuthorizationStudentSchoolSeed(
+            new DocumentUuid(Guid.Parse("cccccccc-0000-0000-0000-000000000210")),
+            210,
+            "or-direct-missing",
+            100,
+            "missing-or-student"
+        );
+
+        var result = await PostStudentSchoolAsync(
+            seed,
+            RelationshipAuthorizationCrudTestSupport.EdOrgAndPeoplePlusPeopleOnlyStrategyNames
+        );
+
+        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>().Subject;
+        failure
+            .RelationshipFailure.FailedStrategies.Select(static strategy => strategy.StrategyName)
+            .Should()
+            .Equal(
+                RelationshipAuthorizationCrudTestSupport.RelationshipsWithEdOrgsAndPeople,
+                RelationshipAuthorizationCrudTestSupport.RelationshipsWithPeopleOnly
+            );
+        failure
+            .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
+            .Select(static subject => (subject.RootBinding.ColumnName, subject.FailureKind))
+            .Should()
+            .Equal(
+                ("Student_DocumentId", RelationshipAuthorizationSubjectFailureKind.NoRelationship),
+                ("Student_DocumentId", RelationshipAuthorizationSubjectFailureKind.NoRelationship)
+            );
+        await AssertNoStudentSchoolCreateSideEffectsAsync(seed);
     }
 
     [Test]
@@ -764,6 +958,24 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
             .Select(static subject => subject.FailureKind)
             .Should()
             .Contain(expectedFailureKind);
+    }
+
+    private static RelationshipAuthorizationFailure AssertSingleNoRelationshipSubject(UpsertResult result)
+    {
+        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>().Subject;
+        failure
+            .RelationshipFailure.ValueSource.Should()
+            .Be(RelationshipAuthorizationFailureValueSource.Proposed);
+        var failedSubject = failure
+            .RelationshipFailure.FailedStrategies.Should()
+            .ContainSingle()
+            .Subject.FailedSubjects.Should()
+            .ContainSingle()
+            .Subject;
+        failedSubject.FailureKind.Should().Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
+        failedSubject.RootBinding.ColumnName.Should().Be("School_SchoolId");
+
+        return failure.RelationshipFailure;
     }
 
     private static void AssertPeopleRelationshipDenied(

@@ -8,6 +8,8 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Tests.Unit.Profile.ProfileTestDoubles;
@@ -651,4 +653,191 @@ public class Given_Resolver_with_reference_derived_member_and_hidden_sibling_sub
         }
         return row;
     }
+}
+
+/// <summary>
+/// Builds the resolved-reference lookups a profile merge sees when the submitted
+/// <c>schoolReference</c> could not be resolved and its missing-document failure was deferred so
+/// proposed authorization can run first.
+/// </summary>
+internal static class DeferredMissingSchoolReferenceLookups
+{
+    public const string ReferencePath = "$.schoolReference";
+
+    public static FlatteningResolvedReferenceLookupSet Create(ResourceWritePlan plan) =>
+        FlatteningResolvedReferenceLookupSet.Create(
+            plan,
+            EmptyResolvedReferenceSet() with
+            {
+                InvalidDocumentReferences =
+                [
+                    DocumentReferenceFailure.From(
+                        RelationalAccessTestData.CreateDocumentReference(
+                            new ReferentialId(Guid.NewGuid()),
+                            ReferencePath
+                        ),
+                        DocumentReferenceFailureReason.Missing
+                    ),
+                ],
+            },
+            allowMissingDocumentReferencesForPrecedence: true
+        );
+
+    public static FlattenedWriteValue[] NewInitialRow(ResourceWritePlan plan)
+    {
+        var row = new FlattenedWriteValue[plan.TablePlansInDependencyOrder[0].ColumnBindings.Length];
+        for (var i = 0; i < row.Length; i++)
+        {
+            row[i] = new FlattenedWriteValue.Literal(null);
+        }
+        return row;
+    }
+}
+
+[TestFixture]
+public class Given_Resolver_with_a_deferred_missing_visible_reference_member_and_a_nonnullable_canonical
+{
+    private FlattenedWriteValue[] _row = null!;
+    private int _canonicalIndex;
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, canonicalIdx, _, _) = BuildRootPlanWithReferenceDerivedKeyUnificationMember(
+            referenceMemberPath: DeferredMissingSchoolReferenceLookups.ReferencePath,
+            derivedMemberPath: "$.schoolReference.schoolId",
+            canonicalIsNullable: false
+        );
+        _canonicalIndex = canonicalIdx;
+
+        var body = new JsonObject { ["schoolReference"] = new JsonObject { ["schoolId"] = 999 } };
+        var context = BuildResolverContext(
+            plan,
+            writableBody: body,
+            resolvedReferenceLookups: DeferredMissingSchoolReferenceLookups.Create(plan),
+            profileRequest: CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"))
+        );
+
+        _row = DeferredMissingSchoolReferenceLookups.NewInitialRow(plan);
+        _exception = Catch(() =>
+            new ProfileRootKeyUnificationResolver().Resolve(
+                plan.TablePlansInDependencyOrder[0],
+                context,
+                _row,
+                ImmutableHashSet.Create(_canonicalIndex)
+            )
+        );
+    }
+
+    [Test]
+    public void It_allows_the_temporary_null_canonical_for_authorization() => _exception.Should().BeNull();
+
+    [Test]
+    public void It_writes_a_null_canonical() =>
+        ((FlattenedWriteValue.Literal)_row[_canonicalIndex]).Value.Should().BeNull();
+
+    private static Exception? Catch(Action act)
+    {
+        try
+        {
+            act();
+            return null;
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
+    }
+}
+
+[TestFixture]
+public class Given_Resolver_with_an_absent_visible_reference_member_and_a_nonnullable_canonical_under_deferral
+{
+    private Action _act = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, canonicalIdx, _, _) = BuildRootPlanWithReferenceDerivedKeyUnificationMember(
+            referenceMemberPath: DeferredMissingSchoolReferenceLookups.ReferencePath,
+            derivedMemberPath: "$.schoolReference.schoolId",
+            canonicalIsNullable: false
+        );
+
+        // Deferral is enabled for the request, but this member's reference was genuinely omitted, so
+        // the non-nullable guardrail still applies.
+        var body = new JsonObject();
+        var context = BuildResolverContext(
+            plan,
+            writableBody: body,
+            resolvedReferenceLookups: DeferredMissingSchoolReferenceLookups.Create(plan),
+            profileRequest: CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"))
+        );
+        var row = DeferredMissingSchoolReferenceLookups.NewInitialRow(plan);
+
+        _act = () =>
+            new ProfileRootKeyUnificationResolver().Resolve(
+                plan.TablePlansInDependencyOrder[0],
+                context,
+                row,
+                ImmutableHashSet.Create(canonicalIdx)
+            );
+    }
+
+    [Test]
+    public void It_throws_InvalidOperationException_for_non_nullable_canonical_null() =>
+        _act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*is not nullable but resolved to null*");
+}
+
+[TestFixture]
+public class Given_Resolver_with_a_hidden_stored_contributor_and_a_deferred_visible_reference_member
+{
+    private FlattenedWriteValue[] _row = null!;
+    private int _canonicalIndex;
+
+    [SetUp]
+    public void Setup()
+    {
+        var (plan, canonicalIdx, _, _) = BuildRootPlanWithReferenceDerivedKeyUnificationMember(
+            referenceMemberPath: DeferredMissingSchoolReferenceLookups.ReferencePath,
+            derivedMemberPath: "$.schoolReference.schoolId",
+            canonicalIsNullable: false,
+            scalarMemberPath: "$.hiddenSchoolId"
+        );
+        _canonicalIndex = canonicalIdx;
+
+        var body = new JsonObject { ["schoolReference"] = new JsonObject { ["schoolId"] = 999 } };
+        var request = CreateRequest(writableBody: body, scopeStates: RequestVisiblePresentScope("$"));
+        var appliedContext = CreateContext(
+            request,
+            storedScopeStates: StoredVisiblePresentScope("$", "hiddenSchoolId")
+        );
+        var currentRow = new Dictionary<DbColumnName, object?>
+        {
+            [MemberPathColumnFor("$.hiddenSchoolId")] = 777,
+        };
+        var context = BuildResolverContext(
+            plan,
+            writableBody: body,
+            currentRootRowByColumnName: currentRow,
+            resolvedReferenceLookups: DeferredMissingSchoolReferenceLookups.Create(plan),
+            profileRequest: request,
+            profileAppliedContext: appliedContext
+        );
+
+        _row = DeferredMissingSchoolReferenceLookups.NewInitialRow(plan);
+        new ProfileRootKeyUnificationResolver().Resolve(
+            plan.TablePlansInDependencyOrder[0],
+            context,
+            _row,
+            ImmutableHashSet.Create(_canonicalIndex)
+        );
+    }
+
+    [Test]
+    public void It_uses_the_hidden_stored_contributor_instead_of_the_deferred_visible_contributor() =>
+        ((FlattenedWriteValue.Literal)_row[_canonicalIndex]).Value.Should().Be(777);
 }

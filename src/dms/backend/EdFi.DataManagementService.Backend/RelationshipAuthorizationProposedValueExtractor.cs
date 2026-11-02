@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Frozen;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 
 namespace EdFi.DataManagementService.Backend;
@@ -26,7 +28,8 @@ internal sealed record ProposedRelationshipAuthorizationRuntimeSubject(
     int SubjectOrdinal,
     RelationshipAuthorizationSubject Subject,
     RelationshipAuthorizationProposedValueBinding Binding,
-    ProposedRelationshipAuthorizationRuntimeValue RuntimeValue
+    ProposedRelationshipAuthorizationRuntimeValue RuntimeValue,
+    bool IsNullBecauseDeferredMissingReference = false
 );
 
 internal abstract record ProposedRelationshipAuthorizationRuntimeValue
@@ -53,22 +56,25 @@ internal abstract record ProposedRelationshipAuthorizationExtractionResult
 
 internal static class RelationshipAuthorizationProposedValueExtractor
 {
+    /// <summary>
+    /// Extracts runtime values and marks each null subject value that is null only because its submitted
+    /// document reference could not be resolved, so a proposed-missing denial for that subject can be
+    /// reported as no-relationship instead.
+    /// </summary>
     public static ProposedRelationshipAuthorizationExtractionResult Extract(
         RelationshipAuthorizationResult.Authorized authorized,
-        RootWriteRowBuffer rootRow,
-        int emittedAuth1Index
-    ) => Extract(authorized, rootRow, emittedAuth1Index, targetContext: null);
-
-    public static ProposedRelationshipAuthorizationExtractionResult Extract(
-        RelationshipAuthorizationResult.Authorized authorized,
+        ResourceWritePlan writePlan,
         RootWriteRowBuffer rootRow,
         int emittedAuth1Index,
-        RelationalWriteTargetContext? targetContext
+        RelationalWriteTargetContext? targetContext = null,
+        IReadOnlySet<string>? deferredPaths = null
     )
     {
+        ArgumentNullException.ThrowIfNull(writePlan);
         ArgumentNullException.ThrowIfNull(authorized);
         ArgumentNullException.ThrowIfNull(rootRow);
         ArgumentOutOfRangeException.ThrowIfNegative(emittedAuth1Index);
+        deferredPaths ??= FrozenSet<string>.Empty;
 
         if (authorized.CheckSpecs.Count == 0)
         {
@@ -176,13 +182,32 @@ internal static class RelationshipAuthorizationProposedValueExtractor
                 }
 
                 var runtimeValue = ((ProposedRuntimeValue.Ready)valueResult).RuntimeValue;
+                var isNullBecauseDeferredMissingReference = false;
+
+                if (
+                    deferredPaths.Count > 0
+                    && UsesFinalizedRootValue(subject)
+                    && GetRuntimeSqlValue(runtimeValue) is null
+                    && !ProposedAuthorizationReferenceProvenance.TryClassify(
+                        writePlan,
+                        rootRow,
+                        binding.BindingIndex,
+                        deferredPaths,
+                        out isNullBecauseDeferredMissingReference,
+                        out var provenanceFailureMessage
+                    )
+                )
+                {
+                    return Invalid(provenanceFailureMessage);
+                }
 
                 runtimeSubjects.Add(
                     new ProposedRelationshipAuthorizationRuntimeSubject(
                         subjectOrdinal,
                         subject,
                         binding,
-                        runtimeValue
+                        runtimeValue,
+                        isNullBecauseDeferredMissingReference
                     )
                 );
             }
@@ -261,6 +286,25 @@ internal static class RelationshipAuthorizationProposedValueExtractor
             new ProposedRelationshipAuthorizationRuntimeValue.SubjectValue(value)
         );
     }
+
+    /// <summary>
+    /// An existing-resource self People subject authorizes the target's own DocumentId, not a value from the
+    /// finalized row, so it never carries deferred-reference provenance.
+    /// </summary>
+    private static bool UsesFinalizedRootValue(RelationshipAuthorizationSubject subject) =>
+        subject.PersonMetadata?.ProposedAnchor?.Kind
+            is not RelationshipAuthorizationPersonProposedAnchorKind.ExistingTargetDocumentId;
+
+    private static object? GetRuntimeSqlValue(ProposedRelationshipAuthorizationRuntimeValue runtimeValue) =>
+        runtimeValue switch
+        {
+            ProposedRelationshipAuthorizationRuntimeValue.SubjectValue subjectValue => subjectValue.Value,
+            ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue anchorValue =>
+                anchorValue.Value,
+            _ => throw new InvalidOperationException(
+                $"Unsupported proposed relationship authorization runtime value '{runtimeValue.GetType().Name}'."
+            ),
+        };
 
     private static object? GetBoundSqlValue(FlattenedWriteValue value)
     {

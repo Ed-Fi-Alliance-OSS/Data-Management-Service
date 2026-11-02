@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Frozen;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 
@@ -19,7 +20,8 @@ namespace EdFi.DataManagementService.Backend;
 /// </param>
 internal sealed record ProposedCustomViewRuntimeValue(
     SingleRecordCustomViewAuthorizationCheckSpec Check,
-    object? BasisValue
+    object? BasisValue,
+    bool IsNullBecauseDeferredMissingReference = false
 );
 
 /// <summary>
@@ -58,13 +60,22 @@ internal abstract record ProposedCustomViewExtractionResult
 /// </summary>
 internal static class ProposedCustomViewValueExtractor
 {
+    /// <summary>
+    /// Extracts basis values and marks each null document basis that is null only because its submitted
+    /// reference could not be resolved, so a proposed-missing denial for that check can be reported as
+    /// no-matching-row instead. Descriptor bases are never marked.
+    /// </summary>
     public static ProposedCustomViewExtractionResult Extract(
         IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> proposedChecks,
-        RootWriteRowBuffer rootRow
+        ResourceWritePlan writePlan,
+        RootWriteRowBuffer rootRow,
+        IReadOnlySet<string>? deferredPaths = null
     )
     {
+        ArgumentNullException.ThrowIfNull(writePlan);
         ArgumentNullException.ThrowIfNull(proposedChecks);
         ArgumentNullException.ThrowIfNull(rootRow);
+        deferredPaths ??= FrozenSet<string>.Empty;
 
         if (proposedChecks.Count == 0)
         {
@@ -137,7 +148,31 @@ internal static class ProposedCustomViewValueExtractor
                         );
                     }
 
-                    sqlValues.Add(new ProposedCustomViewRuntimeValue(check, basisValue));
+                    var isNullBecauseDeferredMissingReference = false;
+
+                    if (
+                        deferredPaths.Count > 0
+                        && basisValue is null
+                        && !ProposedAuthorizationReferenceProvenance.TryClassify(
+                            writePlan,
+                            rootRow,
+                            bindingIndex,
+                            deferredPaths,
+                            out isNullBecauseDeferredMissingReference,
+                            out var provenanceFailureMessage
+                        )
+                    )
+                    {
+                        return Invalid(provenanceFailureMessage);
+                    }
+
+                    sqlValues.Add(
+                        new ProposedCustomViewRuntimeValue(
+                            check,
+                            basisValue,
+                            isNullBecauseDeferredMissingReference
+                        )
+                    );
                     continue;
 
                 default:

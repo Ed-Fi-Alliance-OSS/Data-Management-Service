@@ -6,6 +6,7 @@
 using System.Data;
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
@@ -45,6 +46,7 @@ public class Given_CompactDescriptor_CustomViewAuthorization_Values(SqlDialect d
             (ProposedCustomViewExtractionResult.Ready)
                 ProposedCustomViewValueExtractor.Extract(
                     [_customChecks[1]],
+                    CreateWritePlan(),
                     _fixture.RootRow(CompactDescriptorAuthorizationFixture.DescriptorId)
                 )
         ).Work;
@@ -66,7 +68,11 @@ public class Given_CompactDescriptor_CustomViewAuthorization_Values(SqlDialect d
     {
         var work = (
             (ProposedCustomViewExtractionResult.Ready)
-                ProposedCustomViewValueExtractor.Extract([_customChecks[1]], _fixture.RootRow(null))
+                ProposedCustomViewValueExtractor.Extract(
+                    [_customChecks[1]],
+                    CreateWritePlan(),
+                    _fixture.RootRow(null)
+                )
         ).Work;
         var command = ProposedCustomViewAuthorizationCommand
             .Build(_fixture.MappingSet, new(_customChecks, work.SqlValues))!
@@ -80,7 +86,7 @@ public class Given_CompactDescriptor_CustomViewAuthorization_Values(SqlDialect d
     {
         var row = _fixture.RootRow(CompactDescriptorAuthorizationFixture.DocumentId);
         ProposedCustomViewValueExtractor
-            .Extract([_customChecks[1]], row)
+            .Extract([_customChecks[1]], CreateWritePlan(), row)
             .Should()
             .BeOfType<ProposedCustomViewExtractionResult.InvalidAuthorizationPlan>();
     }
@@ -160,13 +166,16 @@ public class Given_CompactDescriptor_CustomViewAuthorization_Values(SqlDialect d
         ).Checks;
         var work = (
             (ProposedCustomViewExtractionResult.Ready)
-                ProposedCustomViewValueExtractor.Extract([checks[1]], _fixture.RootRow(42))
+                ProposedCustomViewValueExtractor.Extract([checks[1]], CreateWritePlan(), _fixture.RootRow(42))
         ).Work;
         var command = ProposedCustomViewAuthorizationCommand
             .Build(_fixture.MappingSet, new(checks, work.SqlValues))!
             .Command;
         command.Parameters.Single().Value.Should().BeOfType<int>().Which.Should().Be(73);
     }
+
+    private ResourceWritePlan CreateWritePlan() =>
+        new(_fixture.Subject.RelationalModel, [_fixture.RootRow(null).TableWritePlan]);
 
     private void VerifyType(RelationalParameter parameter, DbType expected)
     {

@@ -25,6 +25,7 @@ public class Given_RelationshipAuthorizationProposedValueExtractor
 
         var result = RelationshipAuthorizationProposedValueExtractor.Extract(
             CreateAuthorized(CreateProposedEdOrgCheckSpec(rootPlan)),
+            CreateWritePlan(rootPlan),
             rootRow,
             emittedAuth1Index: 4
         );
@@ -51,6 +52,7 @@ public class Given_RelationshipAuthorizationProposedValueExtractor
 
         var result = RelationshipAuthorizationProposedValueExtractor.Extract(
             CreateAuthorized(CreateProposedDirectPeopleCheckSpec(rootPlan)),
+            CreateWritePlan(rootPlan),
             rootRow,
             emittedAuth1Index: 5
         );
@@ -85,6 +87,7 @@ public class Given_RelationshipAuthorizationProposedValueExtractor
 
         var result = RelationshipAuthorizationProposedValueExtractor.Extract(
             CreateAuthorized(CreateProposedSelfPeopleCheckSpec(rootPlan)),
+            CreateWritePlan(rootPlan),
             rootRow,
             emittedAuth1Index: 6,
             targetContext: new RelationalWriteTargetContext.ExistingDocument(
@@ -119,6 +122,7 @@ public class Given_RelationshipAuthorizationProposedValueExtractor
 
         var result = RelationshipAuthorizationProposedValueExtractor.Extract(
             CreateAuthorized(CreateProposedTransitivePeopleCheckSpec(rootPlan)),
+            CreateWritePlan(rootPlan),
             rootRow,
             emittedAuth1Index: 7
         );
@@ -160,6 +164,7 @@ public class Given_RelationshipAuthorizationProposedValueExtractor
 
         var result = RelationshipAuthorizationProposedValueExtractor.Extract(
             CreateAuthorized(CreateProposedEdOrgCheckSpec(rootPlan)),
+            CreateWritePlan(rootPlan),
             rootRow,
             emittedAuth1Index: 8
         );
@@ -181,6 +186,7 @@ public class Given_RelationshipAuthorizationProposedValueExtractor
 
         var result = RelationshipAuthorizationProposedValueExtractor.Extract(
             CreateAuthorized(CreateProposedSelfPeopleCheckSpec(rootPlan)),
+            CreateWritePlan(rootPlan),
             rootRow,
             emittedAuth1Index: 9
         );
@@ -204,6 +210,20 @@ public class Given_RelationshipAuthorizationProposedValueExtractor
             "unresolved root document id"
         );
     }
+
+    private static ResourceWritePlan CreateWritePlan(TableWritePlan rootPlan) =>
+        new(
+            new RelationalResourceModel(
+                SchoolResource,
+                new DbSchemaName("edfi"),
+                ResourceStorageKind.RelationalTables,
+                rootPlan.TableModel,
+                [rootPlan.TableModel],
+                [],
+                []
+            ),
+            [rootPlan]
+        );
 
     private static RootWriteRowBuffer CreateRootRow(
         TableWritePlan rootPlan,

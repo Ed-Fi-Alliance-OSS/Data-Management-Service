@@ -413,13 +413,11 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                     childPlan.TableWritePlan,
                     values
                 );
-                var hasDeferredMissingSemanticIdentityMember =
-                    collapsedTracker is not null
-                    && HasDeferredMissingSemanticIdentityMember(
-                        childPlan.TableWritePlan,
-                        semanticIdentityValues,
-                        valueHasDeferredMissingReference
-                    );
+                var hasDeferredMissingSemanticIdentityMember = HasDeferredMissingSemanticIdentityMember(
+                    childPlan.TableWritePlan,
+                    semanticIdentityValues,
+                    valueHasDeferredMissingReference
+                );
                 var semanticIdentityInOrder = MaterializeSemanticIdentityParts(
                     childPlan.TableWritePlan,
                     collectionScopeInstance.ScopeNode,
@@ -480,9 +478,18 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                         collapsedTracker[semanticIdentityValues] = trackerEntry;
                     }
                 }
-                else
+                else if (!isDuplicate)
                 {
                     presenceAwareTracker!.Add(semanticIdentityInOrder, trackerEntry);
+                }
+                else if (
+                    firstSeen is { ContainsDeferredMissingSemanticIdentityMember: true }
+                    && !hasDeferredMissingSemanticIdentityMember
+                )
+                {
+                    // Retain a real null identity so another real duplicate is still rejected.
+                    // Deferred-only collisions cannot reach collection merge or DML.
+                    presenceAwareTracker![presenceAwareKey!] = trackerEntry;
                 }
 
                 var childParentKeyParts = RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
