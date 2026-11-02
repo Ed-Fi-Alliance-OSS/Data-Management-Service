@@ -670,10 +670,12 @@ For running the recipes against a local development stack through
 
 A secret a plugin serves from a vault must not also be supplied by the environment, because an environment variable outranks every plugin source; see [Secrets](./SECRETS.md#the-process-global-secrets-phase-a-serves).
 The shipped Compose files map six of those secrets from `.env` variables, and deleting a variable does not remove the mapping.
-For five of them, Compose sets the key to an empty string, which outranks the vault.
+For five of them, `local-dms.compose.yml` and `local-config.compose.yml` set the key to an empty string, which outranks the vault.
 An empty `DatabaseSettings__EncryptionKey` stops the Configuration Service at startup.
 The others do not: the host starts and then fails requests, and an empty `IdentitySettings__EncryptionKey` fails only once the self-contained identity provider issues its first token.
-The sixth, `DatabaseSettings__DatabaseConnection`, has a default in the Compose files, so deleting its variable sends the Configuration Service to the bundled `dms-postgresql` database instead of the one the vault names.
+`published-dms.compose.yml` and `published-config.compose.yml` require the three encryption keys instead: deleting `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` or `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY` stops `docker compose config`, `up` and `down` with an error that names the variable.
+In those files only the two client secrets still become empty strings.
+The sixth, `DatabaseSettings__DatabaseConnection`, has a default in all four files, so deleting its variable sends the Configuration Service to the bundled `dms-postgresql` database instead of the one the vault names.
 
 Remove each key the vault serves in the same deployment-owned override that sets
 `Plugins__Allowed`, with `!reset null`. A service block goes only in the override for
@@ -698,7 +700,10 @@ services:
 List only the keys the vault actually serves. Keep the matching `.env` variables
 set: the reset already keeps their values out of the containers, and the local
 launch scripts read them directly to register identity clients and provision
-databases. `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` feeds both
+databases. For the encryption keys the published files enforce this: Compose
+interpolates every file before it applies `!reset null`, so a deleted variable stops
+Compose even when the override resets its key.
+`CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` feeds both
 `DatabaseSettings__EncryptionKey` on `config` and
 `ConfigurationServiceSettings__EncryptionKey` on `dms`, so clearing it for one host
 would blank the key the other still reads from the environment. With the connection
@@ -706,8 +711,31 @@ string removed, the stock Configuration Service entry point skips its database w
 and .NET reports a connection error itself if the database is not ready yet, so keep
 a restart policy on `config`, as [Secrets](./SECRETS.md) describes.
 
-`DATABASE_CONNECTION_STRING_ADMIN` on `dms` is not a vault key, because only the DMS entry point reads it, but it carries superuser credentials and the shipped files give it a default.
-To keep it out of the container, reset it in the same override with `DATABASE_CONNECTION_STRING_ADMIN: !reset null` under `dms`.
+> **Limitation in the combined DMS and Configuration Service stack (observed with Docker
+> Compose v5.1.3).** The DMS launchers add `dms-cms-proxy.yml` after both service files, and
+> that file sets `environment` on `config`. With Compose v5.1.3, a later `!reset null` on a
+> `config` environment key is then not applied: the Configuration Service keys in this
+> override can stay in the container, and their `.env` values outrank the vault values. The
+> `dms` resets are not affected. Before relying on the override, render the complete Compose
+> file sequence you deploy with, override included, and confirm that every key you reset is
+> absent. Check key names only, and do not publish or log the rendered configuration,
+> because it contains the secret values. For example, this prints nothing when the resets
+> on `config` apply:
+>
+> ```powershell
+> docker compose <every -f file, in deployment order> --env-file <your env file> config --format json |
+>     ConvertFrom-Json |
+>     ForEach-Object { $_.services.config.environment.PSObject.Properties.Name } |
+>     Where-Object { $_ -in 'DatabaseSettings__DatabaseConnection', 'DatabaseSettings__EncryptionKey', 'IdentitySettings__ClientSecret', 'IdentitySettings__EncryptionKey' }
+> ```
+>
+> Reordering the files or leaving out `dms-cms-proxy.yml` is not a validated workaround:
+> that file carries the Configuration Service's forwarded-header trust and `/connect/*`
+> rate-limit settings for the combined stack.
+
+`DATABASE_CONNECTION_STRING_ADMIN` on `dms` is not a vault key, because only the DMS entry point reads it, but it carries database credentials.
+`local-dms.compose.yml` gives it a default, a superuser connection string for the bundled `dms-postgresql` service; `published-dms.compose.yml` has no default and requires a value.
+To keep it out of the container, keep the variable set and reset it in the same override with `DATABASE_CONNECTION_STRING_ADMIN: !reset null` under `dms`.
 DMS then starts without waiting for PostgreSQL.
 
 ## Logging

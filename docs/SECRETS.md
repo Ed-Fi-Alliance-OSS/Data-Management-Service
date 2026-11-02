@@ -55,9 +55,10 @@ moving a value into a vault removes it from the environment.
 
 **On the shipped Docker Compose files, removing it from `.env` does not work.**
 `local-dms.compose.yml`, `published-dms.compose.yml`, `local-config.compose.yml` and `published-config.compose.yml` map six of these keys from `.env` variables: `ConfigurationServiceSettings__ClientSecret` and `ConfigurationServiceSettings__EncryptionKey` on `dms`, and `DatabaseSettings__DatabaseConnection`, `DatabaseSettings__EncryptionKey`, `IdentitySettings__ClientSecret` and `IdentitySettings__EncryptionKey` on `config`.
-Deleting the variable sets the key to an empty string, which still outranks the vault, so the host sees no value.
-`DatabaseSettings__DatabaseConnection` has a default in those files instead, so deleting its variable sends the Configuration Service to the bundled `dms-postgresql` database rather than the one the vault names.
-Unset each key in a deployment-owned override file instead, and keep the `.env` variables set, because the local launch scripts read them; see [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files).
+In the local files, deleting the variable sets the key to an empty string, which still outranks the vault, so the host sees no value.
+The published files require the three encryption keys, so deleting `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` or `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY` stops Compose with an error instead; their two client secrets still become empty strings.
+`DatabaseSettings__DatabaseConnection` has a default in all four files, so deleting its variable sends the Configuration Service to the bundled `dms-postgresql` database rather than the one the vault names.
+Unset each key in a deployment-owned override file instead, and keep the `.env` variables set, because the local launch scripts read them and the published files require the encryption keys; see [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files), including its limitation for the combined DMS and Configuration Service stack.
 
 **DMS, two keys:**
 
@@ -106,8 +107,9 @@ It carries elevated database credentials, and its only consumer is the DMS conta
 No configuration source of any origin can serve a value read before there is a configuration to read it from, so a deployment that sets it supplies it from the deployment environment, the way it already supplies its other secret environment variables.
 A deployment that does not need the wait can leave it unset: when the entry point cannot parse a PostgreSQL host from it, it prints that it is skipping the readiness wait and starts DMS without waiting.
 DMS itself never reads the variable, and if the database is not up yet, its startup check retries on the first request.
-On the shipped Compose files, `local-dms.compose.yml` and `published-dms.compose.yml` give the variable a default, a superuser connection string for the bundled `dms-postgresql` service, so deleting it from `.env` still puts that credential in the container.
-To leave it out there, reset it under `dms` with `DATABASE_CONNECTION_STRING_ADMIN: !reset null` in a deployment-owned override; see [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files).
+On the shipped Compose files, only `local-dms.compose.yml` gives the variable a default, a superuser connection string for the bundled `dms-postgresql` service, so deleting it from `.env` still puts that credential in the container.
+`published-dms.compose.yml` has no default: a missing or empty variable stops Compose with an error.
+To leave it out of the container on either file, keep the variable set and reset it under `dms` with `DATABASE_CONNECTION_STRING_ADMIN: !reset null` in a deployment-owned override; see [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files).
 
 ### Rotating a process-global secret takes a restart
 

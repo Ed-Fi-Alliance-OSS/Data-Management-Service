@@ -93,8 +93,9 @@ isolate the services from other containers on the stack's Docker networks.
 
 ### Before a shared or exposed deployment
 
-Replace every credential and key in this table with a unique value from a cryptographically
-secure random generator, and review the settings listed after it.
+Replace every credential and key in this table, and review the settings listed after it.
+Generate passwords, client secrets and encryption-key material with a cryptographically secure
+random generator, then use those credentials in the connection strings.
 
 | Setting | What it protects or does | When it applies |
 | --- | --- | --- |
@@ -129,9 +130,9 @@ Other settings to review:
 and `DATABASE_CONNECTION_STRING_ADMIN` with `${VAR:?message}` and supply no fallback. When one
 of them is missing or empty, `docker compose config`, `up` and `down` stop with an error that
 names the service, the environment key and the variable. The check is for presence only:
-example values, weak values and quoted whitespace-only values pass. Generate each value with a
-cryptographically secure random generator. The local Compose files (`local-*.compose.yml`) keep
-their fallbacks.
+example values, weak values and quoted whitespace-only values pass. Generate the encryption keys,
+and the credentials inside the admin connection string, with a cryptographically secure random
+generator. The local Compose files (`local-*.compose.yml`) keep their fallbacks.
 
 ## Identity Provider Configuration
 
