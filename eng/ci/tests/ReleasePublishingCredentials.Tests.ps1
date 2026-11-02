@@ -13,6 +13,7 @@
 # assumed: assertions run over the raw workflow text.
 
 BeforeAll {
+    Import-Module (Join-Path $PSScriptRoot 'WorkflowExpression.psm1') -Force
     $script:workflowRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../.github/workflows'))
 
     function script:Get-WorkflowJobTable([string] $Content) {
@@ -42,26 +43,13 @@ BeforeAll {
         return $names[$names.Count - 1].Groups['name'].Value.Trim()
     }
 
-    function script:Get-JobCondition([string] $Job) {
-        return [regex]::Match($Job, '(?m)^    if: \$\{\{ (?<expression>.+) \}\}\r?$').Groups['expression'].Value
-    }
+    function script:Get-JobCondition([string] $Job) { Get-WorkflowJobCondition $Job }
 
     function script:Test-RefCondition {
-        # Evaluates a job condition built from event_name, ref_type, and ref by translating its
-        # few operators into PowerShell with GitHub's case-insensitive comparison. Anything else
-        # survives the translation and fails to parse.
+        # Evaluates a job condition built from event_name, ref_type, and ref.
         param([string] $Expression, [string] $EventName, [string] $Ref, [string] $RefType)
 
-        $translated = $Expression.
-            Replace('github.event_name', '$EventName').
-            Replace('github.ref_type', '$RefType').
-            Replace('github.ref', '$Ref').
-            Replace('!=', '-ine').
-            Replace('==', '-ieq').
-            Replace('&&', '-and').
-            Replace('||', '-or')
-        $translated = [regex]::Replace($translated, "startsWith\(\`$Ref, '([^']*)'\)", '$Ref.StartsWith(''$1'', [StringComparison]::OrdinalIgnoreCase)')
-        return [bool](& ([scriptblock]::Create("param(`$EventName, `$Ref, `$RefType) $translated")) $EventName $Ref $RefType)
+        return Test-WorkflowExpression -Expression $Expression -Run @{ 'github.event_name' = $EventName; 'github.ref' = $Ref; 'github.ref_type' = $RefType }
     }
 
     function script:Assert-SecretReferenceInStep {
@@ -80,18 +68,25 @@ BeforeAll {
         $found | Should -Be $ExpectedCount
     }
 
-    function script:Get-PublishingSecretViolation([string] $Content) {
-        # The repository-wide rule, as findings. A publishing token is read either by a step of a job
-        # bound to the 'publishing' environment, or passed by name from a caller job to a reusable
-        # workflow, which GitHub requires for an environment secret and which resolves to nothing
-        # outside that environment. Secret names are case-insensitive, so the match is too. A
-        # reference the guard cannot place in a job is a finding, so syntax it does not read fails
-        # rather than passes.
-        $pattern = "(?i)secrets(?:\.(?:AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN|AZURE_ARTIFACTS_USER_NAME|DOCKER_HUB_TOKEN)\b|\[\s*['""](?:AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN|AZURE_ARTIFACTS_USER_NAME|DOCKER_HUB_TOKEN)['""]\s*\])"
+    function script:Get-EnvironmentSecretViolation {
+        # The repository-wide rule, as findings. Each named secret is read either by a step of a job
+        # bound to Environment, or passed by name from a caller job to a reusable workflow, which
+        # GitHub requires for an environment secret and which resolves to nothing outside that
+        # environment. Secret names are case-insensitive, so the match is too. A reference the guard
+        # cannot place in a job is a finding, so syntax it does not read fails rather than passes.
+        param(
+            [string] $Content,
+            [string[]] $Secrets = @('AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN', 'AZURE_ARTIFACTS_USER_NAME', 'DOCKER_HUB_TOKEN'),
+            [string] $Environment = 'publishing'
+        )
+
+        $names = ($Secrets | ForEach-Object { [regex]::Escape($_) }) -join '|'
+        $pattern = "(?i)secrets(?:\.(?:$names)\b|\[\s*['""](?:$names)['""]\s*\])"
+        $environmentLine = "(?m)^    environment: $([regex]::Escape($Environment))\r?$"
         $violations = [Collections.Generic.List[string]]::new()
         if ($Content -match '(?i)secrets:\s*inherit') { $violations.Add('passes secrets: inherit') }
         if ($Content -match '(?i)toJSON\(\s*secrets\s*\)') { $violations.Add('reads the whole secrets context') }
-        if ((Get-WorkflowEnv $Content) -match $pattern) { $violations.Add('reads a publishing token in the workflow-wide env') }
+        if ((Get-WorkflowEnv $Content) -match $pattern) { $violations.Add("reads a $Environment token in the workflow-wide env") }
 
         $total = [regex]::Matches($Content, $pattern).Count
         if ($total -eq 0) { return $violations.ToArray() }
@@ -110,13 +105,13 @@ BeforeAll {
                     }
                     continue
                 }
-                if ($job -notmatch '(?m)^    environment: publishing\r?$') { $violations.Add("$id reads $($match.Value) outside the publishing environment") }
+                if ($job -notmatch $environmentLine) { $violations.Add("$id reads $($match.Value) outside the $Environment environment") }
                 if ($line -notmatch '^ {10}\S') { $violations.Add("$id reads $($match.Value) other than at step level") }
                 if ($job.IndexOf("`n    steps:") -lt 0 -or $job.IndexOf("`n    steps:") -gt $match.Index) { $violations.Add("$id reads $($match.Value) outside its steps") }
             }
         }
         if ($placed -ne $total) {
-            $violations.Add("$($total - $placed) publishing token reference(s) outside any job this guard can read")
+            $violations.Add("$($total - $placed) $Environment token reference(s) outside any job this guard can read")
         }
         return $violations.ToArray()
     }
@@ -283,12 +278,34 @@ Describe 'every workflow keeps the publishing tokens behind the publishing envir
 
     It '<File>' -ForEach $script:workflowFiles {
         $content = Get-Content (Join-Path $script:workflowRoot $File) -Raw
-        Get-PublishingSecretViolation $content | Should -BeNullOrEmpty
+        Get-EnvironmentSecretViolation $content | Should -BeNullOrEmpty
+    }
+
+    It '<File> keeps EDFI_BUILD_AGENT_PAT in the release-automation environment' -ForEach $script:workflowFiles {
+        # The build-agent token creates prerelease tags and is the identity the tag ruleset lets past
+        # its restrictions, so a branch must not be able to read it either.
+        $content = Get-Content (Join-Path $script:workflowRoot $File) -Raw
+        Get-EnvironmentSecretViolation $content -Secrets 'EDFI_BUILD_AGENT_PAT' -Environment 'release-automation' |
+            Should -BeNullOrEmpty
+    }
+
+    It 'binds exactly the build-agent token jobs to the release-automation environment' {
+        $bound = foreach ($file in Get-ChildItem -LiteralPath $script:workflowRoot -Filter '*.yml') {
+            $jobs = Get-WorkflowJobTable (Get-Content -LiteralPath $file.FullName -Raw)
+            foreach ($id in $jobs.Keys) {
+                if ($jobs[$id] -match '(?m)^\s*environment:\s*release-automation\b') { "$($file.Name):$id" }
+            }
+        }
+        @($bound) | Sort-Object | Should -Be @(
+            'on-config-merge-or-tag.yml:create-pre-releases',
+            'on-dms-merge-or-tag.yml:create-pre-releases',
+            'scheduled-merge-queue-enqueue.yml:enqueue'
+        )
     }
 }
 
 Describe 'the repository-wide publishing token rule' {
-    # Fixtures for Get-PublishingSecretViolation, so a workflow the guard cannot read fails it.
+    # Fixtures for Get-EnvironmentSecretViolation, so a workflow the guard cannot read fails it.
     BeforeAll {
         function script:New-Workflow([string] $Jobs) {
             return "name: Fixture`non: workflow_dispatch`n`npermissions: read-all`n`njobs:`n$Jobs"
@@ -310,24 +327,24 @@ Describe 'the repository-wide publishing token rule' {
         @{ Case = 'publish followed by a comment'; Id = 'publish: # pushes the image' }
     ) {
         $header = if ($Id.Contains(':')) { "  $Id" } else { "  ${Id}:" }
-        $violations = Get-PublishingSecretViolation (New-Workflow "$header`n$script:publishStep")
+        $violations = Get-EnvironmentSecretViolation (New-Workflow "$header`n$script:publishStep")
         $violations | Should -Contain "$(($Id -split ':')[0]) reads secrets.DOCKER_HUB_TOKEN outside the publishing environment"
     }
 
     It 'accepts the same job, with an underscore in its id, bound to the publishing environment' {
-        Get-PublishingSecretViolation (New-Workflow "  publish_package:`n    environment: publishing`n$script:publishStep") |
+        Get-EnvironmentSecretViolation (New-Workflow "  publish_package:`n    environment: publishing`n$script:publishStep") |
             Should -BeNullOrEmpty
     }
 
     It 'flags a secret name written in lower case' {
         $step = $script:publishStep.Replace('secrets.DOCKER_HUB_TOKEN', 'secrets.docker_hub_token')
-        Get-PublishingSecretViolation (New-Workflow "  publish:`n$step") |
+        Get-EnvironmentSecretViolation (New-Workflow "  publish:`n$step") |
             Should -Contain 'publish reads secrets.docker_hub_token outside the publishing environment'
     }
 
     It 'flags a secret read with index syntax' {
         $step = $script:publishStep.Replace('secrets.DOCKER_HUB_TOKEN', "secrets['DOCKER_HUB_TOKEN']")
-        Get-PublishingSecretViolation (New-Workflow "  publish:`n$step") |
+        Get-EnvironmentSecretViolation (New-Workflow "  publish:`n$step") |
             Should -Contain "publish reads secrets['DOCKER_HUB_TOKEN'] outside the publishing environment"
     }
 
@@ -336,12 +353,25 @@ Describe 'the repository-wide publishing token rule' {
         @{ Case = 'jobs indented four spaces'; Jobs = "    publish:`n" }
     ) {
         $step = if ($Case -eq 'a quoted job id') { $script:publishStep } else { ($script:publishStep -split "`n" | ForEach-Object { "  $_" }) -join "`n" }
-        Get-PublishingSecretViolation (New-Workflow "$Jobs$step") |
+        Get-EnvironmentSecretViolation (New-Workflow "$Jobs$step") |
             Should -Contain '1 publishing token reference(s) outside any job this guard can read'
     }
 
+    It 'flags the build-agent token read in the workflow-wide env, outside release-automation' {
+        $content = "name: Fixture`non: push`n`nenv:`n  TOKEN: `${{ secrets.EDFI_BUILD_AGENT_PAT }}`n`njobs:`n  tag:`n    environment: release-automation`n    runs-on: ubuntu-latest`n    steps:`n      - run: echo tag`n"
+        $violations = Get-EnvironmentSecretViolation $content -Secrets 'EDFI_BUILD_AGENT_PAT' -Environment 'release-automation'
+        $violations | Should -Contain 'reads a release-automation token in the workflow-wide env'
+        $violations | Should -Contain '1 release-automation token reference(s) outside any job this guard can read'
+    }
+
+    It 'flags the build-agent token read by a job bound to publishing instead of release-automation' {
+        $step = $script:publishStep.Replace('secrets.DOCKER_HUB_TOKEN', 'secrets.EDFI_BUILD_AGENT_PAT')
+        Get-EnvironmentSecretViolation (New-Workflow "  tag:`n    environment: publishing`n$step") -Secrets 'EDFI_BUILD_AGENT_PAT' -Environment 'release-automation' |
+            Should -Contain 'tag reads secrets.EDFI_BUILD_AGENT_PAT outside the release-automation environment'
+    }
+
     It 'flags secrets: inherit and the whole secrets context' {
-        $violations = Get-PublishingSecretViolation (New-Workflow "  build:`n    uses: ./.github/workflows/build.yml`n    secrets: inherit`n  dump:`n    runs-on: ubuntu-latest`n    steps:`n      - run: echo `"`${{ toJSON(secrets) }}`"`n")
+        $violations = Get-EnvironmentSecretViolation (New-Workflow "  build:`n    uses: ./.github/workflows/build.yml`n    secrets: inherit`n  dump:`n    runs-on: ubuntu-latest`n    steps:`n      - run: echo `"`${{ toJSON(secrets) }}`"`n")
         $violations | Should -Contain 'passes secrets: inherit'
         $violations | Should -Contain 'reads the whole secrets context'
     }

@@ -18,7 +18,6 @@ on:
 
 env:
   API_URL: https://api.github.com/repos/${{ github.repository }}
-  TOKEN: ${{ secrets.EDFI_BUILD_AGENT_PAT }}
 
 permissions: read-all
 
@@ -28,6 +27,11 @@ jobs:
     # Only in Ed-Fi-Alliance-OSS: cutting the pre-release needs EDFI_BUILD_AGENT_PAT, which a
     # fork does not have. This workflow has only a push trigger, so it never runs on a fork.
     if: github.repository_owner == 'Ed-Fi-Alliance-OSS'
+    # EDFI_BUILD_AGENT_PAT creates the prerelease and its tag, and the tag ruleset lets this identity
+    # past its tag restrictions, so the token lives only in the 'release-automation' environment,
+    # which releases it only to runs on main and v* tags. No reviewer is required: every merge to
+    # main cuts its prerelease unattended.
+    environment: release-automation
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -59,6 +63,8 @@ jobs:
           Get-VersionNumber -projectPrefix "dms"
 
       - name: Create Dms API Pre-Release
+        env:
+          TOKEN: ${{ secrets.EDFI_BUILD_AGENT_PAT }}
         run: |
           $version = "${{ steps.versions.outputs.dms-semver }}"
           $tag = $version -replace "dms-v","dms-pre-"

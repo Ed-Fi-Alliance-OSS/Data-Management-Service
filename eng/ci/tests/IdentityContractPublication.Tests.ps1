@@ -88,6 +88,7 @@ Describe "EdFi.Api.Identity publication wiring" {
         $script:If = ${function:Get-JobIf}
 
         $script:promote = Get-WorkflowStep -Workflow $release -Name "Promote EdFi.Api.Identity Package"
+        $script:promoteJob = [regex]::Match($release, "(?ms)^  promote-azure-artifact:\r?\n.*?(?=^  \S|\z)").Value
         $script:prCreate = Get-WorkflowStep -Workflow $pullRequest -Name "Create Identity NuGet Package"
         $script:prAssert = Get-WorkflowStep -Workflow $pullRequest -Name "Assert Identity Package Contents"
         $script:prConsumer = Get-WorkflowStep -Workflow $pullRequest -Name "Compile Identity Scratch Consumer"
@@ -238,7 +239,9 @@ Describe "EdFi.Api.Identity publication wiring" {
         }
 
         It "promotes only on a final release tag" {
-            $script:promote | Should -Match "if: \$\{\{ github\.ref_type == 'tag' && startsWith\(github\.ref_name, 'v'\) \}\}"
+            # The promote job admits only a v tag, so the step needs no condition of its own.
+            $script:promote | Should -Not -Match '(?m)^        if:'
+            $script:promoteJob | Should -Match "(?m)^    if: \$\{\{ github\.ref_type == 'tag' && startsWith\(github\.ref, 'refs/tags/v'\) \}\}\r?$"
         }
     }
 

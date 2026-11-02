@@ -17,6 +17,8 @@
 param()
 
 BeforeAll {
+    Import-Module (Join-Path $PSScriptRoot 'WorkflowExpression.psm1') -Force
+
     # The one signing-eligibility rule: never a pull request, and only main or a v*.*.* tag.
     # Each reusable workflow states it twice (the signing job's gate and the build job's
     # unattested-build notice), and the tests require each verbatim.
@@ -25,49 +27,36 @@ BeforeAll {
     $script:signingEnabledExpression = "vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED == 'true'"
 
     function script:Test-SigningEligibleExpression {
-        # Evaluates the workflow expression for one event, ref, and signing-enabled variable by
-        # translating its few operators into PowerShell, with GitHub's case-insensitive string
-        # comparison. Any token outside that vocabulary survives the translation and fails to
-        # parse, so a changed rule cannot pass by being ignored.
+        # Evaluates the signing rule for one event, ref, and signing-enabled variable.
         param([string]$Expression, [string]$EventName, [string]$Ref, [string]$SigningEnabled = "")
 
-        $translated = $Expression.
-            Replace("vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED", '$SigningEnabled').
-            Replace("github.event_name", '$EventName').
-            Replace("github.ref", '$Ref').
-            Replace("!=", "-ine").
-            Replace("==", "-ieq").
-            Replace("&&", "-and").
-            Replace("||", "-or")
-        $translated = [regex]::Replace($translated, "startsWith\(\`$Ref, '([^']*)'\)", '$Ref.StartsWith(''$1'', [StringComparison]::OrdinalIgnoreCase)')
-        return [bool](& ([scriptblock]::Create("param(`$EventName, `$Ref, `$SigningEnabled) $translated")) $EventName $Ref $SigningEnabled)
+        return Test-WorkflowExpression -Expression $Expression -Run @{
+            "github.event_name" = $EventName
+            "github.ref" = $Ref
+            "vars.TEMPLATE_ATTESTATION_SIGNING_ENABLED" = $SigningEnabled
+        }
     }
 
     function script:Test-PublishCondition {
         # Evaluates the publish job's condition for one set of upstream job results and one
-        # event and ref, the same way: needs.<job>.result becomes that job's result string, and
-        # anything unrecognized fails to parse. The defaults are a push to main.
+        # event and ref. The defaults are a push to main.
         param(
-            [string]$Expression,
             [bool]$PublishPackage,
+            [string]$Expression,
             [hashtable]$Results,
             [string]$EventName = "push",
             [string]$Ref = "refs/heads/main",
             [string]$RefType = "branch"
         )
 
-        $translated = $Expression.Replace("!cancelled()", '$true').Replace("inputs.publish_package", '$PublishPackage')
-        $translated = [regex]::Replace($translated, "needs\.([a-z-]+)\.result", { param($match) "'" + $Results[$match.Groups[1].Value] + "'" })
-        $translated = $translated.
-            Replace("github.event_name", '$EventName').
-            Replace("github.ref_type", '$RefType').
-            Replace("github.ref", '$Ref').
-            Replace("!=", "-ine").
-            Replace("==", "-ieq").
-            Replace("&&", "-and").
-            Replace("||", "-or")
-        $translated = [regex]::Replace($translated, "startsWith\(\`$Ref, '([^']*)'\)", '$Ref.StartsWith(''$1'', [StringComparison]::OrdinalIgnoreCase)')
-        return [bool](& ([scriptblock]::Create("param(`$PublishPackage, `$EventName, `$Ref, `$RefType) $translated")) $PublishPackage $EventName $Ref $RefType)
+        $run = @{
+            "inputs.publish_package" = $PublishPackage
+            "github.event_name" = $EventName
+            "github.ref" = $Ref
+            "github.ref_type" = $RefType
+        }
+        foreach ($job in $Results.Keys) { $run["needs.$job.result"] = $Results[$job] }
+        return Test-WorkflowExpression -Expression $Expression -Run $run
     }
 
     function script:Get-WorkflowJobBlock {
@@ -742,26 +731,12 @@ Describe "template caller workflows pass the attestation secret through (<Caller
         $script:buildCall = Get-WorkflowJobBlock -Content $script:callerContent -JobName "build-$Kind-template"
         $script:publishCall = Get-WorkflowJobBlock -Content $script:callerContent -JobName "publish-$Kind-template"
 
-        function script:Test-CallerCondition {
-            # Evaluates a caller job's condition for one run. Every github.* and inputs.* name
-            # becomes that run's value, and the few operators become PowerShell with GitHub's
-            # case-insensitive comparison; anything else fails to parse.
-            param([string]$Expression, [hashtable]$Run)
-
-            $translated = [regex]::Replace($Expression, "startsWith\(([a-z_.]+), '([^']*)'\)", '([string]$1).StartsWith(''$2'', [StringComparison]::OrdinalIgnoreCase)')
-            $translated = [regex]::Replace($translated, "\b(?:github|inputs)\.[a-z_.]+", { param($match) "`$Run['$($match.Value)']" })
-            $translated = $translated.
-                Replace("!=", "-ine").
-                Replace("==", "-ieq").
-                Replace("&&", "-and").
-                Replace("||", "-or").
-                Replace("!(", "-not (")
-            $translated = [regex]::Replace($translated, "\b(true|false)\b", '$$$1')
-            return [bool](& ([scriptblock]::Create("param(`$Run) $translated")) $Run)
+        function script:Test-CallerCondition([string]$Expression, [hashtable]$Run) {
+            return Test-WorkflowExpression -Expression $Expression -Run $Run
         }
 
         function script:Get-CallerCondition([string]$Job) {
-            $condition = [regex]::Match($Job, '(?m)^    if: \$\{\{ (?<expression>.+) \}\}$').Groups["expression"].Value
+            $condition = Get-WorkflowJobCondition $Job
             $condition | Should -Not -BeNullOrEmpty
             return $condition
         }
