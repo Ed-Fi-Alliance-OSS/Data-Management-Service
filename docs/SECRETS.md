@@ -56,9 +56,9 @@ moving a value into a vault removes it from the environment.
 **On the shipped Docker Compose files, removing it from `.env` does not work.**
 `local-dms.compose.yml`, `published-dms.compose.yml`, `local-config.compose.yml` and `published-config.compose.yml` map six of these keys from `.env` variables: `ConfigurationServiceSettings__ClientSecret` and `ConfigurationServiceSettings__EncryptionKey` on `dms`, and `DatabaseSettings__DatabaseConnection`, `DatabaseSettings__EncryptionKey`, `IdentitySettings__ClientSecret` and `IdentitySettings__EncryptionKey` on `config`.
 In the local files, deleting the variable sets the key to an empty string, which still outranks the vault, so the host sees no value.
-The published files require the three encryption keys, so deleting `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` or `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY` stops Compose with an error instead; their two client secrets still become empty strings.
-`DatabaseSettings__DatabaseConnection` has a default in all four files, so deleting its variable sends the Configuration Service to the bundled `dms-postgresql` database rather than the one the vault names.
-Unset each key in a deployment-owned override file instead, and keep the `.env` variables set, because the local launch scripts read them and the published files require the encryption keys; see [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files), including its limitation for the combined DMS and Configuration Service stack.
+The published files require both encryption-key variables, `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` (feeding the two database-key mappings) and `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY` (feeding `IdentitySettings__EncryptionKey`), so deleting either stops Compose with an error instead; their two client secrets still become empty strings.
+`DatabaseSettings__DatabaseConnection` has a default in `local-config.compose.yml` and `published-config.compose.yml`, the only files that map it, so deleting its variable sends the Configuration Service to the bundled `dms-postgresql` database rather than the one the vault names.
+Unset each key in a deployment-owned override file instead, and keep the `.env` variables set, because the local launch scripts read them and the published files require the encryption-key variables; see [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files), including its limitation for the combined DMS and Configuration Service stack.
 
 **DMS, two keys:**
 
