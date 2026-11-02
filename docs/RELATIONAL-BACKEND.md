@@ -309,6 +309,11 @@ WHERE o.name = N'ContentLastModifiedAt'
                   WHERE c.object_id = o.object_id AND c.name = N'ContentCreatedAt');
 ```
 
+Database template packages built before this change lack the column. They restore and serve,
+but `Assert-TemplateSchema.ps1` checks only `ContentLastModifiedAt` on each owner, so it does not
+reject them. Run the two queries above on the source and restored catalogs of every rebuilt
+package.
+
 ### Descriptor catalog checks and template handoff
 
 Use the reusable [compact descriptor catalog assertions](../eng/DatabaseTemplates/Compact-Descriptor.md)

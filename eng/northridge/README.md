@@ -123,7 +123,9 @@ $baseline = './src/dms/backend/Fixtures/authoritative/ds-5.2/expected/relational
 The copied schemas include every resource and tracked-history schema in the baseline, plus `auth`.
 The preflight verifies the compact target against that baseline, complete source/target table
 coverage, exact column shapes for descriptor conversion and directly restored tables, and unchanged
-resource-key seeds. `dms.Document` retains its staging rules: source-only columns are omitted from
+resource-key seeds. The one exception to exact shapes is an owner's `ContentCreatedAt` (DMS-1656),
+which legacy dumps predate: a target-only `ContentCreatedAt` is admitted, and a source that has
+it is still type-checked. `dms.Document` retains its staging rules: source-only columns are omitted from
 the target insert, and target columns absent from the source must be nullable, defaulted, identity
 or generated. Source descriptor keys and stored descriptor references must be legacy bigint
 document keys. Descriptor rows keep their bigint `DocumentId`
@@ -147,7 +149,10 @@ from their owning `dms.Document`; a row with no owning document stops the copy. 
 insert omits them as source-only. The document `ContentVersion` check remains. Authoritative
 descriptor and sampled stamp-bearing root rows retain their exact timestamps and versions, checked
 using deterministic `DocumentId`-ordered stamp-tuple checksums as well as distributions; swapping
-timestamps while preserving min/max must fail. The sampled-root scope is unchanged. The tool retains
+timestamps while preserving min/max must fail. The sampled-root scope is unchanged. Owners'
+`ContentCreatedAt` is not carried: the load runs with triggers disabled and leaves it to its
+default, the copy time, which is later than the carried `ContentLastModifiedAt` (see
+[RELATIONAL-BACKEND.md](../../docs/RELATIONAL-BACKEND.md#reprovisioning-and-legacy-data-carry-forward)). The tool retains
 row-count, FK, trigger-state, fingerprint, singleton and source-identity checks. It initializes the
 native descriptor backing sequence from allocated compact keys. Copy
 and Checkpoint resolve that sequence from catalog ownership and check `last_value`, `is_called`
