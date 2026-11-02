@@ -105,6 +105,7 @@ function Export-CdcApiEvidence {
         AttachmentBoundary = $validated.AttachmentBoundary; Disposal = $validated.Disposal; Scenarios = $validated.Cases
         Traceability = @(Get-CdcApiTraceability)
         Diagnostics = Get-CdcApiDiagnostic -Path "$Path.checkpoints" -InvocationId $invocation
+        Cleanup = Get-CdcApiCleanupDiagnostic -PrivateDirectory (Split-Path $Path -Parent) -InvocationId $invocation
         RuntimeInputs = Get-CdcApiRuntimeInput -Path (Join-Path (Split-Path $Path -Parent) 'runtime-inputs.json') -InvocationId $invocation }
     $safe | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $Destination 'cdc-api-e2e.json')
 }
@@ -220,13 +221,33 @@ function Invoke-CdcApiQualification {
             $Report.Stages.Teardown = 'Running'
             try { & $Persist } catch { $Report.ReportFailure = 'ReportPersistenceFailed' }
             if ($owned) {
+                $cleanupTimer = [Diagnostics.Stopwatch]::StartNew()
                 $result = Invoke-CdcApiProcess -FilePath pwsh -Arguments @('-NoProfile', '-File', (Join-Path $PSScriptRoot 'cleanup-cdc-api-e2e.ps1'),
                     '-Repo', $Repo, '-PrivateDirectory', $private, '-Provider', $Report.Provider, '-InvocationId', $Report.InvocationId) `
                     -LogPath (Join-Path $private 'cleanup') -TimeoutSeconds 900
+                try {
+                    @{ InvocationId = $Report.InvocationId; ExitCode = $result.ExitCode; FailureKind = $result.FailureKind
+                        TimedOut = ($result.FailureKind -eq 'Timeout'); ElapsedMilliseconds = $cleanupTimer.ElapsedMilliseconds; TimeoutSeconds = 900 } |
+                        ConvertTo-Json | Set-Content -LiteralPath (Join-Path $private 'cleanup-process.json') -ErrorAction Stop
+                } catch { Write-Warning 'CDC_API_CLEANUP_PROCESS_DIAGNOSTICS_UNAVAILABLE' }
+                # Process termination can prevent the child's finally block from observing leftovers.
+                if ($result.FailureKind -ne 'None') {
+                    Write-CdcApiRemainingResource -PrivateDirectory $private -InvocationId $Report.InvocationId
+                }
                 Assert-CdcApiProcess $result
             }
             $Report.Stages.Teardown = 'Passed'
-        } catch { $Report.Stages.Teardown = 'Failed'; $Report.CleanupFailure = 'CleanupFailed' }
+        } catch {
+            $Report.Stages.Teardown = 'Failed'; $Report.CleanupFailure = 'CleanupFailed'
+            try {
+                $cleanup = Get-CdcApiCleanupDiagnostic -PrivateDirectory $private -InvocationId $Report.InvocationId
+                $failedStep = @($cleanup.Steps | Where-Object Status -eq 'Failed' | Select-Object -First 1)
+                if ($failedStep.Count -eq 0) { $failedStep = @($cleanup.Steps | Where-Object Status -eq 'Running' | Select-Object -Last 1) }
+                $stepName = if ($failedStep.Count) { $failedStep[0].Step } else { 'Unavailable' }
+                $provider = ConvertTo-CdcApiEnum $Report.Provider @('Postgresql', 'Mssql')
+                Write-Information -InformationAction Continue "CDC API cleanup failed: provider=$provider step=$stepName process=$($cleanup.Process | ConvertTo-Json -Compress). See $provider-ApiE2E/cdc-api-e2e.json in the CDC qualification artifact."
+            } catch { Write-Warning 'CDC_API_CLEANUP_DIAGNOSTICS_UNAVAILABLE' }
+        }
         try {
             $Report.Stages.Export = 'Running'
             try { & $Persist } catch { $Report.ReportFailure = 'ReportPersistenceFailed' }

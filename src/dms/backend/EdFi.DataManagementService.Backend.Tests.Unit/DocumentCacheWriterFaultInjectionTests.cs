@@ -9,6 +9,7 @@ using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
@@ -128,7 +129,7 @@ public class Given_DocumentCacheWriterFaultInjection
         services.AddSingleton(FakeItEasy.A.Fake<IReadableProfileProjector>());
 
         services.AddReferenceResolver<
-            ExecutorBackedReferenceResolverAdapterFactory,
+            ThrowingNaturalKeyLookupCommandBuilder,
             TestRelationalCommandExecutor,
             TestRelationalWriteSessionFactory,
             TestDocumentHydrator,
@@ -220,30 +221,6 @@ public class Given_DocumentCacheWriterFaultInjection
             DocumentProjectionWorkPageRequest request,
             CancellationToken cancellationToken = default
         ) => throw new InvalidOperationException("Stub work pager is unused in composition-surface tests.");
-    }
-
-    private sealed class ExecutorBackedReferenceResolverAdapterFactory(
-        IRelationalCommandExecutor commandExecutor
-    ) : IReferenceResolverAdapterFactory
-    {
-        public IRelationalCommandExecutor CommandExecutor { get; } =
-            commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
-
-        public IReferenceResolverAdapter CreateAdapter() => new TestReferenceResolverAdapter();
-
-        public IReferenceResolverAdapter CreateSessionAdapter(IRelationalCommandExecutor commandExecutor) =>
-            new TestReferenceResolverAdapter();
-    }
-
-    private sealed class TestReferenceResolverAdapter : IReferenceResolverAdapter
-    {
-        public Task<IReadOnlyList<ReferenceLookupResult>> ResolveAsync(
-            ReferenceLookupRequest request,
-            CancellationToken cancellationToken = default
-        )
-        {
-            return Task.FromResult<IReadOnlyList<ReferenceLookupResult>>([]);
-        }
     }
 
     private sealed class TestRelationalCommandExecutor : IRelationalCommandExecutor

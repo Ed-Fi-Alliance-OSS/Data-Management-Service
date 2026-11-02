@@ -154,10 +154,12 @@ function Check_RealmExists () {
 function Create_Realm() {
     # Define the new realm configuration
     $RealmData = @{
-        id          = $script:Realm
-        realm       = $script:Realm
-        displayName = $script:Realm
-        enabled     = $true
+        id                   = $script:Realm
+        realm                = $script:Realm
+        displayName          = $script:Realm
+        enabled              = $true
+        # Explicit, so the realm does not depend on Keycloak's default for password recovery.
+        resetPasswordAllowed = $false
     }
     # Create the new realm
     try {

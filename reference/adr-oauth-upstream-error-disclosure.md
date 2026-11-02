@@ -234,10 +234,12 @@ implemented this ADR.
   with no record at all. Whoever fixes the status code must confirm the event still lands.
 - **[DMS-1550](https://edfi.atlassian.net/browse/DMS-1550)** — *Token proxy logs the entire
   upstream body on the 502 path, and the logging policy does not say whether that is allowed.*
-  The `502` branch logs the whole sanitized, bounded body at **Warning**. The `docs/LOGGING.md`
-  prohibition is scoped to Information, so this is not literally a policy violation — the policy
-  is silent. That silence is the substance of the ticket. The `502` branch was left untouched
-  rather than aligned by assumption.
+  The `502` upstream-error branch logs the whole sanitized, bounded body at **Warning**. Since
+  DMS-1495, that event also carries the original integer `UpstreamStatusCode` alongside `TraceId`
+  (`traceId.Value`) and `Content`; the client still receives the fixed generic `502`.
+  The `docs/LOGGING.md` prohibition is scoped to Information, so this is not literally a policy
+  violation — the policy is silent. That silence is the substance of the ticket. The `502`
+  body-logging policy remains unchanged rather than aligned by assumption.
 
 ## Defects found and their lessons
 

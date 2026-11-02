@@ -219,9 +219,8 @@ public sealed class RelationalChangeQueryRepository(
             authorizationPlan.ClaimParameterization
         );
         // Everything the command binds beyond the namespace and claim lists — paging, the change-version
-        // window, the deletes query's own descriptor discriminators, and the custom-view descriptor
-        // discriminators (two per descriptor identity part or descriptor basis; custom views bind no claim
-        // parameters) — spends the same ceiling and is counted here.
+        // window, and the deletes query's own descriptor resource keys — spends the same ceiling and is
+        // counted here. Custom views bind no parameters; their descriptor resource keys are literals.
         int nonAuthorizationParameterCount = command.Parameters.Count - authorizationParameterCount;
 
         if (

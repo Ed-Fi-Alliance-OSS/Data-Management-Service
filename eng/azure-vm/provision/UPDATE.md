@@ -180,9 +180,11 @@ It then restarts the gateway and Swagger UI, because both read their mounted fil
 The Configuration Service applies its database migrations at startup.
 If a Configuration Service stays unhealthy, `./logs.sh st-config` (or `mt-config`) names the migration that failed.
 
-Keycloak: `keycloak.yml` pins the floating minor tag `26.7`.
-`update.sh` refuses a changed pin, because the H2 realm volume cannot cross minor versions, but it does apply a patch release published under the same tag.
-The 26.7.4 to 26.7.5 move has been rehearsed; Keycloak migrated the realm and every key kept working.
+Keycloak: `keycloak.compose.yml` pins one image by tag and digest (`26.8.1@sha256:…`), the same image as `eng/docker-compose/keycloak.compose.yml`.
+To protect the persisted H2 realm volume, `update.sh` refuses any change to that reference, including a new digest under the same tag; such an update follows [`REDEPLOY.md`](REDEPLOY.md), which issues new API keys.
+An `update.sh` from before `keycloak.yml` was renamed to `keycloak.compose.yml` keeps running after its own `git pull`, cannot find `keycloak.yml`, and stops with `cannot read the layout of the PostgreSQL volume`; nothing is changed.
+Run it again: the pulled `update.sh` then reports the Keycloak image change, and the deployment follows [`REDEPLOY.md`](REDEPLOY.md).
+Later versions of `update.sh` rerun the pulled copy of themselves after `git pull`.
 
 PostgreSQL: builds from October 2026 run PostgreSQL 18, which keeps its cluster in a versioned directory inside the `dms-security-review_dms-sec-postgres` volume.
 A deployment created before that holds a PostgreSQL 16 cluster at the volume root, which PostgreSQL 18 does not read: it would start an empty cluster beside it, and the databases and API keys would not carry over.
@@ -195,7 +197,7 @@ See [Database versions](../../../docs/OPERATIONS.md#database-versions) for the P
 Only `update.sh` makes this check: running `up.sh` or `docker compose up` directly against an old volume skips it.
 
 Keycloak clients created before the Configuration Service gave each client its own audience need that audience added once.
-On Keycloak 26.6.2 or later, which the `26.7` pin runs, `/connect/introspect` answers `{"active": false}` to a client introspecting its own token unless the client is in the token's `aud` (see [Token introspection](../../../reference/design/configuration-service/CS-AUTH.md#token-introspection)).
+On Keycloak 26.6.2 or later, which the `26.8.1` pin runs, `/connect/introspect` answers `{"active": false}` to a client introspecting its own token unless the client is in the token's `aud` (see [Token introspection](../../../reference/design/configuration-service/CS-AUTH.md#token-introspection)).
 `update.sh` keeps existing clients as they are, `bootstrap.ps1` refuses to run again once complete, and `add-review-variants.ps1` skips applications that exist, so none of them adds it.
 Run steps 1 to 4 after updating such a deployment, without rerunning `bootstrap.ps1` or deleting its `.bootstrap` markers.
 Both repairs are idempotent: they add the own-audience mapper only where it is missing and keep every client id, secret, role, scope and other mapper.
@@ -375,7 +377,7 @@ The DS 6.1 template must exist for the running build; builds before 8.0.1-alpha.
    It loads claims only into an empty database, so the recreated services need one reload:
 
    ```bash
-   docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps st-config mt-config
+   docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d --no-deps st-config mt-config
    until [ "$(curl -sk -o /dev/null -w '%{http_code}' https://localhost/st-config/health)" = 200 ] &&
      curl -sk -o /dev/null -w '%{http_code}' https://localhost/mt-config/health | grep -qE '^(200|400)$'; do sleep 5; done
    ADMIN_ID=$(grep -E '^BOOTSTRAP_ADMIN_CLIENT_ID=' .env | cut -d= -f2-)
@@ -413,7 +415,7 @@ The DS 6.1 template must exist for the running build; builds before 8.0.1-alpha.
 
    ```bash
    sed -i 's/^CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=.*/CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=false/' .env
-   docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps st-config mt-config
+   docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d --no-deps st-config mt-config
    ```
 
 5. Start the DMS services and check the existing keys **[bash]**:

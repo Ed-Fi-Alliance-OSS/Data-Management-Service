@@ -120,7 +120,7 @@ public class ClaimsFragmentComposer
                             )
                         );
                         _logger.LogError(
-                            "Fragment {FragmentFile} defines a claim set name that is empty, longer than {MaxLength} characters, or contains white space; the claim set is not registered",
+                            "Fragment {FragmentFile} defines a claim set name that is empty, longer than {MaxLength} characters, or contains white space or a comma; the claim set is not registered",
                             LoggingUtility.SanitizeForLog(fragmentFile),
                             ValidationConstants.ClaimSetNameMaxLength
                         );

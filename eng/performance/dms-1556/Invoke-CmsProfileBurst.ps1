@@ -100,7 +100,7 @@ param(
     # Coordinated evidence mode: after any -Cold restart, start the diagnostics samplers
     # against the (new) CMS process, wait until every sampler is producing data, run the
     # burst, then stop the samplers and FAIL the run unless the runtime captures cover
-    # the entire burst window. Requires the local-config-diagnostics.yml sidecar.
+    # the entire burst window. Requires the local-config-diagnostics.compose.yml sidecar.
     [Parameter(ParameterSetName = 'Burst')]
     [switch] $WithSamplers,
 

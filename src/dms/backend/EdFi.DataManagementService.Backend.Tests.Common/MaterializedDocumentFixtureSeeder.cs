@@ -67,7 +67,6 @@ public sealed class MaterializedDocumentFixtureSeeder(
         AddTableRowCommands(commands, fixture, fixture.SourceSetup.ConcreteRootRows);
         AddTableRowCommands(commands, fixture, fixture.SourceSetup.ChildRows);
         AddTableRowCommands(commands, fixture, fixture.SourceSetup.ExtensionRows);
-        AddReferentialIdentityCommands(commands, fixture);
         AddPreserveStampCommands(commands, fixture);
 
         return commands;
@@ -210,20 +209,6 @@ public sealed class MaterializedDocumentFixtureSeeder(
                     {_dialect.Quote("EffectiveEndDate")} date NULL,
                     {_dialect.Quote("ContentVersion")} bigint NOT NULL,
                     {_dialect.Quote("ContentLastModifiedAt")} {_dialect.TimestampWithOffsetColumnType} NOT NULL
-                    """
-                ),
-                []
-            )
-        );
-        commands.Add(
-            new(
-                _dialect.CreateTableIfMissing(
-                    "dms",
-                    "ReferentialIdentity",
-                    $"""
-                    {_dialect.Quote("ReferentialId")} {_dialect.UuidColumnType} NOT NULL PRIMARY KEY,
-                    {_dialect.Quote("DocumentId")} bigint NOT NULL,
-                    {_dialect.Quote("ResourceKeyId")} smallint NOT NULL
                     """
                 ),
                 []
@@ -435,28 +420,6 @@ public sealed class MaterializedDocumentFixtureSeeder(
             }
 
             commands.Add(BuildInsertCommand(row.Schema, row.Table, values));
-        }
-    }
-
-    private void AddReferentialIdentityCommands(
-        List<MaterializedDocumentFixtureSqlCommand> commands,
-        MaterializedDocumentFixture fixture
-    )
-    {
-        foreach (
-            var row in fixture.SourceSetup.ReferentialIdentityRows.OrderBy(row =>
-                Guid.Parse(row.ReferentialId)
-            )
-        )
-        {
-            var values = new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["ReferentialId"] = Guid.Parse(row.ReferentialId),
-                ["DocumentId"] = row.DocumentId,
-                ["ResourceKeyId"] = row.ResourceKeyId,
-            };
-
-            commands.Add(BuildInsertCommand("dms", "ReferentialIdentity", values));
         }
     }
 

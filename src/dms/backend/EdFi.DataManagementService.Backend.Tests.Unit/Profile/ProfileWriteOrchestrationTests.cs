@@ -438,23 +438,13 @@ internal static class OrchestrationTestHelpers
             DocumentIdentity: new DocumentIdentity([
                 new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
             ]),
-            ReferentialId: new ReferentialId(Guid.NewGuid()),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
             SuperclassIdentity: null
         );
 
-    public static ResolvedReferenceSet CreateResolvedReferenceSet() =>
-        new(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
-        );
+    public static ResolvedReferenceSet CreateResolvedReferenceSet() => ResolvedReferenceSets.Create();
 
     public static BackendProfileWriteContext CreateBackendProfileWriteContext(
         ResourceWritePlan writePlan,

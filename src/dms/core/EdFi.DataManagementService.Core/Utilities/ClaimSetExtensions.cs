@@ -10,16 +10,6 @@ namespace EdFi.DataManagementService.Core.Utilities;
 internal static class ClaimSetExtensions
 {
     /// <summary>
-    /// Finds a claim set by name using case-insensitive comparison.
-    /// </summary>
-    public static ClaimSet? FindClaimSetByName(this IEnumerable<ClaimSet> claimSets, string claimSetName)
-    {
-        return claimSets.SingleOrDefault(c =>
-            string.Equals(c.Name, claimSetName, StringComparison.InvariantCultureIgnoreCase)
-        );
-    }
-
-    /// <summary>
     /// Finds resource claims matching the requested resource URI.
     /// </summary>
     public static ResourceClaim[] FindMatchingResourceClaims(this ClaimSet claimSet, string resourceClaimUri)

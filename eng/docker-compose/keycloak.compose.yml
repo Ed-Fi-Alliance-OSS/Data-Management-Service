@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b
+    container_name: dms-keycloak
+    volumes:
+      - dms-keycloak:/var/lib/keycloak/data
+    environment:
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HOSTNAME: http://localhost:${KEYCLOAK_PORT:-8045}
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: true
+      KC_LOG_CONSOLE_LEVEL: error
+    ports:
+      - '127.0.0.1:${KEYCLOAK_PORT:-8045}:8080'
+    networks:
+      - dms
+    command:
+      - start-dev
+    hostname: dms-keycloak
+    logging:
+      driver: json-file
+      options:
+        max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
+
+networks:
+  dms:
+    external: true
+
+volumes:
+  dms-keycloak:
+
+

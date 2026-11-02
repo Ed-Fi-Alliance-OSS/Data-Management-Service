@@ -47,7 +47,7 @@ param(
 
     [string[]] $StatsContainers = @('ed-fi-api-config-service', 'dms-postgresql'),
 
-    # dotnet-monitor sidecar base URL (local-config-diagnostics.yml). Empty disables the
+    # dotnet-monitor sidecar base URL (local-config-diagnostics.compose.yml). Empty disables the
     # live-metrics capture.
     [string] $MonitorBaseUrl = 'http://localhost:52323',
 

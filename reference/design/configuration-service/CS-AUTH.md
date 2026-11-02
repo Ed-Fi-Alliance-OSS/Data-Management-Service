@@ -64,12 +64,36 @@ An omitted or empty `scope` is treated as absent, as RFC 6749 section 3.2 requir
 Keycloak then issues the client's default client scopes.
 The `self-contained` provider issues the scopes registered for the client.
 
+In `self-contained` mode, any other `scope` value is split on spaces and commas, and each value is compared with the client's registered scopes, ignoring case.
+A `scope` that names none of them answers `400` with the RFC 6749 section 5.2 error body, served as `application/json`, and no token is issued or stored:
+
+```json
+{"error":"invalid_scope","error_description":"The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."}
+```
+
+This includes a value made only of spaces or commas, which is supplied and therefore not absent, and any `scope` sent by a client with no registered scopes.
+The client credentials are checked first, so a wrong secret still answers `invalid_client` whatever the `scope`.
+The answer carries no `correlationId` and no `WWW-Authenticate` header.
+It used to succeed with every scope registered for the client.
+
+A `scope` that names some of the client's registered scopes succeeds with only those, as RFC 6749 section 3.3 permits.
+Requested values the client does not hold are dropped, and so are registered scopes it did not request.
+The granted scopes keep the spelling and order of the request, and duplicates are not removed.
+
+A successful token response carries a `scope` member that lists the granted scopes separated by spaces, as RFC 6749 section 3.3 defines, for example `"scope":"edfi_admin_api/full_access edfi_admin_api/readonly_access"`.
+In `self-contained` mode the member is present whenever at least one scope is granted; it is omitted for a client with no registered scopes that omitted `scope`, because RFC 6749 section 3.3 defines no empty scope value.
+Under Keycloak it is the `scope` Keycloak returns, passed through unchanged, and it is omitted when Keycloak returns none.
+The `scope` claim in a `self-contained` access token lists the same granted scopes, also separated by spaces (see below).
+
 Under Keycloak, a requested scope that Keycloak rejects answers `400 invalid_scope` in the OAuth error format, for example with the `error_description` `Invalid scopes: edfi_admin_api/readonly_access`.
 It used to answer `502`, and then `400` in problem details.
 Other Keycloak failures keep their status: a failed connection, a 5xx or any other `400` error code answers `502`, now as `server_error`, and a name-resolution failure or a timeout answers `500`.
 A `client_secret` or `scope` longer than Keycloak's form attribute limit (128 KiB by default) also answers `502` `server_error`: CMS accepts form values up to 4 MiB, and Keycloak rejects the request with `413`.
 Each token request to Keycloak closes its connection after the answer, as revocation and introspection requests do (see [Responses](#responses)), so such a request does not stall the next one.
-The `self-contained` provider does not reject an ungranted scope: it issues the requested scopes the client holds, and the client's registered scopes when it holds none of them.
+
+The `self-contained` provider joins the scopes it grants with single spaces, in both cases that issue a token: the requested scopes the client holds, and the client's registered scopes when no scope is requested.
+The token response `scope` and the signed JWT `scope` describe the same granted values.
+The token request parser accepts a requested scope list separated by commas or spaces. Issued tokens retain their scope values and delimiters until they expire; clients must request a new token to obtain the current issuance format.
 
 Both `/openapi/v1.json` and `/metadata/specifications` declare an `oauth2_client_credentials` scheme whose `tokenUrl` is the document's own server URL (request scheme, host and path base) followed by `/connect/token`.
 The token URL follows the address the document was requested on, as the server URL and the DMS OpenAPI token URL do; the discovery document instead builds its endpoints from `IdentitySettings:Authority`, because services fetch it to validate tokens.
@@ -93,6 +117,7 @@ Responses produced before the endpoint is selected, such as the `405` for anothe
 | A parameter or the `Authorization` header sent more than once | `400` | `invalid_request` |
 | `grant_type` missing or empty | `400` | `invalid_request` |
 | Unsupported `grant_type` | `400` | `unsupported_grant_type` |
+| `self-contained`: a `scope` naming none of the client's registered scopes (see [Token Endpoints](#token-endpoints)) | `400` | `invalid_scope` |
 | Keycloak rejected the requested scope | `400` | `invalid_scope` |
 | Source or source-plus-client rate limit exceeded | `429` with `Retry-After` | `temporarily_unavailable`, with the fixed rate-limit description (see [Token Endpoints](#token-endpoints)) |
 | Token limit reached | `429` | `temporarily_unavailable`, with the canonical limit sentence as `error_description` |
@@ -891,6 +916,21 @@ are described, with their defaults and accepted ranges, in
 The design and its test evidence are in
 [DMS-1556](./DMS-1556-cms-signing-key-resolution-under-load.md).
 
+### Accepted signing algorithm
+
+The helper that verifies a self-contained token's signature, `JwtTokenValidator`,
+accepts **RS256 only**, matching the algorithm token issuance signs with. A token that
+is correctly signed with another algorithm (for example RS512 or PS256) fails
+verification even when the trusted RSA key could verify it and its issuer, audience and
+lifetime are valid. It is classified as untrusted, like an unsigned token or one with an
+unknown key id, and its failure is sanitized as other verification failures are. The
+same verification backs the self-contained `Bearer` schemes, introspection (the token
+is reported `{"active": false}`), and revocation (nothing is changed, and the response
+is the existing idempotent answer for a token that cannot be verified).
+
+This is a restriction of that helper only. It is not a platform-wide algorithm policy,
+and it does not change `keycloak` mode or token validation in DMS.
+
 ### The key snapshot
 
 Each Configuration Service instance holds the public keys it validates tokens with in one
@@ -1380,6 +1420,33 @@ Authorization is scope-based. Three scopes are defined:
 | `edfi_admin_api/readonly_access` | Read-only access to all CMS API endpoints |
 | `edfi_admin_api/authMetadata_readonly_access` | Read access to the `MapLimitedAccess` endpoints below: every Configuration Service read a single-tenant DMS makes. A multi-tenant DMS also reads `GET /v3/tenants/`, which is `MapSecuredGet`, so it needs `readonly_access` |
 
+### How a token's scopes are evaluated
+
+A token's `scope` may be one space-delimited string or an array. An array arrives as one
+`scope` claim per element, so the scope policy considers **every** claim whose type is
+exactly `scope`. Each value is split on ASCII space and empty entries are removed. Commas
+and tabs do not separate scopes, and the position of a scope in the token never changes
+the decision.
+
+The policy succeeds when any scope the token holds is any scope the endpoint allows.
+The comparison is exact and case-sensitive: wrong-case and prefix-only values do not match.
+A missing, empty or nonmatching `scope` grants nothing. The service-role policy is
+evaluated independently and still composes with the scope policy (see
+[Endpoint Authorization Model](#endpoint-authorization-model)), so a matching scope does
+not open a route without the required role.
+
+### Claim-set names
+
+A claim-set name must not contain white space or a comma
+(`Claim set name must not contain white spaces or commas.`). The rule is the shared
+`ValidationConstants` rule, applied to application insert and update, claim-set insert,
+update, copy and import, fragment registration (an invalid name is skipped and logged
+while the other claim sets compose), and XML conversion (which fails with its existing
+validation exception). A comma is rejected, never removed. The reason is that the claim
+set's name is the scope in a token, and DMS separates scopes on spaces only. Existing
+comma-containing names are not changed automatically; see the
+[deployment preflight](../../../docs/OPERATIONS.md#deployment-preflight-for-claim-set-names-and-scope-shapes).
+
 ## Endpoint Authorization Model
 
 Scope requirements are applied per HTTP method via extension helpers:
@@ -1399,3 +1466,10 @@ Two roles are configurable via `IdentitySettings`:
 
 - `ConfigServiceRole` — assigned to clients that manage the CMS (admin tooling).
 - `ClientRole` — assigned to DMS clients that consume the CMS (e.g., to retrieve authorization metadata).
+
+Each role is recognized under the claim type configured for the Configuration Service
+(`IdentitySettings:RoleClaimType`), independently of the scope policy. A role alone does
+not open a route without an allowed scope, and a scope alone does not open a route without
+its role. The DMS-side role middleware, which trusts only its own configured
+`JwtAuthentication:RoleClaimType`, is described in
+[Roles and Scopes](../../../docs/ROLES-SCOPES.md#role-claim-type).

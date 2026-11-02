@@ -27,7 +27,7 @@ if grep -qE '=.*CHANGEME' .env; then
   exit 1
 fi
 
-# External network shared by docker-compose.yml and keycloak.yml.
+# External network shared by docker-compose.yml and keycloak.compose.yml.
 docker network inspect dms-sec >/dev/null 2>&1 || docker network create dms-sec
 
 # Self-signed cert for local use if none present (replace with Let's Encrypt on the VM).
@@ -115,7 +115,7 @@ if [ "$starts_dms" = true ] && ! find .bootstrap/ApiSchema -type f -name '*.json
   exit 1
 fi
 
-compose=(docker compose -f docker-compose.yml -f keycloak.yml --env-file .env)
+compose=(docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env)
 if [ "$#" -eq 0 ]; then
   echo "Stopping DMS services before dependency restart/update..."
   "${compose[@]}" stop st-dms mt-dms

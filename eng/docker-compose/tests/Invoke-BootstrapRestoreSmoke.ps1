@@ -1155,7 +1155,7 @@ try {
 
         $imageEnvironmentFile = Join-Path $script:WorkDirectory ".env.smoke-images"
         if ($Wrapper -eq "published") {
-            # published-dms.yml pins the edfialliance/ed-fi-api repository and takes only the tag.
+            # published-dms.compose.yml pins the edfialliance/ed-fi-api repository and takes only the tag.
             $publishedReference = [string]$images.Dms.Tags[-1]
             $publishedTag = $publishedReference.Substring($publishedReference.LastIndexOf(":") + 1)
             $forwarded = Write-RestoreSmokeImageEnvironmentFile -BaseEnvironmentFile $script:BaseEnvironmentFile -TargetPath $imageEnvironmentFile `

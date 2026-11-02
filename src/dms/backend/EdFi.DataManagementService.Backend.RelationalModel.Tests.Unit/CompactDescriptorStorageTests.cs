@@ -60,11 +60,24 @@ public class Given_A_Compact_Descriptor_Root(SqlDialect dialect)
             .Should()
             .ContainSingle()
             .Subject;
-        documentFk.Columns.Select(column => column.Value).Should().Equal("DocumentId");
+        documentFk.Name.Should().Be("FK_Descriptor_DocumentResourceKey");
+        documentFk.Columns.Select(column => column.Value).Should().Equal("DocumentId", "ResourceKeyId");
         documentFk.TargetTable.Should().Be(new DbTableName(new("dms"), "Document"));
-        documentFk.TargetColumns.Select(column => column.Value).Should().Equal("DocumentId");
+        documentFk.TargetColumns.Select(column => column.Value).Should().Equal("DocumentId", "ResourceKeyId");
         documentFk.OnDelete.Should().Be(ReferentialAction.Restrict);
-        root.Columns.Select(column => column.ColumnName.Value).Should().NotContain("Uri", "Discriminator");
+        var resourceKeyId = root.Columns.Single(column => column.ColumnName.Value == "ResourceKeyId");
+        resourceKeyId.Kind.Should().Be(ColumnKind.Scalar);
+        resourceKeyId.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int16));
+        resourceKeyId.IsNullable.Should().BeFalse();
+        resourceKeyId.SourceJsonPath.Should().BeNull();
+        resourceKeyId.Storage.Should().BeOfType<ColumnStorage.Stored>();
+        root.Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .NotContain(["Uri", "UriLowered", "Discriminator"]);
+        root.Constraints.OfType<TableConstraint.ForeignKey>()
+            .Select(constraint => constraint.Name)
+            .Should()
+            .NotContain(["FK_Descriptor_Document", "FK_Descriptor_ResourceKey"]);
     }
 
     [Test]
@@ -109,6 +122,34 @@ public class Given_A_Compact_Descriptor_Root(SqlDialect dialect)
                 .GetValue<string>()
                 .Should()
                 .Be("Int64");
+            var resourceKeyId = columns.Single(column =>
+                column!["name"]!.GetValue<string>() == "ResourceKeyId"
+            )!;
+            resourceKeyId["type"]!["kind"]!.GetValue<string>().Should().Be("Int16");
+            resourceKeyId["is_nullable"]!.GetValue<bool>().Should().BeFalse();
+
+            var foreignKeys = sharedTable["constraints"]!
+                .AsArray()
+                .Where(constraint => constraint!["kind"]!.GetValue<string>() == "ForeignKey")
+                .ToArray();
+            var documentFk = foreignKeys.Should().ContainSingle().Subject!;
+            documentFk["name"]!.GetValue<string>().Should().Be("FK_Descriptor_DocumentResourceKey");
+            documentFk["columns"]!
+                .AsArray()
+                .Select(column => column!.GetValue<string>())
+                .Should()
+                .Equal("DocumentId", "ResourceKeyId");
+            documentFk["target_columns"]!
+                .AsArray()
+                .Select(column => column!.GetValue<string>())
+                .Should()
+                .Equal("DocumentId", "ResourceKeyId");
+            documentFk["on_delete"]!.GetValue<string>().Should().Be("Restrict");
+            sharedTable["constraints"]!
+                .AsArray()
+                .Select(constraint => constraint!["name"]!.GetValue<string>())
+                .Should()
+                .NotContain(["FK_Descriptor_Document", "FK_Descriptor_ResourceKey"]);
         }
     }
 }

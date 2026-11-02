@@ -77,7 +77,10 @@ public class ServiceClaimAuthorizationMiddlewareTests
                 EducationOrganizationIds: [],
                 NamespacePrefixes: [],
                 DataStoreIds: []
-            ),
+            )
+            {
+                ScopeValues = [claimSetName],
+            },
         };
     }
 
@@ -595,11 +598,11 @@ public class ServiceClaimAuthorizationMiddlewareTests
     public class Given_The_Claim_Set_Lookup_Is_Cancelled
     {
         [Test]
-        public void It_lets_the_cancellation_propagate()
+        public async Task It_lets_the_cancellation_propagate()
         {
             var claimSetProvider = A.Fake<IClaimSetProvider>();
             using var cts = new CancellationTokenSource();
-            cts.Cancel();
+            await cts.CancelAsync();
             A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
                 .Throws(new OperationCanceledException(cts.Token));
             RequestInfo requestInfo = CreateRequestInfo(IdentityOperation.Create);
@@ -608,7 +611,309 @@ public class ServiceClaimAuthorizationMiddlewareTests
             Func<Task> act = async () =>
                 await CreateMiddleware(claimSetProvider).Execute(requestInfo, TestHelper.NullNext);
 
-            act.Should().ThrowAsync<OperationCanceledException>();
+            await act.Should().ThrowAsync<OperationCanceledException>();
+        }
+    }
+
+    private static ClaimSet IdentityClaimSet(string name, string action = "Create") =>
+        new(
+            name,
+            [IdentityResourceClaim(action, AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired)]
+        );
+
+    /// <summary>
+    /// An identity request whose authorizations carry '|'-separated scope values, shaped as JWT
+    /// extraction produces them: the claim-set name is set only for one distinct scope value.
+    /// </summary>
+    private static RequestInfo CreateScopedRequestInfo(
+        string scopeValueList,
+        string traceId = "service-claim-authorization",
+        string tenant = Tenant
+    )
+    {
+        string[] scopeValues = scopeValueList.Split('|');
+        RequestInfo requestInfo = CreateRequestInfo(
+            IdentityOperation.Create,
+            claimSetName: scopeValues.Length == 1 ? scopeValues[0] : "",
+            traceId: traceId
+        );
+        requestInfo.FrontendRequest = requestInfo.FrontendRequest with { Tenant = tenant };
+        requestInfo.ClientAuthorizations = requestInfo.ClientAuthorizations with
+        {
+            ScopeValues = scopeValues,
+        };
+        return requestInfo;
+    }
+
+    private static async Task<int> ExecuteCountingContinuations(
+        ServiceClaimAuthorizationMiddleware middleware,
+        RequestInfo requestInfo
+    )
+    {
+        int continuations = 0;
+        await middleware.Execute(
+            requestInfo,
+            () =>
+            {
+                continuations++;
+                return Task.CompletedTask;
+            }
+        );
+        return continuations;
+    }
+
+    private static string[] Errors(RequestInfo requestInfo) =>
+        [.. requestInfo.FrontendResponse.Body!["errors"]!.AsArray().Select(node => node!.GetValue<string>())];
+
+    [TestFixture("Alpha|profile")]
+    [TestFixture("profile|Alpha")]
+    [Parallelizable]
+    public class Given_Scope_Values_That_Identify_One_Claim_Set(string scopeValueList)
+    {
+        private IClaimSetProvider _claimSetProvider = null!;
+        private RequestInfo _requestInfo = null!;
+        private ClientAuthorizations _authenticatedAuthorizations = null!;
+        private int _continuations;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Beta also grants the identity claim, but it is not in the token.
+            _claimSetProvider = CreateProvider(IdentityClaimSet("Alpha"), IdentityClaimSet("Beta"));
+            _requestInfo = CreateScopedRequestInfo(scopeValueList);
+            _authenticatedAuthorizations = _requestInfo.ClientAuthorizations;
+
+            _continuations = await ExecuteCountingContinuations(
+                CreateMiddleware(_claimSetProvider),
+                _requestInfo
+            );
+        }
+
+        [Test]
+        public void It_continues_the_protected_work_once()
+        {
+            _continuations.Should().Be(1);
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_puts_the_selected_name_on_a_request_local_copy()
+        {
+            _requestInfo.ClientAuthorizations.ClaimSetName.Should().Be("Alpha");
+            _requestInfo.ClientAuthorizations.Should().NotBeSameAs(_authenticatedAuthorizations);
+            _authenticatedAuthorizations.ClaimSetName.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_reads_the_claim_set_metadata_once() =>
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(Tenant, A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Scope_Values_Whose_Selected_Claim_Set_Lacks_The_Identity_Grant
+    {
+        private RequestInfo _requestInfo = null!;
+        private int _continuations;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Alpha is selected and grants only Read; Beta grants Create but is not in the token.
+            IClaimSetProvider claimSetProvider = CreateProvider(
+                IdentityClaimSet("Alpha", "Read"),
+                IdentityClaimSet("Beta", "Create")
+            );
+            _requestInfo = CreateScopedRequestInfo("profile|Alpha");
+
+            _continuations = await ExecuteCountingContinuations(
+                CreateMiddleware(claimSetProvider),
+                _requestInfo
+            );
+        }
+
+        [Test]
+        public void It_is_forbidden_with_the_existing_envelope()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            Errors(_requestInfo).Should().BeEmpty();
+            _requestInfo.ClientAuthorizations.ClaimSetName.Should().Be("Alpha");
+        }
+
+        [Test]
+        public void It_does_not_continue() => _continuations.Should().Be(0);
+    }
+
+    [TestFixture("Alpha|Beta")]
+    [TestFixture("Beta|Alpha")]
+    [TestFixture("profile|Beta|Alpha")]
+    [Parallelizable]
+    public class Given_Scope_Values_That_Identify_Two_Claim_Sets(string scopeValueList)
+    {
+        private IClaimSetProvider _claimSetProvider = null!;
+        private RecordingLogger<ServiceClaimAuthorizationMiddleware> _logger = null!;
+        private RequestInfo _requestInfo = null!;
+        private int _continuations;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _claimSetProvider = CreateProvider(IdentityClaimSet("Alpha"), IdentityClaimSet("Beta"));
+            _logger = new RecordingLogger<ServiceClaimAuthorizationMiddleware>();
+            _requestInfo = CreateScopedRequestInfo(scopeValueList);
+
+            _continuations = await ExecuteCountingContinuations(
+                CreateMiddleware(_claimSetProvider, _logger),
+                _requestInfo
+            );
+        }
+
+        [Test]
+        public void It_returns_403_with_the_generic_ambiguity_error()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+            _requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+            Errors(_requestInfo).Should().Equal("The token identifies multiple claim sets.");
+        }
+
+        [Test]
+        public void It_does_not_continue() => _continuations.Should().Be(0);
+
+        [Test]
+        public void It_selects_no_claim_set_name() =>
+            _requestInfo.ClientAuthorizations.ClaimSetName.Should().BeEmpty();
+
+        [Test]
+        public void It_reads_the_claim_set_metadata_once() =>
+            A.CallTo(() => _claimSetProvider.GetAllClaimSets(Tenant, A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_logs_the_scope_values_for_diagnosis() =>
+            _logger
+                .Records.Should()
+                .ContainSingle(record =>
+                    record.Message.Contains("multiple claim sets")
+                    && Equals(record.Properties["Scope"], scopeValueList.Replace('|', ' '))
+                );
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Scope_Values_That_Match_No_Claim_Set
+    {
+        private RequestInfo _requestInfo = null!;
+        private RecordingLogger<ServiceClaimAuthorizationMiddleware> _logger = null!;
+        private int _continuations;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IClaimSetProvider claimSetProvider = CreateProvider(IdentityClaimSet("Alpha"));
+            _logger = new RecordingLogger<ServiceClaimAuthorizationMiddleware>();
+            _requestInfo = CreateScopedRequestInfo("pro\r\nfile|Gamma");
+
+            _continuations = await ExecuteCountingContinuations(
+                CreateMiddleware(claimSetProvider, _logger),
+                _requestInfo
+            );
+        }
+
+        [Test]
+        public void It_keeps_the_existing_forbidden_response()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            Errors(_requestInfo).Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_does_not_continue() => _continuations.Should().Be(0);
+
+        [Test]
+        public void It_logs_all_unmatched_scope_values() =>
+            _logger
+                .Records.Should()
+                .ContainSingle(record =>
+                    record.Message.Contains("No ClaimSet matching Scope")
+                    && Equals(record.Properties["Scope"], "profile Gamma")
+                );
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Duplicate_Matching_Claim_Set_Metadata
+    {
+        private RecordingLogger<ServiceClaimAuthorizationMiddleware> _logger = null!;
+        private RequestInfo _requestInfo = null!;
+        private int _continuations;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IClaimSetProvider claimSetProvider = CreateProvider(
+                IdentityClaimSet("Alpha"),
+                IdentityClaimSet("alpha")
+            );
+            _logger = new RecordingLogger<ServiceClaimAuthorizationMiddleware>();
+            _requestInfo = CreateScopedRequestInfo("Alpha", traceId: "trace\r\nid", tenant: "Tenant\r\nA");
+
+            _continuations = await ExecuteCountingContinuations(
+                CreateMiddleware(claimSetProvider, _logger),
+                _requestInfo
+            );
+        }
+
+        [Test]
+        public void It_returns_a_security_configuration_500()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+            _requestInfo.FrontendResponse.Body!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:system:configuration:security");
+            Errors(_requestInfo).Should().Equal("The security metadata contains duplicate claim-set names.");
+        }
+
+        [Test]
+        public void It_does_not_continue() => _continuations.Should().Be(0);
+
+        [Test]
+        public void It_logs_duplicate_names_with_sanitized_request_context()
+        {
+            LogRecord record = _logger.Records.Should().ContainSingle(r => r.Level == LogLevel.Error).Subject;
+            record.Message.Should().Contain("duplicate claim-set names");
+            record.Properties["DuplicateNames"].Should().Be("Alpha alpha");
+            record.Properties["Tenant"].Should().Be("TenantA");
+            record.Properties["CorrelationId"].Should().Be("traceid");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Claim_Set_Lookup_Fails_For_Multiple_Scope_Values
+    {
+        private Func<Task> _act = null!;
+        private RequestInfo _requestInfo = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var claimSetProvider = A.Fake<IClaimSetProvider>();
+            A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>._, A<CancellationToken>._))
+                .Throws(new InvalidOperationException("simulated failure"));
+            _requestInfo = CreateScopedRequestInfo("Alpha|Beta");
+
+            _act = () => CreateMiddleware(claimSetProvider).Execute(_requestInfo, TestHelper.NullNext);
+        }
+
+        [Test]
+        public async Task It_lets_the_failure_propagate_instead_of_a_no_match_or_ambiguity_response()
+        {
+            await _act.Should().ThrowAsync<InvalidOperationException>();
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
         }
     }
 }

@@ -11,8 +11,8 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 /// <summary>
-/// Verifies that the synthesized change-version mirror columns (<c>ContentVersion</c> and
-/// <c>ContentLastModifiedAt</c>) are excluded from client-writable projections and generated DML.
+/// Verifies that the synthesized change-version mirror columns (<c>ContentVersion</c>,
+/// <c>ContentLastModifiedAt</c> and <c>ContentCreatedAt</c>) are excluded from client-writable projections and generated DML.
 /// They are non-writable stored columns maintained only by document-stamping triggers.
 /// </summary>
 [TestFixture]
@@ -48,6 +48,17 @@ public class Given_WritePlanCompiler_ContentVersionMirrorColumns : WritePlanComp
                 {
                     IsWritable = false,
                 },
+                new DbColumnModel(
+                    ColumnName: new DbColumnName("ContentCreatedAt"),
+                    Kind: ColumnKind.AuthoritativeContentCreatedAt,
+                    ScalarType: new RelationalScalarType(ScalarKind.DateTime),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                )
+                {
+                    IsWritable = false,
+                },
             ],
         };
 
@@ -70,7 +81,8 @@ public class Given_WritePlanCompiler_ContentVersionMirrorColumns : WritePlanComp
             .ColumnBindings.Select(binding => binding.Column.ColumnName.Value)
             .Should()
             .NotContain("ContentVersion")
-            .And.NotContain("ContentLastModifiedAt");
+            .And.NotContain("ContentLastModifiedAt")
+            .And.NotContain("ContentCreatedAt");
     }
 
     [TestCase(SqlDialect.Pgsql)]
@@ -81,9 +93,17 @@ public class Given_WritePlanCompiler_ContentVersionMirrorColumns : WritePlanComp
             .Compile(CreateModelWithMirrorColumns())
             .TablePlansInDependencyOrder.Single();
 
-        tablePlan.InsertSql.Should().NotContain("ContentVersion").And.NotContain("ContentLastModifiedAt");
+        tablePlan
+            .InsertSql.Should()
+            .NotContain("ContentVersion")
+            .And.NotContain("ContentLastModifiedAt")
+            .And.NotContain("ContentCreatedAt");
 
         tablePlan.UpdateSql.Should().NotBeNull();
-        tablePlan.UpdateSql!.Should().NotContain("ContentVersion").And.NotContain("ContentLastModifiedAt");
+        tablePlan
+            .UpdateSql!.Should()
+            .NotContain("ContentVersion")
+            .And.NotContain("ContentLastModifiedAt")
+            .And.NotContain("ContentCreatedAt");
     }
 }

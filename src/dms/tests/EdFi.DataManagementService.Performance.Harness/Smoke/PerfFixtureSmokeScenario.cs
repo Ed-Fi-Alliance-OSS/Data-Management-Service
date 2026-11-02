@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.Performance.Harness.Smoke;
 /// carrying the fixture's full child-collection and descriptor shape — and one control
 /// descriptor are POSTed through the real HTTP pipeline after the load, and the loader rows
 /// must match their row shapes across dms.Document, edfi.Student, the four child collection
-/// tables, dms.Descriptor, dms.ReferentialIdentity, and the tracked-change side effects —
+/// tables, dms.Descriptor, and the tracked-change side effects —
 /// including producing exactly as many insert-time tracked-change rows per document as the
 /// POST does (expected: none). Real GET-many and GET-by-id requests must then hydrate loader
 /// rows with correct bodies, including non-empty child collections and resolved descriptor
@@ -48,12 +48,6 @@ internal static class PerfFixtureSmokeScenario
     private const string StudentRowSql = """
         SELECT "StudentUniqueId", "FirstName", "LastSurname", "BirthDate", "BirthCity", "ContentVersion", "BirthSexDescriptor_DescriptorId"
         FROM "edfi"."Student"
-        WHERE "DocumentId" = @documentId;
-        """;
-
-    private const string ReferentialIdentityRowsSql = """
-        SELECT "ReferentialId", "ResourceKeyId"
-        FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = @documentId;
         """;
 
@@ -251,32 +245,11 @@ internal static class PerfFixtureSmokeScenario
                 .Equal(controlSignatures, $"loader {table} rows must match the production POST's row shape");
         }
 
-        // Validate the independent uuidv5 formula against the control row the production
-        // write path produced, then hold loader rows to it.
-        await AssertReferentialIdentityAsync(
-            connection,
-            control.DocumentId,
-            control.ResourceKeyId,
-            "control-000000001"
-        );
-        await AssertReferentialIdentityAsync(
-            connection,
-            loaderFirst.DocumentId,
-            control.ResourceKeyId,
-            PerfFixtureDefinition.StudentUniqueIdFor(1)
-        );
-
         DocumentRow loaderLast = await ReadDocumentRowAsync(
             connection,
             PerfFixtureDefinition.DocumentUuidFor(definition.RowCount)
         );
         loaderLast.DocumentId.Should().Be(definition.MaxDocumentId);
-        await AssertReferentialIdentityAsync(
-            connection,
-            loaderLast.DocumentId,
-            control.ResourceKeyId,
-            PerfFixtureDefinition.StudentUniqueIdFor(definition.RowCount)
-        );
 
         await AssertControlDescriptorParityAsync(
             harness,
@@ -356,7 +329,7 @@ internal static class PerfFixtureSmokeScenario
     /// <summary>
     /// POSTs one control VisaDescriptor through the production descriptor write path and
     /// holds the loader's VisaDescriptor rows to its shape: dms.Document metadata, the
-    /// dms.Descriptor row semantics, referential-identity row count, and tracked-change accounting.
+    /// dms.Descriptor row semantics and tracked-change accounting.
     /// </summary>
     private static async Task AssertControlDescriptorParityAsync(
         ApiIntegrationHarness harness,
@@ -446,58 +419,6 @@ internal static class PerfFixtureSmokeScenario
                 "the descriptor stamp trigger must mirror the document version"
             );
         controlDescriptor.ContentVersion.Should().Be(controlDocument.ContentVersion);
-
-        // Validate the independent descriptor referential-id formula against the control
-        // row the production write path produced, then hold the loader row to it.
-        await AssertDescriptorReferentialIdentityAsync(
-            connection,
-            controlDocument.DocumentId,
-            controlDescriptor.ResourceKeyId,
-            controlDescriptor.Uri
-        );
-        await AssertDescriptorReferentialIdentityAsync(
-            connection,
-            loaderDescriptorDocumentId,
-            loaderDescriptor.ResourceKeyId,
-            loaderDescriptor.Uri
-        );
-    }
-
-    private static async Task AssertDescriptorReferentialIdentityAsync(
-        DbConnection connection,
-        long documentId,
-        long expectedResourceKeyId,
-        string uri
-    )
-    {
-        await using DbCommand command = connection.CreateCommand();
-        command.CommandText = ReferentialIdentityRowsSql;
-        AddParameter(command, "documentId", documentId);
-
-        List<(Guid ReferentialId, long ResourceKeyId)> rows = [];
-        await using (DbDataReader reader = await command.ExecuteReaderAsync())
-        {
-            while (await reader.ReadAsync())
-            {
-                rows.Add(
-                    (reader.GetGuid(0), Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture))
-                );
-            }
-        }
-
-        (Guid referentialId, long resourceKeyId) = rows.Should()
-            .ContainSingle($"descriptor document {documentId} must carry exactly one referential identity")
-            .Subject;
-        resourceKeyId.Should().Be(expectedResourceKeyId);
-        referentialId
-            .Should()
-            .Be(
-                ReferentialIdentityDerivation.DescriptorReferentialId(
-                    PerfFixtureDefinition.VisaDescriptorResource,
-                    uri
-                ),
-                $"the referential id for '{uri}' must match the independent uuidv5 derivation"
-            );
     }
 
     private static async Task AssertFirstPageAsync(ApiIntegrationHarness harness)
@@ -605,40 +526,6 @@ internal static class PerfFixtureSmokeScenario
         string body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
         return JsonNode.Parse(body)!.AsArray();
-    }
-
-    private static async Task AssertReferentialIdentityAsync(
-        DbConnection connection,
-        long documentId,
-        long expectedResourceKeyId,
-        string studentUniqueId
-    )
-    {
-        await using DbCommand command = connection.CreateCommand();
-        command.CommandText = ReferentialIdentityRowsSql;
-        AddParameter(command, "documentId", documentId);
-
-        List<(Guid ReferentialId, long ResourceKeyId)> rows = [];
-        await using (DbDataReader reader = await command.ExecuteReaderAsync())
-        {
-            while (await reader.ReadAsync())
-            {
-                rows.Add(
-                    (reader.GetGuid(0), Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture))
-                );
-            }
-        }
-
-        (Guid referentialId, long resourceKeyId) = rows.Should()
-            .ContainSingle($"document {documentId} must carry exactly one referential identity")
-            .Subject;
-        resourceKeyId.Should().Be(expectedResourceKeyId);
-        referentialId
-            .Should()
-            .Be(
-                ReferentialIdentityDerivation.StudentReferentialId(studentUniqueId),
-                $"the referential id for '{studentUniqueId}' must match the independent uuidv5 derivation"
-            );
     }
 
     private static async Task<long> CountAsync(DbConnection connection, string sql, long? documentId = null)

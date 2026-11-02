@@ -462,7 +462,7 @@ public partial class ApplicationModuleTests
                   "correlationId": "{correlationId}",
                   "validationErrors": {
                     "ClaimSetName": [
-                      "Claim set name must not contain white spaces."
+                      "Claim set name must not contain white spaces or commas."
                     ]
                   },
                   "errors": []
@@ -525,6 +525,109 @@ public partial class ApplicationModuleTests
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
+    }
+
+    [TestFixture("Alpha,Beta")]
+    [TestFixture(",Alpha")]
+    [TestFixture("Alpha,")]
+    [TestFixture(",")]
+    public class Given_application_requests_with_a_comma_in_the_claim_set_name(string claimSetName)
+        : ApplicationModuleTests
+    {
+        private HttpResponseMessage _insertResponse = null!;
+        private HttpResponseMessage _updateResponse = null!;
+        private List<string> _dependencyCalls = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _dependencyCalls = [];
+            A.CallTo(_lockManager).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_apiClientRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_clientRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_vendorRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_dataStoreRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_profileRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+
+            using var client = SetUpClient();
+            _insertResponse = await client.PostAsync(
+                "/v3/applications",
+                new StringContent(
+                    $$"""
+                    {
+                        "ApplicationName": "Application101",
+                        "ClaimSetName": "{{claimSetName}}",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [255901],
+                        "DataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            _updateResponse = await client.PutAsync(
+                "/v3/applications/1",
+                new StringContent(
+                    $$"""
+                    {
+                        "Id": 1,
+                        "ApplicationName": "Application101",
+                        "ClaimSetName": "{{claimSetName}}",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [255901],
+                        "DataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        [TearDown]
+        public void TearDownResponses()
+        {
+            _insertResponse?.Dispose();
+            _updateResponse?.Dispose();
+        }
+
+        private static async Task AssertSharedValidationContract(HttpResponseMessage response)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode actual = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+            JsonNode expected = JsonNode.Parse(
+                $$"""
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{{actual["correlationId"]!.GetValue<string>()}}",
+                  "validationErrors": {
+                    "ClaimSetName": [
+                      "Claim set name must not contain white spaces or commas."
+                    ]
+                  },
+                  "errors": []
+                }
+                """
+            )!;
+            JsonNode.DeepEquals(actual, expected).Should().BeTrue();
+        }
+
+        [Test]
+        public async Task It_rejects_the_insert_with_the_shared_validation_error() =>
+            await AssertSharedValidationContract(_insertResponse);
+
+        [Test]
+        public async Task It_rejects_the_update_with_the_shared_validation_error() =>
+            await AssertSharedValidationContract(_updateResponse);
+
+        [Test]
+        public void It_calls_no_repository_lock_or_identity_provider_dependency() =>
+            _dependencyCalls.Should().BeEmpty();
     }
 
     /// <summary>

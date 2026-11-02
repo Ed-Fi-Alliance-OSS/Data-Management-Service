@@ -73,7 +73,7 @@ function Start-DmsSamplerSet {
 
         [string[]] $StatsContainers = @('ed-fi-api-config-service', 'dms-postgresql'),
 
-        # dotnet-monitor sidecar (local-config-diagnostics.yml); '' disables livemetrics.
+        # dotnet-monitor sidecar (local-config-diagnostics.compose.yml); '' disables livemetrics.
         [string] $MonitorBaseUrl = 'http://localhost:52323',
 
         # Fail instead of skipping when the sidecar or its single process is unavailable.

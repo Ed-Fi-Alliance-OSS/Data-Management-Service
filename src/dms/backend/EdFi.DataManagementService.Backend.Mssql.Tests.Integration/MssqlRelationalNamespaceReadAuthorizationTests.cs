@@ -545,8 +545,6 @@ public class Given_A_Mssql_Relational_Namespace_Read_Authorization_With_A_Synthe
 
             DELETE FROM [authz].[AuthorizationNamespaceResource] WHERE [DocumentId] = @documentId;
 
-            DELETE FROM [dms].[ReferentialIdentity] WHERE [DocumentId] = @documentId;
-
             DELETE FROM [dms].[Document] WHERE [DocumentId] = @documentId;
             """,
             new SqlParameter("@documentUuid", seed.DocumentUuid.Value)

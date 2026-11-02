@@ -637,7 +637,7 @@ public class WebApplicationBuilderExtensionsTests
             scope
                 .ServiceProvider.GetRequiredService<IReferenceResolver>()
                 .Should()
-                .BeOfType<ReferenceResolver>();
+                .BeOfType<NaturalKeyReferenceResolver>();
             scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteFlattener>()
                 .Should()
@@ -655,10 +655,6 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<RelationalWriteTargetLookupService>();
             scope
-                .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>()
-                .Should()
-                .BeOfType<RelationalWriteTargetLookupResolver>();
-            scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteExecutor>()
                 .Should()
                 .BeOfType<DefaultRelationalWriteExecutor>();
@@ -671,13 +667,9 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<PostgresqlDocumentHydrator>();
             scope
-                .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
+                .ServiceProvider.GetRequiredService<INaturalKeyLookupCommandBuilder>()
                 .Should()
-                .BeOfType<PostgresqlReferenceResolverAdapterFactory>();
-            scope
-                .ServiceProvider.GetRequiredService<IReferenceResolverAdapter>()
-                .Should()
-                .BeOfType<PostgresqlReferenceResolverAdapter>();
+                .BeOfType<PostgresqlNaturalKeyLookupCommandBuilder>();
             scope
                 .ServiceProvider.GetRequiredService<IRelationalCommandExecutor>()
                 .Should()
@@ -891,7 +883,7 @@ public class WebApplicationBuilderExtensionsTests
             scope
                 .ServiceProvider.GetRequiredService<IReferenceResolver>()
                 .Should()
-                .BeOfType<ReferenceResolver>();
+                .BeOfType<NaturalKeyReferenceResolver>();
             scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteFlattener>()
                 .Should()
@@ -909,10 +901,6 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .BeOfType<RelationalWriteTargetLookupService>();
             scope
-                .ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>()
-                .Should()
-                .BeOfType<RelationalWriteTargetLookupResolver>();
-            scope
                 .ServiceProvider.GetRequiredService<IRelationalWriteExecutor>()
                 .Should()
                 .BeOfType<DefaultRelationalWriteExecutor>();
@@ -927,16 +915,10 @@ public class WebApplicationBuilderExtensionsTests
                 .Should()
                 .Match<IDocumentHydrator>(hydrator => hydrator.GetType().Name == "MssqlDocumentHydrator");
             scope
-                .ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>()
+                .ServiceProvider.GetRequiredService<INaturalKeyLookupCommandBuilder>()
                 .Should()
-                .Match<IReferenceResolverAdapterFactory>(factory =>
-                    factory.GetType().Name == "MssqlReferenceResolverAdapterFactory"
-                );
-            scope
-                .ServiceProvider.GetRequiredService<IReferenceResolverAdapter>()
-                .Should()
-                .Match<IReferenceResolverAdapter>(adapter =>
-                    adapter.GetType().Name == "MssqlReferenceResolverAdapter"
+                .Match<INaturalKeyLookupCommandBuilder>(builder =>
+                    builder.GetType().Name == "MssqlNaturalKeyLookupCommandBuilder"
                 );
             scope
                 .ServiceProvider.GetRequiredService<IRelationalCommandExecutor>()

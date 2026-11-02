@@ -20,7 +20,7 @@ param (
 
 $files = @(
     "-f",
-    "keycloak.yml"
+    "keycloak.compose.yml"
 )
 
 if ($d) {

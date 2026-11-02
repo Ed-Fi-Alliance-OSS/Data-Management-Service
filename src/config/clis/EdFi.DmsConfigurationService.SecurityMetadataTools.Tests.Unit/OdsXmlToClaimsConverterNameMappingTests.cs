@@ -150,6 +150,30 @@ public class Given_a_claim_set_name_with_remaining_unicode_whitespace(string sou
     }
 }
 
+[TestFixture("Alpha,Beta")]
+[TestFixture(",Alpha")]
+[TestFixture("Alpha,")]
+[TestFixture(",")]
+[TestFixture("District, Reader")]
+public class Given_a_claim_set_name_containing_a_comma(string sourceName)
+{
+    private Action _convert = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        XDocument document = NameMappingExport.Document(NameMappingExport.Claim("resource", sourceName));
+        _convert = () => OdsXmlToClaimsConverter.Convert(document);
+    }
+
+    [Test]
+    public void It_rejects_the_name_with_the_source_name_and_does_not_strip_the_comma()
+    {
+        string message = _convert.Should().Throw<InvalidOperationException>().Which.Message;
+        message.Should().Contain($"\"{sourceName}\"").And.Contain("whitespace").And.Contain("comma");
+    }
+}
+
 [TestFixture]
 public class Given_a_normalized_claim_set_name_longer_than_256_characters
 {

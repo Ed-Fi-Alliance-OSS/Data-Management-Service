@@ -294,7 +294,7 @@ Describe "Get-E2ETestEnvironmentContext resolves the E2E database name with Comp
     # DMS-1527: the restamp harness copies the API schema out of the DMS container and stops/starts
     # it by name, so the context has to hand the test process the name Compose actually created.
     # Taking it from Get-E2EStartupPhasePlan keeps one decision point for the Docker phases and the
-    # test process; published-dms.yml sets no container_name, so the two modes disagree.
+    # test process; published-dms.compose.yml sets no container_name, so the two modes disagree.
     It "carries the <Label> DMS container name from the startup phase plan" -ForEach @(
         @{ Label = "local-image"; Published = $false; Expected = "ed-fi-api" }
         @{ Label = "published-image"; Published = $true; Expected = "dms-published-dms-1" }
@@ -355,7 +355,7 @@ Describe "DocumentCache hosted E2E environment isolation" {
 
     It "keeps the shared E2E environment free of a configured DocumentCache target" {
         $baseValues = ReadValuesFromEnvFile (Join-Path $script:dockerComposeRoot ".env.e2e")
-        $localDmsCompose = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "local-dms.yml") -Raw
+        $localDmsCompose = Get-Content -LiteralPath (Join-Path $script:dockerComposeRoot "local-dms.compose.yml") -Raw
 
         $baseValues.ContainsKey("DMS_DOCUMENTCACHE_TARGET_DATA_STORE_ID") | Should -BeFalse
         $baseValues.ContainsKey("DMS_DOCUMENTCACHE_READ_ACCELERATION_ENABLED") | Should -BeFalse

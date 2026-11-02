@@ -46,7 +46,7 @@
        allowlist empty, which must still reach Ready and emit no inventory event. Absence is only
        evidence against a boot that reached the same state.
 
-    4. Recipe 2: the committed eng/docker-compose/plugins-fetch-dms.yml, run unedited, fetching the
+    4. Recipe 2: the committed eng/docker-compose/plugins-fetch-dms.compose.yml, run unedited, fetching the
        package over HTTP from a digest-pinned static-file container in a test-owned overlay. Then a
        third, fresh deployment with a deliberately wrong digest, where the fetch must fail on the
        checksum comparison specifically and the DMS container must never start.
@@ -218,7 +218,7 @@ function New-DeploymentEnvironmentFile {
     $lines.Add("# Per-run values for this deployment.")
 
     # The image Phase 1 built from the current source and read the assembly versions out of.
-    # local-dms.yml already reads this setting and falls back to ed-fi-api-local, which Compose builds
+    # local-dms.compose.yml already reads this setting and falls back to ed-fi-api-local, which Compose builds
     # only when absent and otherwise reuses from whenever it was last built. Pinning here is what makes
     # the stamping proof and the deployment proof statements about one artifact rather than two.
     $lines.Add("DMS_DOCKER_IMAGE=local/ed-fi-api")
@@ -387,7 +387,7 @@ function Get-DmsLog {
 # The image an image reference currently resolves to, and the image a container actually ran. These
 # are separate facts and the whole point of recording them: build-dms.ps1 DockerBuild tags
 # local/ed-fi-api, while Compose builds ed-fi-api-local from the same Dockerfile through
-# local-dms.yml. Without the ids, the assembly versions asserted in Phase 1 and the deployments below
+# local-dms.compose.yml. Without the ids, the assembly versions asserted in Phase 1 and the deployments below
 # are claims about two artifacts nothing ties together.
 function Get-ImageId([string]$reference) {
     $id = & docker image inspect $reference --format '{{.Id}}' 2>$null
@@ -608,7 +608,7 @@ function Invoke-ImageVersionProof {
         (-not [string]::IsNullOrWhiteSpace($probedImageId)) `
         "the assemblies above were read out of image local/ed-fi-api $probedImageId"
 
-    # The tag local-dms.yml would select on its own, recorded rather than used. Compose builds it
+    # The tag local-dms.compose.yml would select on its own, recorded rather than used. Compose builds it
     # only when it is absent and silently reuses it when it is not, so a machine that has run this
     # before carries one built from whatever the source said then. The deployments below are pinned
     # away from it through DMS_DOCKER_IMAGE, and this is the value that makes the pin checkable: if
@@ -1012,7 +1012,7 @@ $packageDirectory = Join-Path $feedRoot "$($pluginName.ToLowerInvariant())/$pack
 New-PluginPackage -Destination $packageDirectory -Version $packageVersion
 
 $acquisitionOverlay = "plugins-dms.yml"
-$fetchOverlay = "plugins-fetch-dms.yml"
+$fetchOverlay = "plugins-fetch-dms.compose.yml"
 $allowedOverlay = "tests/plugin-deployment/plugins-allowed-dms.yml"
 $feedOverlay = "tests/plugin-deployment/plugins-feed-dms.yml"
 $packageUrl = "http://plugin-feed:8080/$($pluginName.ToLowerInvariant())/$packageVersion/$($script:package.fileName)"

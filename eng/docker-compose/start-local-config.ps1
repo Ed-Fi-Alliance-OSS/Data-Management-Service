@@ -36,7 +36,7 @@ Import-Module (Join-Path $PSScriptRoot "env-utility.psm1") -Force
 Write-LegacyEnvironmentVariableWarning -EnvironmentFile $EnvironmentFile
 $envValues = ReadValuesFromEnvFile $EnvironmentFile
 $datastore = if ($envValues["CONFIGURATION_SERVICE_DATASTORE"]) { $envValues["CONFIGURATION_SERVICE_DATASTORE"] } else { "postgresql" }
-$databaseComposeFile = if ($datastore -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
+$databaseComposeFile = if ($datastore -eq "mssql") { "mssql.compose.yml" } else { "postgresql.compose.yml" }
 $useMssqlTmpfs = [string]::Equals(
     (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "MSSQL_USE_TMPFS" -DefaultValue "false"),
     "true",
@@ -72,9 +72,9 @@ if ($useMssqlTmpfs -and $datastore -eq "mssql") {
 
 $files += @(
     "-f",
-    "local-config.yml",
+    "local-config.compose.yml",
     "-f",
-    "keycloak.yml"
+    "keycloak.compose.yml"
 )
 
 foreach ($overlayComposeFile in $overlayComposeFiles) {
@@ -202,7 +202,7 @@ try {
         # SQL Server readiness is explicitly polled before the config service starts.
         # This sleep covers Keycloak and config-service warmup before the setup scripts run.
         Start-Sleep 25
-        # The two role names CMS enforces are supported overrides: local-config.yml maps
+        # The two role names CMS enforces are supported overrides: local-config.compose.yml maps
         # IdentitySettings:ConfigServiceRole / :ClientRole from CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE /
         # CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE, and BOTH identity setup scripts -- setup-keycloak.ps1 and
         # setup-openiddict.ps1 -InsertData -- fall back to their own cms-client / dms-client defaults when
@@ -234,11 +234,11 @@ try {
         	Write-Output "Starting self-contained initialization script..."
             Write-Output "Init db public and private keys for OpenIddict..."
             $dbType = if ($datastore -eq "mssql") { "MSSQL" } else { "Postgresql" }
-            # POSTGRES_USER is a supported override - postgresql.yml passes ${POSTGRES_USER:-postgres}
+            # POSTGRES_USER is a supported override - postgresql.compose.yml passes ${POSTGRES_USER:-postgres}
             # to the container - so the PostgreSQL superuser is resolved with the same Compose precedence
             # the container saw rather than assumed. The compose file's own fallback is the default here,
             # so an unset override resolves exactly as before. SQL Server has no equivalent override:
-            # mssql.yml authenticates as the fixed sa account.
+            # mssql.compose.yml authenticates as the fixed sa account.
             $dbUser = if ($datastore -eq "mssql") { "sa" } else { Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name "POSTGRES_USER" -DefaultValue "postgres" }
             $dbPort = if ($datastore -eq "mssql") { "ENV:MSSQL_PORT" } else { "ENV:POSTGRES_PORT" }
             ./setup-openiddict.ps1 -InitDb -EnvironmentFile $EnvironmentFile -SkipLegacyEnvironmentVariableWarning -DbType $dbType -DbUser $dbUser -DbPort $dbPort -PostgresContainerName $postgresContainerName -MssqlContainerName $mssqlContainerName

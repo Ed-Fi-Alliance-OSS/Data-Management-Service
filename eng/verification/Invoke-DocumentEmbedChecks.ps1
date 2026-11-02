@@ -56,7 +56,7 @@ $checkedDocument = @(
         Document = "docs/OPERATIONS.md"
         RequiredEmbed = @(
             "eng/docker-compose/plugins-dms.yml",
-            "eng/docker-compose/plugins-fetch-dms.yml",
+            "eng/docker-compose/plugins-fetch-dms.compose.yml",
             "eng/docker-compose/plugins-config.yml"
         )
     }

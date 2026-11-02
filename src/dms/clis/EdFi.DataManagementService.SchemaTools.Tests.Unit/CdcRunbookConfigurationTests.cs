@@ -159,7 +159,9 @@ public partial class Given_Cdc_command_configuration
         _settings["Cdc:SetupPrincipal"].Should().Be(provider == CoreProvider.Postgresql ? "postgres" : "sa");
         _settings["Cdc:Worker:OffsetStorageTopic"].Should().Be("dms-connect-offsets");
         _config.Project.Should().Be("dms-local");
-        _config.ComposeFile.Should().Be(Path.Combine(_root, "runbook/eng/docker-compose/kafka-cdc.yml"));
+        _config
+            .ComposeFile.Should()
+            .Be(Path.Combine(_root, "runbook/eng/docker-compose/kafka-cdc.compose.yml"));
         _config.EnvironmentFile.Should().Be(Path.Combine(_root, "runbook/eng/docker-compose/.env"));
         _config.BrokerSizeOverride.Should().Be(Path.Combine(state, "broker-size.json"));
         _config

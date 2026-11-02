@@ -928,11 +928,11 @@ Describe "Stop-RestoreDatabaseOnlySlice" {
             $postgresqlSet = @(Get-RestoreDatabaseOnlyComposeFile -DatabaseEngine postgresql)
             $postgresqlSet.Count | Should -Be 2
             $postgresqlSet[0] | Should -Be "-f"
-            $postgresqlSet[1] | Should -BeLike "*postgresql.yml"
+            $postgresqlSet[1] | Should -BeLike "*postgresql.compose.yml"
 
             $mssqlSet = @(Get-RestoreDatabaseOnlyComposeFile -DatabaseEngine mssql)
             $mssqlSet.Count | Should -Be 2
-            $mssqlSet[1] | Should -BeLike "*mssql.yml"
+            $mssqlSet[1] | Should -BeLike "*mssql.compose.yml"
 
             # Same condition the start scripts use: the process-environment opt-in, and only on
             # PostgreSQL - SQL Server never gets the tmpfs override.
@@ -947,7 +947,7 @@ Describe "Stop-RestoreDatabaseOnlySlice" {
             $env:POSTGRES_USE_TMPFS = "true"
             foreach ($engine in @("postgresql", "mssql")) {
                 $composeSet = @(Get-RestoreDatabaseOnlyComposeFile -DatabaseEngine $engine) -join " "
-                foreach ($forbidden in @("local-dms.yml", "published-dms.yml", "local-config.yml", "published-config.yml", "bootstrap-dms.yml", "keycloak.yml", "kafka.yml", "swagger-ui.yml")) {
+                foreach ($forbidden in @("local-dms.compose.yml", "published-dms.compose.yml", "local-config.compose.yml", "published-config.compose.yml", "bootstrap-dms.yml", "keycloak.compose.yml", "kafka.compose.yml", "swagger-ui.compose.yml")) {
                     $composeSet | Should -Not -BeLike "*$forbidden*"
                 }
             }
@@ -967,8 +967,8 @@ Describe "Stop-RestoreDatabaseOnlySlice" {
         }
 
         It "stops only the db service with the compose files, the preflight env file, and this run's project (<Project>/<Engine>)" -ForEach @(
-            @{ Project = "dms-local"; Engine = "postgresql"; ExpectedFile = "postgresql.yml" }
-            @{ Project = "dms-published"; Engine = "mssql"; ExpectedFile = "mssql.yml" }
+            @{ Project = "dms-local"; Engine = "postgresql"; ExpectedFile = "postgresql.compose.yml" }
+            @{ Project = "dms-published"; Engine = "mssql"; ExpectedFile = "mssql.compose.yml" }
         ) {
             Stop-RestoreDatabaseOnlySlice `
                 -ProjectName $Project `
@@ -2007,7 +2007,6 @@ Describe "Invoke-RestoreScratchValidation" {
         $stage = New-ScratchStage -Directory $script:scratchRoot
         $global:ScratchPrivilegeRows = @(
             'function|EXECUTE|edfi_dms_enqueue_owner|edfi_dms_enqueue_owner|dms."TF_Document_EnqueueProjectionInsert"()',
-            'function|EXECUTE|postgres|-|dms.uuidv5(namespace_uuid uuid, name_text text)',
             'relation|INSERT|postgres|edfi_dms_enqueue_owner|dms."DocumentProjectionWork"',
             'relation|SELECT|postgres|edfi_dms_enqueue_owner|dms."DocumentCacheState"',
             'relation|SELECT|postgres|postgres|dms."Document"',
@@ -2592,10 +2591,10 @@ exit 0
         $emitArgs.Count | Should -Be 1
         $emitArgs[0] | Should -BeLike "ddl emit --schema C:\candidate\core.json C:\candidate\ext.json --output *expected-ddl-* --dialect pgsql*"
 
-        # The expected database is created, seeded with pgcrypto, replayed, then dropped.
+        # The expected database is created, replayed with no extension bootstrap, then dropped.
         $queries = @($global:DerivationQueryLog)
         @($queries | Where-Object { $_ -like 'CREATE DATABASE "edfi_dms_restore_expected_*' }) | Should -Not -BeNullOrEmpty
-        @($queries | Where-Object { $_ -like "*pgcrypto*" }) | Should -Not -BeNullOrEmpty
+        @($queries | Where-Object { $_ -like "*pgcrypto*" }) | Should -BeNullOrEmpty
         @($queries | Where-Object { $_ -like 'DROP DATABASE IF EXISTS "edfi_dms_restore_expected_*' }) | Should -Not -BeNullOrEmpty
 
         $dockerCalls = @($global:DerivationDockerLog)

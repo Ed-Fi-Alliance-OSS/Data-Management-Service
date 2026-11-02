@@ -20,7 +20,7 @@ param (
 
 $files = @(
     "-f",
-    "postgresql.yml"
+    "postgresql.compose.yml"
 )
 
 if ($d) {

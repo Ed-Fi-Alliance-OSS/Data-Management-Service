@@ -32,7 +32,6 @@ public class Given_A_Provisioned_Postgresql_Database_Document_Safety_Net_Foreign
     [
         "dms.DocumentCache",
         "dms.DocumentProjectionWork",
-        "dms.ReferentialIdentity",
         "edfi.EducationOrganizationIdentity",
         "edfi.GeneralStudentProgramAssociationIdentity",
     ];

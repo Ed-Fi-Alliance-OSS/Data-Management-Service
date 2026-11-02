@@ -494,6 +494,54 @@ public class QueryRequestHandlerTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_A_Repository_That_Returns_A_Validation_Failure : QueryRequestHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<QueryResult> QueryDocuments(
+                IQueryRequest queryRequest,
+                CancellationToken cancellationToken = default
+            )
+            {
+                return Task.FromResult<QueryResult>(
+                    new QueryResult.QueryFailureValidation([
+                        new WriteValidationFailure(
+                            new JsonPath("$.schoolCategoryDescriptor"),
+                            "Descriptor values must not contain NUL."
+                        ),
+                    ])
+                );
+            }
+        }
+
+        private readonly RequestInfo _requestInfo = RequestInfoWithRelationalMappingSet();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (queryHandler, serviceProvider) = Handler(new Repository());
+            _requestInfo.ScopedServiceProvider = serviceProvider;
+            await queryHandler.Execute(_requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_a_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_keys_the_validation_error_by_the_query_field_path()
+        {
+            _requestInfo.FrontendResponse.Body!["validationErrors"]!["$.schoolCategoryDescriptor"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("Descriptor values must not contain NUL.");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_A_Repository_That_Returns_Unknown_Failure : QueryRequestHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -1708,6 +1756,13 @@ public class QueryRequestHandlerTests
             new TestCaseData(new QueryResult.UnknownFailure("unknown"), "unknown_failure").SetName(
                 "{m}(unknown_failure)"
             ),
+            // The backend's own query-value validation is the same client error as a middleware rejection.
+            new TestCaseData(
+                new QueryResult.QueryFailureValidation([
+                    new WriteValidationFailure(new JsonPath("$.schoolCategoryDescriptor"), "invalid"),
+                ]),
+                "validation_rejected"
+            ).SetName("{m}(validation_rejected)"),
             // A known error reports query terms that evaded validation. The bounded outcome set has no
             // value of its own for it, and counting it as validation_rejected would dilute the
             // middleware-rejection rate operators watch, so it is an unclassified backend failure.

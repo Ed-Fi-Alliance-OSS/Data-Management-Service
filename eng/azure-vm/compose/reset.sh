@@ -38,7 +38,7 @@ echo "Dropping app/database volumes and the Keycloak realm..."
 mkdir -p .bootstrap
 : > .bootstrap/reset-pending
 rm -f .bootstrap/bootstrap-attempted .bootstrap/bootstrap-complete
-docker compose -f docker-compose.yml -f keycloak.yml --env-file .env down -v
+docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env down -v
 # Volumes are gone: clear the sentinel and the recorded Keycloak image reference (update.sh's
 # pin guard) -- a fresh volume may be created under any pin.
 rm -f .bootstrap/reset-pending .bootstrap/keycloak-image
@@ -48,7 +48,7 @@ rm -f .bootstrap/reset-pending .bootstrap/keycloak-image
 # against an unprovisioned data DB / a CMS with no data stores). They must come up LAST, after
 # bootstrap + schema, exactly like a first stand-up. --no-deps stops the gateway (which depends_on
 # the DMS services) from pulling them up early; it resolves upstreams at request time.
-docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps \
+docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d --no-deps \
   postgres keycloak st-config mt-config pgadmin swagger-ui gateway
 ./record-keycloak-image.sh
 

@@ -69,7 +69,7 @@ at `/var/lib/postgresql`, where earlier images mounted the volume at
 not read: PostgreSQL 18 initializes a new, empty cluster beside the old files.
 Before the first start on 18, either remove the old volume (its data is lost) or
 upgrade it with `pg_upgrade`. This applies to developer volumes from
-`eng/docker-compose/postgresql.yml`. The security-review VM's `update.sh` refuses
+`eng/docker-compose/postgresql.compose.yml`. The security-review VM's `update.sh` refuses
 to update such a volume; see
 [its update runbook](../eng/azure-vm/provision/UPDATE.md#part-b-update-to-a-newer-build--bash).
 
@@ -176,7 +176,7 @@ holds the plugin directories.
 
 # Plugin acquisition, recipe 1: a pre-populated plugin root, bind-mounted read-only.
 #
-# Add with its own -f. It is an alternative to plugins-fetch-dms.yml rather than an addition
+# Add with its own -f. It is an alternative to plugins-fetch-dms.compose.yml rather than an addition
 # to it: /app/plugins is one mount target and two overlays cannot both claim it.
 #
 # DMS_PLUGINS_MOUNT_SOURCE is declared with :? rather than a default. A deployment that
@@ -208,7 +208,7 @@ mounts that volume read-only exactly as in Recipe 1.
 The three required values are `PLUGIN_PACKAGE_URL`, `PLUGIN_PACKAGE_SHA256`, and
 `PLUGIN_NAME`.
 
-<!-- embed: eng/docker-compose/plugins-fetch-dms.yml -->
+<!-- embed: eng/docker-compose/plugins-fetch-dms.compose.yml -->
 ```yaml
 # SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
@@ -314,7 +314,7 @@ by no `.deps.json`, and the next person to read that directory cannot tell which
 version they are looking at.
 
 **The `fetch-plugins` image is pinned by digest**, following the convention every
-third-party image in `eng/docker-compose/` already uses — `postgresql.yml` pins its
+third-party image in `eng/docker-compose/` already uses — `postgresql.compose.yml` pins its
 Postgres image the same way. The committed digest is a real, pullable `alpine` 3.22
 image, so the recipe is runnable as it stands rather than a placeholder that must be
 replaced before it works. An operator may re-pin it to an image they have approved; a
@@ -587,7 +587,7 @@ stops it before it serves a request, and the reason is on standard error; see
 `plugins-config.yml` is the Configuration Service counterpart of `plugins-dms.yml`.
 `CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE` is the one required value: the host path that holds the
 Configuration Service's plugin directories. Add the file with its own `-f` after
-`local-config.yml` or `published-config.yml`, followed by a deployment-owned
+`local-config.compose.yml` or `published-config.compose.yml`, followed by a deployment-owned
 override that sets `Plugins__Allowed` on the `config` service, because this overlay
 allowlists nothing. When the plugin serves secrets from a vault, that override also
 removes them from the environment; see
@@ -603,7 +603,7 @@ removes them from the environment; see
 # Plugin acquisition for the Configuration Service: a pre-populated plugin root, bind-mounted
 # read-only. The Configuration Service counterpart of plugins-dms.yml, which it mirrors.
 #
-# Add with its own -f, after local-config.yml or published-config.yml, both of which it leaves
+# Add with its own -f, after local-config.compose.yml or published-config.compose.yml, both of which it leaves
 # unchanged. start-local-config.ps1 has no setting that adds it: DMS_PLUGINS_COMPOSE_FILES is the
 # Data Management Service launchers' setting for DMS overlays, not a Configuration Service one.
 #
@@ -636,7 +636,7 @@ mounted differs. Either of two forms does it:
 - **Into the host path Recipe 1 mounts.** Run the four commands as a deployment step
   that extracts into the directory `CONFIGURATION_SERVICE_PLUGINS_MOUNT_SOURCE` names, then compose
   `plugins-config.yml` exactly as in Recipe 1. Nothing about the overlay changes.
-- **Into a volume, as `plugins-fetch-dms.yml` does for DMS.** Copy that file into the
+- **Into a volume, as `plugins-fetch-dms.compose.yml` does for DMS.** Copy that file into the
   deployment and point its last service block at `config` instead of `dms`. When DMS
   also uses Recipe 2 in the same Compose project, rename the `fetch-plugins` service
   and the `plugins` volume as well, because the two files would otherwise define one
@@ -654,7 +654,7 @@ because no committed file is their artifact.
 
 ### The Compose blocks above are asserted equal to the committed files
 
-`eng/docker-compose/plugins-dms.yml`, `eng/docker-compose/plugins-fetch-dms.yml`, and
+`eng/docker-compose/plugins-dms.yml`, `eng/docker-compose/plugins-fetch-dms.compose.yml`, and
 `eng/docker-compose/plugins-config.yml` are the artifact. The end-to-end tiers run
 those files as committed, and a check in this repository compares each block above
 against its file, so a chapter edited without the file — or a file edited without the
@@ -751,6 +751,65 @@ be relied on for DoS or brute-force protection.
 ### Authentication and Authorization
 
 See [Roles and Scopes](./ROLES-SCOPES.md)
+
+### Deployment preflight for claim-set names and scope shapes
+
+The Ed-Fi API resolves the one claim set a request uses from the token's scope
+values, the Configuration Service rejects commas in claim-set names, and the
+self-contained provider issues scopes separated by spaces. See
+[Roles and Scopes](./ROLES-SCOPES.md#claim-set-selection-from-token-scopes) for the
+rules. Complete the steps below **before** rolling out the release that contains
+them. This is a deployment prerequisite for operators, not a code migration, and
+nothing in the product performs it for you.
+
+1. **Inventory comma-containing claim-set names.** List every claim set in every
+   tenant whose name contains a comma. The new validation rejects such a name
+   wherever a name is introduced or replaced through the API, import, and application
+   paths (claim-set create, update, copy and import, application create and update),
+   so an existing one can no longer be re-saved unchanged. Fragment registration skips
+   registering an invalid name, logs it, and continues with the other claim sets, and
+   the XML conversion tool throws its established `InvalidOperationException`.
+
+   In **self-contained mode**, this inventory also prevents an unintended change in
+   permissions. A client assigned `Alpha,Beta` stores separate `Alpha` and `Beta`
+   permissions. Fresh tokens carry `Alpha Beta`, so DMS looks up those two names
+   instead of the literal `Alpha,Beta` claim set. If neither name exists in the
+   tenant, resource requests return `500`, identity-service requests return `403`,
+   and `/oauth/token_info` returns `401`. If exactly one exists, requests use that
+   claim set's permissions, which may differ from the application's assigned claim
+   set. If both exist, requests return `403` for ambiguity. Skipping preflight can
+   therefore change effective permissions as well as cause an outage. Keycloak
+   stores the literal client scope name and does not perform this comma split.
+2. **Inventory the references to those names.** List every application, and every
+   identity-provider client or client scope (the Keycloak realm, or the
+   `OpenIddictScope` and `OpenIddictApplicationScope` rows of the self-contained
+   provider), that refers to a comma-containing claim-set name. A token carries its
+   claim set as a scope, so a client's scope and the claim set's name must change
+   together.
+3. **Correct each name through the established management workflows.** Use the
+   Configuration Service claim-set and application endpoints, and the identity
+   provider's own administration, as for any other claim-set change. Do not
+   auto-rename names with scripts against stored data, and do not edit stored client
+   credentials: the key and secret of an existing application stay as they are.
+4. **Obtain fresh tokens where the old scope shape is incompatible.** An issued
+   token keeps the `scope` it was issued with until it expires. A token whose scope
+   joined several values with commas is read as one literal value, because DMS and
+   the Configuration Service do not split issued JWT claims on commas. Neither
+   product rewrites or splits such a token. Having clients request a new token is
+   what replaces it. The self-contained provider's change to space-separated output
+   applies only to tokens issued after the release and does not repair old ones.
+5. **Account for propagation.** Corrected claim sets reach the Ed-Fi API through its
+   cached claim sets, per tenant and per replica, and are eventually consistent
+   rather than an immediate revocation. Follow
+   [How long a change takes to apply](./IDENTITY-MANAGEMENT.md#how-long-a-change-takes-to-apply)
+   and [Reloading the claim-set cache](./IDENTITY-MANAGEMENT.md#reloading-the-claim-set-cache),
+   remembering that a reload clears one replica and one tenant spelling at a time.
+
+While a token's scopes recognize more than one claim set in a tenant, the Ed-Fi API
+answers `403` with `The token identifies multiple claim sets.`, and a tenant whose
+metadata holds two claim sets with names that differ only by case answers `500` for
+a token that names them. Correct such tenants by renaming or removing the duplicate
+through the same management workflows.
 
 ## Configuration Service database upgrades
 

@@ -66,7 +66,7 @@ public class Given_ClaimSetCopyCommand_names_containing_whitespace
         result
             .Errors.Select(error => error.ErrorMessage)
             .Should()
-            .Equal("Claim set name must not contain white spaces.");
+            .Equal("Claim set name must not contain white spaces or commas.");
     }
 
     [TestCaseSource(nameof(_namesWithWhitespace))]
@@ -84,5 +84,86 @@ public class Given_ClaimSetCopyCommand_names_containing_whitespace
             .Errors.Select(error => error.ErrorMessage)
             .Should()
             .Equal(insertResult.Errors.Select(error => error.ErrorMessage));
+    }
+}
+
+[TestFixture]
+public class Given_ClaimSet_Names_Containing_Commas
+{
+    private const string SharedMessage = "Claim set name must not contain white spaces or commas.";
+
+    private static readonly string[] _namesWithCommas = ["Alpha,Beta", ",Alpha", "Alpha,", ","];
+    private static readonly string[] _validNames = ["Alpha", "Alpha-Beta"];
+
+    [TestCaseSource(nameof(_namesWithCommas))]
+    public void It_rejects_the_name_on_insert(string name)
+    {
+        var result = new ClaimSetInsertCommand.Validator().Validate(
+            new ClaimSetInsertCommand { Name = name, IsSystemReserved = false }
+        );
+
+        result.Errors.Select(error => error.ErrorMessage).Should().Equal(SharedMessage);
+    }
+
+    [TestCaseSource(nameof(_namesWithCommas))]
+    public void It_rejects_the_name_on_update(string name)
+    {
+        var result = new ClaimSetUpdateCommand.Validator().Validate(
+            new ClaimSetUpdateCommand { Id = 1, Name = name }
+        );
+
+        result.Errors.Select(error => error.ErrorMessage).Should().Equal(SharedMessage);
+    }
+
+    [TestCaseSource(nameof(_namesWithCommas))]
+    public void It_rejects_the_name_on_copy(string name)
+    {
+        var result = new ClaimSetCopyCommand.Validator().Validate(
+            new ClaimSetCopyCommand { OriginalId = 1, Name = name }
+        );
+
+        result.Errors.Select(error => error.ErrorMessage).Should().Equal(SharedMessage);
+    }
+
+    [TestCaseSource(nameof(_validNames))]
+    public void It_accepts_a_valid_name_on_insert(string name)
+    {
+        new ClaimSetInsertCommand.Validator()
+            .Validate(new ClaimSetInsertCommand { Name = name, IsSystemReserved = false })
+            .IsValid.Should()
+            .BeTrue();
+    }
+
+    [TestCaseSource(nameof(_validNames))]
+    public void It_accepts_a_valid_name_on_update(string name)
+    {
+        new ClaimSetUpdateCommand.Validator()
+            .Validate(new ClaimSetUpdateCommand { Id = 1, Name = name })
+            .IsValid.Should()
+            .BeTrue();
+    }
+
+    [TestCaseSource(nameof(_validNames))]
+    public void It_accepts_a_valid_name_on_copy(string name)
+    {
+        new ClaimSetCopyCommand.Validator()
+            .Validate(new ClaimSetCopyCommand { OriginalId = 1, Name = name })
+            .IsValid.Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public void It_reports_both_length_and_comma_violations_for_a_long_name_with_a_comma()
+    {
+        string name = new string('a', 256) + ",";
+
+        var result = new ClaimSetInsertCommand.Validator().Validate(
+            new ClaimSetInsertCommand { Name = name, IsSystemReserved = false }
+        );
+
+        result
+            .Errors.Select(error => error.ErrorMessage)
+            .Should()
+            .BeEquivalentTo("The claim set name must be less than 256 characters.", SharedMessage);
     }
 }

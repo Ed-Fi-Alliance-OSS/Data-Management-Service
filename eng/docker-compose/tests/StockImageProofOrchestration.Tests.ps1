@@ -63,7 +63,7 @@ Describe 'Stock image proof orchestration' {
         It 'refuses the fixed container name <_>, which no project name can move' -ForEach @(
             'dms-postgresql', 'ed-fi-api-config-service', 'ed-fi-api-swagger-ui', 'dms-keycloak', 'ed-fi-api'
         ) {
-            # postgresql.yml and its siblings hard-code container_name, so a running one of these
+            # postgresql.compose.yml and its siblings hard-code container_name, so a running one of these
             # collides whatever compose project this run uses.
             $result = Get-OccupiedHostResource -ExistingContainerName @($_)
 
@@ -892,7 +892,7 @@ Describe 'Stock image proof orchestration' {
 
         It 'writes the recipe 2 values when they are supplied' {
             $content = Get-StockProofEnvironmentContent -Pin (New-Pin) -BaseContent 'X=1' `
-                -PluginComposeFiles 'plugins-fetch-dms.yml' `
+                -PluginComposeFiles 'plugins-fetch-dms.compose.yml' `
                 -PluginFeedSource '/scratch/feed' `
                 -PluginPackageUrl 'http://plugin-feed:8080/a/1.0.0/a.1.0.0.nupkg' `
                 -PluginPackageSha256 ('0' * 64) `

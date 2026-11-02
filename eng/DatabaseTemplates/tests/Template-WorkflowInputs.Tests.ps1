@@ -16,7 +16,7 @@ Describe "Assert-TemplateWorkflowInputs" {
                 FileName        = "EdFi.Api.Minimal.Template.PostgreSQL.yml"
                 Reusable        = ".github/workflows/build-minimal-template.yml"
                 BackendPath     = "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/**"
-                ComposePath     = "eng/docker-compose/postgresql.yml"
+                ComposePath     = "eng/docker-compose/postgresql.compose.yml"
                 ExtraPaths      = @("eng/docker-compose/postgresql-init.sh")
                 ForkGuardCount  = 1
                 PackageNames    = @(
@@ -28,7 +28,7 @@ Describe "Assert-TemplateWorkflowInputs" {
                 FileName        = "EdFi.Api.Minimal.Template.MsSql.yml"
                 Reusable        = ".github/workflows/build-minimal-template.yml"
                 BackendPath     = "src/dms/backend/EdFi.DataManagementService.Backend.Mssql/**"
-                ComposePath     = "eng/docker-compose/mssql.yml"
+                ComposePath     = "eng/docker-compose/mssql.compose.yml"
                 ExtraPaths      = @("eng/docker-compose/.env.mssql")
                 ForkGuardCount  = 1
                 PackageNames    = @(
@@ -40,7 +40,7 @@ Describe "Assert-TemplateWorkflowInputs" {
                 FileName        = "EdFi.Api.Populated.Template.PostgreSQL.yml"
                 Reusable        = ".github/workflows/build-populated-template.yml"
                 BackendPath     = "src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/**"
-                ComposePath     = "eng/docker-compose/postgresql.yml"
+                ComposePath     = "eng/docker-compose/postgresql.compose.yml"
                 ExtraPaths      = @("eng/docker-compose/postgresql-init.sh")
                 ForkGuardCount  = 2
                 PackageNames    = @(
@@ -52,7 +52,7 @@ Describe "Assert-TemplateWorkflowInputs" {
                 FileName        = "EdFi.Api.Populated.Template.MsSql.yml"
                 Reusable        = ".github/workflows/build-populated-template.yml"
                 BackendPath     = "src/dms/backend/EdFi.DataManagementService.Backend.Mssql/**"
-                ComposePath     = "eng/docker-compose/mssql.yml"
+                ComposePath     = "eng/docker-compose/mssql.compose.yml"
                 ExtraPaths      = @("eng/docker-compose/.env.mssql")
                 ForkGuardCount  = 2
                 PackageNames    = @(
@@ -259,8 +259,8 @@ Describe "Assert-TemplateWorkflowInputs" {
             "eng/docker-compose/bootstrap-restore.psm1",
             "eng/docker-compose/bootstrap-schema-tool.psm1",
             "eng/docker-compose/env-utility.psm1",
-            "eng/docker-compose/local-config.yml",
-            "eng/docker-compose/local-dms.yml",
+            "eng/docker-compose/local-config.compose.yml",
+            "eng/docker-compose/local-dms.compose.yml",
             "eng/docker-compose/OpenIddict-Crypto.psm1",
             "eng/docker-compose/provision-dms-schema.ps1",
             "eng/docker-compose/provision-e2e-database.ps1",

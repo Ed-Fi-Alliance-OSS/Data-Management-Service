@@ -20,11 +20,27 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
 
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
 
+    // Whole microseconds, so the value round-trips exactly through timestamp with time zone.
+    private static readonly DateTime CreatedAtSentinel = new DateTime(
+        2000,
+        2,
+        3,
+        4,
+        5,
+        6,
+        DateTimeKind.Utc
+    ).AddTicks(1_234_560);
+
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
         var fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(FixtureRelativePath);
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(fixture.GeneratedDdl);
+
+        // Keep DocumentId far above DescriptorId so no test can pass by confusing the two keys.
+        await _database.ExecuteNonQueryAsync(
+            """ALTER TABLE dms."Document" ALTER COLUMN "DocumentId" RESTART WITH 1000000;"""
+        );
     }
 
     [SetUp]
@@ -62,6 +78,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         );
         descriptorId.Should().NotBe((int)documentId);
         await BackdateOwnerTimestampAsync(documentId);
+        await SetOwnerCreatedAtAsync(documentId, CreatedAtSentinel);
         var stamps = await ReadStampPairAsync(documentId);
         return (documentId, stamps.DocumentVersion, stamps.Owner.ContentLastModifiedAt);
     }
@@ -93,9 +110,9 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             """
             INSERT INTO dms."Descriptor"
                 ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription", "Description",
-                 "EffectiveBeginDate", "EffectiveEndDate", "ContentLastModifiedAt")
+                 "EffectiveBeginDate", "EffectiveEndDate", "ContentLastModifiedAt", "ContentCreatedAt")
             VALUES (@documentId, @resourceKeyId, @namespace, @codeValue, @shortDescription, @description,
-                    NULL, NULL, '2000-01-01T00:00:00Z') RETURNING now();
+                    NULL, NULL, '2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z') RETURNING now();
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
@@ -121,7 +138,8 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             SELECT
                 doc."ContentVersion" AS "DocumentContentVersion",
                 descriptor."ContentVersion" AS "OwnerContentVersion",
-                descriptor."ContentLastModifiedAt" AS "OwnerContentLastModifiedAt"
+                descriptor."ContentLastModifiedAt" AS "OwnerContentLastModifiedAt",
+                descriptor."ContentCreatedAt" AS "OwnerContentCreatedAt"
             FROM dms."Document" doc
             INNER JOIN dms."Descriptor" descriptor ON descriptor."DocumentId" = doc."DocumentId"
             WHERE doc."DocumentId" = @documentId;
@@ -138,7 +156,8 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             Convert.ToInt64(row["DocumentContentVersion"]),
             new(
                 Convert.ToInt64(row["OwnerContentVersion"]),
-                Convert.ToDateTime(row["OwnerContentLastModifiedAt"])
+                Convert.ToDateTime(row["OwnerContentLastModifiedAt"]),
+                Convert.ToDateTime(row["OwnerContentCreatedAt"])
             )
         );
     }
@@ -165,7 +184,24 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
 
     private sealed record StampPair(long DocumentVersion, StampValues Owner);
 
-    private sealed record StampValues(long ContentVersion, DateTime ContentLastModifiedAt);
+    private async Task SetOwnerCreatedAtAsync(long documentId, DateTime createdAt)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE dms."Descriptor"
+            SET "ContentCreatedAt" = @createdAt
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("createdAt", createdAt),
+            new NpgsqlParameter("documentId", documentId)
+        );
+    }
+
+    private sealed record StampValues(
+        long ContentVersion,
+        DateTime ContentLastModifiedAt,
+        DateTime ContentCreatedAt
+    );
 
     [Test]
     public async Task It_initializes_owner_timestamp_and_copies_document_version_on_descriptor_insert()
@@ -181,6 +217,8 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         after.DocumentVersion.Should().Be(beforeDocument);
         after.Owner.ContentVersion.Should().Be(beforeDocument);
         after.Owner.ContentLastModifiedAt.Should().Be(insertTimestamp);
+        // The trigger overrides the supplied creation time with the inserting transaction's now().
+        after.Owner.ContentCreatedAt.Should().Be(insertTimestamp);
         afterMaxChangeVersion.Should().Be(beforeMaxChangeVersion);
     }
 
@@ -231,6 +269,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
         after.DocumentVersion.Should().BeGreaterThan(seed.ContentVersion);
         after.Owner.ContentLastModifiedAt.Should().BeAfter(seedContentLastModifiedAt);
+        after.Owner.ContentCreatedAt.Should().Be(CreatedAtSentinel);
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(1L, "a single descriptor value change must allocate exactly one content stamp");
@@ -257,7 +296,44 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         var after = await ReadStampPairAsync(seed.DocumentId);
         after.DocumentVersion.Should().Be(seed.ContentVersion);
         after.Owner.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
+        after.Owner.ContentCreatedAt.Should().Be(CreatedAtSentinel);
         after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
+        var afterWork = await _database.QueryRowsAsync(
+            """SELECT * FROM dms."DocumentProjectionWork" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", seed.DocumentId)
+        );
+        afterWork.Should().BeEquivalentTo(beforeWork);
+    }
+
+    [Test]
+    public async Task It_does_not_stamp_or_track_a_creation_timestamp_only_update()
+    {
+        var seed = await SeedAsync();
+        var watermark = await ReadMaxChangeVersionAsync();
+        var trackedRowsBefore = await _database.ExecuteScalarAsync<long>(
+            """SELECT COUNT(*) FROM "tracked_changes_edfi"."Descriptor";"""
+        );
+        var beforeWork = await _database.QueryRowsAsync(
+            """SELECT * FROM dms."DocumentProjectionWork" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", seed.DocumentId)
+        );
+        var updatedCreatedAt = CreatedAtSentinel.AddDays(1);
+
+        await SetOwnerCreatedAtAsync(seed.DocumentId, updatedCreatedAt);
+
+        var after = await ReadStampPairAsync(seed.DocumentId);
+        after.DocumentVersion.Should().Be(seed.ContentVersion);
+        after.Owner.ContentVersion.Should().Be(seed.ContentVersion);
+        after.Owner.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
+        after.Owner.ContentCreatedAt.Should().Be(updatedCreatedAt);
+        (await ReadMaxChangeVersionAsync()).Should().Be(watermark);
+        (
+            await _database.ExecuteScalarAsync<long>(
+                """SELECT COUNT(*) FROM "tracked_changes_edfi"."Descriptor";"""
+            )
+        )
+            .Should()
+            .Be(trackedRowsBefore);
         var afterWork = await _database.QueryRowsAsync(
             """SELECT * FROM dms."DocumentProjectionWork" WHERE "DocumentId" = @documentId;""",
             new NpgsqlParameter("documentId", seed.DocumentId)
@@ -280,9 +356,9 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
     public async Task It_rejects_a_descriptor_update_whose_resource_key_id_diverges_from_the_document()
     {
         // List paging trusts dms.Descriptor.ResourceKeyId while GET-by-id trusts
-        // dms.Document.ResourceKeyId, and no FK ties the two copies together. The trigger's
-        // equality guard must reject the divergent write before the no-op diff (which
-        // deliberately excludes ResourceKeyId) can short-circuit past it.
+        // dms.Document.ResourceKeyId. The bench key exists in dms.ResourceKey, so only
+        // FK_Descriptor_DocumentResourceKey can reject the divergent write; the trigger's no-op
+        // diff deliberately excludes ResourceKeyId.
         var seed = await SeedAsync();
         await InsertBenchResourceKeyAsync();
 
@@ -297,7 +373,8 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             );
 
         var exception = (await act.Should().ThrowAsync<PostgresException>()).Which;
-        exception.MessageText.Should().Contain("diverges from the owning dms.Document row");
+        exception.SqlState.Should().Be(PostgresErrorCodes.ForeignKeyViolation);
+        exception.ConstraintName.Should().Be("FK_Descriptor_DocumentResourceKey");
 
         var storedResourceKeyId = await _database.ExecuteScalarAsync<short>(
             """SELECT "ResourceKeyId" FROM dms."Descriptor" WHERE "DocumentId" = @documentId;""",
@@ -316,6 +393,7 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
     [Test]
     public async Task It_rejects_a_descriptor_insert_whose_resource_key_id_diverges_from_the_document()
     {
+        // The bench key exists in dms.ResourceKey, so only FK_Descriptor_DocumentResourceKey can reject.
         var documentId = await InsertDocumentAsync();
         await InsertBenchResourceKeyAsync();
 
@@ -332,7 +410,8 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
             );
 
         var exception = (await act.Should().ThrowAsync<PostgresException>()).Which;
-        exception.MessageText.Should().Contain("diverges from the owning dms.Document row");
+        exception.SqlState.Should().Be(PostgresErrorCodes.ForeignKeyViolation);
+        exception.ConstraintName.Should().Be("FK_Descriptor_DocumentResourceKey");
 
         var descriptorRowCount = await _database.ExecuteScalarAsync<long>(
             """SELECT COUNT(*) FROM dms."Descriptor" WHERE "DocumentId" = @documentId;""",
@@ -342,31 +421,31 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
     }
 
     [Test]
-    public async Task It_does_not_stamp_document_when_a_resource_key_id_backfill_updates_both_tables()
+    public async Task It_rejects_a_document_resource_key_id_change_while_its_descriptor_references_it()
     {
-        // ResourceKeyId is immutable in production and deliberately excluded from the trigger's
-        // no-op diff so a migration backfill UPDATE of the column cannot bump stamps. The
-        // equality guard requires such a backfill to update dms.Document before dms.Descriptor.
+        // The composite FK also covers the document side, which the former trigger guard never did.
         var seed = await SeedAsync();
         await InsertBenchResourceKeyAsync();
 
-        await _database.ExecuteNonQueryAsync(
-            """
-            UPDATE dms."Document"
-            SET "ResourceKeyId" = 32000
-            WHERE "DocumentId" = @documentId;
-            """,
-            new NpgsqlParameter("documentId", seed.DocumentId)
-        );
-        await _database.ExecuteNonQueryAsync(
-            """
-            UPDATE dms."Descriptor"
-            SET "ResourceKeyId" = 32000
-            WHERE "DocumentId" = @documentId;
-            """,
-            new NpgsqlParameter("documentId", seed.DocumentId)
-        );
+        var act = async () =>
+            await _database.ExecuteNonQueryAsync(
+                """
+                UPDATE dms."Document"
+                SET "ResourceKeyId" = 32000
+                WHERE "DocumentId" = @documentId;
+                """,
+                new NpgsqlParameter("documentId", seed.DocumentId)
+            );
 
+        var exception = (await act.Should().ThrowAsync<PostgresException>()).Which;
+        exception.SqlState.Should().Be(PostgresErrorCodes.ForeignKeyViolation);
+        exception.ConstraintName.Should().Be("FK_Descriptor_DocumentResourceKey");
+
+        var documentResourceKeyId = await _database.ExecuteScalarAsync<short>(
+            """SELECT "ResourceKeyId" FROM dms."Document" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", seed.DocumentId)
+        );
+        documentResourceKeyId.Should().NotBe((short)32000);
         var after = await ReadStampPairAsync(seed.DocumentId);
         after.DocumentVersion.Should().Be(seed.ContentVersion);
         after.Owner.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
@@ -400,6 +479,8 @@ public class Given_A_Provisioned_Postgresql_Database_With_Descriptor_Stamping_Tr
         afterB.Owner.ContentLastModifiedAt.Should().BeAfter(seedB.ContentLastModifiedAt);
         afterA.Owner.ContentVersion.Should().Be(afterA.DocumentVersion);
         afterB.Owner.ContentVersion.Should().Be(afterB.DocumentVersion);
+        afterA.Owner.ContentCreatedAt.Should().Be(CreatedAtSentinel);
+        afterB.Owner.ContentCreatedAt.Should().Be(CreatedAtSentinel);
         afterA.DocumentVersion.Should().BeGreaterThan(seedA.ContentVersion);
         afterB.DocumentVersion.Should().BeGreaterThan(seedB.ContentVersion);
         afterA

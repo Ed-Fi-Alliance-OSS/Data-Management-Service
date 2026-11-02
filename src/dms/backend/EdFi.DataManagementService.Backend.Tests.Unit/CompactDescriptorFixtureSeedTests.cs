@@ -95,7 +95,7 @@ public class Given_Compact_Descriptor_Fixture_Seeds(MaterializedDocumentFixtureS
     }
 
     [Test]
-    public void It_keeps_referential_identity_and_document_stamps_keyed_by_the_owning_document()
+    public void It_keeps_document_stamps_keyed_by_the_owning_document()
     {
         foreach (var source in _fixture.SourceSetup.Descriptors)
         {
@@ -103,17 +103,6 @@ public class Given_Compact_Descriptor_Fixture_Seeds(MaterializedDocumentFixtureS
             keys.DocumentId.Should().Be(source.DocumentId);
             keys.DescriptorId.Should().NotBe(source.DescriptorId);
             ((long)keys.DescriptorId).Should().NotBe(source.DocumentId);
-            _connection
-                .Commands.Where(command =>
-                    command.CommandText.Contains(
-                        "INSERT INTO " + Quote("dms") + "." + Quote("ReferentialIdentity"),
-                        StringComparison.Ordinal
-                    )
-                )
-                .Should()
-                .Contain(command =>
-                    command.Parameters.Any(parameter => Equals(parameter.Value, source.DocumentId))
-                );
             _connection
                 .Commands.Where(command =>
                     command.CommandText.StartsWith(

@@ -79,6 +79,34 @@ public class ClaimSetCommandValidatorTests
         result.IsValid.Should().BeFalse();
         result
             .Errors.Should()
-            .Contain(e => e.ErrorMessage.Contains("Claim set name must not contain white spaces."));
+            .Contain(e => e.ErrorMessage.Contains("Claim set name must not contain white spaces or commas."));
+    }
+
+    [TestCase("Alpha,Beta")]
+    [TestCase(",Alpha")]
+    [TestCase("Alpha,")]
+    [TestCase(",")]
+    public void Validate_WithNameContainingComma_ShouldFailValidation(string name)
+    {
+        // Arrange
+        var command = new ClaimSetImportCommand { Name = name };
+
+        // Act
+        var result = _validator.Validate(command);
+
+        // Assert
+        result
+            .Errors.Select(e => e.ErrorMessage)
+            .Should()
+            .Equal("Claim set name must not contain white spaces or commas.");
+    }
+
+    [TestCase("Alpha")]
+    [TestCase("Alpha-Beta")]
+    public void Validate_WithNameWithoutCommaOrWhitespace_ShouldPassValidation(string name)
+    {
+        var result = _validator.Validate(new ClaimSetImportCommand { Name = name });
+
+        result.IsValid.Should().BeTrue();
     }
 }

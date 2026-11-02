@@ -22,16 +22,13 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// Rows are generated with direct set-based SQL, bypassing the document write pipeline. The page and totalCount
 /// SQL under measurement read only the root table, the person path's intermediate tables and the authorization
 /// view, so nothing those queries touch needs a valid Ed-Fi payload. Generated rows carry no JSON payload and so
-/// cannot be hydrated; that is the one thing missing, not the referential identities.
+/// cannot be hydrated; that is the one thing missing.
 /// </para>
 /// <para>
-/// What this does NOT bypass: every generated <c>edfi</c> table carries a <c>TR_&lt;Table&gt;_ReferentialIdentity</c>
-/// trigger that hashes the natural key into <c>dms.ReferentialIdentity</c>, whose <c>ReferentialId</c> is the
-/// primary key, so two generated rows whose hashed columns coincide fail on a primary-key violation. Every root
-/// table in this inventory hashes the student unique id (directly, or through the StudentSectionAssociation /
-/// StudentAcademicRecord it points at), so varying Student per row satisfies all of them. SQL Server's triggers
-/// are set-based over the <c>inserted</c> pseudo-table, so one statement per table still writes one identity row
-/// per generated row. A second trigger stamps <c>dms.Document.[ContentVersion]</c> and writes
+/// What this does NOT bypass: every generated <c>edfi</c> root table carries its natural-key unique constraint,
+/// so two generated rows with the same natural key fail. Every root table in this inventory keys on the student
+/// (directly, or through the StudentSectionAssociation / StudentAcademicRecord it points at), so varying Student
+/// per row satisfies all of them. A trigger stamps <c>dms.Document.[ContentVersion]</c> and writes
 /// <c>tracked_changes_edfi.*</c>, which is why this is not the pure bulk insert one statement per table suggests.
 /// Unlike the hand-written seed helpers on this context, the generator leaves every trigger enabled — the point
 /// is to measure the schema the product actually runs.

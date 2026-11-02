@@ -55,4 +55,16 @@ public sealed class Given_Postgresql_DescriptorRuntime : PostgresqlApiIntegratio
     [Test]
     public Task It_uses_the_url_id_for_descriptor_puts() =>
         PutBodyIdScenario.It_uses_the_url_id_for_descriptor_puts(Harness);
+
+    [Test]
+    public Task It_rejects_nul_in_descriptor_identity_components() =>
+        DescriptorRuntimeScenario.It_rejects_nul_in_descriptor_identity_components(Harness);
+
+    [Test]
+    public Task It_rejects_nul_in_a_descriptor_reference() =>
+        DescriptorRuntimeScenario.It_rejects_nul_in_a_descriptor_reference(Harness);
+
+    [Test]
+    public Task It_rejects_unpaired_surrogate_escapes_as_malformed_bodies() =>
+        DescriptorRuntimeScenario.It_rejects_unpaired_surrogate_escapes_as_malformed_bodies(Harness);
 }

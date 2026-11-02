@@ -148,8 +148,13 @@ initial client's. To act on that client, read it with
    The scope may be omitted: the token endpoint then forwards no `scope`, and
    the client receives its default scopes (its default client scopes under
    Keycloak, its registered scopes under the self-contained provider). Under
-   Keycloak, a scope the client is not granted answers `400` with
-   `invalid_scope`.
+   both providers, a scope the client is not granted answers `400` with
+   `invalid_scope` in the RFC 6749 `error`/`error_description` body.
+   Under the self-contained provider, a scope the client holds only in part
+   succeeds with the part it holds. The token response's `scope` member lists
+   the granted scopes separated by spaces; under Keycloak it is omitted when
+   Keycloak returns none. See
+   [Token Endpoints](../reference/design/configuration-service/CS-AUTH.md#token-endpoints).
 8. **Delete a client** — `DELETE /v3/apiClients/{numeric id}`, after which
    both `GET /v3/apiClients/{numeric id}` and `GET /v3/apiClients/{key}` report
    `404`.

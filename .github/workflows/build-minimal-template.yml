@@ -120,6 +120,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      # A tag push builds, publishes and attaches release assets from this job's outputs, and every
+      # job that reads the tag name follows it by needs. A tag that is not a v version stops here.
+      - name: Validate the release tag
+        if: ${{ github.ref_type == 'tag' }}
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:RELEASE_REF -Prefix v
+
       - name: Validate workflow inputs
         env:
           STANDARD_VERSION: ${{ inputs.standard_version }}
@@ -827,7 +837,7 @@ jobs:
               }
               Write-Host "Pushing $_ to ${{ env.ARTIFACTS_FEED_URL }}"
               $global:LASTEXITCODE = 0
-              dotnet nuget push $_ --api-key "${{ env.ARTIFACTS_API_KEY }}" --source "${{ env.ARTIFACTS_FEED_URL }}" @duplicateHandling
+              dotnet nuget push $_ --api-key $env:ARTIFACTS_API_KEY --source "${{ env.ARTIFACTS_FEED_URL }}" @duplicateHandling
               if ($LASTEXITCODE -ne 0) {
                 throw "Package push failed for '$_' with exit code $LASTEXITCODE."
               }
@@ -840,17 +850,25 @@ jobs:
     defaults:
       run:
         shell: pwsh
+    env:
+      RELEASE_REF: ${{ github.ref_name }}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # A stable release promotes by its tag name, so the name must be a v version first.
+      - name: Validate the release tag
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:RELEASE_REF -Prefix v
 
       - name: Promote Minimal Template Azure Package
         run: |
           Import-Module ./package-helpers.psm1
 
-          $releaseVersion = "${{ github.ref_name }}" -replace "v", ""
+          $releaseVersion = $env:RELEASE_REF -replace "v", ""
           $companionPackageName = "${{ inputs.package_name }}.Attestation"
-          $credential = New-Object -TypeName PSCredential -ArgumentList "${{ env.ARTIFACTS_USERNAME }}", (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+          $credential = New-Object -TypeName PSCredential -ArgumentList $env:ARTIFACTS_USERNAME, (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force)
 
           # Promotion coupling mirrors publication: when the companion attestation package
           # exists at this version (attested-era release), it promotes FIRST so the template
@@ -869,10 +887,10 @@ jobs:
 
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
-            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            Username    = $env:ARTIFACTS_USERNAME
             ViewId      = "release"
-            ReleaseRef  = "${{ github.ref_name }}"
-            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            ReleaseRef  = $env:RELEASE_REF
+            Password    = (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force)
           }
 
           if ($promoteCompanion) {
@@ -890,6 +908,9 @@ jobs:
       - generate-package-sbom
       - generate-package-provenance
     if: ${{ startsWith(github.ref, 'refs/tags/') }} # Only run on releases
+    # The tag was validated by the build job this one follows through its needs.
+    env:
+      RELEASE_REF: ${{ github.ref_name }}
     permissions:
       contents: write
     steps:
@@ -907,10 +928,12 @@ jobs:
 
       - name: Attach SBOM to Release
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $release = "${{ github.ref_name }}"
+          $release = $env:RELEASE_REF
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
           $file = "${{ inputs.manifest_file }}"
           $uploadName = "${{ inputs.package_name }}-SBOM.zip"
 
@@ -932,10 +955,12 @@ jobs:
 
       - name: Attach Provenance to Release
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $release = "${{ github.ref_name }}"
+          $release = $env:RELEASE_REF
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
           $file = "${{ inputs.provenance_file }}"
           $uploadName = "${{ inputs.provenance_file }}"
 

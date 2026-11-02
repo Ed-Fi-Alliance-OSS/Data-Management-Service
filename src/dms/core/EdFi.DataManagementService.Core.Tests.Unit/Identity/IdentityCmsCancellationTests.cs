@@ -291,7 +291,10 @@ public class IdentityCmsCancellationTests
                 EducationOrganizationIds: [],
                 NamespacePrefixes: [],
                 DataStoreIds: []
-            );
+            )
+            {
+                ScopeValues = [ClaimSetName],
+            };
 
         private static FrontendRequest BuildFrontendRequest(string uniqueId) =>
             new(

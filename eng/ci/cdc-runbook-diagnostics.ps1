@@ -101,7 +101,7 @@ function ConvertTo-CdcRunbookDiagnostic {
     if ($Value['TimedOut'] -is [bool]) { $safe.TimedOut = $Value.TimedOut }
     $sources = @('eng/docker-compose/tests/RunbookSetup.Live.Tests.ps1',
         'eng/docker-compose/tests/cdc-runbook-snippets.ps1', 'eng/docker-compose/tests/cdc-runbook-lifecycle.ps1',
-        'eng/ci/tests/CdcQualification.Tests.ps1',
+        'eng/ci/tests/CdcQualification.Tests.ps1', 'eng/ci/cleanup-cdc-api-e2e.ps1',
         'src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1') +
         @(Get-ChildItem (Join-Path $PSScriptRoot '../docker-compose') -File | Where-Object {
             $_.Extension -in @('.ps1', '.psm1')

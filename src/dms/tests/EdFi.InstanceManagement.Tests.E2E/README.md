@@ -42,7 +42,7 @@ commands exclude it. It carries no shard tag, so neither shard run picks it up.
 
 The suite is engine-aware. `-DatabaseEngine` defaults to `postgresql`; pass `mssql` to run the
 same public entry point against SQL Server (which composes the `eng/docker-compose/.env.mssql`
-overlay and swaps in `mssql.yml`; the SQL Server stack is relational-only).
+overlay and swaps in `mssql.compose.yml`; the SQL Server stack is relational-only).
 
 `-EnvironmentFile` is optional: when omitted, `InstanceE2ETest` resolves the tracked
 [`eng/docker-compose/.env.routeContext.e2e`](../../../../eng/docker-compose/.env.routeContext.e2e)

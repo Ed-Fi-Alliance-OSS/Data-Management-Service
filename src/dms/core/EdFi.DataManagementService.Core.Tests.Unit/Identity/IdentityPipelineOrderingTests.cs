@@ -124,7 +124,10 @@ public class IdentityPipelineOrderingTests
             EducationOrganizationIds: [],
             NamespacePrefixes: [],
             DataStoreIds: []
-        );
+        )
+        {
+            ScopeValues = [ClaimSetName],
+        };
 
     private static FrontendRequest BuildFrontendRequest(
         string? tenant = null,

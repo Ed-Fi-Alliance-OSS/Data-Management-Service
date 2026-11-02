@@ -225,7 +225,7 @@ conditional-GET behavior is defined in
      authorization failures.
   7. Treat multiple/collapsed If-Match values as opaque. Backend should compare exactly the string it receives. No parsing, splitting, trimming, or malformed-header rejection. If the frontend passes
      abc, def or any collapsed value, it simply mismatches unless it exactly equals the current _etag.
-  8. Use the small referential identity fixture for cascade tests. Preferred pair: Student -> ResourceA from the small/referential-identity fixtures already used by PostgreSQL and SQL Server tests.
+  8. Use the small identity-references fixture for cascade tests. Preferred pair: Student -> ResourceA from the small/identity-references fixtures already used by PostgreSQL and SQL Server tests.
      Change Student.studentUniqueId with allowIdentityUpdates=true, verify dependent ResourceA gets a new _etag, then assert stale If-Match on ResourceA returns 412. Use ResourceB only if you want a
      second dependent; ResourceA is enough for the story.
 

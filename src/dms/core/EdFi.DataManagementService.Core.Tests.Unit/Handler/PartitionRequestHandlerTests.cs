@@ -366,6 +366,27 @@ public class PartitionRequestHandlerTests
             requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
         }
 
+        [Test]
+        public async Task It_maps_a_validation_failure_to_a_400_keyed_by_the_query_field_path()
+        {
+            RequestInfo requestInfo = await Execute(
+                new Handler(
+                    new PartitionResult.PartitionFailureValidation([
+                        new WriteValidationFailure(
+                            new JsonPath("$.schoolCategoryDescriptor"),
+                            "Descriptor values must not contain NUL."
+                        ),
+                    ])
+                )
+            );
+
+            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            requestInfo.FrontendResponse.Body!["validationErrors"]!["$.schoolCategoryDescriptor"]![0]!
+                .GetValue<string>()
+                .Should()
+                .Be("Descriptor values must not contain NUL.");
+        }
+
         // Matches the GET-many path: once retries are exhausted the client receives a generic system
         // error rather than a retryable status code.
         [Test]
@@ -587,6 +608,12 @@ public class PartitionRequestHandlerTests
             new TestCaseData(new PartitionResult.UnknownPartitionFailure("boom"), "unknown_failure").SetName(
                 "{m}(unknown_failure)"
             ),
+            new TestCaseData(
+                new PartitionResult.PartitionFailureValidation([
+                    new WriteValidationFailure(new JsonPath("$.schoolCategoryDescriptor"), "invalid"),
+                ]),
+                "validation_rejected"
+            ).SetName("{m}(validation_rejected)"),
         ];
 
         [TestCaseSource(nameof(_failureOutcomes))]

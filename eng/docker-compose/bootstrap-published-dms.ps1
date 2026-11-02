@@ -114,7 +114,7 @@
 
 .PARAMETER DatabaseEngine
     Database engine for the whole stack ("postgresql" or "mssql"). Forwarded to
-    `start-published-dms.ps1`, which swaps mssql.yml in for postgresql.yml: SQL Server then
+    `start-published-dms.ps1`, which swaps mssql.compose.yml in for postgresql.compose.yml: SQL Server then
     hosts the DMS datastore, the Configuration Service (its SQL Server backend), and the
     self-contained OpenIddict identity stores.
 
@@ -171,7 +171,7 @@ param(
 
     [string]$SchoolYearRange = "",
 
-    # Database engine for the whole stack. "mssql" swaps mssql.yml in for postgresql.yml:
+    # Database engine for the whole stack. "mssql" swaps mssql.compose.yml in for postgresql.compose.yml:
     # SQL Server hosts the DMS datastore (relational backend), the Configuration Service
     # (its SQL Server backend), and the self-contained OpenIddict identity stores - no
     # PostgreSQL container runs. Forwarded to start-published-dms.ps1. The .env.mssql overlay
@@ -183,7 +183,7 @@ param(
 
     # Redirects the Configuration Service database to a dedicated edfi_configurationservice
     # database instead of sharing the DMS datastore database. Forwarded unchanged to
-    # start-published-dms.ps1, where it also brings published-config.yml into the compose set so the Configuration Service
+    # start-published-dms.ps1, where it also brings published-config.compose.yml into the compose set so the Configuration Service
     # actually runs to create that database. Also forwarded to both datastore phases, each of which
     # enforces one half of the rule that the DMS datastore may not land in the dedicated
     # Configuration Service database: the configure phase judges a name it is about to register, and

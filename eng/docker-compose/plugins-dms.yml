@@ -5,7 +5,7 @@
 
 # Plugin acquisition, recipe 1: a pre-populated plugin root, bind-mounted read-only.
 #
-# Add with its own -f. It is an alternative to plugins-fetch-dms.yml rather than an addition
+# Add with its own -f. It is an alternative to plugins-fetch-dms.compose.yml rather than an addition
 # to it: /app/plugins is one mount target and two overlays cannot both claim it.
 #
 # DMS_PLUGINS_MOUNT_SOURCE is declared with :? rather than a default. A deployment that

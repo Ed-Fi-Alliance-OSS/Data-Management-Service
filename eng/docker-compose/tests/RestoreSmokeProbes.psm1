@@ -43,8 +43,8 @@ $script:GuardedComposeProjects = @("dms-local", "dms-published")
 # and start-published-dms.ps1). A volume a confirmed removal leaves behind is identified only
 # against the top-level volumes these files declare.
 $script:EngineComposeFiles = [ordered]@{
-    postgresql = "postgresql.yml"
-    mssql      = "mssql.yml"
+    postgresql = "postgresql.compose.yml"
+    mssql      = "mssql.compose.yml"
 }
 
 # The smoke's own image builds (Get-RestoreSmokeImageBuildPlan). Repository, source directory, and
@@ -425,7 +425,7 @@ function Get-RestoreSmokeEngineVolumeDefinition {
 
     .DESCRIPTION
     Reads the top-level volumes: keys (two-space-indented under a column-0 volumes:) of
-    postgresql.yml and mssql.yml. Service-level volume lists are indented and ignored. Fails closed:
+    postgresql.compose.yml and mssql.compose.yml. Service-level volume lists are indented and ignored. Fails closed:
     a missing file, a file that declares no volume, or a key both engines declare means leftovers
     cannot be identified, so the caller refuses before removing anything.
     #>
@@ -868,7 +868,7 @@ function Get-RestoreSmokeImageBuildPlan {
     $plan = foreach ($definition in $script:ImageBuildDefinitions) {
         $tags = @("$($definition.Repository):$runTag")
         if ($definition.Key -eq "Dms" -and $Wrapper -eq "published") {
-            # published-dms.yml pins the edfialliance/ed-fi-api repository and takes only the tag.
+            # published-dms.compose.yml pins the edfialliance/ed-fi-api repository and takes only the tag.
             $tags += "$($script:PublishedDmsRepository):$runTag"
         }
         $iidFile = Join-Path $imageDirectory "$($definition.Key.ToLowerInvariant()).iid"

@@ -137,7 +137,7 @@ internal sealed class RelationalWriteLockedTarget
 /// </summary>
 /// <remarks>
 /// <para>
-/// Statement 0 captures and locks the target — the referential-id lookup for POST, the document-uuid
+/// Statement 0 captures and locks the target — the own-natural-key lookup for POST, the document-uuid
 /// lookup for PUT — and every later statement consumes the captured decision through the provider
 /// carrier rather than re-observing, so a concurrent create landing after the capture cannot change
 /// what this attempt decided. Stored namespace checks precede the stored relationship check, and both
@@ -155,15 +155,14 @@ internal sealed class RelationalWriteLockedTarget
 /// knowing the target before the command runs.
 /// </para>
 /// <para>
-/// A target-dependent POST immediate result, a provider shape that cannot be embedded, or a combined
-/// parameter count above the command budget selects the ordered-segment path before a composite builder
-/// is mutated. Capture runs alone first. Each later command binds the decoded captured DocumentId and
+/// A target-dependent POST immediate result or a combined parameter count above the command budget
+/// selects the ordered-segment path before a composite builder is mutated. Capture runs alone first. Each later command binds the decoded captured DocumentId and
 /// remains on the same transaction, so SQL Server never depends on a batch-local carrier crossing a
 /// command boundary and the original row lock remains held through the phase.
 /// </para>
 /// <para>
 /// The SQL Server hint set locks a target the capture actually observes; it does not lock a range when
-/// there is none. A create — the bulk-import case, where the referential-id subquery yields no row —
+/// there is none. A create — the bulk-import case, where the natural-key subquery yields no row —
 /// takes no key lock at all, only the statement's intent lock on the table, so nothing is held across
 /// reference resolution and the DML. An update-shaped capture holds exactly one row lock, which is the
 /// reason for taking it: the observation deciding create-versus-update must be the row the write then
@@ -171,7 +170,8 @@ internal sealed class RelationalWriteLockedTarget
 /// </para>
 /// </remarks>
 internal sealed class CompositeRelationalWriteFirstPhase(
-    IReferenceResolverAdapterFactory referenceResolverAdapterFactory,
+    INaturalKeyLookupCommandBuilder naturalKeyLookupCommandBuilder,
+    IResolvedDocumentReferenceMapFactory resolvedDocumentReferenceMapFactory,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? relationshipAuthorizationProviderFailureExtractor =
         null,
@@ -184,9 +184,13 @@ internal sealed class CompositeRelationalWriteFirstPhase(
     private const string ReferenceResolutionLabel = "reference-resolution";
     private const string CurrentStateHydrationLabel = "current-state-hydration";
 
-    private readonly IReferenceResolverAdapterFactory _referenceResolverAdapterFactory =
-        referenceResolverAdapterFactory
-        ?? throw new ArgumentNullException(nameof(referenceResolverAdapterFactory));
+    private readonly INaturalKeyLookupCommandBuilder _naturalKeyLookupCommandBuilder =
+        naturalKeyLookupCommandBuilder
+        ?? throw new ArgumentNullException(nameof(naturalKeyLookupCommandBuilder));
+
+    private readonly IResolvedDocumentReferenceMapFactory _resolvedDocumentReferenceMapFactory =
+        resolvedDocumentReferenceMapFactory
+        ?? throw new ArgumentNullException(nameof(resolvedDocumentReferenceMapFactory));
 
     private readonly IRelationalParameterConfigurator _relationalParameterConfigurator =
         relationalParameterConfigurator ?? DefaultRelationalParameterConfigurator.Instance;
@@ -251,17 +255,37 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(writeSession);
 
-        if (TryBuildSingleCompositePlan(input) is not { } plan)
+        // One resolver per attempt, so a retried attempt never reuses the lookups of the one it replaces.
+        var referenceResolver = new NaturalKeyReferenceResolver(
+            _naturalKeyLookupCommandBuilder,
+            _resolvedDocumentReferenceMapFactory
+        );
+
+        if (TryBuildSingleCompositePlan(input, referenceResolver) is not { } plan)
         {
-            return await ResolveInOrderedSegmentsAsync(input, writeSession, cancellationToken)
+            return await ResolveInOrderedSegmentsAsync(
+                    input,
+                    writeSession,
+                    referenceResolver,
+                    cancellationToken
+                )
                 .ConfigureAwait(false);
         }
 
-        return await ExecuteSingleCompositePlanAsync(input, writeSession, plan, cancellationToken)
+        return await ExecuteSingleCompositePlanAsync(
+                input,
+                writeSession,
+                plan,
+                referenceResolver,
+                cancellationToken
+            )
             .ConfigureAwait(false);
     }
 
-    private CompositeFirstPhasePlan? TryBuildSingleCompositePlan(RelationalWriteExecutorInput input)
+    private CompositeFirstPhasePlan? TryBuildSingleCompositePlan(
+        RelationalWriteExecutorInput input,
+        NaturalKeyReferenceResolver referenceResolver
+    )
     {
         var relationshipDisposition = ClassifyStoredRelationshipDisposition(input);
 
@@ -282,18 +306,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             return null;
         }
 
-        var lookupRequest = ReferenceResolver.TryBuildLookupRequest(input.ReferenceResolutionRequest);
-        RelationalCommand? lookupCommand = null;
-
-        if (lookupRequest is not null)
-        {
-            lookupCommand = _referenceResolverAdapterFactory.TryBuildSessionLookupCommand(lookupRequest);
-
-            if (lookupCommand is null)
-            {
-                return null;
-            }
-        }
+        var lookupBatch = referenceResolver.TryBuildLookupRequest(input.ReferenceResolutionRequest);
 
         var dialect = input.MappingSet.Key.Dialect;
         var builder = new RelationalCompositeCommandBuilder(
@@ -381,7 +394,14 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             return null;
         }
 
-        if (!TryAppendReferenceResolution(builder, lookupRequest, lookupCommand, out var referencePlan))
+        if (
+            !TryAppendReferenceResolution(
+                builder,
+                lookupBatch,
+                _naturalKeyLookupCommandBuilder,
+                out var referencePlan
+            )
+        )
         {
             return null;
         }
@@ -406,6 +426,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         RelationalWriteExecutorInput input,
         IRelationalWriteSession writeSession,
         CompositeFirstPhasePlan plan,
+        NaturalKeyReferenceResolver referenceResolver,
         CancellationToken cancellationToken
     )
     {
@@ -522,14 +543,12 @@ internal sealed class CompositeRelationalWriteFirstPhase(
 
         var currentState = DecodeCurrentState(hydrationPlan, outcomes, capturedTarget);
 
-        var resolvedReferences = await ResolveReferencesAsync(
-                input,
-                referencePlan,
-                outcomes,
-                writeSession,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
+        var resolvedReferences = ResolveReferencesFromOutcomes(
+            input,
+            referenceResolver,
+            referencePlan,
+            outcomes
+        );
 
         var lockedTarget = capturedTarget is null
             ? null
@@ -549,6 +568,7 @@ internal sealed class CompositeRelationalWriteFirstPhase(
     private async Task<RelationalWriteFirstPhaseResolution> ResolveInOrderedSegmentsAsync(
         RelationalWriteExecutorInput input,
         IRelationalWriteSession writeSession,
+        NaturalKeyReferenceResolver referenceResolver,
         CancellationToken cancellationToken
     )
     {
@@ -679,8 +699,9 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             }
         }
 
-        var decodedReferenceResults = await ExecuteStandaloneReferenceLookupAsync(
+        var resolvedReferences = await ResolveReferencesStandaloneAsync(
                 input,
+                referenceResolver,
                 writeSession,
                 cancellationToken
             )
@@ -704,12 +725,6 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             currentState = DecodeCurrentState(hydratedPage, capturedTarget);
         }
 
-        var resolvedReferences = await ResolveReferencesFromDecodedResultsAsync(
-                input,
-                decodedReferenceResults,
-                cancellationToken
-            )
-            .ConfigureAwait(false);
         var lockedTarget = capturedTarget is null
             ? null
             : RelationalWriteLockedTarget.FromCaptureOutcome(captureOutcome, writeSession);
@@ -928,11 +943,11 @@ internal sealed class CompositeRelationalWriteFirstPhase(
     {
         var capturePredicate = input.TargetRequest switch
         {
-            RelationalWriteTargetRequest.Post(var referentialId, _) =>
-                RelationalWriteTargetLookupSupport.BuildPostCaptureTargetPredicate(
+            RelationalWriteTargetRequest.Post(var documentIdentity, _) =>
+                RelationalWriteTargetLookupSupport.BuildNaturalKeyCaptureTargetPredicate(
                     input.MappingSet,
-                    input.WritePlan.Model.Resource,
-                    referentialId
+                    input.WritePlan,
+                    documentIdentity
                 ),
             RelationalWriteTargetRequest.Put(var documentUuid) =>
                 RelationalWriteTargetLookupSupport.BuildDocumentUuidCaptureTargetPredicate(
@@ -969,27 +984,32 @@ internal sealed class CompositeRelationalWriteFirstPhase(
                 : input.StoredRelationshipAuthorization
         );
 
-    private sealed record ReferenceStatementPlan(ReferenceLookupRequest LookupRequest, int? Ordinal);
+    /// <summary>
+    /// The request's lookup batch and, when it has lookups to send, the ordinal of the statement carrying them.
+    /// A batch of only unmatchable keys has no statement.
+    /// </summary>
+    private sealed record ReferenceStatementPlan(NaturalKeyLookupBatch Batch, int? Ordinal);
 
     private static bool TryAppendReferenceResolution(
         RelationalCompositeCommandBuilder builder,
-        ReferenceLookupRequest? lookupRequest,
-        RelationalCommand? lookupCommand,
+        NaturalKeyLookupBatch? lookupBatch,
+        INaturalKeyLookupCommandBuilder lookupCommandBuilder,
         out ReferenceStatementPlan? statementPlan
     )
     {
-        if (lookupRequest is null)
+        if (lookupBatch is null)
         {
             statementPlan = null;
             return true;
         }
 
-        if (lookupCommand is null)
+        if (lookupBatch.LookupRequest is not { } lookupRequest)
         {
-            throw new InvalidOperationException(
-                "A composite reference statement requires a prebuilt lookup command."
-            );
+            statementPlan = new ReferenceStatementPlan(lookupBatch, null);
+            return true;
         }
+
+        var lookupCommand = lookupCommandBuilder.BuildEmbeddableCommand(lookupRequest);
 
         if (!builder.Fits(lookupCommand.Parameters.Count))
         {
@@ -1007,10 +1027,15 @@ internal sealed class CompositeRelationalWriteFirstPhase(
             rewritten.Sql,
             rewritten.Parameters,
             RelationalCompositeResultShape.Rows,
-            static (reader, readCancellation) => ReadReferenceLookupResultsAsync(reader, readCancellation)
+            (reader, readCancellation) =>
+                NaturalKeyLookupResultReader.ReadCompositeResultSetAsync(
+                    reader,
+                    lookupRequest,
+                    readCancellation
+                )
         );
 
-        statementPlan = new ReferenceStatementPlan(lookupRequest, ordinal);
+        statementPlan = new ReferenceStatementPlan(lookupBatch, ordinal);
         return true;
     }
 
@@ -1548,86 +1573,46 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         return currentState;
     }
 
-    private async Task<IReadOnlyList<ReferenceLookupResult>?> ExecuteStandaloneReferenceLookupAsync(
+    /// <summary>
+    /// Resolves the request's references with the standalone lookup on the write session. A request with no
+    /// lookup to send is classified without asking the session for a command executor.
+    /// </summary>
+    private static async Task<ResolvedReferenceSet> ResolveReferencesStandaloneAsync(
         RelationalWriteExecutorInput input,
+        NaturalKeyReferenceResolver referenceResolver,
         IRelationalWriteSession writeSession,
         CancellationToken cancellationToken
     )
     {
-        if (
-            ReferenceResolver.TryBuildLookupRequest(input.ReferenceResolutionRequest) is not { } lookupRequest
-        )
+        var request = input.ReferenceResolutionRequest;
+        var lookupBatch = referenceResolver.TryBuildLookupRequest(request);
+
+        if (lookupBatch?.LookupRequest is null)
         {
-            return null;
+            return referenceResolver.ResolveFromRows(request, lookupBatch ?? NaturalKeyLookupBatch.Empty, []);
         }
 
-        return await _referenceResolverAdapterFactory
-            .CreateSessionAdapter(writeSession.CreateCommandExecutor())
-            .ResolveAsync(lookupRequest, cancellationToken)
+        return await referenceResolver
+            .ResolveAsync(request, writeSession.CreateCommandExecutor(), cancellationToken)
             .ConfigureAwait(false);
     }
 
-    private static async Task<ResolvedReferenceSet> ResolveReferencesFromDecodedResultsAsync(
+    /// <summary>
+    /// Classifies the request's references from the rows the composite command's lookup statement decoded.
+    /// </summary>
+    private static ResolvedReferenceSet ResolveReferencesFromOutcomes(
         RelationalWriteExecutorInput input,
-        IReadOnlyList<ReferenceLookupResult>? decodedResults,
-        CancellationToken cancellationToken
-    )
-    {
-        IReferenceResolverAdapter adapter = new ReplayReferenceResolverAdapter(decodedResults ?? []);
-
-        return await new ReferenceResolver(adapter)
-            .ResolveAsync(input.ReferenceResolutionRequest, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private async Task<ResolvedReferenceSet> ResolveReferencesAsync(
-        RelationalWriteExecutorInput input,
+        NaturalKeyReferenceResolver referenceResolver,
         ReferenceStatementPlan? referencePlan,
-        IReadOnlyList<RelationalCompositeStatementOutcome> outcomes,
-        IRelationalWriteSession writeSession,
-        CancellationToken cancellationToken
-    )
-    {
-        IReferenceResolverAdapter adapter;
-
-        if (referencePlan is { Ordinal: { } ordinal })
-        {
-            var decodedResults = (IReadOnlyList<ReferenceLookupResult>)outcomes[ordinal].Value!;
-            adapter = new ReplayReferenceResolverAdapter(decodedResults);
-        }
-        else if (referencePlan is not null)
-        {
-            // The provider's lookup shape could not join the composite command and runs standalone
-            // on this same session.
-            adapter = _referenceResolverAdapterFactory.CreateSessionAdapter(
-                writeSession.CreateCommandExecutor()
-            );
-        }
-        else
-        {
-            // No lookup was needed; replaying an empty set avoids constructing a provider adapter or
-            // asking the write session for a command executor that cannot be invoked.
-            adapter = new ReplayReferenceResolverAdapter([]);
-        }
-
-        return await new ReferenceResolver(adapter)
-            .ResolveAsync(input.ReferenceResolutionRequest, cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private static async Task<object?> ReadReferenceLookupResultsAsync(
-        DbDataReader reader,
-        CancellationToken cancellationToken
-    )
-    {
-        // The wrapper is deliberately not disposed: the composite execution owns the reader, and this
-        // statement owns exactly one result set of it.
-        var commandReader = new DbRelationalCommandReader(reader);
-
-        return await ReferenceLookupResultReader
-            .ReadAsync(commandReader, cancellationToken)
-            .ConfigureAwait(false);
-    }
+        IReadOnlyList<RelationalCompositeStatementOutcome> outcomes
+    ) =>
+        referenceResolver.ResolveFromRows(
+            input.ReferenceResolutionRequest,
+            referencePlan?.Batch ?? NaturalKeyLookupBatch.Empty,
+            referencePlan is { Ordinal: { } ordinal }
+                ? (NaturalKeyLookupMatch?[][])outcomes[ordinal].Value!
+                : []
+        );
 
     private static async Task<object?> ReadHydratedPageAsync(
         DbDataReader reader,
@@ -1639,13 +1624,4 @@ internal sealed class CompositeRelationalWriteFirstPhase(
         await HydrationExecutor
             .ReadPageAsync(reader, readPlan, keyset, options, cancellationToken)
             .ConfigureAwait(false);
-
-    private sealed class ReplayReferenceResolverAdapter(IReadOnlyList<ReferenceLookupResult> decodedResults)
-        : IReferenceResolverAdapter
-    {
-        public Task<IReadOnlyList<ReferenceLookupResult>> ResolveAsync(
-            ReferenceLookupRequest request,
-            CancellationToken cancellationToken = default
-        ) => Task.FromResult(decodedResults);
-    }
 }

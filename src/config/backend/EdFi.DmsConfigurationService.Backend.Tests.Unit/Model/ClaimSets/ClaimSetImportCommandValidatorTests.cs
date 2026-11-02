@@ -162,4 +162,53 @@ public class ClaimSetImportCommandValidatorTests
                 e.ErrorMessage.Contains("Validation context is missing required data for validation.")
             );
     }
+
+    [TestCase("Alpha,Beta")]
+    [TestCase(",Alpha")]
+    [TestCase("Alpha,")]
+    [TestCase(",")]
+    public void Validate_WithNameContainingCommaAndOtherwiseValidContext_ShouldFailOnlyOnTheName(string name)
+    {
+        var result = _validator.Validate(CreateOtherwiseValidContext(name));
+
+        result
+            .Errors.Select(e => e.ErrorMessage)
+            .Should()
+            .Equal("Claim set name must not contain white spaces or commas.");
+    }
+
+    [TestCase("Alpha")]
+    [TestCase("Alpha-Beta")]
+    public void Validate_WithNameWithoutCommaAndOtherwiseValidContext_ShouldPassValidation(string name)
+    {
+        var result = _validator.Validate(CreateOtherwiseValidContext(name));
+
+        result.IsValid.Should().BeTrue();
+    }
+
+    private static ValidationContext<ClaimSetImportCommand> CreateOtherwiseValidContext(string name)
+    {
+        var command = new ClaimSetImportCommand
+        {
+            Name = name,
+            ResourceClaims =
+            [
+                new ResourceClaim
+                {
+                    Name = "Resource1",
+                    Actions = [new ResourceClaimAction { Name = "Read", Enabled = true }],
+                },
+            ],
+        };
+
+        var context = new ValidationContext<ClaimSetImportCommand>(command);
+        context.RootContextData["Actions"] = new List<string> { "Read" };
+        context.RootContextData["AuthorizationStrategies"] = new List<string> { "Strategy1" };
+        context.RootContextData["ResourceClaimsHierarchyTuples"] = new Dictionary<string, string?>
+        {
+            { "Resource1", null },
+        };
+
+        return context;
+    }
 }

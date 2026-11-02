@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    A write profile over Data Standard 5.2 StudentEducationOrganizationAssociation that hides the required,
+    non-identifying studentIndicators.indicator. Core therefore treats every studentIndicators item it
+    considers new as not creatable, while an item that matches a stored row stays updatable with its hidden
+    indicator preserved.
+
+    The case-variant identity scenario uses it to prove, through Core's real creatability analysis, that on
+    SQL Server an item whose indicatorName differs from the stored one only in case matches the stored row.
+-->
+<Profile name="StudentEducationOrganizationAssociation-HiddenIndicator">
+    <Resource name="StudentEducationOrganizationAssociation">
+        <WriteContentType memberSelection="IncludeAll">
+            <Collection name="studentIndicators" memberSelection="ExcludeOnly">
+                <Property name="indicator" />
+            </Collection>
+        </WriteContentType>
+    </Resource>
+</Profile>

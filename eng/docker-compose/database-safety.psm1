@@ -949,7 +949,7 @@ function Get-SqlServerDataSourceEndpoint {
         dispatches through CreateTcpHandle, so it is ALSO the TCP transport - only its default port
         differs: a portless, non-instance admin endpoint resolves to DAC port 1434, reported in Port while
         HasExplicitPort stays false because the provider supplied it rather than the caller authoring it.
-        That matters here because mssql.yml permits MSSQL_PORT=1434, so an admin target can reach the
+        That matters here because mssql.compose.yml permits MSSQL_PORT=1434, so an admin target can reach the
         published Compose listener; reporting it as non-TCP classified it external and skipped the
         separate-topology authority. SqlClient accepts no comma parameters on admin, so an authored port
         there is refused rather than supported. np (named pipes) remains a genuinely different transport:
@@ -1035,7 +1035,7 @@ function Get-SqlServerDataSourceEndpoint {
 
     # Admin (the DAC prefix) dispatches through CreateTcpHandle, so it IS the TCP transport for endpoint
     # purposes - only its default port differs. Treating it as non-TCP classified an admin target as
-    # external and skipped the separate-topology authority, even though mssql.yml permits MSSQL_PORT=1434
+    # external and skipped the separate-topology authority, even though mssql.compose.yml permits MSSQL_PORT=1434
     # and the host's published listener then answers exactly the port admin resolves to.
     $isTcp = [string]::IsNullOrEmpty($protocol) -or $protocol -eq "tcp" -or $protocol -eq "admin"
 
@@ -1457,7 +1457,7 @@ function Get-CmsDatabaseTopologyDefaultConnectionString {
         Constructs the concrete PostgreSQL connection-string default
         Confirm-CmsDatabaseTopologyAgreement validates against when
         CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING is entirely absent, in exactly the shape the checked-in
-        local-config.yml / published-config.yml nested Compose fallback renders (confirmed against a
+        local-config.compose.yml / published-config.compose.yml nested Compose fallback renders (confirmed against a
         real `docker compose config` invocation - see CmsDatabaseTopology.Tests.ps1's Compose-rendering
         oracle).
 
@@ -1762,12 +1762,12 @@ function Assert-E2EDatabaseIsDedicated {
 
     foreach ($databaseNameKey in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) {
         if (-not (Test-ProtectedKeyConfigured -EnvironmentValues $EnvironmentValues -Name $databaseNameKey)) {
-            # postgresql.yml gives the container edfi_datamanagementservice when POSTGRES_DB_NAME is
+            # postgresql.compose.yml gives the container edfi_datamanagementservice when POSTGRES_DB_NAME is
             # absent from both the file and the shell, so that default is protected. An absent
             # MSSQL_DB_NAME is skipped.
             if ($databaseNameKey -ceq "POSTGRES_DB_NAME" -and
                 (Test-E2EDatabaseNameCollidesWithProtectedName -E2EDatabaseName $E2EDatabaseName -ProtectedDatabaseName "edfi_datamanagementservice")) {
-                throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match edfi_datamanagementservice, the database postgresql.yml uses when POSTGRES_DB_NAME is absent."
+                throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match edfi_datamanagementservice, the database postgresql.compose.yml uses when POSTGRES_DB_NAME is absent."
             }
             continue
         }

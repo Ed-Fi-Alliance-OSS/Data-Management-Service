@@ -56,6 +56,12 @@ public sealed class Given_Mssql_CompactDescriptorResources : MssqlApiIntegration
         );
 
     [Test]
+    public Task It_matches_a_repeated_POST_with_three_descriptor_spellings_in_the_existing_write_command_stream() =>
+        CompactDescriptorResourceScenario.It_matches_a_repeated_POST_with_three_descriptor_spellings_in_the_existing_write_command_stream(
+            Harness
+        );
+
+    [Test]
     public Task It_stores_compact_keys_and_hydrates_root_collection_extension_and_copied_URIs() =>
         CompactDescriptorResourceScenario.It_stores_compact_keys_and_hydrates_root_collection_extension_and_copied_URIs(
             Harness
@@ -74,14 +80,26 @@ public sealed class Given_Mssql_CompactDescriptorResources : MssqlApiIntegration
         );
 
     [Test]
+    public Task It_validates_descriptor_filter_values_at_the_framework_percent_decoding_boundary() =>
+        CompactDescriptorResourceScenario.It_validates_descriptor_filter_values_at_the_framework_percent_decoding_boundary(
+            Harness
+        );
+
+    [Test]
     public Task It_protects_referenced_descriptors_without_changing_rows_or_stamps() =>
         CompactDescriptorResourceScenario.It_protects_referenced_descriptors_without_changing_rows_or_stamps(
             Harness
         );
 
     [Test]
-    public Task It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates() =>
-        CompactDescriptorResourceScenario.It_maintains_RI_and_copied_descriptor_keys_after_resource_identity_updates(
+    public Task It_maintains_copied_descriptor_keys_after_resource_identity_updates() =>
+        CompactDescriptorResourceScenario.It_maintains_copied_descriptor_keys_after_resource_identity_updates(
+            Harness
+        );
+
+    [Test]
+    public Task It_matches_repeated_POSTs_with_case_variant_descriptors_after_a_resource_identity_update() =>
+        CompactDescriptorResourceScenario.It_matches_repeated_POSTs_with_case_variant_descriptors_after_a_resource_identity_update(
             Harness
         );
 

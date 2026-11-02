@@ -241,7 +241,7 @@ Backend is expected to own all of the following:
 
 - load the current persisted document state needed for auth, reconstitution, no-op detection, and profile-constrained merge execution,
 - resolve document references to `bigint DocumentId` and descriptor references to both
-  `int DescriptorId` and owning `bigint DocumentId` in the same RI lookup; flattened descriptor
+  `int DescriptorId` and owning `bigint DocumentId` in the same natural-key probe; flattened descriptor
   bindings, including copied reference identity parts and hidden-value preservation, use `DescriptorId`,
 - flatten the `WritableRequestBody` into row candidates,
 - run post-resolution collection duplicate validation with resolved `DocumentId`/`DescriptorId` values and backend schema equality before merge/no-op/DML,

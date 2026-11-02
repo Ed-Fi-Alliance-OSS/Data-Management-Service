@@ -140,4 +140,41 @@ function Test-DeletablePrerelease {
     return -not (Test-TaggedReleaseBuild -ReleaseRef $ReleaseRef -TaggedVersion $TaggedVersion)
 }
 
-Export-ModuleMember -Function Get-PrereleaseVersion, Get-ReleaseTagVersion, Test-TaggedReleaseBuild, Test-DeletablePrerelease
+function Assert-ReleaseRef {
+    <#
+    .SYNOPSIS
+        Throws unless a tag or release ref is exactly one prefix followed by a version.
+    .DESCRIPTION
+        A release workflow reads its ref from the event, and git allows shell metacharacters in tag
+        names. The ref is passed to the shell through env, so it is data there; this check is what
+        stops a ref that is not a version before anything is computed, published or deleted from it.
+        The pattern is anchored to the whole string with \A and \z, because $ also matches before a
+        trailing newline, it is case-sensitive, and [0-9] is used because \d also matches non-ASCII
+        digits.
+    .PARAMETER Prefix
+        The prefixes the caller accepts: v for a release tag, dms-pre- or cs-pre- for a prerelease.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string]
+        $ReleaseRef,
+
+        [Parameter(Mandatory)]
+        [ValidateSet('v', 'dms-pre-', 'cs-pre-')]
+        [string[]]
+        $Prefix
+    )
+
+    $alternatives = ($Prefix | ForEach-Object { [regex]::Escape($_) }) -join '|'
+    $pattern = "\A(?:$alternatives)[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?\z"
+
+    if ($ReleaseRef -cnotmatch $pattern) {
+        # Only printable ASCII reaches the log, so the refused value cannot start a workflow command.
+        $shown = [regex]::Replace($ReleaseRef, '[^\x20-\x7E]', '?')
+        throw "Release ref '$shown' is not a $($Prefix -join ', ') version such as $($Prefix[0])1.2.3 or $($Prefix[0])1.2.3-beta.0.1. It is refused before anything uses it."
+    }
+}
+
+Export-ModuleMember -Function Get-PrereleaseVersion, Get-ReleaseTagVersion, Test-TaggedReleaseBuild, Test-DeletablePrerelease, Assert-ReleaseRef

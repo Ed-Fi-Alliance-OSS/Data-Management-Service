@@ -79,12 +79,10 @@ using the same provider equality contract as the natural-key resolver.
 - The SQL pinned by `TrackedChangeQueryPlannerTests` and `TrackedChangeAuthorizationSqlEmitterTests`
   contains no live-descriptor `Discriminator` predicate, including the custom-view `ReadChanges`
   authorization SQL emitted by `TrackedChangeAuthorizationSqlEmitter`.
-- Custom-view `ReadChanges` authorization keeps the verdicts it has after DMS-1443, with these
-  changes. On PostgreSQL, where all four comparisons are exact today, descriptor values that are
-  equal after `pg_c_utf8` lowercasing now match. On SQL Server, DMS-1443's identity collation
-  already makes all four comparisons case-insensitive, so verdicts stay as DMS-1443 left them,
-  plus the pairs where `LOWER` and the collation's comparison weights disagree (dotted `İ`/`i`),
-  which now match. The criterion holds for both basis kinds, each with a live basis row and with a
+- All four custom-view descriptor comparisons follow the provider's lowered whole-URI identity
+  contract. This includes equal-URI component re-splits matching on both providers, and trailing
+  namespace spaces becoming significant on SQL Server, alongside the specified casing and dotted-`İ`
+  behavior. The criterion holds for both basis kinds, each with a live basis row and with a
   deleted basis row reached through its tombstone probe arm:
   - a descriptor basis (`DescriptorSeek`);
   - a resource basis whose identity includes a descriptor (live seek).

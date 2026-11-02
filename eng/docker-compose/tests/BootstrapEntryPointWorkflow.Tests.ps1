@@ -576,7 +576,7 @@ $failureStatement
                 param($ProjectName, $DatabaseEngine, $EnvironmentFile)
                 # Records the full shape so tests can prove the slice is stopped with the same
                 # compose files/env file it was started with - never a bare compose call.
-                $composeFiles = if ($DatabaseEngine -eq "mssql") { "mssql.yml" } else { "postgresql.yml" }
+                $composeFiles = if ($DatabaseEngine -eq "mssql") { "mssql.compose.yml" } else { "postgresql.compose.yml" }
                 Add-Content -LiteralPath $log -Value "restore:stop-db project=$ProjectName engine=$DatabaseEngine env=[$EnvironmentFile] files=[$composeFiles]"
                 & $stubThrow "Stop-RestoreDatabaseOnlySlice"
             }.GetNewClosure()
@@ -2363,7 +2363,7 @@ Add-Content -LiteralPath '$script:restoreLog' -Value "seed args=[`$(`$args -join
             $stopDbLine = $log[(Get-RestoreLogIndex -Log $log -Pattern "restore:stop-db*")]
             $stopDbLine | Should -BeLike "*project=dms-local engine=postgresql*"
             $stopDbLine | Should -BeLike "*env=[[]*preflight.env]*"
-            $stopDbLine | Should -BeLike "*files=[[]postgresql.yml]*"
+            $stopDbLine | Should -BeLike "*files=[[]postgresql.compose.yml]*"
             $wrapperSource = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1") -Raw
             # No bare compose invocation survives anywhere in the wrapper: every remaining
             # mention is commentary. (The helper's own argv contract - stop/db only, carrying the
@@ -4635,18 +4635,18 @@ Export-ModuleMember -Function *
     #   compatibility only and is no longer a meaningful opt-out.
     # =========================================================================
     Context "Config Service always included in compose set" {
-        It "start-local-dms.ps1 includes local-config.yml for every non-DbOnly compose set" {
+        It "start-local-dms.ps1 includes local-config.compose.yml for every non-DbOnly compose set" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
             # Config Service is unconditional within the full application compose set. The
             # outer databaseOnlyStartup guard keeps the dedicated database diagnostic isolated.
-            $startScript | Should -Match '\$files\s*\+=\s*@\("-f",\s*"local-config\.yml"\)'
-            $startScript | Should -Match '(?s)if \(-not \$databaseOnlyStartup\) \{.*?\$files\s*\+=\s*@\("-f",\s*"local-config\.yml"\)'
+            $startScript | Should -Match '\$files\s*\+=\s*@\("-f",\s*"local-config\.compose\.yml"\)'
+            $startScript | Should -Match '(?s)if \(-not \$databaseOnlyStartup\) \{.*?\$files\s*\+=\s*@\("-f",\s*"local-config\.compose\.yml"\)'
 
-            # There must be no feature-switch guard wrapping the local-config.yml inclusion.
-            $startScript | Should -Not -Match 'if\s*\([^)]*EnableConfig[^)]*\)[^{]*\{[^}]*local-config\.yml' -Because "local-config.yml must be included unconditionally, not gated on -EnableConfig"
+            # There must be no feature-switch guard wrapping the local-config.compose.yml inclusion.
+            $startScript | Should -Not -Match 'if\s*\([^)]*EnableConfig[^)]*\)[^{]*\{[^}]*local-config\.compose\.yml' -Because "local-config.compose.yml must be included unconditionally, not gated on -EnableConfig"
             $startScript | Should -Not -Match 'if\s*\(\$EnableConfig\s*-or' -Because "the old conditional guard must have been removed"
         }
 
@@ -4657,7 +4657,7 @@ Export-ModuleMember -Function *
             $params | Should -Contain "EnableConfig" -Because "-EnableConfig must be retained for backward compatibility even though it is no longer a meaningful opt-out"
         }
 
-        It "start-published-dms.ps1 includes published-config.yml when bootstrap mode is active" {
+        It "start-published-dms.ps1 includes published-config.compose.yml when bootstrap mode is active" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             ) -Raw
@@ -4667,11 +4667,11 @@ Export-ModuleMember -Function *
             # single source and that the source's definition still carries $bootstrapMode. Behavioral
             # coverage of each disjunct lives in CmsDatabaseTopology.Tests.ps1, which runs the script
             # and inspects the compose file set it actually builds.
-            $startScript | Should -Match '(?s)if \(\$cmsIncludedInComposeSet\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.yml"\)' -Because "published bootstrap starts must include the Configuration Service compose file so staged claims mount with DMS ApiSchema"
+            $startScript | Should -Match '(?s)if \(\$cmsIncludedInComposeSet\)\s*\{[^}]*?\$files \+= @\("-f", "published-config\.compose\.yml"\)' -Because "published bootstrap starts must include the Configuration Service compose file so staged claims mount with DMS ApiSchema"
             $startScript | Should -Match '\$cmsIncludedInComposeSet = [^\r\n]*\$bootstrapMode'
         }
 
-        It "start-published-dms.ps1 keeps non-bootstrap keycloak published-config.yml opt-in behavior" {
+        It "start-published-dms.ps1 keeps non-bootstrap keycloak published-config.compose.yml opt-in behavior" {
             $startScript = Get-Content -LiteralPath (
                 Join-Path $script:sourceDockerComposeRoot "start-published-dms.ps1"
             ) -Raw
@@ -4691,7 +4691,7 @@ Export-ModuleMember -Function *
     Context "MSSQL datastore engine compose selection and runtime isolation (DMS-1238, DMS-1279)" {
         It "isolates the SQL Server 2025 runtime from legacy SQL Server volumes (DMS-1279)" {
             $mssqlCompose = Get-Content -LiteralPath (
-                Join-Path $script:sourceDockerComposeRoot "mssql.yml"
+                Join-Path $script:sourceDockerComposeRoot "mssql.compose.yml"
             ) -Raw
 
             $mssqlCompose | Should -Match '(?m)^\s*image:\s*\$\{MSSQL_IMAGE:-mcr\.microsoft\.com/mssql/server:2025-latest\}\s*$'
@@ -4725,13 +4725,13 @@ Export-ModuleMember -Function *
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            # postgresql.yml and mssql.yml both define the "db" service that local-config.yml
+            # postgresql.compose.yml and mssql.compose.yml both define the "db" service that local-config.compose.yml
             # gates on (depends_on: db: service_healthy), so exactly one of them may join the
             # compose set: SQL Server hosts the whole stack on the mssql path (DMS-1243 CMS
             # SQL Server backend), and no PostgreSQL container runs.
-            $startScript | Should -Match '\$databaseComposeFile = if \(\$DatabaseEngine -eq "mssql"\) \{ "mssql\.yml" \} else \{ "postgresql\.yml" \}'
+            $startScript | Should -Match '\$databaseComposeFile = if \(\$DatabaseEngine -eq "mssql"\) \{ "mssql\.compose\.yml" \} else \{ "postgresql\.compose\.yml" \}'
             $startScript | Should -Match '\$files\s*=\s*@\(\s*"-f",\s*\$databaseComposeFile'
-            $startScript | Should -Not -Match '\$files \+= @\("-f", "mssql\.yml"\)'
+            $startScript | Should -Not -Match '\$files \+= @\("-f", "mssql\.compose\.yml"\)'
         }
 
         It "start-local-dms.ps1 passes engine-aware database parameters to every setup-openiddict.ps1 call" {
@@ -4757,7 +4757,7 @@ Export-ModuleMember -Function *
                 Join-Path $script:sourceDockerComposeRoot "start-local-dms.ps1"
             ) -Raw
 
-            $startScript | Should -Match 'if \(\$enableKafkaInfrastructure -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*\$files \+= @\("-f", "kafka\.yml"\)'
+            $startScript | Should -Match 'if \(\$enableKafkaInfrastructure -and \$DatabaseEngine -eq "postgresql"\)\s*\{[^}]*\$files \+= @\("-f", "kafka\.compose\.yml"\)'
         }
 
         It "start-local-dms.ps1 permits MSSQL Kafka UI only through the explicit CDC infrastructure path" {
@@ -5236,7 +5236,7 @@ Copy-Item -LiteralPath `$EnvironmentFile -Destination '$capturedEnvPath' -Force
                 'SchoolYearRange', 'DataStandardVersion', 'InfraOnly', 'DmsBaseUrl',
                 'EnableConfig', 'AddExtensionSecurityMetadata', 'NoDataStore', 'AddSmokeTestCredentials', 'Rebuild',
                 # -SeparateConfigDatabase changes which database CMS targets, never which compose
-                # files a teardown must cover: local-config.yml is unconditional in
+                # files a teardown must cover: local-config.compose.yml is unconditional in
                 # start-local-dms.ps1's compose set. So it is excluded, like the other
                 # non-compose-shaping options.
                 'SeparateConfigDatabase', 'DataStoreDatabaseName',
@@ -5451,7 +5451,7 @@ Export-ModuleMember -Function Invoke-CdcDeploymentLifecycle
 
     # =========================================================================
     # DMS-1238 - -DatabaseEngine parameter surface and unconditional forwarding across both
-    # start scripts. mssql.yml is no longer a local-only tier: both bootstrap entry points
+    # start scripts. mssql.compose.yml is no longer a local-only tier: both bootstrap entry points
     # accept -DatabaseEngine, and the wrapper forwards it to whichever start script it targets
     # without gating on StartScriptName.
     # =========================================================================
@@ -5542,7 +5542,7 @@ Add-Content -LiteralPath '$callLog' -Value "start DatabaseEngine=`$DatabaseEngin
                 Join-Path $script:sourceDockerComposeRoot "bootstrap-wrapper.psm1"
             ) -Raw
 
-            # mssql.yml is no longer a local-only tier, so there must be no gating variable
+            # mssql.compose.yml is no longer a local-only tier, so there must be no gating variable
             # deciding forwarding by StartScriptName.
             $wrapperSource | Should -Not -Match "startScriptSupportsDatabaseEngine"
             $wrapperSource | Should -Match '(?m)^\s*\$startArgs\.DatabaseEngine\s*=\s*\$DatabaseEngine\s*$'
@@ -5675,8 +5675,8 @@ CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH=not-an-integer
 
         It "both start scripts keep application and bootstrap compose files out of database-only startup" {
             foreach ($case in @(
-                @{ Name = "start-local-dms.ps1"; ApplicationFile = "local-dms.yml"; ConfigFile = "local-config.yml" },
-                @{ Name = "start-published-dms.ps1"; ApplicationFile = "published-dms.yml"; ConfigFile = "published-config.yml" }
+                @{ Name = "start-local-dms.ps1"; ApplicationFile = "local-dms.compose.yml"; ConfigFile = "local-config.compose.yml" },
+                @{ Name = "start-published-dms.ps1"; ApplicationFile = "published-dms.compose.yml"; ConfigFile = "published-config.compose.yml" }
             )) {
                 $source = Get-Content -LiteralPath (
                     Join-Path $script:sourceDockerComposeRoot $case.Name

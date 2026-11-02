@@ -134,8 +134,8 @@ Feature: Client credentials at the token endpoint
     @DMS-1604
     @DMS-1606
     @e2e-ci-shard-1
-    Scenario: 07 A Bearer Authorization header is rejected even with credentials in the body
-      When a token request is made with Authorization header "Bearer some-access-token", content type "application/x-www-form-urlencoded" and body
+    Scenario: 07 A Bearer Authorization header containing "basic" is rejected even with credentials in the body
+      When a token request is made with Authorization header "Bearer xbasicx", content type "application/x-www-form-urlencoded" and body
         """
         grant_type=client_credentials&client_id={clientId}&client_secret={clientSecret}
         """
@@ -210,7 +210,7 @@ Feature: Client credentials at the token endpoint
     @DMS-1606
     @e2e-ci-shard-1
     Scenario Outline: 38 Grant validation precedes malformed Basic header parsing
-      When a token request is made with Authorization header "Basicxyz:secret", content type "application/json" and body
+      When a token request is made with Authorization header "Basic abc,Basic def", content type "application/json" and body
         """
         <body>
         """
@@ -305,8 +305,8 @@ Feature: Client credentials at the token endpoint
 
     @DMS-1606
     @e2e-ci-shard-1
-    Scenario: 17 A malformed Basic-like Authorization value is rejected safely
-      When a token request is made with Authorization header "Basicxyz:secret", content type "application/x-www-form-urlencoded" and body
+    Scenario: 17 A malformed Basic Authorization value is rejected safely
+      When a token request is made with Authorization header "Basic abc,Basic def", content type "application/x-www-form-urlencoded" and body
         """
         grant_type=client_credentials
         """

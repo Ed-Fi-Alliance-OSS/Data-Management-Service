@@ -263,19 +263,19 @@ internal class JwtValidationService(
     /// </summary>
     /// <param name="principal">The validated ClaimsPrincipal containing JWT claims</param>
     /// <param name="fallbackTokenId">A non-secret hash-derived token identifier used when the token has no jti claim</param>
-    /// <returns>ClientAuthorizations object containing tokenId, claimSetName, educationOrganizationIds, and namespacePrefixes</returns>
+    /// <returns>ClientAuthorizations object containing the token and client identifiers, every distinct scope value (and the claim set name when there is exactly one), education organization ids, namespace prefixes, and data store ids</returns>
     private static ClientAuthorizations ExtractClientAuthorizations(
         ClaimsPrincipal principal,
         string fallbackTokenId
     )
     {
-        string claimSetName = string.Empty;
+        List<string> scopeValues = [];
+        HashSet<string> seenScopeValues = new(StringComparer.Ordinal);
         string tokenId = fallbackTokenId;
         string clientId = string.Empty;
         string? namespacePrefixClaim = null;
         string? educationOrganizationIdsClaim = null;
         string? dataStoreIdsClaim = null;
-        bool foundClaimSetName = false;
         bool foundTokenId = false;
         bool foundClientId = false;
         bool foundNamespacePrefixes = false;
@@ -286,9 +286,15 @@ internal class JwtValidationService(
         {
             switch (claim.Type)
             {
-                case "scope" when !foundClaimSetName:
-                    claimSetName = claim.Value;
-                    foundClaimSetName = true;
+                case "scope":
+                    // Every scope claim counts (an array arrives as repeated claims) and each value
+                    // is a space-separated list. Only ASCII space separates; commas, tabs and case
+                    // are left alone, and no claim set is chosen here.
+                    scopeValues.AddRange(
+                        claim
+                            .Value.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                            .Where(seenScopeValues.Add)
+                    );
                     break;
                 case "jti" when !foundTokenId:
                     tokenId = claim.Value;
@@ -316,11 +322,16 @@ internal class JwtValidationService(
         return new ClientAuthorizations(
             TokenId: tokenId,
             ClientId: clientId,
-            ClaimSetName: claimSetName,
+            // Left empty for zero or several distinct scope values; the request-level resolver
+            // picks the claim set against tenant metadata.
+            ClaimSetName: scopeValues.Count == 1 ? scopeValues[0] : string.Empty,
             EducationOrganizationIds: ParseEducationOrganizationIds(educationOrganizationIdsClaim),
             NamespacePrefixes: ParseNamespacePrefixes(namespacePrefixClaim),
             DataStoreIds: ParseDataStoreIds(dataStoreIdsClaim)
-        );
+        )
+        {
+            ScopeValues = Array.AsReadOnly(scopeValues.ToArray()),
+        };
     }
 
     private bool TryGetCachedValidation(

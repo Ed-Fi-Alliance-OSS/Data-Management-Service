@@ -1742,13 +1742,13 @@ exit $ExitCode
 
         It "bootstrap-dms.yml exists with the dms volume override and is conditionally included by start scripts" {
             # bootstrap-dms.yml overrides the dms service with the staged ApiSchema volume mount.
-            # local-dms.yml and published-dms.yml must NOT carry the ApiSchema mount directly (they
+            # local-dms.compose.yml and published-dms.compose.yml must NOT carry the ApiSchema mount directly (they
             # rely on bootstrap-dms.yml, included only when bootstrap mode is active). Config Service
             # keeps its mount-source env hook for bootstrap-mode claims activation.
-            $localDms = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "local-dms.yml") -Raw
-            $publishedDms = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "published-dms.yml") -Raw
-            $localConfig = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "local-config.yml") -Raw
-            $publishedConfig = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "published-config.yml") -Raw
+            $localDms = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "local-dms.compose.yml") -Raw
+            $publishedDms = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "published-dms.compose.yml") -Raw
+            $localConfig = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "local-config.compose.yml") -Raw
+            $publishedConfig = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "published-config.compose.yml") -Raw
 
             $localDms | Should -Not -Match "/app/additional-claims"
             $publishedDms | Should -Not -Match "/app/additional-claims"
@@ -1776,7 +1776,7 @@ exit $ExitCode
             # The inclusion condition is computed once into $cmsIncludedInComposeSet (shared with the
             # CMS-participation gate so the two cannot drift); assert the inclusion is gated on that
             # variable and that its definition still carries $bootstrapMode.
-            $publishedStartScript | Should -Match '(?s)if \(\$cmsIncludedInComposeSet\)\s*\{[^}]*?published-config\.yml' -Because "published bootstrap mode must include the Config Service compose file that mounts staged claims"
+            $publishedStartScript | Should -Match '(?s)if \(\$cmsIncludedInComposeSet\)\s*\{[^}]*?published-config\.compose\.yml' -Because "published bootstrap mode must include the Config Service compose file that mounts staged claims"
             $publishedStartScript | Should -Match '\$cmsIncludedInComposeSet = [^\r\n]*\$bootstrapMode' -Because "bootstrap mode must remain one of the conditions that includes CMS"
         }
 
@@ -2607,7 +2607,7 @@ exit 0
 
         It "both E2E setup wrappers let the selected environment file provide the schema package settings" {
             # DMS-1300. Docker Compose gives process env vars precedence over --env-file entries, and
-            # local-dms.yml resolves all three names with a ${VAR:-default} fallback that treats a
+            # local-dms.compose.yml resolves all three names with a ${VAR:-default} fallback that treats a
             # present-but-blank value as unset. Both setup flows must therefore REMOVE the three names
             # around their Docker phases, never blank them: an assignment-based clear is
             # platform- and PowerShell-version-dependent and can leave a present-but-blank value,

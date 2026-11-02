@@ -655,14 +655,14 @@ Describe "Dedicated E2E database guard" {
         }
     }
 
-    # postgresql.yml gives the container edfi_datamanagementservice when POSTGRES_DB_NAME is absent from
+    # postgresql.compose.yml gives the container edfi_datamanagementservice when POSTGRES_DB_NAME is absent from
     # the file and the shell. The refusals are regression rows: without the default the guard skips the
     # absent key and accepts. The file and shell overrides and the configured blank are preservation rows.
-    Context "absent POSTGRES_DB_NAME: the postgresql.yml default (regression: default unprotected)" {
+    Context "absent POSTGRES_DB_NAME: the postgresql.compose.yml default (regression: default unprotected)" {
         BeforeAll {
             function Get-PostgresDefaultDiagnostic {
                 param([string]$E2EDatabaseName)
-                "E2E database '$E2EDatabaseName' in '$script:environmentFileLabel' must be dedicated and cannot match edfi_datamanagementservice, the database postgresql.yml uses when POSTGRES_DB_NAME is absent."
+                "E2E database '$E2EDatabaseName' in '$script:environmentFileLabel' must be dedicated and cannot match edfi_datamanagementservice, the database postgresql.compose.yml uses when POSTGRES_DB_NAME is absent."
             }
         }
 

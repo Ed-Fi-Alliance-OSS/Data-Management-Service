@@ -147,6 +147,15 @@ internal static class AbstractIdentitySchoolTestData
                     new ColumnStorage.Stored()
                 ),
                 new DbColumnModel(
+                    new DbColumnName("ResourceKeyId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
                     new DbColumnName("Discriminator"),
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, 256),
@@ -166,10 +175,10 @@ internal static class AbstractIdentitySchoolTestData
                     [new DbColumnName("EducationOrganizationId"), new DbColumnName("DocumentId")]
                 ),
                 new TableConstraint.ForeignKey(
-                    "FK_EducationOrganizationIdentity_Document",
-                    [new DbColumnName("DocumentId")],
+                    "FK_EducationOrganizationIdentity_DocumentResourceKey",
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
-                    [new DbColumnName("DocumentId")],
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     OnDelete: ReferentialAction.Cascade
                 ),
             ]
@@ -256,6 +265,15 @@ internal static class AbstractIdentitySchoolTestData
                     new ColumnStorage.Stored()
                 ),
                 new DbColumnModel(
+                    new DbColumnName("ResourceKeyId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
                     new DbColumnName("Discriminator"),
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, 256),
@@ -275,10 +293,10 @@ internal static class AbstractIdentitySchoolTestData
                     [new DbColumnName("Program_EducationOrganizationId"), new DbColumnName("DocumentId")]
                 ),
                 new TableConstraint.ForeignKey(
-                    "FK_GeneralStudentProgramAssociationIdentity_Document",
-                    [new DbColumnName("DocumentId")],
+                    "FK_GeneralStudentProgramAssociationIdentity_DocumentResourceKey",
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
-                    [new DbColumnName("DocumentId")],
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     OnDelete: ReferentialAction.Cascade
                 ),
             ]
@@ -440,8 +458,8 @@ internal static class AbstractIdentitySchoolTestData
 
     /// <summary>
     /// Builds the School write plan and mapping set shared by the abstract-identity tests. The School
-    /// referential-identity trigger is always present so the failure mapper can project the concrete identity
-    /// values; the constraint resolver ignores triggers.
+    /// own natural-key probe is always present so the failure mapper can project the concrete identity
+    /// values; the constraint resolver classifies abstract identity conflicts structurally.
     /// </summary>
     /// <param name="abstractIdentityTable">
     /// The abstract identity table placed in the mapping set's abstract-identity inventory. Tests pass a
@@ -556,26 +574,19 @@ internal static class AbstractIdentitySchoolTestData
         var concreteKey = new ResourceKeyEntry(1, concreteResource, "1.0.0", false);
         var abstractResourceKey = new ResourceKeyEntry(2, abstractResource, "1.0.0", true);
 
-        // Subclass identifiers carry an Int32 scalar type in these fixtures; the failure mapper reads only the
-        // identity JSONPath from this element (walking it against the request body), not its scalar type, so a
-        // reference-backed nested path resolves the same way.
-        var referentialIdentityTrigger = new DbTriggerInfo(
-            new DbTriggerName($"TR_{concreteResource.ResourceName}_ReferentialIdentity"),
+        // The failure mapper reads only the identity JSONPath from the probe entry (walking it against the
+        // request body), not its column or binding, so a reference-backed nested path resolves the same way.
+        var ownNaturalKeyProbe = new OwnNaturalKeyProbe(
+            concreteResource,
             concreteRootTable.Table,
-            [new DbColumnName("DocumentId")],
-            [.. identityElements.Select(identityElement => identityElement.Column)],
-            new TriggerKindParameters.ReferentialIdentityMaintenance(
-                concreteKey.ResourceKeyId,
-                concreteResource.ProjectName,
-                concreteResource.ResourceName,
-                [
-                    .. identityElements.Select(identityElement => new IdentityElementMapping(
-                        identityElement.Column,
-                        identityElement.JsonPath,
-                        new RelationalScalarType(ScalarKind.Int32)
-                    )),
-                ]
-            )
+            [
+                .. identityElements.Select(identityElement => new NaturalKeyProbeKeyColumn(
+                    new JsonPathExpression(identityElement.JsonPath, []),
+                    identityElement.Column,
+                    new NaturalKeyProbeKeyBinding.Scalar(new RelationalScalarType(ScalarKind.Int32))
+                )),
+            ],
+            new DbColumnName("DocumentId")
         );
 
         var mappingSet = new MappingSet(
@@ -596,7 +607,7 @@ internal static class AbstractIdentitySchoolTestData
                 [new AbstractIdentityTableInfo(abstractResourceKey, abstractIdentityTable)],
                 [],
                 [],
-                [referentialIdentityTrigger]
+                []
             ),
             new Dictionary<QualifiedResourceName, ResourceWritePlan> { [concreteResource] = writePlan },
             new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
@@ -611,7 +622,13 @@ internal static class AbstractIdentitySchoolTestData
                 [abstractResourceKey.ResourceKeyId] = abstractResourceKey,
             },
             new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>()
-        );
+        )
+        {
+            OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>
+            {
+                [concreteResource] = ownNaturalKeyProbe,
+            },
+        };
 
         return (writePlan, mappingSet);
     }

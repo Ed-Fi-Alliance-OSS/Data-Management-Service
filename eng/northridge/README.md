@@ -123,7 +123,10 @@ $baseline = './src/dms/backend/Fixtures/authoritative/ds-5.2/expected/relational
 The copied schemas include every resource and tracked-history schema in the baseline, plus `auth`.
 The preflight verifies the compact target against that baseline, complete source/target table
 coverage, exact column shapes for descriptor conversion and directly restored tables, and unchanged
-resource-key seeds. `dms.Document` retains its staging rules: source-only columns are omitted from
+resource-key seeds. The one exception to exact shapes is an owner's `ContentCreatedAt` (DMS-1656),
+which legacy dumps predate: a target-only `ContentCreatedAt` is admitted. No source the copy
+accepts has the column, because it postdates compact descriptors, which the copy refuses.
+`dms.Document` retains its staging rules: source-only columns are omitted from
 the target insert, and target columns absent from the source must be nullable, defaulted, identity
 or generated. Source descriptor keys and stored descriptor references must be legacy bigint
 document keys. Descriptor rows keep their bigint `DocumentId`
@@ -138,13 +141,19 @@ that name. Unknown or ambiguous history types stop the copy and require resolvin
 type identity before retrying. Live rows accept those same qualified forms or an unqualified
 resource name matching the owning document's type; their `ResourceKeyId` comes from that document.
 
-Document IDs/UUIDs, document-level RI rows, content stamps and history IDs/versions remain intact.
-The current combined target omits both `dms.Document.ContentLastModifiedAt` and
+Document IDs/UUIDs, content stamps and history IDs/versions remain intact. `dms.ReferentialIdentity`
+is retired: an archive that still carries it has that entry skipped and logged, never restored or
+reconciled, and a target that still has the table stops the copy. Abstract identity tables load
+through the same staged path as descriptor-bearing tables, once each, and take `ResourceKeyId`
+from their owning `dms.Document`; a row with no owning document stops the copy. The current combined target omits both `dms.Document.ContentLastModifiedAt` and
 `dms.Document.CreatedAt`; legacy source-shaped staging can still contain them, but the target
 insert omits them as source-only. The document `ContentVersion` check remains. Authoritative
 descriptor and sampled stamp-bearing root rows retain their exact timestamps and versions, checked
 using deterministic `DocumentId`-ordered stamp-tuple checksums as well as distributions; swapping
-timestamps while preserving min/max must fail. The sampled-root scope is unchanged. The tool retains
+timestamps while preserving min/max must fail. The sampled-root scope is unchanged. Owners'
+`ContentCreatedAt` is not carried: the load runs with triggers disabled and leaves it to its
+default, the copy time, which is later than the carried `ContentLastModifiedAt` (see
+[RELATIONAL-BACKEND.md](../../docs/RELATIONAL-BACKEND.md#reprovisioning-and-legacy-data-carry-forward)). The tool retains
 row-count, FK, trigger-state, fingerprint, singleton and source-identity checks. It initializes the
 native descriptor backing sequence from allocated compact keys. Copy
 and Checkpoint resolve that sequence from catalog ownership and check `last_value`, `is_called`
@@ -162,7 +171,8 @@ republication is not a prerequisite for either physical change. See the
 
 The live regression runs the actual custom-dump conversion on PostgreSQL 16.8, with descriptor
 document keys above `Int32.MaxValue`, unequal native target keys, exact root/nested/extension/
-composite remaps, deleted-row history, retained stamps/RI and a successful next ordinary insert.
+composite remaps, deleted-row history, retained stamps, skipped legacy `dms.ReferentialIdentity`
+rows, abstract identity `ResourceKeyId` from the owning document and a successful next ordinary insert.
 Run it with the disposable-container environment variables described above:
 
 ```powershell
@@ -314,7 +324,7 @@ pwsh -NoProfile -File ./bootstrap-local-dms.ps1 -DatabaseEngine postgresql -Iden
 # 5. Stop the applications, set the deployment aside, then restore. Nothing may hold a connection
 #    during the rename or the restore.
 #    Read the live values rather than assuming defaults. The superuser name is one of them:
-#    postgresql.yml sets POSTGRES_USER: ${POSTGRES_USER:-postgres}, so the container accepts an
+#    postgresql.compose.yml sets POSTGRES_USER: ${POSTGRES_USER:-postgres}, so the container accepts an
 #    override, and this recipe reads whatever the running container was given rather than adding a
 #    hard-coded copy of its own -- here, and in the connection string built in step 9, where a
 #    wrong name registers a data store that saves cleanly and cannot connect. This is not a claim
@@ -696,7 +706,7 @@ echo "reference database $REF dropped"
 #
 #    The key is replaced in the Configuration Service database: the Configuration Service mints tokens from the dmscs."OpenIddictKey" row of
 #    the database it reads its dmscs rows from, taken from the running Configuration Service rather
-#    than assumed to be $DB -- CONFIGURATION_SERVICE_DATABASE_NAME is a supported override, and local-config.yml
+#    than assumed to be $DB -- CONFIGURATION_SERVICE_DATABASE_NAME is a supported override, and local-config.compose.yml
 #    builds the Configuration Service connection string from it -- so a key replaced anywhere else leaves the Configuration Service reading
 #    the producer's. The rule for the rest of the recipe: dmscs operations target $CMSDB (step 10
 #    reuses this value), dms data-store operations target $DB. The connection string carries the
@@ -791,7 +801,7 @@ echo "SourceIdentity rotated to $NEW_SOURCE_ID"
 #    replaced dmscs.OpenIddict*, so register the admin client AFTER the restore, not before.
 #    Skip this and DMS restart-loops with "Failed to decrypt the connection string".
 #
-#    The ports are read from the containers, not assumed. local-config.yml and local-dms.yml set each
+#    The ports are read from the containers, not assumed. local-config.compose.yml and local-dms.compose.yml set each
 #    container's ASPNETCORE_HTTP_PORTS from CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS and DMS_HTTP_PORTS
 #    respectively and publish that same number on 127.0.0.1, so the value inside the container is the
 #    host port -- the same two overrides eng/docker-compose/env-utility.psm1 resolves in
@@ -973,7 +983,7 @@ test -n "$CID" -a -n "$CSEC" -a -n "$CSCOPE" || \
 
 #     The two role names are read as well, and from the Configuration Service rather than from DMS, because the Configuration Service is the side
 #     that enforces them: its service policy requires the presented token to carry
-#     IdentitySettings:ConfigServiceRole. Both are supported overrides -- local-config.yml sets them
+#     IdentitySettings:ConfigServiceRole. Both are supported overrides -- local-config.compose.yml sets them
 #     from CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE and CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE -- and left unpassed,
 #     setup-openiddict.ps1 falls back to its own cms-client/dms-client defaults and grants a role your
 #     Configuration Service does not require. The token check below would still pass, because minting a token does not
@@ -1218,7 +1228,7 @@ Every published artifact records the following, on its ticket and in this direct
 | Branch head at publication | `b303450ab5fd689526696cb088a76a90b7ef6c14` on `DMS-1406` — the workflow tooling and restore recipe as they stood when the artifact was uploaded |
 | Recipe text executed | the eleven-step text at `b303450ab5fd689526696cb088a76a90b7ef6c14` (no 5b, no 5c, DMS started as step 10), from a clean slate with non-default credentials on 2026-08-19. The current fourteen-step text has **not** been executed end to end against the published artifact — see *Recipe execution record* below |
 | `SourceIdentity` as shipped | `8b962de6-b979-49aa-bce0-ca59e0a1ad51` — rotate it (step 8); a consumer whose value still reads this has skipped the step |
-| Engine image | `postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0` — `eng/docker-compose/postgresql.yml` at the DMS revision built, unchanged at the publication head; the archive header reads `Dumped from database version: 16.8` and `Dumped by pg_dump version: 16.8` (`pg_restore -l`) |
+| Engine image | `postgres:16.8-alpine@sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0` — `eng/docker-compose/postgresql.compose.yml` at the DMS revision built, unchanged at the publication head; the archive header reads `Dumped from database version: 16.8` and `Dumped by pg_dump version: 16.8` (`pg_restore -l`) |
 | `ResourceKeySeedHash` | `fae376b7b81722efe1878226a49200d74ae68febac7d21f5121a0824236e981b` — `dms."EffectiveSchema"` of the restored artifact and of the fresh same-revision deployment step 5c compares it against (section `11-fingerprint` of both snapshots), and asserted against the reference in every checkpoint record |
 | `ResourceKey` rows | 351 |
 | `dms."Descriptor"` rows | 2,968 |

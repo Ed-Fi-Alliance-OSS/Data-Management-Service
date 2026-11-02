@@ -402,7 +402,7 @@ Describe "Teardown down set keeps every volume-bearing compose file" {
         # `docker compose down -v` removes the named volumes of the services in the composed set only,
         # so a compose file omitted from the down set takes its volumes with it. Teardown resolves the
         # identity provider from the environment file, which need not name the provider the running
-        # stack was started with, so the down set must not gate keycloak.yml on that value.
+        # stack was started with, so the down set must not gate keycloak.compose.yml on that value.
         #
         # The real primitive is invoked in a child pwsh with `docker` replaced by a recording
         # function, so the assertion is on the command the script actually emits rather than on its
@@ -434,7 +434,7 @@ $env:DMS_TEARDOWN_CAPTURE_LOG = $LogPath
             Should -Contain "CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained"
     }
 
-    It "includes keycloak.yml in the <Project> down set even when the environment file selects self-contained identity" -ForEach @(
+    It "includes keycloak.compose.yml in the <Project> down set even when the environment file selects self-contained identity" -ForEach @(
         @{ Primitive = "start-local-dms.ps1"; Project = "dms-local" }
         @{ Primitive = "start-published-dms.ps1"; Project = "dms-published" }
     ) {
@@ -450,7 +450,7 @@ $env:DMS_TEARDOWN_CAPTURE_LOG = $LogPath
         $downCommands = @(Get-Content -LiteralPath $logPath | Where-Object { $_ -match " -p $Project down" })
         $downCommands.Count | Should -Be 1 -Because "teardown issues exactly one project-scoped down"
         $downCommands[0] | Should -Match "down --remove-orphans -v$" -Because "teardown removes the project's volumes"
-        $downCommands[0] | Should -Match "-f keycloak\.yml" `
-            -Because "keycloak.yml carries the dms-keycloak named volume, so omitting it leaks ${Project}_dms-keycloak past down -v"
+        $downCommands[0] | Should -Match "-f keycloak\.compose\.yml" `
+            -Because "keycloak.compose.yml carries the dms-keycloak named volume, so omitting it leaks ${Project}_dms-keycloak past down -v"
     }
 }

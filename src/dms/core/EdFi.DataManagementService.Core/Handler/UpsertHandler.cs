@@ -146,6 +146,11 @@ internal class UpsertHandler(ILogger _logger, ResiliencePipeline _resiliencePipe
                 ),
                 Headers: []
             ),
+            UpsertFailureNonUniqueValues => new FrontendResponse(
+                StatusCode: 409,
+                Body: ForNonUniqueValues(requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
             // Returns 500 to match ODS/API behavior: after retries are exhausted for a deadlock,
             // the client receives a generic system error rather than a retryable status code.
             UpsertFailureWriteConflict => new(

@@ -123,8 +123,8 @@ Describe "Start scripts pass the resolved database identity and role names to th
     # (postgres), and BOTH setup-openiddict.ps1 and setup-keycloak.ps1 carry their own defaults for
     # the two role names (cms-client / dms-client), so a caller that omits them silently overrides a
     # configured stack -- under either identity provider. POSTGRES_USER is a supported override --
-    # postgresql.yml passes ${POSTGRES_USER:-postgres} to the container -- and the role names are
-    # mapped by local-config.yml and published-config.yml onto IdentitySettings:ConfigServiceRole /
+    # postgresql.compose.yml passes ${POSTGRES_USER:-postgres} to the container -- and the role names are
+    # mapped by local-config.compose.yml and published-config.compose.yml onto IdentitySettings:ConfigServiceRole /
     # :ClientRole.
 
     # Discovery-time cases: $PSScriptRoot is available during discovery in Pester v5.
@@ -258,7 +258,7 @@ Describe "Start scripts pass the resolved database identity and role names to th
     }
 
     It "leaves the SQL Server branch on the sa login in <Name>" -ForEach $dmsCases {
-        # mssql.yml has no POSTGRES_USER equivalent; the engine authenticates as the fixed sa account.
+        # mssql.compose.yml has no POSTGRES_USER equivalent; the engine authenticates as the fixed sa account.
         $resolved = Get-ResolvedAssignment -ScriptPath $ScriptPath -VariableName "identityDbParams" -Variable @{
             DatabaseEngine = "mssql"
             envValues      = @{ POSTGRES_USER = "northridge_super" }

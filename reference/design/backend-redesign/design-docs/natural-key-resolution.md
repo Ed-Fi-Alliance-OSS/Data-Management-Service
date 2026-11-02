@@ -392,13 +392,16 @@ The probe metadata (`NaturalKeyProbeTargets`, `OwnNaturalKeyProbesByResource`,
 `DescriptorProbeTarget` on the compiled `MappingSet`) will be compiled from the relational model
 itself — never from trigger metadata, never by parsing constraint names (dialect identifier
 shortening hash-truncates names), and never by converting abstract discriminator strings to resource
-keys at runtime. It will be storage-resolved, so key-unified identity parts will bind their canonical
-stored columns and abstract probes will bind the stored concrete `ResourceKeyId`. Each probe key entry
-will also carry its command-binding metadata: scalar keys carry `RelationalScalarType`; descriptor-valued
-identity parts carry the descriptor resource whose compile-time `ResourceKeyId` drives the inline
-descriptor join; own-natural-key document-reference parts carry the
-`ResourceWritePlan.Model.DocumentReferenceBindings` index for the reference site that supplies the
-stored `..._DocumentId` key value. That document-reference binding will be valid only for
+keys at runtime. Reference-target and abstract probes will be storage-resolved, so key-unified identity
+parts will bind their canonical stored columns (matching `UX_<R>_RefKey`) and abstract probes will bind
+the stored concrete `ResourceKeyId`. Own-key probes will instead bind the `UX_<R>_NK` column contract as
+emitted: reference-sourced parts bind the reference's `..._DocumentId` and other parts bind their path
+column, which for an unconditional key-unification alias is the alias, not the canonical column.
+Each probe key entry will also carry its command-binding metadata: scalar keys carry
+`RelationalScalarType`; descriptor-valued identity parts carry the descriptor resource whose
+compile-time `ResourceKeyId` drives the inline descriptor join; own-natural-key document-reference
+parts carry the `ResourceWritePlan.Model.DocumentReferenceBindings` index for the reference site that
+supplies the stored `..._DocumentId` key value. That document-reference binding will be valid only for
 `OwnNaturalKeyProbe.KeyColumns`; normal target probes will still consume a fully flattened
 `DocumentIdentity` and therefore need only scalar/descriptor binding metadata.
 
@@ -873,7 +876,7 @@ The rows below state the target behavior once this design ships:
 | Case-variant natural-key POST of an existing document | **200** — silent update; stored casing preserved; if the payload is otherwise identical, a true no-op (no `ContentVersion` bump, no change event). Matches ODS. | Creates a second document (a case variant is a different value). Matches ODS. |
 | Case-variant (casing-only) key change via PUT | Not a key change: stored key casing is **immutable** on SQL Server, exactly as it is structurally in ODS. Real key changes on cascade-enabled resources behave as today. | A real key change (allowed on cascade-enabled resources, as today). |
 | Descriptor matching + uniqueness | Case-insensitive via the `LOWER(...)` computed column under the CI identity collation, + `ResourceKeyId`; also includes the accepted version-80 linguistic and unweighted-code-point aliases described above. | Case-insensitive via `lower(... COLLATE "pg_c_utf8")` + `ResourceKeyId` — extends CI from the current RI lookup to database-enforced descriptor uniqueness (ODS *intended* CI descriptors but its PostgreSQL implementation stored CS and could accumulate case-variant duplicates). Uniform with SQL Server for ASCII input; non-ASCII folding verdicts are per-engine (accepted trade-off #8). |
-| Descriptor POST-as-update casing | Stored-wins: the update preserves stored `Namespace`/`CodeValue` and reconstructed URI casing; a casing-only re-POST is a true no-op. A case-only descriptor PUT is a 200 update/no-op, not an error. Matches `DescriptorCaseInsensitiveValidation.feature`. | Same. |
+| Descriptor POST-as-update casing | Stored-wins: the update preserves stored `Namespace`/`CodeValue` and reconstructed URI casing; a casing-only re-POST is a true no-op. A case-only descriptor PUT is a 204 update/no-op, not an error. Matches `DescriptorCaseInsensitiveValidation.feature`. | Same. |
 | Core-side equality constraints and duplicate-item validation | Ordinal (stricter than the DMS identity collation; fails closed with 400). The gap this leaves for collections is closed below. | Ordinal (exact). |
 | Collection item matching against stored rows (local string semantic-key members) | Case-insensitive under the schema comparer; a comparer-equal item keeps its stored row, `CollectionItemId`, hidden profile columns, and stored casing (casing-only re-PUT is a no-op). Matches ODS child-entity key equality. | Case-sensitive (unchanged): a case variant is a different item (delete + insert). Matches ODS. |
 | GET-many string equality filters (`?field=value`) | Follow the column collation (no query-side `COLLATE` override): case-insensitive under the DMS identity collation for identity string columns, database-default collation for other string columns. Matches ODS. | Case-sensitive (unchanged). Matches ODS. |
@@ -952,7 +955,7 @@ When DMS-1454 implements this proposal, update
 [`data-model.md`](data-model.md#2-dmsdescriptor-unified) from the current ordinal whole-URI PUT
 guard and incoming-component POST behavior to these stored-wins equality terms. In the future
 contract PUT cannot persist a move to a different engine-defined descriptor identity; the proposed
-case-only PUT returns 200/no-op with stored components intact. Until that cutover, DMS-1404's
+case-only PUT returns 204/no-op with stored components intact. Until that cutover, DMS-1404's
 current behavior remains authoritative. Canonical response URIs continue to reconstruct from
 the stored components in either contract.
 
@@ -966,8 +969,9 @@ equal the fixed DMS SQL Server collation, and the two can disagree in either dir
   comparer: the update target can only exist because the CI probe matched under the identity-column
   collation.
 - *Comparer looser than the collation* — a pair `OrdinalIgnoreCase` equates but the collation
-  distinguishes. No such pair is currently known: .NET's `OrdinalIgnoreCase` uses simple case
-  folding and, measured on .NET 10, does *not* equate `ſ`/`s`, dotless `ı`/`i`, or Kelvin `K`
+  distinguishes. `OrdinalIgnoreCase` compares simple uppercase mappings, so the micro sign `µ`
+  (U+00B5) and Greek `μ` (U+03BC), which both uppercase to U+039C, are one such pair; the collation
+  keeps them distinct. Measured on .NET 10, it does *not* equate `ſ`/`s`, dotless `ı`/`i`, or Kelvin `K`
   (U+212A)/`k`; and code points the version-80 collation has no data for are unweighted, which makes
   them compare *equal* on the SQL side as well (`Ǹ`/`ǹ` is equal under both). If the
   engine-divergence fixtures ever surface such a pair, the behavior is defined here rather than left
@@ -1052,7 +1056,7 @@ Relative to current DMS behavior (the hash era), on SQL Server:
   immutable, as in ODS).
 - Descriptor POST-as-update: today it rewrites stored descriptor casing to the request's; it will
   preserve stored casing (first-created canonical form, per the official feature test). A case-only
-  descriptor PUT is a 400 today; it will become a 200 update/no-op. These two descriptor deltas will
+  descriptor PUT is a 400 today; it will become a 204 update/no-op. These two descriptor deltas will
   apply on both engines.
 - NUL in descriptor URI writes, descriptor references, and descriptor-valued query filters will
   become a path-attributed 400 validation failure; a JSON `\uD800`-class unpaired-surrogate escape
@@ -1160,8 +1164,9 @@ invariants had an explicit relational owner tied to the document's real concrete
 Deliberately lost will be: the `dms.ReferentialIdentity` corruption canary (the RI hash row drifting
 from the root row it summarizes), and a redundant second uniqueness net (the RI PK). Mitigations for
 the redundancy loss: the probe compiler will carry an empty-identity guard (a resource whose
-compiled identity has zero parts will fail compilation loudly), a compile-time parity guard will
-prove the compiled probes reproduce the legacy trigger derivation resource-by-resource for as long
+compiled identity has zero parts will fail compilation loudly), a parity guard in the
+probe-compilation unit tests, which compiles every resource and compares it with the live derivation,
+will prove the compiled probes reproduce the legacy trigger derivation resource-by-resource for as long
 as both exist, generated natural-key probes will fail on duplicate candidates instead of silently
 choosing one, and golden DDL fixtures will continue to pin the schema.
 
@@ -1487,7 +1492,7 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
     row / `ContentVersion` bump; casing-only PUT is not a key change; a mixed PUT cascades only the
     genuinely changed column) and the PostgreSQL second-document behavior.
   - Descriptor stored-wins pins per engine (POST preserves stored casing and no-ops on casing-only
-    re-POST; case-only descriptor PUT returns 200 with stored identity intact).
+    re-POST; case-only descriptor PUT returns 204 with stored identity intact).
   - Collection semantic-key stored-wins pins: on SQL Server a PUT whose collection item differs from
     the stored row only in the casing of a local string semantic-key member keeps the same
     `CollectionItemId`, serves the stored casing, is a guarded no-op when otherwise identical, and
@@ -1567,7 +1572,7 @@ E2E lane; a performance re-measure on 2025 will be a post-merge observation item
 7. **Casing comparer approximation** — the runtime provider will derive `OrdinalIgnoreCase` from the
    fixed SQL Server identity contract, but it will still not emulate every
    `SQL_Latin1_General_CP1_CI_AS` equality. Where the comparer is stricter the guard will fail closed;
-   where it is looser (no instance currently known) a collation-distinct value would be treated as
+   where it is looser (for example `µ`/`μ`) a collation-distinct value would be treated as
    unchanged and the stored value kept (non-destructive but silent). Both directions are documented
    above, pinned by the engine-divergence fixtures, and identical to ODS; neither silently
    redefines database identity.

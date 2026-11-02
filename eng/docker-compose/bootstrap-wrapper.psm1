@@ -942,7 +942,7 @@ function Invoke-BootstrapWrapper {
             # phase (which always receives -DatabaseEngine), and the start phases all see
             # DMS_DATASTORE=mssql and the SQL Server connection strings from one canonical path.
             # Without this, the CMS data store could be provisioned for MSSQL while the DMS container
-            # itself still starts on its postgresql default (local-dms.yml AppSettings__Datastore
+            # itself still starts on its postgresql default (local-dms.compose.yml AppSettings__Datastore
             # comes only from the env file). Applied AFTER the data-standard overlay above so
             # composition order is deterministic; the two overlays touch disjoint keys. Guarded for
             # the isolated wrapper-argument Pester fixtures, which sandbox the wrapper without the
@@ -1082,7 +1082,7 @@ function Invoke-BootstrapWrapper {
                     -EnvironmentValues $restoreEnvironmentValues `
                     -Name "MSSQL_SA_PASSWORD" `
                     -DefaultValue "abcdefgh1!"
-                # Likewise the PostgreSQL administrator: postgresql.yml initializes the container
+                # Likewise the PostgreSQL administrator: postgresql.compose.yml initializes the container
                 # with ${POSTGRES_USER:-postgres}, and no postgres role exists under an override,
                 # so every restore helper and the preflight cleanup connect as this account.
                 $restorePostgresUser = Get-ComposeResolvedEnvValue `

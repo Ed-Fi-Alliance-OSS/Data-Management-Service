@@ -305,7 +305,7 @@ Feature: ClaimSets endpoints
                       "status": 400,
                       "validationErrors": {
                           "Name": [
-                              "Claim set name must not contain white spaces."
+                              "Claim set name must not contain white spaces or commas."
                           ]
                       },
                       "errors": []
@@ -327,7 +327,7 @@ Feature: ClaimSets endpoints
                       "status": 400,
                       "validationErrors": {
                           "Name": [
-                              "Claim set name must not contain white spaces."
+                              "Claim set name must not contain white spaces or commas."
                           ]
                       },
                       "errors": []

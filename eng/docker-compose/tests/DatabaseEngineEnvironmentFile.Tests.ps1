@@ -180,7 +180,7 @@ MSSQL_SA_PASSWORD=CustomSecret1!
     It "composes the overlay onto a partial env carrying DMS_DATASTORE=mssql without the full overlay signal" {
         # A hand-authored env with only DMS_DATASTORE=mssql must not be mistaken for a
         # wrapper-composed file: it would miss the CMS SQL Server settings and credentials
-        # while mssql.yml starts no PostgreSQL container to fall back to.
+        # while mssql.compose.yml starts no PostgreSQL container to fall back to.
         $partialPath = Join-Path $script:work ".env.partial"
         Set-Content -LiteralPath $partialPath -Value "DMS_DATASTORE=mssql`n" -NoNewline
 
@@ -1203,7 +1203,7 @@ Describe "The real .env.mssql overlay (DMS-1238)" {
     }
 
     It "does not carry a non-admin DATABASE_CONNECTION_STRING or identity-provider token endpoints" {
-        # The non-admin DATABASE_CONNECTION_STRING is dead: local-dms.yml passes only
+        # The non-admin DATABASE_CONNECTION_STRING is dead: local-dms.compose.yml passes only
         # DATABASE_CONNECTION_STRING_ADMIN into the DMS container. The token-endpoint overrides
         # are engine-agnostic (the DMS container's in-network /oauth/token proxy target is the
         # same for both database engines), so they belong in the base environment file, not

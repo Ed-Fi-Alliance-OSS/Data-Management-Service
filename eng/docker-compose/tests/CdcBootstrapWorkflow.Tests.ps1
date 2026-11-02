@@ -20,7 +20,7 @@ Describe 'CDC bootstrap wrapper phase contract' {
         $script:sandbox = Join-Path $TestDrive 'wrapper'
         New-Item -ItemType Directory $script:sandbox | Out-Null
         Copy-Item (Join-Path $script:composeRoot '*.yml') $script:sandbox
-        foreach ($name in @('bootstrap-local-dms.ps1', 'bootstrap-published-dms.ps1', 'bootstrap-wrapper.psm1')) {
+        foreach ($name in @('bootstrap-local-dms.ps1', 'bootstrap-published-dms.ps1', 'bootstrap-wrapper.psm1', 'cdc-cleanup-diagnostics.psm1')) {
             Copy-Item (Join-Path $script:composeRoot $name) $script:sandbox
         }
         @'
@@ -69,7 +69,7 @@ function New-BootstrapCdcHandoff { param($Settings, $StatePath, $EnvironmentFile
     if (Test-Path (Join-Path $PSScriptRoot 'retained.json')) { throw 'Replacement handoff' }
     $Settings.AppSettings = @{ Datastore = $Settings.Provider }
     $Settings.DataManagement = @{ DocumentCache = @{ Targets = @(@{ DataStoreId = 42 }) } }
-    $Settings.Cdc.Compose = @{ Project = $Project; EnvironmentFile = $EnvironmentFile; File = (Join-Path $PSScriptRoot 'kafka-cdc.yml'); BrokerSizeOverrideFile = (Join-Path $StatePath 'broker-size.json') }
+    $Settings.Cdc.Compose = @{ Project = $Project; EnvironmentFile = $EnvironmentFile; File = (Join-Path $PSScriptRoot 'kafka-cdc.compose.yml'); BrokerSizeOverrideFile = (Join-Path $StatePath 'broker-size.json') }
     $Settings.Cdc.Worker = @{ Key = 'worker'; OffsetStorageTopic = 'shared-offsets' }
     $Settings.Cdc.ConnectEndpoint = 'http://localhost:8083/'
     $Settings.Cdc.WorkerMetricsEndpoint = 'http://localhost:9404/metrics'
@@ -272,7 +272,7 @@ Add-Content (Join-Path $PSScriptRoot 'calls') "seed:$($DataStoreId -join ',')"
         }
         @(Get-ChildItem (Join-Path $script:sandbox 'resources')).Count | Should -Be 0
         Test-CdcDeployment "dms-$wrapper" | Should -BeFalse
-        @(Get-Content (Join-Path $script:sandbox 'selected-files')) | Should -Not -Contain 'kafka-cdc.yml'
+        @(Get-Content (Join-Path $script:sandbox 'selected-files')) | Should -Not -Contain 'kafka-cdc.compose.yml'
         if ($provider -eq 'mssql') {
             @(Get-Content (Join-Path $script:sandbox 'selected-files')) | Should -Contain 'mssql-cdc.yml'
         }

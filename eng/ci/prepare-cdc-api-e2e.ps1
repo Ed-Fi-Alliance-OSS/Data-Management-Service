@@ -51,7 +51,7 @@ $settings.Cdc = @{
         'database.port' = $(if ($sqlServer) { '1433' } else { '5432' })
         'database.user' = 'cdc_reader'; 'database.password' = '${env:CDC_DATABASE_PASSWORD}'
     }
-    Compose = @{ File = Join-Path $Repo 'eng/docker-compose/kafka-cdc.yml'; EnvironmentFile = $inputs.EnvironmentFile
+    Compose = @{ File = Join-Path $Repo 'eng/docker-compose/kafka-cdc.compose.yml'; EnvironmentFile = $inputs.EnvironmentFile
         Project = 'dms-local'; BrokerSizeOverrideFile = Join-Path $inputs.StatePath 'broker-size.json' }
     Timing = @{ CallMilliseconds = 120000; WaitMilliseconds = 600000; PollMilliseconds = 1000; MaximumObservationAgeMilliseconds = 60000 }
 }

@@ -4,7 +4,7 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 # Test-owned. Serves the harness's packed plugin package over HTTP so that the committed
-# plugins-fetch-dms.yml can be run exactly as written.
+# plugins-fetch-dms.compose.yml can be run exactly as written.
 #
 # Every other packaged path in this work consumes a nupkg from a local folder feed, and Recipe 2
 # cannot: fetch-plugins mounts only the output volume, its BusyBox wget speaks http, https and ftp,
@@ -26,7 +26,7 @@ services:
       options:
         max-size: "${DOCKER_LOG_MAX_SIZE:-50m}"
         max-file: "${DOCKER_LOG_MAX_FILE:-5}"
-  # fetch-plugins is declared by the committed plugins-fetch-dms.yml, which knows nothing about a
+  # fetch-plugins is declared by the committed plugins-fetch-dms.compose.yml, which knows nothing about a
   # feed. Ordering it after the server is this file's business, not that file's.
   fetch-plugins:
     depends_on:

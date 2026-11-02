@@ -93,10 +93,12 @@ public class Given_TrackedChange_Compact_Descriptor_Routing(SqlDialect dialect)
                 .CommandText.Should()
                 .Contain($"c.{Q("ResourceKeyId")} = @ResourceKeyId")
                 .And.Contain($"live.{Q("ResourceKeyId")} = @ResourceKeyId")
-                .And.Contain($"live.{Q("Namespace")} = c.{Q("OldNamespace")}")
-                .And.Contain($"live.{Q("CodeValue")} = c.{Q("OldCodeValue")}")
+                .And.Contain(
+                    $"live.{Q("ResourceKeyId")} = @ResourceKeyId AND {LiveUriFold("live", "c", "OldNamespace", "OldCodeValue")}"
+                )
+                .And.NotContain($"live.{Q("Namespace")} = ")
+                .And.NotContain($"live.{Q("CodeValue")} = ")
                 .And.NotContain("Discriminator")
-                .And.NotContain("LOWER(")
                 .And.NotContain(Q("Uri"))
                 .And.NotContain("JOIN " + Table("dms", "Document"));
             command
@@ -120,14 +122,33 @@ public class Given_TrackedChange_Compact_Descriptor_Routing(SqlDialect dialect)
     }
 
     [Test]
+    public void It_folds_every_lowered_descriptor_uri_under_the_identity_collation()
+    {
+        string[] sqls =
+        [
+            _resourcePlan.Command!.CommandText,
+            .. _descriptorPlans.Select(plan => plan.Command!.CommandText),
+        ];
+
+        foreach (string sql in sqls)
+        {
+            DescriptorUriFoldGuard.AssertEveryLoweringIsCollated(sql, dialect).Should().BePositive();
+        }
+    }
+
+    [Test]
     public void It_compares_both_compact_resource_foreign_keys_to_descriptor_ids()
     {
         string sql = _resourcePlan.Command!.CommandText;
         sql.Should()
             .Contain($"live.{Q("Kind_DescriptorId")} = descriptor_0.{Q("DescriptorId")}")
             .And.Contain($"live.{Q("SampleKind_DescriptorId")} = descriptor_1.{Q("DescriptorId")}")
-            .And.Contain($"descriptor_0.{Q("ResourceKeyId")} = @DescriptorResourceKeyId0")
-            .And.Contain($"descriptor_1.{Q("ResourceKeyId")} = @DescriptorResourceKeyId1")
+            .And.Contain(
+                $"descriptor_0.{Q("ResourceKeyId")} = @DescriptorResourceKeyId0 AND {LiveUriFold("descriptor_0", "c", "OldKind_Namespace", "OldKind_CodeValue")}"
+            )
+            .And.Contain(
+                $"descriptor_1.{Q("ResourceKeyId")} = @DescriptorResourceKeyId1 AND {LiveUriFold("descriptor_1", "c", "OldSampleKind_Namespace", "OldSampleKind_CodeValue")}"
+            )
             .And.NotContain($"descriptor_0.{Q("DocumentId")}")
             .And.NotContain($"descriptor_1.{Q("DocumentId")}");
         _resourcePlan
@@ -137,9 +158,7 @@ public class Given_TrackedChange_Compact_Descriptor_Routing(SqlDialect dialect)
                 ("@Limit", 25L),
                 ("@Offset", 0L),
                 ("@DescriptorResourceKeyId0", (short)101),
-                ("@DescriptorResourceKeyId1", (short)202),
-                ("@CustomViewDescriptorResourceKeyId0", (short)101),
-                ("@CustomViewDescriptorResourceKeyId1", (short)202)
+                ("@DescriptorResourceKeyId1", (short)202)
             );
     }
 
@@ -147,8 +166,10 @@ public class Given_TrackedChange_Compact_Descriptor_Routing(SqlDialect dialect)
     public void It_authorizes_deleted_bases_from_type_qualified_history_document_ids()
     {
         _customViewSql.Predicates.Should().HaveCount(2);
+        _customViewSql.Parameters.Should().BeEmpty();
         for (var index = 0; index < _customViewSql.Predicates.Count; index++)
         {
+            string trackedPrefix = index == 0 ? "OldKind" : "OldSampleKind";
             _customViewSql
                 .Predicates[index]
                 .Should()
@@ -156,10 +177,11 @@ public class Given_TrackedChange_Compact_Descriptor_Routing(SqlDialect dialect)
                 .And.Contain(
                     $"UNION SELECT t.{Q("DocumentId")} FROM {Table("tracked_changes_edfi", "Descriptor")} t"
                 )
-                .And.Contain($"t.{Q("ResourceKeyId")} = @CustomViewDescriptorResourceKeyId{index}")
+                .And.Contain($"d.{Q("ResourceKeyId")} = {(index == 0 ? 101 : 202)} AND")
                 .And.Contain(
-                    $"t.{Q("OldNamespace")} = c.{Q(index == 0 ? "OldKind_Namespace" : "OldSampleKind_Namespace")}"
+                    $"t.{Q("ResourceKeyId")} = {(index == 0 ? 101 : 202)} AND {TombstoneUriFold(trackedPrefix)}"
                 )
+                .And.NotContain("@CustomViewDescriptorResourceKeyId")
                 .And.Contain($"basis.{Q("DocumentId")} IN (SELECT {Q("DocumentId")} FROM")
                 .And.NotContain(Q("DescriptorId"))
                 .And.NotContain("JOIN " + Table("dms", "Document"));
@@ -278,6 +300,21 @@ public class Given_TrackedChange_Compact_Descriptor_Routing(SqlDialect dialect)
     ) => new(new($"{resource.ResourceName}WithAllowedRowsIncludingDeletes", index), index, resource);
 
     private string Q(string name) => SqlIdentifierQuoter.QuoteIdentifier(dialect, name);
+
+    private string LiveUriFold(
+        string descriptorAlias,
+        string trackedAlias,
+        string oldNamespace,
+        string oldCodeValue
+    ) =>
+        dialect is SqlDialect.Pgsql
+            ? $"lower(({descriptorAlias}.{Q("Namespace")} || '#' || {descriptorAlias}.{Q("CodeValue")}) COLLATE \"pg_c_utf8\") = lower(({trackedAlias}.{Q(oldNamespace)} || '#' || {trackedAlias}.{Q(oldCodeValue)}) COLLATE \"pg_c_utf8\")"
+            : $"{descriptorAlias}.{Q("UriLowered")} = LOWER(({trackedAlias}.{Q(oldNamespace)} + N'#' + {trackedAlias}.{Q(oldCodeValue)}) COLLATE SQL_Latin1_General_CP1_CI_AS)";
+
+    private string TombstoneUriFold(string trackedPrefix) =>
+        dialect is SqlDialect.Pgsql
+            ? $"lower((t.{Q("OldNamespace")} || '#' || t.{Q("OldCodeValue")}) COLLATE \"pg_c_utf8\") = lower((c.{Q(trackedPrefix + "_Namespace")} || '#' || c.{Q(trackedPrefix + "_CodeValue")}) COLLATE \"pg_c_utf8\")"
+            : $"LOWER((t.{Q("OldNamespace")} + N'#' + t.{Q("OldCodeValue")}) COLLATE SQL_Latin1_General_CP1_CI_AS) = LOWER((c.{Q(trackedPrefix + "_Namespace")} + N'#' + c.{Q(trackedPrefix + "_CodeValue")}) COLLATE SQL_Latin1_General_CP1_CI_AS)";
 
     private string Table(string schema, string name) =>
         SqlIdentifierQuoter.QuoteTableName(dialect, new(new(schema), name));

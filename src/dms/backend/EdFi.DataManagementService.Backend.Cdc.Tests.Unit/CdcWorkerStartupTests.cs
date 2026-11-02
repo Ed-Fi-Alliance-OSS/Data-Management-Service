@@ -323,7 +323,7 @@ internal sealed class Given_CdcWorkerStartup(bool retained)
                 new CdcKafkaProducerInspection(_connect, _worker)
             ),
             new CdcComposeWorkerStartupTransport(
-                "/compose/kafka-cdc.yml",
+                "/compose/kafka-cdc.compose.yml",
                 "/configuration/selected.env",
                 "selected-project",
                 new HashSet<string> { "example/qualified@" + _request.WorkerPolicy.QualifiedImageDigest },
@@ -380,7 +380,7 @@ public sealed class Given_CdcWorkerComposeStartup
             }
         );
         _transport = new(
-            "/compose/kafka-cdc.yml",
+            "/compose/kafka-cdc.compose.yml",
             "/configuration/selected.env",
             "selected-project",
             new HashSet<string> { Image },
@@ -437,7 +437,7 @@ public sealed class Given_CdcWorkerComposeStartup
         try
         {
             _transport = new(
-                "/compose/kafka-cdc.yml",
+                "/compose/kafka-cdc.compose.yml",
                 "/configuration/selected.env",
                 "selected-project",
                 new HashSet<string> { Image },
@@ -494,7 +494,7 @@ public sealed class Given_CdcWorkerComposeStartup
                 }
             );
             _transport = new(
-                "/compose/kafka-cdc.yml",
+                "/compose/kafka-cdc.compose.yml",
                 "/configuration/selected.env",
                 "selected-project",
                 new HashSet<string> { Image },
@@ -543,7 +543,7 @@ public sealed class Given_CdcWorkerComposeStartup
             }
         );
         _transport = new(
-            "/compose/kafka-cdc.yml",
+            "/compose/kafka-cdc.compose.yml",
             "/configuration/selected.env",
             "selected-project",
             new HashSet<string> { Image },
@@ -581,7 +581,7 @@ public sealed class Given_CdcWorkerComposeStartup
             }
         );
         _transport = new(
-            "/compose/kafka-cdc.yml",
+            "/compose/kafka-cdc.compose.yml",
             "/configuration/selected.env",
             "selected-project",
             new HashSet<string> { Image },

@@ -66,9 +66,9 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
             $inheritsAzureDefaults = $RelativePath -eq "eng/azure-vm/compose/docker-compose.yml" -and $service.Block -match '<<:\s*\*app-defaults'
             # The shared broker is checked as its own tracked service file. Accept its inherited
             # defaults only when the child does not replace the logging configuration.
-            $inheritsKafkaDefaults = $RelativePath -in @('eng/docker-compose/kafka.yml', 'eng/docker-compose/kafka-cdc.yml') -and
+            $inheritsKafkaDefaults = $RelativePath -in @('eng/docker-compose/kafka.compose.yml', 'eng/docker-compose/kafka-cdc.compose.yml') -and
                 $service.Name -eq 'kafka' -and
-                $service.Block -match '(?m)^    extends:\s*\r?\n      file: kafka-broker\.yml\s*\r?\n      service: kafka\s*$' -and
+                $service.Block -match '(?m)^    extends:\s*\r?\n      file: kafka-broker\.compose\.yml\s*\r?\n      service: kafka\s*$' -and
                 $service.Block -notmatch '(?m)^    logging:'
             if ($service.Block -notmatch $script:composeLogBlockPattern -and -not $inheritsAzureDefaults -and -not $inheritsKafkaDefaults) {
                 $violations.Add("$RelativePath service '$($service.Name)' must keep the bounded json-file logging defaults")
@@ -109,12 +109,12 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
         # for a logging cap to bound. Two of these also declare a container of their own,
         # fetch-plugins and plugin-feed; those services keep the cap, and the file is listed here
         # only for the overlay blocks beside them. The DMS-1556 investigation overlays add keys to
-        # the config and db services; local-config-diagnostics.yml also declares cms-monitor,
+        # the config and db services; local-config-diagnostics.compose.yml also declares cms-monitor,
         # which keeps the cap.
         $excludedOverrideFiles = @(
             "eng/docker-compose/bootstrap-dms.yml",
             "eng/docker-compose/dms-cms-proxy.yml",
-            "eng/docker-compose/local-config-diagnostics.yml",
+            "eng/docker-compose/local-config-diagnostics.compose.yml",
             "eng/docker-compose/local-control-e3-certificates.yml",
             "eng/docker-compose/local-control-e4-threads.yml",
             "eng/docker-compose/local-control-e5-pool16.yml",
@@ -127,7 +127,7 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
             "eng/docker-compose/mssql-tmpfs.yml",
             "eng/docker-compose/plugins-config.yml",
             "eng/docker-compose/plugins-dms.yml",
-            "eng/docker-compose/plugins-fetch-dms.yml",
+            "eng/docker-compose/plugins-fetch-dms.compose.yml",
             "eng/docker-compose/postgresql-tmpfs.yml",
             "eng/docker-compose/tests/cms-isolation/cms-e2e-isolation.yml",
             "eng/docker-compose/tests/identity-plugin/identity-fixture-dms.yml",
@@ -218,7 +218,7 @@ Describe "Docker Compose logging defaults (DMS-1407)" {
     }
 
     It "rejects a Kafka child that overrides the inherited logging cap in <File>" -ForEach @(
-        @{ File = 'kafka.yml' }, @{ File = 'kafka-cdc.yml' }
+        @{ File = 'kafka.compose.yml' }, @{ File = 'kafka-cdc.compose.yml' }
     ) {
         $relativePath = "eng/docker-compose/$File"
         $content = Get-Content -LiteralPath (Join-Path $script:repoRoot $relativePath) -Raw

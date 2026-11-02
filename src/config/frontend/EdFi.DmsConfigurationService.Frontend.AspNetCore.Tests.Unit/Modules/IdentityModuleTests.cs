@@ -1178,6 +1178,147 @@ public class TokenEndpointScopeForwardingTests
 }
 
 /// <summary>
+/// The token response passes through the <c>scope</c> member the token manager returns, unchanged, under
+/// both providers, and omits it when the manager returns none. <c>access_token</c>, <c>expires_in</c> and
+/// <c>token_type</c> are unchanged, and members outside the response contract are still dropped (DMS-1492).
+/// Non-fixture container; the runnable fixtures are the nested <c>Given_…</c> classes.
+/// </summary>
+public class TokenEndpointScopeResponseTests
+{
+    public abstract class SuccessfulTokenRequest
+    {
+        private const string UnreachableDatabase =
+            "host=127.0.0.1;port=1;database=unreachable;username=none;timeout=1";
+
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        protected HttpResponseMessage Response = null!;
+        protected string Body = string.Empty;
+
+        protected abstract string IdentityProvider { get; }
+        protected abstract string ManagerBody { get; }
+        protected abstract string ExpectedBody { get; }
+
+        [SetUp]
+        public async Task Act()
+        {
+            var tokenManager = A.Fake<ITokenManager>();
+            A.CallTo(() =>
+                    tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
+                )
+                .Returns(new TokenResult.Success(ManagerBody));
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("AppSettings:IdentityProvider", IdentityProvider);
+                builder.UseSetting("DatabaseSettings:DatabaseConnection", UnreachableDatabase);
+                builder.ConfigureServices(collection =>
+                {
+                    collection.AddTransient((_) => tokenManager);
+                });
+            });
+            _client = _factory.CreateClient();
+            Response = await _client.PostAsync(
+                "/connect/token",
+                new FormUrlEncodedContent([
+                    new KeyValuePair<string, string>("client_id", "CSClient1"),
+                    new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+                    new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                    new KeyValuePair<string, string>("scope", "A B"),
+                ])
+            );
+            Body = await Response.Content.ReadAsStringAsync();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            Response.Dispose();
+            _client.Dispose();
+            _factory.Dispose();
+        }
+
+        [Test]
+        public void It_returns_ok() => Response.StatusCode.Should().Be(HttpStatusCode.OK, Body);
+
+        [Test]
+        public void It_returns_exactly_the_response_members() =>
+            JsonNode.DeepEquals(JsonNode.Parse(Body), JsonNode.Parse(ExpectedBody)).Should().BeTrue(Body);
+    }
+
+    public abstract class ManagerBodyCarryingAScope : SuccessfulTokenRequest
+    {
+        protected abstract string ExpectedScope { get; }
+
+        [Test]
+        public void It_returns_the_scope_unchanged() =>
+            JsonNode.Parse(Body)!["scope"]!.GetValue<string>().Should().Be(ExpectedScope);
+    }
+
+    public abstract class ManagerBodyWithoutAScope : SuccessfulTokenRequest
+    {
+        [Test]
+        public void It_omits_the_scope_member() =>
+            JsonNode.Parse(Body)!.AsObject().ContainsKey("scope").Should().BeFalse(Body);
+    }
+
+    [TestFixture]
+    public class Given_self_contained_mode_and_a_manager_body_carrying_a_scope : ManagerBodyCarryingAScope
+    {
+        protected override string IdentityProvider => "self-contained";
+        protected override string ExpectedScope => "A B";
+        protected override string ManagerBody =>
+            """{"access_token":"input123token","expires_in":900,"refresh_expires_in":0,"token_type":"bearer","scope":"A B"}""";
+        protected override string ExpectedBody =>
+            """{"access_token":"input123token","expires_in":900,"token_type":"bearer","scope":"A B"}""";
+    }
+
+    [TestFixture]
+    public class Given_self_contained_mode_and_a_manager_body_without_a_scope : ManagerBodyWithoutAScope
+    {
+        protected override string IdentityProvider => "self-contained";
+        protected override string ManagerBody =>
+            """{"access_token":"input123token","expires_in":900,"refresh_expires_in":0,"token_type":"bearer"}""";
+        protected override string ExpectedBody =>
+            """{"access_token":"input123token","expires_in":900,"token_type":"bearer"}""";
+    }
+
+    // The self-contained manager reports an empty granted set, from a client with no registered scopes
+    // that omitted scope, as a null scope; the response leaves it out rather than sending "scope":"".
+    [TestFixture]
+    public class Given_self_contained_mode_and_a_manager_body_with_a_null_scope : ManagerBodyWithoutAScope
+    {
+        protected override string IdentityProvider => "self-contained";
+        protected override string ManagerBody =>
+            """{"access_token":"input123token","expires_in":900,"refresh_expires_in":0,"token_type":"Bearer","scope":null}""";
+        protected override string ExpectedBody =>
+            """{"access_token":"input123token","expires_in":900,"token_type":"Bearer"}""";
+    }
+
+    [TestFixture]
+    public class Given_keycloak_mode_and_a_provider_body_carrying_a_scope : ManagerBodyCarryingAScope
+    {
+        protected override string IdentityProvider => "keycloak";
+        protected override string ExpectedScope => "edfi_admin_api/full_access profile email";
+        protected override string ManagerBody =>
+            """{"access_token":"kc-token","expires_in":300,"refresh_expires_in":0,"token_type":"Bearer","not-before-policy":0,"scope":"edfi_admin_api/full_access profile email"}""";
+        protected override string ExpectedBody =>
+            """{"access_token":"kc-token","expires_in":300,"token_type":"Bearer","scope":"edfi_admin_api/full_access profile email"}""";
+    }
+
+    [TestFixture]
+    public class Given_keycloak_mode_and_a_provider_body_without_a_scope : ManagerBodyWithoutAScope
+    {
+        protected override string IdentityProvider => "keycloak";
+        protected override string ManagerBody =>
+            """{"access_token":"kc-token","expires_in":300,"refresh_expires_in":0,"token_type":"Bearer","not-before-policy":0}""";
+        protected override string ExpectedBody =>
+            """{"access_token":"kc-token","expires_in":300,"token_type":"Bearer"}""";
+    }
+}
+
+/// <summary>
 /// End-to-end verification that the OAuth endpoints, <c>/connect/token</c>, <c>/connect/revoke</c> and
 /// <c>/connect/introspect</c>, answer every error in the OAuth <c>{ error, error_description }</c>
 /// format (DMS-1327 D-01, DMS-1491), including a malformed form and a faulting manager, pinned here and
@@ -6880,13 +7021,14 @@ internal sealed class RevocationLogCapture : ILoggerProvider, ISupportExternalSc
 /// <summary>
 /// An identity-provider rejection of the request itself (<c>invalid_scope</c>) is answered with a 400
 /// <c>invalid_scope</c> carrying the provider's <c>error_description</c>, or a fixed description when the
-/// provider sends none, through form credentials. The other provider failures are pinned by
+/// provider sends none, through form credentials. A self-contained scope rejection answers the same code
+/// with the fixed description (DMS-1492). The other provider failures are pinned by
 /// <see cref="OAuthEndpointErrorTests"/>. Non-fixture container; the runnable fixtures are the nested
 /// <c>Given_…</c> classes.
 /// </summary>
 public class TokenEndpointInvalidScopeTests
 {
-    public abstract class ProviderFailureRequest
+    public abstract class TokenFailureRequest
     {
         private const string UnreachableDatabase =
             "host=127.0.0.1;port=1;database=unreachable;username=none;timeout=1";
@@ -6896,7 +7038,8 @@ public class TokenEndpointInvalidScopeTests
         protected HttpResponseMessage Response = null!;
         protected string Body = string.Empty;
 
-        protected abstract IdentityProviderError ProviderError { get; }
+        protected abstract TokenResult Result { get; }
+        protected abstract string IdentityProvider { get; }
 
         [SetUp]
         public async Task Act()
@@ -6905,12 +7048,12 @@ public class TokenEndpointInvalidScopeTests
             A.CallTo(() =>
                     tokenManager.GetAccessTokenAsync(A<IEnumerable<KeyValuePair<string, string>>>.Ignored)
                 )
-                .Returns(new TokenResult.FailureIdentityProvider(ProviderError));
+                .Returns(Result);
 
             _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
-                builder.UseSetting("AppSettings:IdentityProvider", "keycloak");
+                builder.UseSetting("AppSettings:IdentityProvider", IdentityProvider);
                 builder.UseSetting("DatabaseSettings:DatabaseConnection", UnreachableDatabase);
                 builder.ConfigureServices(collection =>
                 {
@@ -6937,6 +7080,56 @@ public class TokenEndpointInvalidScopeTests
             _client.Dispose();
             _factory.Dispose();
         }
+    }
+
+    /// <summary>A Keycloak failure, reported by the identity provider the manager calls.</summary>
+    public abstract class ProviderFailureRequest : TokenFailureRequest
+    {
+        protected abstract IdentityProviderError ProviderError { get; }
+
+        protected sealed override TokenResult Result =>
+            new TokenResult.FailureIdentityProvider(ProviderError);
+        protected sealed override string IdentityProvider => "keycloak";
+    }
+
+    [TestFixture]
+    public class Given_the_self_contained_provider_rejects_the_scope : TokenFailureRequest
+    {
+        protected override TokenResult Result => new TokenResult.FailureInvalidScope();
+        protected override string IdentityProvider => "self-contained";
+
+        [Test]
+        public void It_returns_400() => Response.StatusCode.Should().Be(HttpStatusCode.BadRequest, Body);
+
+        [Test]
+        public void It_returns_json() =>
+            (Response.Content.Headers.ContentType?.MediaType).Should().Be("application/json");
+
+        [Test]
+        public void It_returns_exactly_the_oauth_invalid_scope_error()
+        {
+            var expected = JsonNode.Parse(
+                """
+                {
+                  "error": "invalid_scope",
+                  "error_description": "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
+                }
+                """
+            );
+            JsonNode.DeepEquals(JsonNode.Parse(Body), expected).Should().BeTrue(Body);
+        }
+
+        [Test]
+        public void It_issues_no_access_token() =>
+            JsonNode.Parse(Body)!.AsObject().ContainsKey("access_token").Should().BeFalse(Body);
+
+        [Test]
+        public void It_carries_no_correlation_id() =>
+            JsonNode.Parse(Body)!.AsObject().ContainsKey("correlationId").Should().BeFalse(Body);
+
+        [Test]
+        public void It_sends_no_authentication_challenge() =>
+            Response.Headers.WwwAuthenticate.Should().BeEmpty();
     }
 
     [TestFixture]

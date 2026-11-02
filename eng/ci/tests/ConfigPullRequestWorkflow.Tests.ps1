@@ -116,7 +116,7 @@ bash "$CLASSIFIER"
         @{ Path = 'src/Directory.Packages.props' }
         @{ Path = 'src/config/Dockerfile' }
         @{ Path = 'src/plugins/Directory.Build.props' }
-        @{ Path = 'eng/docker-compose/local-config.yml' }
+        @{ Path = 'eng/docker-compose/local-config.compose.yml' }
     ) {
         $result = Invoke-ConfigDetection -ChangedFile @('docs/README.md', $Path)
         $result.ExitCode | Should -Be 0

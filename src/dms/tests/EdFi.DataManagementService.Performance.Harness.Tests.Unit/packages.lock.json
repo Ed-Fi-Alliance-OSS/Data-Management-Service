@@ -710,7 +710,6 @@
       "edfi.datamanagementservice.core": {
         "type": "Project",
         "dependencies": {
-          "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": "[4.0.0, )",
           "EdFi.Api.CustomValidation": "[1.0.0, )",
           "EdFi.Api.Identity": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
@@ -742,7 +741,6 @@
       "edfi.datamanagementservice.core.external": {
         "type": "Project",
         "dependencies": {
-          "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": "[4.0.0, )",
           "Microsoft.CodeAnalysis": "[4.12.0, )",
           "Microsoft.Extensions.Logging": "[10.0.1, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
@@ -814,12 +812,6 @@
           "Microsoft.Extensions.Diagnostics.HealthChecks": "8.0.0",
           "Npgsql": "8.0.3"
         }
-      },
-      "Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic": {
-        "type": "CentralTransitive",
-        "requested": "[4.0.0, )",
-        "resolved": "4.0.0",
-        "contentHash": "ssdML8g+JqdP2BbDxg/bqzUBz81RD3SCGAbop6qs+o1xCGPXnlCSNAOp22TDKTtFmHfp+sKSPuWL0JONf3fYYA=="
       },
       "EdFi.DataStandard52.ApiSchema": {
         "type": "CentralTransitive",

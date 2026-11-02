@@ -37,23 +37,5 @@
     }
   ],
   "childRows": [],
-  "extensionRows": [],
-  "referentialIdentityRows": [
-    {
-      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000010101",
-      "documentId": 970101,
-      "resourceKeyId": 11,
-      "values": {
-        "identity": "studentSchoolAssociation=970101"
-      }
-    },
-    {
-      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000010201",
-      "documentId": 970201,
-      "resourceKeyId": 30,
-      "values": {
-        "schoolId": 255901
-      }
-    }
-  ]
+  "extensionRows": []
 }

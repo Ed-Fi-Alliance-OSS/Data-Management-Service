@@ -123,7 +123,7 @@ Describe "Assert-DocumentEmbeds against the committed documents" {
 
         $paths | Should -Contain "docs/OPERATIONS.md"
         $paths | Should -Contain "eng/docker-compose/plugins-dms.yml"
-        $paths | Should -Contain "eng/docker-compose/plugins-fetch-dms.yml"
+        $paths | Should -Contain "eng/docker-compose/plugins-fetch-dms.compose.yml"
         $paths | Should -Contain "eng/docker-compose/plugins-config.yml"
     }
 
