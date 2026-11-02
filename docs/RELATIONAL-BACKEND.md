@@ -272,8 +272,8 @@ has no `dms.Document` table, still has `CreatedAt`, or cannot be queried.
 **Owner `ContentCreatedAt` (DMS-1656).** Freshly provisioned schemas store each resource's
 creation time as a non-null `ContentCreatedAt` column on the root table of every resource
 (core and extension-project) and on `dms.Descriptor`: PostgreSQL `timestamp with time zone`,
-SQL Server `datetime2(7)`, both UTC. It is not on `dms.Document`, child/collection tables,
-`_ext` tables or `dms.DocumentCache`, and it has no index. A direct database reader gets a
+SQL Server `datetime2(7)`, both UTC. It is not on `dms.Document`, child/collection tables or
+`_ext` tables, and it has no index. A direct database reader gets a
 resource's creation time from its own row, without joining `dms.Document`. The column is
 backend-owned: inserting the owner row sets it from the same database timestamp as the initial
 `ContentLastModifiedAt`, and no later write, cascade, no-op or restamp changes it. Deleting and
@@ -322,6 +322,17 @@ Database template packages built before this change lack the column. They restor
 but `Assert-TemplateSchema.ps1` checks only `ContentLastModifiedAt` on each owner, so it does not
 reject them. Run the two queries above on the source and restored catalogs of every rebuilt
 package.
+
+**Cached `ContentCreatedAt` (DMS-1657).** `dms.DocumentCache.ContentCreatedAt` (non-null, same
+types as the owner column) carries a copy of each resource owner's `ContentCreatedAt`. The cache
+materializer writes it on every projection, direct fill and rebuild, never a cache-side default,
+so a rebuild recovers it from the owner. A database provisioned before this change fails the
+DocumentCache inventory check (`ContentCreatedAt` column missing), so its cache target stays
+unavailable. CDC setup, `cdc-validate` and the guarded start, restart and resume pre-checks also
+fail closed on it; as with the `dms.Document` shape change above, established CDC deployments have
+no supported upgrade or cutover path. Rerunning `ddl provision` does not add the column, because
+provisioning is create-only. Drop and recreate the database from current DDL. Canonical reads and
+writes are unaffected.
 
 ### Descriptor catalog checks and template handoff
 
