@@ -33,6 +33,17 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
 
     private static readonly DateTimeOffset ObservedAt = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset FirstEnqueuedAt = ObservedAt.AddMinutes(-5);
+    private static readonly DateTimeOffset CacheContentCreatedAt = new(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        123,
+        456,
+        TimeSpan.Zero
+    );
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("TenantA", 1);
     private static readonly DocumentCacheAdministrativeTargetKey AdministrativeTargetKey =
@@ -1365,6 +1376,7 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
                 "ContentVersion",
                 "StreamEtag",
                 "LastModifiedAt",
+                "ContentCreatedAt",
                 "DocumentJson",
                 "ComputedAt"
             )
@@ -1377,6 +1389,7 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
                 @contentVersion,
                 @streamEtag,
                 @lastModifiedAt,
+                @contentCreatedAt,
                 @documentJson,
                 @computedAt
             )
@@ -1403,6 +1416,10 @@ public class Given_A_Postgresql_DocumentCacheAdministration_Workflow
             new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = cacheContentVersion },
             new NpgsqlParameter("streamEtag", NpgsqlDbType.Varchar) { Value = $"etag-{cacheContentVersion}" },
             new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = ObservedAt },
+            new NpgsqlParameter("contentCreatedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = CacheContentCreatedAt,
+            },
             new NpgsqlParameter("documentJson", NpgsqlDbType.Jsonb)
             {
                 Value = new JsonObject { ["value"] = $"cache-{source.DocumentId}" }.ToJsonString(),

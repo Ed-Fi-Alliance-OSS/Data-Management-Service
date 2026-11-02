@@ -33,6 +33,17 @@ public class Given_A_Mssql_DocumentCacheInternalOnlyCacheAheadRecovery_Command
     private static readonly DateTime ObservedAt = new(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc);
     private static readonly DateTimeOffset ObservedAtOffset = new(ObservedAt);
     private static readonly DateTimeOffset FirstEnqueuedAt = ObservedAtOffset.AddMinutes(-5);
+    private static readonly DateTimeOffset CacheContentCreatedAt = new(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        123,
+        456,
+        TimeSpan.Zero
+    );
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("TenantA", 1);
     private static readonly DocumentCacheAdministrativeTargetKey AdministrativeTargetKey =
@@ -595,6 +606,7 @@ public class Given_A_Mssql_DocumentCacheInternalOnlyCacheAheadRecovery_Command
                 [ContentVersion],
                 [StreamEtag],
                 [LastModifiedAt],
+                [ContentCreatedAt],
                 [DocumentJson],
                 [ComputedAt]
             )
@@ -607,6 +619,7 @@ public class Given_A_Mssql_DocumentCacheInternalOnlyCacheAheadRecovery_Command
                 @contentVersion,
                 @streamEtag,
                 @lastModifiedAt,
+                @contentCreatedAt,
                 @documentJson,
                 @computedAt
             );
@@ -631,6 +644,10 @@ public class Given_A_Mssql_DocumentCacheInternalOnlyCacheAheadRecovery_Command
                 Value = $"etag-{source.ContentVersion}",
             },
             new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = ObservedAt },
+            new SqlParameter("@contentCreatedAt", SqlDbType.DateTime2)
+            {
+                Value = CacheContentCreatedAt.UtcDateTime,
+            },
             new SqlParameter("@documentJson", SqlDbType.NVarChar, -1)
             {
                 Value = new JsonObject { ["value"] = $"{jsonPrefix}-{source.DocumentId}" }.ToJsonString(),
