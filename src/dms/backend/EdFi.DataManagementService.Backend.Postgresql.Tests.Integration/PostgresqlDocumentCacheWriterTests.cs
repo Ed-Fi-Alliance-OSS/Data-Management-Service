@@ -1978,6 +1978,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
             resourceVersion,
             contentVersion ?? source.ContentVersion,
             new DateTimeOffset(2026, 7, 31, 12, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
             $"etag-{contentVersion ?? source.ContentVersion}",
             new JsonObject { ["value"] = value }
         );

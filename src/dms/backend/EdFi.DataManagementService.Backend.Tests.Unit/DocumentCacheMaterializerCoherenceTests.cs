@@ -41,7 +41,11 @@ public class Given_DocumentCacheMaterializer_Coherence
         var source = isDescriptor
             ? (DocumentCacheResolvedSourceMetadata)testContext.DescriptorSource
             : testContext.OrdinarySource;
-        var initial = CreateCurrentMetadata(source) with { ContentLastModifiedAt = null };
+        var initial = CreateCurrentMetadata(source) with
+        {
+            ContentLastModifiedAt = null,
+            ContentCreatedAt = null,
+        };
         DocumentCacheCurrentSourceMetadataReadResult final = finalState switch
         {
             "Deleted" => DocumentCacheCurrentSourceMetadataReadResult.MissingSource.Instance,
@@ -51,6 +55,7 @@ public class Given_DocumentCacheMaterializer_Coherence
                     initial.DocumentUuid,
                     initial.ResourceKeyId,
                     initial.ContentVersion + 1,
+                    null,
                     null
                 )
             ),
@@ -111,6 +116,7 @@ public class Given_DocumentCacheMaterializer_Coherence
                 CreateCurrentMetadata(source) with
                 {
                     ContentLastModifiedAt = null,
+                    ContentCreatedAt = null,
                 }
             )
         );
@@ -179,6 +185,7 @@ public class Given_DocumentCacheMaterializer_Coherence
     [TestCase("ResourceKeyId")]
     [TestCase("ContentVersion")]
     [TestCase("ContentLastModifiedAt")]
+    [TestCase("ContentCreatedAt")]
     public async Task It_returns_source_changed_when_the_final_metadata_read_differs(string changedField)
     {
         var testContext = CreateMaterializerTestContext();
@@ -239,21 +246,18 @@ public class Given_DocumentCacheMaterializer_Coherence
         exception.Reason.Should().Be(DocumentCacheProjectionProcessingFailureReason.StableSourceBodyMissing);
     }
 
-    [Test]
-    public async Task It_returns_source_changed_for_descriptors_when_the_final_metadata_read_differs()
+    [TestCase("ContentVersion")]
+    [TestCase("ContentCreatedAt")]
+    public async Task It_returns_source_changed_for_descriptors_when_the_final_metadata_read_differs(
+        string changedField
+    )
     {
         var testContext = CreateMaterializerTestContext();
         var source = testContext.DescriptorSource;
         var sourceReader = new SequencedSourceMetadataReader(
             new DocumentCacheSourceMetadataReadResult.Found(source),
             new DocumentCacheCurrentSourceMetadataReadResult.Found(
-                new DocumentCacheCurrentSourceMetadata(
-                    source.DocumentId,
-                    source.DocumentUuid,
-                    source.ResourceKeyId,
-                    source.ContentVersion + 1,
-                    source.ContentLastModifiedAt
-                )
+                CreateChangedMetadata(source, changedField)
             )
         );
         var descriptorHydrator = new RecordingDescriptorHydrator
@@ -328,28 +332,40 @@ public class Given_DocumentCacheMaterializer_Coherence
                 new DocumentUuid(Guid.Parse("22222222-2222-3333-4444-555555555555")),
                 source.ResourceKeyId,
                 source.ContentVersion,
-                source.ContentLastModifiedAt
+                source.ContentLastModifiedAt,
+                source.ContentCreatedAt
             ),
             "ResourceKeyId" => new DocumentCacheCurrentSourceMetadata(
                 source.DocumentId,
                 source.DocumentUuid,
                 (short)(source.ResourceKeyId + 1),
                 source.ContentVersion,
-                source.ContentLastModifiedAt
+                source.ContentLastModifiedAt,
+                source.ContentCreatedAt
             ),
             "ContentVersion" => new DocumentCacheCurrentSourceMetadata(
                 source.DocumentId,
                 source.DocumentUuid,
                 source.ResourceKeyId,
                 source.ContentVersion + 1,
-                source.ContentLastModifiedAt
+                source.ContentLastModifiedAt,
+                source.ContentCreatedAt
             ),
             "ContentLastModifiedAt" => new DocumentCacheCurrentSourceMetadata(
                 source.DocumentId,
                 source.DocumentUuid,
                 source.ResourceKeyId,
                 source.ContentVersion,
-                source.ContentLastModifiedAt.AddSeconds(1)
+                source.ContentLastModifiedAt.AddSeconds(1),
+                source.ContentCreatedAt
+            ),
+            "ContentCreatedAt" => new DocumentCacheCurrentSourceMetadata(
+                source.DocumentId,
+                source.DocumentUuid,
+                source.ResourceKeyId,
+                source.ContentVersion,
+                source.ContentLastModifiedAt,
+                source.ContentCreatedAt.AddTicks(1)
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(changedField), changedField, "Unknown field."),
         };
@@ -362,7 +378,8 @@ public class Given_DocumentCacheMaterializer_Coherence
             source.DocumentUuid,
             source.ResourceKeyId,
             source.ContentVersion,
-            source.ContentLastModifiedAt
+            source.ContentLastModifiedAt,
+            source.ContentCreatedAt
         );
 
     private static HydratedPage CreateHydratedPage(
@@ -475,6 +492,7 @@ public class Given_DocumentCacheMaterializer_Coherence
                 ordinaryModel,
                 ContentVersion,
                 LastModifiedAt,
+                new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
                 readPlan
             ),
             new DocumentCacheResolvedSourceMetadata.DescriptorResource(
@@ -484,7 +502,8 @@ public class Given_DocumentCacheMaterializer_Coherence
                 descriptorKey,
                 descriptorModel,
                 ContentVersion,
-                LastModifiedAt
+                LastModifiedAt,
+                new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero)
             )
         );
     }

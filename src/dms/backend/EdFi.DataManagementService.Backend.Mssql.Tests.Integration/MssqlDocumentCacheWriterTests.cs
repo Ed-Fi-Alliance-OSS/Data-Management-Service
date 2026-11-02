@@ -2031,6 +2031,7 @@ public class Given_A_Mssql_DocumentCacheWriter
             resourceVersion,
             contentVersion ?? source.ContentVersion,
             LastModifiedAt,
+            new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
             $"etag-{contentVersion ?? source.ContentVersion}",
             new JsonObject { ["value"] = value }
         );

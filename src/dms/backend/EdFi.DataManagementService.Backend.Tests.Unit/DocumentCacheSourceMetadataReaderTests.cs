@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -21,6 +22,17 @@ public class Given_DocumentCacheSourceMetadataReader
     private static readonly QualifiedResourceName DescriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
     private static readonly Guid DocumentGuid = Guid.Parse("11111111-2222-3333-4444-555555555555");
     private static readonly DateTimeOffset LastModifiedAt = new(2026, 7, 30, 14, 15, 16, TimeSpan.Zero);
+
+    // Distinct from LastModifiedAt, so reading the wrong owner column fails.
+    private static readonly DateTimeOffset ContentCreatedAt = new DateTimeOffset(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        TimeSpan.Zero
+    ).AddTicks(1_234_567);
 
     [Test]
     public async Task It_returns_missing_source_when_the_canonical_document_row_is_absent()
@@ -74,6 +86,8 @@ public class Given_DocumentCacheSourceMetadataReader
         metadata.ConcreteResourceModel.StorageKind.Should().Be(ResourceStorageKind.RelationalTables);
         metadata.ContentVersion.Should().Be(987);
         metadata.ContentLastModifiedAt.Should().Be(LastModifiedAt);
+        metadata.ContentCreatedAt.Should().Be(ContentCreatedAt);
+        metadata.ContentCreatedAt.Should().NotBe(metadata.ContentLastModifiedAt);
         metadata.ReadPlan.Should().BeSameAs(readPlan);
         dataStore.Commands.Should().HaveCount(2);
         dataStore.Commands[0].CommandText.Should().NotContain("ContentLastModifiedAt");
@@ -176,6 +190,7 @@ public class Given_DocumentCacheSourceMetadataReader
         found.Metadata.ResourceKeyId.Should().Be(99);
         found.Metadata.ContentVersion.Should().Be(987);
         found.Metadata.ContentLastModifiedAt.Should().BeNull();
+        found.Metadata.ContentCreatedAt.Should().BeNull();
         dataStore.Commands.Should().HaveCount(2);
         dataStore.Commands[1].CommandText.Should().Be(dataStore.Commands[0].CommandText);
     }
@@ -199,6 +214,8 @@ public class Given_DocumentCacheSourceMetadataReader
         metadata.ResourceKey.Resource.Should().Be(DescriptorResource);
         metadata.ConcreteResourceModel.StorageKind.Should().Be(ResourceStorageKind.SharedDescriptorTable);
         metadata.ContentLastModifiedAt.Should().Be(LastModifiedAt);
+        metadata.ContentCreatedAt.Should().Be(ContentCreatedAt);
+        metadata.ContentCreatedAt.Should().NotBe(metadata.ContentLastModifiedAt);
         dataStore.Commands[1].CommandText.Should().Contain("""FROM "dms"."Descriptor" owner""");
         dataStore.Commands[1].CommandText.Should().Contain("""owner."DocumentId" = @documentId""");
         dataStore.Commands[1].CommandText.Should().NotContain("DescriptorId");
@@ -264,6 +281,7 @@ public class Given_DocumentCacheSourceMetadataReader
         missingOwner.Metadata.DocumentId.Should().Be(123);
         missingOwner.Metadata.ContentVersion.Should().Be(987);
         missingOwner.Metadata.ContentLastModifiedAt.Should().BeNull();
+        missingOwner.Metadata.ContentCreatedAt.Should().BeNull();
         var found = current.Should().BeOfType<DocumentCacheCurrentSourceMetadataReadResult.Found>().Subject;
         found.Metadata.Should().Be(missingOwner.Metadata);
         dataStore.Commands.Should().HaveCount(5);
@@ -345,6 +363,7 @@ public class Given_DocumentCacheSourceMetadataReader
                 .Subject.Metadata;
             current.ContentVersion.Should().Be(finalState == "Present" ? 987 : 988);
             current.ContentLastModifiedAt.Should().Be(finalState == "Present" ? LastModifiedAt : null);
+            current.ContentCreatedAt.Should().Be(finalState == "Present" ? ContentCreatedAt : null);
         }
         dataStore.Commands.Should().HaveCount(finalState == "Present" ? 2 : 3);
         dataStore.Commands[0].CommandText.Should().NotContain("ContentLastModifiedAt");
@@ -357,6 +376,100 @@ public class Given_DocumentCacheSourceMetadataReader
         {
             dataStore.Commands[2].CommandText.Should().Be(dataStore.Commands[0].CommandText);
         }
+    }
+
+    [TestCase(SqlDialect.Pgsql, false)]
+    [TestCase(SqlDialect.Pgsql, true)]
+    [TestCase(SqlDialect.Mssql, false)]
+    [TestCase(SqlDialect.Mssql, true)]
+    public async Task It_reads_both_owner_timestamps_in_one_owner_query_keyed_by_document_id(
+        SqlDialect dialect,
+        bool isDescriptor
+    )
+    {
+        var mappingSet = isDescriptor ? CreateMappingSet(dialect) : CreateMappingSetWithReadPlan(dialect);
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore(
+            [
+                new InMemoryRelationalCommandExecution([
+                    CreateSourceRow(isDescriptor ? (short)13 : (short)11),
+                ]),
+                new InMemoryRelationalCommandExecution([CreateOwnerRow(descriptorId: 7)]),
+            ],
+            dialect
+        );
+
+        await new DocumentCacheSourceMetadataReader(dataStore).ReadAsync(CreateRequest(mappingSet));
+
+        dataStore.Commands.Should().HaveCount(2);
+        dataStore
+            .Commands[1]
+            .CommandText.Should()
+            .Be(
+                (dialect, isDescriptor) switch
+                {
+                    (SqlDialect.Pgsql, true) =>
+                        """SELECT owner."ContentLastModifiedAt" AS "ContentLastModifiedAt", owner."ContentCreatedAt" AS "ContentCreatedAt" FROM "dms"."Descriptor" owner WHERE owner."DocumentId" = @documentId;""",
+                    (SqlDialect.Pgsql, false) =>
+                        """SELECT owner."ContentLastModifiedAt" AS "ContentLastModifiedAt", owner."ContentCreatedAt" AS "ContentCreatedAt" FROM "edfi"."School" owner WHERE owner."DocumentId" = @documentId;""",
+                    (SqlDialect.Mssql, true) =>
+                        "SELECT owner.[ContentLastModifiedAt] AS [ContentLastModifiedAt], owner.[ContentCreatedAt] AS [ContentCreatedAt] FROM [dms].[Descriptor] owner WHERE owner.[DocumentId] = @documentId;",
+                    _ =>
+                        "SELECT owner.[ContentLastModifiedAt] AS [ContentLastModifiedAt], owner.[ContentCreatedAt] AS [ContentCreatedAt] FROM [edfi].[School] owner WHERE owner.[DocumentId] = @documentId;",
+                }
+            );
+        dataStore
+            .Commands[1]
+            .Parameters.Should()
+            .ContainSingle(parameter => parameter.Name == "@documentId" && (long)parameter.Value! == 123L);
+    }
+
+    [TestCase("DateTimeOffset")]
+    [TestCase("UnspecifiedDateTime")]
+    [TestCase("UtcDateTime")]
+    [TestCase("String")]
+    public async Task It_parses_the_owner_creation_timestamp_from_each_provider_value_shape(string valueShape)
+    {
+        object providerValue = valueShape switch
+        {
+            "DateTimeOffset" => ContentCreatedAt,
+            "UnspecifiedDateTime" => DateTime.SpecifyKind(
+                ContentCreatedAt.UtcDateTime,
+                DateTimeKind.Unspecified
+            ),
+            "UtcDateTime" => ContentCreatedAt.UtcDateTime,
+            _ => ContentCreatedAt.ToString("O", CultureInfo.InvariantCulture),
+        };
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
+            new InMemoryRelationalCommandExecution([CreateSourceRow(resourceKeyId: 11)]),
+            new InMemoryRelationalCommandExecution([CreateOwnerRow(contentCreatedAt: providerValue)]),
+        ]);
+
+        var result = await new DocumentCacheSourceMetadataReader(dataStore).ReadCurrentAsync(
+            CreateRequest(CreateMappingSetWithReadPlan())
+        );
+
+        var current = result
+            .Should()
+            .BeOfType<DocumentCacheCurrentSourceMetadataReadResult.Found>()
+            .Subject.Metadata;
+        current.ContentCreatedAt.Should().Be(ContentCreatedAt);
+        current.ContentCreatedAt!.Value.Offset.Should().Be(TimeSpan.Zero);
+        current.ContentLastModifiedAt.Should().Be(LastModifiedAt);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_throws_when_the_owner_row_has_no_creation_timestamp(bool isDescriptor)
+    {
+        var mappingSet = isDescriptor ? CreateMappingSet() : CreateMappingSetWithReadPlan();
+        var dataStore = new InMemoryDocumentCacheMaterializationDataStore([
+            new InMemoryRelationalCommandExecution([CreateSourceRow(isDescriptor ? (short)13 : (short)11)]),
+            new InMemoryRelationalCommandExecution([CreateOwnerRow(includeContentCreatedAt: false)]),
+        ]);
+
+        var act = () => new DocumentCacheSourceMetadataReader(dataStore).ReadAsync(CreateRequest(mappingSet));
+
+        await act.Should().ThrowAsync<IndexOutOfRangeException>().WithMessage("*ContentCreatedAt*");
     }
 
     [Test]
@@ -681,12 +794,22 @@ public class Given_DocumentCacheSourceMetadataReader
             }
         );
 
-    private static InMemoryRelationalResultSet CreateOwnerRow(int? descriptorId = null) =>
-        InMemoryRelationalResultSet.Create(
-            new Dictionary<string, object?>
-            {
-                ["ContentLastModifiedAt"] = LastModifiedAt,
-                ["DescriptorId"] = descriptorId,
-            }
-        );
+    private static InMemoryRelationalResultSet CreateOwnerRow(
+        int? descriptorId = null,
+        object? contentCreatedAt = null,
+        bool includeContentCreatedAt = true
+    )
+    {
+        var row = new Dictionary<string, object?>
+        {
+            ["ContentLastModifiedAt"] = LastModifiedAt,
+            ["DescriptorId"] = descriptorId,
+        };
+        if (includeContentCreatedAt)
+        {
+            row["ContentCreatedAt"] = contentCreatedAt ?? ContentCreatedAt;
+        }
+
+        return InMemoryRelationalResultSet.Create(row);
+    }
 }

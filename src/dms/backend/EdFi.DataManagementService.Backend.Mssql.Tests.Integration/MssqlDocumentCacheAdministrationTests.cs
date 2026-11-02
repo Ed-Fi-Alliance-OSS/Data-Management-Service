@@ -1683,6 +1683,7 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
                         resourceKey.ResourceVersion,
                         source.ContentVersion,
                         ObservedAtOffset,
+                        new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
                         $"etag-{source.ContentVersion}",
                         new JsonObject { ["value"] = $"rebuilt-{source.DocumentId}" }
                     )

@@ -50,6 +50,7 @@ public class Given_MssqlDocumentCacheWriterParameterBinding
             "5.0.0-学",
             23,
             new DateTimeOffset(2026, 7, 31, 12, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
             "etag-23",
             new JsonObject { ["value"] = "candidate" }
         );

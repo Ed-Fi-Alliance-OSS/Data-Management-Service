@@ -598,6 +598,7 @@ public class Given_DocumentCacheProjectionItemProcessor
             "5.2.0",
             contentVersion,
             ObservedAt,
+            new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
             $"etag-{contentVersion}",
             new JsonObject { ["id"] = documentId }
         );

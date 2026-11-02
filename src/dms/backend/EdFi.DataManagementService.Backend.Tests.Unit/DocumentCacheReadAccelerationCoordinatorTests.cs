@@ -3532,6 +3532,7 @@ public class Given_DocumentCacheReadAccelerationCoordinator
                 "1.0",
                 request.SelectedRequiredContentVersion ?? 91,
                 ObservedAt,
+                new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
                 $"stream-{request.DocumentId}",
                 new JsonObject { ["id"] = DocumentUuid.Value.ToString() }
             );

@@ -59,9 +59,25 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
         success.Candidate.ResourceVersion.Should().Be("5.2.0");
         success.Candidate.ContentVersion.Should().Be(ContentVersion);
         success.Candidate.LastModifiedAt.Should().Be(LastModifiedAt);
+        success.Candidate.ContentCreatedAt.Should().Be(source.ContentCreatedAt);
+        success.Candidate.ContentCreatedAt.Should().NotBe(success.Candidate.LastModifiedAt);
         success.Candidate.StreamEtag.Should().Be("stream-etag");
 
         var documentJson = success.Candidate.DocumentJson;
+        // Creation time is cache-row metadata only; the descriptor body carries no creation key.
+        documentJson
+            .Select(property => property.Key)
+            .Should()
+            .BeEquivalentTo(
+                "id",
+                "namespace",
+                "codeValue",
+                "shortDescription",
+                "description",
+                "effectiveBeginDate",
+                "effectiveEndDate",
+                "_lastModifiedDate"
+            );
         documentJson["namespace"]!.GetValue<string>().Should().Be("uri://ed-fi.org/SchoolTypeDescriptor");
         documentJson["codeValue"]!.GetValue<string>().Should().Be("Alternative");
         documentJson["shortDescription"]!.GetValue<string>().Should().Be("Alternative");
@@ -141,7 +157,8 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
                     source.DocumentUuid,
                     source.ResourceKeyId,
                     source.ContentVersion,
-                    source.ContentLastModifiedAt.AddSeconds(1)
+                    source.ContentLastModifiedAt.AddSeconds(1),
+                    source.ContentCreatedAt
                 )
             )
         );
@@ -235,7 +252,8 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
             testContext.ResourceKey,
             testContext.ConcreteResourceModel,
             ContentVersion,
-            LastModifiedAt
+            LastModifiedAt,
+            new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero)
         );
 
     private static DescriptorReadRow CreateDescriptorRow(DocumentCacheResolvedSourceMetadata source) =>
@@ -301,7 +319,8 @@ public class Given_DocumentCacheMaterializer_With_DescriptorHydration
                             found.Metadata.DocumentUuid,
                             found.Metadata.ResourceKeyId,
                             found.Metadata.ContentVersion,
-                            found.Metadata.ContentLastModifiedAt
+                            found.Metadata.ContentLastModifiedAt,
+                            found.Metadata.ContentCreatedAt
                         )
                     ),
                 _ => throw new InvalidOperationException(
@@ -578,7 +597,8 @@ public class Given_DocumentCacheDescriptorHydrator
             mappingSetContext.ResourceKey,
             mappingSetContext.ConcreteResourceModel,
             ContentVersion,
-            LastModifiedAt
+            LastModifiedAt,
+            new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero)
         );
 
     private sealed record DescriptorHydratorTestContext(

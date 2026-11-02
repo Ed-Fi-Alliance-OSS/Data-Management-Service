@@ -560,6 +560,7 @@ internal static class DocumentCacheWriterContractTestData
                 "2026-01-01T00:00:00Z",
                 System.Globalization.CultureInfo.InvariantCulture
             ),
+            contentCreatedAt: new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
             streamEtag: "\"11-fixed-stream\"",
             documentJson: System
                 .Text.Json.Nodes.JsonNode.Parse(
