@@ -14,7 +14,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// Provider-agnostic assertion helpers for the no-profile atomic rollback family
 /// (`NoProfileRollbackSafety`): a failure injected at the last write of a full-surface create rolls
 /// the whole request back to its exact pre-state across every authoritative surface (document and
-/// its tracking stamps, referential identity, root, nested child/grandchild, root extension,
+/// its tracking stamps, root, nested child/grandchild, root extension,
 /// aligned extension, extension-child and visit rows, and tracked-change rowsets), and a
 /// key-unification conflict is rejected as a validation failure that leaves the document and
 /// authoritative tables unchanged. Each provider suite keeps its own provisioning, failure
@@ -84,14 +84,13 @@ public static class NoProfileAtomicRollbackAssertions
     /// <summary>
     /// Provider-neutral row-count snapshot of every authoritative surface the full-surface create
     /// touches: the document row (whose absence also proves its tracking stamp state is gone), the
-    /// trigger-maintained referential identity, the root, the nested child and grandchild
+    /// root, the nested child and grandchild
     /// collections, the root extension, the collection-aligned extension, the extension-child and
     /// visit collections, and the root's tracked-change rowset. Each provider suite reads its own
     /// SQL into this shape before the failing request and after the rollback.
     /// </summary>
     public sealed record FullSurfaceRollbackSnapshot(
         long DocumentCount,
-        long ReferentialIdentityCount,
         long SchoolCount,
         long SchoolAddressCount,
         long SchoolAddressPeriodCount,
@@ -106,8 +105,7 @@ public static class NoProfileAtomicRollbackAssertions
     /// Asserts the failed full-surface create rolled back to its exact pre-state: the pre-state
     /// snapshot is proven to be the reset/empty state (so rollback-to-pre-state is non-vacuous and
     /// cannot hide leaked rows), and the post-rollback snapshot equals it exactly across every
-    /// authoritative surface, including the trigger-maintained referential identity and the
-    /// tracked-change rowset.
+    /// authoritative surface, including the tracked-change rowset.
     /// </summary>
     public static void AssertFullSurfaceRollbackToPreState(
         FullSurfaceRollbackSnapshot before,
@@ -117,7 +115,7 @@ public static class NoProfileAtomicRollbackAssertions
         before
             .Should()
             .BeEquivalentTo(
-                new FullSurfaceRollbackSnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+                new FullSurfaceRollbackSnapshot(0, 0, 0, 0, 0, 0, 0, 0, 0),
                 "the reset pre-state must be empty on every touched surface"
             );
         after.Should().BeEquivalentTo(before);
@@ -129,12 +127,6 @@ public static class NoProfileAtomicRollbackAssertions
         Guid DocumentUuid,
         short ResourceKeyId,
         long ContentVersion
-    );
-
-    public sealed record RejectedWriteReferentialIdentityRow(
-        Guid ReferentialId,
-        long DocumentId,
-        short ResourceKeyId
     );
 
     /// <summary>
@@ -191,10 +183,10 @@ public static class NoProfileAtomicRollbackAssertions
     );
 
     /// <summary>
-    /// Provider-neutral, deterministically ordered, value-bearing snapshot of every authoritative,
-    /// referential-identity, and tracking surface a rejected StudentSchoolAssociation
-    /// key-unification write could have touched: stamp-complete document rows, full
-    /// referential-identity rows, the conflicting Calendar seed's value-bearing row, the full
+    /// Provider-neutral, deterministically ordered, value-bearing snapshot of every authoritative
+    /// and tracking surface a rejected StudentSchoolAssociation
+    /// key-unification write could have touched: stamp-complete document rows,
+    /// the conflicting Calendar seed's value-bearing row, the full
     /// value-bearing rowsets of the association root/extension/collection tables (expected empty),
     /// and the association/calendar tracked-change rowset counts (their tables are expected empty,
     /// so a count captures their entire state). Each provider suite reads its own SQL into this
@@ -202,7 +194,6 @@ public static class NoProfileAtomicRollbackAssertions
     /// </summary>
     public sealed record RejectedWriteSnapshot(
         IReadOnlyList<RejectedWriteDocumentRow> Documents,
-        IReadOnlyList<RejectedWriteReferentialIdentityRow> ReferentialIdentities,
         RejectedWriteCalendarRow ConflictCalendar,
         IReadOnlyList<RejectedWriteAssociationRow> AssociationRows,
         IReadOnlyList<RejectedWriteAssociationExtensionRow> AssociationExtensionRows,
@@ -216,7 +207,7 @@ public static class NoProfileAtomicRollbackAssertions
     /// Asserts a key-unification conflict was rejected atomically: a single validation failure at
     /// <c>$.schoolReference.schoolId</c> carrying the canonical SchoolId_Unified conflict message,
     /// with the full before/after value-bearing snapshot exactly unchanged in order — document
-    /// stamps, referential identities, the conflicting Calendar seed's values, association-side
+    /// stamps, the conflicting Calendar seed's values, association-side
     /// rowsets, and tracked-change counts — the rejected document absent, the association-side
     /// tables and tracked-change rowsets empty, the baseline document count unchanged, and the
     /// positive resource-key and conflict-seed preconditions preserved (the before snapshot must

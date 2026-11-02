@@ -248,8 +248,7 @@ public class Given_MaterializedDocumentFixtureSeeder
                     ),
                 ],
                 ChildRows: [],
-                ExtensionRows: [],
-                ReferentialIdentityRows: []
+                ExtensionRows: []
             ),
             ExpectedCacheRow: null,
             ExpectedStreamEtag: null,

@@ -24,8 +24,8 @@ namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 /// Every denial asserts three independent things. The typed failure carries the right kind and value source,
 /// which is what proves the stored check ran before the proposed one — a proposed failure is only reachable
 /// once the stored check has passed. The complete before/after
-/// <see cref="AuthorizationWriteSideEffectState"/> snapshot proves no authoritative row, referential identity,
-/// or tracking stamp moved. The no-DML command boundary proves the write session issued no persistence at all,
+/// <see cref="AuthorizationWriteSideEffectState"/> snapshot proves no authoritative row or tracking stamp
+/// moved. The no-DML command boundary proves the write session issued no persistence at all,
 /// which is what generalizes the guarantee to root, child, extension, identity, and tracking writes alike.
 /// The recorder is reset after arrangement in each test so only the act's commands are evaluated.
 /// </remarks>
@@ -137,7 +137,6 @@ public class Given_A_Mssql_Relational_Namespace_Write_Authorization_With_A_Synth
         var state = await _context.ReadAuthorizationNamespaceSideEffectStateAsync(seed.DocumentUuid);
         AssertRootRow(state, seed);
         AssertChildRowCount(state, 1);
-        state.ReferentialIdentities.Should().ContainSingle();
     }
 
     [TestCase(
@@ -772,7 +771,7 @@ public class Given_A_Mssql_Relational_Namespace_Write_Authorization_With_A_Synth
         (await _context.CountResourceRootRowsAsync(ProjectEndpointName, ResourceName, seed.DocumentUuid))
             .Should()
             .Be(0);
-        (await _context.CountReferentialIdentityRowsForAuthorizationNamespaceAsync(seed)).Should().Be(0);
+        (await _context.CountAuthorizationNamespaceRowsByNaturalKeyAsync(seed)).Should().Be(0);
     }
 
     private static void AssertRootRow(

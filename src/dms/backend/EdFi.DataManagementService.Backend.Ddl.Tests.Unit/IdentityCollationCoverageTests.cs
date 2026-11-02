@@ -404,6 +404,8 @@ public class Given_Authoritative_Mssql_Identity_Collation_Coverage(string fixtur
                     column.Value
                 ))
             )
+            // The computed lowered descriptor URI folds under the identity collation.
+            .Append(new QualifiedColumn("dms", "Descriptor", "UriLowered"))
             .ToHashSet();
 
         var emitted = _definitions
@@ -475,11 +477,26 @@ public class Given_The_Descriptor_Identity_Text_Columns
         descriptorDefinitions
             .Should()
             .Contain(entry => entry.Key.Column == "ShortDescription")
-            .And.Contain(entry => entry.Key.Column == "Uri");
-        descriptorDefinitions
+            .And.Contain(entry => entry.Key.Column == "Uri")
+            .And.Contain(entry => entry.Key.Column == "UriLowered");
+        var collated = descriptorDefinitions
             .Where(entry => entry.Value.Contains(AuthoritativeMssqlIdentityCollation.IdentityCollateClause))
+            .ToArray();
+
+        // Stored columns carry the collation exactly on the shared list.
+        collated
+            .Where(entry => !entry.Value.Contains(" AS "))
             .Select(entry => entry.Key.Column)
             .Should()
             .BeEquivalentTo(DescriptorIdentityTextColumns.All.Select(column => column.Value));
+
+        // The only computed column carrying it is UriLowered, inside LOWER(...).
+        collated
+            .Where(entry => entry.Value.Contains(" AS "))
+            .Select(entry => entry.Value)
+            .Should()
+            .Equal(
+                $"[UriLowered] AS LOWER(([Namespace] + N'#' + [CodeValue]) {AuthoritativeMssqlIdentityCollation.IdentityCollateClause}),"
+            );
     }
 }

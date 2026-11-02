@@ -193,32 +193,6 @@ public static class PerfAuthorizationSeeder
             );
             descriptorId = await PerfSeederDatabase.ExecuteDescriptorInsertAsync(descriptorInsert);
         }
-
-        await using DbCommand referentialInsert = PerfSeederDatabase.CreateCommand(
-            connection,
-            postgresql
-                ? PgsqlPerfFixtureLoaderSql.DescriptorReferentialIdentityInsertSql
-                : MssqlPerfFixtureLoaderSql.DescriptorReferentialIdentityInsertSql
-        );
-        PerfSeederDatabase.AddObjectParameter(
-            referentialInsert,
-            PerfFixtureLoaderParameters.DescriptorReferentialId,
-            ReferentialIdentityDerivation.DescriptorReferentialId(
-                PerfAuthorizationSeedDefinition.GradeLevelDescriptorResource,
-                PerfAuthorizationSeedDefinition.GradeLevelDescriptorUri
-            )
-        );
-        PerfSeederDatabase.AddParameter(
-            referentialInsert,
-            PerfFixtureLoaderParameters.DescriptorDocumentId,
-            seed.GradeLevelDescriptorDocumentId
-        );
-        PerfSeederDatabase.AddParameter(
-            referentialInsert,
-            PerfFixtureLoaderParameters.ResourceKeyId,
-            descriptorResourceKeyId
-        );
-        await referentialInsert.ExecuteNonQueryAsync();
         return descriptorId;
     }
 

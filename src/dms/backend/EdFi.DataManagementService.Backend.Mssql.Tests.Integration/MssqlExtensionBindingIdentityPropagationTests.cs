@@ -235,9 +235,7 @@ public class Given_A_Provisioned_Mssql_Database_With_A_FavoriteProgram_Extension
 
         // EducationOrganization and ProgramTypeDescriptor point at synthetic anchors, so this
         // table's reference FKs are disabled for the seed insert. Program's own triggers stay
-        // disabled for the whole test: with a synthetic EducationOrganization anchor (no seeded
-        // dms.ReferentialIdentity alias row) Program's identity-maintenance trigger would compute a
-        // NULL ReferentialId on the rename. That machinery is orthogonal to the behavior under
+        // disabled for the whole test because they are orthogonal to the behavior under
         // test — the FavoriteProgram_RefKey cascade is a native FK action and the extension stamp
         // trigger lives on the extension table, so both fire independently of Program's own
         // triggers (the behavior under test). Constraints are re-enabled (untrusted) after the

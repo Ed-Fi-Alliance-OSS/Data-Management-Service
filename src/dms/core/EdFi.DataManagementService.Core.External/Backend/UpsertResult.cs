@@ -88,6 +88,12 @@ public record UpsertResult
     public record UpsertFailureWriteConflict() : UpsertResult();
 
     /// <summary>
+    /// A non-retryable failure because the database rejected the write with a unique-constraint
+    /// violation that the backend could not attribute to a more specific failure
+    /// </summary>
+    public record UpsertFailureNonUniqueValues() : UpsertResult();
+
+    /// <summary>
     /// A failure because the request's If-Match ETag precondition was not satisfied
     /// </summary>
     /// <param name="Reason">Machine-readable reason for the precondition failure</param>

@@ -2467,8 +2467,8 @@ function Get-RestoreAuthoritativeObjectInventory {
 
     try {
         if ($DatabaseEngine -eq "postgresql") {
-            # The candidate DDL references the locked-down restore-global role and pgcrypto's
-            # digest() (via dms.uuidv5), exactly as a restored artifact does.
+            # The candidate DDL references the locked-down restore-global role, exactly as a
+            # restored artifact does.
             $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
                 -Query (Get-PostgresqlRestoreGlobalRoleSql) `
                 -FailureMessage "Failed to ensure the PostgreSQL restore-global role before the expected-schema replay."
@@ -2478,14 +2478,6 @@ function Get-RestoreAuthoritativeObjectInventory {
             $null = Invoke-RestoreCatalogQuery @adminQueryArguments `
                 -Query "CREATE DATABASE `"$expectedDatabaseName`";" `
                 -FailureMessage "Failed to create expected database '$expectedDatabaseName'."
-            $null = Invoke-RestoreCatalogQuery `
-                -DatabaseEngine $DatabaseEngine `
-                -ContainerName $ContainerName `
-                -DatabaseName $expectedDatabaseName `
-                -MssqlPassword $MssqlPassword `
-                -PostgresUser $PostgresUser `
-                -Query "CREATE EXTENSION IF NOT EXISTS `"pgcrypto`";" `
-                -FailureMessage "Failed to create the pgcrypto extension in expected database '$expectedDatabaseName'."
 
             $containerDdlPath = "/tmp/restore-expected-$([Guid]::NewGuid().ToString('N')).sql"
             $null = Invoke-RestoreDockerCommand `

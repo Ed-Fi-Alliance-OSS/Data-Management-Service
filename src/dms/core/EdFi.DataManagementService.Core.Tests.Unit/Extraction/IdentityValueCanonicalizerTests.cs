@@ -226,11 +226,11 @@ public class IdentityValueCanonicalizerTests
         }
 
         [Test]
-        public void It_lower_cases_the_descriptor_value()
+        public void It_keeps_the_descriptor_value_unchanged()
         {
             _result
                 .IdentityValue.Should()
-                .Be("uri://ed-fi.org/staffclassificationdescriptor#kindergarten teacher");
+                .Be("uri://ed-fi.org/StaffClassificationDescriptor#Kindergarten Teacher");
         }
     }
 
@@ -291,7 +291,7 @@ public class IdentityValueCanonicalizerTests
         [SetUp]
         public void Setup()
         {
-            // A path ending in "Descriptor" is always treated as descriptor (lower-cased),
+            // A path ending in "Descriptor" is always treated as a descriptor (kept unchanged),
             // even when isNumeric is true — descriptor path wins.
             _result = IdentityValueCanonicalizer.CreateDocumentIdentityElement(
                 new JsonPath("$.staffClassificationDescriptor"),
@@ -301,9 +301,9 @@ public class IdentityValueCanonicalizerTests
         }
 
         [Test]
-        public void It_lower_cases_the_descriptor_value_ignoring_isNumeric()
+        public void It_keeps_the_descriptor_value_unchanged_ignoring_isNumeric()
         {
-            _result.IdentityValue.Should().Be("uri://ed-fi.org/staffclassificationdescriptor#teacher");
+            _result.IdentityValue.Should().Be("uri://ed-fi.org/StaffClassificationDescriptor#Teacher");
         }
     }
 

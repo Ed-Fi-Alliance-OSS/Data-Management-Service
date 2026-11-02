@@ -106,6 +106,12 @@ public sealed class Given_Postgresql_OwnershipAuthorization : PostgresqlApiInteg
         );
 
     [Test]
+    public Task It_authorizes_a_case_variant_descriptor_repost_against_the_stored_rows_ownership() =>
+        OwnershipAuthorizationIntegrationScenario.It_authorizes_a_case_variant_descriptor_repost_against_the_stored_rows_ownership(
+            Harness
+        );
+
+    [Test]
     public Task It_filters_descriptor_get_many_and_partitions_to_the_callers_ownership_tokens() =>
         OwnershipAuthorizationIntegrationScenario.It_filters_descriptor_get_many_and_partitions_to_the_callers_ownership_tokens(
             Harness

@@ -1257,7 +1257,7 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
             resolveToCreate ? RelationalWriteOperationKind.Post : RelationalWriteOperationKind.Put,
             resolveToCreate
                 ? new RelationalWriteTargetRequest.Post(
-                    new ReferentialId(Guid.Parse("11111111-2222-3333-4444-555555555555")),
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                     CreatedDocumentUuid
                 )
                 : new RelationalWriteTargetRequest.Put(ExistingDocumentUuid),

@@ -53,13 +53,11 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         var noProfilePersister = scope.ServiceProvider.GetRequiredService<IRelationalWritePersister>();
         var targetLookupService =
             scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupService>();
-        var targetLookupResolver =
-            scope.ServiceProvider.GetRequiredService<IRelationalWriteTargetLookupResolver>();
         var writeExecutor = scope.ServiceProvider.GetRequiredService<IRelationalWriteExecutor>();
         var writeSessionFactory = scope.ServiceProvider.GetRequiredService<IRelationalWriteSessionFactory>();
         var documentHydrator = scope.ServiceProvider.GetRequiredService<IDocumentHydrator>();
-        var factory = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapterFactory>();
-        var adapter = scope.ServiceProvider.GetRequiredService<IReferenceResolverAdapter>();
+        var lookupCommandBuilder =
+            scope.ServiceProvider.GetRequiredService<INaturalKeyLookupCommandBuilder>();
         var commandExecutor = scope.ServiceProvider.GetRequiredService<IRelationalCommandExecutor>();
         var readMaterializer = scope.ServiceProvider.GetRequiredService<IRelationalReadMaterializer>();
         var documentCacheMaterializationDataStore =
@@ -108,18 +106,21 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         var documentCacheReadAccelerationCoordinator =
             scope.ServiceProvider.GetRequiredService<IDocumentCacheReadAccelerationCoordinator>();
 
-        resolver.Should().BeOfType<ReferenceResolver>();
+        resolver.Should().BeOfType<NaturalKeyReferenceResolver>();
         writeFlattener.Should().BeOfType<RelationalWriteFlattener>();
         currentStateLoader.Should().BeOfType<RelationalWriteCurrentStateLoader>();
         noProfileMergeSynthesizer.Should().BeOfType<RelationalWriteNoProfileMergeSynthesizer>();
         noProfilePersister.Should().BeOfType<RelationalWriteNoProfilePersister>();
         targetLookupService.Should().BeOfType<RelationalWriteTargetLookupService>();
-        targetLookupResolver.Should().BeOfType<RelationalWriteTargetLookupResolver>();
         writeExecutor.Should().BeOfType<DefaultRelationalWriteExecutor>();
         writeSessionFactory.Should().BeOfType<PostgresqlRelationalWriteSessionFactory>();
         documentHydrator.Should().BeOfType<PostgresqlDocumentHydrator>();
-        factory.Should().BeOfType<PostgresqlReferenceResolverAdapterFactory>();
-        adapter.Should().BeOfType<PostgresqlReferenceResolverAdapter>();
+        // The natural-key resolver is the only reference resolver, with this provider's lookup builder.
+        services
+            .Where(descriptor => descriptor.ServiceType == typeof(IReferenceResolver))
+            .Should()
+            .ContainSingle();
+        lookupCommandBuilder.Should().BeOfType<PostgresqlNaturalKeyLookupCommandBuilder>();
         commandExecutor.Should().BeOfType<PostgresqlRelationalCommandExecutor>();
         readMaterializer.Should().BeOfType<RelationalReadMaterializer>();
         documentCacheMaterializationDataStore
@@ -344,22 +345,6 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
     }
 
     [Test]
-    public void It_builds_an_embeddable_postgresql_reference_lookup_command()
-    {
-        var factory = new PostgresqlReferenceResolverAdapterFactory(A.Fake<IRelationalCommandExecutor>());
-        var request = CreateLookupRequest(3);
-
-        var command = factory.TryBuildSessionLookupCommand(request);
-
-        command.Should().NotBeNull();
-        command!.Parameters.Should().ContainSingle();
-        command.Parameters[0].Name.Should().Be("@referentialIds");
-        command.CommandText.Should().Contain("unnest(@referentialIds::uuid[])");
-        command.CommandText.Should().Contain("referentialIdentity.\"DocumentId\" AS \"DocumentId\"");
-        command.CommandText.Should().Contain("descriptor.\"DescriptorId\" AS \"DescriptorId\"");
-    }
-
-    [Test]
     public void ServiceCollection_replaces_existing_relational_token_info_lookup_with_postgresql_lookup()
     {
         var services = new ServiceCollection();
@@ -478,25 +463,6 @@ public class Given_Postgresql_Reference_Resolver_Service_Collection_Extensions
         descriptor.ImplementationFactory.Should().NotBeNull();
         descriptor.ImplementationType.Should().BeNull();
         descriptor.ImplementationInstance.Should().BeNull();
-    }
-
-    private static ReferenceLookupRequest CreateLookupRequest(int count)
-    {
-        var requestResource = new QualifiedResourceName("Ed-Fi", "Student");
-        var mappingSet = RelationalAccessTestData.CreateMappingSet(requestResource);
-
-        return new ReferenceLookupRequest(
-            mappingSet,
-            requestResource,
-            Enumerable
-                .Range(1, count)
-                .Select(index =>
-                    RelationalAccessTestData.CreateSchoolLookup(
-                        new ReferentialId(Guid.ParseExact($"{index:x8}000000000000000000000000", "N"))
-                    )
-                )
-                .ToArray()
-        );
     }
 
     private sealed class NoLinkSlugResolver : IDocumentLinkSlugResolver

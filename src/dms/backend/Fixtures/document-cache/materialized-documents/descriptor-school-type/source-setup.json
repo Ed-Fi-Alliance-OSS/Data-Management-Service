@@ -27,15 +27,5 @@
   ],
   "concreteRootRows": [],
   "childRows": [],
-  "extensionRows": [],
-  "referentialIdentityRows": [
-    {
-      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000010301",
-      "documentId": 970301,
-      "resourceKeyId": 13,
-      "values": {
-        "uri": "uri://ed-fi.org/SchoolTypeDescriptor#Alternative"
-      }
-    }
-  ]
+  "extensionRows": []
 }

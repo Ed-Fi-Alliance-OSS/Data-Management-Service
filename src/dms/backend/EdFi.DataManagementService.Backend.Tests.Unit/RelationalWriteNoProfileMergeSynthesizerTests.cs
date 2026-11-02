@@ -441,11 +441,76 @@ public class Given_Relational_Write_No_Profile_Merge_Synthesizer
         LiteralValue(addressState.MergedRows[0].Values[4]).Should().Be("New City");
     }
 
-    private static WritePlanFixture CreateFixture()
+    [TestCase(true, "Home", 50L)]
+    [TestCase(false, "HOME", null)]
+    public void It_matches_and_rebinds_a_case_variant_semantic_identity_only_for_a_collated_column(
+        bool addressTypeUsesSqlServerIdentityCollation,
+        string expectedAddressType,
+        long? expectedCollectionItemId
+    )
+    {
+        var fixture = CreateFixture(addressTypeUsesSqlServerIdentityCollation);
+        var flattenedWriteSet = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                fixture.RootPlan,
+                [Literal(345L), Literal("Lincoln High")],
+                collectionCandidates:
+                [
+                    CreateAddressCandidate(fixture, 0, NewCollectionItemId(), "HOME", "New City"),
+                ]
+            )
+        );
+        var currentState = CreateCurrentState(
+            fixture,
+            rootRows:
+            [
+                [345L, "Lincoln High"],
+            ],
+            addressRows:
+            [
+                [50L, 345L, 0, "Home", "Old City"],
+            ]
+        );
+
+        var result = _sut.Synthesize(
+            new RelationalWriteNoProfileMergeRequest(fixture.WritePlan, flattenedWriteSet, currentState)
+        );
+
+        var mergedAddress = result.TablesInDependencyOrder[2].MergedRows.Should().ContainSingle().Subject;
+        if (expectedCollectionItemId is null)
+        {
+            mergedAddress.Values[0].Should().BeOfType<FlattenedWriteValue.UnresolvedCollectionItemId>();
+        }
+        else
+        {
+            LiteralValue(mergedAddress.Values[0]).Should().Be(expectedCollectionItemId);
+        }
+
+        LiteralValue(mergedAddress.Values[3]).Should().Be(expectedAddressType);
+        LiteralValue(mergedAddress.Values[4]).Should().Be("New City");
+    }
+
+    private static WritePlanFixture CreateFixture(bool addressTypeUsesSqlServerIdentityCollation = false)
     {
         var rootPlan = CreateRootPlan();
         var rootExtensionPlan = CreateRootExtensionPlan();
         var addressPlan = CreateAddressPlan();
+
+        if (addressTypeUsesSqlServerIdentityCollation)
+        {
+            var addressTypeBinding = addressPlan.ColumnBindings[3];
+            addressPlan = addressPlan with
+            {
+                ColumnBindings = addressPlan.ColumnBindings.SetItem(
+                    3,
+                    addressTypeBinding with
+                    {
+                        Column = addressTypeBinding.Column with { UsesSqlServerIdentityCollation = true },
+                    }
+                ),
+            };
+        }
+
         var periodPlan = CreatePeriodPlan();
         var resourceModel = new RelationalResourceModel(
             Resource: new QualifiedResourceName("Ed-Fi", "School"),

@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 
 internal static class CompactDescriptorCacheScenario
 {
-    public static async Task ExecuteAsync(
+    public static Task ExecuteAsync(
         DbConnection connection,
         MappingSet mappingSet,
         string connectionString,
@@ -23,6 +23,51 @@ internal static class CompactDescriptorCacheScenario
         IDocumentCacheMaterializer materializer,
         IDocumentCacheWriter writer,
         Func<string, DescriptorWriteRequest> postRequest
+    ) =>
+        ExecuteCoreAsync(
+            connection,
+            mappingSet,
+            connectionString,
+            handler,
+            materializer,
+            writer,
+            postRequest,
+            casingUpdate: false
+        );
+
+    /// <summary>
+    /// Re-POSTs the stored descriptor in a different casing, alone and with a descriptive change, and checks the
+    /// cache keeps serving the stored casing for the owning document.
+    /// </summary>
+    public static Task ExecuteCasingUpdateAsync(
+        DbConnection connection,
+        MappingSet mappingSet,
+        string connectionString,
+        IDescriptorWriteHandler handler,
+        IDocumentCacheMaterializer materializer,
+        IDocumentCacheWriter writer,
+        Func<string, DescriptorWriteRequest> postRequest
+    ) =>
+        ExecuteCoreAsync(
+            connection,
+            mappingSet,
+            connectionString,
+            handler,
+            materializer,
+            writer,
+            postRequest,
+            casingUpdate: true
+        );
+
+    private static async Task ExecuteCoreAsync(
+        DbConnection connection,
+        MappingSet mappingSet,
+        string connectionString,
+        IDescriptorWriteHandler handler,
+        IDocumentCacheMaterializer materializer,
+        IDocumentCacheWriter writer,
+        Func<string, DescriptorWriteRequest> postRequest,
+        bool casingUpdate
     )
     {
         ISqlDialect dialect =
@@ -77,53 +122,68 @@ internal static class CompactDescriptorCacheScenario
             "Original"
         );
 
-        // A different component pair with the identical whole URI remains an accepted representation update.
-        string componentsBody = Body($"{Namespace}#Campus", "MixedCase");
-        (await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(postRequest(componentsBody)))
+        // A different component pair with the identical whole URI binds the stored components: nothing changes.
+        (
+            await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                postRequest(Body($"{Namespace}#Campus", "MixedCase"))
+            )
+        )
             .Should()
             .BeOfType<UpsertResult.UpdateSuccess>();
-        StoredDescriptor components = await ReadStoredAsync();
-        AssertChanged(components, original);
-        DocumentCacheMaterializationCandidate componentCandidate = await ProjectAsync(
-            components,
-            $"{Namespace}#Campus",
-            "MixedCase",
-            "Original"
-        );
-        componentCandidate.StreamEtag.Should().NotBe(initial.StreamEtag);
+        (await ReadStoredAsync()).Should().Be(original);
 
-        // RI matching is case insensitive; the cache must retain the newly accepted original casing.
-        string casingBody = Body($"{Namespace}#CAMPUS", "MIXEDCASE");
-        (await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(postRequest(casingBody)))
-            .Should()
-            .BeOfType<UpsertResult.UpdateSuccess>();
-        StoredDescriptor casing = await ReadStoredAsync();
-        AssertChanged(casing, components);
-        DocumentCacheMaterializationCandidate casingCandidate = await ProjectAsync(
-            casing,
-            $"{Namespace}#CAMPUS",
-            "MIXEDCASE",
-            "Original"
-        );
-        casingCandidate.StreamEtag.Should().NotBe(componentCandidate.StreamEtag);
+        if (casingUpdate)
+        {
+            // Descriptor identity is case-insensitive on both engines; the cache keeps serving the stored casing.
+            (
+                await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                    postRequest(Body($"{Namespace}#CAMPUS", "MIXEDCASE"))
+                )
+            )
+                .Should()
+                .BeOfType<UpsertResult.UpdateSuccess>();
+            (await ReadStoredAsync()).Should().Be(original);
+            (
+                await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                    postRequest(Body($"{Namespace}#CAMPUS", "MIXEDCASE", "Recased description"))
+                )
+            )
+                .Should()
+                .BeOfType<UpsertResult.UpdateSuccess>();
+            StoredDescriptor casing = await ReadStoredAsync();
+            AssertChanged(casing, original);
+            DocumentCacheMaterializationCandidate casingCandidate = await ProjectAsync(
+                casing,
+                Namespace,
+                "Campus#MixedCase",
+                "Recased description"
+            );
+            casingCandidate.StreamEtag.Should().NotBe(initial.StreamEtag);
+            await ExecuteSql(
+                $"UPDATE {Table("DocumentCacheState")} SET {Q("ProjectionLifecycleState")} = 'Disabled';"
+            );
+            return;
+        }
 
-        string descriptiveBody = Body($"{Namespace}#CAMPUS", "MIXEDCASE", "Changed description");
-        DescriptorWriteRequest put = postRequest(descriptiveBody) with
+        DescriptorWriteRequest casingPut = postRequest(
+            Body($"{Namespace}#CAMPUS", "MIXEDCASE", "Changed description")
+        ) with
         {
             DocumentUuid = create.DocumentUuid,
-            ReferentialId = null,
         };
-        (await handler.HandlePutAsync(put)).Should().BeOfType<UpdateResult.UpdateSuccess>();
+        (await handler.HandlePutAsync(casingPut)).Should().BeOfType<UpdateResult.UpdateSuccess>();
         StoredDescriptor descriptive = await ReadStoredAsync();
-        AssertChanged(descriptive, casing);
+        AssertChanged(descriptive, original);
         DocumentCacheMaterializationCandidate descriptiveCandidate = await ProjectAsync(
             descriptive,
-            $"{Namespace}#CAMPUS",
-            "MIXEDCASE",
+            Namespace,
+            "Campus#MixedCase",
             "Changed description"
         );
-        descriptiveCandidate.StreamEtag.Should().NotBe(casingCandidate.StreamEtag);
+        descriptiveCandidate.StreamEtag.Should().NotBe(initial.StreamEtag);
 
+        string descriptiveBody = Body(Namespace, "Campus#MixedCase", "Changed description");
+        DescriptorWriteRequest put = postRequest(descriptiveBody) with { DocumentUuid = create.DocumentUuid };
         (await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(postRequest(descriptiveBody)))
             .Should()
             .BeOfType<UpsertResult.UpdateSuccess>();

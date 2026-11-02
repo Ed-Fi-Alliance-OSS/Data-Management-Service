@@ -138,8 +138,11 @@ that name. Unknown or ambiguous history types stop the copy and require resolvin
 type identity before retrying. Live rows accept those same qualified forms or an unqualified
 resource name matching the owning document's type; their `ResourceKeyId` comes from that document.
 
-Document IDs/UUIDs, document-level RI rows, content stamps and history IDs/versions remain intact.
-The current combined target omits both `dms.Document.ContentLastModifiedAt` and
+Document IDs/UUIDs, content stamps and history IDs/versions remain intact. `dms.ReferentialIdentity`
+is retired: an archive that still carries it has that entry skipped and logged, never restored or
+reconciled, and a target that still has the table stops the copy. Abstract identity tables load
+through the same staged path as descriptor-bearing tables, once each, and take `ResourceKeyId`
+from their owning `dms.Document`; a row with no owning document stops the copy. The current combined target omits both `dms.Document.ContentLastModifiedAt` and
 `dms.Document.CreatedAt`; legacy source-shaped staging can still contain them, but the target
 insert omits them as source-only. The document `ContentVersion` check remains. Authoritative
 descriptor and sampled stamp-bearing root rows retain their exact timestamps and versions, checked
@@ -162,7 +165,8 @@ republication is not a prerequisite for either physical change. See the
 
 The live regression runs the actual custom-dump conversion on PostgreSQL 16.8, with descriptor
 document keys above `Int32.MaxValue`, unequal native target keys, exact root/nested/extension/
-composite remaps, deleted-row history, retained stamps/RI and a successful next ordinary insert.
+composite remaps, deleted-row history, retained stamps, skipped legacy `dms.ReferentialIdentity`
+rows, abstract identity `ResourceKeyId` from the owning document and a successful next ordinary insert.
 Run it with the disposable-container environment variables described above:
 
 ```powershell

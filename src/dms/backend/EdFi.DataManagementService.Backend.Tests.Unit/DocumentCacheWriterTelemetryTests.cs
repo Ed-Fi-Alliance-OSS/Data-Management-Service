@@ -455,7 +455,6 @@ public class Given_DocumentCacheWriterTelemetry
             DescriptorResource,
             CreateDescriptorRequestBody(description),
             documentUuid,
-            new ReferentialId(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
             new TraceId("descriptor-post-telemetry"),
             tenantKey: "tenant-a"
         );
@@ -472,7 +471,6 @@ public class Given_DocumentCacheWriterTelemetry
             DescriptorResource,
             CreateDescriptorRequestBody(description),
             documentUuid,
-            null,
             new TraceId("descriptor-put-telemetry"),
             tenantKey: "tenant-a"
         );
@@ -716,10 +714,10 @@ public class Given_DocumentCacheWriterTelemetry
         public RelationalWriteTargetLookupResult PutResult { get; set; } =
             new RelationalWriteTargetLookupResult.NotFound();
 
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
-            ReferentialId referentialId,
+            string descriptorUri,
             DocumentUuid candidateDocumentUuid,
             CancellationToken cancellationToken = default
         )

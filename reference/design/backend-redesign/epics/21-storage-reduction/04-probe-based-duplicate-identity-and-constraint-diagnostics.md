@@ -27,8 +27,9 @@ before the RI triggers are removed.
 - Resolve root natural-key columns from compiled own-key probe metadata.
 - Do not parse trigger metadata, constraint names, discriminator strings, or generated SQL to
   determine natural-key members.
-- Use the probe's canonical identity JSON path as the response member name and its ordered physical
-  columns as the root natural-key constraint members.
+- Derive the response member name from the probe's canonical identity JSON path (its trailing
+  property segment, unchanged from today), and use its ordered physical columns as the root
+  natural-key constraint members.
 
 ## Acceptance Criteria
 

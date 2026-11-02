@@ -133,7 +133,7 @@ effective schema.
 
 The harness's `FixtureKey` enum lists only fixtures whose effective schema the
 strict production DMS runtime mapping compiler accepts. The backend-only
-`small/referential-identity` fixture (used by
+`small/identity-references` fixture (used by
 `Backend.{Postgresql,Mssql}.Tests.Integration` in non-strict mode) is omitted
 here because the runtime compiler is hardcoded strict and rejects fixtures
 authored without post-key-unification columns.

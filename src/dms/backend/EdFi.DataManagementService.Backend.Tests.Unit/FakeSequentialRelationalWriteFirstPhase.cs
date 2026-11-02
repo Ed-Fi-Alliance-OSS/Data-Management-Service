@@ -4,13 +4,40 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.Composite;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
 
 /// <summary>
+/// The fake first phase's target-observation seam. Production POST captures the target by its own natural key
+/// inside the composite command, so a POST lookup here takes the request identity the capture would match.
+/// </summary>
+internal interface IFakeRelationalWriteTargetLookup
+{
+    Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentIdentity documentIdentity,
+        DocumentUuid candidateDocumentUuid,
+        IRelationalCommandExecutor commandExecutor,
+        CancellationToken cancellationToken = default
+    );
+
+    Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        IRelationalCommandExecutor commandExecutor,
+        CancellationToken cancellationToken = default
+    );
+}
+
+/// <summary>
 /// A first phase for executor unit tests that performs the phase's observations through the fixture's
-/// fakeable seams — the target lookup resolver, the reference resolver adapter factory, and the
+/// fakeable seams — the target lookup resolver, the session reference resolver, and the
 /// current-state loader — while every decision runs through the production first phase's own policy
 /// functions (missing-PUT shaping, plan selection, stored relationship classification, and the shared
 /// standalone stored-authorization execution and mapping). Tests therefore script data, not policy,
@@ -18,8 +45,8 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 /// provider tests.
 /// </summary>
 internal sealed class FakeSequentialRelationalWriteFirstPhase(
-    IRelationalWriteTargetLookupResolver targetLookupResolver,
-    IReferenceResolverAdapterFactory referenceResolverAdapterFactory,
+    IFakeRelationalWriteTargetLookup targetLookupResolver,
+    RecordingSessionReferenceResolver referenceResolver,
     IRelationalWriteCurrentStateLoader currentStateLoader,
     IRelationalParameterConfigurator? relationalParameterConfigurator = null,
     IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
@@ -42,11 +69,11 @@ internal sealed class FakeSequentialRelationalWriteFirstPhase(
 
         RelationalWriteTargetLookupResult lookupResult = input.TargetRequest switch
         {
-            RelationalWriteTargetRequest.Post(var referentialId, var candidateDocumentUuid) =>
+            RelationalWriteTargetRequest.Post(var documentIdentity, var candidateDocumentUuid) =>
                 await targetLookupResolver.ResolveForPostAsync(
                     input.MappingSet,
                     input.WritePlan.Model.Resource,
-                    referentialId,
+                    documentIdentity,
                     candidateDocumentUuid,
                     lookupExecutor,
                     cancellationToken
@@ -154,12 +181,9 @@ internal sealed class FakeSequentialRelationalWriteFirstPhase(
                 );
         }
 
-        var referenceAdapter = referenceResolverAdapterFactory.CreateSessionAdapter(
-            writeSession.CreateCommandExecutor()
-        );
-        var resolvedReferences = await new ReferenceResolver(referenceAdapter).ResolveAsync(
+        var resolvedReferences = referenceResolver.Resolve(
             input.ReferenceResolutionRequest,
-            cancellationToken
+            writeSession.CreateCommandExecutor()
         );
 
         return new RelationalWriteFirstPhaseResolution(
@@ -255,4 +279,111 @@ internal sealed class FakeSequentialRelationalWriteFirstPhase(
                 );
         }
     }
+}
+
+/// <summary>
+/// The sequential first phase's reference resolution: records each request and the session executor it was
+/// resolved on, and resolves the references a test scripted by natural key, or fails them with a scripted
+/// reason. Every other reference is missing.
+/// The resolver's own lookup and classification are covered by its fixtures and the live provider tests.
+/// </summary>
+internal sealed class RecordingSessionReferenceResolver
+{
+    private readonly Dictionary<ReferenceLookupKey, NaturalKeyLookupMatch> _matches = new(
+        ReferenceLookupKeyComparer.Instance
+    );
+
+    private readonly Dictionary<ReferenceLookupKey, DocumentReferenceFailureReason> _failures = new(
+        ReferenceLookupKeyComparer.Instance
+    );
+
+    public List<ReferenceResolverRequest> Requests { get; } = [];
+
+    public IRelationalCommandExecutor? CapturedCommandExecutor { get; private set; }
+
+    public int CallCount => Requests.Count;
+
+    public void Script(DocumentReference reference, long documentId, short resourceKeyId) =>
+        _matches[KeyOf(reference.ResourceInfo, reference.DocumentIdentity)] = new(
+            documentId,
+            null,
+            resourceKeyId
+        );
+
+    public void Script(DocumentReference reference, DocumentReferenceFailureReason failureReason) =>
+        _failures[KeyOf(reference.ResourceInfo, reference.DocumentIdentity)] = failureReason;
+
+    public void Script(
+        DescriptorReference reference,
+        int descriptorId,
+        long documentId,
+        short resourceKeyId
+    ) =>
+        _matches[KeyOf(reference.ResourceInfo, reference.DocumentIdentity)] = new(
+            documentId,
+            descriptorId,
+            resourceKeyId
+        );
+
+    public ResolvedReferenceSet Resolve(ReferenceResolverRequest request, IRelationalCommandExecutor executor)
+    {
+        Requests.Add(request);
+        CapturedCommandExecutor = executor;
+
+        Dictionary<JsonPath, ResolvedDocumentReference> documentsByPath = [];
+        List<DocumentReferenceFailure> documentFailures = [];
+
+        foreach (var reference in request.DocumentReferences)
+        {
+            var key = KeyOf(reference.ResourceInfo, reference.DocumentIdentity);
+
+            if (_matches.TryGetValue(key, out var match))
+            {
+                documentsByPath.Add(reference.Path, new(reference, match.DocumentId, match.ResourceKeyId));
+            }
+            else
+            {
+                documentFailures.Add(
+                    DocumentReferenceFailure.From(
+                        reference,
+                        _failures.GetValueOrDefault(key, DocumentReferenceFailureReason.Missing)
+                    )
+                );
+            }
+        }
+
+        Dictionary<JsonPath, ResolvedDescriptorReference> descriptorsByPath = [];
+        List<DescriptorReferenceFailure> descriptorFailures = [];
+
+        foreach (var reference in request.DescriptorReferences)
+        {
+            if (
+                _matches.TryGetValue(KeyOf(reference.ResourceInfo, reference.DocumentIdentity), out var match)
+                && match.DescriptorId is { } descriptorId
+            )
+            {
+                descriptorsByPath.Add(
+                    reference.Path,
+                    new(reference, descriptorId, match.DocumentId, match.ResourceKeyId)
+                );
+            }
+            else
+            {
+                descriptorFailures.Add(
+                    DescriptorReferenceFailure.From(reference, DescriptorReferenceFailureReason.Missing)
+                );
+            }
+        }
+
+        return new ResolvedReferenceSet(
+            documentsByPath,
+            descriptorsByPath,
+            new ResolvedDocumentReferenceMapFactory().Create(documentsByPath.Values),
+            documentFailures,
+            descriptorFailures
+        );
+    }
+
+    private static ReferenceLookupKey KeyOf(BaseResourceInfo resourceInfo, DocumentIdentity identity) =>
+        new(RelationalWriteSupport.ToQualifiedResourceName(resourceInfo), identity);
 }

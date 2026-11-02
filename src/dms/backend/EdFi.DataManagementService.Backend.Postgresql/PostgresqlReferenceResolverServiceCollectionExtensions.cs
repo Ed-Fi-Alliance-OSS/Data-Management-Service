@@ -81,7 +81,7 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
             )
         );
         services.AddReferenceResolver<
-            PostgresqlReferenceResolverAdapterFactory,
+            PostgresqlNaturalKeyLookupCommandBuilder,
             PostgresqlRelationalCommandExecutor,
             PostgresqlRelationalWriteSessionFactory,
             PostgresqlDocumentHydrator,
@@ -136,34 +136,6 @@ public static class PostgresqlReferenceResolverServiceCollectionExtensions
         );
 
         return services;
-    }
-}
-
-internal sealed class PostgresqlReferenceResolverAdapterFactory(IRelationalCommandExecutor commandExecutor)
-    : IReferenceResolverAdapterFactory
-{
-    private readonly IRelationalCommandExecutor _commandExecutor =
-        commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
-
-    public IReferenceResolverAdapter CreateAdapter()
-    {
-        return new PostgresqlReferenceResolverAdapter(_commandExecutor);
-    }
-
-    public IReferenceResolverAdapter CreateSessionAdapter(IRelationalCommandExecutor commandExecutor)
-    {
-        ArgumentNullException.ThrowIfNull(commandExecutor);
-
-        return new PostgresqlReferenceResolverAdapter(commandExecutor);
-    }
-
-    public RelationalCommand? TryBuildSessionLookupCommand(ReferenceLookupRequest request)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        // The PostgreSQL lookup is always one statement binding one array parameter, so every
-        // request is embeddable.
-        return PostgresqlReferenceLookupCommandBuilder.Build(request);
     }
 }
 

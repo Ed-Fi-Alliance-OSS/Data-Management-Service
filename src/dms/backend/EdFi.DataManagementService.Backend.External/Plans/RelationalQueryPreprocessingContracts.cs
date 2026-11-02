@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend.External.Plans;
@@ -16,7 +17,8 @@ public sealed record RelationalQueryPreprocessingResult(
 );
 
 /// <summary>
-/// Classifies whether preprocessing should continue into predicate planning or short-circuit to an empty page.
+/// Classifies whether preprocessing should continue into predicate planning, short-circuit to an empty page,
+/// or reject the request as invalid.
 /// </summary>
 public abstract record RelationalQueryPreprocessingOutcome
 {
@@ -32,6 +34,14 @@ public abstract record RelationalQueryPreprocessingOutcome
     /// </summary>
     /// <param name="Reason">Actionable diagnostic text describing why preprocessing proved the page is empty.</param>
     public sealed record EmptyPage(string Reason) : RelationalQueryPreprocessingOutcome;
+
+    /// <summary>
+    /// A query value violated a validation rule, so the request is rejected with a path-attributed 400
+    /// before any resolver call.
+    /// </summary>
+    /// <param name="Failures">One failure per invalid query element, keyed by the query field's document path.</param>
+    public sealed record ValidationFailure(IReadOnlyList<WriteValidationFailure> Failures)
+        : RelationalQueryPreprocessingOutcome;
 }
 
 /// <summary>

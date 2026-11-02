@@ -16,6 +16,8 @@ public static class DuplicatePropertyPathScanner
 {
     /// <summary>
     /// Returns true with the first duplicate's path, or false with an empty path.
+    /// Throws <see cref="InvalidOperationException"/> with the containing object's path when a
+    /// property name is malformed.
     /// </summary>
     public static bool TryFindFirstDuplicatePropertyPath(ReadOnlySpan<byte> json, out string path)
     {
@@ -53,7 +55,17 @@ public static class DuplicatePropertyPathScanner
 
                 case JsonTokenType.PropertyName:
                     ContainerFrame currentObject = containers.Peek();
-                    string propertyName = reader.GetString()!;
+                    string propertyName;
+                    try
+                    {
+                        propertyName = reader.GetString()!;
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        // A malformed property name, such as an unpaired surrogate escape. Report the
+                        // object that holds it so the caller can answer with a path-attributed 400.
+                        throw new InvalidOperationException($"{ex.Message} Path: {currentPath}", ex);
+                    }
                     if (!currentObject.PropertyNames.Add(propertyName))
                     {
                         path = currentPath.Append('.').Append(propertyName).ToString();

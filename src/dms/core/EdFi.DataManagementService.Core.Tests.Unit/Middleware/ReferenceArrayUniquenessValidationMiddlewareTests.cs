@@ -44,6 +44,31 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
         return result;
     }
 
+    internal static ApiSchemaDocuments StudentSchoolAssociationApiSchema()
+    {
+        return new ApiSchemaBuilder()
+            .WithStartProject()
+            .WithStartResource("StudentSchoolAssociation")
+            .WithStartDocumentPathsMapping()
+            .WithDocumentPathReference(
+                "GraduationPlan",
+                [
+                    new(
+                        "$.educationOrganizationId",
+                        "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.educationOrganizationId"
+                    ),
+                    new(
+                        "$.graduationPlanTypeDescriptor",
+                        "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor"
+                    ),
+                ]
+            )
+            .WithEndDocumentPathsMapping()
+            .WithEndResource()
+            .WithEndProject()
+            .ToApiSchemaDocuments();
+    }
+
     internal static async Task<RequestInfo> CreateContextAndExecute(
         ApiSchemaDocuments apiSchema,
         string jsonBody,
@@ -302,6 +327,143 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
                     """
                     "validationErrors":{"$.classPeriods":["The 2nd item of the classPeriods has the same identifying values as another item earlier in the list."]}
                     """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Document_With_A_Duplicate_Reference_After_A_Distinct_One
+        : ReferenceArrayUniquenessValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Each reference's identity is extracted onto its own array, so only a structural comparison of the
+            // first and third items can find the repeat.
+            string jsonBody = """
+                {
+                    "schoolReference": {
+                        "schoolId": 1
+                    },
+                    "bellScheduleName": "Test Schedule",
+                    "totalInstructionalTime": 325,
+                    "classPeriods": [
+                        {
+                            "classPeriodReference": {
+                                "classPeriodName": "01 - Traditional",
+                                "schoolId": 1
+                            }
+                        },
+                        {
+                            "classPeriodReference": {
+                                "classPeriodName": "02 - Block",
+                                "schoolId": 1
+                            }
+                        },
+                        {
+                            "classPeriodReference": {
+                                "classPeriodName": "01 - Traditional",
+                                "schoolId": 1
+                            }
+                        }
+                    ],
+                    "dates": [],
+                    "gradeLevels": []
+                }
+                """;
+
+            _requestInfo = await CreateContextAndExecute(
+                BellScheduleApiSchema(),
+                jsonBody,
+                "bellschedules",
+                RequestMethod.POST
+            );
+        }
+
+        [Test]
+        public void It_returns_status_400()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_reports_the_third_item_as_the_duplicate()
+        {
+            _requestInfo
+                .FrontendResponse.Body?.ToJsonString()
+                .Should()
+                .Contain(
+                    """
+                    "validationErrors":{"$.classPeriods":["The 3rd item of the classPeriods has the same identifying values as another item earlier in the list."]}
+                    """
+                );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Document_With_References_Differing_Only_In_Descriptor_Casing
+        : ReferenceArrayUniquenessValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Core's duplicate check is ordinal. Whether the two spellings name one descriptor is decided by the
+            // database, which resolves both to the same DescriptorId.
+            string jsonBody = """
+                {
+                    "alternativeGraduationPlans": [
+                        {
+                            "alternativeGraduationPlanReference": {
+                                "educationOrganizationId": 255901,
+                                "graduationPlanTypeDescriptor": "uri://ed-fi.org/GraduationPlanTypeDescriptor#Foundation"
+                            }
+                        },
+                        {
+                            "alternativeGraduationPlanReference": {
+                                "educationOrganizationId": 255901,
+                                "graduationPlanTypeDescriptor": "uri://ed-fi.org/graduationplantypedescriptor#foundation"
+                            }
+                        }
+                    ]
+                }
+                """;
+
+            _requestInfo = await CreateContextAndExecute(
+                StudentSchoolAssociationApiSchema(),
+                jsonBody,
+                "studentschoolassociations",
+                RequestMethod.POST
+            );
+        }
+
+        [Test]
+        public void It_does_not_treat_them_as_core_duplicates()
+        {
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_extracts_both_references_with_their_own_spelling()
+        {
+            _requestInfo
+                .DocumentInfo.DocumentReferenceArrays.Single()
+                .DocumentReferences.Select(reference =>
+                    reference
+                        .DocumentIdentity.DocumentIdentityElements.Single(element =>
+                            element.IdentityJsonPath.Value == "$.graduationPlanTypeDescriptor"
+                        )
+                        .IdentityValue
+                )
+                .Should()
+                .Equal(
+                    "uri://ed-fi.org/GraduationPlanTypeDescriptor#Foundation",
+                    "uri://ed-fi.org/graduationplantypedescriptor#foundation"
                 );
         }
     }

@@ -8,10 +8,8 @@ namespace EdFi.DataManagementService.Performance.Harness.Fixtures;
 /// <summary>
 /// PostgreSQL loader SQL for the descriptor fixture. Rows are generated set-based with
 /// generate_series and must mirror <see cref="PerfDescriptorFixtureDefinition" /> exactly:
-/// dense DocumentIds, odd ordinals under the accessible namespace, Uri as namespace#codeValue,
-/// and one referential identity per descriptor derived through the database's own uuidv5
-/// function over the lowercased URI — the same derivation the production descriptor write
-/// records. Production triggers and constraints stay enabled throughout.
+/// dense DocumentIds, odd ordinals under the accessible namespace, and Uri as
+/// namespace#codeValue. Production triggers and constraints stay enabled throughout.
 /// </summary>
 public static class PgsqlPerfDescriptorFixtureLoaderSql
 {
@@ -49,23 +47,6 @@ public static class PgsqlPerfDescriptorFixtureLoaderSql
         FROM generate_series(@{PerfFixtureLoaderParameters.FromOrdinal}, @{PerfFixtureLoaderParameters.ToOrdinal}) AS n;
         """;
 
-    /// <summary>
-    /// Mirrors the production descriptor write's referential identity: uuidv5 over the
-    /// project, resource, and the lowercased $.descriptor URI, computed by the database's
-    /// own function so the set-based load and the write path can never drift apart.
-    /// </summary>
-    public const string ReferentialIdentityInsertSql = $"""
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        SELECT
-            "dms"."uuidv5"(
-                'edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid,
-                '{PerfDescriptorFixtureDefinition.ProjectName}{PerfDescriptorFixtureDefinition.ResourceName}'
-                    || '$.descriptor=' || LOWER({NamespaceCaseExpression} || '#' || {CodeValueExpression})),
-            n,
-            @{PerfFixtureLoaderParameters.ResourceKeyId}
-        FROM generate_series(@{PerfFixtureLoaderParameters.FromOrdinal}, @{PerfFixtureLoaderParameters.ToOrdinal}) AS n;
-        """;
-
     public static string ReseedSql(PerfDescriptorFixtureDefinition definition) =>
         $"""
             ALTER TABLE "dms"."Document" ALTER COLUMN "DocumentId" RESTART WITH {definition.ReseedTargetDocumentId
@@ -76,7 +57,6 @@ public static class PgsqlPerfDescriptorFixtureLoaderSql
     [
         """VACUUM (ANALYZE) "dms"."Document";""",
         """VACUUM (ANALYZE) "dms"."Descriptor";""",
-        """VACUUM (ANALYZE) "dms"."ReferentialIdentity";""",
     ];
 
     public static IReadOnlyList<PerfVerificationQuery> VerificationQueries(
@@ -131,32 +111,16 @@ public static class PgsqlPerfDescriptorFixtureLoaderSql
                 definition.DocumentIdSum()
             ),
             new(
-                "referential-identity-count",
-                """SELECT COUNT(*) FROM "dms"."ReferentialIdentity";""",
-                definition.RowCount
-            ),
-            new(
-                "referential-identity-pairing",
-                """
-                SELECT COUNT(*)
-                FROM "dms"."ReferentialIdentity" ri
-                INNER JOIN "dms"."Descriptor" r ON r."DocumentId" = ri."DocumentId";
-                """,
-                definition.RowCount
-            ),
-            new(
-                "uri-witness-count",
+                "uri-shape-count",
                 $"""
                 SELECT COUNT(*) FROM "dms"."Descriptor" r
-                INNER JOIN "dms"."ReferentialIdentity" ri ON ri."DocumentId" = r."DocumentId"
                 INNER JOIN "dms"."ResourceKey" rk ON rk."ResourceKeyId" = r."ResourceKeyId"
                 WHERE rk."ProjectName" = '{PerfDescriptorFixtureDefinition.ProjectName}'
                     AND rk."ResourceName" = '{PerfDescriptorFixtureDefinition.ResourceName}'
-                    AND ri."ResourceKeyId" = r."ResourceKeyId"
-                    AND ri."ReferentialId" = "dms"."uuidv5"(
-                        'edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid,
-                        '{PerfDescriptorFixtureDefinition.ProjectName}{PerfDescriptorFixtureDefinition.ResourceName}'
-                            || '$.descriptor=' || LOWER(r."Namespace" || '#' || r."CodeValue"));
+                    AND r."CodeValue" = 'perf-' || lpad(r."DocumentId"::text, 9, '0')
+                    AND r."Namespace" || '#' || r."CodeValue"
+                        = CASE WHEN r."DocumentId" % 2 = 1 THEN '{PerfDescriptorFixtureDefinition.AccessibleNamespace}' ELSE '{PerfDescriptorFixtureDefinition.InaccessibleNamespace}' END
+                            || '#perf-' || lpad(r."DocumentId"::text, 9, '0');
                 """,
                 definition.RowCount
             ),

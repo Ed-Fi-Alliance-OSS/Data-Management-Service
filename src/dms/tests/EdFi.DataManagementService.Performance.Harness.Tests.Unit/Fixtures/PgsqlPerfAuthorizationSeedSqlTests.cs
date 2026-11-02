@@ -97,7 +97,6 @@ public class Given_The_Pgsql_Authorization_Seed_Sql
                 ("ssa-distinct-students", 250_000),
                 ("ssa-student-document-id-sum", _seed.EnrolledStudentDocumentIdSum()),
                 ("ssa-odd-ordinal-enrollments", 0),
-                ("ssa-referential-identity-count", 250_000),
                 ("school-row-count", 1),
                 ("school-self-auth-edge", 1),
                 ("authorized-view-membership", 250_000),

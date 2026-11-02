@@ -71,9 +71,32 @@ internal static class ProfileCollectionPlanner
             .ToArray();
 
         // Matched current rows are those whose semantic identity also appears in visible-stored.
-        var matchedCurrentByIdentity = currentRowEntries
-            .Where(p => visibleStoredByIdentity.ContainsKey(p.Key))
-            .ToDictionary(p => p.Key, p => p.Row);
+        // They are keyed with the scope's semantic-identity equality, so on SQL Server a request
+        // item whose identity differs from a stored row only under the identity comparer matches
+        // that row; the stored key is kept so hidden paths are read through the matched row.
+        var matchedCurrentByIdentity = new Dictionary<
+            ImmutableArray<SemanticIdentityPart>,
+            (CurrentCollectionRowSnapshot Row, string StoredKey)
+        >(input.SemanticIdentityEquality.PresenceAware);
+
+        foreach (
+            var (row, storedKey) in currentRowEntries.Where(p => visibleStoredByIdentity.ContainsKey(p.Key))
+        )
+        {
+            if (!matchedCurrentByIdentity.TryAdd(row.SemanticIdentityInOrder, (row, storedKey)))
+            {
+                throw new ProfilePlannerContractMismatchException(
+                    jsonScope: input.JsonScope,
+                    invariantName: "current-row identity uniqueness",
+                    message: $"Two current rows in scope '{input.JsonScope}' share semantic identity "
+                        + LogSanitizer.SanitizeInternalValueForLog(
+                            FormatIdentity(row.SemanticIdentityInOrder)
+                        )
+                        + " under the scope's identity equality. "
+                        + "Planner invariant violated: current-row identity uniqueness."
+                );
+            }
+        }
 
         // Build candidate lookup for retrieving the CollectionWriteCandidate per request item.
         var candidateByIdentityKey = input.RequestCandidates.ToDictionary(SemanticIdentityKeys.BuildKey);
@@ -85,10 +108,16 @@ internal static class ProfileCollectionPlanner
         {
             var key = SemanticIdentityKeys.BuildKey(visibleRequestItem.Address.SemanticIdentityInOrder);
 
-            if (matchedCurrentByIdentity.TryGetValue(key, out var currentRow))
+            if (
+                matchedCurrentByIdentity.TryGetValue(
+                    visibleRequestItem.Address.SemanticIdentityInOrder,
+                    out var matchedCurrent
+                )
+            )
             {
                 // Matched: visible request item maps to a visible stored row with a current snapshot.
-                var hiddenPaths = visibleStoredByIdentity[key].HiddenMemberPaths;
+                var (currentRow, storedKey) = matchedCurrent;
+                var hiddenPaths = visibleStoredByIdentity[storedKey].HiddenMemberPaths;
                 var candidate = candidateByIdentityKey[key];
                 mergedVisibleSequence.Add(
                     new ProfileCollectionPlanEntry.MatchedUpdateEntry(currentRow, candidate, hiddenPaths)
@@ -564,7 +593,16 @@ internal sealed record ProfileCollectionScopeInput(
     ImmutableArray<VisibleRequestCollectionItem> VisibleRequestItems,
     ImmutableArray<VisibleStoredCollectionRow> VisibleStoredRows,
     ImmutableArray<CurrentCollectionRowSnapshot> CurrentRows
-);
+)
+{
+    /// <summary>
+    /// The scope table's semantic-identity equality, used only where a request item is matched to
+    /// a stored row. Request-vs-request and stored-vs-stored comparisons stay ordinal because each
+    /// side already uses one spelling per identity.
+    /// </summary>
+    public CollectionSemanticIdentityEquality SemanticIdentityEquality { get; init; } =
+        CollectionSemanticIdentityEquality.Ordinal;
+}
 
 /// <summary>
 /// Snapshot of a single current-state collection row, paired with both its binding-indexed

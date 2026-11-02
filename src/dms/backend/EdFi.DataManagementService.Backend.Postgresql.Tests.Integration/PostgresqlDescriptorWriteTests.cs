@@ -157,6 +157,42 @@ public class Given_PostgresqlDescriptorWriteHandler
     }
 
     [Test]
+    public async Task It_treats_a_sql_server_collation_alias_as_a_different_descriptor_on_postgresql()
+    {
+        var handler = ResolveHandler();
+        var create = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """{ "namespace": "uri://ed-fi.org/SchoolTypeDescriptor", "codeValue": "Strasse", "shortDescription": "Strasse" }"""
+        );
+        (await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(create))
+            .Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
+        const string AliasBody =
+            """{ "namespace": "uri://ed-fi.org/SchoolTypeDescriptor", "codeValue": "Stra\u00DFe", "shortDescription": "Strasse" }""";
+
+        // pg_c_utf8 folds case only, so the alias names a different descriptor: POST creates it and PUT is an
+        // identity change.
+        (
+            await handler.HandlePutAsync(
+                CreatePutRequest(
+                    _database.Fixture.SchoolTypeDescriptorResource,
+                    create.DocumentUuid,
+                    AliasBody
+                )
+            )
+        )
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureImmutableIdentity>();
+        (
+            await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(_database.Fixture.SchoolTypeDescriptorResource, AliasBody)
+            )
+        )
+            .Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
+    }
+
+    [Test]
     public async Task It_returns_descriptor_write_etags_matching_follow_up_get_by_id()
     {
         using var scope = CreateConfiguredScope();
@@ -883,22 +919,11 @@ public class Given_PostgresqlDescriptorWriteHandler
         string? profileName = null
     )
     {
-        var body = JsonNode.Parse(bodyJson)!;
-        var descriptorDoc = new Core.Model.DescriptorDocument(body);
-        var resourceInfo = new BaseResourceInfo(
-            new ProjectName(resource.ProjectName),
-            new ResourceName(resource.ResourceName),
-            true
-        );
-        var identity = descriptorDoc.ToDocumentIdentity();
-        var referentialId = Core.Extraction.ReferentialIdCalculator.ReferentialIdFrom(resourceInfo, identity);
-
         return new DescriptorWriteRequest(
             _database.MappingSet,
             resource,
-            body,
+            JsonNode.Parse(bodyJson)!,
             new DocumentUuid(Guid.NewGuid()),
-            referentialId,
             new TraceId("test-trace")
         )
         {
@@ -918,7 +943,6 @@ public class Given_PostgresqlDescriptorWriteHandler
             resource,
             JsonNode.Parse(bodyJson)!,
             documentUuid,
-            referentialId: null,
             new TraceId("test-trace")
         )
         {
@@ -961,12 +985,45 @@ public class Given_PostgresqlDescriptorWriteHandler
     }
 
     [Test]
-    public async Task It_preserves_compact_descriptor_RI_CRUD_and_conflict_behavior()
+    public async Task It_keeps_the_stored_compact_descriptor_identity_across_its_lifecycle()
     {
         using var scope = CreateConfiguredScope();
         await using var connection = new NpgsqlConnection(_database.ConnectionString);
         await connection.OpenAsync();
         await CompactDescriptorWriteScenario.ExecuteAsync(
+            connection,
+            scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
+            scope.ServiceProvider.GetRequiredService<IDescriptorReadHandler>(),
+            (resource, body) => CreatePostRequest(resource, body),
+            _database.Fixture.SchoolTypeDescriptorResource,
+            _database.Fixture.AcademicSubjectDescriptorResource
+        );
+    }
+
+    [Test]
+    public async Task It_keeps_the_DocumentCacheMaterializer_Descriptor_stored_casing_after_a_case_variant_post()
+    {
+        using var scope = CreateConfiguredScope();
+        await using var connection = new Npgsql.NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CompactDescriptorCacheScenario.ExecuteCasingUpdateAsync(
+            connection,
+            _database.MappingSet,
+            _database.ConnectionString,
+            scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializer>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>(),
+            body => CreatePostRequest(_database.Fixture.SchoolTypeDescriptorResource, body)
+        );
+    }
+
+    [Test]
+    public async Task It_keeps_the_stored_casing_for_a_case_variant_compact_descriptor_post()
+    {
+        using var scope = CreateConfiguredScope();
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CompactDescriptorWriteScenario.ExecuteCasingUpdateAsync(
             connection,
             scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
             scope.ServiceProvider.GetRequiredService<IDescriptorReadHandler>(),

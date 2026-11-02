@@ -68,7 +68,7 @@ internal sealed class RelationalWriteMergeOrchestrator(
                 request.SelectedBody,
                 resolvedReferences,
                 // The no-profile merge matches collection rows by raw object?[] semantic
-                // identity values via ObjectValueArrayComparer, which maps a missing
+                // identity values via CollectionSemanticIdentityEquality.RawValues, which maps a missing
                 // identity property and an explicit JSON null to the same key. The
                 // relational storage model collapses them the same way (both persist as
                 // SQL NULL), so two request siblings that differ only by

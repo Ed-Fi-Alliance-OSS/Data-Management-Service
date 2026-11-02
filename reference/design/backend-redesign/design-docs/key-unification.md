@@ -591,15 +591,13 @@ For each table row being materialized, and for each `KeyUnificationClass` on tha
      used for normal scalar columns (coercions are Core-owned; backend should treat incoming values as already
      canonicalized).
    - For `DescriptorFk` members: obtain the resolved `int DescriptorId` using the member's
-     `DbColumnModel.TargetResource` and descriptor path from the current batched RI resolver.
+     `DbColumnModel.TargetResource` and descriptor path from the batched natural-key resolver.
      Its descriptor result carries both `DescriptorId` and owning `bigint DocumentId`; only the
-     compact key is stored here. The normalized URI lookup map uses the existing whole-string
-     `ToLowerInvariant()` key with ordinal comparison, as in
-     [flattening-reconstitution.md](flattening-reconstitution.md#52-reference--descriptor-resolution-bulk).
-     Core extraction, RI hashing/verification, and lookup retain their existing validation and
-     transformations. Do not split on `#`, trim components, or introduce Unicode normalization.
-     The additional well-formedness validation and engine-owned equality proposals in
-     [natural-key-resolution.md](natural-key-resolution.md) belong to later work.
+     compact key is stored here. The URI lookup map keys the raw validated whole URI with ordinal
+     comparison and no C# case folding, as in
+     [flattening-reconstitution.md](flattening-reconstitution.md#52-reference--descriptor-resolution-bulk);
+     the resolver folds case in SQL, so case variants resolve to the same `DescriptorId`.
+     Do not split on `#`, trim components, or introduce Unicode normalization.
      If a descriptor URI is present but cannot be resolved to a `DescriptorId`, the write MUST fail closed (descriptor
      reference validation failure).
 3. Apply conflict detection:
@@ -1172,9 +1170,10 @@ Implications when descriptor identity parts participate in key unification:
 - Descriptor FK unification MUST be resource-type safe: a unification class must not mix descriptor FK members that
   target different descriptor resource types.
 - Both descriptor IDs remain stable across accepted updates, and descriptor FKs retain `ON UPDATE NO ACTION`.
-  Current RI-matched POSTs apply incoming components; PUT checks whole-URI text ordinally. Unification
-  prevents drift between duplicated bindings without changing either operation's behavior.
-- Hydration and RI witnesses join the canonical/alias compact value to `dms.Descriptor.DescriptorId`
+  Descriptor writes keep the stored identity components (a probe-matched POST or identity-equal PUT
+  never changes them). Unification prevents drift between duplicated bindings without changing either
+  operation's behavior.
+- Hydration joins the canonical/alias compact value to `dms.Descriptor.DescriptorId`
   and reconstruct the whole original-case URI before each consumer's existing transformation.
   History snapshots keep namespace/code values; authorization-view membership bridges to the descriptor's
   owning `DocumentId`. Document metadata, locks, version checks and cache work remain document-keyed;

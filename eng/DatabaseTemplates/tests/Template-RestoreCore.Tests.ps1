@@ -43,7 +43,7 @@ BeforeAll {
                 @{
                     schemaName = "dms"
                     objects    = @(
-                        @{ name = "uuidv5"; type = "function" },
+                        @{ name = "GetMaxChangeVersion"; type = "function" },
                         @{ name = "Document"; type = "TABLE" },
                         @{ name = "EffectiveSchema"; type = "table" }
                     )
@@ -198,8 +198,8 @@ Describe "Get-RestoreSchemaNameExclusion" {
     # DumpDiscovery mirrors the existing template dump discovery: package contents are scoped
     # to discovered user schemas, so "public"/"dbo" are excluded. InventoryEnumeration feeds
     # the DMS-only content gates, which must SEE those always-present schemas so contamination
-    # hidden inside them is visible; only permitted extension bootstrap (e.g. pgcrypto created
-    # by the template's own CREATE EXTENSION line) is allowed there by the gate.
+    # hidden inside them is visible; only allowlisted extension objects (pgcrypto, which the
+    # Configuration Service may install in a shared database) are allowed there by the gate.
     It "excludes PostgreSQL 'public' from dump discovery, matching the existing template dump scope" {
         $exclusion = Get-RestoreSchemaNameExclusion -DatabaseEngine postgresql -Purpose DumpDiscovery
         $exclusion.ExcludedSchemaName | Should -Contain "public"
@@ -250,7 +250,7 @@ Describe "ConvertTo-CanonicalInventoryJson" {
         $json = ConvertTo-CanonicalInventoryJson -Inventory (New-TestInventory)
 
         $json | Should -Be ('{"schemas":[' +
-            '{"schemaName":"dms","objects":[{"name":"uuidv5","type":"function"},{"name":"Document","type":"table"},{"name":"EffectiveSchema","type":"table"}]},' +
+            '{"schemaName":"dms","objects":[{"name":"GetMaxChangeVersion","type":"function"},{"name":"Document","type":"table"},{"name":"EffectiveSchema","type":"table"}]},' +
             '{"schemaName":"edfi","objects":[{"name":"AcademicWeek","type":"table"},{"name":"School","type":"table"}]}' +
             '],"principals":[]}')
     }
@@ -263,7 +263,7 @@ Describe "ConvertTo-CanonicalInventoryJson" {
                     objects    = @(
                         @{ name = "EffectiveSchema"; type = "table" },
                         @{ name = "Document"; type = "table" },
-                        @{ name = "uuidv5"; type = "FUNCTION" }
+                        @{ name = "GetMaxChangeVersion"; type = "FUNCTION" }
                     )
                 },
                 @{
@@ -796,7 +796,7 @@ Describe "PostgreSQL template ownership finalization" {
 
     It "refuses ownership it cannot reproduce without naming a source role (<Case>)" -ForEach @(
         @{ Case = "a relation owned by another role"; Row = 'relation|someone_else|dms."Document"'; Named = 'relation dms."Document" (owner someone_else)' }
-        @{ Case = "a function owned by another role"; Row = 'function|someone_else|dms.uuidv5(namespace_uuid uuid, name_text text)'; Named = 'function dms.uuidv5(namespace_uuid uuid, name_text text) (owner someone_else)' }
+        @{ Case = "a function owned by another role"; Row = 'function|someone_else|dms."GetMaxChangeVersion"()'; Named = 'function dms."GetMaxChangeVersion"() (owner someone_else)' }
         @{ Case = "a non-function owned by the enqueue owner"; Row = 'relation|edfi_dms_enqueue_owner|dms."DocumentProjectionWork"'; Named = 'relation dms."DocumentProjectionWork" (owner edfi_dms_enqueue_owner)' }
         @{ Case = "a case-variant enqueue owner name"; Row = 'function|EDFI_DMS_ENQUEUE_OWNER|dms.f()'; Named = 'function dms.f() (owner EDFI_DMS_ENQUEUE_OWNER)' }
     ) {
@@ -837,7 +837,7 @@ Describe "Assert-PostgresqlArtifactOwnership" {
 
     It "refuses <Case>, keeping each owner exception to its own object kind" -ForEach @(
         @{ Case = "an unexpected existing role owning a table"; Row = 'relation|reporting_reader|dms."Document"'; Named = 'relation dms."Document" (owner reporting_reader)' }
-        @{ Case = "an unexpected role owning a function"; Row = 'function|reporting_reader|dms.uuidv5(namespace_uuid uuid, name_text text)'; Named = 'function dms.uuidv5(namespace_uuid uuid, name_text text) (owner reporting_reader)' }
+        @{ Case = "an unexpected role owning a function"; Row = 'function|reporting_reader|dms."GetMaxChangeVersion"()'; Named = 'function dms."GetMaxChangeVersion"() (owner reporting_reader)' }
         @{ Case = "the enqueue owner owning a table"; Row = 'relation|edfi_dms_enqueue_owner|dms."DocumentProjectionWork"'; Named = 'relation dms."DocumentProjectionWork" (owner edfi_dms_enqueue_owner)' }
         @{ Case = "the enqueue owner owning a schema"; Row = 'schema|edfi_dms_enqueue_owner|dms'; Named = 'schema dms (owner edfi_dms_enqueue_owner)' }
         @{ Case = "pg_database_owner owning a DMS schema"; Row = 'schema|pg_database_owner|dms'; Named = 'schema dms (owner pg_database_owner)' }

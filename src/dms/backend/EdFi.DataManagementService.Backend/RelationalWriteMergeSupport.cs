@@ -426,11 +426,4 @@ internal static class StorageCollapsedIdentityHelpers
 
         return builder.ToString();
     }
-
-    /// <summary>
-    /// Equality comparer for raw <c>object?[]</c> identity values. Aliases
-    /// <see cref="ObjectValueArrayComparer.Instance"/> so the no-profile flattener
-    /// expresses the storage-collapsed-uniqueness rule by name.
-    /// </summary>
-    public static IEqualityComparer<object?[]> ObjectArrayComparer => ObjectValueArrayComparer.Instance;
 }

@@ -789,6 +789,93 @@ internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_an_e
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("PostgresqlIntegration")]
+/// PostgreSQL: the request recases the parent's <c>parentCode</c>, which compares ordinally, so the stored parent
+/// is replaced and the aligned extension row is created under the new parent.
+internal class Given_a_ProfileCollectionAlignedExtension_update_request_recasing_the_parent_of_a_visible_present_aligned_extension_scope
+    : PostgresqlProfileCollectionAlignedExtensionFixtureBase
+{
+    private const string RecasedParentCode = "parent-a";
+
+    private UpdateResult _putResult = null!;
+    private IReadOnlyList<ParentRow> _parentRowsBefore = null!;
+    private IReadOnlyList<ParentRow> _parentRowsAfter = null!;
+    private AlignedRow? _alignedRow;
+
+    [OneTimeSetUp]
+    public async Task ScenarioOneTimeSetUp()
+    {
+        var seedBody = CreateParentResourceBody(
+            ParentResourceId,
+            new ParentInput(ParentCode, "Seed Parent", new AlignedInput("SeedVisible", "SeedHidden"))
+        );
+        await SeedAsync(seedBody, "pgsql-profile-collection-aligned-recased-parent-seed");
+        _parentRowsBefore = await PostgresqlProfileCollectionAlignedExtensionSupport.ReadParentRowsAsync(
+            Database,
+            DocumentUuid
+        );
+
+        var writeBody = CreateParentResourceBody(
+            ParentResourceId,
+            new ParentInput(
+                RecasedParentCode,
+                "Seed Parent",
+                new AlignedInput("UpdatedVisible", "UpdatedHidden")
+            )
+        );
+        var profileContext = CreateProfileContext(
+            writeBody,
+            [new RequestParentItem(RecasedParentCode, ArrayIndex: 0)],
+            [
+                new RequestAlignedScope(
+                    RecasedParentCode,
+                    ProfileVisibilityKind.VisiblePresent,
+                    Creatable: true
+                ),
+            ],
+            [StoredParent()],
+            [StoredAligned(ProfileVisibilityKind.VisiblePresent)]
+        );
+
+        _putResult = await ExecuteProfiledPutAsync(
+            writeBody,
+            profileContext,
+            "pgsql-profile-collection-aligned-recased-parent-put"
+        );
+        _parentRowsAfter = await PostgresqlProfileCollectionAlignedExtensionSupport.ReadParentRowsAsync(
+            Database,
+            DocumentUuid
+        );
+        _alignedRow = await PostgresqlProfileCollectionAlignedExtensionSupport.TryReadAlignedRowAsync(
+            Database,
+            DocumentUuid
+        );
+    }
+
+    [Test]
+    public void It_returns_update_success() =>
+        _putResult.Should().BeOfType<UpdateResult.UpdateSuccess>(FormatResult(_putResult));
+
+    [Test]
+    public void It_replaces_the_stored_parent_row()
+    {
+        var parentRow = _parentRowsAfter.Should().ContainSingle().Subject;
+        parentRow.CollectionItemId.Should().NotBe(_parentRowsBefore.Single().CollectionItemId);
+        parentRow.ParentCode.Should().Be(RecasedParentCode);
+    }
+
+    [Test]
+    public void It_creates_the_aligned_extension_row_under_the_new_parent()
+    {
+        _alignedRow.Should().NotBeNull();
+        _alignedRow!.BaseCollectionItemId.Should().Be(_parentRowsAfter.Single().CollectionItemId);
+        _alignedRow.AlignedVisibleScalar.Should().Be("UpdatedVisible");
+        _alignedRow.AlignedHiddenScalar.Should().Be("UpdatedHidden");
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("PostgresqlIntegration")]
 internal class Given_a_ProfileCollectionAlignedExtension_update_request_for_an_existing_resource_with_an_aligned_extension_scope_visible_present_to_visible_absent
     : PostgresqlProfileCollectionAlignedExtensionFixtureBase
 {

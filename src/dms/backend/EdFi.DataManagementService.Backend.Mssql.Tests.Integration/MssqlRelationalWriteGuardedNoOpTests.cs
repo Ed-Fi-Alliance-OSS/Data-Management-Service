@@ -14,7 +14,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -234,15 +233,8 @@ internal sealed record GuardedNoOpPersistedState(
     GuardedNoOpSchoolRow School,
     IReadOnlyList<GuardedNoOpSchoolAddressRow> Addresses,
     IReadOnlyList<GuardedNoOpSchoolExtensionAddressRow> ExtensionAddresses,
-    IReadOnlyList<GuardedNoOpReferentialIdentityRow> ReferentialIdentities,
     long DocumentCount,
     long MaxChangeVersion
-);
-
-internal sealed record GuardedNoOpReferentialIdentityRow(
-    Guid ReferentialId,
-    long DocumentId,
-    short ResourceKeyId
 );
 
 file static class GuardedNoOpIntegrationTestSupport
@@ -395,20 +387,18 @@ file static class GuardedNoOpIntegrationTestSupport
     public static UpsertRequest CreatePostAsUpdateRequest(
         MappingSet mappingSet,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId referentialId
-    ) => CreatePostAsUpdateRequest(mappingSet, documentUuid, traceId, referentialId, RequestBodyJson);
+        string traceId
+    ) => CreatePostAsUpdateRequest(mappingSet, documentUuid, traceId, RequestBodyJson);
 
     public static UpsertRequest CreatePostAsUpdateRequest(
         MappingSet mappingSet,
         DocumentUuid documentUuid,
         string traceId,
-        ReferentialId referentialId,
         string requestBodyJson
     ) =>
         new(
             ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: CreateSchoolDocumentInfo(referentialId),
+            DocumentInfo: CreateSchoolDocumentInfo(),
             MappingSet: mappingSet,
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
@@ -429,7 +419,6 @@ file static class GuardedNoOpIntegrationTestSupport
         var school = await ReadSchoolAsync(database, document.DocumentId);
         var addresses = await ReadSchoolAddressesAsync(database, document.DocumentId);
         var extensionAddresses = await ReadSchoolExtensionAddressesAsync(database, document.DocumentId);
-        var referentialIdentities = await ReadAllReferentialIdentityRowsAsync(database);
         var documentCount = await ReadDocumentCountAsync(database);
         var maxChangeVersion = await ReadMaxChangeVersionAsync(database);
 
@@ -438,7 +427,6 @@ file static class GuardedNoOpIntegrationTestSupport
             school,
             addresses,
             extensionAddresses,
-            referentialIdentities,
             documentCount,
             maxChangeVersion
         );
@@ -478,46 +466,9 @@ file static class GuardedNoOpIntegrationTestSupport
                     )
                 ),
             ],
-            [
-                .. state.ReferentialIdentities.Select(
-                    referentialIdentity => new NoProfileGuardedNoOpScenarios.ReferentialIdentityRow(
-                        referentialIdentity.ReferentialId,
-                        referentialIdentity.DocumentId,
-                        referentialIdentity.ResourceKeyId
-                    )
-                ),
-            ],
             state.DocumentCount,
             state.MaxChangeVersion
         );
-
-    public static async Task<GuardedNoOpReferentialIdentityRow> ReadReferentialIdentityRowAsync(
-        MssqlGeneratedDdlTestDatabase database,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await database.QueryRowsAsync(
-            """
-            SELECT [ReferentialId], [DocumentId], [ResourceKeyId]
-            FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] = @documentId
-                AND [ResourceKeyId] = @resourceKeyId;
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-
-        return rows.Count == 1
-            ? new GuardedNoOpReferentialIdentityRow(
-                GetGuid(rows[0], "ReferentialId"),
-                GetInt64(rows[0], "DocumentId"),
-                GetInt16(rows[0], "ResourceKeyId")
-            )
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
-            );
-    }
 
     private static async Task<long> ReadMaxChangeVersionAsync(MssqlGeneratedDdlTestDatabase database)
     {
@@ -528,26 +479,6 @@ file static class GuardedNoOpIntegrationTestSupport
         );
 
         return GetInt64(rows[0], "MaxChangeVersion");
-    }
-
-    private static async Task<
-        IReadOnlyList<GuardedNoOpReferentialIdentityRow>
-    > ReadAllReferentialIdentityRowsAsync(MssqlGeneratedDdlTestDatabase database)
-    {
-        var rows = await database.QueryRowsAsync(
-            """
-            SELECT [ReferentialId], [DocumentId], [ResourceKeyId]
-            FROM [dms].[ReferentialIdentity]
-            ORDER BY [ReferentialId];
-            """
-        );
-
-        return rows.Select(row => new GuardedNoOpReferentialIdentityRow(
-                GetGuid(row, "ReferentialId"),
-                GetInt64(row, "DocumentId"),
-                GetInt16(row, "ResourceKeyId")
-            ))
-            .ToArray();
     }
 
     public static async Task<long> ReadDocumentCountAsync(
@@ -613,7 +544,7 @@ file static class GuardedNoOpIntegrationTestSupport
                 $"Expected persisted row to contain column '{columnName}'."
             );
 
-    private static DocumentInfo CreateSchoolDocumentInfo(ReferentialId? referentialId = null)
+    private static DocumentInfo CreateSchoolDocumentInfo()
     {
         var schoolIdentity = new DocumentIdentity([
             new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
@@ -621,8 +552,6 @@ file static class GuardedNoOpIntegrationTestSupport
 
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
-            ReferentialId: referentialId
-                ?? ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -951,16 +880,7 @@ internal class Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_With_A_Focu
             ExistingSchoolDocumentUuid.Value
         );
 
-        var persistedReferentialIdentity =
-            await GuardedNoOpIntegrationTestSupport.ReadReferentialIdentityRowAsync(
-                _database,
-                _stateBeforePostAsUpdate.Document.DocumentId,
-                _mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]
-            );
-
-        _postAsUpdateResult = await ExecutePostAsUpdateAsync(
-            new ReferentialId(persistedReferentialIdentity.ReferentialId)
-        );
+        _postAsUpdateResult = await ExecutePostAsUpdateAsync();
 
         _stateAfterPostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
@@ -1017,7 +937,7 @@ internal class Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_With_A_Focu
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
     }
 
-    private async Task<UpsertResult> ExecutePostAsUpdateAsync(ReferentialId referentialId)
+    private async Task<UpsertResult> ExecutePostAsUpdateAsync()
     {
         using var scope = _serviceProvider.CreateScope();
 
@@ -1039,8 +959,7 @@ internal class Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_With_A_Focu
             GuardedNoOpIntegrationTestSupport.CreatePostAsUpdateRequest(
                 _mappingSet,
                 IncomingSchoolDocumentUuid,
-                "mssql-guarded-no-op-post-as-update",
-                referentialId
+                "mssql-guarded-no-op-post-as-update"
             )
         );
     }
@@ -1210,16 +1129,7 @@ internal class Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_After_A_Ful
             ExistingSchoolDocumentUuid.Value
         );
 
-        var persistedReferentialIdentity =
-            await GuardedNoOpIntegrationTestSupport.ReadReferentialIdentityRowAsync(
-                _database,
-                _stateBeforePostAsUpdate.Document.DocumentId,
-                _mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]
-            );
-
-        _postAsUpdateResult = await ExecutePostAsUpdateAsync(
-            new ReferentialId(persistedReferentialIdentity.ReferentialId)
-        );
+        _postAsUpdateResult = await ExecutePostAsUpdateAsync();
 
         _stateAfterPostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
             _database,
@@ -1305,7 +1215,7 @@ internal class Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_After_A_Ful
         reorderResult.Should().BeOfType<UpdateResult.UpdateSuccess>();
     }
 
-    private async Task<UpsertResult> ExecutePostAsUpdateAsync(ReferentialId referentialId)
+    private async Task<UpsertResult> ExecutePostAsUpdateAsync()
     {
         using var scope = _serviceProvider.CreateScope();
 
@@ -1328,7 +1238,6 @@ internal class Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_After_A_Ful
                 _mappingSet,
                 IncomingSchoolDocumentUuid,
                 "mssql-guarded-no-op-post-as-update-after-reorder-no-op-update",
-                referentialId,
                 GuardedNoOpIntegrationTestSupport.ReorderedRequestBodyJson
             )
         );
@@ -1497,16 +1406,8 @@ internal class Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_With_A_Comp
             ExistingSchoolDocumentUuid.Value
         );
 
-        var persistedReferentialIdentity =
-            await GuardedNoOpIntegrationTestSupport.ReadReferentialIdentityRowAsync(
-                _database,
-                _stateBeforePostAsUpdate.Document.DocumentId,
-                _mappingSet.ResourceKeyIdByResource[GuardedNoOpIntegrationTestSupport.SchoolResource]
-            );
-
         _postAsUpdateResult = await ExecuteContendedPostAsUpdateAsync(
-            _stateBeforePostAsUpdate.Document.DocumentId,
-            new ReferentialId(persistedReferentialIdentity.ReferentialId)
+            _stateBeforePostAsUpdate.Document.DocumentId
         );
 
         _stateAfterPostAsUpdate = await GuardedNoOpIntegrationTestSupport.ReadPersistedStateAsync(
@@ -1571,10 +1472,7 @@ internal class Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_With_A_Comp
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
     }
 
-    private async Task<UpsertResult> ExecuteContendedPostAsUpdateAsync(
-        long documentId,
-        ReferentialId referentialId
-    )
+    private async Task<UpsertResult> ExecuteContendedPostAsUpdateAsync(long documentId)
     {
         await using var scope = _serviceProvider.CreateAsyncScope();
 
@@ -1599,8 +1497,7 @@ internal class Given_A_Mssql_Relational_Guarded_No_Op_Post_As_Update_With_A_Comp
             GuardedNoOpIntegrationTestSupport.CreatePostAsUpdateRequest(
                 _mappingSet,
                 IncomingSchoolDocumentUuid,
-                "mssql-guarded-no-op-competing-bump-post-as-update",
-                referentialId
+                "mssql-guarded-no-op-competing-bump-post-as-update"
             )
         );
 

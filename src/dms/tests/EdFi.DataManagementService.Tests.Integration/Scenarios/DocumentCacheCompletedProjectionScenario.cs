@@ -854,7 +854,6 @@ internal static class DocumentCacheCompletedProjectionScenario
     private static async Task<RollbackSnapshot> ReadRollbackSnapshotAsync(ApiIntegrationHarness harness) =>
         new(
             await ReadDocumentSnapshotRowsAsync(harness),
-            await ReadReferentialIdentitySnapshotRowsAsync(harness),
             await ReadProfileRootOnlyMergeItemSnapshotRowsAsync(harness),
             await CountRowsAsync(harness, "\"dms\".\"DocumentProjectionWork\""),
             await CountRowsAsync(harness, "\"dms\".\"DocumentCache\""),
@@ -894,35 +893,6 @@ internal static class DocumentCacheCompletedProjectionScenario
                     reader.GetString(3),
                     Convert.ToInt64(reader.GetValue(4), CultureInfo.InvariantCulture),
                     ToUtcDateTimeOffset(reader.GetValue(5))
-                )
-            );
-        }
-
-        return rows;
-    }
-
-    private static async Task<
-        IReadOnlyList<ReferentialIdentitySnapshotRow>
-    > ReadReferentialIdentitySnapshotRowsAsync(ApiIntegrationHarness harness)
-    {
-        var rows = new List<ReferentialIdentitySnapshotRow>();
-        await using DbCommand command = harness.DbConnection.CreateCommand();
-        command.CommandText = """
-            SELECT "ReferentialId",
-                   "DocumentId",
-                   "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            ORDER BY "DocumentId", "ResourceKeyId", "ReferentialId";
-            """;
-
-        await using DbDataReader reader = await command.ExecuteReaderAsync();
-        while (await reader.ReadAsync())
-        {
-            rows.Add(
-                new(
-                    (Guid)reader.GetValue(0),
-                    Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture),
-                    Convert.ToInt16(reader.GetValue(2), CultureInfo.InvariantCulture)
                 )
             );
         }
@@ -1135,12 +1105,6 @@ internal static class DocumentCacheCompletedProjectionScenario
             .BeEquivalentTo("Student", "ProfileRootOnlyMergeItem");
         snapshot.ProfileRootOnlyMergeItems.Should().ContainSingle();
         ProfileRootOnlyMergeItemSnapshotRow item = snapshot.ProfileRootOnlyMergeItems.Single();
-        snapshot
-            .ReferentialIdentities.Should()
-            .HaveCount(2, "Student and ProfileRootOnlyMergeItem each stamp a referential identity");
-        snapshot
-            .ReferentialIdentities.Should()
-            .ContainSingle(identity => identity.DocumentId == item.DocumentId);
         item.ProfileRootOnlyMergeItemId.Should().Be(1301);
         item.DisplayName.Should().Be("Rollback original");
         item.ProfileScopeClearableText.Should().Be("Clearable original");
@@ -1213,7 +1177,6 @@ internal static class DocumentCacheCompletedProjectionScenario
 
     private sealed record RollbackSnapshot(
         IReadOnlyList<DocumentSnapshotRow> Documents,
-        IReadOnlyList<ReferentialIdentitySnapshotRow> ReferentialIdentities,
         IReadOnlyList<ProfileRootOnlyMergeItemSnapshotRow> ProfileRootOnlyMergeItems,
         long ProjectionWorkCount,
         long CacheCount,
@@ -1227,12 +1190,6 @@ internal static class DocumentCacheCompletedProjectionScenario
         string ResourceName,
         long ContentVersion,
         DateTimeOffset ContentLastModifiedAt
-    );
-
-    private sealed record ReferentialIdentitySnapshotRow(
-        Guid ReferentialId,
-        long DocumentId,
-        short ResourceKeyId
     );
 
     private sealed record ProfileRootOnlyMergeItemSnapshotRow(

@@ -26,7 +26,6 @@ internal static class DmsTableNames
         DocumentCacheInventoryDefinition.DocumentCacheState;
     public static readonly DbTableName DocumentProjectionWork =
         DocumentCacheInventoryDefinition.DocumentProjectionWork;
-    public static readonly DbTableName ReferentialIdentity = new(DmsSchema, "ReferentialIdentity");
     public static readonly DbTableName RepresentationRestampOperation = new(
         DmsSchema,
         "RepresentationRestampOperation"

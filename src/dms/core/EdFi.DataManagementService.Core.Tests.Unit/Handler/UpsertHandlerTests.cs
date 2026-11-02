@@ -174,8 +174,6 @@ public class UpsertHandlerTests
 
             public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
             {
-                var sharedReferentialId = new ReferentialId(Guid.NewGuid());
-
                 return Task.FromResult<UpsertResult>(
                     new UpsertFailureReference(
                         [
@@ -183,14 +181,12 @@ public class UpsertHandlerTests
                                 Path: new JsonPath("$.schoolReference"),
                                 TargetResource: _targetResource,
                                 DocumentIdentity: new([]),
-                                ReferentialId: sharedReferentialId,
                                 Reason: DocumentReferenceFailureReason.Missing
                             ),
                             new(
                                 Path: new JsonPath("$.sessionReference.schoolReference"),
                                 TargetResource: _targetResource,
                                 DocumentIdentity: new([]),
-                                ReferentialId: sharedReferentialId,
                                 Reason: DocumentReferenceFailureReason.Missing
                             ),
                         ],
@@ -499,7 +495,6 @@ public class UpsertHandlerTests
                                         "uri://ed-fi.org/schooltypedescriptor#elementary"
                                     ),
                                 ]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
                                 Reason: DescriptorReferenceFailureReason.Missing
                             ),
                         ]
@@ -543,73 +538,6 @@ public class UpsertHandlerTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_A_Repository_That_Returns_A_Descriptor_Type_Mismatch_Failure : UpsertHandlerTests
-    {
-        internal class Repository : NotImplementedDocumentStoreRepository
-        {
-            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
-            {
-                return Task.FromResult<UpsertResult>(
-                    new UpsertFailureReference(
-                        [],
-                        [
-                            new(
-                                Path: new JsonPath("$.schoolTypeDescriptor"),
-                                TargetResource: new BaseResourceInfo(
-                                    new ProjectName("ed-fi"),
-                                    new ResourceName("SchoolTypeDescriptor"),
-                                    true
-                                ),
-                                DocumentIdentity: new([
-                                    new(
-                                        DocumentIdentity.DescriptorIdentityJsonPath,
-                                        "uri://ed-fi.org/gradeleveldescriptor#first-grade"
-                                    ),
-                                ]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
-                                Reason: DescriptorReferenceFailureReason.DescriptorTypeMismatch
-                            ),
-                        ]
-                    )
-                );
-            }
-        }
-
-        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet();
-
-        [SetUp]
-        public async Task Setup()
-        {
-            var (upsertHandler, serviceProvider) = Handler(new Repository());
-            requestInfo.ScopedServiceProvider = serviceProvider;
-            await upsertHandler.Execute(requestInfo, NullNext);
-        }
-
-        [Test]
-        public void It_has_the_correct_response()
-        {
-            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
-
-            var body = requestInfo.FrontendResponse.Body!.AsObject();
-            body["detail"]!
-                .GetValue<string>()
-                .Should()
-                .Be("Data validation failed. See 'validationErrors' for details.");
-
-            var validationErrors = body["validationErrors"]!.AsObject();
-            validationErrors.Count.Should().Be(1);
-            validationErrors["$.schoolTypeDescriptor"]![0]!
-                .GetValue<string>()
-                .Should()
-                .Be(
-                    "SchoolTypeDescriptor value 'uri://ed-fi.org/gradeleveldescriptor#first-grade' is not a valid SchoolTypeDescriptor."
-                );
-            body["errors"]!.AsArray().Count.Should().Be(0);
-        }
-    }
-
-    [TestFixture]
-    [Parallelizable]
     public class Given_A_Repository_That_Returns_Mixed_Reference_Failures : UpsertHandlerTests
     {
         internal class Repository : NotImplementedDocumentStoreRepository
@@ -635,7 +563,6 @@ public class UpsertHandlerTests
                                 Path: new JsonPath("$.schoolReference"),
                                 TargetResource: _documentTargetResource,
                                 DocumentIdentity: new([]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
                                 Reason: DocumentReferenceFailureReason.Missing
                             ),
                         ],
@@ -649,7 +576,6 @@ public class UpsertHandlerTests
                                         "uri://ed-fi.org/schooltypedescriptor#elementary"
                                     ),
                                 ]),
-                                ReferentialId: new ReferentialId(Guid.NewGuid()),
                                 Reason: DescriptorReferenceFailureReason.Missing
                             ),
                         ]
@@ -743,6 +669,47 @@ public class UpsertHandlerTests
                 .GetValue<string>()
                 .Should()
                 .Be("urn:ed-fi:api:data-conflict:non-unique-identity");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Repository_That_Returns_Failure_Non_Unique_Values : UpsertHandlerTests
+    {
+        internal class Repository : NotImplementedDocumentStoreRepository
+        {
+            public override Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest)
+            {
+                return Task.FromResult<UpsertResult>(new UpsertFailureNonUniqueValues());
+            }
+        }
+
+        private readonly RequestInfo requestInfo = UpsertRequestInfoWithRelationalMappingSet();
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (handler, serviceProvider) = Handler(new Repository());
+            requestInfo.ScopedServiceProvider = serviceProvider;
+            await handler.Execute(requestInfo, NullNext);
+        }
+
+        [Test]
+        public void It_returns_the_ods_compatible_non_unique_values_conflict()
+        {
+            requestInfo.FrontendResponse.StatusCode.Should().Be(409);
+            var body = requestInfo.FrontendResponse.Body!;
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:data-conflict:non-unique-values");
+            body["title"]!.GetValue<string>().Should().Be("Non-Unique Values");
+            body["status"]!.GetValue<int>().Should().Be(409);
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "A value (or a specific set of values) in the item must be unique, but another item with these values already exists."
+                );
+            body["validationErrors"]!.AsObject().Should().BeEmpty();
+            requestInfo.FrontendResponse.Headers.Should().BeEmpty();
         }
     }
 

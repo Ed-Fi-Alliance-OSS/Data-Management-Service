@@ -4,4 +4,6 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 -- Test-only catalog mutation; the v3 EffectiveSchema fingerprint is deliberately unchanged.
-DROP INDEX "dms"."UX_Descriptor_ResourceKeyId_Uri";CREATE UNIQUE INDEX "UX_Descriptor_ResourceKeyId_Uri" ON "dms"."Descriptor" ("ResourceKeyId", (LOWER("Namespace" || '#' || "CodeValue")));
+-- Rebuilds the lowered whole-URI index, keeping the pg_c_utf8 pin, over the components in the wrong order.
+DROP INDEX "dms"."UX_Descriptor_UriLowered_ResourceKeyId";
+CREATE UNIQUE INDEX "UX_Descriptor_UriLowered_ResourceKeyId" ON "dms"."Descriptor" (lower(("CodeValue" || '#' || "Namespace") COLLATE "pg_c_utf8"), "ResourceKeyId");

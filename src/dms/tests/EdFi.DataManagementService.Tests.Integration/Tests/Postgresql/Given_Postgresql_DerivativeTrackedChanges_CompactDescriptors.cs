@@ -51,8 +51,14 @@ public sealed class Given_Postgresql_DerivativeTrackedChanges_CompactDescriptors
         );
 
     [Test]
-    public Task It_preserves_provider_component_comparisons_for_descriptor_recreation() =>
-        CompactDescriptorHistoryScenario.It_preserves_provider_component_comparisons_for_descriptor_recreation(
+    public Task It_suppresses_descriptor_recreation_by_lowered_uri_and_resource_key() =>
+        CompactDescriptorHistoryScenario.It_suppresses_descriptor_recreation_by_lowered_uri_and_resource_key(
+            Harness
+        );
+
+    [Test]
+    public Task It_matches_a_case_variant_descriptor_repost_without_resource_history() =>
+        CompactDescriptorHistoryScenario.It_matches_a_case_variant_descriptor_repost_without_resource_history(
             Harness
         );
 

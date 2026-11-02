@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Telemetry;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
@@ -141,6 +142,10 @@ internal class PartitionRequestHandler(
                 Headers: [],
                 ContentType: "application/problem+json"
             ),
+            PartitionFailureValidation failure => ValidationErrorFactory.CreateValidationErrorResponse(
+                ValidationErrorFactory.BuildWriteValidationErrors(failure.ValidationFailures),
+                requestInfo.FrontendRequest.TraceId
+            ),
             // Returns 500 to match the GET-many path: after retries are exhausted for a deadlock, the
             // client receives a generic system error rather than a retryable status code.
             PartitionFailureRetryable => new FrontendResponse(
@@ -206,6 +211,9 @@ internal class PartitionRequestHandler(
             ),
             PartitionFailureRetryable => FailureClassification(
                 CollectionPagingTelemetryLabel.RetryExhaustedOutcome
+            ),
+            PartitionFailureValidation => FailureClassification(
+                CollectionPagingTelemetryLabel.ValidationRejectedOutcome
             ),
             _ => FailureClassification(CollectionPagingTelemetryLabel.UnknownFailureOutcome),
         };

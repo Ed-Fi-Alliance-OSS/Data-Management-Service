@@ -4,4 +4,4 @@
 -- See the LICENSE and NOTICES files in the project root for more information.
 
 -- Test-only catalog mutation; the v3 EffectiveSchema fingerprint is deliberately unchanged.
-DROP INDEX [UX_Descriptor_ResourceKeyId_Uri] ON [dms].[Descriptor]; ALTER TABLE [dms].[Descriptor] DROP COLUMN [Uri]; ALTER TABLE [dms].[Descriptor] ADD [Uri] AS ([Namespace]+N'#'+[CodeValue]) PERSISTED; CREATE UNIQUE INDEX [UX_Descriptor_ResourceKeyId_Uri] ON [dms].[Descriptor] ([ResourceKeyId], [Uri]);
+ALTER TABLE [dms].[Descriptor] DROP COLUMN [Uri]; ALTER TABLE [dms].[Descriptor] ADD [Uri] AS ([Namespace]+N'#'+[CodeValue]) PERSISTED;

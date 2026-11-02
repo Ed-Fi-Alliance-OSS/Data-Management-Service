@@ -28,7 +28,6 @@ internal static partial class ProvisionTestHelper
         "DocumentProjectionWork",
         "Descriptor",
         "EffectiveSchema",
-        "ReferentialIdentity",
         "ResourceKey",
         "SchemaComponent",
     ];
