@@ -64,6 +64,14 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The release-asset and image jobs read the tag name and need this job, so a tag that is not a
+      # dms-pre- or cs-pre- version stops here, before anything is classified, pushed or attached.
+      - name: Validate the release tag
+        shell: pwsh
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:REF -Prefix dms-pre-, cs-pre-
+
       - name: Classify the release
         id: classify
         shell: pwsh
@@ -404,7 +412,7 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
@@ -445,7 +453,7 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
@@ -476,6 +484,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      # This job does not need classify-release, so it checks the tag itself before anything is
+      # versioned or published for it. A dispatch has no tag and skips the check.
+      - name: Validate the release tag
+        if: ${{ github.event_name == 'release' }}
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:REF -Prefix dms-pre-
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -565,6 +581,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      # This job does not need classify-release, so it checks the tag itself before anything is
+      # versioned or published for it. A dispatch has no tag and skips the check.
+      - name: Validate the release tag
+        if: ${{ github.event_name == 'release' }}
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:REF -Prefix dms-pre-
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -656,6 +680,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      # This job does not need classify-release, so it checks the tag itself before anything is
+      # versioned or published for it. A dispatch has no tag and skips the check.
+      - name: Validate the release tag
+        if: ${{ github.event_name == 'release' }}
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:REF -Prefix dms-pre-
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -1012,7 +1044,7 @@ jobs:
             -PackageVersion "${{ needs.pack-plugins.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "plugins-check-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1051,7 +1083,7 @@ jobs:
             -PackageVersion "${{ needs.pack-custom-validation.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "custom-validation-check-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1100,7 +1132,7 @@ jobs:
             -PackageVersion "${{ needs.pack-identity.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "identity-check-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1174,7 +1206,7 @@ jobs:
             -ContractVersion "${{ needs.pack-identity.outputs.contract-version }}" `
             -PackedPackageFile (Resolve-Path "${{ env.IDENTITY_PACKAGE_NAME }}.${{ needs.pack-identity.outputs.contract-version }}.nupkg").Path `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}"
+            -FeedApiKey $env:ARTIFACTS_API_KEY
 
           $line = "Identity wire gate: outcome=$($decision.Outcome) published=$($decision.PublishedVersion) anchor=$($decision.AnchorCommit) contract=${{ needs.pack-identity.outputs.contract-version }}"
           Write-Host $line
@@ -1228,7 +1260,7 @@ jobs:
             -PackageVersion "${{ needs.pack-plugins.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "plugins-publish-decide-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1248,7 +1280,7 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
@@ -1294,7 +1326,7 @@ jobs:
             -PackageVersion "${{ needs.pack-custom-validation.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "custom-validation-publish-decide-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1314,7 +1346,7 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
@@ -1368,7 +1400,7 @@ jobs:
             -PackageVersion "${{ needs.pack-identity.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "identity-publish-decide-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1392,7 +1424,7 @@ jobs:
             -ContractVersion "${{ needs.pack-identity.outputs.contract-version }}" `
             -PackedPackageFile (Resolve-Path "${{ env.IDENTITY_PACKAGE_NAME }}.${{ needs.pack-identity.outputs.contract-version }}.nupkg").Path `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}"
+            -FeedApiKey $env:ARTIFACTS_API_KEY
 
           $line = "Identity wire gate before push: outcome=$($decision.Outcome) published=$($decision.PublishedVersion) anchor=$($decision.AnchorCommit) contract=${{ needs.pack-identity.outputs.contract-version }}"
           Write-Host $line
@@ -1414,7 +1446,7 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
@@ -1438,9 +1470,9 @@ jobs:
     steps:
       - name: Prepare release version
         id: prepare-version
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          TAG_NAME="${{ github.event.release.tag_name }}"
-
           # Remove 'dms-pre-' prefix and add 'v' to match release format
           SEMVER="v${TAG_NAME#dms-pre-}"
 
@@ -1477,10 +1509,13 @@ jobs:
 
       - name: Attach DMS SBOM and Provenance to release
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.prepare-version.outputs.semver }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $release = "${{ steps.prepare-version.outputs.semver }}"
+          $release = $env:RELEASE_VERSION
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
 
           $url = "https://api.github.com/repos/$repo/releases/tags/$release"
           $gh_headers = @{
@@ -1615,9 +1650,9 @@ jobs:
       - name: Prepare release version
         id: prepare-version
         shell: bash
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          TAG_NAME="${{ github.event.release.tag_name }}"
-
           # Remove 'dms-pre-' prefix and add 'v' to match release format
           SEMVER="v${TAG_NAME#dms-pre-}"
 
@@ -1636,7 +1671,7 @@ jobs:
           # digest before it inspects anything, so a tag republished mid-run cannot make one
           # manifest describe two images.
           ./eng/verification/New-HostAssemblyManifest.ps1 `
-            -Image "${{ env.IMAGE_NAME }}:${{ env.REF }}" `
+            -Image "$($env:IMAGE_NAME):$($env:REF)" `
             -OutputPath "host-assembly-manifest.md"
 
       - name: Assert Host Assembly Manifest
@@ -1659,12 +1694,15 @@ jobs:
 
       - name: Attach Host Assembly Manifest to release
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.prepare-version.outputs.semver }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
 
-          $release = "${{ steps.prepare-version.outputs.semver }}"
+          $release = $env:RELEASE_VERSION
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
 
           $gh_headers = @{
               "Accept"        = "application/vnd.github+json"
@@ -1709,6 +1747,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      # This job does not need classify-release, so it checks the tag itself before anything is
+      # versioned or published for it. A dispatch has no tag and skips the check.
+      - name: Validate the release tag
+        if: ${{ github.event_name == 'release' }}
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:REF -Prefix cs-pre-
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -1921,7 +1967,7 @@ jobs:
             -PackageVersion "${{ needs.pack-secrets.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "secrets-check-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1965,7 +2011,7 @@ jobs:
             -PackageVersion "${{ needs.pack-secrets.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "secrets-publish-decide-$([guid]::NewGuid().ToString('N'))") `
             -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -FeedApiKey $env:ARTIFACTS_API_KEY |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1985,7 +2031,7 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
@@ -2240,7 +2286,7 @@ jobs:
          $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
          $arguments = @{
            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-           NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+           NuGetApiKey = $env:ARTIFACTS_API_KEY
          }
 
          $artifact | ForEach-Object {
@@ -2264,9 +2310,9 @@ jobs:
     steps:
       - name: Prepare release version
         id: prepare-version
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          TAG_NAME="${{ github.event.release.tag_name }}"
-
           # Remove 'cs-pre-' prefix and add 'v' to match release format
           SEMVER="v${TAG_NAME#cs-pre-}"
 
@@ -2287,10 +2333,13 @@ jobs:
 
       - name: Attach CS SBOM and Provenance to release
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.prepare-version.outputs.semver }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $release = "${{ steps.prepare-version.outputs.semver }}"
+          $release = $env:RELEASE_VERSION
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
 
           $url = "https://api.github.com/repos/$repo/releases/tags/$release"
           $gh_headers = @{
@@ -2342,8 +2391,7 @@ jobs:
       - name: Prepare Config Tags
         id: prepare-tags
         run: |
-          REF="${{ env.REF }}"
-          PACKAGEVERSION=${REF}
+          PACKAGEVERSION="$REF"
 
           case "$TAGGED_RELEASE" in
             true|false) ;;
@@ -2557,7 +2605,7 @@ jobs:
               -PackageFile $packageFile `
               -Sha256 "${{ needs.pack-security-metadata-tools.outputs.sha256 }}" `
               -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-              -ApiKey "${{ env.ARTIFACTS_API_KEY }}"
+              -ApiKey $env:ARTIFACTS_API_KEY
 
   attach-security-metadata-tools-artifacts-to-release:
     name: Attach SecurityMetadataTools Artifacts to GitHub Release
@@ -2574,9 +2622,9 @@ jobs:
     steps:
       - name: Prepare release version
         id: prepare-version
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          TAG_NAME="${{ github.event.release.tag_name }}"
-
           # Remove 'cs-pre-' prefix and add 'v' to match release format
           SEMVER="v${TAG_NAME#cs-pre-}"
 
@@ -2597,10 +2645,13 @@ jobs:
 
       - name: Attach SecurityMetadataTools SBOM and Provenance to release
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.prepare-version.outputs.semver }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $release = "${{ steps.prepare-version.outputs.semver }}"
+          $release = $env:RELEASE_VERSION
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
 
           $url = "https://api.github.com/repos/$repo/releases/tags/$release"
           $gh_headers = @{

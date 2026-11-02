@@ -500,7 +500,6 @@ Describe "template publication keeps each template with its own attestation on d
         $script:feedUrl = "https://feed.test/nuget/v3/index.json"
         $script:pushScript = ($bodyLines -join "`n").
             Replace('${{ env.ARTIFACTS_FEED_URL }}', $script:feedUrl).
-            Replace('${{ env.ARTIFACTS_API_KEY }}', "test-key").
             Replace('${{ inputs.package_name }}', $script:packageId)
         $script:pushScript | Should -Not -Match '\$\{\{'
 

@@ -96,6 +96,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      # A tag push builds, publishes and attaches release assets from this job's outputs, and every
+      # job that reads the tag name follows it by needs. A tag that is not a v version stops here.
+      - name: Validate the release tag
+        if: ${{ github.ref_type == 'tag' }}
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:RELEASE_REF -Prefix v
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
@@ -324,7 +334,7 @@ jobs:
          $artifact = (Get-ChildItem -Name -Include *.nupkg)
          $arguments = @{
            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-           NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+           NuGetApiKey = $env:ARTIFACTS_API_KEY
          }
 
          $artifact | ForEach-Object {
@@ -339,18 +349,26 @@ jobs:
     defaults:
       run:
         shell: pwsh
+    env:
+      RELEASE_REF: ${{ github.ref_name }}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # A stable release promotes by its tag name, so the name must be a v version first.
+      - name: Validate the release tag
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:RELEASE_REF -Prefix v
 
       - name: Promote SDK Azure Package
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
-            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            Username    = $env:ARTIFACTS_USERNAME
             ViewId      = "release"
-            ReleaseRef  = "${{ github.ref_name }}"
-            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            ReleaseRef  = $env:RELEASE_REF
+            Password    = (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force)
             PackageName = "${{ inputs.sdk_package_name }}"
           }
 
@@ -364,6 +382,9 @@ jobs:
       - generate-package-sbom
       - generate-package-provenance
     if: ${{ github.event_name == 'push' }}
+    # The tag was validated by the build job this one follows through its needs.
+    env:
+      RELEASE_REF: ${{ github.ref_name }}
     permissions:
       contents: write
     steps:
@@ -381,10 +402,12 @@ jobs:
 
       - name: Attach SBOM to Release
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $release = "${{ github.ref_name }}"
+          $release = $env:RELEASE_REF
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
           $file = "${{ inputs.manifest_file }}"
           $uploadName = "${{ inputs.sdk_package_name }}-SBOM.zip"
 
@@ -406,10 +429,12 @@ jobs:
 
       - name: Attach Provenance to Release
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $release = "${{ github.ref_name }}"
+          $release = $env:RELEASE_REF
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
           $file = "${{ inputs.provenance_file }}"
           $uploadName = "${{ inputs.provenance_file }}"
 
