@@ -145,20 +145,22 @@ copy.
 ### 4. Restrict release tags
 
 A tag rule on an environment does not prove a commit was reviewed, because anyone who can push can
-create a tag. In **Settings → Rules → Rulesets**, add a tag ruleset:
+create a tag. A ruleset applies every rule it selects to all of its targets, so this takes two tag
+rulesets in **Settings → Rules → Rulesets**. Both have the same bypass list: the release
+maintainers, and the identity that owns `EDFI_BUILD_AGENT_PAT`, which creates the prerelease tags.
 
-- **Targets:** `v*`, `dms-pre-*` and `cs-pre-*`.
-- **Restrict creations** and **Restrict updates** for all three, so only the bypass list can create
-  or move a release tag.
-- **Restrict deletions** for `v*` only. `On Release` deletes superseded `dms-pre-*` and `cs-pre-*`
-  prereleases and their tags with the workflow's own `GITHUB_TOKEN`, which is not on the bypass
-  list; restricting their deletion would leave the release deleted and the tag in place, and fail
-  the run. Deleting a prerelease tag publishes nothing.
-- **Bypass list:** the release maintainers, and the identity that owns `EDFI_BUILD_AGENT_PAT`,
-  which creates the prerelease tags.
+1. **Release tags.** Targets `v*`, `dms-pre-*` and `cs-pre-*`. Turn on **Restrict creations** and
+   **Restrict updates**, and leave deletions unrestricted, so only the bypass list can create or
+   move a release tag.
+2. **Stable release tags.** Targets `v*` only. Turn on **Restrict deletions**.
 
-Add the build-agent identity to the bypass list only after step 3. Until then any branch can read
-its token, and with it create, move or delete any release tag.
+Prerelease tags stay deletable on purpose. `On Release` deletes superseded `dms-pre-*` and
+`cs-pre-*` prereleases and their tags with the workflow's own `GITHUB_TOKEN`, which is not on the
+bypass list. A deletion rule on them would leave the release deleted and the tag in place, and fail
+the run. Deleting a prerelease tag publishes nothing.
+
+Add the build-agent identity to either bypass list only after step 3. Until then any branch can read
+its token, and with it create or move any release tag.
 
 ### Docker Scout identity
 
@@ -180,18 +182,34 @@ log in and scan with them (see Verification).
 
 ## When a publishing run fails
 
-Rerunning a failed run does not pick up a fix. A rerun, and any new run a tag starts, uses the
-workflow files of that run's commit. A commit from before this change has no `environment:` on its
-jobs, so after step 3 it cannot read any token.
+A run uses the workflow files of its own commit: a prerelease run uses its tag's commit, and a rerun
+keeps the original commit. What to do depends on whether that commit includes this change.
 
-- **A `main` build or prerelease:** start a new run from a commit that includes this change. The
-  next merge to `main` cuts a new prerelease; to publish sooner, start the workflow by hand on
-  `main`.
-- **A release tag on an older commit:** do not rerun it, and do not move the tag. A release
-  maintainer creates the next version's tag on a commit that includes this change; the ruleset
-  from step 4 allows that for the bypass list only.
-- **A run waiting for approval:** a reviewer approves it under **Deployments**, or rejects it and
-  starts a new one.
+- **The commit includes this change.** Retry the failed jobs (**Re-run failed jobs**). The retry
+  still runs in the `publishing` environment, still waits for its approval, and reuses the
+  packages, SBOMs and provenance the run already produced, while GitHub still retains them.
+- **The commit is from before this change.** Its jobs name no environment, so after setup step 3
+  they cannot read any token, and no retry or new run from that commit or its tag can publish. Do
+  not move the tag. Publish from a commit that includes this change instead:
+  - **A prerelease.** The next merge to `main` that changes `src/dms/**`, `src/plugins/**` or
+    `src/config/**` cuts a new one. The merge-or-tag workflows have no manual trigger, and a
+    manual `On Pre-Release` run is only the four-contract dry run. To cut one sooner, a release
+    maintainer creates it by hand on a `main` commit that includes this change, named the way the
+    merge-or-tag workflow names it:
+
+    ```shell
+    git fetch --tags origin && git checkout <main-commit>
+    dotnet tool install --global minver-cli
+    version=$(minver -t v)
+    gh release create "dms-pre-$version" --target <main-commit> --prerelease --title "dms-v$version" --notes "" -R Ed-Fi-Alliance-OSS/Data-Management-Service
+    ```
+
+    Use `cs-pre-` and `cs-v` for the Configuration Service. Publishing the prerelease starts
+    `On Pre-Release`, which waits for the `publishing` approval. The tag ruleset allows this only
+    for the bypass list.
+  - **A stable release.** A release maintainer tags the next version on a commit that includes this
+    change.
+- **A run waiting for approval.** A reviewer approves it under **Deployments**, or rejects it.
 
 ## Read-only inspection
 
@@ -291,30 +309,3 @@ and while the organization secrets were still shared with this repository:
 These runs show the workflows build, scan and dry-run without publishing credentials. They do not
 show that the credentials are protected: checks 1, 5, 6 and 7, and the inspection above, remain
 outstanding until the setup is done.
-
-1. **A scratch branch cannot publish.** Push a throwaway branch and start these on it:
-
-   ```shell
-   gh workflow run on-release.yml --ref <scratch-branch>
-   gh workflow run on-prerelease.yml --ref <scratch-branch>
-   gh workflow run "Pkg EdFi.Api.SecurityMetadataTools.yml" --ref <scratch-branch> -f publish_package=true
-   gh workflow run "Pkg EdFi.Api.Sdk.yml" --ref <scratch-branch> -f publish_package=true
-   gh workflow run EdFi.Api.Minimal.Template.PostgreSQL.yml --ref <scratch-branch> -f publish_package=true
-   ```
-
-   In each run, every job that names `publishing` must be skipped, no deployment to `publishing` may
-   appear under **Deployments**, and no package or image may change. The template run builds with
-   its credential-free job only.
-2. **Docker checks.** A pull request that changes `src/dms/Dockerfile`, the next push to `main`,
-   and `gh workflow run on-pullrequest-dockerfile.yml --ref main` must each pass Hadolint, the
-   image build and the Docker Scout scan, using `DOCKER_SCOUT_USERNAME`.
-3. **Template and smoke pull request runs.** A pull request that changes `eng/DatabaseTemplates/**`
-   runs all four template workflows and the smoke test. Each must pass, with the publish job
-   skipped.
-4. **Prerelease dry run.** `gh workflow run on-prerelease.yml --ref main` must succeed without
-   the `publishing` environment. Then `gh run download <run-id>` must contain the
-   `EdFi.Api.Plugins`, `EdFi.Api.CustomValidation`, `EdFi.Api.Identity` and `EdFi.Api.Secrets`
-   `-NuGet` and `-SBOM` artifacts, and their `edfiApi*.intoto.jsonl` provenance files.
-5. **A real publish waits for approval.** The next `dms-pre-*` or `cs-pre-*` prerelease, `main`
-   template build and `v*` release must each stop at the `publishing` approval and publish only
-   after a reviewer other than the person who started it approves.
