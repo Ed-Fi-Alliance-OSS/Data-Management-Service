@@ -95,9 +95,9 @@ moved. Whoever holds the Azure DevOps and Docker Hub publishing credentials has 
 again, or issue new ones. To add each to the environment without leaving it in shell history:
 
 ```shell
-gh-work secret set AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN --env publishing -R Ed-Fi-Alliance-OSS/Data-Management-Service
-gh-work secret set AZURE_ARTIFACTS_USER_NAME --env publishing -R Ed-Fi-Alliance-OSS/Data-Management-Service
-gh-work secret set DOCKER_HUB_TOKEN --env publishing -R Ed-Fi-Alliance-OSS/Data-Management-Service
+gh secret set AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN --env publishing -R Ed-Fi-Alliance-OSS/Data-Management-Service
+gh secret set AZURE_ARTIFACTS_USER_NAME --env publishing -R Ed-Fi-Alliance-OSS/Data-Management-Service
+gh secret set DOCKER_HUB_TOKEN --env publishing -R Ed-Fi-Alliance-OSS/Data-Management-Service
 ```
 
 Each command prompts for the value. Never paste a token into an issue, a log or this repository.
@@ -116,8 +116,8 @@ Each command prompts for the value. Never paste a token into an issue, a log or 
    cannot push, overwrite or delete any `edfialliance` image:
 
    ```shell
-   gh-work variable set DOCKER_SCOUT_USERNAME --body "<scout-account>" -R Ed-Fi-Alliance-OSS/Data-Management-Service
-   gh-work secret set DOCKER_SCOUT_TOKEN -R Ed-Fi-Alliance-OSS/Data-Management-Service
+   gh variable set DOCKER_SCOUT_USERNAME --body "<scout-account>" -R Ed-Fi-Alliance-OSS/Data-Management-Service
+   gh secret set DOCKER_SCOUT_TOKEN -R Ed-Fi-Alliance-OSS/Data-Management-Service
    ```
 
 Docker's documentation says Scout needs a Docker Hub login, but it does not say a read-only token is
@@ -159,16 +159,16 @@ These commands only read settings, and none of them print a secret value:
 
 ```shell
 # Environments and their protection rules
-gh-work api repos/Ed-Fi-Alliance-OSS/Data-Management-Service/environments
-gh-work api repos/Ed-Fi-Alliance-OSS/Data-Management-Service/environments/publishing/deployment-branch-policies
+gh api repos/Ed-Fi-Alliance-OSS/Data-Management-Service/environments
+gh api repos/Ed-Fi-Alliance-OSS/Data-Management-Service/environments/publishing/deployment-branch-policies
 
 # Secret names, by scope
-gh-work secret list -R Ed-Fi-Alliance-OSS/Data-Management-Service
-gh-work secret list --env publishing -R Ed-Fi-Alliance-OSS/Data-Management-Service
-gh-work api repos/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/organization-secrets --jq '.secrets[].name'
+gh secret list -R Ed-Fi-Alliance-OSS/Data-Management-Service
+gh secret list --env publishing -R Ed-Fi-Alliance-OSS/Data-Management-Service
+gh api repos/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/organization-secrets --jq '.secrets[].name'
 
 # Variables
-gh-work variable list -R Ed-Fi-Alliance-OSS/Data-Management-Service
+gh variable list -R Ed-Fi-Alliance-OSS/Data-Management-Service
 ```
 
 After setup step 4, neither the repository nor the organization-secrets listing may include
@@ -176,30 +176,60 @@ After setup step 4, neither the repository nor the organization-secrets listing 
 
 ## Verification
 
-None of these runs has happened yet. Each starts a workflow, so run them only once you are
-authorized to.
+Each check starts a workflow, so run it only once you are authorized to.
+
+| Check | Status |
+| --- | --- |
+| 1. A scratch branch cannot publish | Not run. Needs the `publishing` environment and the secret cutover |
+| 2. Docker checks | Pull request run passed (see below). The next push to `main` and a manual run are not run yet |
+| 3. Template and smoke pull request runs | Passed (see below) |
+| 4. Prerelease dry run | Passed (see below) |
+| 5. A real publish waits for approval | Not run. Needs the `publishing` environment and the secret cutover |
+
+Recorded on pull request #1419 at commit `3073af017`, before the `publishing` environment existed
+and while the organization secrets were still shared with this repository:
+
+- **Docker checks:** [On Pull Request - Dockerfile](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/41476473627)
+  passed Hadolint, the image build and the Docker Scout scan for both Dockerfiles, after logging in
+  with `DOCKER_SCOUT_USERNAME`.
+- **Template and smoke runs:** all passed, each with every publish job skipped:
+  [Minimal MsSql](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/41476474838),
+  [Minimal PostgreSQL](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/41476474974),
+  [Populated MsSql](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/41476474651),
+  [Populated PostgreSQL](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/41476474532)
+  and [Scheduled Smoke Test](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/41476474646).
+- **Prerelease dry run:** [a manual run on the pull request branch](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/runs/41485910918)
+  passed. It produced the `-NuGet` and `-SBOM` artifacts and the `edfiApi*.intoto.jsonl`
+  provenance for `EdFi.Api.Plugins`, `EdFi.Api.CustomValidation`, `EdFi.Api.Identity` and
+  `EdFi.Api.Secrets`, and checked all four contracts against the feed without a token. Every
+  publish, Docker Hub and release-attachment job was skipped.
+
+These runs show the workflows build, scan and dry-run without publishing credentials. They do not
+show that the credentials are protected: checks 1 and 5, and the setup verification above, remain
+outstanding until the `publishing` environment exists and this repository's access to the
+organization secrets is removed.
 
 1. **A scratch branch cannot publish.** Push a throwaway branch and start these on it:
 
    ```shell
-   gh-work workflow run on-release.yml --ref <scratch-branch>
-   gh-work workflow run on-prerelease.yml --ref <scratch-branch>
-   gh-work workflow run "Pkg EdFi.Api.SecurityMetadataTools.yml" --ref <scratch-branch> -f publish_package=true
-   gh-work workflow run "Pkg EdFi.Api.Sdk.yml" --ref <scratch-branch> -f publish_package=true
-   gh-work workflow run EdFi.Api.Minimal.Template.PostgreSQL.yml --ref <scratch-branch> -f publish_package=true
+   gh workflow run on-release.yml --ref <scratch-branch>
+   gh workflow run on-prerelease.yml --ref <scratch-branch>
+   gh workflow run "Pkg EdFi.Api.SecurityMetadataTools.yml" --ref <scratch-branch> -f publish_package=true
+   gh workflow run "Pkg EdFi.Api.Sdk.yml" --ref <scratch-branch> -f publish_package=true
+   gh workflow run EdFi.Api.Minimal.Template.PostgreSQL.yml --ref <scratch-branch> -f publish_package=true
    ```
 
    In each run, every job that names `publishing` must be skipped, no deployment to `publishing` may
    appear under **Deployments**, and no package or image may change. The template run builds with
    its credential-free job only.
 2. **Docker checks.** A pull request that changes `src/dms/Dockerfile`, the next push to `main`,
-   and `gh-work workflow run on-pullrequest-dockerfile.yml --ref main` must each pass Hadolint, the
+   and `gh workflow run on-pullrequest-dockerfile.yml --ref main` must each pass Hadolint, the
    image build and the Docker Scout scan, using `DOCKER_SCOUT_USERNAME`.
 3. **Template and smoke pull request runs.** A pull request that changes `eng/DatabaseTemplates/**`
    runs all four template workflows and the smoke test. Each must pass, with the publish job
    skipped.
-4. **Prerelease dry run.** `gh-work workflow run on-prerelease.yml --ref main` must succeed without
-   the `publishing` environment. Then `gh-work run download <run-id>` must contain the
+4. **Prerelease dry run.** `gh workflow run on-prerelease.yml --ref main` must succeed without
+   the `publishing` environment. Then `gh run download <run-id>` must contain the
    `EdFi.Api.Plugins`, `EdFi.Api.CustomValidation`, `EdFi.Api.Identity` and `EdFi.Api.Secrets`
    `-NuGet` and `-SBOM` artifacts, and their `edfiApi*.intoto.jsonl` provenance files.
 5. **A real publish waits for approval.** The next `dms-pre-*` or `cs-pre-*` prerelease, `main`

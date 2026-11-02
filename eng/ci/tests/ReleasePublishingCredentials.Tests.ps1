@@ -16,12 +16,14 @@ BeforeAll {
     $script:workflowRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../../.github/workflows'))
 
     function script:Get-WorkflowJobTable([string] $Content) {
-        # Each job under jobs:, keyed by id, up to the next job or a comment introducing one.
-        $jobsStart = $Content.IndexOf("`njobs:`n")
-        $jobsStart | Should -BeGreaterThan 0
-        $body = $Content.Substring($jobsStart)
+        # Each job under jobs:, keyed by id, up to the next job or a comment introducing one. A job id
+        # is any GitHub accepts: a letter or _ followed by letters, digits, - or _. Empty when the
+        # text has no jobs: key the guard can read.
         $jobs = [ordered]@{}
-        $headers = [regex]::Matches($body, '(?m)^  (?<id>[a-z0-9-]+):\r?$')
+        $jobsKey = [regex]::Match($Content, '(?m)^jobs:[ \t]*(?:#.*)?\r?$')
+        if (-not $jobsKey.Success) { return $jobs }
+        $body = $Content.Substring($jobsKey.Index)
+        $headers = [regex]::Matches($body, '(?m)^  (?<id>[A-Za-z_][A-Za-z0-9_-]*):[ \t]*(?:#.*)?\r?$')
         for ($i = 0; $i -lt $headers.Count; $i++) {
             $end = if ($i + 1 -lt $headers.Count) { $headers[$i + 1].Index } else { $body.Length }
             $jobs[$headers[$i].Groups['id'].Value] = $body.Substring($headers[$i].Index, $end - $headers[$i].Index)
@@ -77,12 +79,54 @@ BeforeAll {
         }
         $found | Should -Be $ExpectedCount
     }
+
+    function script:Get-PublishingSecretViolation([string] $Content) {
+        # The repository-wide rule, as findings. A publishing token is read either by a step of a job
+        # bound to the 'publishing' environment, or passed by name from a caller job to a reusable
+        # workflow, which GitHub requires for an environment secret and which resolves to nothing
+        # outside that environment. Secret names are case-insensitive, so the match is too. A
+        # reference the guard cannot place in a job is a finding, so syntax it does not read fails
+        # rather than passes.
+        $pattern = "(?i)secrets(?:\.(?:AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN|AZURE_ARTIFACTS_USER_NAME|DOCKER_HUB_TOKEN)\b|\[\s*['""](?:AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN|AZURE_ARTIFACTS_USER_NAME|DOCKER_HUB_TOKEN)['""]\s*\])"
+        $violations = [Collections.Generic.List[string]]::new()
+        if ($Content -match '(?i)secrets:\s*inherit') { $violations.Add('passes secrets: inherit') }
+        if ($Content -match '(?i)toJSON\(\s*secrets\s*\)') { $violations.Add('reads the whole secrets context') }
+        if ((Get-WorkflowEnv $Content) -match $pattern) { $violations.Add('reads a publishing token in the workflow-wide env') }
+
+        $total = [regex]::Matches($Content, $pattern).Count
+        if ($total -eq 0) { return $violations.ToArray() }
+
+        $jobs = Get-WorkflowJobTable $Content
+        $placed = 0
+        foreach ($id in $jobs.Keys) {
+            $job = $jobs[$id]
+            foreach ($match in [regex]::Matches($job, $pattern)) {
+                $placed++
+                $line = ($job.Substring(0, $match.Index) -split "`n")[-1]
+                if ($job -match '(?m)^    uses: ') {
+                    $callerSecrets = [regex]::Match($job, '(?ms)^    secrets:\r?\n(?:      .*\r?\n?)+')
+                    if (-not ($callerSecrets.Success -and $match.Index -ge $callerSecrets.Index -and $match.Index -lt $callerSecrets.Index + $callerSecrets.Length)) {
+                        $violations.Add("$id passes $($match.Value) other than through its reusable-workflow secrets")
+                    }
+                    continue
+                }
+                if ($job -notmatch '(?m)^    environment: publishing\r?$') { $violations.Add("$id reads $($match.Value) outside the publishing environment") }
+                if ($line -notmatch '^ {10}\S') { $violations.Add("$id reads $($match.Value) other than at step level") }
+                if ($job.IndexOf("`n    steps:") -lt 0 -or $job.IndexOf("`n    steps:") -gt $match.Index) { $violations.Add("$id reads $($match.Value) outside its steps") }
+            }
+        }
+        if ($placed -ne $total) {
+            $violations.Add("$($total - $placed) publishing token reference(s) outside any job this guard can read")
+        }
+        return $violations.ToArray()
+    }
 }
 
 Describe 'on-prerelease.yml publishing credentials' {
     BeforeAll {
         $script:content = Get-Content (Join-Path $script:workflowRoot 'on-prerelease.yml') -Raw
         $script:jobs = Get-WorkflowJobTable $script:content
+        $script:jobs.Count | Should -BeGreaterThan 0
         $script:dmsPublishers = @('publish-package-dms', 'publish-package-schema-tools', 'publish-package-plugins', 'publish-package-custom-validation', 'publish-package-identity', 'docker-publish-dms')
         $script:csPublishers = @('publish-package-secrets', 'publish-package-cs', 'publish-package-security-metadata-tools', 'docker-publish-cs')
     }
@@ -156,6 +200,7 @@ Describe 'on-release.yml publishing credentials' {
     BeforeAll {
         $script:content = Get-Content (Join-Path $script:workflowRoot 'on-release.yml') -Raw
         $script:jobs = Get-WorkflowJobTable $script:content
+        $script:jobs.Count | Should -BeGreaterThan 0
         $script:publishers = @('promote-azure-artifact', 'tag-dms-image', 'tag-cs-image')
     }
 
@@ -199,6 +244,7 @@ Describe 'build-sdk-package.yml publishing credentials' {
     BeforeAll {
         $script:content = Get-Content (Join-Path $script:workflowRoot 'build-sdk-package.yml') -Raw
         $script:jobs = Get-WorkflowJobTable $script:content
+        $script:jobs.Count | Should -BeGreaterThan 0
     }
 
     It 'keeps every secret out of the workflow-wide env and declares the Azure secrets optional' {
@@ -237,25 +283,66 @@ Describe 'every workflow keeps the publishing tokens behind the publishing envir
 
     It '<File>' -ForEach $script:workflowFiles {
         $content = Get-Content (Join-Path $script:workflowRoot $File) -Raw
-        $content | Should -Not -Match 'secrets: inherit'
-        if ($content -notmatch "`njobs:`n") { return }
-        Get-WorkflowEnv $content | Should -Not -Match 'secrets\.(AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN|AZURE_ARTIFACTS_USER_NAME|DOCKER_HUB_TOKEN)\b'
+        Get-PublishingSecretViolation $content | Should -BeNullOrEmpty
+    }
+}
 
-        $jobs = Get-WorkflowJobTable $content
-        foreach ($id in $jobs.Keys) {
-            $job = $jobs[$id]
-            foreach ($match in [regex]::Matches($job, 'secrets\.(AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN|AZURE_ARTIFACTS_USER_NAME|DOCKER_HUB_TOKEN)\b')) {
-                $line = ($job.Substring(0, $match.Index) -split "`n")[-1]
-                if ($job -match '(?m)^    uses: ') {
-                    $callerSecrets = [regex]::Match($job, '(?ms)^    secrets:\r?\n(?:      .*\r?\n?)+')
-                    ($callerSecrets.Success -and $match.Index -ge $callerSecrets.Index -and $match.Index -lt $callerSecrets.Index + $callerSecrets.Length) |
-                        Should -BeTrue -Because "$id passes $($match.Value) only through its reusable-workflow secrets"
-                    continue
-                }
-                $job | Should -Match '(?m)^    environment: publishing\r?$' -Because "$id reads $($match.Value)"
-                $line | Should -Match '^ {10}\S' -Because "$id reads $($match.Value) only at step level, never in job env"
-                $job.IndexOf("`n    steps:") | Should -BeLessThan $match.Index -Because "$id reads $($match.Value) inside a step"
-            }
+Describe 'the repository-wide publishing token rule' {
+    # Fixtures for Get-PublishingSecretViolation, so a workflow the guard cannot read fails it.
+    BeforeAll {
+        function script:New-Workflow([string] $Jobs) {
+            return "name: Fixture`non: workflow_dispatch`n`npermissions: read-all`n`njobs:`n$Jobs"
         }
+        $script:publishStep = @"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Log in
+        uses: docker/login-action@v3
+        with:
+          password: `${{ secrets.DOCKER_HUB_TOKEN }}
+"@
+    }
+
+    It 'flags an unprotected job whose id is <Case>' -ForEach @(
+        @{ Case = 'publish_package, with an underscore'; Id = 'publish_package' }
+        @{ Case = 'Publish, with a capital'; Id = 'Publish' }
+        @{ Case = '_publish, starting with an underscore'; Id = '_publish' }
+        @{ Case = 'publish followed by a comment'; Id = 'publish: # pushes the image' }
+    ) {
+        $header = if ($Id.Contains(':')) { "  $Id" } else { "  ${Id}:" }
+        $violations = Get-PublishingSecretViolation (New-Workflow "$header`n$script:publishStep")
+        $violations | Should -Contain "$(($Id -split ':')[0]) reads secrets.DOCKER_HUB_TOKEN outside the publishing environment"
+    }
+
+    It 'accepts the same job, with an underscore in its id, bound to the publishing environment' {
+        Get-PublishingSecretViolation (New-Workflow "  publish_package:`n    environment: publishing`n$script:publishStep") |
+            Should -BeNullOrEmpty
+    }
+
+    It 'flags a secret name written in lower case' {
+        $step = $script:publishStep.Replace('secrets.DOCKER_HUB_TOKEN', 'secrets.docker_hub_token')
+        Get-PublishingSecretViolation (New-Workflow "  publish:`n$step") |
+            Should -Contain 'publish reads secrets.docker_hub_token outside the publishing environment'
+    }
+
+    It 'flags a secret read with index syntax' {
+        $step = $script:publishStep.Replace('secrets.DOCKER_HUB_TOKEN', "secrets['DOCKER_HUB_TOKEN']")
+        Get-PublishingSecretViolation (New-Workflow "  publish:`n$step") |
+            Should -Contain "publish reads secrets['DOCKER_HUB_TOKEN'] outside the publishing environment"
+    }
+
+    It 'flags a reference it cannot place in a job, <Case>' -ForEach @(
+        @{ Case = 'a quoted job id'; Jobs = "  'publish':`n" }
+        @{ Case = 'jobs indented four spaces'; Jobs = "    publish:`n" }
+    ) {
+        $step = if ($Case -eq 'a quoted job id') { $script:publishStep } else { ($script:publishStep -split "`n" | ForEach-Object { "  $_" }) -join "`n" }
+        Get-PublishingSecretViolation (New-Workflow "$Jobs$step") |
+            Should -Contain '1 publishing token reference(s) outside any job this guard can read'
+    }
+
+    It 'flags secrets: inherit and the whole secrets context' {
+        $violations = Get-PublishingSecretViolation (New-Workflow "  build:`n    uses: ./.github/workflows/build.yml`n    secrets: inherit`n  dump:`n    runs-on: ubuntu-latest`n    steps:`n      - run: echo `"`${{ toJSON(secrets) }}`"`n")
+        $violations | Should -Contain 'passes secrets: inherit'
+        $violations | Should -Contain 'reads the whole secrets context'
     }
 }
