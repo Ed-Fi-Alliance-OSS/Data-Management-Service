@@ -135,6 +135,41 @@ public class Given_A_Mssql_DocumentCacheWriter
         cacheRow.ContentVersion.Should().Be(10);
         cacheRow.StreamEtag.Should().Be("etag-10");
         JsonNode.Parse(cacheRow.DocumentJson)!["value"]!.GetValue<string>().Should().Be("candidate-current");
+
+        // Exact to the tick, including the seventh fractional digit.
+        DateTime contentCreatedAt = await ReadCacheTimestampAsync(source.DocumentId, "ContentCreatedAt");
+        contentCreatedAt.Ticks.Should().Be(CandidateContentCreatedAt.UtcTicks);
+        contentCreatedAt
+            .Should()
+            .NotBe(await ReadCacheTimestampAsync(source.DocumentId, "LastModifiedAt"))
+            .And.NotBe(await ReadCacheTimestampAsync(source.DocumentId, "ComputedAt"));
+    }
+
+    [Test]
+    public async Task It_replaces_the_cached_creation_timestamp_with_the_candidate_value_for_a_newer_version()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await InsertCacheRowAsync(source, contentVersion: 9);
+        (await ReadCacheTimestampAsync(source.DocumentId, "ContentCreatedAt"))
+            .Ticks.Should()
+            .Be(CachedContentCreatedAt.UtcTicks);
+
+        DocumentCacheWriterResult result = await WriteAsync(
+            source,
+            CreateCandidate(source, "candidate-newer")
+        );
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(10);
+        (await ReadCacheRowAsync(source.DocumentId)).ContentVersion.Should().Be(10);
+        // Replacement takes the candidate's source value; it never keeps cache-local history.
+        (await ReadCacheTimestampAsync(source.DocumentId, "ContentCreatedAt"))
+            .Ticks.Should()
+            .Be(CandidateContentCreatedAt.UtcTicks);
     }
 
     [Test]
@@ -322,6 +357,9 @@ public class Given_A_Mssql_DocumentCacheWriter
             .Be(10);
         (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
         (await ReadCacheComputedAtAsync(source.DocumentId)).Should().Be(beforeComputedAt);
+        (await ReadCacheTimestampAsync(source.DocumentId, "ContentCreatedAt"))
+            .Ticks.Should()
+            .Be(CachedContentCreatedAt.UtcTicks);
     }
 
     [Test]
@@ -352,6 +390,9 @@ public class Given_A_Mssql_DocumentCacheWriter
         cacheRow.StreamEtag.Should().Be("etag-10");
         JsonNode.Parse(cacheRow.DocumentJson)!["value"]!.GetValue<string>().Should().Be("cache-10");
         (await ReadCacheComputedAtAsync(source.DocumentId)).Should().Be(beforeComputedAt);
+        (await ReadCacheTimestampAsync(source.DocumentId, "ContentCreatedAt"))
+            .Ticks.Should()
+            .Be(CachedContentCreatedAt.UtcTicks);
         (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
         (await ReadCacheAheadLatchAsync()).Should().BeFalse();
         telemetry
@@ -1970,6 +2011,7 @@ public class Given_A_Mssql_DocumentCacheWriter
                 [ContentVersion],
                 [StreamEtag],
                 [LastModifiedAt],
+                [ContentCreatedAt],
                 [DocumentJson],
                 [ComputedAt]
             )
@@ -1982,6 +2024,7 @@ public class Given_A_Mssql_DocumentCacheWriter
                 @contentVersion,
                 @streamEtag,
                 @lastModifiedAt,
+                @contentCreatedAt,
                 @documentJson,
                 @computedAt
             );
@@ -2003,6 +2046,10 @@ public class Given_A_Mssql_DocumentCacheWriter
             new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion },
             new SqlParameter("@streamEtag", SqlDbType.VarChar, 64) { Value = $"etag-{contentVersion}" },
             new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt.UtcDateTime },
+            new SqlParameter("@contentCreatedAt", SqlDbType.DateTime2)
+            {
+                Value = CachedContentCreatedAt.UtcDateTime,
+            },
             new SqlParameter("@documentJson", SqlDbType.NVarChar, -1)
             {
                 Value = new JsonObject { ["value"] = $"cache-{contentVersion}" }.ToJsonString(),
@@ -2013,6 +2060,16 @@ public class Given_A_Mssql_DocumentCacheWriter
             }
         );
     }
+
+    // datetime2(7) keeps all seven fractional digits.
+    private static readonly DateTimeOffset CandidateContentCreatedAt = DateTimeOffset.Parse(
+        "2001-02-03T04:05:06.1234567Z",
+        CultureInfo.InvariantCulture
+    );
+    private static readonly DateTimeOffset CachedContentCreatedAt = DateTimeOffset.Parse(
+        "1999-12-31T23:59:58.6543210Z",
+        CultureInfo.InvariantCulture
+    );
 
     private static DocumentCacheMaterializationCandidate CreateCandidate(
         SourceDocument source,
@@ -2031,7 +2088,7 @@ public class Given_A_Mssql_DocumentCacheWriter
             resourceVersion,
             contentVersion ?? source.ContentVersion,
             LastModifiedAt,
-            new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
+            CandidateContentCreatedAt,
             $"etag-{contentVersion ?? source.ContentVersion}",
             new JsonObject { ["value"] = value }
         );
@@ -2097,6 +2154,16 @@ public class Given_A_Mssql_DocumentCacheWriter
             (string)row["DocumentJson"]!
         );
     }
+
+    private async Task<DateTime> ReadCacheTimestampAsync(long documentId, string column) =>
+        await _database.ExecuteScalarAsync<DateTime>(
+            $"""
+            SELECT [{column}]
+            FROM [dms].[DocumentCache]
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId }
+        );
 
     private async Task<DateTime> ReadCacheComputedAtAsync(long documentId) =>
         await _database.ExecuteScalarAsync<DateTime>(
