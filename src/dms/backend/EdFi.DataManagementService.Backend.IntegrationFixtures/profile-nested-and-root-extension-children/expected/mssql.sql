@@ -248,6 +248,7 @@ CREATE TABLE [dms].[DocumentCache]
     [ContentVersion] bigint NOT NULL,
     [StreamEtag] varchar(64) NOT NULL,
     [LastModifiedAt] datetime2(7) NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL,
     [DocumentJson] nvarchar(max) NOT NULL,
     [ComputedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DocumentCache_ComputedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_DocumentCache] PRIMARY KEY CLUSTERED ([DocumentId])

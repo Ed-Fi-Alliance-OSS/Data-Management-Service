@@ -91,11 +91,25 @@ internal static partial class ProvisionTestHelper
             createdAt.DefaultExpression.Should().Be(timestamp.DefaultExpression);
         }
 
+        // DocumentCache carries a copy of the owner's creation timestamp. It has the owners' shape but
+        // no default: the cache materializer always writes the owner value.
+        var cacheCreatedAt = manifest
+            .Columns.Should()
+            .ContainSingle(c =>
+                c.SchemaName == "dms" && c.TableName == "DocumentCache" && c.ColumnName == "ContentCreatedAt"
+            )
+            .Subject;
+        cacheCreatedAt.IsNullable.Should().BeFalse();
+        cacheCreatedAt
+            .DataType.Should()
+            .Be(manifest.Dialect == "pgsql" ? "timestamp with time zone" : "datetime2");
+        cacheCreatedAt.DefaultExpression.Should().BeNull();
+
         manifest
             .Columns.Where(c => c.ColumnName == "ContentCreatedAt")
             .Select(c => (c.SchemaName, c.TableName))
             .Should()
-            .BeEquivalentTo(owners.Select(c => (c.SchemaName, c.TableName)));
+            .BeEquivalentTo(owners.Select(c => (c.SchemaName, c.TableName)).Append(("dms", "DocumentCache")));
         manifest
             .Indexes.Where(index => index.Columns.Contains("ContentCreatedAt"))
             .Should()
@@ -112,7 +126,8 @@ internal static partial class ProvisionTestHelper
         // Double-quoted identifiers work on both test providers; owner names are fixture constants.
         command.CommandText = $"""
             SELECT cache."LastModifiedAt", owner."ContentLastModifiedAt",
-                cache."ContentVersion", document."ContentVersion", owner."ContentVersion"
+                cache."ContentVersion", document."ContentVersion", owner."ContentVersion",
+                cache."ContentCreatedAt", owner."ContentCreatedAt"
             FROM "dms"."DocumentCache" cache
             INNER JOIN "dms"."Document" document ON document."DocumentId" = cache."DocumentId"
             INNER JOIN "{ownerSchema}"."{ownerTable}" owner ON owner."DocumentId" = document."DocumentId"
@@ -123,6 +138,7 @@ internal static partial class ProvisionTestHelper
         timestamp.Should().Be(reader.GetDateTime(1));
         reader.GetInt64(2).Should().Be(reader.GetInt64(3));
         reader.GetInt64(4).Should().Be(reader.GetInt64(3));
+        reader.GetDateTime(5).Should().Be(reader.GetDateTime(6));
         reader.Read().Should().BeFalse("these fixtures seed exactly one cache row");
         return timestamp;
     }
@@ -379,13 +395,13 @@ internal static partial class ProvisionTestHelper
 
                     INSERT INTO dms."DocumentCache" (
                         "DocumentId", "DocumentUuid", "ProjectName", "ResourceName", "ResourceVersion",
-                        "ContentVersion", "StreamEtag", "LastModifiedAt", "DocumentJson"
+                        "ContentVersion", "StreamEtag", "LastModifiedAt", "ContentCreatedAt", "DocumentJson"
                     )
                     SELECT
                         document."DocumentId", document."DocumentUuid", resource_key."ProjectName",
                         resource_key."ResourceName", resource_key."ResourceVersion", document."ContentVersion",
                         'preserved-etag-' || document."ContentVersion"::text,
-                        descriptor."ContentLastModifiedAt", '{"id":"preserved"}'::jsonb
+                        descriptor."ContentLastModifiedAt", descriptor."ContentCreatedAt", '{"id":"preserved"}'::jsonb
                     FROM dms."Document" document
                     INNER JOIN dms."Descriptor" descriptor
                         ON descriptor."DocumentId" = document."DocumentId"
@@ -419,13 +435,13 @@ internal static partial class ProvisionTestHelper
 
                     INSERT INTO [dms].[DocumentCache] (
                         [DocumentId], [DocumentUuid], [ProjectName], [ResourceName], [ResourceVersion],
-                        [ContentVersion], [StreamEtag], [LastModifiedAt], [DocumentJson]
+                        [ContentVersion], [StreamEtag], [LastModifiedAt], [ContentCreatedAt], [DocumentJson]
                     )
                     SELECT
                         document.[DocumentId], document.[DocumentUuid], resource_key.[ProjectName],
                         resource_key.[ResourceName], resource_key.[ResourceVersion], document.[ContentVersion],
                         CONCAT(N'preserved-etag-', CONVERT(varchar(20), document.[ContentVersion])),
-                        descriptor.[ContentLastModifiedAt], N'{"id":"preserved"}'
+                        descriptor.[ContentLastModifiedAt], descriptor.[ContentCreatedAt], N'{"id":"preserved"}'
                     FROM [dms].[Document] document
                     INNER JOIN [dms].[Descriptor] descriptor
                         ON descriptor.[DocumentId] = document.[DocumentId]
