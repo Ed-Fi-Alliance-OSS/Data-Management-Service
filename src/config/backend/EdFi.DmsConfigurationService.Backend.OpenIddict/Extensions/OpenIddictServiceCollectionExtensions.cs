@@ -55,10 +55,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     configuration.GetValue<string>("IdentitySettings:CertificatePassword") ?? string.Empty;
                 options.EncryptionKey =
                     configuration.GetValue<string>("IdentitySettings:EncryptionKey") ?? string.Empty;
-                options.KeyFormatCacheSize = configuration.GetValue<int>(
-                    "IdentitySettings:KeyFormatCacheSize",
-                    100
-                );
                 options.ClientSecretHashingIterations = configuration.GetValue<int>(
                     "IdentitySettings:ClientSecretHashingIterations",
                     options.ClientSecretHashingIterations

@@ -174,6 +174,7 @@ Compose files map them to the new keys.
 | `AppSettings:ApiSchemaPath` | `AppSettings:ApiSchema:Path` | `AppSettings__ApiSchema__Path` | No custom path is set |
 | `IdentitySettings:TokenCleanupEnabled` (Configuration Service, 8.1 pre-release builds only) | `IdentitySettings:TokenCleanup:Enabled` | `IdentitySettings__TokenCleanup__Enabled` | Token cleanup stays on |
 | `IdentitySettings:TokenCleanupIntervalMinutes` (Configuration Service, 8.1 pre-release builds only) | `IdentitySettings:TokenCleanup:IntervalMinutes` | `IdentitySettings__TokenCleanup__IntervalMinutes` | The sweep runs every 30 minutes |
+| `IdentitySettings:KeyFormatCacheSize` (Configuration Service) | Removed. The signing-key format cache it sized no longer exists. | None | Ignored |
 
 With one switch for both claimset operations, a deployment that kept
 `EnableClaimsetReload=false` but sets `AppSettings:ManagementEndpoints:Enabled=true` and a valid
@@ -1512,7 +1513,6 @@ them, so the defaults apply unless you add them.
 | `IdentitySettings.SigningKeyMaxStalenessSeconds` | `3600` | from 2 × the refresh interval to 86,400 | How long after its last successful load a snapshot can still be used while reloads fail. After that, every authenticated request answers 503. Also bounds how long a key retired during a key-store outage can still be accepted. The snapshot's age is the larger of its wall-clock age and the elapsed (monotonic) time, so setting the system clock back does not extend this bound. |
 | `IdentitySettings.SigningKeyUnknownKeyRefreshCooldownSeconds` | `30` | 1–3,600 | Minimum elapsed time after the last completed load before a token with an unknown key id may trigger a reload. It is measured on the monotonic clock, so a system clock change neither shortens nor extends it. It applies to the whole instance, not to each caller, and protects the key store's database from reads driven by made-up key ids. One exception per instance: when the first successful load finds no key, one reload may start inside the cooldown, so a fresh store's first key, inserted after startup, is accepted promptly. |
 | `IdentitySettings.SigningKeyLoadTimeoutSeconds` | `10` | 1–60, and less than the refresh interval | How long one load may run before it is canceled and counted as failed. |
-| `IdentitySettings.KeyFormatCacheSize` | `100` | any | **Ignored.** The key-format cache it sized was removed. The setting still binds, so existing configuration keeps working, but it has no effect. |
 
 The Configuration Service checks these values at startup and refuses to start when one is out of
 range. It reports every failing rule, and each message names the `IdentitySettings:` key, its
