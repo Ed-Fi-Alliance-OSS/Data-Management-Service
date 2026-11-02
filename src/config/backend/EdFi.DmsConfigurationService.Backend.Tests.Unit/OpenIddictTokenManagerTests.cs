@@ -3684,6 +3684,64 @@ public class OpenIddictTokenManagerTests
         public void It_returns_a_success_result() => _result.Should().BeOfType<TokenResult.Success>();
     }
 
+    // The fixture above runs on the default lifetime, so it cannot tell a lifetime read from
+    // IdentityOptions apart from a hardcoded 30 minutes. A non-default value can.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithAConfiguredTokenLifetime : OpenIddictTokenManagerTests
+    {
+        private const int ConfiguredMinutes = 45;
+
+        private StoredTokenCall _call = null!;
+        private DateTimeOffset _before;
+        private DateTimeOffset _after;
+        private int _expiresIn;
+        private JwtSecurityToken _accessToken = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient();
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => _call = call);
+
+            _before = DateTimeOffset.UtcNow;
+            TokenResult result = await NewTokenManager(
+                    new IdentityOptions
+                    {
+                        Authority = TestIssuer,
+                        Audience = TestAudience,
+                        EncryptionKey = "test-encryption-key",
+                        TokenExpirationMinutes = ConfiguredMinutes,
+                    }
+                )
+                .GetAccessTokenAsync(GrantCredentials());
+            _after = DateTimeOffset.UtcNow;
+
+            string json = result.Should().BeOfType<TokenResult.Success>().Subject.Token;
+            System.Text.Json.JsonElement response = System.Text.Json.JsonDocument.Parse(json).RootElement;
+            _expiresIn = response.GetProperty("expires_in").GetInt32();
+            _accessToken = new JwtSecurityTokenHandler().ReadJwtToken(
+                response.GetProperty("access_token").GetString()
+            );
+        }
+
+        [Test]
+        public void It_returns_the_configured_lifetime_as_expires_in() =>
+            _expiresIn.Should().Be(ConfiguredMinutes * 60);
+
+        [Test]
+        public void It_mints_a_token_that_expires_one_configured_lifetime_after_issue() =>
+            (_accessToken.ValidTo - _accessToken.IssuedAt)
+                .Should()
+                .Be(TimeSpan.FromMinutes(ConfiguredMinutes));
+
+        [Test]
+        public void It_stores_an_expiration_one_configured_lifetime_ahead()
+        {
+            _call.Expiration.Should().BeOnOrAfter(_before.AddMinutes(ConfiguredMinutes));
+            _call.Expiration.Should().BeOnOrBefore(_after.AddMinutes(ConfiguredMinutes));
+        }
+    }
+
     [TestFixture]
     public class Given_GetAccessTokenAsync_WhenTheClientIsAtItsTokenLimit : OpenIddictTokenManagerTests
     {

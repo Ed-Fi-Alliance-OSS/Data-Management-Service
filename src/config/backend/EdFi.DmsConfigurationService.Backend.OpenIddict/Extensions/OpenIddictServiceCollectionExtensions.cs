@@ -106,6 +106,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                 )
                 .ValidateOnStart();
 
+            // A non-positive lifetime mints tokens that are already expired, so without this every
+            // token would be rejected instead of startup failing.
+            services
+                .AddOptions<IdentityOptions>()
+                .Validate(
+                    options => options.TokenExpirationMinutes > 0,
+                    "IdentitySettings:TokenExpirationMinutes must be greater than zero."
+                )
+                .ValidateOnStart();
+
             return services;
         }
 

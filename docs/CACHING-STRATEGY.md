@@ -254,7 +254,7 @@ built-in stampede protection
 
 **Invalidation Strategy:**
 
-- TTL matches the token's `expires_in` value from the Configuration Service response
+- TTL is `CacheSettings:TokenCacheExpirationSeconds` (default 1500); the token's `expires_in` is not consulted, so the Configuration Service's `IdentitySettings:TokenExpirationMinutes` must not be shorter than this TTL
 - No manual invalidation - relies on automatic expiration
 - Cache-aside pattern: fetches new token when cache miss occurs
 

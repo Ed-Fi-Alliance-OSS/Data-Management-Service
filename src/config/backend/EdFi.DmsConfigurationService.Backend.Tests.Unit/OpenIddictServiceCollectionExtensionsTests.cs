@@ -27,13 +27,13 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
 /// <summary>
 /// Covers what <see cref="OpenIddictServiceCollectionExtensions.AddOpenIddictIdentityOptions"/>
-/// actually reads out of configuration. Nothing else does: the token-manager tests construct
+/// actually reads out of configuration. The token-manager tests construct
 /// <see cref="IdentityOptions"/> directly and the HTTP tests replace <c>ITokenManager</c>
-/// wholesale, so a key spelled wrong here would bind nothing and fail no test.
+/// wholesale, so a key spelled wrong here would bind nothing and fail none of them.
 ///
-/// A key spelled differently in the shipped appsettings.json would likewise bind nothing. The
-/// Configuration Service frontend unit tests check every shipped <c>IdentitySettings</c> key
-/// against what the readers actually read.
+/// The Configuration Service frontend unit tests also run this method against the shipped
+/// appsettings.json, and fail when a shipped <c>IdentitySettings</c> key is not one that this
+/// method or another reader asks for. A key the shipped file does not carry is covered only here.
 /// </summary>
 [TestFixture]
 public class OpenIddictServiceCollectionExtensionsTests
@@ -152,6 +152,63 @@ public class OpenIddictServiceCollectionExtensionsTests
         // name, this would silently come back as the default 30.
         [Test]
         public void It_binds_the_configured_value() => _options.TokenExpirationMinutes.Should().Be(45);
+    }
+
+    [TestFixture]
+    public class Given_a_positive_token_expiration_is_configured
+    {
+        private Action _validate = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _validate = ValidateAtStartup(
+                new Dictionary<string, string?> { ["IdentitySettings:TokenExpirationMinutes"] = "1" }
+            );
+
+        [Test]
+        public void It_passes_startup_validation() => _validate.Should().NotThrow();
+    }
+
+    /// <summary>
+    /// A token minted with a non-positive lifetime is already expired, so an unchecked value would
+    /// only show up as every token being rejected.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_zero_token_expiration_is_configured
+    {
+        private Action _validate = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _validate = ValidateAtStartup(
+                new Dictionary<string, string?> { ["IdentitySettings:TokenExpirationMinutes"] = "0" }
+            );
+
+        [Test]
+        public void It_fails_startup_validation() =>
+            _validate
+                .Should()
+                .Throw<OptionsValidationException>()
+                .WithMessage("*IdentitySettings:TokenExpirationMinutes must be greater than zero*");
+    }
+
+    [TestFixture]
+    public class Given_a_negative_token_expiration_is_configured
+    {
+        private Action _validate = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _validate = ValidateAtStartup(
+                new Dictionary<string, string?> { ["IdentitySettings:TokenExpirationMinutes"] = "-5" }
+            );
+
+        [Test]
+        public void It_fails_startup_validation() =>
+            _validate
+                .Should()
+                .Throw<OptionsValidationException>()
+                .WithMessage("*IdentitySettings:TokenExpirationMinutes must be greater than zero*");
     }
 
     [TestFixture]
