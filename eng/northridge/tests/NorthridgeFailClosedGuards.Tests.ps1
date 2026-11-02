@@ -1873,6 +1873,44 @@ Describe 'Compact descriptor carry-forward contracts and independent allocator g
         $loader | Should -Match "Staged and inserted row counts differ"
         $loader | Should -Not -Match 'SELECT \*'
     }
+    It 'Admits a target-only owner ContentCreatedAt that a legacy dump predates on <QualifiedTable>' -ForEach @(
+        @{ QualifiedTable = 'dms.Descriptor' },
+        @{ QualifiedTable = 'edfi.Student' }
+    ) {
+        $legacy = @(
+            [pscustomobject]@{ Name = 'DocumentId'; Type = 'bigint'; Generated = $false },
+            [pscustomobject]@{ Name = 'ContentLastModifiedAt'; Type = 'timestamp with time zone'; Generated = $false }
+        )
+        if ($QualifiedTable -ceq 'dms.Descriptor') {
+            $legacy += @(
+                [pscustomobject]@{ Name = 'Uri'; Type = 'character varying(306)'; Generated = $false },
+                [pscustomobject]@{ Name = 'Discriminator'; Type = 'character varying(256)'; Generated = $false }
+            )
+        }
+        $current = @($legacy | Where-Object { $_.Name -cnotin @('Uri', 'Discriminator') })
+        $createdAt = [pscustomobject]@{ Name = 'ContentCreatedAt'; Type = 'timestamp with time zone'; Generated = $false }
+        { Assert-CopyColumnShape -QualifiedTable $QualifiedTable -Source $legacy -Target ($current + $createdAt) -Inventory $compactInventory } |
+            Should -Not -Throw
+        # A source that carries the column is still held to its shape.
+        $mistyped = [pscustomobject]@{ Name = 'ContentCreatedAt'; Type = 'text'; Generated = $false }
+        { Assert-CopyColumnShape -QualifiedTable $QualifiedTable -Source ($legacy + $mistyped) -Target ($current + $createdAt) -Inventory $compactInventory } |
+            Should -Throw "*Mismatched legacy source type: $QualifiedTable/ContentCreatedAt*"
+        # The exception is that one column; any other target-only column still stops the copy.
+        $extra = [pscustomobject]@{ Name = 'Extra'; Type = 'bigint'; Generated = $false }
+        { Assert-CopyColumnShape -QualifiedTable $QualifiedTable -Source $legacy -Target ($current + $createdAt + $extra) -Inventory $compactInventory } |
+            Should -Throw "*Missing/mismatched source-shape coverage: $QualifiedTable/Extra*"
+    }
+    It 'Refuses a current-shape dms.Descriptor source, the only kind that has ContentCreatedAt' {
+        $current = @(
+            [pscustomobject]@{ Name = 'DescriptorId'; Type = 'integer'; Generated = $false },
+            [pscustomobject]@{ Name = 'DocumentId'; Type = 'bigint'; Generated = $false },
+            [pscustomobject]@{ Name = 'ResourceKeyId'; Type = 'smallint'; Generated = $false },
+            [pscustomobject]@{ Name = 'ContentLastModifiedAt'; Type = 'timestamp with time zone'; Generated = $false },
+            [pscustomobject]@{ Name = 'ContentCreatedAt'; Type = 'timestamp with time zone'; Generated = $false }
+        )
+        { Assert-CopyColumnShape -QualifiedTable 'dms.Descriptor' -Source $current -Target $current -Inventory $compactInventory } |
+            Should -Throw '*Expected legacy dms.Descriptor/Discriminator in source*'
+    }
     It 'Requires generated aliases to retain their compact target type and skips remapping them' {
         $source = @([pscustomobject]@{ Name = 'PrimarySchoolTypeDescriptor_DescriptorId'; Type = 'bigint'; Generated = $true })
         $target = @([pscustomobject]@{ Name = 'PrimarySchoolTypeDescriptor_DescriptorId'; Type = 'integer'; Generated = $true })

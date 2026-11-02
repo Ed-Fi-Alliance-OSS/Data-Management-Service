@@ -55,6 +55,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
@@ -94,6 +95,7 @@ BEGIN
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
         NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
         SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
