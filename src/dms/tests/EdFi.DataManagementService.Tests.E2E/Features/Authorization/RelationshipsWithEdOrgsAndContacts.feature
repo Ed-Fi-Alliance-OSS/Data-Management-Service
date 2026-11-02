@@ -731,12 +731,14 @@ Feature: RelationshipsWithEdOrgsAndContacts Authorization
               And the response body is
                   """
                     {
-                      "detail": "Access to the requested data could not be authorized. The 'StudentUniqueId' value is required for authorization purposes. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-                      "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
+                      "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
                       "validationErrors": {},
-                      "errors": []
+                      "errors": [
+                        "No relationships have been established between the caller's education organization id claims ('255901901', '25590190200000') and the resource item's 'StudentUniqueId' value."
+                      ]
                     }
                   """
 

@@ -849,13 +849,15 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the requested data could not be authorized. The values of one or more of the following properties are required for authorization purposes: 'SchoolId', 'StudentUniqueId'. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-                      "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
+                      "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
                       "correlationId": null,
                       "validationErrors": {},
-                      "errors": []
+                      "errors": [
+                        "No relationships have been established between the caller's education organization id claims ('4255901001', '4255902001') and one or more of the following properties of the resource item: 'SchoolId', 'StudentUniqueId'."
+                      ]
                   }
                   """
 
@@ -1294,12 +1296,14 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the response body is
                   """
                   {
-                  "detail": "Access to the requested data could not be authorized. The values of one or more of the following properties are required for authorization purposes: 'EducationOrganizationId', 'StudentUniqueId'. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-                  "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
+                  "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                  "type": "urn:ed-fi:api:security:authorization",
                   "title": "Authorization Denied",
                   "status": 403,
                   "validationErrors": {},
-                  "errors": []
+                  "errors": [
+                    "No relationships have been established between the caller's education organization id claim ('5255901001') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."
+                  ]
                   }
                   """
 
