@@ -3660,7 +3660,7 @@ public class OpenIddictTokenManagerTests
         public void It_passes_the_client_id_as_the_subject() => _call.Subject.Should().Be(GrantClientId);
 
         /// <summary>
-        /// DMS-1493 D-11: the store re-validates against the stored hash the grant authenticated
+        /// The store re-validates against the stored hash the grant authenticated
         /// against. Passing anything else, the presented secret included, refuses every grant.
         /// </summary>
         [Test]
@@ -3852,7 +3852,7 @@ public class OpenIddictTokenManagerTests
     }
 
     /// <summary>
-    /// DMS-1493 D-11: a credential reset or un-approval that committed before the store took the
+    /// A credential reset or un-approval that committed before the store took the
     /// row lock. The token was minted but not stored, so the grant must be refused exactly as a
     /// vanished client is; falling through would hand out a token the store never recorded.
     /// </summary>

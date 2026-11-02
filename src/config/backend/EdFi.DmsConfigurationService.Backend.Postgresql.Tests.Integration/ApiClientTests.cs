@@ -1527,7 +1527,7 @@ public class ApiClientTests : DatabaseTest
     }
 
     /// <summary>
-    /// Shared arrangement for the un-approval participant call (DMS-1493 D-3). A recording fake
+    /// Shared arrangement for the un-approval participant call. A recording fake
     /// stands in for the participant, so these fixtures pin only what <see cref="ApiClientRepository"/>
     /// owes it: whether it is called, with which identifier, and on which transaction. The fake reads
     /// the stored approval and writes a marker through the connection and transaction it is handed;

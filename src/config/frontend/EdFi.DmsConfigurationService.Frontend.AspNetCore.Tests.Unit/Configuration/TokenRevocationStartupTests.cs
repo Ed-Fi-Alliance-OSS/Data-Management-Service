@@ -150,7 +150,7 @@ public class TokenRevocationStartupTests
             : typeof(Backend.Postgresql.Repositories.ApiClientRepository);
 
     /// <summary>
-    /// DMS-1493 D-3: the API client repository requires an un-approval participant, and each
+    /// The API client repository requires an un-approval participant, and each
     /// composition <c>Program</c> builds supplies its provider's: self-contained the OpenIddict one,
     /// Keycloak the explicit no-op. Nothing is replaced; the registrations are only read. This
     /// resolves through the overloads <c>Program</c> calls (the default PostgreSQL one, MSSQL and

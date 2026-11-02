@@ -30,7 +30,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 {
     /// <summary>
     /// The stored secret hash every <see cref="RegisterApplicationAsync"/> application carries,
-    /// and so the one a store re-validates against unless a test changed it (DMS-1493 D-11).
+    /// and so the one a store re-validates against unless a test changed it.
     /// </summary>
     protected const string RegisteredSecret = "hashed-secret";
 
@@ -39,7 +39,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     /// under the store's own 5 s lock timeout (<c>OpenIddictDataRepository.LockTimeoutMilliseconds</c>),
     /// after which the grant stops waiting and answers <see cref="TokenStoreOutcome.LockTimeout"/>;
     /// the probe is raced against the grant, so a grant that finishes first fails the test
-    /// naming its outcome instead (DMS-1493 R2-F1).
+    /// naming its outcome instead.
     /// </summary>
     protected static readonly TimeSpan GrantBlockedObservationTimeout = TimeSpan.FromSeconds(3);
 
@@ -693,7 +693,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
     /// <summary>
     /// The client changes that revoke its tokens and must refuse every grant that waited behind
-    /// them (DMS-1493 §8.1).
+    /// them.
     /// </summary>
     public enum LifecycleChange
     {
@@ -1259,7 +1259,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         }
     }
 
-    // DMS-1493 D-1: lifecycle revocation is one UPDATE constrained by the stored ApplicationId and an
+    // Lifecycle revocation is one UPDATE constrained by the stored ApplicationId and an
     // unrevoked status, run inside the caller's transaction. These fixtures pin each property against
     // the real engine.
 
@@ -1333,7 +1333,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     /// One of the target's three unrevoked tokens is already expired: the UPDATE has no expiry or type
     /// filter, so it counts. The pre-revoked token carries the sentinel date; without the status
     /// predicate the result is 4 and the sentinel is overwritten. The bystander is a real registered
-    /// application, so only the ApplicationId predicate keeps its tokens valid.
+    /// application, so only the ApplicationId predicate keeps its tokens valid. The revocation runs
+    /// in a session whose time zone is fourteen hours ahead of UTC, and the transaction's own
+    /// timestamp is read in UTC alongside it, so a redemption date written in session-local time
+    /// is caught without depending on the clock.
     /// </summary>
     [TestFixture]
     public class Given_RevokeTokensForApplicationAsync_For_An_Application_With_Outstanding_Tokens
@@ -1344,6 +1347,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         private Guid _preRevokedTokenId;
         private Guid[] _bystanderTokenIds = null!;
         private int _result;
+        private DateTime _transactionUtcTimestamp;
+        private DateTime _transactionLocalTimestamp;
 
         [SetUp]
         public async Task Setup()
@@ -1376,7 +1381,22 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 await StoreValidTokenAsync(_repository, bystanderApplicationId, FarFuture),
             ];
 
-            _result = await RevokeTokensForApplicationInTransactionAsync(_repository, applicationId);
+            await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+            await using NpgsqlTransaction transaction = await connection.BeginTransactionAsync();
+            await connection.ExecuteAsync(
+                "SET LOCAL TIME ZONE 'Pacific/Kiritimati'",
+                transaction: transaction
+            );
+            _result = await _repository.RevokeTokensForApplicationAsync(
+                applicationId,
+                connection,
+                transaction
+            );
+            (_transactionUtcTimestamp, _transactionLocalTimestamp) = await connection.QuerySingleAsync<(
+                DateTime,
+                DateTime
+            )>("SELECT CURRENT_TIMESTAMP AT TIME ZONE 'UTC', LOCALTIMESTAMP", transaction: transaction);
+            await transaction.CommitAsync();
         }
 
         [Test]
@@ -1396,6 +1416,16 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 .And.AllSatisfy(redemptionDate =>
                     redemptionDate.Should().NotBeNull().And.NotBe(SentinelRedemptionDate)
                 );
+
+        [Test]
+        public void It_revoked_in_a_session_whose_local_time_is_not_utc() =>
+            _transactionLocalTimestamp.Should().Be(_transactionUtcTimestamp.AddHours(14));
+
+        [Test]
+        public async Task It_stores_their_redemption_dates_as_the_transaction_timestamp_in_utc() =>
+            (await RedemptionDatesAsync(_unrevokedTokenIds))
+                .Should()
+                .Equal(_transactionUtcTimestamp, _transactionUtcTimestamp, _transactionUtcTimestamp);
 
         [Test]
         public async Task It_preserves_the_already_revoked_tokens_redemption_date()
@@ -1557,7 +1587,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 D-1/D-2: the lock every lifecycle transaction takes first. A second session asks for
+    /// The lock every lifecycle transaction takes first. A second session asks for
     /// the same row lock a grant takes, and <c>WaitUntilABackendIsBlockedBy</c> must see it
     /// waiting on a lock the locking transaction's backend owns, so an implementation that only
     /// reads the row fails here.
@@ -2146,7 +2176,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     /// <summary>
     /// The opt-out an operator configures with a value below 1. It stores however many active
     /// tokens the client already holds, but under the same row lock and re-validation as the
-    /// enforcing path (DMS-1493 D-9).
+    /// enforcing path.
     /// </summary>
     [TestFixture]
     public class Given_Enforcement_Is_Disabled : OpenIddictDataRepositoryTests
@@ -2242,7 +2272,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 D-11: a credential reset committed before the store took the lock. The grant
+    /// A credential reset committed before the store took the lock. The grant
     /// authenticated against <see cref="RegisteredSecret"/>, the stored secret is now another
     /// value, and the store must refuse without inserting under either limit setting. The
     /// case-only variant pins the ordinal comparison, which a comparison under a case-insensitive
@@ -2333,7 +2363,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 D-11: an un-approval committed before the store took the lock. The approval is
+    /// An un-approval committed before the store took the lock. The approval is
     /// re-read from <c>ApiClient</c> under the lock, so the store refuses under either limit
     /// setting.
     /// </summary>
@@ -2457,7 +2487,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 fixture C-3, §8.1 case (ii): a grant that arrives while a credential reset,
+    /// Concurrency: a grant that arrives while a credential reset,
     /// deletion or un-approval transaction is still open. The transaction makes its change and
     /// revokes the client's tokens, then holds at a gate; <c>pg_locks</c> must show the grant
     /// waiting on that transaction's backend, and once it commits the grant must refuse without
@@ -2465,7 +2495,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     /// starts with an approved API client row that the un-approval sets to false inside the held
     /// transaction. A store that takes no lock finishes before the probe sees it waiting; one that
     /// re-validated inside its <c>FOR UPDATE</c> statement would read the snapshot taken before
-    /// that statement blocked, still see the client approved, and store (A-3).
+    /// that statement blocked, still see the client approved, and store.
     /// </summary>
     [TestFixture(LifecycleChange.CredentialReset, EnforcementDisabled)]
     [TestFixture(LifecycleChange.CredentialReset, 15)]
@@ -2633,7 +2663,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             (await _repository.GetTokenStatusAsync(_earlierTokenId)).Should().Be("revoked");
     }
 
-    // DMS-1493 Step 3.4: credential reset through its production caller,
+    // Credential reset through its production caller,
     // OpenIddictClientRepository.ResetCredentialsAsync, against the real engine repository.
 
     /// <summary>
@@ -2692,7 +2722,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 fixture C-1 for a reset, §8.1 case (i): a grant that already holds the client's
+    /// Concurrency with a reset: a grant that already holds the client's
     /// application row lock when the reset starts. <c>pg_locks</c> must show the reset waiting on
     /// the holder's backend; the holder then inserts a token and commits, so the reset has to
     /// revoke it. A reset that does not write the application row first finishes before the probe
@@ -2779,7 +2809,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 fixture C-2 for a reset, §8.1 case (ii): a grant that authenticated against the old
+    /// Concurrency with a reset: a grant that authenticated against the old
     /// secret and reaches the store after the reset committed is refused under either limit
     /// setting. A grant carrying the new hash is stored, so the refusal comes from the changed
     /// secret alone and not from the client being otherwise unusable.
@@ -2847,7 +2877,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 whole-lifecycle rollback for a reset (D-7): the revocation fails after the secret
+    /// Whole-lifecycle rollback for a reset: the revocation fails after the secret
     /// write succeeded in the same transaction. The reset reports an unknown failure, and the
     /// engine keeps neither change: the stored hash is still the registered one and every token
     /// is still valid.
@@ -2924,7 +2954,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             (await TokenStatusesAsync(_repository, _tokenIds)).Should().Equal("valid", "valid");
     }
 
-    // DMS-1493 Step 3.5: client deletion through its production caller,
+    // Client deletion through its production caller,
     // OpenIddictClientRepository.DeleteClientAsync, against the real engine repository.
 
     /// <summary>
@@ -3051,7 +3081,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 D-6: an application row already deleted without revoking its tokens, as every
+    /// An application row already deleted without revoking its tokens, as every
     /// deletion did before this change, leaves valid orphan tokens. Deleting the client again
     /// answers not found and still commits the revocation, so the orphans converge to revoked.
     /// </summary>
@@ -3103,7 +3133,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 fixture C-1 for a deletion, §8.1 case (i): a grant that already holds the client's
+    /// Concurrency with a deletion: a grant that already holds the client's
     /// application row lock when the deletion starts. <c>pg_locks</c> must show the deletion
     /// waiting on the holder's backend; the holder then inserts a token and commits, so the
     /// deletion has to revoke it. A deletion that does not delete the application row first
@@ -3192,7 +3222,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 fixture C-2 for a deletion, §8.1 case (ii): a grant that reaches the store after
+    /// Concurrency with a deletion: a grant that reaches the store after
     /// the deletion committed is refused as not found under either limit setting and writes no
     /// row. The same client's grant before the deletion was stored, so the refusal comes from the
     /// deletion alone, and the deletion revoked that earlier token.
@@ -3257,7 +3287,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 whole-lifecycle rollback for a deletion (D-7): the revocation fails after the
+    /// Whole-lifecycle rollback for a deletion: the revocation fails after the
     /// application row, and with it its scope and client-role rows, was deleted in the same
     /// transaction. The deletion reports an unknown failure, and the engine keeps neither change:
     /// the application row, its scope and client-role rows and every token are as they were.
@@ -3357,7 +3387,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             (await TokenStatusesAsync(_repository, _tokenIds)).Should().Equal("valid", "valid");
     }
 
-    // DMS-1493 Step 3.6: un-approval through its production caller, the CMS
+    // Un-approval through its production caller, the CMS
     // ApiClientRepository.UpdateApiClient, with the real OpenIddict participant against the real
     // engine repository. Each API client row carries its OpenIddict application id as ClientUuid.
 
@@ -3429,7 +3459,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// The regression control (R2-F3): the same update with the client kept approved, renamed only,
+    /// The regression control: the same update with the client kept approved, renamed only,
     /// commits the new name and leaves every token valid with no redemption date. Fails if the
     /// revocation runs on every update instead of on un-approval.
     /// </summary>
@@ -3620,7 +3650,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 fixture C-1 for an un-approval, §8.1 case (i): a grant that already holds the
+    /// Concurrency with an un-approval: a grant that already holds the
     /// client's application row lock when the CMS update starts. <c>pg_locks</c> must show the
     /// update waiting on the holder's backend, at its participant's lock; the holder then inserts a
     /// token and commits, so the update has to revoke it. An update whose participant takes no lock
@@ -3715,7 +3745,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 fixture C-2 for an un-approval, §8.1 case (ii): a grant that authenticated while
+    /// Concurrency with an un-approval: a grant that authenticated while
     /// the client was approved and reaches the store after the un-approval committed is refused
     /// under either limit setting and writes no row. The same client's grant before the
     /// un-approval was stored, so the refusal comes from the un-approval alone, and the
@@ -3785,14 +3815,14 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 fixture C-3 for an un-approval, §8.1 case (ii), with the CMS update's own
+    /// Concurrency with an un-approval, with the CMS update's own
     /// transaction as the blocker. A participant wrapping the real one lets it lock and revoke,
     /// records the transaction's backend and holds at a gate before returning, so the update has
     /// not yet written <c>IsApproved</c>. <c>pg_locks</c> must show a grant waiting on that backend;
     /// once the gate opens the update writes the un-approval and commits, and the grant must refuse
     /// without storing. A store that takes no lock finishes before the probe sees it waiting; one
     /// that re-validated from the snapshot its blocked lock statement took would still see the
-    /// client approved and store (A-3).
+    /// client approved and store.
     /// </summary>
     [TestFixture(EnforcementDisabled)]
     [TestFixture(15)]
@@ -3924,7 +3954,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 whole-lifecycle rollback for an un-approval (D-7), participant side: a participant
+    /// Whole-lifecycle rollback for an un-approval, participant side: a participant
     /// wrapping the real one lets it lock and revoke inside the CMS update's transaction, then
     /// fails. The update reports an unknown failure and rolls back both changes: the client keeps
     /// its approval and name, and the tokens the real participant had revoked are valid again.
@@ -3998,12 +4028,12 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// DMS-1493 whole-lifecycle rollback for an un-approval (D-7), CMS side: the real participant
+    /// Whole-lifecycle rollback for an un-approval, CMS side: the real participant
     /// locks and revokes, then the <c>ApiClient</c> UPDATE matches no row because the target
     /// application does not exist. The update reports the missing application and rolls the
     /// revocation back with it: the client keeps its approval, name and application, and every
     /// token is valid. The participant logged the revocation as pending in that transaction, not
-    /// as done (S3.3-F1).
+    /// as done.
     /// </summary>
     [TestFixture]
     public class Given_An_Un_Approval_Whose_Client_Update_Fails : OpenIddictDataRepositoryTests

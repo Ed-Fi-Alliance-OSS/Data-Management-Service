@@ -2,8 +2,8 @@
 Feature: Client lifecycle token revocation
     Resetting a client's credentials, deleting the client, or un-approving it revokes every
     outstanding token the self-contained provider issued to it (DMS-1493); the application-level
-    reset and delete do the same for their clients. A token's state is read through the
-    Configuration Service's own bearer validation, which checks the token's stored status. GET
+    reset and delete, and the vendor delete, do the same for their clients. A token's state is read
+    through the Configuration Service's own bearer validation, which checks the token's stored status. GET
     /v3/vendors with a client's token answers 403 while the token is valid: the token authenticates,
     but its client role is not authorised for /v3/vendors (authenticated but unauthorised). Once
     the token is revoked it no longer authenticates and the same request answers 401. A 403 after
@@ -247,3 +247,81 @@ Feature: Client lifecycle token revocation
             # Authenticated but unauthorised: another application's client keeps its token.
              When a GET request is made to "/v3/vendors" with the token captured as "survivor1"
              Then it should respond with 403
+
+        @MssqlRepresentative
+        Scenario: 06 Deleting a vendor revokes the tokens of every client of every application it has
+             When a GET request is made to "/v3/applications/{lifecycleApplicationId}"
+             Then it should respond with 200
+              And the response body property "vendorId" is captured as "lifecycleVendorId"
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {lifecycleVendorId},
+                   "applicationName": "Second Lifecycle Application",
+                   "claimSetName": "TestClaim01",
+                   "dataStoreIds": []
+                  }
+                  """
+             Then it should respond with 201
+              And the response body credentials are captured as "secondApplication"
+             When a token is requested with the credentials captured as "secondApplication" and scope "TestClaim01"
+             Then it should respond with 200
+              And the access token in the response is captured as "secondApplication1"
+             When a POST request is made to "/v3/vendors" with
+                  """
+                    {
+                        "company": "Unrelated Vendor {scenarioRunId}",
+                        "contactName": "Unrelated",
+                        "contactEmailAddress": "unrelated@example.com",
+                        "namespacePrefixes": "uri://ed-fi-e2e.org"
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "unrelatedVendorId"
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {unrelatedVendorId},
+                   "applicationName": "Unrelated Application",
+                   "claimSetName": "TestClaim01",
+                   "dataStoreIds": []
+                  }
+                  """
+             Then it should respond with 201
+              And the response body credentials are captured as "unrelated"
+             When a token is requested with the credentials captured as "unrelated" and scope "TestClaim01"
+             Then it should respond with 200
+              And the access token in the response is captured as "unrelated1"
+            # Authenticated but unauthorised: every token is valid before the deletion.
+             When a GET request is made to "/v3/vendors" with the token captured as "victim1"
+             Then it should respond with 403
+             When a GET request is made to "/v3/vendors" with the token captured as "bystander"
+             Then it should respond with 403
+             When a GET request is made to "/v3/vendors" with the token captured as "secondApplication1"
+             Then it should respond with 403
+             When a DELETE request is made to "/v3/vendors/{lifecycleVendorId}"
+             Then it should respond with 204
+            # Rejected: no token of any client of either deleted application authenticates any more.
+             When a GET request is made to "/v3/vendors" with the token captured as "victim1"
+             Then it should respond with 401
+             When a GET request is made to "/v3/vendors" with the token captured as "victim2"
+             Then it should respond with 401
+             When a GET request is made to "/v3/vendors" with the token captured as "bystander"
+             Then it should respond with 401
+             When a GET request is made to "/v3/vendors" with the token captured as "secondApplication1"
+             Then it should respond with 401
+            # Refused: no deleted client's credentials obtain a new token.
+             When a token is requested with the credentials captured as "victim" and scope "TestClaim01"
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
+             When a token is requested with the credentials captured as "bystander" and scope "TestClaim01"
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
+             When a token is requested with the credentials captured as "secondApplication" and scope "TestClaim01"
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
+            # Authenticated but unauthorised: the unrelated vendor's client keeps its token and its credentials.
+             When a GET request is made to "/v3/vendors" with the token captured as "unrelated1"
+             Then it should respond with 403
+             When a token is requested with the credentials captured as "unrelated" and scope "TestClaim01"
+             Then it should respond with 200

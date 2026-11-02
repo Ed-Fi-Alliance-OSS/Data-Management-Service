@@ -529,7 +529,7 @@ public class OpenIddictServiceCollectionExtensionsTests
         public void It_registers_one_bearer_events() => Count(typeof(SigningKeyBearerEvents)).Should().Be(1);
     }
 
-    // DMS-1493 D-3: every self-contained store registration supplies the OpenIddict un-approval
+    // Every self-contained store registration supplies the OpenIddict un-approval
     // participant that the CMS API client repository requires; there is no optional fallback.
     [TestFixture("postgresql")]
     [TestFixture("postgresql-jwt-settings")]

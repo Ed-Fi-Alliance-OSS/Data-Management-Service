@@ -150,19 +150,19 @@ its stored status rather than being marked `revoked`, so a `valid` reading in
 #### Credential reset, client deletion and un-approval revoke outstanding tokens
 
 Three client lifecycle operations mark every outstanding self-contained token of the affected
-client `revoked`, in the same database transaction that makes the change (DMS-1493):
+client `revoked`, in the same database transaction that makes the client's change (DMS-1493):
 
 | Operation | Endpoints | The client's tokens are revoked when |
 |---|---|---|
 | Credential reset | `PUT /v3/apiClients/{id}/reset-credential`, `PUT /v3/applications/{id}/reset-credential` | the new secret is committed |
-| Client deletion | `DELETE /v3/apiClients/{id}`, and `DELETE /v3/applications/{id}` for each client of the application | the client is deleted from the identity provider |
+| Client deletion | `DELETE /v3/apiClients/{id}`, `DELETE /v3/applications/{id}` for each client of the application, and `DELETE /v3/vendors/{id}` for each client of each of the vendor's applications | the client is deleted from the identity provider |
 | Un-approval | `PUT /v3/apiClients/{id}` with `isApproved: false` | `isApproved = false` is committed |
 
 Once the operation has answered success, the next Configuration Service request that presents one
 of those tokens is rejected with `401`, because the per-request status check no longer finds it
 `valid`. Tokens of clients the operation does not target do not change: a client-level operation
-leaves the application's other clients alone, while deleting an application targets every client
-it has.
+leaves the application's other clients alone, while deleting an application or a vendor targets
+every client it has.
 
 - **A grant racing the operation is revoked or refused.** Every token grant for a client takes the
   same database row lock as these operations and, while holding it, re-checks that the client
@@ -174,12 +174,19 @@ it has.
   secret after a reset, or after the client is approved again, is not stale and succeeds.
 - **Re-approval does not revive tokens.** Approving the client again lets it obtain new tokens;
   the tokens revoked by the un-approval stay revoked.
-- **All or nothing.** The change and the revocation commit together or not at all. If the
-  revocation fails before the commit, the operation rolls back: the new secret, the deletion or
-  the approval change is not persisted either, and the request fails. A success answer confirms
-  the commit. An error or a response that never arrives does not establish the outcome, because
-  the transaction may have committed before the failure was reported. Confirm the client's token
-  state, or retry: retrying is safe, and a retried reset issues another new secret.
+- **All or nothing per client transaction.** A client's change and its revocation commit together
+  or not at all: the new secret, the un-approval, or the client's deletion from the identity
+  provider. If the revocation fails before that commit, the transaction rolls back and the request
+  fails. A deletion request is not one transaction, though. It deletes each client from the
+  identity provider, each in its own transaction with its revocation, and only then deletes the
+  Configuration Service rows in a separate commit. An application or vendor deletion that fails
+  partway can therefore leave some of its clients deleted from the provider, with their tokens
+  revoked, while the Configuration Service rows of all of them survive. A provider failure stops
+  the request before those rows are deleted, so a retry finds the same clients and treats the ones
+  already deleted as done. A success answer confirms every commit. An error or a response that
+  never arrives does not establish the outcome, because a transaction may have committed before
+  the failure was reported. Confirm the client's token state, or retry: retrying is safe, and a
+  retried reset issues another new secret.
 
 **Residual DMS window.** DMS does not consult token status (see
 [DMS resource API](#dms-resource-api--stateless-bearer-validation-no-app-side-replay-cache)), so it
@@ -196,9 +203,28 @@ un-approved before that version was deployed is still `valid` in the token store
 Configuration Service accepts it until its `exp` plus the Configuration Service's fixed 5-minute
 clock skew (up to 35 minutes after issuance with the default lifetime). DMS accepts it until `exp`
 plus `ClockSkewSeconds`, as above. These are two separate bounds. Repeating the reset or the
-un-approval revokes such tokens. A client already deleted from the Configuration Service cannot be
-addressed through the API again, so its tokens are left to expire. Every such token expires within
-one token lifetime, plus the applicable clock skew, of the deployment.
+un-approval revokes such tokens. A client deleted with `DELETE /v3/apiClients/{id}` or
+`DELETE /v3/applications/{id}` before that version cannot be addressed through the API again, so
+its tokens are left to expire, within one token lifetime, plus the applicable clock skew, of the
+deployment.
+
+**Clients orphaned by earlier vendor deletions.** Before this change, `DELETE /v3/vendors/{id}`
+removed the vendor's applications and API clients from the Configuration Service without deleting
+their clients from the identity provider. Those provider clients, with their credentials and
+tokens, still exist. With no `dmscs.ApiClient` row left, such a client counts as approved, so its
+credentials can keep obtaining new tokens; its exposure is not bounded by a token lifetime after
+deployment. Deploying this version does not cut these clients off, and no Configuration Service API
+reaches them. This version provides no cleanup for them.
+
+**Concurrent creation during a vendor deletion.** A vendor deletion deletes from the identity
+provider the clients it read, and then deletes the vendor only if no other client would go with it.
+That last step locks the vendor row and the vendor's application rows before it reads the vendor's
+clients, so a client created under the vendor at the same time cannot be removed without first
+being deleted from the provider. Such a client is either one the deletion sees, and the vendor
+deletion then deletes nothing and answers `409` (a retry deletes the new client from the provider
+too), or one whose creation waits for the deletion and then fails because its vendor or
+application is gone. This covers a new application under the vendor and a new client on any of its
+applications, including one that had no client.
 
 **Keycloak mode.** The same operations regenerate the client's secret, delete the client, or
 disable it at Keycloak, so the old credentials stop obtaining new tokens. The Configuration Service
@@ -488,13 +514,25 @@ The behaviors above are exercised by automated tests:
   `Configuration/TokenRevocationStartupTests.cs` boots each datastore and identity-provider
   combination and asserts that the API client repository receives that provider's participant,
   and that a missing participant registration fails resolution instead of skipping revocation.
+  `Modules/VendorModuleTests.cs` pins that a vendor deletion deletes every client of every
+  application from the identity provider before the vendor, that a provider failure or exception
+  deletes no vendor, that a retry after a partial cleanup treats the clients already deleted
+  as done and completes, that the vendor delete is guarded by exactly the clients deleted from the
+  provider, and that a guarded delete refused because a new client appeared answers `409` and its
+  retry deletes the new client from the provider before the vendor.
+  `VendorTests.cs` in both engines' integration projects covers the guarded vendor delete: a
+  client created under the vendor (in a new application, or in one that had no client) after the
+  cleanup, whether committed before the delete or still uncommitted while the delete waits for
+  it, makes the delete refuse and keep every row; a creation arriving while the delete holds its
+  locks waits for it and then fails, leaving no client behind.
 - The Configuration Service — `EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration` and
   `Backend.Mssql.Tests.Integration` (`OpenIddictDataRepositoryTests.cs`): the revocation
   `UPDATE` changes only a row stored for the caller's application, and a second revocation
   changes nothing and keeps the original `RedemptionDate`, on both engines.
 
   For lifecycle revocation, the same files and `ApiClientTests.cs` cover, on both engines: the
-  bulk revocation (scoped to one application, idempotent, undone with its transaction) and the
+  bulk revocation (scoped to one application, idempotent, undone with its transaction, and on
+  PostgreSQL dated in UTC under a non-UTC session time zone) and the
   application-row lock; grants that wait for the lock and refuse a changed secret, an un-approved
   client or a deleted client, with the token limit enforced and disabled; reset, deletion and
   un-approval through the real repositories (the client's tokens revoked, another client's
@@ -529,7 +567,7 @@ The behaviors above are exercised by automated tests:
   and public clients (no secret, an arbitrary form secret, an arbitrary Basic secret) are
   refused with their token still active.
 - The Configuration Service — `EdFi.DmsConfigurationService.Tests.E2E/Features/ClientLifecycleRevocation.feature`
-  (self-contained only; scenarios 01–03 also run in the SQL Server lane): a client's token
+  (self-contained only; scenarios 01–03 and 06 also run in the SQL Server lane): a client's token
   answers `403` on `GET /v3/vendors` while valid (authenticated but not authorized) and `401`
   once revoked. Client credential reset rejects both of the client's earlier tokens, leaves another
   client's token valid, accepts a token obtained with the new secret, and introspection with the
@@ -537,7 +575,10 @@ The behaviors above are exercised by automated tests:
   credentials with `invalid_client`. Un-approval refuses new grants; after re-approval the earlier
   tokens stay rejected and a new token is accepted. Application credential reset rejects the
   application's earlier token, and deleting an application with several clients rejects every
-  captured token of its clients while another application's token stays valid.
+  captured token of its clients while another application's token stays valid. Deleting a vendor
+  with clients in two applications rejects every captured token of those clients and refuses
+  their credentials with `invalid_client`, while another vendor's client keeps its token and can
+  obtain a new one.
 - The Configuration Service — `EdFi.DmsConfigurationService.Tests.E2E/Keycloak/KeycloakRevocationCharacterizationTests.cs`:
   Keycloak's own revocation endpoint characterized row by row (status, `error`,
   `error_description`, token state before and after), the evidence the Configuration Service mapping is

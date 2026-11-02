@@ -75,8 +75,8 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
                 ) < @MaxActiveTokens";
 
         /// <summary>
-        /// What the grant authenticated against, read after the lock statement has returned
-        /// (DMS-1493 D-11), in its own statement as on PostgreSQL, where that is what makes the
+        /// What the grant authenticated against, read after the lock statement has returned,
+        /// in its own statement as on PostgreSQL, where that is what makes the
         /// read current. The approval has the semantics of <see cref="GetClientCredentialAsync"/>:
         /// every API client registered under the client id approved, and approved when there is
         /// none. The secret is returned rather than compared here, so the database's
@@ -576,7 +576,7 @@ UPDATE dmscs.OpenIddictApplication
             // Against other grants that makes the limit a strict ceiling rather than a best-effort
             // one; against credential reset, deletion and un-approval, which take the same lock
             // first, it means a grant either stores before the change and is revoked by it, or
-            // re-validates after it and is refused (DMS-1493 I-1). The lock lives and dies with
+            // re-validates after it and is refused. The lock lives and dies with
             // this transaction, so every path below releases it.
             await using var transaction = await connection.BeginTransactionAsync();
 

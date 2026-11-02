@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using Dapper;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -13,6 +14,7 @@ using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
@@ -272,7 +274,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
 
                 _vendor2Id = ((VendorInsertResult.Success)insertResult2).Id;
 
-                var deleteResult = await _repository.DeleteVendor(_vendor1Id);
+                var deleteResult = await _repository.DeleteVendor(_vendor1Id, []);
                 deleteResult.Should().BeOfType<VendorDeleteResult.Success>();
             }
 
@@ -826,6 +828,319 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
                 (await RenameTo(OtherTenantCompany)).Should().BeOfType<VendorUpdateResult.Success>();
 
                 (await GetVendor(_tenantARepository, _vendorId)).Company.Should().Be(OtherTenantCompany);
+            }
+        }
+
+        /// <summary>The client that appears under the vendor without the cleanup having seen it.</summary>
+        public enum ConcurrentCreation
+        {
+            NewApplicationWithClient,
+            ClientInClientlessApplication,
+        }
+
+        /// <summary>
+        /// The vendor deletion guarded by the clients the caller cleaned up. The vendor has one
+        /// application whose client was cleaned up and one application with no client.
+        /// </summary>
+        public abstract class GuardedDeleteTests : VendorTests
+        {
+            protected int _vendorId;
+            protected int _clientlessApplicationId;
+            protected VendorApiClient _cleanedClient = null!;
+            protected Guid _concurrentClientUuid;
+
+            [SetUp]
+            public async Task SeedVendor()
+            {
+                _vendorId = (
+                    (VendorInsertResult.Success)
+                        await _repository.InsertVendor(
+                            new VendorInsertCommand
+                            {
+                                Company = $"Guarded Vendor {Guid.NewGuid():N}",
+                                ContactEmailAddress = "guarded@test.com",
+                                ContactName = "Guarded",
+                                NamespacePrefixes = "",
+                            }
+                        )
+                ).Id;
+                int cleanedApplicationId = await InsertApplicationAsync(
+                    Connection!,
+                    null,
+                    "Cleaned Application"
+                );
+                _cleanedClient = await InsertClientAsync(
+                    Connection!,
+                    null,
+                    cleanedApplicationId,
+                    "Cleaned Client",
+                    Guid.NewGuid()
+                );
+                _clientlessApplicationId = await InsertApplicationAsync(
+                    Connection!,
+                    null,
+                    "Clientless Application"
+                );
+            }
+
+            protected Task<VendorDeleteResult> DeleteAsync() =>
+                _repository.DeleteVendor(_vendorId, [_cleanedClient]);
+
+            protected async Task CreateConcurrentClientAsync(
+                ConcurrentCreation creation,
+                SqlConnection connection,
+                SqlTransaction? transaction
+            )
+            {
+                // Fixed before any insert, so a creation that fails still names the client it tried.
+                _concurrentClientUuid = Guid.NewGuid();
+                int applicationId =
+                    creation == ConcurrentCreation.NewApplicationWithClient
+                        ? await InsertApplicationAsync(connection, transaction, "Concurrent Application")
+                        : _clientlessApplicationId;
+                await InsertClientAsync(
+                    connection,
+                    transaction,
+                    applicationId,
+                    "Concurrent Client",
+                    _concurrentClientUuid
+                );
+            }
+
+            private Task<int> InsertApplicationAsync(
+                SqlConnection connection,
+                SqlTransaction? transaction,
+                string name
+            ) =>
+                connection.ExecuteScalarAsync<int>(
+                    """
+                    INSERT INTO dmscs.Application (ApplicationName, VendorId, ClaimSetName)
+                    OUTPUT INSERTED.Id VALUES (@Name, @VendorId, 'TestClaim');
+                    """,
+                    new { Name = name, VendorId = _vendorId },
+                    transaction
+                );
+
+            private static async Task<VendorApiClient> InsertClientAsync(
+                SqlConnection connection,
+                SqlTransaction? transaction,
+                int applicationId,
+                string name,
+                Guid clientUuid
+            )
+            {
+                int id = await connection.ExecuteScalarAsync<int>(
+                    """
+                    INSERT INTO dmscs.ApiClient (ApplicationId, Name, ClientId, ClientUuid)
+                    OUTPUT INSERTED.Id VALUES (@ApplicationId, @Name, @ClientId, @ClientUuid);
+                    """,
+                    new
+                    {
+                        ApplicationId = applicationId,
+                        Name = name,
+                        ClientId = clientUuid.ToString(),
+                        ClientUuid = clientUuid,
+                    },
+                    transaction
+                );
+                return new VendorApiClient(id, clientUuid.ToString(), clientUuid, applicationId);
+            }
+
+            protected Task<bool> VendorExistsAsync() =>
+                Connection!.ExecuteScalarAsync<bool>(
+                    "SELECT CAST(COUNT(*) AS BIT) FROM dmscs.Vendor WHERE Id = @Id;",
+                    new { Id = _vendorId }
+                );
+
+            protected Task<int> ClientCountAsync(params Guid[] clientUuids) =>
+                Connection!.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(*) FROM dmscs.ApiClient WHERE ClientUuid IN @ClientUuids;",
+                    new { ClientUuids = clientUuids }
+                );
+
+            /// <summary>
+            /// Returns once <paramref name="operation"/>'s session waits on a lock: on
+            /// <paramref name="holderSession"/>, or, with none given, on any session at all for
+            /// <paramref name="waiterSession"/>. The bound only turns an operation that never waits
+            /// into a failure instead of a hang.
+            /// </summary>
+            protected static async Task WaitUntilBlockedAsync(
+                Task operation,
+                int? holderSession,
+                int? waiterSession
+            )
+            {
+                await using SqlConnection monitor = await OpenConnectionAsync();
+                using CancellationTokenSource bound = new(TimeSpan.FromSeconds(60));
+                while (
+                    await monitor.ExecuteScalarAsync<int>(
+                        """
+                        SELECT COUNT(*) FROM sys.dm_exec_requests
+                        WHERE blocking_session_id <> 0
+                          AND (@Holder IS NULL OR blocking_session_id = @Holder)
+                          AND (@Waiter IS NULL OR session_id = @Waiter);
+                        """,
+                        new { Holder = holderSession, Waiter = waiterSession }
+                    ) == 0
+                )
+                {
+                    operation.IsCompleted.Should().BeFalse("the operation must wait on the lock");
+                    await Task.Delay(TimeSpan.FromMilliseconds(20), bound.Token);
+                }
+            }
+        }
+
+        [TestFixture]
+        public class Given_a_guarded_vendor_delete_with_every_client_cleaned : GuardedDeleteTests
+        {
+            private VendorDeleteResult _result = null!;
+
+            [SetUp]
+            public async Task Act() => _result = await DeleteAsync();
+
+            [Test]
+            public void It_deletes_the_vendor() => _result.Should().BeOfType<VendorDeleteResult.Success>();
+
+            [Test]
+            public async Task It_removes_the_vendor_and_its_client()
+            {
+                (await VendorExistsAsync()).Should().BeFalse();
+                (await ClientCountAsync(_cleanedClient.ClientUuid)).Should().Be(0);
+            }
+        }
+
+        /// <summary>
+        /// A client committed after the caller's cleanup read and before the guarded delete: the
+        /// interleaving in which an unconditional cascade orphaned a live provider client.
+        /// </summary>
+        [TestFixture(ConcurrentCreation.NewApplicationWithClient)]
+        [TestFixture(ConcurrentCreation.ClientInClientlessApplication)]
+        public class Given_a_guarded_vendor_delete_after_a_client_was_created(ConcurrentCreation creation)
+            : GuardedDeleteTests
+        {
+            private VendorDeleteResult _result = null!;
+
+            [SetUp]
+            public async Task Act()
+            {
+                await CreateConcurrentClientAsync(creation, Connection!, null);
+                _result = await DeleteAsync();
+            }
+
+            [Test]
+            public void It_refuses_the_cascade() =>
+                _result.Should().BeOfType<VendorDeleteResult.FailureClientsChanged>();
+
+            [Test]
+            public async Task It_keeps_the_vendor_and_every_client()
+            {
+                (await VendorExistsAsync()).Should().BeTrue();
+                (await ClientCountAsync(_cleanedClient.ClientUuid, _concurrentClientUuid)).Should().Be(2);
+            }
+        }
+
+        /// <summary>
+        /// The creation is still uncommitted when the guarded delete runs: the delete waits for it
+        /// on its locking reads, and then sees the committed client.
+        /// </summary>
+        [TestFixture(ConcurrentCreation.NewApplicationWithClient)]
+        [TestFixture(ConcurrentCreation.ClientInClientlessApplication)]
+        public class Given_a_guarded_vendor_delete_waiting_on_an_uncommitted_client_creation(
+            ConcurrentCreation creation
+        ) : GuardedDeleteTests
+        {
+            private VendorDeleteResult _result = null!;
+
+            [SetUp]
+            public async Task Act()
+            {
+                await using SqlConnection creator = await OpenConnectionAsync();
+                await using SqlTransaction creatorTransaction = (SqlTransaction)
+                    await creator.BeginTransactionAsync();
+                await CreateConcurrentClientAsync(creation, creator, creatorTransaction);
+
+                Task<VendorDeleteResult> delete = DeleteAsync();
+                await WaitUntilBlockedAsync(delete, creator.ServerProcessId, null);
+                await creatorTransaction.CommitAsync();
+                _result = await delete;
+            }
+
+            [Test]
+            public void It_refuses_the_cascade() =>
+                _result.Should().BeOfType<VendorDeleteResult.FailureClientsChanged>();
+
+            [Test]
+            public async Task It_keeps_the_vendor_and_every_client()
+            {
+                (await VendorExistsAsync()).Should().BeTrue();
+                (await ClientCountAsync(_cleanedClient.ClientUuid, _concurrentClientUuid)).Should().Be(2);
+            }
+        }
+
+        /// <summary>
+        /// The creation arrives while the guarded delete holds its vendor and application locks:
+        /// a held update of the cleaned client parks the delete at its client read, the creation
+        /// is shown to wait, and once the update commits the delete removes the vendor and the
+        /// creation fails, leaving no client behind. The creation runs at low deadlock priority:
+        /// the delete's cascade can meet the creation's uncommitted row, and the engine then ends
+        /// the creation as the deadlock victim rather than on the vanished parent.
+        /// </summary>
+        [TestFixture(ConcurrentCreation.NewApplicationWithClient)]
+        [TestFixture(ConcurrentCreation.ClientInClientlessApplication)]
+        public class Given_a_client_creation_arriving_while_the_guarded_vendor_delete_holds_its_locks(
+            ConcurrentCreation creation
+        ) : GuardedDeleteTests
+        {
+            private const int ForeignKeyViolation = 547;
+            private const int DeadlockVictim = 1205;
+
+            private VendorDeleteResult _result = null!;
+            private int? _creationErrorNumber;
+
+            [SetUp]
+            public async Task Act()
+            {
+                await using SqlConnection holder = await OpenConnectionAsync();
+                await using SqlTransaction holderTransaction = (SqlTransaction)
+                    await holder.BeginTransactionAsync();
+                await holder.ExecuteAsync(
+                    "UPDATE dmscs.ApiClient SET Name = 'Held Client' WHERE Id = @Id;",
+                    new { _cleanedClient.Id },
+                    holderTransaction
+                );
+
+                Task<VendorDeleteResult> delete = DeleteAsync();
+                await WaitUntilBlockedAsync(delete, holder.ServerProcessId, null);
+
+                await using SqlConnection creator = await OpenConnectionAsync();
+                await creator.ExecuteAsync("SET DEADLOCK_PRIORITY LOW;");
+                Task create = CreateConcurrentClientAsync(creation, creator, null);
+                await WaitUntilBlockedAsync(create, null, creator.ServerProcessId);
+
+                await holderTransaction.CommitAsync();
+                _result = await delete;
+                try
+                {
+                    await create;
+                }
+                catch (SqlException ex)
+                {
+                    _creationErrorNumber = ex.Number;
+                }
+            }
+
+            [Test]
+            public void It_deletes_the_vendor() => _result.Should().BeOfType<VendorDeleteResult.Success>();
+
+            [Test]
+            public void It_rejects_the_creation() =>
+                _creationErrorNumber.Should().BeOneOf(ForeignKeyViolation, DeadlockVictim);
+
+            [Test]
+            public async Task It_leaves_no_client_behind()
+            {
+                (await VendorExistsAsync()).Should().BeFalse();
+                (await ClientCountAsync(_cleanedClient.ClientUuid, _concurrentClientUuid)).Should().Be(0);
             }
         }
     }

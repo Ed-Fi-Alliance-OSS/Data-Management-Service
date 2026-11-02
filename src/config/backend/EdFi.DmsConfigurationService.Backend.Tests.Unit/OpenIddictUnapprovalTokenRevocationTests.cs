@@ -15,7 +15,7 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
 /// <summary>
-/// DMS-1493 D-3: the self-contained un-approval participant locks the application row a token store
+/// The self-contained un-approval participant locks the application row a token store
 /// waits on, then revokes the client's tokens, on the connection and transaction the Configuration
 /// Service hands it. It never commits or rolls back: the caller's transaction decides both.
 /// </summary>
@@ -86,7 +86,7 @@ public class OpenIddictUnapprovalTokenRevocationTests
 
         /// <summary>
         /// The count message says the revocation is pending in the caller's transaction, not done:
-        /// the caller may still roll it back (DMS-1493 S3.3-F1).
+        /// the caller may still roll it back.
         /// </summary>
         protected void AssertRevocationLogged(int revokedCount) =>
             _logger

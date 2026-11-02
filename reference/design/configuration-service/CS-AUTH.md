@@ -417,8 +417,8 @@ accepting them until they expire (see [Propagation and clock skew](#propagation-
 Revocation marks the token rows `revoked` and sets `RedemptionDate`, as `/connect/revoke` does.
 Rows already revoked keep their first `RedemptionDate`, and the expired-token sweep removes rows
 later. Tokens of clients the operation does not target do not change: a client-level operation
-leaves the application's other clients alone, while deleting an application targets every client
-it has.
+leaves the application's other clients alone, while deleting an application or a vendor targets
+every client it has.
 
 `keycloak` mode is unchanged. CMS stores no Keycloak tokens, so these operations revoke nothing:
 they regenerate the secret, delete the client, or disable it at Keycloak, and Keycloak tokens
@@ -473,7 +473,36 @@ credential check before the lock may be arbitrarily stale.
 | Un-approval | CMS `ApiClientRepository.UpdateApiClient`, when the command carries `IsApproved = false` | 1. CMS `dmscs.Application` locks: SQL Server share-locks the client's current and target Application rows (`HOLDLOCK`) in one statement on every update; PostgreSQL share-locks the target Application row (`FOR SHARE`) only when the update completes an identity provider sync. 2. A tenant-scoped read returns the stored `ClientUuid` and holds no lock past the statement. 3. The un-approval participant locks the client's `dmscs.OpenIddictApplication` row and revokes the client's tokens. 4. The `dmscs.ApiClient` row lock (`XLOCK, HOLDLOCK` on SQL Server, `FOR UPDATE` on PostgreSQL). 5. `UPDATE dmscs.ApiClient SET IsApproved = false, …`, the client's education organization rows when the update requests a scope or moves the client to another Application, then the data-store mappings. Commit. |
 
 `PUT /v3/applications/{id}/reset-credential` and `DELETE /v3/applications/{id}` reach the same
-provider methods for the application's clients.
+provider methods for the application's clients. `DELETE /v3/vendors/{id}` reaches
+`DeleteClientAsync` for every client of every application of the vendor: it reads the clients
+under the locks of the applications that own them, deletes each from the provider, and only then
+deletes the vendor row, whose cascade removes its applications and `dmscs.ApiClient` rows. A
+client the provider reports as not found counts as deleted. Any other provider failure or
+exception stops the request before the vendor row is deleted.
+
+The application locks do not cover an application created under the vendor, or a client added to
+one of its applications that had no client. The vendor row is therefore deleted by
+`IVendorRepository.DeleteVendor` only when every `dmscs.ApiClient` row the cascade would remove is
+one of the clients the request deleted from the provider, matched by row id and `ClientUuid`. Its
+transaction:
+
+1. Locks the vendor row (`FOR UPDATE` on PostgreSQL, `XLOCK, HOLDLOCK` on SQL Server).
+2. Locks every application row of the vendor the same way.
+3. Reads the vendor's `dmscs.ApiClient` rows with a locking read (`FOR UPDATE` on PostgreSQL,
+   `UPDLOCK, HOLDLOCK` on SQL Server).
+4. If any of them is not a deleted client, rolls back and reports `FailureClientsChanged`, which
+   the request answers with the retriable `409`. Otherwise deletes the vendor and commits.
+
+Inserting an application validates its vendor, and inserting an API client or moving one onto an
+application validates that application, with a lock (`FOR KEY SHARE` on PostgreSQL, a shared lock
+on SQL Server) that conflicts with steps 1 and 2. A creation that wrote its row before those steps
+holds that lock, or the uncommitted row, until it commits, and steps 1 to 3 wait for it and then
+see its client. A creation that arrives after them waits for the deletion and then fails on the
+missing vendor or application; on SQL Server it can instead end as the deadlock victim. Either
+way, no client leaves the CMS without having been deleted from the provider. Each step is its own
+statement, so on PostgreSQL the read after a lock sees what committed while the lock waited. On
+SQL Server the application read selects a column outside the `(VendorId, ApplicationName)` index,
+so the lock reaches the clustered rows that the foreign key check reads.
 
 Un-approval takes the `dmscs.OpenIddictApplication` lock after the CMS `dmscs.Application` locks
 and before the `dmscs.ApiClient` row lock:
@@ -505,9 +534,18 @@ complete grant run between the provider commit and the CMS commit.
 
 #### Failures, retries and lost acknowledgements
 
-The change and the revocation are durable together or not at all: no operation commits a reset,
-deletion or un-approval without its revocation. An exception before the commit rolls both back,
-and the request fails.
+Within each transaction in the table above, the change and the revocation are durable together or
+not at all: no reset, provider deletion or un-approval commits without its revocation. An
+exception before the commit rolls both back, and the request fails.
+
+A deletion request spans more than one commit. `DELETE /v3/apiClients/{id}`,
+`DELETE /v3/applications/{id}` and `DELETE /v3/vendors/{id}` first delete each affected client
+from the provider, each in its own `DeleteClientAsync` transaction with its revocation, and then
+delete the CMS rows in a separate commit. A failure after a provider commit leaves that client
+deleted from the provider, with its tokens revoked, while its CMS rows survive. For an application
+or vendor with several clients, some clients may be deleted from the provider and others not. A
+provider failure stops the request before the CMS delete, so the surviving rows are the work list
+for a retry, which treats the clients already deleted as done.
 
 A success answer confirms the commit. An error or a response that never arrives does not: the
 transaction may have committed before its acknowledgement was lost or the failure was reported, so
@@ -526,8 +564,13 @@ be addressed: a `DELETE /v3/apiClients/{id}` retried after its provider step suc
 database step failed (the `dmscs.ApiClient` row still exists), or an application deletion retried
 after it stopped partway. It does not reach a client already gone from CMS: once its
 `dmscs.ApiClient` row is deleted, `DELETE /v3/apiClients/{id}` answers `404` without reaching the
-provider. The un-approval participant likewise revokes when the application row is absent, and
-logs that at Information. A credential reset of a missing application row changes nothing.
+provider. A credential reset of a missing application row changes nothing.
+
+The un-approval participant, called with a client whose application row is absent, still revokes
+the tokens stored under the client's id and logs that at Information. `PUT /v3/apiClients/{id}`
+does not reach that case: it updates the provider client before the CMS transaction, and in
+`self-contained` mode a missing provider client fails that update, so the request answers `500`
+before the participant runs. The participant's handling is defensive.
 
 #### Logging
 
@@ -590,7 +633,15 @@ With the default lifetime (`IdentitySettings:TokenExpirationMinutes`, 30 minutes
 is 30 minutes 30 seconds after issuance, and the CMS bound for a token never marked revoked is 35
 minutes. The two bounds are separate: each applies only to its own consumer. Repeating the reset
 or the un-approval of a client handled before DMS-1493 was deployed revokes its remaining tokens;
-a client already deleted cannot be addressed again, and its tokens are left to expire.
+a client already deleted through `DELETE /v3/apiClients/{id}` or `DELETE /v3/applications/{id}`
+cannot be addressed again, and its tokens are left to expire.
+
+These bounds do not hold for a client removed by a vendor deletion made before this change.
+`DELETE /v3/vendors/{id}` then removed the CMS rows without deleting the provider client, so the
+client's `dmscs.OpenIddictApplication` row, credentials and tokens remain. With no
+`dmscs.ApiClient` row the client counts as approved and can keep obtaining new tokens. Deploying
+this version does not cut it off, no CMS API reaches it, and this version provides no cleanup for
+it.
 
 ### `503 temporarily_unavailable`: retry and confirm
 

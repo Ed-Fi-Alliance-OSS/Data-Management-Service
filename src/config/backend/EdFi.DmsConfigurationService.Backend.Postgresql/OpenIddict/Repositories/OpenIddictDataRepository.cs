@@ -59,8 +59,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
                 ) < @MaxActiveTokens";
 
         /// <summary>
-        /// What the grant authenticated against, read after the lock statement has returned
-        /// (DMS-1493 D-11). It has to be its own statement: under read committed each statement
+        /// What the grant authenticated against, read after the lock statement has returned.
+        /// It has to be its own statement: under read committed each statement
         /// takes a new snapshot, whereas a subquery inside the <c>FOR UPDATE</c> statement would
         /// read the snapshot taken before that statement blocked, and miss a reset or un-approval
         /// that committed while it waited. The approval has the semantics of
@@ -545,7 +545,7 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             // Against other grants that makes the limit a strict ceiling rather than a best-effort
             // one; against credential reset, deletion and un-approval, which take the same lock
             // first, it means a grant either stores before the change and is revoked by it, or
-            // re-validates after it and is refused (DMS-1493 I-1). The lock lives and dies with
+            // re-validates after it and is refused. The lock lives and dies with
             // this transaction, so every path below releases it.
             await using var transaction = await connection.BeginTransactionAsync();
 
@@ -677,8 +677,10 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             // The predicate shape of RevokeTokenAsync minus the token id: only unrevoked rows
             // change, so a repeat changes nothing and keeps every original RedemptionDate, and the
             // ApplicationId predicate keeps every other application's tokens out of reach.
+            // RedemptionDate has no time zone, so the timestamp is converted to UTC explicitly
+            // rather than written in the session's local time.
             return await connection.ExecuteAsync(
-                "UPDATE \"dmscs\".\"OpenIddictToken\" SET \"Status\" = 'revoked', \"RedemptionDate\" = CURRENT_TIMESTAMP WHERE \"ApplicationId\" = @ApplicationId AND \"Status\" <> 'revoked'",
+                "UPDATE \"dmscs\".\"OpenIddictToken\" SET \"Status\" = 'revoked', \"RedemptionDate\" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC' WHERE \"ApplicationId\" = @ApplicationId AND \"Status\" <> 'revoked'",
                 new { ApplicationId = applicationId },
                 transaction
             );

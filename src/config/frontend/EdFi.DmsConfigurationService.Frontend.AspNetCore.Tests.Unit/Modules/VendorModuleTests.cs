@@ -165,7 +165,12 @@ public class VendorModuleTests
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .Returns(new VendorUpdateResult.Success());
 
-            A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored))
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        A<int>.Ignored,
+                        A<IReadOnlyCollection<VendorApiClient>>.Ignored
+                    )
+                )
                 .Returns(new VendorDeleteResult.Success());
         }
 
@@ -624,7 +629,12 @@ public class VendorModuleTests
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .Returns(new VendorUpdateResult.FailureNotExists());
 
-            A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored))
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        A<int>.Ignored,
+                        A<IReadOnlyCollection<VendorApiClient>>.Ignored
+                    )
+                )
                 .Returns(new VendorDeleteResult.FailureNotExists());
         }
 
@@ -711,7 +721,12 @@ public class VendorModuleTests
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .Returns(new VendorUpdateResult.FailureUnknown(""));
 
-            A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored))
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        A<int>.Ignored,
+                        A<IReadOnlyCollection<VendorApiClient>>.Ignored
+                    )
+                )
                 .Returns(new VendorDeleteResult.FailureUnknown(""));
         }
 
@@ -783,7 +798,13 @@ public class VendorModuleTests
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .Returns(new VendorUpdateResult());
 
-            A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored)).Returns(new VendorDeleteResult());
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        A<int>.Ignored,
+                        A<IReadOnlyCollection<VendorApiClient>>.Ignored
+                    )
+                )
+                .Returns(new VendorDeleteResult());
         }
 
         [Test]
@@ -3689,5 +3710,355 @@ public class VendorModuleTests
 
         [Test]
         public void It_does_not_compensate() => CompensationCalls.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Vendor deletion with clients in two applications. The provider fake behaves like a real
+    /// provider: a client it has deleted answers not found afterwards. Provider deletions and the
+    /// vendor delete are recorded in one ordered event list, which each lock handle also samples
+    /// when it is released.
+    /// </summary>
+    public abstract class VendorDeleteTestBase : VendorModuleTests
+    {
+        protected const int LowerApplicationId = 10;
+        protected const int HigherApplicationId = 30;
+
+        protected VendorApiClient[] _clients = null!;
+        protected readonly List<string> _events = [];
+        protected readonly HashSet<string> _deletedProviderClients = [];
+        protected readonly List<ClientDeleteResult> _providerResults = [];
+
+        /// <summary>
+        /// The provider client whose deletion fails, and how; null when every deletion succeeds.
+        /// </summary>
+        protected string? _failingProviderClient;
+        protected Func<ClientDeleteResult>? _providerFailure;
+
+        [SetUp]
+        public void SetUpVendorDelete()
+        {
+            _lockManager.Reset();
+            _events.Clear();
+            _deletedProviderClients.Clear();
+            _providerResults.Clear();
+            _failingProviderClient = null;
+            _providerFailure = null;
+            Fake.ClearRecordedCalls(_vendorRepository);
+            Fake.ClearRecordedCalls(_identityProviderRepository);
+            _lockManager.ProviderCallCount = () => _events.Count;
+            _clients =
+            [
+                new VendorApiClient(61, "client-61", Guid.NewGuid(), LowerApplicationId),
+                new VendorApiClient(62, "client-62", Guid.NewGuid(), LowerApplicationId),
+                new VendorApiClient(63, "client-63", Guid.NewGuid(), HigherApplicationId),
+            ];
+
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(1))
+                .ReturnsLazily(() =>
+                    new VendorUpdateStateResult.Success(
+                        new VendorUpdateState(
+                            "Test Company",
+                            "Test",
+                            "test@test.com",
+                            "Test Prefix",
+                            _clients
+                        )
+                    )
+                );
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .ReturnsLazily(
+                    (string clientUuid) =>
+                    {
+                        _events.Add(ProviderEvent(clientUuid));
+                        ClientDeleteResult result;
+                        if (clientUuid == _failingProviderClient && _providerFailure is not null)
+                        {
+                            result = _providerFailure();
+                        }
+                        else if (_deletedProviderClients.Add(clientUuid))
+                        {
+                            result = new ClientDeleteResult.Success();
+                        }
+                        else
+                        {
+                            result = new ClientDeleteResult.FailureClientNotFound("already deleted");
+                        }
+                        _providerResults.Add(result);
+                        return result;
+                    }
+                );
+            A.CallTo(() => _vendorRepository.DeleteVendor(1, A<IReadOnlyCollection<VendorApiClient>>.Ignored))
+                .ReturnsLazily(() =>
+                {
+                    _events.Add("vendor");
+                    return new VendorDeleteResult.Success();
+                });
+        }
+
+        protected static string ProviderEvent(string clientUuid) => $"provider:{clientUuid}";
+
+        protected static string ProviderEvent(VendorApiClient client) =>
+            ProviderEvent(client.ClientUuid.ToString());
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_whose_clients_span_two_applications_is_deleted : VendorDeleteTestBase
+    {
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            using var client = SetUpClient();
+            _response = await client.DeleteAsync("/v3/vendors/1");
+        }
+
+        [Test]
+        public void It_returns_no_content() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_deletes_every_provider_client_before_the_vendor() =>
+            _events.Should().Equal(_clients.Select(ProviderEvent).Append("vendor"));
+
+        [Test]
+        public void It_guards_the_cascade_with_exactly_the_clients_it_deleted() =>
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        1,
+                        A<IReadOnlyCollection<VendorApiClient>>.That.IsSameSequenceAs(_clients)
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_reads_the_clients_under_one_lock_set_over_their_applications()
+        {
+            _lockManager.Handles.Should().HaveCount(1);
+            _lockManager.AcquiredApplicationIds.Should().Equal(LowerApplicationId, HigherApplicationId);
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(1)).MustHaveHappenedTwiceExactly();
+        }
+
+        [Test]
+        public void It_releases_the_locks_after_the_vendor_is_deleted()
+        {
+            RecordingLockHandle handle = _lockManager.Handles.Should().ContainSingle().Subject;
+            handle.Disposed.Should().BeTrue();
+            handle.ProviderCallsWhenReleased.Should().Be(_clients.Length + 1);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_delete_whose_provider_deletion_fails : VendorDeleteTestBase
+    {
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _failingProviderClient = _clients[1].ClientUuid.ToString();
+            _providerFailure = () =>
+                new ClientDeleteResult.FailureIdentityProvider(
+                    new IdentityProviderError.Unreachable("the provider is down")
+                );
+
+            using var client = SetUpClient();
+            _response = await client.DeleteAsync("/v3/vendors/1");
+        }
+
+        [Test]
+        public void It_returns_bad_gateway() => _response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+
+        [Test]
+        public void It_stops_at_the_failed_client() =>
+            _events.Should().Equal(ProviderEvent(_clients[0]), ProviderEvent(_clients[1]));
+
+        [Test]
+        public void It_does_not_delete_the_vendor() =>
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        A<int>.Ignored,
+                        A<IReadOnlyCollection<VendorApiClient>>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_releases_the_locks() =>
+            _lockManager.Handles.Should().ContainSingle().Which.Disposed.Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_delete_whose_provider_deletion_throws : VendorDeleteTestBase
+    {
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _failingProviderClient = _clients[0].ClientUuid.ToString();
+            _providerFailure = () => throw new InvalidOperationException("the provider connection dropped");
+
+            using var client = SetUpClient();
+            _response = await client.DeleteAsync("/v3/vendors/1");
+        }
+
+        [Test]
+        public void It_returns_a_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public async Task It_does_not_leak_the_thrown_message() =>
+            (await _response.Content.ReadAsStringAsync())
+                .Should()
+                .NotContain("the provider connection dropped");
+
+        [Test]
+        public void It_does_not_delete_the_vendor() =>
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        A<int>.Ignored,
+                        A<IReadOnlyCollection<VendorApiClient>>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_releases_the_locks() =>
+            _lockManager.Handles.Should().ContainSingle().Which.Disposed.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// The first attempt deletes the first provider client and then fails on the second, so the
+    /// vendor and all of its ApiClient rows survive as the retry's work list. The retry meets the
+    /// already deleted provider client as not found and completes the deletion.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_vendor_delete_retried_after_a_partial_provider_cleanup : VendorDeleteTestBase
+    {
+        private HttpResponseMessage _firstResponse = null!;
+        private HttpResponseMessage _retryResponse = null!;
+        private int _firstAttemptProviderCalls;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _failingProviderClient = _clients[1].ClientUuid.ToString();
+            _providerFailure = () =>
+                new ClientDeleteResult.FailureUnknown("the provider rejected the delete");
+
+            using var client = SetUpClient();
+            _firstResponse = await client.DeleteAsync("/v3/vendors/1");
+            _firstAttemptProviderCalls = _providerResults.Count;
+
+            _providerFailure = null;
+            _retryResponse = await client.DeleteAsync("/v3/vendors/1");
+        }
+
+        [Test]
+        public void It_fails_the_first_attempt_without_deleting_the_vendor()
+        {
+            _firstResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            _events.Take(_firstAttemptProviderCalls).Should().NotContain("vendor");
+        }
+
+        [Test]
+        public void It_completes_the_retry() =>
+            _retryResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_treats_the_client_the_first_attempt_deleted_as_already_absent() =>
+            _providerResults
+                .Skip(_firstAttemptProviderCalls)
+                .Should()
+                .Equal(
+                    new ClientDeleteResult.FailureClientNotFound("already deleted"),
+                    new ClientDeleteResult.Success(),
+                    new ClientDeleteResult.Success()
+                );
+
+        [Test]
+        public void It_deletes_every_provider_client_before_the_vendor_on_the_retry() =>
+            _events
+                .Skip(_firstAttemptProviderCalls)
+                .Should()
+                .Equal(_clients.Select(ProviderEvent).Append("vendor"));
+
+        [Test]
+        public void It_deletes_the_vendor_once() =>
+            A.CallTo(() => _vendorRepository.DeleteVendor(1, A<IReadOnlyCollection<VendorApiClient>>.Ignored))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_releases_the_locks_of_both_attempts() =>
+            _lockManager.Handles.Should().HaveCount(2).And.OnlyContain(handle => handle.Disposed);
+    }
+
+    /// <summary>
+    /// A client appears under the vendor after the first attempt read its clients, so the guarded
+    /// cascade refuses: the first attempt answers the retriable conflict and deletes nothing. The
+    /// retry reads the new client, deletes it from the provider with the others, and completes.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_vendor_delete_whose_cascade_finds_a_client_it_did_not_clean : VendorDeleteTestBase
+    {
+        private HttpResponseMessage _firstResponse = null!;
+        private HttpResponseMessage _retryResponse = null!;
+        private VendorApiClient _newClient = null!;
+        private int _firstAttemptEvents;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _newClient = new VendorApiClient(64, "client-64", Guid.NewGuid(), HigherApplicationId);
+            int deleteAttempts = 0;
+            A.CallTo(() => _vendorRepository.DeleteVendor(1, A<IReadOnlyCollection<VendorApiClient>>.Ignored))
+                .ReturnsLazily(() =>
+                {
+                    if (++deleteAttempts == 1)
+                    {
+                        // The client committed between the first attempt's read and its cascade.
+                        _clients = [.. _clients, _newClient];
+                        return new VendorDeleteResult.FailureClientsChanged();
+                    }
+
+                    _events.Add("vendor");
+                    return new VendorDeleteResult.Success();
+                });
+
+            using var client = SetUpClient();
+            _firstResponse = await client.DeleteAsync("/v3/vendors/1");
+            _firstAttemptEvents = _events.Count;
+            _retryResponse = await client.DeleteAsync("/v3/vendors/1");
+        }
+
+        [Test]
+        public async Task It_answers_the_first_attempt_with_the_retriable_conflict() =>
+            await AssertLockConflictContract(_firstResponse);
+
+        [Test]
+        public void It_deletes_nothing_on_the_first_attempt() =>
+            _events.Take(_firstAttemptEvents).Should().NotContain("vendor");
+
+        [Test]
+        public void It_releases_the_first_attempts_locks_before_the_retry() =>
+            _lockManager.Handles[0].ProviderCallsWhenReleased.Should().Be(_firstAttemptEvents);
+
+        [Test]
+        public void It_completes_the_retry() =>
+            _retryResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_deletes_the_new_client_from_the_provider_before_the_vendor_on_the_retry() =>
+            _events.Skip(_firstAttemptEvents).Should().Equal(_clients.Select(ProviderEvent).Append("vendor"));
+
+        [Test]
+        public void It_guards_the_retry_cascade_with_the_new_client_included() =>
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        1,
+                        A<IReadOnlyCollection<VendorApiClient>>.That.Contains(_newClient)
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
     }
 }

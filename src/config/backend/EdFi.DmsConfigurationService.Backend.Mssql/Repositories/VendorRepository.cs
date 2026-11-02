@@ -408,19 +408,82 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
             }
         }
 
-        public async Task<VendorDeleteResult> DeleteVendor(int id)
+        /// <summary>
+        /// Inserting an application validates its vendor, and inserting or moving an ApiClient
+        /// validates its application, with a shared lock on the referenced row. Exclusive locks
+        /// held to the end of the transaction on the vendor row and on the vendor's application
+        /// rows (key ranges included) therefore wait for those writers and then block them, and
+        /// the locking read of the ApiClient rows waits for any that are uncommitted.
+        /// </summary>
+        public async Task<VendorDeleteResult> DeleteVendor(
+            int id,
+            IReadOnlyCollection<VendorApiClient> cleanedClients
+        )
         {
             await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
+            await connection.OpenAsync();
+            await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
             try
             {
-                var sql = $"""
+                int? vendorId = await connection.QuerySingleOrDefaultAsync<int?>(
+                    $"""
+                    SELECT v.Id FROM dmscs.Vendor v WITH (XLOCK, HOLDLOCK, ROWLOCK)
+                    WHERE v.Id = @Id AND {TenantContext.TenantWhereClause("v")};
+                    """,
+                    new { Id = id, TenantId },
+                    transaction
+                );
+                if (vendorId is null)
+                {
+                    await transaction.CommitAsync();
+                    return new VendorDeleteResult.FailureNotExists();
+                }
+
+                // ClaimSetName is outside the (VendorId, ApplicationName) index, so the read reaches
+                // the clustered rows that an ApiClient's foreign key check locks, not only that index.
+                await connection.ExecuteAsync(
+                    """
+                    SELECT Id, ClaimSetName FROM dmscs.Application WITH (XLOCK, HOLDLOCK, ROWLOCK)
+                    WHERE VendorId = @Id;
+                    """,
+                    new { Id = id },
+                    transaction
+                );
+
+                var currentClients = await connection.QueryAsync<(int Id, Guid ClientUuid)>(
+                    """
+                    SELECT ac.Id, ac.ClientUuid
+                    FROM dmscs.ApiClient ac WITH (UPDLOCK, HOLDLOCK)
+                    JOIN dmscs.Application a ON a.Id = ac.ApplicationId
+                    WHERE a.VendorId = @Id;
+                    """,
+                    new { Id = id },
+                    transaction
+                );
+
+                HashSet<(int, Guid)> cleaned =
+                [
+                    .. cleanedClients.Select(client => (client.Id, client.ClientUuid)),
+                ];
+                if (!currentClients.All(cleaned.Contains))
+                {
+                    await RollbackSafelyAsync(transaction);
+                    return new VendorDeleteResult.FailureClientsChanged();
+                }
+
+                var deleteSql = $"""
                     DELETE FROM dmscs.VendorNamespacePrefix WHERE VendorId IN (
                         SELECT Id FROM dmscs.Vendor WHERE Id = @Id AND {TenantContext.TenantWhereClause()}
                     );
                     DELETE FROM dmscs.Vendor WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                     """;
 
-                var affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
+                var affectedRows = await connection.ExecuteAsync(
+                    deleteSql,
+                    new { Id = id, TenantId },
+                    transaction
+                );
+                await transaction.CommitAsync();
                 return affectedRows > 0
                     ? new VendorDeleteResult.Success()
                     : new VendorDeleteResult.FailureNotExists();
@@ -428,6 +491,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
             catch (Exception ex)
             {
                 logger.LogError(ex, "Delete vendor failure");
+                await RollbackSafelyAsync(transaction);
                 return new VendorDeleteResult.FailureUnknown(ex.Message);
             }
         }

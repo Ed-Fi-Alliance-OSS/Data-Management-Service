@@ -63,7 +63,7 @@ public class KeycloakServiceExtensionsTests
                 .Which.Lifetime.Should()
                 .Be(ServiceLifetime.Transient);
 
-        // DMS-1493 D-3: the CMS API client repository requires an un-approval participant in every
+        // The CMS API client repository requires an un-approval participant in every
         // mode, so Keycloak mode registers the explicit no-op rather than leaving it unresolvable.
         [Test]
         public void It_resolves_the_no_op_unapproval_token_revocation()

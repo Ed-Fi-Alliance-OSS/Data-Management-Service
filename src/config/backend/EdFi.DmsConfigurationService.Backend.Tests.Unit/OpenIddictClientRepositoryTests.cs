@@ -536,7 +536,7 @@ public class OpenIddictClientRepositoryTests
     }
 
     /// <summary>
-    /// Shared arrangement for the credential reset (DMS-1493 §6.2). The reset writes the new hash
+    /// Shared arrangement for the credential reset. The reset writes the new hash
     /// and revokes the client's tokens in one transaction, so every fixture keeps the connection and
     /// the transaction it hands out and checks that both calls ran on them.
     /// </summary>
@@ -782,7 +782,7 @@ public class OpenIddictClientRepositoryTests
     }
 
     /// <summary>
-    /// Shared arrangement for the client deletion (DMS-1493 §6.3). The deletion removes the
+    /// Shared arrangement for the client deletion. The deletion removes the
     /// application row and revokes the client's tokens in one transaction, so every fixture keeps
     /// the connection and the transaction it hands out and checks that both calls ran on them.
     /// </summary>
@@ -909,7 +909,7 @@ public class OpenIddictClientRepositoryTests
     /// <summary>
     /// No application row matched, but tokens stored for the identifier remain, for example from a
     /// deletion before revocation existed. The deletion still revokes them and commits before it
-    /// answers not found (D-6), which the module treats as an already completed deletion. Fails if a
+    /// answers not found, which the module treats as an already completed deletion. Fails if a
     /// missing row skips the revocation, rolls it back, or answers anything but not found.
     /// </summary>
     [TestFixture]
