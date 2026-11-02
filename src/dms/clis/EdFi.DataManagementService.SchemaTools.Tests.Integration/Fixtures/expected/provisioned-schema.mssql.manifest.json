@@ -2793,7 +2793,7 @@
       "schema_name": "dms",
       "table_name": "Descriptor",
       "column_name": "ContentCreatedAt",
-      "ordinal_position": 13,
+      "ordinal_position": 14,
       "data_type": "datetime2",
       "is_nullable": false,
       "default_expression": "(sysutcdatetime())",
