@@ -124,8 +124,9 @@ The copied schemas include every resource and tracked-history schema in the base
 The preflight verifies the compact target against that baseline, complete source/target table
 coverage, exact column shapes for descriptor conversion and directly restored tables, and unchanged
 resource-key seeds. The one exception to exact shapes is an owner's `ContentCreatedAt` (DMS-1656),
-which legacy dumps predate: a target-only `ContentCreatedAt` is admitted, and a source that has
-it is still type-checked. `dms.Document` retains its staging rules: source-only columns are omitted from
+which legacy dumps predate: a target-only `ContentCreatedAt` is admitted. No source the copy
+accepts has the column, because it postdates compact descriptors, which the copy refuses.
+`dms.Document` retains its staging rules: source-only columns are omitted from
 the target insert, and target columns absent from the source must be nullable, defaulted, identity
 or generated. Source descriptor keys and stored descriptor references must be legacy bigint
 document keys. Descriptor rows keep their bigint `DocumentId`

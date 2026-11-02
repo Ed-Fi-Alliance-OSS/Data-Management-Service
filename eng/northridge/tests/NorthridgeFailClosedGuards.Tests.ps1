@@ -1900,6 +1900,17 @@ Describe 'Compact descriptor carry-forward contracts and independent allocator g
         { Assert-CopyColumnShape -QualifiedTable $QualifiedTable -Source $legacy -Target ($current + $createdAt + $extra) -Inventory $compactInventory } |
             Should -Throw "*Missing/mismatched source-shape coverage: $QualifiedTable/Extra*"
     }
+    It 'Refuses a current-shape dms.Descriptor source, the only kind that has ContentCreatedAt' {
+        $current = @(
+            [pscustomobject]@{ Name = 'DescriptorId'; Type = 'integer'; Generated = $false },
+            [pscustomobject]@{ Name = 'DocumentId'; Type = 'bigint'; Generated = $false },
+            [pscustomobject]@{ Name = 'ResourceKeyId'; Type = 'smallint'; Generated = $false },
+            [pscustomobject]@{ Name = 'ContentLastModifiedAt'; Type = 'timestamp with time zone'; Generated = $false },
+            [pscustomobject]@{ Name = 'ContentCreatedAt'; Type = 'timestamp with time zone'; Generated = $false }
+        )
+        { Assert-CopyColumnShape -QualifiedTable 'dms.Descriptor' -Source $current -Target $current -Inventory $compactInventory } |
+            Should -Throw '*Expected legacy dms.Descriptor/Discriminator in source*'
+    }
     It 'Requires generated aliases to retain their compact target type and skips remapping them' {
         $source = @([pscustomobject]@{ Name = 'PrimarySchoolTypeDescriptor_DescriptorId'; Type = 'bigint'; Generated = $true })
         $target = @([pscustomobject]@{ Name = 'PrimarySchoolTypeDescriptor_DescriptorId'; Type = 'integer'; Generated = $true })

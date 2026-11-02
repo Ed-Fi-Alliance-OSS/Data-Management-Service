@@ -309,6 +309,15 @@ WHERE o.name = N'ContentLastModifiedAt'
                   WHERE c.object_id = o.object_id AND c.name = N'ContentCreatedAt');
 ```
 
+Do not rerun `ddl provision` against such a database to add the column. On PostgreSQL the rerun
+succeeds: it keeps the existing tables but replaces the stamping trigger functions, so every later
+INSERT into a resource root table or `dms.Descriptor` fails (`record "new" has no field
+"ContentCreatedAt"`), while updates keep working. On SQL Server the rerun fails at the first
+trigger that names the column and rolls back. Drop and recreate the database from current DDL and
+reload its data instead; a PostgreSQL database that has already been rerun needs the same. The
+carry-forward route does not apply: it accepts only legacy dumps, and these databases already have
+compact descriptors.
+
 Database template packages built before this change lack the column. They restore and serve,
 but `Assert-TemplateSchema.ps1` checks only `ContentLastModifiedAt` on each owner, so it does not
 reject them. Run the two queries above on the source and restored catalogs of every rebuilt
