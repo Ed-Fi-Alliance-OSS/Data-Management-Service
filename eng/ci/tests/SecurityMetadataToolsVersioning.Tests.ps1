@@ -514,7 +514,7 @@ Describe 'Security Metadata Tools normal release workflow wiring and source hand
             (git rev-parse main) | Should -Not -Be $triggerSha
 
             $workflow = Get-Content (Join-Path $script:repoRoot '.github/workflows/on-config-merge-or-tag.yml') -Raw
-            $step = [regex]::Match($workflow, '(?ms)^      - name: Create CS API Pre-Release\r?\n        run: \|\r?\n(?<body>.*)\z').Groups['body'].Value
+            $step = [regex]::Match($workflow, '(?ms)^      - name: Create CS API Pre-Release\r?\n(?:        env:\r?\n(?:          .*\r?\n)+)?        run: \|\r?\n(?<body>.*)\z').Groups['body'].Value
             $step | Should -Not -BeNullOrEmpty
             $body = ($step -replace '(?m)^          ', '').Replace('${{ steps.versions.outputs.dms-semver }}', 'cs-v8.1.9').
                 Replace('${{ github.sha }}', $triggerSha).
@@ -591,7 +591,9 @@ Describe 'Security Metadata Tools normal release workflow wiring and source hand
         $promotionJob | Should -Match 'ref: \$\{\{ github.ref \}\}'
         $promotionJob | Should -Match 'fetch-depth: 0'
         $step = [regex]::Match($promotionJob, '(?ms)^      - name: Promote EdFi.Api.SecurityMetadataTools Package.*?(?=^      - name:|\z)').Value
-        $step | Should -Match "github.ref_type == 'tag'"
+        # The job admits only a v tag, so the step needs no condition of its own.
+        $promotionJob | Should -Match "(?m)^    if: \$\{\{ github\.ref_type == 'tag' && startsWith\(github\.ref, 'refs/tags/v'\) \}\}\r?$"
+        $step | Should -Not -Match '(?m)^        if:'
         $step | Should -Match 'Get-SecurityMetadataToolsVersion -AppVersion "\$\{\{ steps.tool-release-source.outputs.dms-v \}\}" -StableRelease'
         $step | Should -Match 'Invoke-ContractPromotion'
         $step | Should -Match '-PackageName "EdFi.Api.SecurityMetadataTools"'
@@ -836,16 +838,21 @@ Describe 'SecurityMetadataTools independent workflow wiring' {
         $check = [regex]::Match($script:dispatch, '(?ms)^  check-secrets-contract:.*?(?=^  publish:)').Value
         $check | Should -Match 'Assert-PublishedSecretsContract'
         $check | Should -Not -Match 'if:|publish_package'
+        $check | Should -Not -Match 'secrets\.|ApiKey|environment:'
         $script:dispatch | Should -Match './eng/ci/New-SecurityMetadataToolsSbom.ps1'
         $script:dispatch | Should -Match 'provenance-name: edfiApiSecurityMetadataTools.intoto.jsonl'
     }
     It 'guards both mutations and retries promotion with only the original build version' {
         $publish = [regex]::Match($script:dispatch, '(?ms)^  publish:.*?(?=^  promote:)').Value
+        # Both mutations need the publish switch and a main or v* tag ref, never another branch.
+        $trustedGate = "if: `${{ inputs.publish_package && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) }}"
         $promote = [regex]::Match($script:dispatch, '(?ms)^  promote:.*').Value
-        $publish | Should -Match 'if: \$\{\{ inputs.publish_package \}\}'
+        $publish | Should -Match ([regex]::Escape($trustedGate))
+        $publish | Should -Match '(?m)^    environment: publishing$'
         $publish | Should -Match 'Publish-SecurityMetadataToolsRelease'
         $promote | Should -Match 'needs: \[build, publish\]'
-        $promote | Should -Match 'if: \$\{\{ inputs.publish_package \}\}'
+        $promote | Should -Match ([regex]::Escape($trustedGate))
+        $promote | Should -Match '(?m)^    environment: publishing$'
         $promote | Should -Match 'TOOL_VERSION: \$\{\{ needs.build.outputs.tool-version \}\}'
         $promote | Should -Match 'Invoke-ContractPromotion'
         $promote | Should -Match '-Version \$env:TOOL_VERSION'
