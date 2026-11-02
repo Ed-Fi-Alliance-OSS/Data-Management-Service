@@ -31,10 +31,9 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 /// <see cref="IdentityOptions"/> directly and the HTTP tests replace <c>ITokenManager</c>
 /// wholesale, so a key spelled wrong here would bind nothing and fail no test.
 ///
-/// That is not hypothetical. The same method reads
-/// <c>IdentitySettings:TokenExpirationMinutes</c> while both appsettings files spell the key
-/// <c>OpenIddictTokenExpirationTimeMinutes</c>, so that setting never binds and its hardcoded
-/// default always wins - masked only because the two values happen to agree.
+/// A key spelled differently in the shipped appsettings.json would likewise bind nothing. The
+/// Configuration Service frontend unit tests check every shipped <c>IdentitySettings</c> key
+/// against what the readers actually read.
 /// </summary>
 [TestFixture]
 public class OpenIddictServiceCollectionExtensionsTests
@@ -124,6 +123,35 @@ public class OpenIddictServiceCollectionExtensionsTests
         // name, this would silently come back as the default 15.
         [Test]
         public void It_binds_the_configured_value() => _options.BearerTokenPerClientLimit.Should().Be(25);
+    }
+
+    [TestFixture]
+    public class Given_no_token_expiration_is_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() => _options = BindIdentityOptions([]);
+
+        [Test]
+        public void It_defaults_to_30_minutes() => _options.TokenExpirationMinutes.Should().Be(30);
+    }
+
+    [TestFixture]
+    public class Given_a_token_expiration_is_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _options = BindIdentityOptions(
+                new Dictionary<string, string?> { ["IdentitySettings:TokenExpirationMinutes"] = "45" }
+            );
+
+        // Binding the configured value is also what proves the key name: read under any other
+        // name, this would silently come back as the default 30.
+        [Test]
+        public void It_binds_the_configured_value() => _options.TokenExpirationMinutes.Should().Be(45);
     }
 
     [TestFixture]
