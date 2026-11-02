@@ -154,6 +154,29 @@ public class OpenIddictServiceCollectionExtensionsTests
         public void It_binds_the_configured_value() => _options.TokenExpirationMinutes.Should().Be(45);
     }
 
+    /// <summary>
+    /// Earlier releases shipped the lifetime under this name, which nothing ever read. It stays
+    /// unbound, with no alias, so an override using it keeps the default lifetime it always had.
+    /// </summary>
+    [TestFixture]
+    public class Given_only_the_earlier_token_expiration_key_is_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _options = BindIdentityOptions(
+                new Dictionary<string, string?>
+                {
+                    ["IdentitySettings:OpenIddictTokenExpirationTimeMinutes"] = "45",
+                }
+            );
+
+        [Test]
+        public void It_leaves_the_lifetime_at_the_default() =>
+            _options.TokenExpirationMinutes.Should().Be(30);
+    }
+
     [TestFixture]
     public class Given_a_positive_token_expiration_is_configured
     {
@@ -170,8 +193,9 @@ public class OpenIddictServiceCollectionExtensionsTests
     }
 
     /// <summary>
-    /// A token minted with a non-positive lifetime is already expired, so an unchecked value would
-    /// only show up as every token being rejected.
+    /// A token minted with a non-positive lifetime is already expired when issued and reports a zero
+    /// or negative expires_in, so an unchecked value would only show up as tokens failing within the
+    /// validators' clock skew.
     /// </summary>
     [TestFixture]
     public class Given_a_zero_token_expiration_is_configured
@@ -190,6 +214,53 @@ public class OpenIddictServiceCollectionExtensionsTests
                 .Should()
                 .Throw<OptionsValidationException>()
                 .WithMessage("*IdentitySettings:TokenExpirationMinutes must be greater than zero*");
+    }
+
+    [TestFixture]
+    public class Given_the_largest_supported_token_expiration_is_configured
+    {
+        private Action _validate = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _validate = ValidateAtStartup(
+                new Dictionary<string, string?>
+                {
+                    ["IdentitySettings:TokenExpirationMinutes"] =
+                        IdentityOptions.MaxTokenExpirationMinutes.ToString(),
+                }
+            );
+
+        [Test]
+        public void It_passes_startup_validation() => _validate.Should().NotThrow();
+    }
+
+    /// <summary>
+    /// The token response reports the lifetime in seconds as a 32-bit integer, so a longer lifetime
+    /// would overflow into a negative expires_in.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_token_expiration_above_the_largest_supported_value_is_configured
+    {
+        private Action _validate = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _validate = ValidateAtStartup(
+                new Dictionary<string, string?>
+                {
+                    ["IdentitySettings:TokenExpirationMinutes"] = (
+                        IdentityOptions.MaxTokenExpirationMinutes + 1
+                    ).ToString(),
+                }
+            );
+
+        [Test]
+        public void It_fails_startup_validation() =>
+            _validate
+                .Should()
+                .Throw<OptionsValidationException>()
+                .WithMessage("*IdentitySettings:TokenExpirationMinutes must be at most 35791394*");
     }
 
     [TestFixture]

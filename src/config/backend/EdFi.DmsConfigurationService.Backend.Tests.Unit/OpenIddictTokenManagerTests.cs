@@ -3742,6 +3742,42 @@ public class OpenIddictTokenManagerTests
         }
     }
 
+    // The largest lifetime startup validation admits must still produce a positive expires_in, so the
+    // bound and the minutes-to-seconds conversion cannot drift apart.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithTheLargestTokenLifetime : OpenIddictTokenManagerTests
+    {
+        private long _expiresIn;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeGrantableClient();
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
+
+            TokenResult result = await NewTokenManager(
+                    new IdentityOptions
+                    {
+                        Authority = TestIssuer,
+                        Audience = TestAudience,
+                        EncryptionKey = "test-encryption-key",
+                        TokenExpirationMinutes = IdentityOptions.MaxTokenExpirationMinutes,
+                    }
+                )
+                .GetAccessTokenAsync(GrantCredentials());
+
+            string json = result.Should().BeOfType<TokenResult.Success>().Subject.Token;
+            _expiresIn = System
+                .Text.Json.JsonDocument.Parse(json)
+                .RootElement.GetProperty("expires_in")
+                .GetInt64();
+        }
+
+        [Test]
+        public void It_returns_the_lifetime_in_seconds_without_overflow() =>
+            _expiresIn.Should().Be(IdentityOptions.MaxTokenExpirationMinutes * 60L);
+    }
+
     [TestFixture]
     public class Given_GetAccessTokenAsync_WhenTheClientIsAtItsTokenLimit : OpenIddictTokenManagerTests
     {

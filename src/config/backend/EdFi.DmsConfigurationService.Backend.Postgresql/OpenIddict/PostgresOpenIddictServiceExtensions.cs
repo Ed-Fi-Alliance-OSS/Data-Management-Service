@@ -57,12 +57,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 
             // Register JWT authentication with default settings (keeping existing implementation)
             services.AddJwtAuthentication(
-                new JwtSettings
-                {
-                    Issuer = issuer ?? string.Empty,
-                    Audience = audience ?? string.Empty,
-                    ExpirationMinutes = 30,
-                },
+                new JwtSettings { Issuer = issuer ?? string.Empty, Audience = audience ?? string.Empty },
                 configuration
             );
 

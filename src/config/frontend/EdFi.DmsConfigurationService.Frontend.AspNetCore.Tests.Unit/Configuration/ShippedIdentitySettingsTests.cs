@@ -62,10 +62,12 @@ public class Given_the_shipped_identity_settings
 /// Every IdentitySettings key in the shipped appsettings.json must be read by the code. "Read" is
 /// defined by the readers themselves, not by a list of key names: the configuration provider records
 /// each key a reader asks for, so a key the file carries that no reader asks for fails here, and so
-/// does a reader whose key string is renamed while the file keeps the old name. The readers run here
-/// are the section's three binders: the OpenIddict identity options binder, the frontend
-/// IdentitySettings class, and the client secret validation options. Code elsewhere that reads a
-/// single key directly, such as the Authority, reads a key one of these binders also reads.
+/// does a reader whose key string is renamed while the file keeps the old name, unless another
+/// reader still asks for that key: Authority and Audience are read by two binders, so renaming one
+/// of them in a single binder passes here. The readers run here are the section's three binders: the
+/// OpenIddict identity options binder, the frontend IdentitySettings class, and the client secret
+/// validation options. Code elsewhere that reads a single key directly, such as the Authority, reads
+/// a key one of these binders also reads.
 /// </summary>
 [TestFixture]
 public class Given_the_shipped_identity_settings_keys

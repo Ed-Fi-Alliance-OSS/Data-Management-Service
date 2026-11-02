@@ -106,13 +106,18 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                 )
                 .ValidateOnStart();
 
-            // A non-positive lifetime mints tokens that are already expired, so without this every
-            // token would be rejected instead of startup failing.
+            // A non-positive lifetime mints tokens that are already expired when issued, with a zero or
+            // negative expires_in; validators then accept them only within their clock skew. A
+            // lifetime above the maximum overflows expires_in. Both fail startup instead.
             services
                 .AddOptions<IdentityOptions>()
                 .Validate(
                     options => options.TokenExpirationMinutes > 0,
                     "IdentitySettings:TokenExpirationMinutes must be greater than zero."
+                )
+                .Validate(
+                    options => options.TokenExpirationMinutes <= IdentityOptions.MaxTokenExpirationMinutes,
+                    $"IdentitySettings:TokenExpirationMinutes must be at most {IdentityOptions.MaxTokenExpirationMinutes}."
                 )
                 .ValidateOnStart();
 

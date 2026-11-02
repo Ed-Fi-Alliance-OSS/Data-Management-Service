@@ -21,6 +21,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         public string Authority { get; set; } = string.Empty;
 
         /// <summary>
+        /// The longest token lifetime, in minutes, whose <c>expires_in</c> in seconds still fits the
+        /// token response's 32-bit integer.
+        /// </summary>
+        public const int MaxTokenExpirationMinutes = int.MaxValue / 60;
+
+        /// <summary>
         /// Token expiration time in minutes.
         /// </summary>
         public int TokenExpirationMinutes { get; set; } = 30;
