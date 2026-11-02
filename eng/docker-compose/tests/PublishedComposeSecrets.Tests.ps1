@@ -14,6 +14,15 @@ Describe 'Published Compose required secrets' {
         $script:composeRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
         $script:databaseKeySentinel = 'dms1652-db-key-sentinel-0000000000'
         $script:adminSentinel = 'host=sentinel-host;port=5432;username=sentinel;password=sentinel;database=sentinel;'
+        $script:identityKeySentinel = 'dms1652-id-key-sentinel-0000000000'
+        $script:fullDeployment = @('postgresql.compose.yml', 'published-dms.compose.yml', 'published-config.compose.yml', 'dms-cms-proxy.yml')
+
+        function Get-SentinelLines {
+            param([string[]] $Lines)
+            $Lines = Set-Declaration -Lines $Lines -Key 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY' -Value $script:databaseKeySentinel
+            $Lines = Set-Declaration -Lines $Lines -Key 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY' -Value $script:identityKeySentinel
+            return Set-Declaration -Lines $Lines -Key 'DATABASE_CONNECTION_STRING_ADMIN' -Value $script:adminSentinel
+        }
 
         function Get-EnvironmentLines {
             param([string] $Name)
@@ -53,7 +62,8 @@ Describe 'Published Compose required secrets' {
             # one afterwards, even when rendering fails.
             $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
             foreach ($file in $Files) {
-                $text = Get-Content -Raw -LiteralPath (Join-Path $script:composeRoot $file)
+                $filePath = if ([IO.Path]::IsPathRooted($file)) { $file } else { Join-Path $script:composeRoot $file }
+                $text = Get-Content -Raw -LiteralPath $filePath
                 foreach ($match in [regex]::Matches($text, '\$\{([A-Za-z_][A-Za-z0-9_]*)')) {
                     [void]$names.Add($match.Groups[1].Value)
                 }
@@ -190,6 +200,174 @@ Describe 'Published Compose required secrets' {
 
             $result.ExitCode | Should -Be 0
             $result.Config.services.PSObject.Properties.Name | Should -Not -Contain 'config'
+        }
+    }
+
+    Context 'published-config.compose.yml rendered without DMS' {
+        It 'rejects <Variable> when it is <State>' -TestCases @(
+            @{ Key = 'DatabaseSettings__EncryptionKey'; Variable = 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY'; State = 'unset' }
+            @{ Key = 'DatabaseSettings__EncryptionKey'; Variable = 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY'; State = 'empty' }
+            @{ Key = 'DatabaseSettings__EncryptionKey'; Variable = 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY'; State = 'quoted-empty' }
+            @{ Key = 'IdentitySettings__EncryptionKey'; Variable = 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY'; State = 'unset' }
+            @{ Key = 'IdentitySettings__EncryptionKey'; Variable = 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY'; State = 'empty' }
+            @{ Key = 'IdentitySettings__EncryptionKey'; Variable = 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY'; State = 'quoted-empty' }
+        ) {
+            param($Key, $Variable, $State)
+            $lines = Set-State -Lines (Get-EnvironmentLines '.env.e2e') -Key $Variable -State $State
+
+            $result = Invoke-PublishedRender -Files @('postgresql.compose.yml', 'published-config.compose.yml') -Lines $lines
+
+            Assert-RequiredValueFailure -Result $result -Service 'config' -Key $Key -Variable $Variable -Doc 'docs/DOCKER.md'
+        }
+
+        It 'requires the identity key even when Keycloak is the identity provider' {
+            # Compose cannot see the identity provider, so the guard applies whenever CMS is composed.
+            $lines = Remove-Declaration -Lines (Get-EnvironmentLines '.env.e2e') -Key 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY'
+            $lines = Set-Declaration -Lines $lines -Key 'CONFIGURATION_SERVICE_IDENTITY_PROVIDER' -Value 'keycloak'
+
+            $result = Invoke-PublishedRender -Files @('postgresql.compose.yml', 'published-config.compose.yml', 'keycloak.compose.yml') -Lines $lines
+
+            Assert-RequiredValueFailure -Result $result -Service 'config' -Key 'IdentitySettings__EncryptionKey' `
+                -Variable 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY' -Doc 'docs/DOCKER.md'
+        }
+
+        It 'passes explicit <Engine> values through unchanged' -TestCases @(
+            @{ Engine = 'PostgreSQL'; DatabaseFile = 'postgresql.compose.yml'; Overlays = @() }
+            @{ Engine = 'SQL Server'; DatabaseFile = 'mssql.compose.yml'; Overlays = @('.env.mssql') }
+        ) {
+            param($Engine, $DatabaseFile, $Overlays)
+            $lines = @(Get-EnvironmentLines '.env.e2e')
+            foreach ($overlay in $Overlays) { $lines += Get-EnvironmentLines $overlay }
+            $lines = Get-SentinelLines -Lines $lines
+
+            $result = Invoke-PublishedRender -Files @($DatabaseFile, 'published-config.compose.yml') -Lines $lines
+
+            $result.ExitCode | Should -Be 0
+            $settings = $result.Config.services.config.environment
+            $settings.DatabaseSettings__EncryptionKey | Should -BeExactly $script:databaseKeySentinel
+            $settings.IdentitySettings__EncryptionKey | Should -BeExactly $script:identityKeySentinel
+        }
+    }
+
+    Context 'published DMS and Configuration Service rendered together' {
+        It 'passes explicit values through and gives both services the same database key' {
+            $lines = Get-SentinelLines -Lines (Get-EnvironmentLines '.env.e2e')
+
+            $result = Invoke-PublishedRender -Files $script:fullDeployment -Lines $lines
+
+            $result.ExitCode | Should -Be 0
+            $result.Config.services.dms.environment.ConfigurationServiceSettings__EncryptionKey | Should -BeExactly $script:databaseKeySentinel
+            $result.Config.services.config.environment.DatabaseSettings__EncryptionKey | Should -BeExactly $script:databaseKeySentinel
+            $result.Config.services.config.environment.IdentitySettings__EncryptionKey | Should -BeExactly $script:identityKeySentinel
+            $result.Config.services.dms.environment.DATABASE_CONNECTION_STRING_ADMIN | Should -BeExactly $script:adminSentinel
+        }
+
+        It 'renders a Keycloak deployment that supplies the identity key' {
+            $lines = Get-SentinelLines -Lines (Get-EnvironmentLines '.env.e2e')
+            $lines = Set-Declaration -Lines $lines -Key 'CONFIGURATION_SERVICE_IDENTITY_PROVIDER' -Value 'keycloak'
+
+            $result = Invoke-PublishedRender -Files ($script:fullDeployment + 'keycloak.compose.yml') -Lines $lines
+
+            $result.ExitCode | Should -Be 0
+            $result.Config.services.config.environment.AppSettings__IdentityProvider | Should -BeExactly 'keycloak'
+        }
+
+        It 'stops when the shared database key is missing' {
+            $lines = Remove-Declaration -Lines (Get-EnvironmentLines '.env.e2e') -Key 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY'
+
+            $result = Invoke-PublishedRender -Files $script:fullDeployment -Lines $lines
+
+            # Either service's guard may report first; the isolated contexts above pin each one.
+            $result.ExitCode | Should -Not -Be 0
+            $result.StdErr | Should -Match ([regex]::Escape('required variable CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY is missing a value'))
+        }
+
+        Context 'with a deployment-owned override that removes the vault-served keys' {
+            BeforeAll {
+                # dms-cms-proxy.yml is left out on purpose. It also sets environment on config, and
+                # Compose drops a later !reset of a service whose environment an intermediate file
+                # also sets, so with it these resets would not apply. That happens with or without the
+                # required-value guards; these cases only cover how the guards interact with !reset.
+                $script:vaultDeployment = @('postgresql.compose.yml', 'published-dms.compose.yml', 'published-config.compose.yml')
+                $script:vaultOverride = Join-Path $TestDrive 'vault-override.yml'
+                $override = @(
+                    'services:'
+                    '  dms:'
+                    '    environment:'
+                    '      ConfigurationServiceSettings__EncryptionKey: !reset null'
+                    '      DATABASE_CONNECTION_STRING_ADMIN: !reset null'
+                    '  config:'
+                    '    environment:'
+                    '      DatabaseSettings__EncryptionKey: !reset null'
+                    '      IdentitySettings__EncryptionKey: !reset null'
+                )
+                [IO.File]::WriteAllText($script:vaultOverride, (($override -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+            }
+
+            It 'removes the keys from the containers when the env file keeps their values set' {
+                $lines = Get-SentinelLines -Lines (Get-EnvironmentLines '.env.e2e')
+
+                $result = Invoke-PublishedRender -Files ($script:vaultDeployment + $script:vaultOverride) -Lines $lines
+
+                $result.ExitCode | Should -Be 0
+                $dms = $result.Config.services.dms.environment.PSObject.Properties.Name
+                $dms | Should -Not -Contain 'ConfigurationServiceSettings__EncryptionKey'
+                $dms | Should -Not -Contain 'DATABASE_CONNECTION_STRING_ADMIN'
+                $config = $result.Config.services.config.environment.PSObject.Properties.Name
+                $config | Should -Not -Contain 'DatabaseSettings__EncryptionKey'
+                $config | Should -Not -Contain 'IdentitySettings__EncryptionKey'
+            }
+
+            It 'still requires the env file values, because Compose interpolates before applying the reset' {
+                $lines = Remove-Declaration -Lines (Get-EnvironmentLines '.env.e2e') -Key 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY'
+
+                $result = Invoke-PublishedRender -Files ($script:vaultDeployment + $script:vaultOverride) -Lines $lines
+
+                $result.ExitCode | Should -Not -Be 0
+                $result.StdErr | Should -Match ([regex]::Escape('required variable CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY is missing a value'))
+            }
+        }
+
+        It 'renders the committed <Name> environment' -TestCases @(
+            @{ Name = '.env.example'; Files = @('.env.example'); Engine = 'postgresql' }
+            @{ Name = '.env.e2e'; Files = @('.env.e2e'); Engine = 'postgresql' }
+            @{ Name = '.env.routeContext.e2e'; Files = @('.env.routeContext.e2e'); Engine = 'postgresql' }
+            @{ Name = '.env.cursorpartitions.e2e'; Files = @('.env.cursorpartitions.e2e'); Engine = 'postgresql' }
+            @{ Name = '.env.multitenancy'; Files = @('.env.multitenancy'); Engine = 'postgresql' }
+            @{ Name = '.env.smoke'; Files = @('.env.smoke'); Engine = 'postgresql' }
+            @{ Name = '.env.smoke.ds61'; Files = @('.env.smoke.ds61'); Engine = 'postgresql' }
+            @{ Name = '.env.template'; Files = @('.env.template'); Engine = 'postgresql' }
+            @{ Name = '.env.template.ds61'; Files = @('.env.template.ds61'); Engine = 'postgresql' }
+            @{ Name = '.env.e2e with .env.mssql'; Files = @('.env.e2e', '.env.mssql'); Engine = 'mssql' }
+            @{ Name = '.env.smoke with .env.mssql'; Files = @('.env.smoke', '.env.mssql'); Engine = 'mssql' }
+            @{ Name = '.env.e2e with Keycloak'; Files = @('.env.e2e'); Engine = 'postgresql'; Keycloak = $true }
+        ) {
+            param($Name, $Files, $Engine, $Keycloak)
+            $lines = @()
+            foreach ($file in $Files) { $lines += Get-EnvironmentLines $file }
+            $composeFiles = @(if ($Engine -eq 'mssql') { 'mssql.compose.yml' } else { 'postgresql.compose.yml' }) + $script:fullDeployment[1..3]
+            if ($Keycloak) {
+                $lines = Set-Declaration -Lines $lines -Key 'CONFIGURATION_SERVICE_IDENTITY_PROVIDER' -Value 'keycloak'
+                $composeFiles += 'keycloak.compose.yml'
+            }
+
+            $result = Invoke-PublishedRender -Files $composeFiles -Lines $lines
+
+            $result.StdErr | Should -Not -Match 'required variable'
+            $result.ExitCode | Should -Be 0
+        }
+    }
+
+    Context 'local Compose files' {
+        It 'keep their fallbacks, so local stacks render without the published-file values' {
+            $lines = Get-EnvironmentLines '.env.e2e'
+            foreach ($key in 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY', 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY', 'DATABASE_CONNECTION_STRING_ADMIN') {
+                $lines = Remove-Declaration -Lines $lines -Key $key
+            }
+
+            $result = Invoke-PublishedRender -Files @('postgresql.compose.yml', 'local-dms.compose.yml', 'local-config.compose.yml') -Lines $lines
+
+            $result.ExitCode | Should -Be 0
         }
     }
 }
