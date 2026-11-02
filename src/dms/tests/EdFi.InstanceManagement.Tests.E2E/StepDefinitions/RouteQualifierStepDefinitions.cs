@@ -259,6 +259,17 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         content.Should().NotContain(unexpectedContent);
     }
 
+    [Then("the response body should contain {string}")]
+    public async Task ThenTheResponseBodyShouldContain(string expectedContent)
+    {
+        // Unlike "the response should contain", this step does not require a success status, so it can
+        // check the body of an error response.
+        context.LastResponse.Should().NotBeNull();
+
+        var content = await context.LastResponse!.Content.ReadAsStringAsync();
+        content.Should().Contain(expectedContent);
+    }
+
     [When("I GET resource {string} by location")]
     public async Task WhenIGetResourceByLocation(string key)
     {

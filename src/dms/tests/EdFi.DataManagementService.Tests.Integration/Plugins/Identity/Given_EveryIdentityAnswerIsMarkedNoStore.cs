@@ -81,7 +81,7 @@ public sealed class Given_EveryIdentityAnswerIsMarkedNoStore
         using (HttpClient anonymous = _run.Host.CreateClient())
         {
             _answers["swagger"] = await _run.GetAsync(
-                "http://localhost/metadata/identity/v2/swagger.json",
+                $"http://localhost{IdentityServedOpenApi.DocumentPath}",
                 anonymous
             );
             _answers["discovery"] = await _run.GetAsync("http://localhost/", anonymous);
