@@ -12,13 +12,14 @@ services:
     environment:
       - DMS_HTTP_PORTS=${DMS_HTTP_PORTS:-8080}
       - DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS=${DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS:-true}
+      - DMS_SWAGGER_UI_ROUTE_CONTEXT=${DMS_SWAGGER_UI_ROUTE_CONTEXT:-}
     volumes:
       - ./custom-swagger-ui:/tmp/nginx-template:ro
     networks:
       - dms
     hostname: ed-fi-api-swagger-ui
     command: >
-      sh -c "envsubst '$$DMS_HTTP_PORTS $$DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS' < /tmp/nginx-template/index.html > /usr/share/nginx/html/index.html &&
+      sh -c "envsubst '$$DMS_HTTP_PORTS $$DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS $$DMS_SWAGGER_UI_ROUTE_CONTEXT' < /tmp/nginx-template/index.html > /usr/share/nginx/html/index.html &&
              cp /tmp/nginx-template/*.js /usr/share/nginx/html/ &&
              if [ -f /tmp/nginx-template/favicon.ico ]; then cp /tmp/nginx-template/favicon.ico /usr/share/nginx/html/; fi &&
              nginx -g 'daemon off;'"

@@ -65,6 +65,71 @@ public class MetadataModuleTests
         return Options.Create(options);
     }
 
+    internal static DataStore DataStoreWithRouteContext(
+        long id,
+        params (string Key, string Value)[] routeContext
+    )
+    {
+        return new DataStore(
+            id,
+            "Test",
+            $"TestInstance{id}",
+            "test-connection-string",
+            routeContext.ToDictionary(
+                item => new RouteQualifierName(item.Key),
+                item => new RouteQualifierValue(item.Value)
+            )
+        );
+    }
+
+    /// <summary>
+    /// A data store provider for tenant1 whose one instance answers to districtId 255901 and
+    /// schoolYear 2024, so the real route validator accepts /tenant1/255901/2024/metadata/... requests.
+    /// </summary>
+    internal static IDataStoreProvider MultiTenantDataStoreProvider()
+    {
+        DataStore dataStore = DataStoreWithRouteContext(1, ("districtId", "255901"), ("schoolYear", "2024"));
+        var dataStoreProvider = A.Fake<IDataStoreProvider>();
+        A.CallTo(() => dataStoreProvider.LoadDataStores(A<string?>._, A<CancellationToken>._))
+            .Returns([dataStore]);
+        A.CallTo(() => dataStoreProvider.LoadTenants(A<CancellationToken>._))
+            .Returns(new List<string> { "tenant1" });
+        A.CallTo(() => dataStoreProvider.GetAll(A<string?>._)).Returns([dataStore]);
+        A.CallTo(() => dataStoreProvider.GetById(A<long>._, A<string?>._)).Returns(dataStore);
+        A.CallTo(() => dataStoreProvider.IsLoaded(A<string?>._)).Returns(true);
+        A.CallTo(() => dataStoreProvider.TenantExists(A<string>.That.IsNotNull())).Returns(true);
+        A.CallTo(() => dataStoreProvider.GetLoadedTenantKeys())
+            .Returns(new List<string> { "tenant1" }.AsReadOnly());
+        return dataStoreProvider;
+    }
+
+    /// <summary>
+    /// A host with multi-tenancy on, the given route qualifiers, and the tenant1 data store provider.
+    /// </summary>
+    internal static WebApplicationFactory<Program> CreateMultiTenantFactory(
+        Action<IServiceCollection> configureServices,
+        string routeQualifierSegments = "districtId,schoolYear"
+    )
+    {
+        IDataStoreProvider dataStoreProvider = MultiTenantDataStoreProvider();
+
+        return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            builder.ConfigureServices(collection =>
+            {
+                TestMockHelper.AddEssentialMocks(collection);
+                collection.AddTransient(_ => dataStoreProvider);
+                configureServices(collection);
+                collection.Configure<FrontendAppSettings>(options =>
+                {
+                    options.MultiTenancy = true;
+                    options.RouteQualifierSegments = routeQualifierSegments;
+                });
+            });
+        });
+    }
+
     [TestFixture]
     public class Given_OpenApi_documents_with_internal_authentication_urls
     {
@@ -329,35 +394,569 @@ public class MetadataModuleTests
         }
     }
 
+    private const string UnqualifiedMetadataDetail =
+        "Metadata requests must include the tenant and the configured route qualifiers in the path, for example /{tenant}/{districtId}/{schoolYear}/metadata/specifications.";
+
+    /// <summary>
+    /// With multi-tenancy on, an unqualified specifications request has no tenant to serve it for. It
+    /// must answer the guidance 404 before anything reaches the profile catalog; the root route used to
+    /// call the Configuration Service without a tenant and answer 503.
+    /// </summary>
     [TestFixture]
-    public class When_Requesting_Tenant_Only_Metadata_With_Required_Route_Qualifiers
+    public class Given_Multi_Tenancy_With_Route_Qualifiers_And_An_Unqualified_Specifications_Request
     {
+        private const string CorrelationId = "metadata-trace-id";
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonNode _body = null!;
+        private IApiService _apiService = null!;
+        private IMetadataRouteValidator _metadataRouteValidator = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            _apiService = A.Fake<IApiService>();
+            A.CallTo(() => _apiService.GetProfileNamesAsync(A<string?>._))
+                .Returns(Task.FromResult<IReadOnlyList<string>>(["StudentProfile"]));
+            _metadataRouteValidator = A.Fake<IMetadataRouteValidator>();
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(_ => _apiService);
+                    collection.AddTransient(_ => _metadataRouteValidator);
+                    collection.Configure<FrontendAppSettings>(options =>
+                    {
+                        options.MultiTenancy = true;
+                        options.RouteQualifierSegments = "districtId,schoolYear";
+                        // The Test environment disables client-supplied correlation ids; enable them so
+                        // the body can be checked for the echoed value.
+                        options.CorrelationIdHeader = "X-Correlation-Id";
+                    });
+                });
+            });
+            _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Correlation-Id", CorrelationId);
+
+            _response = await _client.GetAsync("/metadata/specifications");
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
+        }
+
+        [OneTimeTearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_returns_404()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public void It_writes_problem_json()
+        {
+            _response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        }
+
+        [Test]
+        public void It_uses_the_not_found_problem_type()
+        {
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+            _body["title"]!.GetValue<string>().Should().Be("Not Found");
+            _body["status"]!.GetValue<int>().Should().Be(404);
+        }
+
+        [Test]
+        public void It_explains_the_required_path_shape()
+        {
+            _body["detail"]!.GetValue<string>().Should().Be(UnqualifiedMetadataDetail);
+        }
+
+        [Test]
+        public void It_echoes_the_correlation_id()
+        {
+            _body["correlationId"]!.GetValue<string>().Should().Be(CorrelationId);
+        }
+
+        [Test]
+        public void It_does_not_call_the_profile_service()
+        {
+            A.CallTo(() => _apiService.GetProfileNamesAsync(A<string?>._)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_does_not_consult_the_route_validator()
+        {
+            A.CallTo(() => _metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
+        }
+    }
+
+    /// <summary>
+    /// Every metadata route that lacks the tenant or a configured route qualifier answers the same
+    /// guidance 404: the unqualified forms, the tenant-only forms reserved so they stop
+    /// matching the discovery templates, and the partially qualified forms that omit a trailing
+    /// qualifier.
+    /// </summary>
+    [TestFixture]
+    public class When_Requesting_Unqualified_Metadata_With_Multi_Tenancy
+    {
+        private static WebApplicationFactory<Program> CreateFactory(
+            IApiService apiService,
+            IMetadataRouteValidator metadataRouteValidator,
+            string routeQualifierSegments,
+            bool identityManagementEnabled = false
+        )
+        {
+            return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(_ => apiService);
+                    collection.AddTransient(_ => metadataRouteValidator);
+                    collection.Configure<FrontendAppSettings>(options =>
+                    {
+                        options.MultiTenancy = true;
+                        options.RouteQualifierSegments = routeQualifierSegments;
+                    });
+                    collection.Configure<IdentityManagementOptions>(options =>
+                        options.Enabled = identityManagementEnabled
+                    );
+                });
+            });
+        }
+
+        [TestCase("/metadata")]
+        [TestCase("/metadata/dependencies")]
+        [TestCase("/metadata/specifications")]
+        [TestCase("/metadata/specifications/resources-spec.json")]
+        [TestCase("/metadata/specifications/descriptors-spec.json")]
+        [TestCase("/metadata/specifications/discovery-spec.json")]
+        [TestCase("/metadata/specifications/profiles/StudentProfile/resources-spec.json")]
+        [TestCase("/metadata/changequeries/v1/swagger.json")]
         [TestCase("/tenant1/metadata")]
         [TestCase("/tenant1/metadata/dependencies")]
         [TestCase("/tenant1/metadata/specifications")]
-        public async Task It_returns_not_found_instead_of_matching_discovery(string requestPath)
+        [TestCase("/tenant1/metadata/specifications/resources-spec.json")]
+        [TestCase("/tenant1/metadata/specifications/descriptors-spec.json")]
+        [TestCase("/tenant1/metadata/specifications/discovery-spec.json")]
+        [TestCase("/tenant1/metadata/specifications/profiles/StudentProfile/resources-spec.json")]
+        [TestCase("/tenant1/metadata/changequeries/v1/swagger.json")]
+        [TestCase("/tenant1/255901/metadata")]
+        [TestCase("/tenant1/255901/metadata/dependencies")]
+        [TestCase("/tenant1/255901/metadata/specifications")]
+        [TestCase("/tenant1/255901/metadata/specifications/resources-spec.json")]
+        [TestCase("/tenant1/255901/metadata/specifications/profiles/StudentProfile/resources-spec.json")]
+        [TestCase("/tenant1/255901/metadata/changequeries/v1/swagger.json")]
+        public async Task It_returns_the_guidance_not_found_without_reaching_the_backend(string requestPath)
         {
             // Arrange
+            var apiService = A.Fake<IApiService>();
+            var metadataRouteValidator = A.Fake<IMetadataRouteValidator>();
+            await using var factory = CreateFactory(
+                apiService,
+                metadataRouteValidator,
+                "districtId,schoolYear"
+            );
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync(requestPath);
+            JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+            body["detail"]!.GetValue<string>().Should().Be(UnqualifiedMetadataDetail);
+            A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._)).MustNotHaveHappened();
+            A.CallTo(() => apiService.GetDependencies()).MustNotHaveHappened();
+            A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
+        }
+
+        /// <summary>
+        /// The identity document route exists only while identity management is on, and then it takes
+        /// the same rejection as every other metadata route instead of serving the document.
+        /// </summary>
+        [TestCase("/metadata/identity/v2/swagger.json")]
+        [TestCase("/tenant1/metadata/identity/v2/swagger.json")]
+        [TestCase("/tenant1/255901/metadata/identity/v2/swagger.json")]
+        public async Task It_rejects_the_unqualified_identity_document_routes_when_identity_management_is_on(
+            string requestPath
+        )
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            var metadataRouteValidator = A.Fake<IMetadataRouteValidator>();
+            await using var factory = CreateFactory(
+                apiService,
+                metadataRouteValidator,
+                "districtId,schoolYear",
+                identityManagementEnabled: true
+            );
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync(requestPath);
+            JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+            body["detail"]!.GetValue<string>().Should().Be(UnqualifiedMetadataDetail);
+            A.CallTo(() => apiService.GetIdentityOpenApiSpecification(A<JsonArray>._)).MustNotHaveHappened();
+            A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
+        }
+
+        [TestCase("schoolYear", "/{tenant}/{schoolYear}/metadata/specifications")]
+        [TestCase("", "/{tenant}/metadata/specifications")]
+        public async Task It_names_the_configured_route_shape_in_the_detail(
+            string routeQualifierSegments,
+            string expectedExamplePath
+        )
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            await using var factory = CreateFactory(
+                apiService,
+                A.Fake<IMetadataRouteValidator>(),
+                routeQualifierSegments
+            );
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/metadata/specifications");
+            JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            body["detail"]!.GetValue<string>().Should().EndWith($"for example {expectedExamplePath}.");
+            A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._)).MustNotHaveHappened();
+        }
+
+        [TestCase("/tenant1/metadata/specifications")]
+        [TestCase("/tenant1/255901/metadata/specifications")]
+        [TestCase("/tenant1/255901/2024/metadata/specifications")]
+        public async Task It_rejects_every_incomplete_qualifier_prefix(string requestPath)
+        {
+            // Arrange: three qualifiers, so two partially qualified prefixes exist besides the tenant.
+            var apiService = A.Fake<IApiService>();
+            var metadataRouteValidator = A.Fake<IMetadataRouteValidator>();
+            await using var factory = CreateFactory(
+                apiService,
+                metadataRouteValidator,
+                "districtId,schoolYear,term"
+            );
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync(requestPath);
+            JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .EndWith("for example /{tenant}/{districtId}/{schoolYear}/{term}/metadata/specifications.");
+            A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._)).MustNotHaveHappened();
+            A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_validates_the_fully_qualified_route_when_three_qualifiers_are_configured()
+        {
+            // Arrange: the rejection templates stop one qualifier short of the validated route, so the
+            // full form must still be served through the validator rather than reported as ambiguous.
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
+            A.CallTo(() => apiService.GetProfileNamesAsync("tenant1"))
+                .Returns(Task.FromResult<IReadOnlyList<string>>(["StudentProfile"]));
+            var metadataRouteValidator = A.Fake<IMetadataRouteValidator>();
+            A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+                .Returns(true);
+            await using var factory = CreateFactory(
+                apiService,
+                metadataRouteValidator,
+                "districtId,schoolYear,term"
+            );
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/tenant1/255901/2024/fall/metadata/specifications");
+            JsonArray sections = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsArray();
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            sections.Select(node => node!["name"]!.GetValue<string>()).Should().Contain("StudentProfile");
+            A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public async Task It_keeps_the_tenant_route_validated_when_no_route_qualifiers_are_configured()
+        {
+            // Arrange: with no qualifiers "/{tenant}/metadata/..." is the fully qualified route, so it
+            // must be validated and served rather than also mapped as a rejection, which would be an
+            // ambiguous match.
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
+            A.CallTo(() => apiService.GetProfileNamesAsync("tenant1"))
+                .Returns(Task.FromResult<IReadOnlyList<string>>(["StudentProfile"]));
+            var metadataRouteValidator = A.Fake<IMetadataRouteValidator>();
+            A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+                .Returns(true);
+            await using var factory = CreateFactory(apiService, metadataRouteValidator, string.Empty);
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/tenant1/metadata/specifications");
+            JsonArray sections = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsArray();
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            sections.Select(node => node!["name"]!.GetValue<string>()).Should().Contain("StudentProfile");
+            A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    /// <summary>
+    /// The fully qualified route is unchanged: the tenant's profile catalog is read and listed.
+    /// </summary>
+    [TestFixture]
+    public class Given_Multi_Tenancy_With_Route_Qualifiers_And_A_Fully_Qualified_Specifications_Request
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+        private HttpResponseMessage _response = null!;
+        private JsonArray _sections = null!;
+        private IApiService _apiService = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            _apiService = A.Fake<IApiService>();
+            A.CallTo(() => _apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
+            A.CallTo(() => _apiService.GetProfileNamesAsync("tenant1"))
+                .Returns(Task.FromResult<IReadOnlyList<string>>(["StudentProfile"]));
+
+            _factory = CreateMultiTenantFactory(collection => collection.AddTransient(_ => _apiService));
+            _client = _factory.CreateClient();
+
+            _response = await _client.GetAsync("/tenant1/255901/2024/metadata/specifications");
+            _sections = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsArray();
+        }
+
+        [OneTimeTearDown]
+        public async Task TearDown()
+        {
+            _response.Dispose();
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [Test]
+        public void It_returns_200()
+        {
+            _response.StatusCode.Should().Be(HttpStatusCode.OK);
+        }
+
+        [Test]
+        public void It_lists_the_tenant_profile_under_the_qualified_route()
+        {
+            JsonNode profile = _sections.Single(node => node!["prefix"]!.GetValue<string>() == "Profiles")!;
+            profile["name"]!.GetValue<string>().Should().Be("StudentProfile");
+            profile["endpointUri"]!
+                .GetValue<string>()
+                .Should()
+                .Be(
+                    "http://localhost/tenant1/255901/2024/metadata/specifications/profiles/StudentProfile/resources-spec.json"
+                );
+        }
+
+        [Test]
+        public void It_reads_the_profile_catalog_for_the_tenant()
+        {
+            A.CallTo(() => _apiService.GetProfileNamesAsync("tenant1")).MustHaveHappenedOnceExactly();
+        }
+    }
+
+    /// <summary>
+    /// Without multi-tenancy the unqualified route is the API surface and keeps listing profiles,
+    /// whether or not route qualifiers are configured.
+    /// </summary>
+    [TestFixture]
+    public class When_Requesting_Unqualified_Specifications_Without_Multi_Tenancy
+    {
+        [TestCase("")]
+        [TestCase("districtId,schoolYear")]
+        public async Task It_lists_the_profiles(string routeQualifierSegments)
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
+            A.CallTo(() => apiService.GetProfileNamesAsync(A<string>.That.IsNull()))
+                .Returns(Task.FromResult<IReadOnlyList<string>>(["StudentProfile"]));
+
             await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Test");
                 builder.ConfigureServices(collection =>
                 {
                     TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(_ => apiService);
                     collection.Configure<FrontendAppSettings>(options =>
                     {
-                        options.MultiTenancy = true;
-                        options.RouteQualifierSegments = "districtId,schoolYear";
+                        options.MultiTenancy = false;
+                        options.RouteQualifierSegments = routeQualifierSegments;
                     });
                 });
             });
             using var client = factory.CreateClient();
 
             // Act
-            var response = await client.GetAsync(requestPath);
+            var response = await client.GetAsync("/metadata/specifications");
+            JsonArray sections = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsArray();
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            JsonNode profile = sections.Single(node => node!["prefix"]!.GetValue<string>() == "Profiles")!;
+            profile["name"]!.GetValue<string>().Should().Be("StudentProfile");
+            A.CallTo(() => apiService.GetProfileNamesAsync(A<string>.That.IsNull()))
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    /// <summary>
+    /// Regression guard: Discovery at "/" and "/{tenant}" must advertise only fully qualified
+    /// metadata URLs, so none of them lands on the guidance 404 once the placeholders are filled in.
+    /// </summary>
+    [TestFixture]
+    public class Given_Multi_Tenancy_With_Route_Qualifiers_And_The_Discovery_Document
+    {
+        private static readonly string[] _metadataUrlKeys =
+        [
+            "dependencies",
+            "openApiMetadata",
+            "xsdMetadata",
+        ];
+        private WebApplicationFactory<Program> _factory = null!;
+        private HttpClient _client = null!;
+
+        [OneTimeSetUp]
+        public void Setup()
+        {
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetDependencies()).Returns(new JsonArray());
+            A.CallTo(() => apiService.HasChangeQueriesOpenApiSpecification()).Returns(false);
+            A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
+                .Returns(Task.FromResult<IReadOnlyList<string>>([]));
+            A.CallTo(() => apiService.GetDataModelInfo()).Returns(new List<IDataModelInfo>());
+
+            _factory = CreateMultiTenantFactory(collection => collection.AddTransient(_ => apiService));
+            _client = _factory.CreateClient();
+        }
+
+        [OneTimeTearDown]
+        public async Task TearDown()
+        {
+            _client.Dispose();
+            await _factory.DisposeAsync();
+        }
+
+        [TestCase("/", "http://localhost/{tenant}/{districtId}/{schoolYear}/metadata")]
+        [TestCase("/tenant1", "http://localhost/tenant1/{districtId}/{schoolYear}/metadata")]
+        [TestCase("/tenant1/255901", "http://localhost/tenant1/255901/{schoolYear}/metadata")]
+        public async Task It_advertises_only_fully_qualified_metadata_urls(
+            string discoveryPath,
+            string expectedPrefix
+        )
+        {
+            // Act
+            var response = await _client.GetAsync(discoveryPath);
+            JsonNode urls = JsonNode.Parse(await response.Content.ReadAsStringAsync())!["urls"]!;
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            foreach (string key in _metadataUrlKeys)
+            {
+                urls[key]!
+                    .GetValue<string>()
+                    .Should()
+                    .StartWith(expectedPrefix, $"urls.{key} must carry the full route context");
+            }
+        }
+
+        [TestCase("/")]
+        [TestCase("/tenant1")]
+        [TestCase("/tenant1/255901")]
+        public async Task It_advertises_metadata_urls_that_resolve(string discoveryPath)
+        {
+            // Arrange
+            var discovery = await _client.GetAsync(discoveryPath);
+            JsonNode urls = JsonNode.Parse(await discovery.Content.ReadAsStringAsync())!["urls"]!;
+
+            foreach (string key in _metadataUrlKeys)
+            {
+                string url = urls[key]!
+                    .GetValue<string>()
+                    .Replace("{tenant}", "tenant1")
+                    .Replace("{districtId}", "255901")
+                    .Replace("{schoolYear}", "2024");
+
+                // Act
+                var response = await _client.GetAsync(url);
+                string body = await response.Content.ReadAsStringAsync();
+
+                // Assert
+                response
+                    .StatusCode.Should()
+                    .Be(HttpStatusCode.OK, $"discovery advertised urls.{key} as {url}");
+                body.Should().NotContain("Metadata requests must include");
+            }
+        }
+    }
+
+    [TestFixture]
+    public class When_Building_The_Unqualified_Metadata_Detail
+    {
+        [TestCase(
+            new string[0],
+            "Metadata requests must include the tenant in the path, for example /{tenant}/metadata/specifications."
+        )]
+        [TestCase(
+            new[] { "schoolYear" },
+            "Metadata requests must include the tenant and the configured route qualifiers in the path, for example /{tenant}/{schoolYear}/metadata/specifications."
+        )]
+        [TestCase(
+            new[] { "districtId", "schoolYear" },
+            "Metadata requests must include the tenant and the configured route qualifiers in the path, for example /{tenant}/{districtId}/{schoolYear}/metadata/specifications."
+        )]
+        public void It_names_the_tenant_and_each_configured_qualifier(
+            string[] routeQualifierSegments,
+            string expected
+        )
+        {
+            MetadataEndpointModule
+                .BuildUnqualifiedMetadataDetail(routeQualifierSegments)
+                .Should()
+                .Be(expected);
         }
     }
 
@@ -420,8 +1019,12 @@ public class MetadataModuleTests
             metadataRouteValidator.CallCount.Should().Be(1);
         }
 
-        [Test]
-        public async Task It_preserves_the_unqualified_metadata_root_without_route_validation()
+        [TestCase(true, HttpStatusCode.NotFound)]
+        [TestCase(false, HttpStatusCode.OK)]
+        public async Task It_answers_the_unqualified_metadata_root_without_consulting_the_route_validator(
+            bool multiTenancy,
+            HttpStatusCode expectedStatusCode
+        )
         {
             // Arrange
             var metadataRouteValidator = new RejectingMetadataRouteValidator();
@@ -437,7 +1040,7 @@ public class MetadataModuleTests
                     collection.AddTransient<IMetadataRouteValidator>(_ => metadataRouteValidator);
                     collection.Configure<FrontendAppSettings>(options =>
                     {
-                        options.MultiTenancy = true;
+                        options.MultiTenancy = multiTenancy;
                         options.RouteQualifierSegments = "districtId,schoolYear";
                     });
                 });
@@ -448,7 +1051,7 @@ public class MetadataModuleTests
             var response = await client.GetAsync("/metadata");
 
             // Assert
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            response.StatusCode.Should().Be(expectedStatusCode);
             metadataRouteValidator.CallCount.Should().Be(0);
         }
 
@@ -499,23 +1102,6 @@ public class MetadataModuleTests
                     Datastore = "postgresql",
                     RouteQualifierSegments = string.Join(',', routeQualifierSegments),
                 }
-            );
-        }
-
-        private static DataStore DataStoreWithRouteContext(
-            long id,
-            params (string Key, string Value)[] routeContext
-        )
-        {
-            return new DataStore(
-                id,
-                "Test",
-                $"TestInstance{id}",
-                "test-connection-string",
-                routeContext.ToDictionary(
-                    item => new RouteQualifierName(item.Key),
-                    item => new RouteQualifierValue(item.Value)
-                )
             );
         }
 
@@ -1260,23 +1846,6 @@ public class MetadataModuleTests
             return new JsonObject { ["openapi"] = "3.0.0", ["servers"] = servers.DeepClone() };
         }
 
-        private static DataStore DataStoreWithRouteContext(
-            long id,
-            params (string Key, string Value)[] routeContext
-        )
-        {
-            return new DataStore(
-                id,
-                "Test",
-                $"TestInstance{id}",
-                "test-connection-string",
-                routeContext.ToDictionary(
-                    item => new RouteQualifierName(item.Key),
-                    item => new RouteQualifierValue(item.Value)
-                )
-            );
-        }
-
         [Test]
         public async Task It_uses_the_data_route_base_for_resource_descriptor_and_profile_documents()
         {
@@ -1487,9 +2056,17 @@ public class MetadataModuleTests
                 });
             });
             using var client = factory.CreateClient();
-            string requestPath = string.IsNullOrWhiteSpace(pathBase)
-                ? "/metadata/changequeries/v1/swagger.json"
-                : $"/{pathBase}/metadata/changequeries/v1/swagger.json";
+            // Under multi-tenancy the unqualified route answers the guidance 404, so the request carries
+            // the tenant and the configured route context. The server variables come from the data store
+            // provider, not from the request path.
+            string requestPath = string.Concat(
+                string.IsNullOrWhiteSpace(pathBase) ? string.Empty : $"/{pathBase}",
+                multiTenancy ? "/tenantA" : string.Empty,
+                multiTenancy && !string.IsNullOrWhiteSpace(routeQualifierSegments)
+                    ? "/255901/2024"
+                    : string.Empty,
+                "/metadata/changequeries/v1/swagger.json"
+            );
 
             // Act
             var response = await client.GetAsync(requestPath);

@@ -276,44 +276,83 @@ public partial class MetadataEndpointModule(
         return null;
     }
 
+    /// <summary>
+    /// How a mapped metadata route decides whether to serve the request.
+    /// </summary>
+    private enum MetadataRouteAccess
+    {
+        /// <summary>
+        /// Serve without route-context validation: the unqualified routes of a single-tenant host.
+        /// </summary>
+        Unrestricted,
+
+        /// <summary>
+        /// Validate the tenant and route qualifiers through <see cref="IMetadataRouteValidator" />.
+        /// </summary>
+        Validate,
+
+        /// <summary>
+        /// Answer the guidance 404: the route lacks the tenant or a configured route qualifier, so there
+        /// is no tenant to serve it for, and no Configuration Service lookup is made.
+        /// </summary>
+        RejectUnqualified,
+    }
+
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         bool identityManagementEnabled = identityManagementOptions.Value.Enabled;
+        bool multiTenancy = appSettings.Value.MultiTenancy;
+        string[] routeQualifierSegments = appSettings.Value.GetRouteQualifierSegmentsArray();
 
-        MapMetadataEndpoints(endpoints, string.Empty, validateRoute: false, identityManagementEnabled);
-
-        MapTenantOnlyMetadataRejections(endpoints);
-
-        string routePattern = MetadataRouteValidator.BuildRoutePattern(
-            appSettings.Value.GetRouteQualifierSegmentsArray(),
-            appSettings.Value.MultiTenancy
+        // The unqualified routes are the single-tenant surface. With multi-tenancy there is no tenant to
+        // serve them for, so they answer the guidance 404 instead of reaching the Configuration Service.
+        MapMetadataEndpoints(
+            endpoints,
+            string.Empty,
+            multiTenancy ? MetadataRouteAccess.RejectUnqualified : MetadataRouteAccess.Unrestricted,
+            identityManagementEnabled
         );
+
+        if (multiTenancy)
+        {
+            // Every incomplete prefix, from the tenant alone up to all but the last qualifier, is reserved
+            // with the same guidance 404. Those forms would otherwise match the discovery templates with
+            // "metadata" and, for deeper paths, the endpoint name as route qualifier values, or fall to the
+            // generic fallback 404. Each template has the literal "metadata" where the discovery and
+            // validated templates have a parameter, so routing prefers it without ambiguity. The loop stops
+            // short of the full qualifier count: that pattern is the validated set below, and mapping it
+            // twice would be an ambiguous match at request time.
+            for (int qualifierCount = 0; qualifierCount < routeQualifierSegments.Length; qualifierCount++)
+            {
+                MapMetadataEndpoints(
+                    endpoints,
+                    MetadataRouteValidator.BuildRoutePattern(
+                        routeQualifierSegments[..qualifierCount],
+                        multiTenancy
+                    ),
+                    MetadataRouteAccess.RejectUnqualified,
+                    identityManagementEnabled
+                );
+            }
+        }
+
+        string routePattern = MetadataRouteValidator.BuildRoutePattern(routeQualifierSegments, multiTenancy);
 
         if (!string.IsNullOrEmpty(routePattern))
         {
-            MapMetadataEndpoints(endpoints, routePattern, validateRoute: true, identityManagementEnabled);
+            MapMetadataEndpoints(
+                endpoints,
+                routePattern,
+                MetadataRouteAccess.Validate,
+                identityManagementEnabled
+            );
         }
     }
 
-    private void MapTenantOnlyMetadataRejections(IEndpointRouteBuilder endpoints)
-    {
-        if (!appSettings.Value.MultiTenancy || appSettings.Value.GetRouteQualifierSegmentsArray().Length == 0)
-        {
-            return;
-        }
-
-        // These routes would otherwise match the fully-qualified discovery route with
-        // "metadata" and, for deeper paths, the endpoint name as route qualifier values. Metadata endpoints
-        // require all configured route qualifiers, so reserve the tenant-only forms as 404.
-        endpoints.MapGet("/{tenant}/metadata", () => Results.NotFound());
-        endpoints.MapGet("/{tenant}/metadata/dependencies", () => Results.NotFound());
-        endpoints.MapGet("/{tenant}/metadata/specifications", () => Results.NotFound());
-    }
-
-    private static void MapMetadataEndpoints(
+    private void MapMetadataEndpoints(
         IEndpointRouteBuilder endpoints,
         string routePattern,
-        bool validateRoute,
+        MetadataRouteAccess access,
         bool identityManagementEnabled
     )
     {
@@ -321,7 +360,7 @@ public partial class MetadataEndpointModule(
             $"{routePattern}/metadata",
             async (HttpContext httpContext, IMetadataRouteValidator metadataRouteValidator) =>
             {
-                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                if (!await GuardMetadataRouteAsync(httpContext, metadataRouteValidator, access))
                 {
                     return;
                 }
@@ -337,7 +376,7 @@ public partial class MetadataEndpointModule(
                 IApiService apiService
             ) =>
             {
-                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                if (!await GuardMetadataRouteAsync(httpContext, metadataRouteValidator, access))
                 {
                     return;
                 }
@@ -363,7 +402,7 @@ public partial class MetadataEndpointModule(
                 IOptions<FrontendAppSettings> options
             ) =>
             {
-                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                if (!await GuardMetadataRouteAsync(httpContext, metadataRouteValidator, access))
                 {
                     return;
                 }
@@ -381,7 +420,7 @@ public partial class MetadataEndpointModule(
                 IOptions<FrontendAppSettings> options
             ) =>
             {
-                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                if (!await GuardMetadataRouteAsync(httpContext, metadataRouteValidator, access))
                 {
                     return;
                 }
@@ -399,7 +438,7 @@ public partial class MetadataEndpointModule(
                 IOptions<FrontendAppSettings> options
             ) =>
             {
-                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                if (!await GuardMetadataRouteAsync(httpContext, metadataRouteValidator, access))
                 {
                     return;
                 }
@@ -417,7 +456,7 @@ public partial class MetadataEndpointModule(
                 IOptions<FrontendAppSettings> options
             ) =>
             {
-                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                if (!await GuardMetadataRouteAsync(httpContext, metadataRouteValidator, access))
                 {
                     return;
                 }
@@ -437,7 +476,7 @@ public partial class MetadataEndpointModule(
                     IOptions<FrontendAppSettings> options
                 ) =>
                 {
-                    if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                    if (!await GuardMetadataRouteAsync(httpContext, metadataRouteValidator, access))
                     {
                         return;
                     }
@@ -456,7 +495,7 @@ public partial class MetadataEndpointModule(
                 IDataStoreProvider dataStoreProvider
             ) =>
             {
-                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                if (!await GuardMetadataRouteAsync(httpContext, metadataRouteValidator, access))
                 {
                     return;
                 }
@@ -475,7 +514,7 @@ public partial class MetadataEndpointModule(
                 IOptions<FrontendAppSettings> options
             ) =>
             {
-                if (!await ValidateMetadataRouteAsync(httpContext, metadataRouteValidator, validateRoute))
+                if (!await GuardMetadataRouteAsync(httpContext, metadataRouteValidator, access))
                 {
                     return;
                 }
@@ -491,13 +530,57 @@ public partial class MetadataEndpointModule(
         );
     }
 
-    private static Task<bool> ValidateMetadataRouteAsync(
+    private async Task<bool> GuardMetadataRouteAsync(
         HttpContext httpContext,
         IMetadataRouteValidator metadataRouteValidator,
-        bool validateRoute
+        MetadataRouteAccess access
     )
     {
-        return validateRoute ? metadataRouteValidator.ValidateAsync(httpContext) : Task.FromResult(true);
+        switch (access)
+        {
+            case MetadataRouteAccess.Validate:
+                return await metadataRouteValidator.ValidateAsync(httpContext);
+            case MetadataRouteAccess.RejectUnqualified:
+                await WriteUnqualifiedMetadataNotFoundAsync(httpContext);
+                return false;
+            default:
+                return true;
+        }
+    }
+
+    /// <summary>
+    /// The detail of the guidance 404 for a metadata request that lacks the tenant or a configured route
+    /// qualifier. The example path is built from the configured qualifier names, never from request values.
+    /// </summary>
+    internal static string BuildUnqualifiedMetadataDetail(string[] routeQualifierSegments)
+    {
+        string examplePath = string.Concat(
+            "/{tenant}",
+            string.Concat(routeQualifierSegments.Select(segment => $"/{{{segment}}}")),
+            "/metadata/specifications"
+        );
+        string requirement =
+            routeQualifierSegments.Length == 0
+                ? "the tenant"
+                : "the tenant and the configured route qualifiers";
+
+        return $"Metadata requests must include {requirement} in the path, for example {examplePath}.";
+    }
+
+    /// <summary>
+    /// Answers a metadata request that lacks the tenant or a configured route qualifier. Written before
+    /// the handler runs, so no profile catalog or other Configuration Service lookup happens.
+    /// </summary>
+    private Task WriteUnqualifiedMetadataNotFoundAsync(HttpContext httpContext)
+    {
+        return WriteProblemAsync(
+            httpContext,
+            HttpStatusCode.NotFound,
+            FailureResponse.ForNotFound(
+                BuildUnqualifiedMetadataDetail(appSettings.Value.GetRouteQualifierSegmentsArray()),
+                AspNetCoreFrontend.ExtractTraceIdFrom(httpContext.Request, appSettings)
+            )
+        );
     }
 
     internal static async Task GetMetadata(HttpContext httpContext)
@@ -751,13 +834,23 @@ public partial class MetadataEndpointModule(
 
     private static Task WriteProfileDataUnavailableAsync(HttpContext httpContext, TraceId traceId)
     {
-        httpContext.Response.StatusCode = (int)HttpStatusCode.ServiceUnavailable;
+        return WriteProblemAsync(
+            httpContext,
+            HttpStatusCode.ServiceUnavailable,
+            FailureResponse.ForServiceUnavailable(traceId)
+        );
+    }
+
+    private static Task WriteProblemAsync(
+        HttpContext httpContext,
+        HttpStatusCode statusCode,
+        JsonNode problem
+    )
+    {
+        httpContext.Response.StatusCode = (int)statusCode;
         httpContext.Response.ContentType = "application/problem+json";
         return httpContext.Response.WriteAsync(
-            JsonSerializer.Serialize(
-                FailureResponse.ForServiceUnavailable(traceId),
-                AspNetCoreFrontend.SharedSerializerOptions
-            )
+            JsonSerializer.Serialize(problem, AspNetCoreFrontend.SharedSerializerOptions)
         );
     }
 

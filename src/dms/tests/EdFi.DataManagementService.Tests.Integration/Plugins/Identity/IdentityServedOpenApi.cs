@@ -20,7 +20,16 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 /// </remarks>
 internal sealed class IdentityServedOpenApi
 {
-    public const string DocumentPath = "/metadata/identity/v2/swagger.json";
+    /// <summary>
+    /// The document under tenant one's first district. The host runs with multi-tenancy on, so the
+    /// metadata routes answer only under the full route context; the identity document itself is the
+    /// same for every tenant and district.
+    /// </summary>
+    public static readonly string DocumentPath = IdentityTestClients.MetadataRoute(
+        IdentityTestClients.TenantOne,
+        IdentityTestClients.DistrictsOf(IdentityTestClients.TenantOne)[0],
+        "identity/v2/swagger.json"
+    );
 
     /// <summary>The value every normalized <c>correlationId</c> is rewritten to.</summary>
     public const string NormalizedCorrelationId = "normalized-correlation-id";

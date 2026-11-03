@@ -1588,6 +1588,15 @@ API definitions advertised by DMS at `/metadata/specifications`, including Resou
 and Descriptors and, when the selected API schema advertises it, Change-Queries.
 Swagger UI consumes the DMS endpoints published on the host (localhost and the
 port defined in DMS_HTTP_PORTS).
+
+With `DMS_MULTI_TENANCY=true`, the DMS metadata routes answer only under the
+tenant and every `ROUTE_QUALIFIER_SEGMENTS` value, so set
+`DMS_SWAGGER_UI_ROUTE_CONTEXT` in the environment file to the tenant and one
+value per configured segment, slash separated (for example `DistrictA/2024`, as
+`.env.multitenancy` ships). Swagger UI loads the definitions under that route
+context, and their tenant and school year selectors then list every tenant and
+value DMS has loaded. Leave the setting empty for a single-tenant stack.
+
 >[!NOTE]
 > The user that is configured to use swagger must have the Web Origins
 > configuration in Keycloak to allow CORS. To do this you must search for your
