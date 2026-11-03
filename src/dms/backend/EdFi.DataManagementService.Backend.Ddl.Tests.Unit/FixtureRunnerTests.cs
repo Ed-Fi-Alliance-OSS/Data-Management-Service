@@ -76,17 +76,17 @@ public class Given_FixtureRunner_With_NamingStress_Fixture : SyntheticDdlGoldenF
 }
 
 /// <summary>
-/// Note: the referential-identity fixture's documentPathsMapping keys use a "Reference" suffix
+/// Note: the identity-references fixture's documentPathsMapping keys use a "Reference" suffix
 /// (e.g. "StudentReference") that MetaEd-generated ApiSchemas never produce — real keys are bare
 /// resource/role names like "Student". The fixture is still correct because column names derive
 /// consistently from the mapping key for both the concrete reference columns and the abstract identity
 /// columns; do not infer from these keys that production reference columns carry a "Reference" suffix.
 /// </summary>
 [TestFixture]
-public class Given_FixtureRunner_With_ReferentialIdentity_Fixture : SyntheticDdlGoldenFixtureTestBase
+public class Given_FixtureRunner_With_Identity_References_Fixture : SyntheticDdlGoldenFixtureTestBase
 {
     protected override string ResolveFixtureDirectory(string projectRoot) =>
-        Path.Combine(projectRoot, "Fixtures", "small", "referential-identity");
+        Path.Combine(projectRoot, "Fixtures", "small", "identity-references");
 }
 
 [TestFixture]

@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Unit.Profile;
+using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -35,7 +36,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_Default_Relational_Write_Executor
 {
     private RecordingRelationalWriteSessionFactory _writeSessionFactory = null!;
-    private RecordingReferenceResolverAdapterFactory _referenceResolverAdapterFactory = null!;
+    private RecordingSessionReferenceResolver _referenceResolver = null!;
     private RecordingRelationalWriteFlattener _writeFlattener = null!;
     private RecordingRelationalWriteCurrentStateLoader _currentStateLoader = null!;
     private RecordingRelationalWriteTargetLookupResolver _targetLookupResolver = null!;
@@ -62,7 +63,7 @@ public class Given_Default_Relational_Write_Executor
     public void Setup()
     {
         _writeSessionFactory = new RecordingRelationalWriteSessionFactory();
-        _referenceResolverAdapterFactory = new RecordingReferenceResolverAdapterFactory();
+        _referenceResolver = new RecordingSessionReferenceResolver();
         _writeFlattener = new RecordingRelationalWriteFlattener();
         _currentStateLoader = new RecordingRelationalWriteCurrentStateLoader();
         _targetLookupResolver = new RecordingRelationalWriteTargetLookupResolver();
@@ -78,7 +79,7 @@ public class Given_Default_Relational_Write_Executor
     /// <summary>
     /// Builds the executor under test with the fixture's fakes. The first phase and the
     /// second-command phase are sequential test seams: they observe through
-    /// the same fakeable resolver, adapter factory, state loader, and persister the pre-composite
+    /// the same fakeable target resolver, reference resolver, state loader, and persister the pre-composite
     /// pipeline used, while their decisions run through the production policy functions.
     /// </summary>
     private DefaultRelationalWriteExecutor CreateExecutor(
@@ -94,7 +95,8 @@ public class Given_Default_Relational_Write_Executor
     ) =>
         new(
             _writeSessionFactory,
-            _referenceResolverAdapterFactory,
+            new ThrowingNaturalKeyLookupCommandBuilder(),
+            new ResolvedDocumentReferenceMapFactory(),
             _writeFlattener,
             noProfileMergeSynthesizer ?? _noProfileMergeSynthesizer,
             _profileMergeSynthesizer,
@@ -112,7 +114,7 @@ public class Given_Default_Relational_Write_Executor
             documentCacheTargetRegistry: documentCacheTargetRegistry,
             writeFirstPhase: new FakeSequentialRelationalWriteFirstPhase(
                 _targetLookupResolver,
-                _referenceResolverAdapterFactory,
+                _referenceResolver,
                 _currentStateLoader,
                 relationalParameterConfigurator,
                 relationshipAuthorizationProviderFailureExtractor,
@@ -128,39 +130,23 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_resolves_references_through_the_attempt_scoped_session_before_flattening_post_requests()
     {
-        var documentReferentialId = new ReferentialId(Guid.NewGuid());
-        var descriptorReferentialId = new ReferentialId(Guid.NewGuid());
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences:
             [
-                RelationalAccessTestData.CreateDocumentReference(documentReferentialId, "$.schoolReference"),
-                RelationalAccessTestData.CreateDocumentReference(
-                    documentReferentialId,
-                    "$.educationOrganizationReference"
-                ),
+                RelationalAccessTestData.CreateDocumentReference("$.schoolReference"),
+                RelationalAccessTestData.CreateDocumentReference("$.educationOrganizationReference"),
             ],
             descriptorReferences:
             [
                 RelationalAccessTestData.CreateDescriptorReference(
-                    descriptorReferentialId,
                     "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
                     "$.schoolTypeDescriptor"
                 ),
             ]
         );
-        _referenceResolverAdapterFactory.Adapter.LookupResults =
-        [
-            new ReferenceLookupResult(documentReferentialId, 101L, 1, 1, null, "$.schoolId=255901"),
-            new ReferenceLookupResult(
-                descriptorReferentialId,
-                202L,
-                13,
-                13,
-                17,
-                "$.descriptor=uri://ed-fi.org/schooltypedescriptor#alternative"
-            ),
-        ];
+        _referenceResolver.Script(request.ReferenceResolutionRequest.DocumentReferences[0], 101L, 1);
+        _referenceResolver.Script(request.ReferenceResolutionRequest.DescriptorReferences[0], 17, 202L, 13);
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -177,13 +163,15 @@ public class Given_Default_Relational_Write_Executor
             );
         result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
         _writeSessionFactory.CreateAsyncCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateAdapterCallCount.Should().Be(0);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory
+        _referenceResolver.CallCount.Should().Be(1);
+        _referenceResolver
             .CapturedCommandExecutor.Should()
             .BeSameAs(_writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor);
-        _referenceResolverAdapterFactory.Adapter.Requests.Should().ContainSingle();
-        _referenceResolverAdapterFactory.Adapter.Requests[0].Lookups.Should().HaveCount(2);
+        _referenceResolver
+            .Requests.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeSameAs(request.ReferenceResolutionRequest);
         _writeFlattener.FlattenCallCount.Should().Be(1);
         _writeFlattener.CapturedInput.Should().NotBeNull();
         _writeFlattener.CapturedInput!.OperationKind.Should().Be(request.OperationKind);
@@ -196,10 +184,6 @@ public class Given_Default_Relational_Write_Executor
             );
         _writeFlattener.CapturedInput.WritePlan.Should().BeSameAs(request.WritePlan);
         _writeFlattener.CapturedInput.SelectedBody.Should().BeSameAs(request.SelectedBody);
-        _writeFlattener.CapturedInput.ResolvedReferences.DocumentReferenceOccurrences.Should().HaveCount(2);
-        _writeFlattener
-            .CapturedInput.ResolvedReferences.DescriptorReferenceOccurrences.Should()
-            .ContainSingle();
         _writeFlattener
             .CapturedInput.ResolvedReferences.SuccessfulDocumentReferencesByPath.Keys.Should()
             .BeEquivalentTo([
@@ -229,7 +213,6 @@ public class Given_Default_Relational_Write_Executor
     public async Task It_short_circuits_descriptor_reference_failures_before_flattening()
     {
         var descriptorReference = RelationalAccessTestData.CreateDescriptorReference(
-            new ReferentialId(Guid.NewGuid()),
             "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
             "$.schoolTypeDescriptor"
         );
@@ -246,7 +229,12 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpsertFailureReference(
                         [],
-                        [DescriptorReferenceFailureClassifier.Missing(descriptorReference)]
+                        [
+                            DescriptorReferenceFailure.From(
+                                descriptorReference,
+                                DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
                     )
                 )
             );
@@ -264,14 +252,10 @@ public class Given_Default_Relational_Write_Executor
     public async Task It_short_circuits_descriptor_reference_failures_before_mixed_missing_document_references()
     {
         var descriptorReference = RelationalAccessTestData.CreateDescriptorReference(
-            new ReferentialId(Guid.NewGuid()),
             "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
             "$.schoolTypeDescriptor"
         );
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference],
@@ -291,7 +275,12 @@ public class Given_Default_Relational_Write_Executor
                                 DocumentReferenceFailureReason.Missing
                             ),
                         ],
-                        [DescriptorReferenceFailureClassifier.Missing(descriptorReference)]
+                        [
+                            DescriptorReferenceFailure.From(
+                                descriptorReference,
+                                DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
                     )
                 )
             );
@@ -775,19 +764,12 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_short_circuits_non_missing_document_reference_failures_before_flattening()
     {
-        var referentialId = new ReferentialId(Guid.NewGuid());
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            referentialId,
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference]
         );
-        _referenceResolverAdapterFactory.Adapter.LookupResults =
-        [
-            new ReferenceLookupResult(referentialId, 202L, 12, 12, null, "$.schoolId=255901"),
-        ];
+        _referenceResolver.Script(documentReference, DocumentReferenceFailureReason.IncompatibleTargetType);
 
         var result = await _sut.ExecuteAsync(request);
 
@@ -816,10 +798,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_defers_missing_document_reference_failures_until_after_no_profile_merge()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference]
@@ -866,13 +845,7 @@ public class Given_Default_Relational_Write_Executor
         );
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
-            documentReferences:
-            [
-                RelationalAccessTestData.CreateDocumentReference(
-                    new ReferentialId(Guid.NewGuid()),
-                    "$.schoolReference"
-                ),
-            ]
+            documentReferences: [RelationalAccessTestData.CreateDocumentReference("$.schoolReference")]
         ) with
         {
             DeferredCreateOwnershipFailureResult = denial,
@@ -1173,10 +1146,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_deferred_missing_document_reference_failures_before_guarded_no_op_success()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
             documentReferences: [documentReference]
@@ -1207,10 +1177,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_keeps_profile_missing_document_reference_failures_immediate()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
@@ -1253,10 +1220,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_proposed_relationship_authorization_failure_before_deferred_missing_reference()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
             documentReferences: [documentReference]
@@ -1289,10 +1253,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_immutable_identity_failure_before_deferred_missing_reference()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
             documentReferences: [documentReference],
@@ -1329,10 +1290,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_forces_create_new_post_proposed_relationship_authorization_before_deferred_missing_reference()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference]
@@ -1381,7 +1339,6 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor =
             new ThrowingRelationalCommandExecutor(SqlDialect.Pgsql, new StubDbException("namespace AUTH1"));
         var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
             "$.educationOrganizationReference"
         );
         var rootPlan = CreateNamespaceRootPlan();
@@ -1431,7 +1388,6 @@ public class Given_Default_Relational_Write_Executor
     public async Task It_authorizes_stored_relationship_values_for_existing_put_before_reference_resolution()
     {
         var descriptorReference = RelationalAccessTestData.CreateDescriptorReference(
-            new ReferentialId(Guid.NewGuid()),
             "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
             "$.schoolTypeDescriptor"
         );
@@ -1453,14 +1409,19 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateFailureReference(
                         [],
-                        [DescriptorReferenceFailureClassifier.Missing(descriptorReference)]
+                        [
+                            DescriptorReferenceFailure.From(
+                                descriptorReference,
+                                DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
                     )
                 )
             );
         // Stored authorization plus reference resolution, both now on the session's executor.
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(3);
         _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().ContainSingle();
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         // The first phase always hydrates a surviving existing target's current state under the
         // capture lock, even when reference failures later short-circuit the attempt.
         _currentStateLoader.LoadCallCount.Should().Be(1);
@@ -1474,10 +1435,7 @@ public class Given_Default_Relational_Write_Executor
     {
         var parameterConfigurator = new RecordingRelationalParameterConfigurator();
         _sut = CreateExecutor(relationalParameterConfigurator: parameterConfigurator);
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
             documentReferences: [documentReference],
@@ -1566,7 +1524,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.FailureKind.Should()
             .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
         providerFailureExtractor.ExtractCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -1620,7 +1578,7 @@ public class Given_Default_Relational_Write_Executor
         logRecord.Message.Should().Contain("ProviderMessageFragment: 2|0|1|0:0:n");
         logRecord.Message.Should().Contain("MappingFailureCategory: PayloadParseFailed");
         providerFailureExtractor.ExtractCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -1629,10 +1587,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_stored_relationship_no_claims_for_an_existing_put_without_a_second_observation()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
             documentReferences: [documentReference]
@@ -1661,7 +1616,7 @@ public class Given_Default_Relational_Write_Executor
             .ContainSingle()
             .Which.FailureKind.Should()
             .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         // The capture statement that observes the target also locks it, so no standalone lock
         // command is recorded on the session.
         _writeSessionFactory.Session.Commands.Should().BeEmpty();
@@ -1700,7 +1655,7 @@ public class Given_Default_Relational_Write_Executor
             .BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>()
             .Which.RelationshipFailure.ValueSource.Should()
             .Be(RelationshipAuthorizationFailureValueSource.Stored);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _writeSessionFactory.Session.Commands.Should().BeEmpty();
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _readMaterializer.MaterializeCallCount.Should().Be(0);
@@ -1716,10 +1671,7 @@ public class Given_Default_Relational_Write_Executor
     )
     {
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             operationKind,
             documentReferences: [documentReference],
@@ -1765,7 +1717,7 @@ public class Given_Default_Relational_Write_Executor
             .ContainSingle()
             .Which.FailureKind.Should()
             .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _writeSessionFactory.Session.Commands.Should().BeEmpty();
         // Both verbs observe their target once at the start of the session, on the session's
         // command executor, before any authorization work.
@@ -1782,7 +1734,6 @@ public class Given_Default_Relational_Write_Executor
     {
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
         var descriptorReference = RelationalAccessTestData.CreateDescriptorReference(
-            new ReferentialId(Guid.NewGuid()),
             "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
             "$.schoolTypeDescriptor"
         );
@@ -1808,7 +1759,12 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Upsert(
                     new UpsertResult.UpsertFailureReference(
                         [],
-                        [DescriptorReferenceFailureClassifier.Missing(descriptorReference)]
+                        [
+                            DescriptorReferenceFailure.From(
+                                descriptorReference,
+                                DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
                     )
                 )
             );
@@ -1817,7 +1773,7 @@ public class Given_Default_Relational_Write_Executor
         // the session's executor.
         _writeSessionFactory.Session.CreateCommandExecutorCallCount.Should().Be(3);
         _writeSessionFactory.Session.RelationshipAuthorizationCommands.Should().ContainSingle();
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         // The first phase always hydrates a surviving existing target's current state under the
         // capture lock, even when reference failures later short-circuit the attempt.
         _currentStateLoader.LoadCallCount.Should().Be(1);
@@ -2238,7 +2194,7 @@ public class Given_Default_Relational_Write_Executor
             .BeOfType<UpdateResult.UpdateFailureETagMisMatch>()
             .Which.Reason.Should()
             .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -2262,7 +2218,7 @@ public class Given_Default_Relational_Write_Executor
             .BeOfType<RelationalWriteExecutorResult.Update>()
             .Which.Result.Should()
             .BeOfType<UpdateResult.UpdateFailureNotExists>();
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -2272,10 +2228,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_if_match_failure_for_put_before_reference_failures_when_the_current_etag_mismatches()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
             documentReferences: [documentReference],
@@ -2295,7 +2248,7 @@ public class Given_Default_Relational_Write_Executor
             .Be(ETagPreconditionFailureReason.Concurrency);
         // References resolve inside the first phase, but the mismatch verdict returns before the
         // missing document reference could surface as a reference failure.
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -2307,10 +2260,7 @@ public class Given_Default_Relational_Write_Executor
     public async Task It_returns_if_match_failure_for_post_as_update_before_reference_failures_when_the_current_etag_mismatches()
     {
         var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference],
@@ -2331,7 +2281,7 @@ public class Given_Default_Relational_Write_Executor
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
         // References resolve inside the first phase, but the mismatch verdict returns before the
         // missing document reference could surface as a reference failure.
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -2371,7 +2321,7 @@ public class Given_Default_Relational_Write_Executor
         _targetLookupResolver
             .CapturedCommandExecutor.Should()
             .BeSameAs(_writeSessionFactory.Session.RelationshipAuthorizationCommandExecutor);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
@@ -2400,7 +2350,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.Reason.Should()
             .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
@@ -2443,7 +2393,7 @@ public class Given_Default_Relational_Write_Executor
                     RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance
                 )
             );
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.CapturedRequest.Should().NotBeNull();
         _noProfileMergeSynthesizer
@@ -2534,7 +2484,7 @@ public class Given_Default_Relational_Write_Executor
             );
         _targetLookupResolver.ResolveForPutCallCount.Should().Be(1);
         // Nothing downstream of the observation runs for a target that does not exist.
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
@@ -2565,7 +2515,7 @@ public class Given_Default_Relational_Write_Executor
             .Which.Reason.Should()
             .Be(ETagPreconditionFailureReason.TargetDoesNotExist);
         _targetLookupResolver.ResolveForPutCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
@@ -3241,10 +3191,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_maps_known_document_reference_foreign_key_violations_to_reference_failures()
     {
-        var invalidReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var invalidReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [invalidReference]
@@ -3299,7 +3246,6 @@ public class Given_Default_Relational_Write_Executor
     public async Task It_maps_known_descriptor_reference_foreign_key_violations_to_reference_failures()
     {
         var invalidReference = RelationalAccessTestData.CreateDescriptorReference(
-            new ReferentialId(Guid.NewGuid()),
             "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
             "$.schoolTypeDescriptor"
         );
@@ -3341,7 +3287,12 @@ public class Given_Default_Relational_Write_Executor
                 new RelationalWriteExecutorResult.Update(
                     new UpdateResult.UpdateFailureReference(
                         [],
-                        [DescriptorReferenceFailureClassifier.Missing(invalidReference)]
+                        [
+                            DescriptorReferenceFailure.From(
+                                invalidReference,
+                                DescriptorReferenceFailureReason.Missing
+                            ),
+                        ]
                     )
                 )
             );
@@ -3828,6 +3779,149 @@ public class Given_Default_Relational_Write_Executor
 
     [TestCase(RelationalWriteOperationKind.Put)]
     [TestCase(RelationalWriteOperationKind.Post)]
+    public async Task It_short_circuits_a_case_only_identity_change_on_a_collated_column_as_a_guarded_no_op(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var request = CreateCaseVariantIdentityRequest(operationKind);
+        _noProfileMergeSynthesizer.ResultToReturn =
+            RelationalWriteIdentityStabilityTestSupport.CreateMergeResult(
+                request.WritePlan.TablePlansInDependencyOrder[0],
+                current: (255901, "Lincoln High", "LHS"),
+                merged: (255901, "LINCOLN HIGH", "LHS")
+            );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
+        _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(1);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(0);
+    }
+
+    /// <summary>
+    /// A casing-only write needs no DML, so the second command runs authorization only and nothing is
+    /// persisted: the captured merge result is the one proposed authorization received.
+    /// </summary>
+    [TestCase(RelationalWriteOperationKind.Put)]
+    [TestCase(RelationalWriteOperationKind.Post)]
+    public async Task It_hands_proposed_relationship_authorization_the_stored_identity_casing(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var request = CreateCaseVariantIdentityRequest(operationKind);
+        _noProfileMergeSynthesizer.ResultToReturn =
+            RelationalWriteIdentityStabilityTestSupport.CreateMergeResult(
+                request.WritePlan.TablePlansInDependencyOrder[0],
+                current: (255901, "Lincoln High", "LHS"),
+                merged: (255901, "LINCOLN HIGH", "LHS")
+            );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.GuardedNoOp.Instance);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        RelationalWriteIdentityStabilityTestSupport
+            .MergedRootRow(_noProfilePersister.CapturedMergeResult!)
+            .Values[2]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal("Lincoln High"));
+    }
+
+    [TestCase(RelationalWriteOperationKind.Put)]
+    [TestCase(RelationalWriteOperationKind.Post)]
+    public async Task It_persists_the_stored_identity_casing_with_a_genuine_non_identity_change(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var request = CreateCaseVariantIdentityRequest(operationKind);
+        _noProfileMergeSynthesizer.ResultToReturn =
+            RelationalWriteIdentityStabilityTestSupport.CreateMergeResult(
+                request.WritePlan.TablePlansInDependencyOrder[0],
+                current: (255901, "Lincoln High", "LHS"),
+                merged: (255901, "LINCOLN HIGH", "Lincoln")
+            );
+
+        var result = await _sut.ExecuteAsync(request);
+
+        result.AttemptOutcome.Should().Be(RelationalWriteExecutorAttemptOutcome.AppliedWrite.Instance);
+        _noProfilePersister.TryPersistCallCount.Should().Be(1);
+        var persistedRootRow = RelationalWriteIdentityStabilityTestSupport.MergedRootRow(
+            _noProfilePersister.CapturedMergeResult!
+        );
+        persistedRootRow.Values[2].Should().Be(new FlattenedWriteValue.Literal("Lincoln High"));
+        persistedRootRow.Values[3].Should().Be(new FlattenedWriteValue.Literal("Lincoln"));
+    }
+
+    /// <summary>
+    /// An existing-document request whose root identity is (SchoolId, Name) with Name flagged for
+    /// the SQL Server identity collation.
+    /// </summary>
+    private RelationalWriteExecutorInput CreateCaseVariantIdentityRequest(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var existingDocumentUuid = new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"));
+        var baseRequest = CreateRequest(
+            operationKind,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, existingDocumentUuid, 44L),
+            rootWritePlan: RelationalWriteIdentityStabilityTestSupport.CreateRootPlan(
+                nameUsesSqlServerIdentityCollation: true
+            ),
+            selectedBody: JsonNode.Parse("""{"schoolId":255901,"name":"LINCOLN HIGH"}""")!
+        );
+        var mappingSet = RelationalWriteIdentityStabilityTestSupport.WithSchoolIdAndNameIdentity(
+            baseRequest.MappingSet
+        );
+        _currentStateLoader.ResultToReturn = new RelationalWriteCurrentState(
+            new DocumentMetadataRow(
+                345L,
+                existingDocumentUuid.Value,
+                44L,
+                new DateTimeOffset(2026, 4, 2, 12, 0, 0, TimeSpan.Zero),
+                1
+            ),
+            [
+                new HydratedTableRows(
+                    baseRequest.WritePlan.Model.Root,
+                    [
+                        [345L, 255901, "Lincoln High", "LHS"],
+                    ]
+                ),
+            ],
+            []
+        );
+        _writeFlattener.ResultToReturn = new FlattenedWriteSet(
+            new RootWriteRowBuffer(
+                baseRequest.WritePlan.TablePlansInDependencyOrder.Single(),
+                [
+                    new FlattenedWriteValue.Literal(345L),
+                    new FlattenedWriteValue.Literal(255901),
+                    new FlattenedWriteValue.Literal("LINCOLN HIGH"),
+                    new FlattenedWriteValue.Literal("LHS"),
+                ]
+            )
+        );
+
+        return baseRequest with
+        {
+            MappingSet = mappingSet,
+            ReferenceResolutionRequest = baseRequest.ReferenceResolutionRequest with
+            {
+                MappingSet = mappingSet,
+            },
+        };
+    }
+
+    [TestCase(RelationalWriteOperationKind.Put)]
+    [TestCase(RelationalWriteOperationKind.Post)]
     public async Task It_returns_immutable_identity_failure_before_proposed_relationship_authorization_for_existing_updates(
         RelationalWriteOperationKind operationKind
     )
@@ -4098,7 +4192,7 @@ public class Given_Default_Relational_Write_Executor
                     new UpsertResult.UpsertFailureValidation([validationFailure])
                 )
             );
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
@@ -4125,7 +4219,7 @@ public class Given_Default_Relational_Write_Executor
                     new UpdateResult.UpdateFailureValidation([validationFailure])
                 )
             );
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(1);
+        _referenceResolver.CallCount.Should().Be(1);
         _writeFlattener.FlattenCallCount.Should().Be(1);
         _currentStateLoader.LoadCallCount.Should().Be(1);
         _noProfileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
@@ -4178,7 +4272,10 @@ public class Given_Default_Relational_Write_Executor
             new RelationalWriteExecutorInput(
                 mappingSet,
                 RelationalWriteOperationKind.Post,
-                new RelationalWriteTargetRequest.Post(new ReferentialId(Guid.NewGuid()), CreateDocumentUuid),
+                new RelationalWriteTargetRequest.Post(
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
+                    CreateDocumentUuid
+                ),
                 resourceWritePlan,
                 CreateReadPlan(otherResourceModel),
                 JsonNode.Parse("""{"name":"Lincoln High"}""")!,
@@ -4203,7 +4300,10 @@ public class Given_Default_Relational_Write_Executor
             new RelationalWriteExecutorInput(
                 mappingSet,
                 RelationalWriteOperationKind.Post,
-                new RelationalWriteTargetRequest.Post(new ReferentialId(Guid.NewGuid()), CreateDocumentUuid),
+                new RelationalWriteTargetRequest.Post(
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
+                    CreateDocumentUuid
+                ),
                 resourceWritePlan,
                 CreateReadPlan(resourceModel),
                 JsonNode.Parse("""{"name":"Lincoln High"}""")!,
@@ -4232,7 +4332,10 @@ public class Given_Default_Relational_Write_Executor
             new RelationalWriteExecutorInput(
                 mappingSet,
                 RelationalWriteOperationKind.Post,
-                new RelationalWriteTargetRequest.Post(new ReferentialId(Guid.NewGuid()), CreateDocumentUuid),
+                new RelationalWriteTargetRequest.Post(
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
+                    CreateDocumentUuid
+                ),
                 resourceWritePlan,
                 CreateReadPlan(resourceModel),
                 JsonNode.Parse("""{"name":"Lincoln High"}""")!,
@@ -4262,7 +4365,7 @@ public class Given_Default_Relational_Write_Executor
                 mappingSet,
                 RelationalWriteOperationKind.Put,
                 new RelationalWriteTargetRequest.Post(
-                    new ReferentialId(Guid.NewGuid()),
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                     new DocumentUuid(Guid.Parse("aaaaaaaa-1111-2222-3333-bbbbbbbbbbbb"))
                 ),
                 resourceWritePlan,
@@ -7060,10 +7163,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_returns_stale_put_if_match_before_deferred_missing_reference_when_proposed_authorization_is_required()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.schoolReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Put,
             documentReferences: [documentReference],
@@ -7269,7 +7369,7 @@ public class Given_Default_Relational_Write_Executor
             );
         // Refused before the current state is hydrated, so neither the precondition nor a no-op compare ran.
         _currentStateLoader.LoadCallCount.Should().Be(0);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
@@ -7337,10 +7437,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_applies_the_create_branch_exactly_as_the_same_single_list_for_a_post_create()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.studentReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.studentReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference]
@@ -7374,7 +7471,7 @@ public class Given_Default_Relational_Write_Executor
 
         result.Should().Be(AttributedTo(createNewFailure, UpsertTargetAction.Create));
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
@@ -7449,10 +7546,7 @@ public class Given_Default_Relational_Write_Executor
     [Test]
     public async Task It_selects_create_new_post_relationship_plan_before_reference_resolution()
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference(
-            new ReferentialId(Guid.NewGuid()),
-            "$.studentReference"
-        );
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.studentReference");
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
             documentReferences: [documentReference]
@@ -7475,7 +7569,7 @@ public class Given_Default_Relational_Write_Executor
         // A security-configuration failure owed by the create branch is attributed to the Create action.
         result.Should().Be(AttributedTo(createNewFailure, UpsertTargetAction.Create));
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
-        _referenceResolverAdapterFactory.CreateSessionAdapterCallCount.Should().Be(0);
+        _referenceResolver.CallCount.Should().Be(0);
         _currentStateLoader.LoadCallCount.Should().Be(0);
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
@@ -8668,7 +8762,7 @@ public class Given_Default_Relational_Write_Executor
             operationKind == RelationalWriteOperationKind.Put
                 ? new RelationalWriteTargetRequest.Put(updateDocumentUuid)
                 : new RelationalWriteTargetRequest.Post(
-                    new ReferentialId(Guid.NewGuid()),
+                    new DocumentIdentity([new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901")]),
                     createDocumentUuid
                 ),
             resourceWritePlan,
@@ -8780,30 +8874,6 @@ public class Given_Default_Relational_Write_Executor
                         identityColumns.Select(columnModel => columnModel.ColumnName).ToArray(),
                         new TriggerKindParameters.DocumentStamping()
                     ),
-                    new DbTriggerInfo(
-                        new DbTriggerName("TR_School_ReferentialIdentity"),
-                        resourceModel.Root.Table,
-                        [new DbColumnName("DocumentId")],
-                        identityColumns.Select(columnModel => columnModel.ColumnName).ToArray(),
-                        new TriggerKindParameters.ReferentialIdentityMaintenance(
-                            resourceKey.ResourceKeyId,
-                            resource.ProjectName,
-                            resource.ResourceName,
-                            identityColumns
-                                .Select(columnModel => new IdentityElementMapping(
-                                    columnModel.ColumnName,
-                                    columnModel.SourceJsonPath?.Canonical
-                                        ?? throw new InvalidOperationException(
-                                            "Expected a root identity source path."
-                                        ),
-                                    columnModel.ScalarType
-                                        ?? throw new InvalidOperationException(
-                                            "Expected a root identity scalar type."
-                                        )
-                                ))
-                                .ToArray()
-                        )
-                    ),
                 ]
             ),
             WritePlansByResource: new Dictionary<QualifiedResourceName, ResourceWritePlan>
@@ -8825,7 +8895,32 @@ public class Given_Default_Relational_Write_Executor
                 QualifiedResourceName,
                 IReadOnlyList<ResolvedSecurableElementPath>
             >()
-        );
+        )
+        {
+            OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>
+            {
+                [resource] = new(
+                    resource,
+                    resourceModel.Root.Table,
+                    identityColumns
+                        .Select(columnModel => new NaturalKeyProbeKeyColumn(
+                            columnModel.SourceJsonPath
+                                ?? throw new InvalidOperationException(
+                                    "Expected a root identity source path."
+                                ),
+                            columnModel.ColumnName,
+                            new NaturalKeyProbeKeyBinding.Scalar(
+                                columnModel.ScalarType
+                                    ?? throw new InvalidOperationException(
+                                        "Expected a root identity scalar type."
+                                    )
+                            )
+                        ))
+                        .ToArray(),
+                    new DbColumnName("DocumentId")
+                ),
+            },
+        };
     }
 
     internal static ResourceReadPlan CreateReadPlan(
@@ -9155,46 +9250,6 @@ public class Given_Default_Relational_Write_Executor
     private static string QuoteIdentifier(string identifier, SqlDialect dialect) =>
         dialect == SqlDialect.Mssql ? $"[{identifier}]" : $"\"{identifier}\"";
 
-    private sealed class RecordingReferenceResolverAdapterFactory : IReferenceResolverAdapterFactory
-    {
-        public RecordingReferenceResolverAdapter Adapter { get; } = new();
-
-        public IRelationalCommandExecutor? CapturedCommandExecutor { get; private set; }
-
-        public int CreateAdapterCallCount { get; private set; }
-
-        public int CreateSessionAdapterCallCount { get; private set; }
-
-        public IReferenceResolverAdapter CreateAdapter()
-        {
-            CreateAdapterCallCount++;
-            return Adapter;
-        }
-
-        public IReferenceResolverAdapter CreateSessionAdapter(IRelationalCommandExecutor commandExecutor)
-        {
-            CreateSessionAdapterCallCount++;
-            CapturedCommandExecutor = commandExecutor;
-            return Adapter;
-        }
-    }
-
-    private sealed class RecordingReferenceResolverAdapter : IReferenceResolverAdapter
-    {
-        public List<ReferenceLookupRequest> Requests { get; } = [];
-
-        public IReadOnlyList<ReferenceLookupResult> LookupResults { get; set; } = [];
-
-        public Task<IReadOnlyList<ReferenceLookupResult>> ResolveAsync(
-            ReferenceLookupRequest request,
-            CancellationToken cancellationToken = default
-        )
-        {
-            Requests.Add(request);
-            return Task.FromResult(LookupResults);
-        }
-    }
-
     private sealed class RecordingRelationalWriteFlattener : IRelationalWriteFlattener
     {
         public int FlattenCallCount { get; private set; }
@@ -9231,7 +9286,7 @@ public class Given_Default_Relational_Write_Executor
         }
     }
 
-    private sealed class RecordingRelationalWriteTargetLookupResolver : IRelationalWriteTargetLookupResolver
+    private sealed class RecordingRelationalWriteTargetLookupResolver : IFakeRelationalWriteTargetLookup
     {
         public int ResolveForPostCallCount { get; private set; }
 
@@ -9288,7 +9343,7 @@ public class Given_Default_Relational_Write_Executor
         public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
-            ReferentialId referentialId,
+            DocumentIdentity documentIdentity,
             DocumentUuid candidateDocumentUuid,
             IRelationalCommandExecutor commandExecutor,
             CancellationToken cancellationToken = default

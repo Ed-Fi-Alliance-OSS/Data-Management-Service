@@ -370,7 +370,10 @@ internal sealed class ProfileCollectionWalker
                 VisibleRequestItems: canonicalizedVisibleRequestItems,
                 VisibleStoredRows: canonicalizedVisibleStoredRows,
                 CurrentRows: currentRowsForScope
-            );
+            )
+            {
+                SemanticIdentityEquality = CollectionSemanticIdentityEquality.For(tablePlan),
+            };
 
             // 2. Call the planner. Invariant violations throw and propagate as fail-closed.
             var planResult = ProfileCollectionPlanner.Plan(input);

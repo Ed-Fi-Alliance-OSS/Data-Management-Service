@@ -17,7 +17,6 @@ public sealed record DocumentReferenceFailure(
     JsonPath Path,
     BaseResourceInfo TargetResource,
     DocumentIdentity DocumentIdentity,
-    ReferentialId ReferentialId,
     DocumentReferenceFailureReason Reason
 )
 {
@@ -29,7 +28,6 @@ public sealed record DocumentReferenceFailure(
             Path: documentReference.Path,
             TargetResource: documentReference.ResourceInfo,
             DocumentIdentity: documentReference.DocumentIdentity,
-            ReferentialId: documentReference.ReferentialId,
             Reason: reason
         );
 }

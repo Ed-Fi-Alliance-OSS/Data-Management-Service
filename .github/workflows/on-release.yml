@@ -10,11 +10,11 @@ on:
       - released
   workflow_dispatch:
 
+# No publishing credential lives here: only the promote steps and the Docker Hub logins read the
+# publishing tokens, in jobs that run in the 'publishing' environment.
 env:
-  ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
   ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
   ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
-  ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
   # Read by the scripts below as $env:RELEASE_REF or "$RELEASE_REF", never interpolated into them.
   RELEASE_REF: ${{ github.ref_name }}
 
@@ -84,6 +84,10 @@ jobs:
 
   promote-azure-artifact:
     name: Promote Azure Artifact
+    # Only on a v* release tag, never a manual run from a branch or a prerelease tag; the
+    # 'publishing' environment releases the publishing tokens only after its protection rules pass.
+    if: ${{ github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v') }}
+    environment: publishing
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the repo
@@ -114,6 +118,9 @@ jobs:
 
       - name: Promote EdFi.Api Package
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
@@ -129,6 +136,9 @@ jobs:
 
       - name: Promote EdFi.Api.ConfigurationService Package
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
@@ -144,6 +154,9 @@ jobs:
 
       - name: Promote EdFi.Api.SchemaTools Package
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
@@ -158,7 +171,6 @@ jobs:
           Invoke-Promote @arguments
 
       - name: Calculate SecurityMetadataTools Release Version
-        if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
         id: tool-release-source
         shell: pwsh
         run: |
@@ -166,8 +178,10 @@ jobs:
           Get-VersionNumber -projectPrefix "cs"
 
       - name: Promote EdFi.Api.SecurityMetadataTools Package
-        if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
           Import-Module ./package-helpers.psm1
@@ -189,17 +203,10 @@ jobs:
       # version lives) but not yet released is promoted; and absent from both fails rather than
       # reporting success for a version that is not on the feed to be promoted.
       - name: Promote EdFi.Api.Plugins Package
-        # A final release is one vX.Y.Z tag covering both products: a prerelease is a dms-pre-* or
-        # cs-pre-* tag, and this workflow fires on released rather than prereleased, so those never
-        # reach it. That is also why the three steps above are unguarded - one release promotes the
-        # Data Management Service and Configuration Service packages together - and they stay that
-        # way. This guard exists only to keep the contract steps off a workflow_dispatch from a
-        # branch and off a dispatch that selects a prerelease tag.
-        #
-        # ref_type carries the weight. GitHub's startsWith is case-insensitive and a branch can be
-        # named anything, v8.0.0 included, so a name test alone would admit a branch dispatch.
-        if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -215,17 +222,10 @@ jobs:
             -Version (Get-PluginsContractVersion)
 
       - name: Promote EdFi.Api.CustomValidation Package
-        # A final release is one vX.Y.Z tag covering both products: a prerelease is a dms-pre-* or
-        # cs-pre-* tag, and this workflow fires on released rather than prereleased, so those never
-        # reach it. That is also why the three steps above are unguarded - one release promotes the
-        # Data Management Service and Configuration Service packages together - and they stay that
-        # way. This guard exists only to keep the contract steps off a workflow_dispatch from a
-        # branch and off a dispatch that selects a prerelease tag.
-        #
-        # ref_type carries the weight. GitHub's startsWith is case-insensitive and a branch can be
-        # named anything, v8.0.0 included, so a name test alone would admit a branch dispatch.
-        if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -241,10 +241,11 @@ jobs:
             -Version (Get-CustomValidationContractVersion)
 
       - name: Promote EdFi.Api.Identity Package
-        # The identity contract, promoted at the version its own csproj declares. Guarded like the
-        # two steps above, and for the same reason.
-        if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
+        # The identity contract, promoted at the version its own csproj declares.
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -261,9 +262,11 @@ jobs:
 
       - name: Promote EdFi.Api.Secrets Package
         # The Configuration Service's contract, published by the cs- prerelease lane at the version
-        # its own csproj declares. Guarded like the steps above, and for the same reason.
-        if: ${{ github.ref_type == 'tag' && startsWith(github.ref_name, 'v') }}
+        # its own csproj declares.
         shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
 
@@ -280,6 +283,10 @@ jobs:
 
   tag-dms-image:
     name: Release Tag DMS Image
+    # Only on a v* release tag, never a manual run from a branch or a prerelease tag; the
+    # 'publishing' environment releases the publishing tokens only after its protection rules pass.
+    if: ${{ github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v') }}
+    environment: publishing
     runs-on: ubuntu-latest
     steps:
       # Required so the local pull action below resolves from the workspace.
@@ -344,6 +351,10 @@ jobs:
 
   tag-cs-image:
     name: Release Tag Configuration Image
+    # Only on a v* release tag, never a manual run from a branch or a prerelease tag; the
+    # 'publishing' environment releases the publishing tokens only after its protection rules pass.
+    if: ${{ github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v') }}
+    environment: publishing
     runs-on: ubuntu-latest
     steps:
       # Required so the local pull action below resolves from the workspace.

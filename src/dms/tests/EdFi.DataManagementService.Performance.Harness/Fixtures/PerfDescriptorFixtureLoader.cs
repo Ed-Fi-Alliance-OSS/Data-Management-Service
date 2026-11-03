@@ -10,9 +10,9 @@ namespace EdFi.DataManagementService.Performance.Harness.Fixtures;
 
 /// <summary>
 /// Executes the descriptor fixture load against a freshly leased database: guard
-/// (SQL Server), resource key lookup, chunked document/descriptor/referential-identity
-/// inserts, identity reseed, statistics refresh, and the analytic verification queries. Any
-/// verification mismatch throws with every mismatch listed.
+/// (SQL Server), resource key lookup, chunked document/descriptor inserts, identity reseed,
+/// statistics refresh, and the analytic verification queries. Any verification mismatch
+/// throws with every mismatch listed.
 /// </summary>
 public static class PerfDescriptorFixtureLoader
 {
@@ -55,13 +55,11 @@ public static class PerfDescriptorFixtureLoader
             [
                 PgsqlPerfDescriptorFixtureLoaderSql.DocumentInsertSql,
                 PgsqlPerfDescriptorFixtureLoaderSql.DescriptorInsertSql,
-                PgsqlPerfDescriptorFixtureLoaderSql.ReferentialIdentityInsertSql,
             ]
             :
             [
                 MssqlPerfDescriptorFixtureLoaderSql.DocumentInsertSql,
                 MssqlPerfDescriptorFixtureLoaderSql.DescriptorInsertSql,
-                MssqlPerfDescriptorFixtureLoaderSql.ReferentialIdentityInsertSql,
             ];
 
         foreach ((long from, long to) in PerfFixtureLoader.Chunks(definition.RowCount, chunkSize))

@@ -72,6 +72,14 @@ public class Given_The_SqlServer_Identity_Equality_Contract
     {
         _comparer.Equals("Ǹ", "ǹ").Should().BeTrue();
     }
+
+    // The comparer-looser direction: SQL_Latin1_General_CP1_CI_AS keeps the micro sign and the Greek
+    // small letter mu distinct, but both uppercase to U+039C.
+    [Test]
+    public void It_equates_the_micro_sign_and_the_greek_small_letter_mu()
+    {
+        _comparer.Equals("µ", "μ").Should().BeTrue();
+    }
 }
 
 [TestFixture]

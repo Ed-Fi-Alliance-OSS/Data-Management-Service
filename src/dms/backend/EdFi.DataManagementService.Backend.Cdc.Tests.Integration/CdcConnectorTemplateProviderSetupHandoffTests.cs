@@ -259,7 +259,6 @@ public sealed class Given_CdcConnectorTemplateProviderSetupHandoff
             DmsTableNames.DocumentCache,
             DmsTableNames.DocumentCacheState,
             DmsTableNames.DocumentProjectionWork,
-            DmsTableNames.ReferentialIdentity,
             DmsTableNames.ResourceKey,
             DmsTableNames.SchemaComponent,
         ];

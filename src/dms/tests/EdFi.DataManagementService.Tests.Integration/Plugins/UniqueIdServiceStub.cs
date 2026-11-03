@@ -217,9 +217,7 @@ public sealed class UniqueIdServiceStub : IAsyncDisposable
             try
             {
                 listener.Start();
-                return Task.FromResult(
-                    new UniqueIdServiceStub(listener, baseAddress, normalizedPrefix)
-                );
+                return Task.FromResult(new UniqueIdServiceStub(listener, baseAddress, normalizedPrefix));
             }
             catch (HttpListenerException) when (attempt < maxAttempts)
             {
@@ -308,9 +306,7 @@ public sealed class UniqueIdServiceStub : IAsyncDisposable
             HttpListenerContext context;
             try
             {
-                context = await _listener
-                    .GetContextAsync()
-                    .WaitAsync(_cancellationTokenSource.Token);
+                context = await _listener.GetContextAsync().WaitAsync(_cancellationTokenSource.Token);
             }
             catch (Exception exception)
                 when (exception

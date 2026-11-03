@@ -95,6 +95,8 @@ public class UnknownFailureClassificationTests
             new PartitionResult.PartitionFailureNotImplemented("not implemented"),
             new QueryResult.QuerySuccess(new JsonArray(), TotalCount: null),
             new QueryResult.UnknownFailure("query failed"),
+            new UpdateResult.UpdateFailureNonUniqueValues(),
+            new UpsertResult.UpsertFailureNonUniqueValues(),
             new object(),
         ];
 
@@ -120,6 +122,8 @@ public class UnknownFailureClassificationTests
             new PartitionResult.PartitionFailureNotImplemented("not implemented"),
             new QueryResult.QuerySuccess(new JsonArray(), TotalCount: null),
             new QueryResult.QueryFailureRetryable(),
+            new UpdateResult.UpdateFailureNonUniqueValues(),
+            new UpsertResult.UpsertFailureNonUniqueValues(),
             new object(),
         ];
 

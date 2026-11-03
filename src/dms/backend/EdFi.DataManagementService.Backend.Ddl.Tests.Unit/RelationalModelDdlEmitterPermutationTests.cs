@@ -435,7 +435,7 @@ internal static class PermutationInputOrderFixture
             [
                 BuildIndex(tpdmSchema, "Gamma"),
                 BuildIndex(edfiSchema, "Zeta"),
-                BuildIndex(edfiSchema, "Alpha", "ReferentialId"),
+                BuildIndex(edfiSchema, "Alpha", "LookupId"),
                 BuildIndex(edfiSchema, "Alpha"),
             ],
             triggerOrder:
@@ -475,7 +475,7 @@ internal static class PermutationInputOrderFixture
             indexOrder:
             [
                 BuildIndex(edfiSchema, "Alpha"),
-                BuildIndex(edfiSchema, "Alpha", "ReferentialId"),
+                BuildIndex(edfiSchema, "Alpha", "LookupId"),
                 BuildIndex(edfiSchema, "Zeta"),
                 BuildIndex(tpdmSchema, "Gamma"),
             ],

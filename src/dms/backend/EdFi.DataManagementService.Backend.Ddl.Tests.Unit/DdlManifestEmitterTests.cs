@@ -372,22 +372,22 @@ public class Given_DdlManifestEmitter_CountStatements_For_Pgsql
     }
 
     [Test]
-    public void It_should_count_tagged_uuidv5_dollar_quoted_block_as_one_statement()
+    public void It_should_count_tagged_dollar_quoted_block_as_one_statement()
     {
         var sql = string.Join(
             "\n",
             "CREATE TABLE foo (id INT);",
-            "CREATE OR REPLACE FUNCTION uuidv5(namespace_uuid uuid, name_text text)",
-            "RETURNS uuid",
+            "CREATE OR REPLACE FUNCTION fn(left_value int, right_value int)",
+            "RETURNS int",
             "LANGUAGE plpgsql",
-            "AS $uuidv5$",
+            "AS $fn$",
             "DECLARE",
-            "    hash bytea;",
+            "    total int;",
             "BEGIN",
-            "    hash := digest('test', 'sha1');",
-            "    RETURN encode(substring(hash from 1 for 16), 'hex')::uuid;",
+            "    total := left_value + right_value;",
+            "    RETURN total;",
             "END",
-            "$uuidv5$;",
+            "$fn$;",
             ""
         );
 
@@ -400,11 +400,11 @@ public class Given_DdlManifestEmitter_CountStatements_For_Pgsql
         var sql = string.Join(
             "\n",
             "CREATE TABLE foo (id INT);",
-            "CREATE OR REPLACE FUNCTION uuidv5() RETURNS uuid AS $uuidv5$",
+            "CREATE OR REPLACE FUNCTION fn() RETURNS int AS $fn$",
             "BEGIN",
-            "    RETURN uuid_generate_v5(uuid_nil(), 'test');",
+            "    RETURN 1;",
             "END",
-            "$uuidv5$;",
+            "$fn$;",
             "CREATE OR REPLACE FUNCTION my_func() RETURNS TRIGGER AS $func$",
             "BEGIN",
             "    INSERT INTO foo VALUES (1);",
@@ -413,7 +413,7 @@ public class Given_DdlManifestEmitter_CountStatements_For_Pgsql
             ""
         );
 
-        // 1 CREATE TABLE + 1 uuidv5 function + 1 trigger function = 3
+        // 1 CREATE TABLE + 1 fn function + 1 trigger function = 3
         DdlManifestEmitter.CountStatements(SqlDialect.Pgsql, sql).Should().Be(3);
     }
 }
@@ -593,11 +593,11 @@ public class Given_DdlManifestEmitter_CountStatements_For_Mssql
             "\n",
             "CREATE TABLE foo (id INT);",
             "GO",
-            "CREATE OR ALTER FUNCTION dms.uuidv5(@ns uniqueidentifier, @name nvarchar(max))",
-            "RETURNS uniqueidentifier",
+            "CREATE OR ALTER FUNCTION dms.fn(@value int)",
+            "RETURNS int",
             "AS",
             "BEGIN",
-            "    RETURN @ns;",
+            "    RETURN @value;",
             "END;",
             "GO",
             "CREATE TABLE bar (id INT);",
@@ -906,8 +906,8 @@ public class Given_DdlManifestEmitter_CountStatements_With_Two_Mssql_Function_Ba
                 RETURN @Result;
             END;
             GO
-            CREATE OR ALTER FUNCTION [dms].[uuidv5](@a uniqueidentifier)
-            RETURNS uniqueidentifier
+            CREATE OR ALTER FUNCTION [dms].[fn](@a int)
+            RETURNS int
             AS
             BEGIN
                 RETURN @a;

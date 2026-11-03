@@ -237,28 +237,6 @@ public static class PerfFixtureLoader
                     await PerfSeederDatabase.ExecuteDescriptorInsertAsync(descriptorInsert)
                 );
             }
-
-            await using DbCommand referentialInsert = CreateCommand(
-                connection,
-                provider == PerfProvider.Postgresql
-                    ? PgsqlPerfFixtureLoaderSql.DescriptorReferentialIdentityInsertSql
-                    : MssqlPerfFixtureLoaderSql.DescriptorReferentialIdentityInsertSql
-            );
-            AddObjectParameter(
-                referentialInsert,
-                PerfFixtureLoaderParameters.DescriptorReferentialId,
-                ReferentialIdentityDerivation.DescriptorReferentialId(
-                    resourceName,
-                    PerfFixtureDefinition.DescriptorUriFor(resourceName)
-                )
-            );
-            AddParameter(referentialInsert, PerfFixtureLoaderParameters.DescriptorDocumentId, documentId);
-            AddParameter(
-                referentialInsert,
-                PerfFixtureLoaderParameters.ResourceKeyId,
-                descriptorResourceKeyId
-            );
-            await referentialInsert.ExecuteNonQueryAsync();
         }
 
         return descriptorIds;

@@ -35,7 +35,6 @@ public class Given_A_Provisioned_Mssql_Database_Document_Safety_Net_Foreign_Keys
     [
         "dms.DocumentCache",
         "dms.DocumentProjectionWork",
-        "dms.ReferentialIdentity",
         "edfi.EducationOrganizationIdentity",
         "edfi.GeneralStudentProgramAssociationIdentity",
     ];

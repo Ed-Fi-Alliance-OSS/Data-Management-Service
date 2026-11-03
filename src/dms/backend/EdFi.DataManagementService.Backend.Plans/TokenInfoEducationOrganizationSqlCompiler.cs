@@ -191,14 +191,9 @@ public sealed class TokenInfoEducationOrganizationSqlCompiler(SqlDialect dialect
     {
         var matches = view
             .OutputColumnsInSelectOrder.Select((column, index) => (column, index))
-            .Where(static entry =>
-                !string.Equals(entry.column.ColumnName.Value, "DocumentId", StringComparison.Ordinal)
-                && !string.Equals(
-                    entry.column.ColumnName.Value,
-                    DiscriminatorColumnName,
-                    StringComparison.Ordinal
-                )
-            )
+            // Identity outputs are the ones bound to a JSON path; DocumentId and the ResourceKeyId and
+            // Discriminator payload outputs have none.
+            .Where(static entry => entry.column.SourceJsonPath is not null)
             .ToArray();
 
         return matches.Length switch

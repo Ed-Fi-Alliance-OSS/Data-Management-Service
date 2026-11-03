@@ -26,6 +26,13 @@ public class Given_A_Fresh_Mssql_CompactDescriptor_Schema : CompactDescriptorSch
     public Task It_rejects_invalid_descriptor_aliases_even_with_the_same_v3_fingerprint(string mutation) =>
         AssertDescriptorAliasMutationAsync(mutation);
 
+    [Test]
+    public Task It_rejects_a_lowered_uri_even_with_the_same_v3_fingerprint() =>
+        AssertCatalogMutationRejectedAsync(
+            "lowered_uri",
+            "*Compact descriptor baseline: Uri must be non-persisted, unlowered*"
+        );
+
     protected override async Task<IAsyncDisposable> ProvisionAsync()
     {
         MssqlConnectionStringGuard.RequireConfiguredForCiOrSkipLocally(

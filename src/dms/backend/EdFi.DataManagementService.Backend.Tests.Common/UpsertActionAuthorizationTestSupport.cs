@@ -28,6 +28,29 @@ public static class UpsertActionAuthorizationTestSupport
         ]);
 
     /// <summary>
+    /// Create permitted with <c>NoFurtherAuthorizationRequired</c>, Update not permitted. The existing-document
+    /// branch owes an immediate result, so the POST takes the ordered-segments first phase.
+    /// </summary>
+    public static UpsertActionAuthorization CreateOnlyWithNoFurtherAuthorizationRequired { get; } =
+        new(NoFurtherAuthorizationRequiredPolicy(), UpsertActionPolicy.NotPermitted.Instance);
+
+    /// <summary>
+    /// Update permitted with <c>NoFurtherAuthorizationRequired</c>, Create not permitted. The create-new branch
+    /// owes an immediate result, so the POST takes the ordered-segments first phase.
+    /// </summary>
+    public static UpsertActionAuthorization UpdateOnlyWithNoFurtherAuthorizationRequired { get; } =
+        new(UpsertActionPolicy.NotPermitted.Instance, NoFurtherAuthorizationRequiredPolicy());
+
+    private static UpsertActionPolicy.Permitted NoFurtherAuthorizationRequiredPolicy() =>
+        new([
+            new AuthorizationStrategyEvaluator(
+                AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired,
+                [],
+                FilterOperator.Or
+            ),
+        ]);
+
+    /// <summary>
     /// Runs a descriptor POST whose Create and Update policies are both the evaluators the test placed on
     /// the request. A request built with no evaluators stands for <c>NoFurtherAuthorizationRequired</c>,
     /// the no-check policy a production POST would carry; production never sends an empty policy.

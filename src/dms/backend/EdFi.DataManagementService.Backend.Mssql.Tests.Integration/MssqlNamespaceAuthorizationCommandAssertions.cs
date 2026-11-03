@@ -101,7 +101,7 @@ internal static class MssqlNamespaceAuthorizationCommandAssertions
             .Should()
             .BeEmpty(
                 "a denied namespace authorization must not be followed by any persistence command, so no "
-                    + "document, root, child, extension, referential identity, or tracking row can change"
+                    + "document, root, child, extension, or tracking row can change"
             );
     }
 

@@ -159,6 +159,7 @@ Describe "EdFi.Api.Secrets contract versioning (DMS-1552)" {
                 $release,
                 "(?ms)^      - name: Promote EdFi\.Api\.Secrets Package\r?\n.*?(?=^      - name: |^  \S|\z)"
             ).Value
+            $script:promoteJob = [regex]::Match($release, "(?ms)^  promote-azure-artifact:\r?\n.*?(?=^  \S|\z)").Value
         }
 
         It "names the package EdFi.Api.Secrets" {
@@ -218,7 +219,10 @@ Describe "EdFi.Api.Secrets contract versioning (DMS-1552)" {
         It "runs the pack and the decision on a dispatch and keeps the push off it" {
             $script:packSecrets | Should -Match "github\.event_name == 'workflow_dispatch'"
             $script:checkSecrets | Should -Match "github\.event_name == 'workflow_dispatch'"
-            $script:publishSecrets | Should -Match "(?m)^    if: \$\{\{ github\.event_name != 'workflow_dispatch' \}\}$"
+            # Only the cs- prerelease's own tag publishes, so a dispatch, which is not a release event,
+            # never reaches the push.
+            $script:publishSecrets | Should -Match "(?m)^    if: \$\{\{ github\.event_name == 'release' && github\.ref_type == 'tag' && startsWith\(github\.ref, 'refs/tags/cs-pre-'\) \}\}$"
+            $script:publishSecrets | Should -Match '(?m)^    environment: publishing$'
         }
 
         It "builds the Configuration Service package only after the contract check, and publishes it only after the contract" {
@@ -228,7 +232,9 @@ Describe "EdFi.Api.Secrets contract versioning (DMS-1552)" {
 
         It "promotes only on a final release tag" {
             $script:promoteSecrets | Should -Match '-PackageName "EdFi\.Api\.Secrets"'
-            $script:promoteSecrets | Should -Match "if: \$\{\{ github\.ref_type == 'tag' && startsWith\(github\.ref_name, 'v'\) \}\}"
+            # The promote job admits only a v tag, so the step needs no condition of its own.
+            $script:promoteSecrets | Should -Not -Match '(?m)^        if:'
+            $script:promoteJob | Should -Match "(?m)^    if: \$\{\{ github\.ref_type == 'tag' && startsWith\(github\.ref, 'refs/tags/v'\) \}\}\r?$"
         }
     }
 

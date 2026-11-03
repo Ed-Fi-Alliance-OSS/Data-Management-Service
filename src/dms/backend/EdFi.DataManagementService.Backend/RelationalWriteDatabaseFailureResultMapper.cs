@@ -88,6 +88,11 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
                     exception,
                     request.WritePlan.Model.Resource
                 ),
+            // A unique violation whose constraint name could not be extracted (e.g. a localized
+            // SQL Server message) is still confirmed unique by the provider error code.
+            RelationalWriteExceptionClassification.UnrecognizedWriteFailure
+                when _writeExceptionClassifier.IsUniqueConstraintViolation(exception) =>
+                BuildNonUniqueValuesFailureResult(request, constraintName: null),
             RelationalWriteExceptionClassification.UnrecognizedWriteFailure =>
                 BuildUnrecognizedWriteFailureResult(request, exception),
             _ => throw new InvalidOperationException(
@@ -163,6 +168,28 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
         );
     }
 
+    /// <summary>
+    /// The ODS-compatible fallback for a unique violation the backend cannot attribute to the
+    /// resource identity or a request reference, such as a collection-table unique key or a
+    /// primary key. It is a client conflict, not a transient one, so it is never retried. The
+    /// constraint name is logged because the client-facing body names no constraint; the provider
+    /// exception is not, because its message carries the duplicate values the client sent.
+    /// </summary>
+    private RelationalWriteExecutorResult BuildNonUniqueValuesFailureResult(
+        RelationalWriteExecutorRequest request,
+        string? constraintName
+    )
+    {
+        _logger.LogWarning(
+            "Relational write for resource {Resource} failed with a unique-constraint violation on "
+                + "{Constraint} that could not be attributed to a specific failure.",
+            RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource),
+            constraintName is null ? "(not parsed)" : LogSanitizer.SanitizeInternalValueForLog(constraintName)
+        );
+
+        return RelationalWriteExecutorResults.BuildNonUniqueValuesFailureResult(request.OperationKind);
+    }
+
     private RelationalWriteExecutorResult BuildConstraintViolationFailureResult(
         RelationalWriteExecutorRequest request,
         RelationalWriteExceptionClassification.ConstraintViolation violation
@@ -188,6 +215,9 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
                     requestReference,
                     out var referenceFailureResult
                 ) => referenceFailureResult!,
+            RelationalWriteConstraintResolution.Unresolved
+                when violation is RelationalWriteExceptionClassification.UniqueConstraintViolation =>
+                BuildNonUniqueValuesFailureResult(request, violation.ConstraintName),
             RelationalWriteConstraintResolution.RequestReference
             or RelationalWriteConstraintResolution.Unresolved =>
                 RelationalWriteExecutorResults.BuildUnknownFailureResult(
@@ -302,7 +332,9 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
                 && RelationalWriteSupport.ToQualifiedResourceName(reference.ResourceInfo)
                     == resolution.TargetResource
             )
-            .Select(DescriptorReferenceFailureClassifier.Missing)
+            .Select(reference =>
+                DescriptorReferenceFailure.From(reference, DescriptorReferenceFailureReason.Missing)
+            )
             .ToArray();
 
         result =
@@ -326,17 +358,20 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
         RelationalWriteExecutorRequest request
     )
     {
-        var referentialIdentityParameters = GetReferentialIdentityParametersOrThrow(request);
-        return referentialIdentityParameters
-            .IdentityElements.Select(identityElement =>
+        var ownNaturalKeyProbe = RelationalWriteSupport.GetOwnNaturalKeyProbeOrThrow(
+            request.MappingSet,
+            request.WritePlan.Model.Resource
+        );
+        return ownNaturalKeyProbe
+            .KeyColumns.Select(keyColumn =>
                 TryResolveIdentityValue(
                     request.SelectedBody,
-                    identityElement.IdentityJsonPath,
+                    keyColumn.IdentityJsonPath,
                     out var identityValue
                 )
                     ? new KeyValuePair<string, string>?(
                         new KeyValuePair<string, string>(
-                            GetIdentityElementName(identityElement.IdentityJsonPath),
+                            GetIdentityElementName(keyColumn.IdentityJsonPath),
                             identityValue
                         )
                     )
@@ -346,24 +381,13 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
             .ToArray();
     }
 
-    private static TriggerKindParameters.ReferentialIdentityMaintenance GetReferentialIdentityParametersOrThrow(
-        RelationalWriteExecutorRequest request
-    ) =>
-        RelationalWriteSupport.GetReferentialIdentityParametersOrThrow(
-            request.MappingSet,
-            request.WritePlan.Model.Resource,
-            request.WritePlan.Model.Root.Table
-        );
-
     private static bool TryResolveIdentityValue(
         JsonNode selectedBody,
-        string identityJsonPath,
+        JsonPathExpression identityJsonPath,
         out string identityValue
     )
     {
-        var segments = RelationalJsonPathSupport.GetRestrictedSegments(
-            new JsonPathExpression(identityJsonPath, [])
-        );
+        var segments = RelationalJsonPathSupport.GetRestrictedSegments(identityJsonPath);
         JsonNode? currentNode = selectedBody;
 
         foreach (var segment in segments)
@@ -407,15 +431,13 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
     /// therefore stay distinguishable. A path that is not made only of property segments is reported as
     /// written rather than shortened.
     /// </summary>
-    private static string GetIdentityElementName(string identityJsonPath)
+    private static string GetIdentityElementName(JsonPathExpression identityJsonPath)
     {
-        var segments = RelationalJsonPathSupport.GetRestrictedSegments(
-            new JsonPathExpression(identityJsonPath, [])
-        );
+        var segments = RelationalJsonPathSupport.GetRestrictedSegments(identityJsonPath);
 
         if (segments.Count == 0)
         {
-            return identityJsonPath;
+            return identityJsonPath.Canonical;
         }
 
         var propertyNames = new string[segments.Count];
@@ -424,7 +446,7 @@ internal sealed class RelationalWriteDatabaseFailureResultMapper(
         {
             if (segments[index] is not JsonPathSegment.Property property)
             {
-                return identityJsonPath;
+                return identityJsonPath.Canonical;
             }
 
             propertyNames[index] = property.Name;

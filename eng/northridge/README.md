@@ -123,7 +123,10 @@ $baseline = './src/dms/backend/Fixtures/authoritative/ds-5.2/expected/relational
 The copied schemas include every resource and tracked-history schema in the baseline, plus `auth`.
 The preflight verifies the compact target against that baseline, complete source/target table
 coverage, exact column shapes for descriptor conversion and directly restored tables, and unchanged
-resource-key seeds. `dms.Document` retains its staging rules: source-only columns are omitted from
+resource-key seeds. The one exception to exact shapes is an owner's `ContentCreatedAt` (DMS-1656),
+which legacy dumps predate: a target-only `ContentCreatedAt` is admitted. No source the copy
+accepts has the column, because it postdates compact descriptors, which the copy refuses.
+`dms.Document` retains its staging rules: source-only columns are omitted from
 the target insert, and target columns absent from the source must be nullable, defaulted, identity
 or generated. Source descriptor keys and stored descriptor references must be legacy bigint
 document keys. Descriptor rows keep their bigint `DocumentId`
@@ -138,13 +141,19 @@ that name. Unknown or ambiguous history types stop the copy and require resolvin
 type identity before retrying. Live rows accept those same qualified forms or an unqualified
 resource name matching the owning document's type; their `ResourceKeyId` comes from that document.
 
-Document IDs/UUIDs, document-level RI rows, content stamps and history IDs/versions remain intact.
-The current combined target omits both `dms.Document.ContentLastModifiedAt` and
+Document IDs/UUIDs, content stamps and history IDs/versions remain intact. `dms.ReferentialIdentity`
+is retired: an archive that still carries it has that entry skipped and logged, never restored or
+reconciled, and a target that still has the table stops the copy. Abstract identity tables load
+through the same staged path as descriptor-bearing tables, once each, and take `ResourceKeyId`
+from their owning `dms.Document`; a row with no owning document stops the copy. The current combined target omits both `dms.Document.ContentLastModifiedAt` and
 `dms.Document.CreatedAt`; legacy source-shaped staging can still contain them, but the target
 insert omits them as source-only. The document `ContentVersion` check remains. Authoritative
 descriptor and sampled stamp-bearing root rows retain their exact timestamps and versions, checked
 using deterministic `DocumentId`-ordered stamp-tuple checksums as well as distributions; swapping
-timestamps while preserving min/max must fail. The sampled-root scope is unchanged. The tool retains
+timestamps while preserving min/max must fail. The sampled-root scope is unchanged. Owners'
+`ContentCreatedAt` is not carried: the load runs with triggers disabled and leaves it to its
+default, the copy time, which is later than the carried `ContentLastModifiedAt` (see
+[RELATIONAL-BACKEND.md](../../docs/RELATIONAL-BACKEND.md#reprovisioning-and-legacy-data-carry-forward)). The tool retains
 row-count, FK, trigger-state, fingerprint, singleton and source-identity checks. It initializes the
 native descriptor backing sequence from allocated compact keys. Copy
 and Checkpoint resolve that sequence from catalog ownership and check `last_value`, `is_called`
@@ -162,7 +171,8 @@ republication is not a prerequisite for either physical change. See the
 
 The live regression runs the actual custom-dump conversion on PostgreSQL 16.8, with descriptor
 document keys above `Int32.MaxValue`, unequal native target keys, exact root/nested/extension/
-composite remaps, deleted-row history, retained stamps/RI and a successful next ordinary insert.
+composite remaps, deleted-row history, retained stamps, skipped legacy `dms.ReferentialIdentity`
+rows, abstract identity `ResourceKeyId` from the owning document and a successful next ordinary insert.
 Run it with the disposable-container environment variables described above:
 
 ```powershell

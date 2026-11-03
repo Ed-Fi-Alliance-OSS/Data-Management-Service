@@ -11,7 +11,7 @@
 
 .DESCRIPTION
     The DMS API is the only write path that maintains every invariant at once: relational projection
-    rows, dms.ReferentialIdentity, descriptor references, tracked-change rows, sequences, and identity
+    rows, abstract identity rows, descriptor references, tracked-change rows, sequences, and identity
     stamps. Direct SQL insertion would mean hand-reproducing the write plan per resource, so documents
     are added through the API.
 

@@ -9,9 +9,17 @@ using EdFi.DataManagementService.Core.External.Backend;
 
 namespace EdFi.DataManagementService.Backend;
 
+/// <summary>
+/// Compares an existing document's finalized root identity-projection values with its stored
+/// values. On SQL Server a value that differs from the stored one only under the identity
+/// comparer (<see cref="IdentityEqualityContract.ComparerFor"/>) is not an identity change: the
+/// stored value is copied back into the merged root row, per column, so proposed authorization,
+/// guarded no-op detection and writer DML all see stored casing. Any other difference is a
+/// genuine identity change and fails closed unless the resource allows identity updates.
+/// </summary>
 internal static class RelationalWriteIdentityStability
 {
-    public static RelationalWriteExecutorResult? TryBuildFailureResult(
+    public static (RelationalWriteMergeResult MergeResult, RelationalWriteExecutorResult? Failure) Apply(
         RelationalWriteExecutorRequest request,
         RelationalWriteMergeResult mergeResult
     )
@@ -21,20 +29,33 @@ internal static class RelationalWriteIdentityStability
 
         if (request.TargetContext is not RelationalWriteTargetContext.ExistingDocument)
         {
-            return null;
+            return (mergeResult, null);
         }
 
-        var rootTableState = mergeResult.TablesInDependencyOrder.SingleOrDefault(tableState =>
-            tableState.TableWritePlan.TableModel.Table.Equals(request.WritePlan.Model.Root.Table)
-        );
+        var rootTableIndex = -1;
 
-        if (rootTableState is null)
+        for (var index = 0; index < mergeResult.TablesInDependencyOrder.Length; index++)
+        {
+            if (
+                mergeResult
+                    .TablesInDependencyOrder[index]
+                    .TableWritePlan.TableModel.Table.Equals(request.WritePlan.Model.Root.Table)
+            )
+            {
+                rootTableIndex = index;
+                break;
+            }
+        }
+
+        if (rootTableIndex < 0)
         {
             throw new InvalidOperationException(
                 $"No-profile merge synthesis for resource '{RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)}' "
                     + $"did not include root table '{request.WritePlan.Model.Root.Table}'. This indicates an internal merge-synthesis bug."
             );
         }
+
+        var rootTableState = mergeResult.TablesInDependencyOrder[rootTableIndex];
 
         if (rootTableState.CurrentRows.Length != 1)
         {
@@ -52,30 +73,70 @@ internal static class RelationalWriteIdentityStability
             );
         }
 
+        var rootTableWritePlan = rootTableState.TableWritePlan;
         var identityProjectionBindingIndexes = GetIdentityProjectionBindingIndexesOrThrow(
             request.MappingSet,
-            rootTableState.TableWritePlan
+            rootTableWritePlan
         );
         var currentRootRow = rootTableState.CurrentRows[0];
         var mergedRootRow = rootTableState.MergedRows[0];
+        FlattenedWriteValue[]? reboundValues = null;
+        var hasIdentityChange = false;
 
-        if (
-            Array.TrueForAll(
-                identityProjectionBindingIndexes,
-                bindingIndex =>
-                    Equals(currentRootRow.Values[bindingIndex], mergedRootRow.Values[bindingIndex])
+        foreach (var bindingIndex in identityProjectionBindingIndexes)
+        {
+            var currentValue = currentRootRow.Values[bindingIndex];
+            var mergedValue = mergedRootRow.Values[bindingIndex];
+
+            if (Equals(currentValue, mergedValue))
+            {
+                continue;
+            }
+
+            if (
+                currentValue is FlattenedWriteValue.Literal { Value: string currentText }
+                && mergedValue is FlattenedWriteValue.Literal { Value: string mergedText }
+                && IdentityEqualityContract
+                    .ComparerFor(rootTableWritePlan.ColumnBindings[bindingIndex].Column)
+                    .Equals(currentText, mergedText)
             )
-        )
-        {
-            return null;
+            {
+                reboundValues ??= [.. mergedRootRow.Values];
+                reboundValues[bindingIndex] = currentValue;
+                continue;
+            }
+
+            hasIdentityChange = true;
         }
 
-        if (request.AllowIdentityUpdates)
+        if (hasIdentityChange && !request.AllowIdentityUpdates)
         {
-            return null;
+            return (
+                mergeResult,
+                BuildImmutableIdentityFailure(request.OperationKind, request.WritePlan.Model.Resource)
+            );
         }
 
-        return BuildImmutableIdentityFailure(request.OperationKind, request.WritePlan.Model.Resource);
+        if (reboundValues is null)
+        {
+            return (mergeResult, null);
+        }
+
+        var reboundRootTableState = rootTableState with
+        {
+            MergedRows = [RelationalWriteRowHelpers.CreateMergedTableRow(rootTableWritePlan, reboundValues)],
+        };
+
+        return (
+            mergeResult with
+            {
+                TablesInDependencyOrder = mergeResult.TablesInDependencyOrder.SetItem(
+                    rootTableIndex,
+                    reboundRootTableState
+                ),
+            },
+            null
+        );
     }
 
     private static RelationalWriteExecutorResult BuildImmutableIdentityFailure(

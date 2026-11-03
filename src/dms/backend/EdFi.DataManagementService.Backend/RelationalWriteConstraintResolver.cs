@@ -65,20 +65,12 @@ internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstr
     /// <summary>
     /// The same duplicate identity can also surface from the other identity-maintenance triggers on the
     /// written table, because SQL Server fires multiple AFTER triggers in an undefined order. A duplicate
-    /// <c>dms.ReferentialIdentity</c> key means another document already holds that resource or
-    /// superclass-alias identity, since the trigger removes the document's own rows before inserting. A
-    /// duplicate <c>auth.EducationOrganizationIdToEducationOrganizationId</c> key is only reachable when the
-    /// education organization id already exists, since the insert trigger adds the new id's self and ancestor
-    /// tuples and the update trigger merges. Both are therefore the same identity conflict as the abstract
-    /// natural key.
+    /// <c>auth.EducationOrganizationIdToEducationOrganizationId</c> key is only reachable when the education
+    /// organization id already exists, since the insert trigger adds the new id's self and ancestor tuples and
+    /// the update trigger merges. It is therefore the same identity conflict as the abstract natural key.
     /// </summary>
     private static bool IsIdentityMaintenancePrimaryKey(string constraintName) =>
         string.Equals(
-            constraintName,
-            ReferentialIdentityTableDefinition.PrimaryKeyName,
-            StringComparison.Ordinal
-        )
-        || string.Equals(
             constraintName,
             AuthObjectDefinitions.AuthEdOrgTable.PrimaryKeyName,
             StringComparison.Ordinal
@@ -151,72 +143,21 @@ internal sealed class RelationalWriteConstraintResolver : IRelationalWriteConstr
         return new RelationalWriteConstraintResolution.Unresolved(constraintName);
     }
 
+    // The own-key probe lists the root natural-key constraint columns as emitted, in semantic identity
+    // order. Every identity part supplied by the same document reference binds that reference's
+    // ..._DocumentId, so duplicates collapse to the first occurrence.
     private static IReadOnlyList<DbColumnName> GetRootNaturalKeyColumnsOrThrow(
         RelationalWriteConstraintResolutionRequest request
-    )
-    {
-        var rootTable = request.WritePlan.Model.Root;
-        var referentialIdentityParameters = RelationalWriteSupport.GetReferentialIdentityParametersOrThrow(
-            request.ReferenceResolutionRequest.MappingSet,
-            request.WritePlan.Model.Resource,
-            rootTable.Table
-        );
-
-        Dictionary<string, DocumentReferenceBinding> identityBindingsByPath = new(StringComparer.Ordinal);
-
-        foreach (
-            var binding in request.WritePlan.Model.DocumentReferenceBindings.Where(binding =>
-                binding.IsIdentityComponent && binding.Table.Equals(rootTable.Table)
-            )
-        )
-        {
-            foreach (
-                var canonicalReferencePath in binding.IdentityBindings.Select(referencePath =>
-                    referencePath.ReferenceJsonPath.Canonical
+    ) =>
+        [
+            .. RelationalWriteSupport
+                .GetOwnNaturalKeyProbeOrThrow(
+                    request.ReferenceResolutionRequest.MappingSet,
+                    request.WritePlan.Model.Resource
                 )
-            )
-            {
-                if (
-                    !identityBindingsByPath.TryAdd(canonicalReferencePath, binding)
-                    && identityBindingsByPath[canonicalReferencePath].ReferenceObjectPath
-                        != binding.ReferenceObjectPath
-                )
-                {
-                    throw new InvalidOperationException(
-                        $"Resource '{RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)}' contains ambiguous identity reference bindings for path "
-                            + $"'{canonicalReferencePath}'."
-                    );
-                }
-            }
-        }
-
-        HashSet<string> seenColumns = new(StringComparer.Ordinal);
-        List<DbColumnName> rootNaturalKeyColumns = [];
-
-        foreach (var identityElement in referentialIdentityParameters.IdentityElements)
-        {
-            var constraintColumn = identityBindingsByPath.TryGetValue(
-                identityElement.IdentityJsonPath,
-                out var identityBinding
-            )
-                ? identityBinding.FkColumn
-                : identityElement.Column;
-
-            if (seenColumns.Add(constraintColumn.Value))
-            {
-                rootNaturalKeyColumns.Add(constraintColumn);
-            }
-        }
-
-        if (rootNaturalKeyColumns.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Resource '{RelationalWriteSupport.FormatResource(request.WritePlan.Model.Resource)}' did not resolve any root natural-key columns from referential-identity metadata."
-            );
-        }
-
-        return rootNaturalKeyColumns;
-    }
+                .KeyColumns.Select(key => key.Column)
+                .Distinct(),
+        ];
 
     private static RelationalWriteConstraintResolution.RequestReference? TryResolveDocumentReference(
         RelationalResourceModel resourceModel,

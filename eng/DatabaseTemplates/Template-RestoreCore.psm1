@@ -209,8 +209,8 @@ function Get-RestoreSchemaNameExclusion {
 
     InventoryEnumeration is for the DMS-only content gates and therefore INCLUDES PostgreSQL
     "public" and SQL Server "dbo": those schemas always exist, so hiding contamination inside
-    them must be visible to the gate. The gate permits only allowlisted extension bootstrap
-    objects there (e.g. pgcrypto installed by the template's own CREATE EXTENSION line);
+    them must be visible to the gate. The gate permits only allowlisted extension objects
+    there (pgcrypto, which the Configuration Service may install in a shared database);
     everything else in them is contamination.
 
     SQL Server's built-in "guest" and fixed-role (db_owner, ...) schemas always exist but are
@@ -1072,10 +1072,10 @@ function New-MssqlRestoreMoveClause {
 function Get-PostgresqlAllowedExtensionName {
     <#
     .SYNOPSIS
-    PostgreSQL extensions whose objects are permitted extension bootstrap: template dumps
-    inject CREATE EXTENSION pgcrypto (dms.uuidv5 requires digest()), and its objects install
-    into "public". Inventory queries filter ONLY these extensions' objects out, so objects
-    from any other extension remain visible to the DMS-only gate as contamination.
+    PostgreSQL extensions whose objects are permitted: the Configuration Service owns pgcrypto
+    and may install it into "public" of a database it shares with DMS. Inventory queries filter
+    ONLY these extensions' objects out, so objects from any other extension remain visible to
+    the DMS-only gate as contamination.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '', Justification = 'Returns the allow-list of extension names; the singular Name suffix is the repo convention for list-returning helpers.')]
     param ()

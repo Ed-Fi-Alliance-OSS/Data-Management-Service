@@ -88,7 +88,6 @@ public abstract class ProfileWriteReferenceFilterTests
                     true
                 ),
                 new DocumentIdentity([]),
-                new ReferentialId(Guid.Empty),
                 new JsonPath(path)
             );
 
@@ -96,7 +95,6 @@ public abstract class ProfileWriteReferenceFilterTests
             new(
                 new BaseResourceInfo(new ProjectName("ed-fi"), new ResourceName("School"), false),
                 new DocumentIdentity([]),
-                new ReferentialId(Guid.Empty),
                 new JsonPath(path)
             );
 

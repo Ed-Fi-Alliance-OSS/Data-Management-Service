@@ -34,7 +34,7 @@ internal sealed record ReadChangesCustomViewPlanResult(
 /// not its DocumentId, so the planner pairs each basis identity column with the canonical tombstone column
 /// holding its old value by walking the resolved path from the basis back to the subject root through each
 /// hop's <see cref="DocumentReferenceBinding.IdentityBindings"/>. Descriptor identity parts pair the basis
-/// FK column with the tombstone's old Namespace/CodeValue; an abstract basis seeks its union view by the
+/// FK column with the tombstone's old Namespace/CodeValue, matched as a lowered whole URI; an abstract basis seeks its union view by the
 /// view's identity output columns. When the strategy name carries the <c>IncludingDeletes</c> suffix, one
 /// probe arm per basis tracked-change table (per concrete member, for an abstract basis) lets a deleted
 /// basis still be found by its <c>Old*</c> identity columns.
@@ -48,8 +48,9 @@ internal sealed record ReadChangesCustomViewPlanResult(
 /// </summary>
 /// <remarks>
 /// A descriptor basis (the path terminates on <c>dms.Descriptor</c>) is the third shape: the tombstone's old
-/// Namespace/CodeValue seek the shared descriptor table under the basis descriptor's resource key, with an
-/// optional probe of the shared descriptor tombstone table. It obeys the same first-hop rule.
+/// Namespace/CodeValue, as a lowered whole URI, seek the shared descriptor table under the basis descriptor's
+/// resource key, with an optional probe of the shared descriptor tombstone table. It obeys the same
+/// first-hop rule.
 /// </remarks>
 internal static class ReadChangesCustomViewPlanner
 {

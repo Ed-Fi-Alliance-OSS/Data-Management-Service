@@ -2007,7 +2007,6 @@ Describe "Invoke-RestoreScratchValidation" {
         $stage = New-ScratchStage -Directory $script:scratchRoot
         $global:ScratchPrivilegeRows = @(
             'function|EXECUTE|edfi_dms_enqueue_owner|edfi_dms_enqueue_owner|dms."TF_Document_EnqueueProjectionInsert"()',
-            'function|EXECUTE|postgres|-|dms.uuidv5(namespace_uuid uuid, name_text text)',
             'relation|INSERT|postgres|edfi_dms_enqueue_owner|dms."DocumentProjectionWork"',
             'relation|SELECT|postgres|edfi_dms_enqueue_owner|dms."DocumentCacheState"',
             'relation|SELECT|postgres|postgres|dms."Document"',
@@ -2592,10 +2591,10 @@ exit 0
         $emitArgs.Count | Should -Be 1
         $emitArgs[0] | Should -BeLike "ddl emit --schema C:\candidate\core.json C:\candidate\ext.json --output *expected-ddl-* --dialect pgsql*"
 
-        # The expected database is created, seeded with pgcrypto, replayed, then dropped.
+        # The expected database is created, replayed with no extension bootstrap, then dropped.
         $queries = @($global:DerivationQueryLog)
         @($queries | Where-Object { $_ -like 'CREATE DATABASE "edfi_dms_restore_expected_*' }) | Should -Not -BeNullOrEmpty
-        @($queries | Where-Object { $_ -like "*pgcrypto*" }) | Should -Not -BeNullOrEmpty
+        @($queries | Where-Object { $_ -like "*pgcrypto*" }) | Should -BeNullOrEmpty
         @($queries | Where-Object { $_ -like 'DROP DATABASE IF EXISTS "edfi_dms_restore_expected_*' }) | Should -Not -BeNullOrEmpty
 
         $dockerCalls = @($global:DerivationDockerLog)

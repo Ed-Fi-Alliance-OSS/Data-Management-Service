@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using Microsoft.Extensions.Logging;
-using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
 namespace EdFi.DataManagementService.Core.Extraction;
 
@@ -104,12 +103,7 @@ internal static class IdentityExtractor
         // Associations do not rename the identity fields in MetaEd, so the DocumentIdentity portion is the same
         if (resourceSchema.SubclassType == "association")
         {
-            return new(
-                superclassResourceInfo,
-                documentIdentity,
-                ReferentialIdFrom(superclassResourceInfo, documentIdentity),
-                new JsonPath("$")
-            );
+            return new(superclassResourceInfo, documentIdentity, new JsonPath("$"));
         }
 
         DocumentIdentity superclassIdentity = IdentityRename(
@@ -117,12 +111,7 @@ internal static class IdentityExtractor
             documentIdentity.DocumentIdentityElements[0]
         );
 
-        return new(
-            superclassResourceInfo,
-            superclassIdentity,
-            ReferentialIdFrom(superclassResourceInfo, superclassIdentity),
-            new JsonPath("$")
-        );
+        return new(superclassResourceInfo, superclassIdentity, new JsonPath("$"));
     }
 
     /// <summary>

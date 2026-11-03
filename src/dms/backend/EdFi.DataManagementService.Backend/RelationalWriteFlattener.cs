@@ -10,6 +10,8 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend;
@@ -348,12 +350,17 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
         foreach (var childPlan in childPlans)
         {
-            // Duplicate detection has two modes selected by FlatteningInput, each backed by a
-            // dictionary whose equality semantics match its consumer downstream:
+            // Duplicate detection has two modes selected by FlatteningInput. Both use the
+            // table's CollectionSemanticIdentityEquality, so string members bound to a column
+            // flagged UsesSqlServerIdentityCollation compare with the SQL Server identity
+            // comparer: case variants that the database would store under one unique key are
+            // duplicates here, on SQL Server only. The no-profile merge and the profile planner
+            // match request items to stored rows with the same equality, so an item that is not a
+            // duplicate here can never bind to the same stored row as a sibling.
             //
-            // - Profile mode (default): keyed on the presence-aware SemanticIdentityKeys.BuildKey
-            //   string. An explicit JSON null and a missing identity property produce distinct
-            //   keys under the SemanticIdentityPart contract, so two siblings with the same null
+            // - Profile mode (default): keyed on the presence-aware SemanticIdentityPart
+            //   sequence. An explicit JSON null and a missing identity property are distinct
+            //   under the SemanticIdentityPart contract, so two siblings with the same null
             //   value are duplicates only when both are present-null or both are missing — never
             //   across the boundary. ProfileCollectionPlanner relies on this to pair stored rows
             //   and request candidates by presence-aware identity. The complementary
@@ -362,25 +369,25 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             //   flatten.
             //
             // - No-profile mode (ValidateStorageCollapsedCollectionIdentityUniqueness): keyed on
-            //   the raw object?[] semantic identity values via ObjectValueArrayComparer, the
-            //   exact same comparer used by
-            //   RelationalWriteNoProfileMerge.ProjectedCollectionTableState. The relational
-            //   storage model maps both missing and explicit-null identity slots to SQL NULL,
-            //   so two request siblings differing only by absent-vs-explicit-null on an identity
-            //   slot would persist indistinguishably. Rejecting such pairs here keeps the merge
-            //   from binding ambiguous request candidates to a stored row. The same comparer
-            //   also catches scalar values that .Equals but stringify differently (e.g. 1.0m
-            //   vs 1.00m), keeping flatten-time rejection aligned with merge-time matching.
+            //   the raw object?[] semantic identity values. The relational storage model maps
+            //   both missing and explicit-null identity slots to SQL NULL, so two request
+            //   siblings differing only by absent-vs-explicit-null on an identity slot would
+            //   persist indistinguishably. Rejecting such pairs here keeps the merge from binding
+            //   ambiguous request candidates to a stored row. Raw value equality also catches
+            //   scalar values that .Equals but stringify differently (e.g. 1.0m vs 1.00m).
             //
             // SemanticIdentityInOrder is built unconditionally because the profile merge
             // pipeline still consumes it on every candidate downstream of this method.
-            Dictionary<string, SemanticIdentityTrackerEntry>? presenceAwareTracker =
-                flatteningInput.ValidateStorageCollapsedCollectionIdentityUniqueness
-                    ? null
-                    : new(StringComparer.Ordinal);
+            var semanticIdentityEquality = CollectionSemanticIdentityEquality.For(childPlan.TableWritePlan);
+            Dictionary<
+                ImmutableArray<SemanticIdentityPart>,
+                SemanticIdentityTrackerEntry
+            >? presenceAwareTracker = flatteningInput.ValidateStorageCollapsedCollectionIdentityUniqueness
+                ? null
+                : new(semanticIdentityEquality.PresenceAware);
             Dictionary<object?[], SemanticIdentityTrackerEntry>? collapsedTracker =
                 flatteningInput.ValidateStorageCollapsedCollectionIdentityUniqueness
-                    ? new(StorageCollapsedIdentityHelpers.ObjectArrayComparer)
+                    ? new(semanticIdentityEquality.RawValues)
                     : null;
 
             foreach (
@@ -421,15 +428,13 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
                 SemanticIdentityTrackerEntry? firstSeen;
                 bool isDuplicate;
-                string? presenceAwareKey = null;
                 if (collapsedTracker is not null)
                 {
                     isDuplicate = collapsedTracker.TryGetValue(semanticIdentityValues, out firstSeen);
                 }
                 else
                 {
-                    presenceAwareKey = Profile.SemanticIdentityKeys.BuildKey(semanticIdentityInOrder);
-                    isDuplicate = presenceAwareTracker!.TryGetValue(presenceAwareKey, out firstSeen);
+                    isDuplicate = presenceAwareTracker!.TryGetValue(semanticIdentityInOrder, out firstSeen);
                 }
 
                 if (isDuplicate)
@@ -451,15 +456,13 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                             childPlan.TableWritePlan,
                             parentScopeCanonical,
                             matchedEntry.OrdinalPath,
-                            ordinalPath,
-                            matchedEntry.Values
+                            ordinalPath
                         );
                     }
                 }
 
                 var trackerEntry = new SemanticIdentityTrackerEntry(
                     ordinalPath,
-                    semanticIdentityValues,
                     hasDeferredMissingSemanticIdentityMember
                 );
 
@@ -479,7 +482,7 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
                 }
                 else
                 {
-                    presenceAwareTracker!.Add(presenceAwareKey!, trackerEntry);
+                    presenceAwareTracker!.Add(semanticIdentityInOrder, trackerEntry);
                 }
 
                 var childParentKeyParts = RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(
@@ -1137,9 +1140,9 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
     /// <remarks>
     /// Used by the profile-aware merge path, where candidate keys must align with
     /// visible-request-item keys reconstructed from <see cref="CollectionRowAddress"/>.
-    /// The no-profile merge path matches current rows on raw
+    /// The no-profile path checks sibling duplicates on raw
     /// <see cref="CollectionWriteCandidate.SemanticIdentityValues"/> via
-    /// <see cref="ObjectValueArrayComparer"/>; profile-aware callers leave the no-profile
+    /// <see cref="CollectionSemanticIdentityEquality.RawValues"/>; profile-aware callers leave the no-profile
     /// path's storage-collapsed-uniqueness flag off because
     /// <see cref="EdFi.DataManagementService.Backend.Profile.ProfileWriteContractValidator"/>
     /// enforces the same invariant on Core-emitted address streams before flatten. The
@@ -1878,26 +1881,38 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
         );
     }
 
+    /// <summary>
+    /// Builds the duplicate-item failure in Core's shape: key = the array path with concrete
+    /// ancestor ordinals (<c>$.parents[1].children</c>), message = Core's "The Nth item of the
+    /// {array} ..." wording. <see cref="DuplicateItemValidationError.Build"/> truncates at
+    /// the first <c>[*]</c>, so only the collection's own wildcard is left in the path it receives.
+    /// Table names and ordinal paths stay out of the client message and travel as the exception's
+    /// diagnostic.
+    /// </summary>
     private static RelationalWriteRequestValidationException CreateDuplicateSemanticIdentityException(
         TableWritePlan tableWritePlan,
         string parentScopeCanonical,
         IReadOnlyList<int> firstOrdinalPath,
-        IReadOnlyList<int> duplicateOrdinalPath,
-        IReadOnlyList<object?> semanticIdentityValues
+        IReadOnlyList<int> duplicateOrdinalPath
     )
     {
-        var duplicatePath = MaterializeConcretePath(
-            tableWritePlan.TableModel.JsonScope.Canonical,
-            [.. duplicateOrdinalPath]
-        );
+        var scopeCanonical = tableWritePlan.TableModel.JsonScope.Canonical;
+        var ownWildcardIndex = scopeCanonical.LastIndexOf("[*]", StringComparison.Ordinal);
+        var arrayPath =
+            MaterializeConcretePath(scopeCanonical[..ownWildcardIndex], [.. duplicateOrdinalPath.SkipLast(1)])
+            + scopeCanonical[ownWildcardIndex..];
+        var (errorKey, message) = DuplicateItemValidationError.Build(arrayPath, duplicateOrdinalPath[^1]);
 
-        return CreateRequestShapeValidationException(
-            duplicatePath,
-            $"Collection table '{FormatTable(tableWritePlan)}' received duplicate semantic identity values "
-                + $"{FormatSemanticIdentityValues(semanticIdentityValues)} under parent scope '{parentScopeCanonical}'. "
+        return new RelationalWriteRequestValidationException([
+            new WriteValidationFailure(new JsonPath(errorKey), message),
+        ])
+        {
+            Diagnostic =
+                $"Collection table '{FormatTable(tableWritePlan)}' received duplicate semantic identity values "
+                + $"under parent scope '{parentScopeCanonical}'. "
                 + $"First ordinal path: {FormatOrdinalPath(firstOrdinalPath)}. "
-                + $"Duplicate ordinal path: {FormatOrdinalPath(duplicateOrdinalPath)}."
-        );
+                + $"Duplicate ordinal path: {FormatOrdinalPath(duplicateOrdinalPath)}.",
+        };
     }
 
     private static RequestDerivedScalarConversionContext CreateColumnScalarConversionContext(
@@ -2016,12 +2031,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
             bool boolValue => boolValue ? "true" : "false",
             _ => Convert.ToString(value, CultureInfo.InvariantCulture) ?? value.ToString() ?? "<unknown>",
         };
-    }
-
-    private static string FormatSemanticIdentityValues(IReadOnlyList<object?> values)
-    {
-        ArgumentNullException.ThrowIfNull(values);
-        return $"[{string.Join(", ", values.Select(FormatLiteral))}]";
     }
 
     private static string FormatOrdinalPath(IReadOnlyList<int> ordinalPath)
@@ -2163,7 +2172,6 @@ internal sealed class RelationalWriteFlattener : IRelationalWriteFlattener
 
     private sealed record SemanticIdentityTrackerEntry(
         int[] OrdinalPath,
-        object?[] Values,
         bool ContainsDeferredMissingSemanticIdentityMember
     );
 

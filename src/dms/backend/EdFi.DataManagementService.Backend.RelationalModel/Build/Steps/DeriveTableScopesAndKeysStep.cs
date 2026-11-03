@@ -189,7 +189,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 
     /// <summary>
     /// Creates the shared descriptor table root, keyed by compact <c>DescriptorId</c> with a unique
-    /// owning <c>DocumentId</c> FK to <c>dms.Document</c>.
+    /// owning <c>DocumentId</c>. The denormalized <c>ResourceKeyId</c> and <c>DocumentId</c> together
+    /// reference <c>dms.Document (DocumentId, ResourceKeyId)</c>, so the database enforces that each
+    /// row's <c>ResourceKeyId</c> matches its owning document.
     /// </summary>
     private static TableScope CreateDescriptorRootTable()
     {
@@ -211,11 +213,19 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         [
             .. RelationalModelSystemColumnFactory.BuildKeyColumns(key.Columns),
             RelationalModelSystemColumnFactory.CreateKeyColumn(documentId, ColumnKind.DocumentFk),
+            new DbColumnModel(
+                RelationalNameConventions.ResourceKeyIdColumnName,
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int16),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
         ];
 
         var fkName = ConstraintNaming.BuildForeignKeyName(
             _descriptorTableName,
-            ConstraintNaming.DocumentToken
+            ConstraintNaming.DocumentResourceKeyToken
         );
 
         TableConstraint[] constraints =
@@ -223,9 +233,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             new TableConstraint.Unique("UX_Descriptor_DocumentId", [documentId]),
             new TableConstraint.ForeignKey(
                 fkName,
-                [RelationalNameConventions.DocumentIdColumnName],
+                RelationalNameConventions.DocumentResourceKeyColumns,
                 _documentTableName,
-                [RelationalNameConventions.DocumentIdColumnName],
+                RelationalNameConventions.DocumentResourceKeyColumns,
                 OnDelete: DocumentSafetyNetDeleteAction
             ),
         ];

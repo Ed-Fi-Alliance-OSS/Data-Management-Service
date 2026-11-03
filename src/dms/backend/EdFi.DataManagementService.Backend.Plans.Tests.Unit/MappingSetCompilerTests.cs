@@ -850,6 +850,12 @@ public class Given_MappingSetCompiler
         var descriptorEdgeResource = new QualifiedResourceName("Ed-Fi", "StudentDescriptorEdge");
         var abstractResource = new QualifiedResourceName("Ed-Fi", "EducationOrganization");
 
+        JsonPathExpression schoolYearPath = new("$.schoolYear", [new JsonPathSegment.Property("schoolYear")]);
+        JsonPathExpression studentUniqueIdPath = new(
+            "$.studentUniqueId",
+            [new JsonPathSegment.Property("studentUniqueId")]
+        );
+
         var descriptorModel = CreateDescriptorModel(descriptorResource);
         var keyUnificationModel = CreateRootOnlyModelWithKeyUnification(keyUnificationResource, "Program");
         var supportedModel = CreateRootOnlyModel(supportedResource, "Student");
@@ -950,6 +956,7 @@ public class Given_MappingSetCompiler
                     keyUnificationModel
                 )
                 {
+                    IdentityJsonPaths = [schoolYearPath],
                     QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
                         ("schoolYear", [("$.schoolYear", "number")]),
                         ("id", [("$.id", "string")])
@@ -961,6 +968,7 @@ public class Given_MappingSetCompiler
                     supportedModel
                 )
                 {
+                    IdentityJsonPaths = [schoolYearPath],
                     QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
                         ("schoolYear", [("$.schoolYear", "number")])
                     ),
@@ -971,6 +979,7 @@ public class Given_MappingSetCompiler
                     multiPathModel
                 )
                 {
+                    IdentityJsonPaths = [schoolYearPath],
                     QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
                         ("schoolYear", [("$.schoolYear", "number")]),
                         ("schoolYearAlias", [("$.schoolYear", "number"), ("$.localSchoolYear", "number")])
@@ -982,6 +991,7 @@ public class Given_MappingSetCompiler
                     projectionMetadataModel
                 )
                 {
+                    IdentityJsonPaths = [schoolYearPath],
                     QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
                         ("schoolId", [("$.schoolReference.schoolId", "number")])
                     ),
@@ -992,6 +1002,7 @@ public class Given_MappingSetCompiler
                     nonRootOnlyModel
                 )
                 {
+                    IdentityJsonPaths = [studentUniqueIdPath],
                     QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
                         ("streetNumberName", [("$.addresses[*].streetNumberName", "string")])
                     ),
@@ -1002,6 +1013,7 @@ public class Given_MappingSetCompiler
                     extensionTableModel
                 )
                 {
+                    IdentityJsonPaths = [schoolYearPath],
                     QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
                         ("favoriteColor", [("$._ext.sample.favoriteColor", "string")])
                     ),
@@ -1012,6 +1024,7 @@ public class Given_MappingSetCompiler
                     descriptorEdgeModel
                 )
                 {
+                    IdentityJsonPaths = [schoolYearPath],
                     QueryFieldMappingsByQueryField = CreateQueryFieldMappings(
                         ("academicSubjectDescriptor", [("$.academicSubjectDescriptor", "string")])
                     ),

@@ -3,17 +3,23 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
 
 public interface IRelationalWriteTargetLookupService
 {
-    Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+    /// <summary>
+    /// Resolves a descriptor POST target by descriptor identity through
+    /// <see cref="RelationalWriteTargetLookupSupport.ResolveDescriptorForPostAsync"/>.
+    /// </summary>
+    Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        ReferentialId referentialId,
+        string descriptorUri,
         DocumentUuid candidateDocumentUuid,
         CancellationToken cancellationToken = default
     );
@@ -22,35 +28,6 @@ public interface IRelationalWriteTargetLookupService
         MappingSet mappingSet,
         QualifiedResourceName resource,
         DocumentUuid documentUuid,
-        CancellationToken cancellationToken = default
-    );
-}
-
-public interface IRelationalWriteTargetLookupResolver
-{
-    /// <summary>
-    /// Resolves the POST target inside an open write session. Takes the session's command executor
-    /// rather than a raw connection/transaction pair so the lookup stays on the session's single
-    /// command-creation seam and a session decorator observes it.
-    /// </summary>
-    Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        ReferentialId referentialId,
-        DocumentUuid candidateDocumentUuid,
-        IRelationalCommandExecutor commandExecutor,
-        CancellationToken cancellationToken = default
-    );
-
-    /// <summary>
-    /// Resolves the PUT target inside an open write session, on the same session command-creation
-    /// seam as <see cref="ResolveForPostAsync"/>.
-    /// </summary>
-    Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        DocumentUuid documentUuid,
-        IRelationalCommandExecutor commandExecutor,
         CancellationToken cancellationToken = default
     );
 }
@@ -61,19 +38,19 @@ internal sealed class RelationalWriteTargetLookupService(IRelationalCommandExecu
     private readonly IRelationalCommandExecutor _commandExecutor =
         commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
 
-    public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+    public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        ReferentialId referentialId,
+        string descriptorUri,
         DocumentUuid candidateDocumentUuid,
         CancellationToken cancellationToken = default
     )
     {
-        return RelationalWriteTargetLookupSupport.ResolveForPostAsync(
+        return RelationalWriteTargetLookupSupport.ResolveDescriptorForPostAsync(
             _commandExecutor,
             mappingSet,
             resource,
-            referentialId,
+            descriptorUri,
             candidateDocumentUuid,
             cancellationToken
         );
@@ -88,49 +65,6 @@ internal sealed class RelationalWriteTargetLookupService(IRelationalCommandExecu
     {
         return RelationalWriteTargetLookupSupport.ResolveForPutAsync(
             _commandExecutor,
-            mappingSet,
-            resource,
-            documentUuid,
-            cancellationToken
-        );
-    }
-}
-
-internal sealed class RelationalWriteTargetLookupResolver : IRelationalWriteTargetLookupResolver
-{
-    public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        ReferentialId referentialId,
-        DocumentUuid candidateDocumentUuid,
-        IRelationalCommandExecutor commandExecutor,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(commandExecutor);
-
-        return RelationalWriteTargetLookupSupport.ResolveForPostAsync(
-            commandExecutor,
-            mappingSet,
-            resource,
-            referentialId,
-            candidateDocumentUuid,
-            cancellationToken
-        );
-    }
-
-    public Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        DocumentUuid documentUuid,
-        IRelationalCommandExecutor commandExecutor,
-        CancellationToken cancellationToken = default
-    )
-    {
-        ArgumentNullException.ThrowIfNull(commandExecutor);
-
-        return RelationalWriteTargetLookupSupport.ResolveForPutAsync(
-            commandExecutor,
             mappingSet,
             resource,
             documentUuid,
@@ -141,55 +75,52 @@ internal sealed class RelationalWriteTargetLookupResolver : IRelationalWriteTarg
 
 internal static class RelationalWriteTargetLookupSupport
 {
-    private const string ReferentialIdParameterName = "@referentialId";
     private const string ResourceKeyIdParameterName = "@resourceKeyId";
     private const string DocumentUuidParameterName = "@documentUuid";
+    private const string DescriptorUriParameterName = "@descriptorUri";
 
     /// <summary>
-    /// Builds the POST target predicate over the aliased <c>dms.Document</c> row <c>d</c> for a
-    /// composite captured-target statement. Semantically identical to
-    /// <see cref="ResolveForPostAsync"/>'s lookup — the referential-identity row selects the document,
-    /// filtered to the request's resource key — expressed as a predicate so the capture statement can
-    /// lock and observe the row in one statement. Returned as a <see cref="RelationalCommand"/> whose
-    /// text is the bare predicate, so the composite rewriter can rename its parameters.
+    /// Builds the POST target predicate over the aliased <c>dms.Document</c> row <c>d</c> from the
+    /// resource's own natural key: one scalar <c>=</c> subselect reads the root table's
+    /// <c>DocumentId</c> through the <c>UX_&lt;R&gt;_NK</c> columns, filtered to the request's resource key.
+    /// Descriptor parts compare the stored <c>int DescriptorId</c> through a lowered-URI descriptor
+    /// subselect; each identity reference compares its <c>_DocumentId</c> FK through a subselect of the
+    /// referenced root or abstract identity table. Every level is a scalar subselect, so a key that admits
+    /// more than one row fails the statement instead of silently picking one. A value no stored row can
+    /// hold binds nothing and yields the no-match predicate. Returned as a <see cref="RelationalCommand"/>
+    /// whose text is the bare predicate, so the composite rewriter can rename its parameters.
     /// </summary>
-    public static RelationalCommand BuildPostCaptureTargetPredicate(
+    public static RelationalCommand BuildNaturalKeyCaptureTargetPredicate(
         MappingSet mappingSet,
-        QualifiedResourceName resource,
-        ReferentialId referentialId
+        ResourceWritePlan writePlan,
+        DocumentIdentity documentIdentity
     )
     {
         ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(writePlan);
+        ArgumentNullException.ThrowIfNull(documentIdentity);
 
+        var resource = writePlan.Model.Resource;
         var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
-        var predicateSql = mappingSet.Key.Dialect switch
-        {
-            SqlDialect.Pgsql => """
-                d."DocumentId" = (
-                    SELECT referentialIdentity."DocumentId"
-                    FROM dms."ReferentialIdentity" referentialIdentity
-                    WHERE referentialIdentity."ReferentialId" = @referentialId
-                ) AND d."ResourceKeyId" = @resourceKeyId
-                """,
-            SqlDialect.Mssql => """
-                d.[DocumentId] = (
-                    SELECT referentialIdentity.[DocumentId]
-                    FROM [dms].[ReferentialIdentity] referentialIdentity
-                    WHERE referentialIdentity.[ReferentialId] = @referentialId
-                ) AND d.[ResourceKeyId] = @resourceKeyId
-                """,
-            _ => throw new NotSupportedException(
-                $"Relational POST capture predicate does not support SQL dialect '{mappingSet.Key.Dialect}'."
-            ),
-        };
-
-        return new RelationalCommand(
-            predicateSql,
-            [
-                new RelationalParameter(ReferentialIdParameterName, referentialId.Value),
-                new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
-            ]
+        var builder = new NaturalKeyCapturePredicateBuilder(
+            mappingSet,
+            writePlan.Model.DocumentReferenceBindings,
+            RelationalWriteSupport.GetOwnNaturalKeyProbeOrThrow(mappingSet, resource),
+            documentIdentity
         );
+        RelationalParameter resourceKeyIdParameter = new(ResourceKeyIdParameterName, resourceKeyId);
+
+        return builder.TryBuildRootSubselect(out var rootSubselect)
+            ? new RelationalCommand(
+                $"{builder.Column("d", "DocumentId")} = {rootSubselect}"
+                    + $" AND {builder.Column("d", "ResourceKeyId")} = {ResourceKeyIdParameterName}",
+                [.. builder.Parameters, resourceKeyIdParameter]
+            )
+            : new RelationalCommand(
+                $"{builder.Column("d", "DocumentId")} IS NULL"
+                    + $" AND {builder.Column("d", "ResourceKeyId")} = {ResourceKeyIdParameterName}",
+                [resourceKeyIdParameter]
+            );
     }
 
     /// <summary>
@@ -225,23 +156,28 @@ internal static class RelationalWriteTargetLookupSupport
         );
     }
 
-    public static async Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+    /// <summary>
+    /// Resolves a descriptor POST target by descriptor identity: the lowered whole URI and the descriptor's
+    /// own resource key, folded exactly as <c>UX_Descriptor_UriLowered_ResourceKeyId</c> folds them, so the
+    /// engine decides which casings (and, on SQL Server, which collation aliases) name the existing
+    /// descriptor. The probe projects both <c>DescriptorId</c> and the owning <c>DocumentId</c>; the result
+    /// carries only <c>DocumentId</c>, because every lock, update, cache and restamp is document-keyed. More
+    /// than one matching row fails the lookup instead of picking one.
+    /// </summary>
+    public static async Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
         IRelationalCommandExecutor commandExecutor,
         MappingSet mappingSet,
         QualifiedResourceName resource,
-        ReferentialId referentialId,
+        string descriptorUri,
         DocumentUuid candidateDocumentUuid,
         CancellationToken cancellationToken = default
     )
     {
-        ArgumentNullException.ThrowIfNull(commandExecutor);
-        ArgumentNullException.ThrowIfNull(mappingSet);
-
-        var existingDocument = await TryResolveExistingDocumentByReferentialIdAsync(
+        var existingDocument = await ProbeDescriptorAsync(
             commandExecutor,
             mappingSet,
             resource,
-            referentialId,
+            descriptorUri,
             cancellationToken
         );
 
@@ -252,6 +188,50 @@ internal static class RelationalWriteTargetLookupSupport
                 existingDocument.DocumentUuid,
                 existingDocument.ObservedContentVersion
             );
+    }
+
+    /// <summary>
+    /// Runs the same descriptor identity probe as <see cref="ResolveDescriptorForPostAsync"/> and returns the
+    /// owning <c>DocumentId</c> of the descriptor the database identifies with <paramref name="descriptorUri"/>,
+    /// or <see langword="null"/> when none does. The descriptor PUT identity guard uses it for its verdict.
+    /// </summary>
+    public static async Task<long?> TryResolveDescriptorDocumentIdAsync(
+        IRelationalCommandExecutor commandExecutor,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        string descriptorUri,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var existingDocument = await ProbeDescriptorAsync(
+            commandExecutor,
+            mappingSet,
+            resource,
+            descriptorUri,
+            cancellationToken
+        );
+
+        return existingDocument?.DocumentId;
+    }
+
+    private static Task<ResolvedExistingDocument?> ProbeDescriptorAsync(
+        IRelationalCommandExecutor commandExecutor,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        string descriptorUri,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(commandExecutor);
+        ArgumentNullException.ThrowIfNull(mappingSet);
+        ArgumentNullException.ThrowIfNull(descriptorUri);
+
+        return ExecuteLookupAsync(
+            commandExecutor,
+            BuildDescriptorTargetProbeCommand(mappingSet, resource, descriptorUri),
+            $"descriptor resource '{RelationalWriteSupport.FormatResource(resource)}' and the request's descriptor URI",
+            cancellationToken
+        );
     }
 
     public static async Task<RelationalWriteTargetLookupResult> ResolveForPutAsync(
@@ -280,31 +260,6 @@ internal static class RelationalWriteTargetLookupSupport
                 existingDocument.DocumentUuid,
                 existingDocument.ObservedContentVersion
             );
-    }
-
-    private static Task<ResolvedExistingDocument?> TryResolveExistingDocumentByReferentialIdAsync(
-        IRelationalCommandExecutor commandExecutor,
-        MappingSet mappingSet,
-        QualifiedResourceName resource,
-        ReferentialId referentialId,
-        CancellationToken cancellationToken
-    )
-    {
-        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
-
-        return ExecuteLookupAsync(
-            commandExecutor,
-            mappingSet.Key.Dialect switch
-            {
-                SqlDialect.Pgsql => BuildPostgresqlLookupByReferentialIdCommand(referentialId, resourceKeyId),
-                SqlDialect.Mssql => BuildMssqlLookupByReferentialIdCommand(referentialId, resourceKeyId),
-                _ => throw new NotSupportedException(
-                    $"Relational POST target lookup does not support SQL dialect '{mappingSet.Key.Dialect}'."
-                ),
-            },
-            $"resource '{RelationalWriteSupport.FormatResource(resource)}' and referential id '{referentialId.Value}'",
-            cancellationToken
-        );
     }
 
     private static Task<ResolvedExistingDocument?> TryResolveExistingDocumentByDocumentUuidAsync(
@@ -389,51 +344,49 @@ internal static class RelationalWriteTargetLookupSupport
         );
     }
 
-    private static RelationalCommand BuildPostgresqlLookupByReferentialIdCommand(
-        ReferentialId referentialId,
-        short resourceKeyId
+    /// <summary>
+    /// Builds the descriptor identity probe over <c>dms.Descriptor</c> joined to its owning
+    /// <c>dms.Document</c>, with the capture predicate's URI fold
+    /// (<see cref="NaturalKeyCapturePredicateBuilder.BuildDescriptorUriFoldPredicate"/>). The resource key is a
+    /// compile-time literal, as in the capture predicate.
+    /// </summary>
+    private static RelationalCommand BuildDescriptorTargetProbeCommand(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        string descriptorUri
     )
     {
-        return new RelationalCommand(
-            """
-            SELECT
-                document."DocumentId" AS "DocumentId",
-                document."DocumentUuid" AS "DocumentUuid",
-                document."ContentVersion" AS "ContentVersion"
-            FROM dms."ReferentialIdentity" referentialIdentity
-            INNER JOIN dms."Document" document
-                ON document."DocumentId" = referentialIdentity."DocumentId"
-            WHERE referentialIdentity."ReferentialId" = @referentialId
-                AND document."ResourceKeyId" = @resourceKeyId
-            """,
-            [
-                new RelationalParameter(ReferentialIdParameterName, referentialId.Value),
-                new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
-            ]
-        );
-    }
+        var dialect = mappingSet.Key.Dialect;
+        var probe = mappingSet.DescriptorProbeTarget;
+        var resourceKeyId = RelationalWriteSupport
+            .GetResourceKeyIdOrThrow(mappingSet, resource)
+            .ToString(CultureInfo.InvariantCulture);
 
-    private static RelationalCommand BuildMssqlLookupByReferentialIdCommand(
-        ReferentialId referentialId,
-        short resourceKeyId
-    )
-    {
+        string Quote(string identifier) =>
+            NaturalKeyCapturePredicateBuilder.QuoteIdentifier(dialect, identifier);
+        string Column(string alias, DbColumnName column) => $"{alias}.{Quote(column.Value)}";
+
+        var uriPredicate = NaturalKeyCapturePredicateBuilder.BuildDescriptorUriFoldPredicate(
+            dialect,
+            probe,
+            "descriptor",
+            DescriptorUriParameterName
+        );
+
         return new RelationalCommand(
-            """
+            $"""
             SELECT
-                document.[DocumentId] AS [DocumentId],
-                document.[DocumentUuid] AS [DocumentUuid],
-                document.[ContentVersion] AS [ContentVersion]
-            FROM [dms].[ReferentialIdentity] referentialIdentity
-            INNER JOIN [dms].[Document] document
-                ON document.[DocumentId] = referentialIdentity.[DocumentId]
-            WHERE referentialIdentity.[ReferentialId] = @referentialId
-                AND document.[ResourceKeyId] = @resourceKeyId
+                {Column("descriptor", probe.DescriptorIdColumn)} AS {Quote("DescriptorId")},
+                {Column("descriptor", probe.DocumentIdColumn)} AS {Quote("DocumentId")},
+                document.{Quote("DocumentUuid")} AS {Quote("DocumentUuid")},
+                document.{Quote("ContentVersion")} AS {Quote("ContentVersion")}
+            FROM {Quote(probe.DescriptorTable.Schema.Value)}.{Quote(probe.DescriptorTable.Name)} descriptor
+            INNER JOIN {Quote("dms")}.{Quote("Document")} document
+                ON document.{Quote("DocumentId")} = {Column("descriptor", probe.DocumentIdColumn)}
+            WHERE {uriPredicate}
+                AND {Column("descriptor", probe.ResourceKeyIdColumn)} = CAST({resourceKeyId} AS smallint)
             """,
-            [
-                new RelationalParameter(ReferentialIdParameterName, referentialId.Value),
-                new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
-            ]
+            [new RelationalParameter(DescriptorUriParameterName, descriptorUri)]
         );
     }
 

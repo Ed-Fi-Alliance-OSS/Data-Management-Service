@@ -37,6 +37,10 @@ jobs:
     # Scheduled runs only in Ed-Fi-Alliance-OSS: a fork inherits the schedule but not the Slack
     # webhook or the Ed-Fi resources the run acts on. workflow_dispatch still runs anywhere.
     if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
+    # EDFI_BUILD_AGENT_PAT can enqueue pull requests and is the identity the tag ruleset trusts, so
+    # it lives only in the 'release-automation' environment, which releases it only to runs on
+    # main. A manual run from any other branch cannot read it.
+    environment: release-automation
     runs-on: ubuntu-latest
     defaults:
       run:

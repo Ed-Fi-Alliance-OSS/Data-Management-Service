@@ -57,7 +57,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -199,10 +198,6 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         ]);
         return new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                ProfileRootOnlyMergeItemResourceInfo,
-                identity
-            ),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -349,12 +344,6 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
     //  ProfileRootOnlyMergeItem root row can carry FK + key-unification values
     //  into the profiled PUT. Helpers are kept local (per DMS-1124 supplement
     //  scope) and duplicated in the mssql sibling with dialect-specific SQL.
-    //
-    //  - Student inserts trigger TR_Student_ReferentialIdentity, which creates
-    //    the dms.ReferentialIdentity row for ResourceKeyId=3 automatically.
-    //  - Descriptors have no trigger, so we insert dms.ReferentialIdentity
-    //    explicitly for ResourceKeyId=2 using the ReferentialId computed from
-    //    the lowercase URI (identity path $.descriptor).
     // ─────────────────────────────────────────────────────────────────────────
 
     public static async Task<short> GetResourceKeyIdAsync(
@@ -392,25 +381,6 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         );
     }
 
-    public static async Task InsertReferentialIdentityRowAsync(
-        PostgresqlGeneratedDdlTestDatabase database,
-        Guid referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
-            """,
-            new NpgsqlParameter("referentialId", referentialId),
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
     public static async Task<long> SeedStudentAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         Guid documentUuid,
@@ -443,7 +413,6 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "SchoolTypeDescriptor");
         await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
-        var uri = $"{@namespace}#{codeValue}";
         var descriptorId = await database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
@@ -469,20 +438,6 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription)
         );
-
-        var descriptorResourceInfo = new BaseResourceInfo(
-            new ProjectName("Ed-Fi"),
-            new ResourceName("SchoolTypeDescriptor"),
-            true
-        );
-        var descriptorIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri.ToLowerInvariant()),
-        ]);
-        var referentialId = ReferentialIdCalculator.ReferentialIdFrom(
-            descriptorResourceInfo,
-            descriptorIdentity
-        );
-        await InsertReferentialIdentityRowAsync(database, referentialId.Value, documentId, resourceKeyId);
 
         return descriptorId;
     }
@@ -587,10 +542,6 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         ]);
         return new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                ProfileRootOnlyMergeItemResourceInfo,
-                identity
-            ),
             DocumentReferences: documentReferences,
             DocumentReferenceArrays: [],
             DescriptorReferences: descriptorReferences,
@@ -606,15 +557,11 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
             true
         );
         var descriptorIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri.ToLowerInvariant()),
+            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
         ]);
         return new DescriptorReference(
             ResourceInfo: descriptorResourceInfo,
             DocumentIdentity: descriptorIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                descriptorResourceInfo,
-                descriptorIdentity
-            ),
             Path: new JsonPath(referenceJsonPath)
         );
     }

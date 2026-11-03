@@ -13,7 +13,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -126,7 +125,6 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         (await CountSchoolRootRowsAsync(documentId!.Value)).Should().Be(1);
         (await CountSchoolAddressRowsAsync(documentId.Value)).Should().BeGreaterThan(0);
         (await CountSchoolAddressPeriodRowsAsync(documentId.Value)).Should().BeGreaterThan(0);
-        (await CountReferentialIdentityRowsAsync(documentId.Value)).Should().Be(1);
 
         var delete = await InvokeAsync(repository =>
             repository.DeleteDocumentById(CreateDeleteRequest(_schoolResourceInfo, documentUuid))
@@ -143,9 +141,6 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
         (await CountSchoolAddressPeriodRowsAsync(documentId.Value))
             .Should()
             .Be(0, "SchoolAddressPeriod child rows must cascade when the Document row is removed");
-        (await CountReferentialIdentityRowsAsync(documentId.Value))
-            .Should()
-            .Be(0, "dms.ReferentialIdentity rows must cascade when the Document row is removed");
         _recordingLogger.Records.Should().NotContain(r => r.Message.Contains("FK constraint '"));
     }
 
@@ -285,7 +280,6 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
             ResourceInfo: _schoolResourceInfo,
             DocumentInfo: new DocumentInfo(
                 DocumentIdentity: identity,
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(_schoolResourceInfo, identity),
                 DocumentReferences: [],
                 DocumentReferenceArrays: [],
                 DescriptorReferences: [],
@@ -373,18 +367,6 @@ public class Given_A_Postgresql_Relational_Delete_By_Id
             SELECT COUNT(*) AS "Count"
             FROM "edfi"."SchoolAddressPeriod"
             WHERE "School_DocumentId" = @documentId;
-            """,
-            documentId
-        );
-    }
-
-    private async Task<long> CountReferentialIdentityRowsAsync(long documentId)
-    {
-        return await CountByDocumentIdAsync(
-            """
-            SELECT COUNT(*) AS "Count"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "DocumentId" = @documentId;
             """,
             documentId
         );

@@ -180,7 +180,6 @@ file static class RollbackSafetyIntegrationTestSupport
     ) =>
         new(
             DocumentCount: await CountRowsAsync(database, "[dms].[Document]"),
-            ReferentialIdentityCount: await CountRowsAsync(database, "[dms].[ReferentialIdentity]"),
             SchoolCount: await CountRowsAsync(database, "[edfi].[School]"),
             SchoolAddressCount: await CountRowsAsync(database, "[edfi].[SchoolAddress]"),
             SchoolAddressPeriodCount: await CountRowsAsync(database, "[edfi].[SchoolAddressPeriod]"),

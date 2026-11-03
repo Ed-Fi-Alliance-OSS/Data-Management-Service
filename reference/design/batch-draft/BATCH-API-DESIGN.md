@@ -12,6 +12,13 @@
 > See [DMS-1623](https://edfi.atlassian.net/browse/DMS-1623) and
 > [the current strictness contract](../../../docs/DATA-STRICTNESS.md).
 
+> **DMS-1454 supersession:** Natural-key resolution below computes a UUIDv5 `ReferentialId`
+> (`ReferentialIdCalculator`, `DocumentInfo.ReferentialId`) and finds the document by it.
+> DMS-1454 removed Core's referential-ID surface, and no runtime path reads
+> `dms.ReferentialIdentity`. A batch natural-key lookup must use the natural-key lookups described
+> in [natural-key-resolution.md](../backend-redesign/design-docs/natural-key-resolution.md)
+> instead.
+
 > This document refines `BATCH-API-INITIAL-DESIGN.md` using the actual
 > Data Management Service (DMS) architecture under `src/dms`. It specifies
 > how to add a transactional batch endpoint that fits the existing
