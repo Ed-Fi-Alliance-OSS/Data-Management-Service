@@ -399,8 +399,8 @@ public class MetadataModuleTests
 
     /// <summary>
     /// With multi-tenancy on, an unqualified specifications request has no tenant to serve it for. It
-    /// must answer the guidance 404 before anything reaches the profile catalog (DMS-1660: the root
-    /// route used to call the Configuration Service without a tenant and answer 503).
+    /// must answer the guidance 404 before anything reaches the profile catalog; the root route used to
+    /// call the Configuration Service without a tenant and answer 503.
     /// </summary>
     [TestFixture]
     public class Given_Multi_Tenancy_With_Route_Qualifiers_And_An_Unqualified_Specifications_Request
@@ -502,7 +502,7 @@ public class MetadataModuleTests
 
     /// <summary>
     /// Every metadata route that lacks the tenant or a configured route qualifier answers the same
-    /// guidance 404: the unqualified forms, the tenant-only forms DMS-1505 reserved so they stop
+    /// guidance 404: the unqualified forms, the tenant-only forms reserved so they stop
     /// matching the discovery templates, and the partially qualified forms that omit a trailing
     /// qualifier.
     /// </summary>
@@ -512,7 +512,8 @@ public class MetadataModuleTests
         private static WebApplicationFactory<Program> CreateFactory(
             IApiService apiService,
             IMetadataRouteValidator metadataRouteValidator,
-            string routeQualifierSegments
+            string routeQualifierSegments,
+            bool identityManagementEnabled = false
         )
         {
             return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -528,6 +529,9 @@ public class MetadataModuleTests
                         options.MultiTenancy = true;
                         options.RouteQualifierSegments = routeQualifierSegments;
                     });
+                    collection.Configure<IdentityManagementOptions>(options =>
+                        options.Enabled = identityManagementEnabled
+                    );
                 });
             });
         }
@@ -577,6 +581,42 @@ public class MetadataModuleTests
             body["detail"]!.GetValue<string>().Should().Be(UnqualifiedMetadataDetail);
             A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._)).MustNotHaveHappened();
             A.CallTo(() => apiService.GetDependencies()).MustNotHaveHappened();
+            A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
+                .MustNotHaveHappened();
+        }
+
+        /// <summary>
+        /// The identity document route exists only while identity management is on, and then it takes
+        /// the same rejection as every other metadata route instead of serving the document.
+        /// </summary>
+        [TestCase("/metadata/identity/v2/swagger.json")]
+        [TestCase("/tenant1/metadata/identity/v2/swagger.json")]
+        [TestCase("/tenant1/255901/metadata/identity/v2/swagger.json")]
+        public async Task It_rejects_the_unqualified_identity_document_routes_when_identity_management_is_on(
+            string requestPath
+        )
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            var metadataRouteValidator = A.Fake<IMetadataRouteValidator>();
+            await using var factory = CreateFactory(
+                apiService,
+                metadataRouteValidator,
+                "districtId,schoolYear",
+                identityManagementEnabled: true
+            );
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync(requestPath);
+            JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+            body["detail"]!.GetValue<string>().Should().Be(UnqualifiedMetadataDetail);
+            A.CallTo(() => apiService.GetIdentityOpenApiSpecification(A<JsonArray>._)).MustNotHaveHappened();
             A.CallTo(() => metadataRouteValidator.ValidateAsync(A<HttpContext>._, A<CancellationToken>._))
                 .MustNotHaveHappened();
         }
@@ -804,7 +844,7 @@ public class MetadataModuleTests
     }
 
     /// <summary>
-    /// DMS-1505 regression guard: Discovery at "/" and "/{tenant}" must advertise only fully qualified
+    /// Regression guard: Discovery at "/" and "/{tenant}" must advertise only fully qualified
     /// metadata URLs, so none of them lands on the guidance 404 once the placeholders are filled in.
     /// </summary>
     [TestFixture]

@@ -115,7 +115,8 @@ internal static class IdentityTestClients
     /// <summary>
     /// The route <c>/{tenant}/{districtId}/{schoolYear}/metadata/{path}</c>, or the metadata root
     /// under that context for an empty path. With multi-tenancy on, the metadata routes answer only
-    /// under the full route context; the unqualified forms answer the guidance 404 (DMS-1660).
+    /// under the full route context; the unqualified forms answer a guidance 404 that names the
+    /// required path shape.
     /// </summary>
     public static string MetadataRoute(
         string tenant,
