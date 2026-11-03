@@ -500,6 +500,20 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             );
         }
 
+        public async Task<IEnumerable<string>> GetApplicationScopesAsync(Guid applicationId)
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            return await connection.QueryAsync<string>(
+                @"SELECT DISTINCT s.""Name""
+                  FROM ""dmscs"".""OpenIddictApplicationScope"" aps
+                  JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""
+                  WHERE aps.""ApplicationId"" = @ApplicationId",
+                new { ApplicationId = applicationId }
+            );
+        }
+
         public async Task<TokenInfo?> GetTokenByIdAsync(Guid tokenId)
         {
             await using var connection = new NpgsqlConnection(_connectionString);

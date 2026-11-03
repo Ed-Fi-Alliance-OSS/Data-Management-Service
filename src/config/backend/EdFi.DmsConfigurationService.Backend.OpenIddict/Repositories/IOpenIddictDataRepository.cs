@@ -147,6 +147,13 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
 
         Task<IEnumerable<string>> GetClientRolesAsync(Guid clientId);
 
+        /// <summary>
+        /// The names of the scopes registered to the application <paramref name="applicationId"/>,
+        /// each once, read on a connection of its own. Empty when the application has no scopes or
+        /// no application has that id.
+        /// </summary>
+        Task<IEnumerable<string>> GetApplicationScopesAsync(Guid applicationId);
+
         // Token operations
         Task<TokenInfo?> GetTokenByIdAsync(Guid tokenId);
 

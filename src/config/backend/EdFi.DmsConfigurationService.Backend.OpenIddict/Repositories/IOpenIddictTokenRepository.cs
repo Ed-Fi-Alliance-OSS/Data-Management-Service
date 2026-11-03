@@ -152,4 +152,14 @@ public interface IOpenIddictTokenRepository
     /// <param name="clientId">The client ID.</param>
     /// <returns>Collection of role names.</returns>
     Task<IEnumerable<string>> GetClientRolesAsync(Guid clientId);
+
+    /// <summary>
+    /// Gets the names of the scopes registered to an application.
+    /// </summary>
+    /// <param name="applicationId">The application ID.</param>
+    /// <returns>
+    /// Each registered scope name once; empty when the application has no scopes or no
+    /// application has the ID.
+    /// </returns>
+    Task<IEnumerable<string>> GetApplicationScopesAsync(Guid applicationId);
 }

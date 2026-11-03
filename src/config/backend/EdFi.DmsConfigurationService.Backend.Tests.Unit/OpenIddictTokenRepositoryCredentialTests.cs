@@ -20,7 +20,8 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
 /// <summary>
 /// Each engine's shipped token repository forwards the credential read to the data repository it
-/// wraps, and a grant through it reads the credential before the full application.
+/// wraps, and a grant through it reads the credential before the full application. It forwards the
+/// application scopes read the same way.
 /// </summary>
 public class OpenIddictTokenRepositoryCredentialTests
 {
@@ -79,6 +80,38 @@ public class OpenIddictTokenRepositoryCredentialTests
         [Test]
         public void It_reads_each_credential_once() =>
             A.CallTo(() => _dataRepository.GetClientCredentialAsync(ClientId)).MustHaveHappenedOnceExactly();
+    }
+
+    [TestFixture("postgresql")]
+    [TestFixture("mssql")]
+    public class Given_an_application_scopes_read_through_a_token_repository(string engine)
+        : OpenIddictTokenRepositoryCredentialTests
+    {
+        private IOpenIddictDataRepository _dataRepository = null!;
+        private readonly Guid _applicationId = Guid.NewGuid();
+        private readonly string[] _stored = ["edfi_admin_api/full_access", "edfi_admin_api/readonly_access"];
+        private IEnumerable<string> _forwarded = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _dataRepository = A.Fake<IOpenIddictDataRepository>();
+            A.CallTo(() => _dataRepository.GetApplicationScopesAsync(_applicationId)).Returns(_stored);
+            IOpenIddictTokenRepository tokenRepository = TokenRepositoryOver(engine, _dataRepository);
+
+            _forwarded = await tokenRepository.GetApplicationScopesAsync(_applicationId);
+        }
+
+        [Test]
+        public void It_returns_the_wrapped_repositorys_scopes() => _forwarded.Should().BeSameAs(_stored);
+
+        [Test]
+        public void It_reads_the_scopes_once_for_the_application() =>
+            A.CallTo(() => _dataRepository.GetApplicationScopesAsync(_applicationId))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_makes_no_other_read() => Fake.GetCalls(_dataRepository).Should().ContainSingle();
     }
 
     [TestFixture("postgresql")]

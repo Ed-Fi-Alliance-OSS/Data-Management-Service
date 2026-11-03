@@ -5610,6 +5610,77 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         }
     }
 
+    // The scope read by application id: the names registered to that application only, each once
+    // and spelled as stored, including a scope row another application shares. An application
+    // without scopes and an unknown id read as empty.
+    [TestFixture]
+    public class Given_Application_Scopes_Read_By_Application_Id : OpenIddictDataRepositoryTests
+    {
+        private string _sharedScope = null!;
+        private string _ownScope = null!;
+        private string _bystanderScope = null!;
+        private string[] _scopes = null!;
+        private string[] _throughWrapper = null!;
+        private string[] _withoutScopes = null!;
+        private string[] _unknownApplication = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string suffix = Guid.NewGuid().ToString("N");
+            _sharedScope = $"Shared_Scope_{suffix}";
+            _ownScope = $"Own_Scope_{suffix}";
+            _bystanderScope = $"Bystander_Scope_{suffix}";
+            Guid applicationId = await RegisterApplicationAsync(
+                repository,
+                Guid.NewGuid().ToString(),
+                _sharedScope,
+                _ownScope
+            );
+            await RegisterApplicationAsync(
+                repository,
+                Guid.NewGuid().ToString(),
+                _sharedScope,
+                _bystanderScope
+            );
+            Guid withoutScopesId = await RegisterApplicationAsync(repository, Guid.NewGuid().ToString());
+
+            _scopes = (await repository.GetApplicationScopesAsync(applicationId)).ToArray();
+            _throughWrapper = (
+                await new OpenIddictTokenRepository(repository).GetApplicationScopesAsync(applicationId)
+            ).ToArray();
+            _withoutScopes = (await repository.GetApplicationScopesAsync(withoutScopesId)).ToArray();
+            _unknownApplication = (await repository.GetApplicationScopesAsync(Guid.NewGuid())).ToArray();
+        }
+
+        [Test]
+        public void It_returns_exactly_the_registered_scope_names() =>
+            _scopes.Should().BeEquivalentTo(_sharedScope, _ownScope);
+
+        [Test]
+        public void It_returns_each_name_once() => _scopes.Should().OnlyHaveUniqueItems();
+
+        [Test]
+        public void It_does_not_return_another_applications_scope() =>
+            _scopes.Should().NotContain(_bystanderScope);
+
+        [Test]
+        public void It_returns_the_same_names_through_the_token_repository() =>
+            _throughWrapper.Should().BeEquivalentTo(_sharedScope, _ownScope);
+
+        [Test]
+        public void It_returns_no_names_for_an_application_without_scopes() =>
+            _withoutScopes.Should().BeEmpty();
+
+        [Test]
+        public void It_returns_no_names_for_an_unknown_application() =>
+            _unknownApplication.Should().BeEmpty();
+    }
+
     // Through the token manager, the credential query decides authentication: a successful grant
     // reads the credential and then the full application once each; a failed one never reads the
     // full application.

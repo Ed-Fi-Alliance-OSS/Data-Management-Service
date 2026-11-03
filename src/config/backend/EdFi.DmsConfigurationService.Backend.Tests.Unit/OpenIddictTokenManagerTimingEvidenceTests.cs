@@ -120,6 +120,9 @@ public class Given_in_process_token_requests_measured_for_timing_evidence
 
         public Task<IEnumerable<string>> GetClientRolesAsync(Guid clientId) =>
             throw new NotSupportedException();
+
+        public Task<IEnumerable<string>> GetApplicationScopesAsync(Guid applicationId) =>
+            throw new NotSupportedException();
     }
 
     /// <summary>The original defect's shape: a hasher that derives nothing, so an absent client costs only the lookup.</summary>
