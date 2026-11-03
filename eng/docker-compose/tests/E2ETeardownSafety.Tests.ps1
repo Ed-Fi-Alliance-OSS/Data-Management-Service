@@ -543,6 +543,9 @@ finally { Pop-Location }
         BeforeAll {
             $script:guardedNames = @('CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY', 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY', 'DATABASE_CONNECTION_STRING_ADMIN')
             $script:placeholder = 'teardown-placeholder-not-used'
+            # Cleared for every case, with the names the cases' env files reference, so the runner's
+            # environment can never supply one of them.
+            $script:clearedNames = $script:guardedNames + @('DMS1652_LATER_REFERENCE', 'DMS1652_ABSENT_REFERENCE')
             # The shared teardown's cleanup step loads these from the compose root's parent.
             $engCopy = Split-Path $script:realComposeRoot
             Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../schema-package-utility.psm1') -Destination $engCopy
@@ -550,7 +553,8 @@ finally { Pop-Location }
             Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../ci/cdc-runbook-diagnostics.ps1') -Destination (Join-Path $engCopy 'ci')
 
             function Write-TeardownEnvironmentFile {
-                param([string] $Name, [string[]] $Remove, [hashtable] $Set = @{})
+                # Set keeps its order (pass [ordered]), because a reference sees only earlier lines.
+                param([string] $Name, [string[]] $Remove, [System.Collections.IDictionary] $Set = @{})
                 $lines = @(Get-Content -LiteralPath $script:standardE2EEnvironmentFile)
                 foreach ($key in @($Remove) + @($Set.Keys)) {
                     $lines = @($lines | Where-Object { $_ -notmatch "^\s*(export\s+)?$([regex]::Escape($key))=" })
@@ -563,30 +567,39 @@ finally { Pop-Location }
             }
 
             function Invoke-RenderedTeardown {
-                param([string] $Name, [string] $EnvironmentFile, [string[]] $Arguments = @(), [hashtable] $Ambient = @{})
+                # StartupFiles, when given, are rendered client-side first, in the same cleared environment.
+                param([string] $Name, [string] $EnvironmentFile, [string[]] $Arguments = @(), [hashtable] $Ambient = @{}, [string[]] $StartupFiles = @())
                 $logPath = Join-Path $TestDrive "$Name.log"
                 # The child inherits this process environment: clear the guarded names so a
                 # developer's exported value cannot change the case, and restore them afterwards.
                 $saved = @{}
-                foreach ($name in $script:guardedNames) {
+                $startupExitCode = $null
+                foreach ($name in $script:clearedNames) {
                     $saved[$name] = [Environment]::GetEnvironmentVariable($name)
                     Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
                 }
                 try {
                     foreach ($name in $Ambient.Keys) { [Environment]::SetEnvironmentVariable($name, $Ambient[$name]) }
+                    if ($StartupFiles) {
+                        $fileArguments = foreach ($file in $StartupFiles) { '-f'; $file }
+                        Push-Location $script:realComposeRoot
+                        try { & docker compose @fileArguments --env-file $EnvironmentFile config --quiet 2>$null; $startupExitCode = $LASTEXITCODE }
+                        finally { Pop-Location }
+                    }
                     & pwsh -NoProfile -File $script:captureScript `
                         -StartScript (Join-Path $script:realComposeRoot 'start-published-dms.ps1') `
                         -EnvironmentFile $EnvironmentFile -LogPath $logPath -Render @Arguments | Out-Null
                     $exitCode = $LASTEXITCODE
                 }
                 finally {
-                    foreach ($name in $script:guardedNames) {
+                    foreach ($name in $script:clearedNames) {
                         if ($null -eq $saved[$name]) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
                         else { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
                     }
                 }
                 [pscustomobject]@{
                     ExitCode = $exitCode
+                    StartupExitCode = $startupExitCode
                     Commands = @(if (Test-Path -LiteralPath $logPath) { Get-Content -LiteralPath $logPath })
                     Renders  = @(if (Test-Path -LiteralPath "$logPath.renders.jsonl") { Get-Content -LiteralPath "$logPath.renders.jsonl" | ForEach-Object { $_ | ConvertFrom-Json } })
                     Outcome  = Get-Content -Raw -LiteralPath "$logPath.outcome.json" | ConvertFrom-Json
@@ -678,9 +691,33 @@ finally { Pop-Location }
             Assert-NothingLeaked -Outcome $result.Outcome -MissingVariable ($script:guardedNames -join '|')
         }
 
-        It "restores an earlier placeholder when resolving a later value fails, without invoking Docker" {
-            # The database key is absent, so its placeholder is set first; resolving the identity
-            # key's own required reference then throws before any Compose command runs.
+        It "treats a forward reference as missing, as Compose reads the env file line by line" {
+            # Compose resolves each line against the lines before it, so the identity key is empty
+            # here even though the file declares the name it references.
+            $environmentFile = Write-TeardownEnvironmentFile -Name 'forward-reference.env' -Set ([ordered]@{
+                CONFIGURATION_SERVICE_IDENTITY_PROVIDER       = 'keycloak'
+                CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY = '${DMS1652_LATER_REFERENCE}'
+                DMS1652_LATER_REFERENCE                       = 'public-test-sentinel'
+            })
+
+            $result = Invoke-RenderedTeardown -Name 'forward-reference' -EnvironmentFile $environmentFile `
+                -Arguments @('-IdentityProvider', 'keycloak') `
+                -StartupFiles @('postgresql.compose.yml', 'published-dms.compose.yml', 'keycloak.compose.yml')
+
+            $result.StartupExitCode | Should -Be 0 -Because 'the Keycloak deployment without the Configuration Service starts without the identity key'
+            $result.ExitCode | Should -Be 0
+            $result.Outcome.TeardownError | Should -BeNullOrEmpty
+            $result.Renders.Count | Should -Be 1
+            Assert-CompletePublishedDown -Render $result.Renders[0]
+            $result.Renders[0].Environment.CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY | Should -BeExactly $script:placeholder
+            $result.Renders[0].Environment.CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY | Should -BeNullOrEmpty
+            $result.Renders[0].Environment.DATABASE_CONNECTION_STRING_ADMIN | Should -BeNullOrEmpty
+            Assert-NothingLeaked -Outcome $result.Outcome -MissingVariable 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY'
+        }
+
+        It "leaves the environment unchanged and never invokes Docker when evaluating the env file fails" {
+            # The identity key's own required reference makes the sequential evaluation throw inside
+            # the restoring try, before any placeholder is set and before any Compose command runs.
             $environmentFile = Write-TeardownEnvironmentFile -Name 'resolution-failure.env' `
                 -Remove 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY' `
                 -Set @{ CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY = '${DMS1652_ABSENT_REFERENCE:?required}' }

@@ -543,9 +543,11 @@ if ($d) {
     # caller's environment is restored afterwards. Startup keeps the guards.
     $savedTeardownValues = @{}
     try {
-        # Inside the try: resolving a later name can throw after an earlier placeholder is set.
+        # Inside the try, so a failure while resolving restores anything already set. Sequential, as
+        # Compose reads the env file: a reference sees only the declarations before it.
+        $teardownEvaluation = Resolve-DotenvFileSequentially -Path $EnvironmentFile
         foreach ($name in 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY', 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY', 'DATABASE_CONNECTION_STRING_ADMIN') {
-            if ([string]::IsNullOrEmpty((Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name $name -KeepWhitespace))) {
+            if ([string]::IsNullOrEmpty((Get-SequentialEffectiveValue -Evaluation $teardownEvaluation -Name $name))) {
                 $savedTeardownValues[$name] = [System.Environment]::GetEnvironmentVariable($name)
                 [System.Environment]::SetEnvironmentVariable($name, 'teardown-placeholder-not-used')
             }
