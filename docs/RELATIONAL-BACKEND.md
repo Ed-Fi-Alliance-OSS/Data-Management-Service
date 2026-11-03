@@ -334,6 +334,20 @@ no supported upgrade or cutover path. Rerunning `ddl provision` does not add the
 provisioning is create-only. Drop and recreate the database from current DDL. Canonical reads and
 writes are unaffected.
 
+Database template packages built before this change lack the cache column, and the two queries
+above do not detect it. On the source and restored catalogs of every rebuilt package, also confirm
+that this returns one row:
+
+```sql
+-- PostgreSQL
+SELECT 1 FROM information_schema.columns
+WHERE table_schema = 'dms' AND table_name = 'DocumentCache' AND column_name = 'ContentCreatedAt';
+
+-- SQL Server
+SELECT 1 FROM sys.columns
+WHERE object_id = OBJECT_ID(N'dms.DocumentCache') AND name = N'ContentCreatedAt';
+```
+
 ### Descriptor catalog checks and template handoff
 
 Use the reusable [compact descriptor catalog assertions](../eng/DatabaseTemplates/Compact-Descriptor.md)

@@ -107,9 +107,9 @@ failure. It never supplies a default timestamp. Cache-ahead recovery and version
 remain unchanged; removing the document timestamp changes neither enqueueing nor the public
 CDC payload contract.
 
-An invariant failure produces no cache write. `LastModifiedAt` and `ContentCreatedAt` are
-copied resource metadata; `ComputedAt` remains operational metadata. None of them is a
-freshness or ordering predicate.
+An invariant failure produces no cache write. `LastModifiedAt` remains payload and
+diagnostic metadata, and `ContentCreatedAt` is copied owner metadata; `ComputedAt` remains
+operational metadata. None of them is a freshness or ordering predicate.
 
 ## Durable Work and Lifecycle
 
