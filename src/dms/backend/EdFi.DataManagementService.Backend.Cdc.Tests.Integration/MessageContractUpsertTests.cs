@@ -238,9 +238,26 @@ public sealed class Given_MessageContractUpsert(CdcProvider provider)
                 "resourceVersion",
                 "contentVersion",
                 "lastModifiedAt",
+                "documentCreatedAt",
                 "document"
             );
         MessageContractJson.ShouldEqual(envelope, Fixture(name).ExpectedEnvelope);
+    }
+
+    [TestCaseSource(nameof(Cases))]
+    public void It_publishes_whole_second_creation_time_from_ContentCreatedAt(string name, string operation)
+    {
+        JsonElement envelope = Envelope(name, operation);
+        string expected = Fixture(name).ExpectedEnvelope.GetProperty("documentCreatedAt").GetString()!;
+        string actual = envelope.GetProperty("documentCreatedAt").GetString()!;
+        actual.Should().Be(expected);
+        actual.Should().MatchRegex(@"\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z\z");
+        // Every E18 row has distinct creation and modification times, so a crossed mapping fails.
+        actual.Should().NotBe(envelope.GetProperty("lastModifiedAt").GetString());
+        JsonElement document = envelope.GetProperty("document");
+        document.TryGetProperty("documentCreatedAt", out _).Should().BeFalse();
+        document.TryGetProperty("ContentCreatedAt", out _).Should().BeFalse();
+        document.TryGetProperty("_createdDate", out _).Should().BeFalse();
     }
 
     private MessageContractFixture Fixture(string name) => _fixtures[$"MC-FIX-{ProviderPrefix}-{name}"];

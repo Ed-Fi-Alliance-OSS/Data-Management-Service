@@ -27,6 +27,46 @@ internal static class MessageContractProviderAssertions
         MessageContractProviderRow row
     ) => MessageContractRecordAssertions.AssertUpsert(request, record, row.Uuid, row.Partition, row.Expected);
 
+    // An update republishes the owner's creation time unchanged while lastModifiedAt advances.
+    public static void AssertCreationTimeKeptAcrossUpdates(
+        IEnumerable<MessageContractKafkaRecord> published,
+        IReadOnlyList<MessageContractProviderRow> rows,
+        IReadOnlyList<MessageContractProviderRow> updates
+    )
+    {
+        JsonElement[] envelopes = published
+            .Where(record => !record.Value.IsNull)
+            .Select(record => JsonSerializer.Deserialize<JsonElement>(record.Value.Bytes))
+            .ToArray();
+        rows.Should().HaveSameCount(updates);
+        for (int index = 0; index < rows.Count; index++)
+        {
+            JsonElement created = Published(envelopes, rows[index]);
+            JsonElement updated = Published(envelopes, updates[index]);
+            updated
+                .GetProperty("documentCreatedAt")
+                .GetString()
+                .Should()
+                .Be(created.GetProperty("documentCreatedAt").GetString());
+            updated
+                .GetProperty("lastModifiedAt")
+                .GetString()
+                .Should()
+                .NotBe(created.GetProperty("lastModifiedAt").GetString());
+        }
+    }
+
+    private static JsonElement Published(JsonElement[] envelopes, MessageContractProviderRow row) =>
+        envelopes
+            .Where(envelope =>
+                envelope.GetProperty("documentUuid").GetString() == row.Uuid
+                && envelope.GetProperty("contentVersion").GetInt64()
+                    == row.Expected.GetProperty("contentVersion").GetInt64()
+            )
+            .Should()
+            .ContainSingle()
+            .Subject;
+
     public static void AssertSchema(JsonElement schema, string type, string name, int version)
     {
         schema.GetProperty("type").GetString().Should().Be(type);

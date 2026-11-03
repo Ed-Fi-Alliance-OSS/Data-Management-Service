@@ -155,6 +155,11 @@ public sealed class Given_MessageContractPostgresql
                 );
             MessageContractProviderAssertions.AssertUpsert(_request, record, row);
         }
+        MessageContractProviderAssertions.AssertCreationTimeKeptAcrossUpdates(
+            _public.Values.SelectMany(s => s.Records),
+            _rows,
+            _updates
+        );
         foreach (MessageContractProviderRow row in _rows)
         {
             var records = _public
@@ -180,6 +185,12 @@ public sealed class Given_MessageContractPostgresql
             );
             MessageContractProviderAssertions.AssertSchema(
                 input.GetProperty("timeSchema"),
+                "STRING",
+                "io.debezium.time.ZonedTimestamp",
+                1
+            );
+            MessageContractProviderAssertions.AssertSchema(
+                input.GetProperty("createdTimeSchema"),
                 "STRING",
                 "io.debezium.time.ZonedTimestamp",
                 1

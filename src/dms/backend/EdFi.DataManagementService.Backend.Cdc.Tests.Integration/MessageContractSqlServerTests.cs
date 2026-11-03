@@ -159,6 +159,11 @@ public sealed class Given_MessageContractSqlServer
                 );
             MessageContractProviderAssertions.AssertUpsert(_request, record, row);
         }
+        MessageContractProviderAssertions.AssertCreationTimeKeptAcrossUpdates(
+            _public.Values.SelectMany(s => s.Records),
+            _rows,
+            _updates
+        );
         foreach (MessageContractProviderRow row in _rows)
         {
             var records = _public
@@ -187,6 +192,12 @@ public sealed class Given_MessageContractSqlServer
             MessageContractProviderAssertions.AssertSchema(input.GetProperty("jsonSchema"), "STRING", "", 0);
             MessageContractProviderAssertions.AssertSchema(
                 input.GetProperty("timeSchema"),
+                "STRING",
+                "io.debezium.time.IsoTimestamp",
+                1
+            );
+            MessageContractProviderAssertions.AssertSchema(
+                input.GetProperty("createdTimeSchema"),
                 "STRING",
                 "io.debezium.time.IsoTimestamp",
                 1

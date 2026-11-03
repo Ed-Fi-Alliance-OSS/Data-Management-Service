@@ -71,6 +71,12 @@ public abstract class Given_RepresentationRestampCdcStateTests
             .GetInt64()
             .Should()
             .BeGreaterThan(original.Value.GetProperty("contentVersion").GetInt64());
+        // Each envelope also matched dms.Descriptor.ContentCreatedAt in the fixture; a restamp keeps it.
+        restamped
+            .Value.GetProperty("documentCreatedAt")
+            .GetString()
+            .Should()
+            .Be(original.Value.GetProperty("documentCreatedAt").GetString());
         restamped
             .Value.GetProperty("document")
             .GetProperty("codeValue")
@@ -126,6 +132,7 @@ public abstract class Given_RepresentationRestampCdcStateTests
                 "resourceVersion",
                 "contentVersion",
                 "lastModifiedAt",
+                "documentCreatedAt",
                 "document"
             );
         value.GetProperty("contractVersion").ValueKind.Should().Be(JsonValueKind.Number);
@@ -136,6 +143,7 @@ public abstract class Given_RepresentationRestampCdcStateTests
         value.GetProperty("resourceVersion").ValueKind.Should().Be(JsonValueKind.String);
         value.GetProperty("contentVersion").ValueKind.Should().Be(JsonValueKind.Number);
         value.GetProperty("lastModifiedAt").ValueKind.Should().Be(JsonValueKind.String);
+        value.GetProperty("documentCreatedAt").ValueKind.Should().Be(JsonValueKind.String);
         value.GetProperty("document").ValueKind.Should().Be(JsonValueKind.Object);
         value
             .GetProperty("document")
@@ -1015,6 +1023,30 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         return timestamp;
     }
 
+    private async Task<DateTimeOffset> ReadDescriptorContentCreatedAtAsync(
+        long documentId,
+        CancellationToken token
+    )
+    {
+        await using DbConnection connection = _providerOperations.OpenConnection(
+            await ConnectionStringAsync(token)
+        );
+        await connection.OpenAsync(token);
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT {Quote("ContentCreatedAt")} FROM {Quote("dms")}.{Quote("Descriptor")} WHERE {Quote("DocumentId")} = @documentId;";
+        command.Parameters.Add(_providerOperations.Parameter("documentId", documentId));
+        object value =
+            await command.ExecuteScalarAsync(token)
+            ?? throw new InvalidOperationException("Missing ContentCreatedAt.");
+        return value switch
+        {
+            DateTimeOffset offset => offset.ToUniversalTime(),
+            DateTime dateTime => new(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)),
+            _ => throw new InvalidOperationException("Unexpected ContentCreatedAt type."),
+        };
+    }
+
     private async Task BackdateOwnerAsync(long documentId, DateTimeOffset timestamp, CancellationToken token)
     {
         await using DbConnection connection = _providerOperations.OpenConnection(
@@ -1075,6 +1107,15 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
             .GetString()
             .Should()
             .Be(description);
+        record
+            .Value.GetProperty("documentCreatedAt")
+            .GetString()
+            .Should()
+            .Be(
+                LastModifiedDateFormatter.Format(
+                    await ReadDescriptorContentCreatedAtAsync(source.DocumentId, token)
+                )
+            );
         await using DbConnection connection = _providerOperations.OpenConnection(
             await ConnectionStringAsync(token)
         );
