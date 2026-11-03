@@ -23,7 +23,9 @@ internal sealed class CdcDocumentObserver(CdcProvider provider, Func<DbConnectio
             """
             SELECT d."DocumentId", d."DocumentUuid", d."ResourceKeyId", d."ContentVersion",
                    CASE WHEN rk."ResourceName" = 'Student' THEN student."ContentLastModifiedAt"
-                        ELSE descriptor."ContentLastModifiedAt" END, es."EffectiveSchemaHash",
+                        ELSE descriptor."ContentLastModifiedAt" END,
+                   CASE WHEN rk."ResourceName" = 'Student' THEN student."ContentCreatedAt"
+                        ELSE descriptor."ContentCreatedAt" END, es."EffectiveSchemaHash",
                    rk."ProjectName", rk."ResourceName", rk."ResourceVersion"
             FROM "dms"."Document" d
             JOIN "dms"."ResourceKey" rk ON rk."ResourceKeyId" = d."ResourceKeyId"
@@ -41,10 +43,11 @@ internal sealed class CdcDocumentObserver(CdcProvider provider, Func<DbConnectio
                 reader.GetInt16(2),
                 reader.GetInt64(3),
                 ReadTimestamp(reader.GetValue(4)),
-                reader.GetString(5),
+                ReadTimestamp(reader.GetValue(5)),
                 reader.GetString(6),
                 reader.GetString(7),
-                reader.GetString(8)
+                reader.GetString(8),
+                reader.GetString(9)
             ),
             token
         );
@@ -155,6 +158,7 @@ internal sealed record CdcSourceDocument(
     short ResourceKeyId,
     long ContentVersion,
     DateTimeOffset ContentLastModifiedAt,
+    DateTimeOffset ContentCreatedAt,
     string EffectiveSchemaHash,
     string ProjectName,
     string ResourceName,

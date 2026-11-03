@@ -102,6 +102,7 @@ internal sealed partial class CdcApiScenarios
                     updated.EffectiveSchemaHash.Should().Be(created.EffectiveSchemaHash);
                     updated.ContentVersion.Should().BeGreaterThan(created.ContentVersion);
                     updated.ContentLastModifiedAt.Should().BeOnOrAfter(created.ContentLastModifiedAt);
+                    updated.ContentCreatedAt.Should().Be(created.ContentCreatedAt);
                     await AssertHeldAsync(updated, held, ct);
                     var oldCache = (await _context.Documents.ReadCacheAsync(created.DocumentId, ct))
                         .Should()
