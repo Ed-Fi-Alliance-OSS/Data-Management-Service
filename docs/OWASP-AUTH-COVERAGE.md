@@ -221,6 +221,8 @@ tokens, still exist. With no `dmscs.ApiClient` row left, such a client counts as
 credentials can keep obtaining new tokens; its exposure is not bounded by a token lifetime after
 deployment. Deploying this version does not cut these clients off, and no Configuration Service API
 reaches them. This version provides no cleanup for them.
+[OPERATIONS.md](OPERATIONS.md#finding-provider-clients-that-no-api-client-references) describes a
+read-only comparison that lists candidates for an operator to review.
 
 **Concurrent creation during a vendor deletion.** A vendor deletion deletes from the identity
 provider the clients it read, and then deletes the vendor only if no other client would go with it.
@@ -234,6 +236,12 @@ Server can choose either one as the victim: a creation chosen as the victim fail
 deletion chosen as the victim deletes no vendor row and answers `409`, so it can be retried safely.
 Provider deletions the request made before that stay committed. This covers a new application
 under the vendor and a new client on any of its applications, including one that had no client.
+On SQL Server the locking reads seek the vendor's own index entries, so they lock only that vendor's
+rows and wait only for uncommitted changes to them; another vendor's applications and clients can
+be created, changed and read meanwhile. The cascade delete that follows takes locks SQL Server
+chooses, which can still make another vendor's write wait until the deletion commits, for example
+an insert into the index range adjoining the deleted vendor's entries, and SQL Server can escalate
+many row locks of a very large vendor to a table lock.
 
 **Keycloak mode.** The same operations regenerate the client's secret, delete the client, or
 disable it at Keycloak, so the old credentials stop obtaining new tokens. The Configuration Service

@@ -415,10 +415,13 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
 
         /// <summary>
         /// Inserting an application validates its vendor, and inserting or moving an ApiClient
-        /// validates its application, with a shared lock on the referenced row. Exclusive locks
-        /// held to the end of the transaction on the vendor row and on the vendor's application
-        /// rows (key ranges included) therefore wait for those writers and then block them, and
-        /// the locking read of the ApiClient rows waits for any that are uncommitted.
+        /// validates its application, with a shared lock on the referenced clustered row.
+        /// Exclusive locks held to the end of the transaction on the vendor row and on the
+        /// vendor's clustered application rows therefore block those writers, and the locking
+        /// reads wait for any uncommitted change to the vendor's application or ApiClient rows.
+        /// The reads seek the vendor's own index entries and hold no key ranges: a scan, which the
+        /// optimizer prefers on small tables, would lock other vendors' rows and the ranges new
+        /// rows are inserted into. The cascade delete still takes engine-chosen locks of its own.
         /// </summary>
         public async Task<VendorDeleteResult> DeleteVendor(
             int id,
@@ -444,22 +447,29 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
                     return new VendorDeleteResult.FailureNotExists();
                 }
 
-                // ClaimSetName is outside the (VendorId, ApplicationName) index, so the read reaches
-                // the clustered rows that an ApiClient's foreign key check locks, not only that index.
+                // ClaimSetName is outside the (VendorId, ApplicationName) index, so the lookup locks
+                // the clustered rows that an ApiClient's foreign key check reads, not only that index.
                 await connection.ExecuteAsync(
                     """
-                    SELECT Id, ClaimSetName FROM dmscs.Application WITH (XLOCK, HOLDLOCK, ROWLOCK)
+                    SELECT Id, ClaimSetName
+                    FROM dmscs.Application
+                        WITH (FORCESEEK(UX_Application_VendorId_ApplicationName(VendorId)), XLOCK, ROWLOCK)
                     WHERE VendorId = @Id;
                     """,
                     new { Id = id },
                     transaction
                 );
 
+                // ClientUuid is outside the (ApplicationId, Name) index, so the lookup also locks the
+                // clustered ApiClient rows that a client update or move must change.
                 var currentClients = await connection.QueryAsync<(int Id, Guid ClientUuid)>(
                     """
                     SELECT ac.Id, ac.ClientUuid
-                    FROM dmscs.ApiClient ac WITH (UPDLOCK, HOLDLOCK)
-                    JOIN dmscs.Application a ON a.Id = ac.ApplicationId
+                    FROM dmscs.Application a
+                        WITH (FORCESEEK(UX_Application_VendorId_ApplicationName(VendorId)))
+                    JOIN dmscs.ApiClient ac
+                        WITH (FORCESEEK(UX_ApiClient_ApplicationId_Name(ApplicationId)), UPDLOCK, ROWLOCK)
+                        ON ac.ApplicationId = a.Id
                     WHERE a.VendorId = @Id;
                     """,
                     new { Id = id },

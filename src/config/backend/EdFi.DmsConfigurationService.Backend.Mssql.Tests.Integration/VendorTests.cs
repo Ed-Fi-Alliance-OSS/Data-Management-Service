@@ -1206,5 +1206,214 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration
                     .Be(3);
             }
         }
+
+        /// <summary>
+        /// The guarded delete and another vendor's transaction do not wait on each other. The other
+        /// vendor first holds uncommitted updates of its application and client, and a held lock on
+        /// the deleted vendor's namespace prefix parks the delete at its first delete statement,
+        /// after all of its locking reads. The delete must be waiting on that lock alone, and the
+        /// other vendor's writes then run with no lock wait allowed. On these small tables a
+        /// scanning read would wait on the other vendor's rows, and lock them and the ranges new rows
+        /// go into. Each new row sorts directly before the other vendor's existing one, so a
+        /// key-range lock reaching past the deleted vendor's own index entries refuses it too.
+        /// </summary>
+        [TestFixture]
+        public class Given_another_vendors_writes_while_the_guarded_vendor_delete_holds_its_locks
+            : GuardedDeleteTests
+        {
+            private const string HeldNamespacePrefix = "uri://held.example.org";
+
+            private VendorDeleteResult _result = null!;
+            private int _otherVendorId;
+            private int _holderSession;
+            private int[] _deleteBlockers = [];
+            private readonly List<Guid> _otherClientUuids = [];
+            private readonly List<int> _otherWriteErrorNumbers = [];
+
+            [SetUp]
+            public async Task Act()
+            {
+                await Connection!.ExecuteAsync(
+                    "INSERT INTO dmscs.VendorNamespacePrefix (VendorId, NamespacePrefix) VALUES (@VendorId, @Prefix);",
+                    new { VendorId = _vendorId, Prefix = HeldNamespacePrefix }
+                );
+                _otherVendorId = (
+                    (VendorInsertResult.Success)
+                        await _repository.InsertVendor(
+                            new VendorInsertCommand
+                            {
+                                Company = $"Other Vendor {Guid.NewGuid():N}",
+                                ContactEmailAddress = "other@test.com",
+                                ContactName = "Other",
+                                NamespacePrefixes = "",
+                            }
+                        )
+                ).Id;
+                int otherApplicationId = await InsertOtherApplicationAsync(
+                    Connection!,
+                    null,
+                    "Other Application M"
+                );
+                _otherClientUuids.Add(
+                    (
+                        await InsertClientAsync(
+                            Connection!,
+                            null,
+                            otherApplicationId,
+                            "Other Client M",
+                            Guid.NewGuid()
+                        )
+                    ).ClientUuid
+                );
+
+                await using SqlConnection holder = await OpenConnectionAsync();
+                await using SqlConnection other = await OpenConnectionAsync();
+                await using SqlTransaction otherTransaction = (SqlTransaction)
+                    await other.BeginTransactionAsync();
+                await other.ExecuteAsync(
+                    """
+                    UPDATE dmscs.Application SET ClaimSetName = 'Other Claim' WHERE Id = @ApplicationId;
+                    UPDATE dmscs.ApiClient SET IsApproved = 1 WHERE ApplicationId = @ApplicationId;
+                    """,
+                    new { ApplicationId = otherApplicationId },
+                    otherTransaction
+                );
+
+                await using SqlTransaction holderTransaction = (SqlTransaction)
+                    await holder.BeginTransactionAsync();
+                await holder.ExecuteAsync(
+                    "SELECT NamespacePrefix FROM dmscs.VendorNamespacePrefix WITH (UPDLOCK, ROWLOCK) WHERE VendorId = @VendorId;",
+                    new { VendorId = _vendorId },
+                    holderTransaction
+                );
+
+                Task<VendorDeleteResult> delete = DeleteAsync();
+                _holderSession = holder.ServerProcessId;
+                _deleteBlockers = await WaitForDeleteBlockersAsync(
+                    delete,
+                    _holderSession,
+                    other.ServerProcessId
+                );
+
+                await other.ExecuteAsync("SET LOCK_TIMEOUT 0;", transaction: otherTransaction);
+                try
+                {
+                    await RecordOtherWriteAsync(async () =>
+                        await InsertOtherApplicationAsync(other, otherTransaction, "Other Application A")
+                    );
+                    await RecordOtherWriteAsync(async () =>
+                        _otherClientUuids.Add(
+                            (
+                                await InsertClientAsync(
+                                    other,
+                                    otherTransaction,
+                                    otherApplicationId,
+                                    "Other Client A",
+                                    Guid.NewGuid()
+                                )
+                            ).ClientUuid
+                        )
+                    );
+                }
+                finally
+                {
+                    await other.ExecuteAsync("SET LOCK_TIMEOUT -1;", transaction: otherTransaction);
+                }
+
+                await otherTransaction.CommitAsync();
+                await holderTransaction.CommitAsync();
+                _result = await delete;
+            }
+
+            private Task<int> InsertOtherApplicationAsync(
+                SqlConnection connection,
+                SqlTransaction? transaction,
+                string name
+            ) =>
+                connection.ExecuteScalarAsync<int>(
+                    """
+                    INSERT INTO dmscs.Application (ApplicationName, VendorId, ClaimSetName)
+                    OUTPUT INSERTED.Id VALUES (@Name, @VendorId, 'TestClaim');
+                    """,
+                    new { Name = name, VendorId = _otherVendorId },
+                    transaction
+                );
+
+            /// <summary>
+            /// Returns the sessions blocking the delete once it waits on a lock. Only requests in this
+            /// test's database count, and the holder's and the other vendor's sessions are excluded as
+            /// waiters, so the one blocked request left is the delete's, whichever of the two blocks it.
+            /// The bound only turns a delete that never waits into a failure instead of a hang.
+            /// </summary>
+            private static async Task<int[]> WaitForDeleteBlockersAsync(
+                Task delete,
+                int holderSession,
+                int otherSession
+            )
+            {
+                await using SqlConnection monitor = await OpenConnectionAsync();
+                using CancellationTokenSource bound = new(TimeSpan.FromSeconds(60));
+                while (true)
+                {
+                    int[] blockers =
+                    [
+                        .. await monitor.QueryAsync<int>(
+                            """
+                            SELECT blocking_session_id FROM sys.dm_exec_requests
+                            WHERE database_id = DB_ID()
+                              AND blocking_session_id <> 0
+                              AND session_id NOT IN (@Holder, @Other, @@SPID);
+                            """,
+                            new { Holder = holderSession, Other = otherSession }
+                        ),
+                    ];
+                    if (blockers.Length > 0)
+                    {
+                        return blockers;
+                    }
+
+                    delete.IsCompleted.Should().BeFalse("the delete must wait on a lock");
+                    await Task.Delay(TimeSpan.FromMilliseconds(20), bound.Token);
+                }
+            }
+
+            private async Task RecordOtherWriteAsync(Func<Task> write)
+            {
+                try
+                {
+                    await write();
+                }
+                catch (SqlException ex)
+                {
+                    _otherWriteErrorNumbers.Add(ex.Number);
+                }
+            }
+
+            [Test]
+            public void It_waits_only_on_the_deleted_vendors_held_lock() =>
+                _deleteBlockers.Should().Equal(_holderSession);
+
+            [Test]
+            public void It_lets_the_other_vendors_writes_proceed_without_waiting() =>
+                _otherWriteErrorNumbers.Should().BeEmpty();
+
+            [Test]
+            public void It_deletes_the_vendor() => _result.Should().BeOfType<VendorDeleteResult.Success>();
+
+            [Test]
+            public async Task It_keeps_the_other_vendors_applications_and_clients()
+            {
+                (await VendorExistsAsync()).Should().BeFalse();
+                (
+                    await Connection!.ExecuteScalarAsync<int>(
+                        "SELECT COUNT(*) FROM dmscs.Application WHERE VendorId = @VendorId;",
+                        new { VendorId = _otherVendorId }
+                    )
+                )
+                    .Should()
+                    .Be(2);
+                (await ClientCountAsync([.. _otherClientUuids])).Should().Be(2);
+            }
+        }
     }
 }

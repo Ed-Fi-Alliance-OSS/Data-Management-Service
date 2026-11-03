@@ -662,8 +662,10 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             // so no interleaving can revoke another application's token, and a repeat changes no
             // row and keeps the original RedemptionDate. RedemptionDate has no time zone, so the
             // timestamp is converted to UTC explicitly rather than written in session-local time.
+            // statement_timestamp() is when this statement started; CURRENT_TIMESTAMP would be
+            // the start of an enclosing transaction.
             var result = await connection.ExecuteAsync(
-                "UPDATE \"dmscs\".\"OpenIddictToken\" SET \"Status\" = 'revoked', \"RedemptionDate\" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC' WHERE \"Id\" = @Id AND \"ApplicationId\" = @ApplicationId AND \"Status\" <> 'revoked'",
+                "UPDATE \"dmscs\".\"OpenIddictToken\" SET \"Status\" = 'revoked', \"RedemptionDate\" = statement_timestamp() AT TIME ZONE 'UTC' WHERE \"Id\" = @Id AND \"ApplicationId\" = @ApplicationId AND \"Status\" <> 'revoked'",
                 new { Id = tokenId, ApplicationId = applicationId }
             );
             return result > 0;
@@ -679,9 +681,11 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             // change, so a repeat changes nothing and keeps every original RedemptionDate, and the
             // ApplicationId predicate keeps every other application's tokens out of reach.
             // RedemptionDate has no time zone, so the timestamp is converted to UTC explicitly
-            // rather than written in the session's local time.
+            // rather than written in the session's local time. statement_timestamp() is when this
+            // statement started, not when the lifecycle transaction that runs it began, which can
+            // be earlier by the time spent waiting for the application row lock.
             return await connection.ExecuteAsync(
-                "UPDATE \"dmscs\".\"OpenIddictToken\" SET \"Status\" = 'revoked', \"RedemptionDate\" = CURRENT_TIMESTAMP AT TIME ZONE 'UTC' WHERE \"ApplicationId\" = @ApplicationId AND \"Status\" <> 'revoked'",
+                "UPDATE \"dmscs\".\"OpenIddictToken\" SET \"Status\" = 'revoked', \"RedemptionDate\" = statement_timestamp() AT TIME ZONE 'UTC' WHERE \"ApplicationId\" = @ApplicationId AND \"Status\" <> 'revoked'",
                 new { ApplicationId = applicationId },
                 transaction
             );

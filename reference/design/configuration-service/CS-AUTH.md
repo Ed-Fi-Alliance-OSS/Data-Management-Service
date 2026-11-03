@@ -445,9 +445,16 @@ later. Tokens of clients the operation does not target do not change: a client-l
 leaves the application's other clients alone, while deleting an application or a vendor targets
 every client it has.
 
-`keycloak` mode is unchanged. CMS stores no Keycloak tokens, so these operations revoke nothing:
-they regenerate the secret, delete the client, or disable it at Keycloak, and Keycloak tokens
-issued before them stay usable at CMS and DMS until they expire.
+In `keycloak` mode CMS stores no Keycloak tokens, so these operations revoke nothing: they
+regenerate the secret, delete the client, or disable it at Keycloak, and Keycloak tokens issued
+before them stay usable at CMS and DMS until they expire (see
+[Propagation and clock skew](#propagation-and-clock-skew)). Vendor deletion did change in this mode:
+`DELETE /v3/vendors/{id}` now deletes the Keycloak client of every API client of the vendor before
+it deletes any CMS row, so it depends on Keycloak being available. A client Keycloak reports as
+not found counts as deleted. A failure the Keycloak client repository classifies as an identity
+provider error, such as an error response or a failed call, answers `502`; any other failure takes
+the generic `500` path. Either way the vendor and its CMS rows are kept, the Keycloak clients
+deleted before the failure stay deleted, and a retry deletes the rest.
 
 #### One lock serializes grants and lifecycle changes
 
@@ -512,9 +519,12 @@ one of the clients the request deleted from the provider, matched by row id and 
 transaction:
 
 1. Locks the vendor row (`FOR UPDATE` on PostgreSQL, `XLOCK, HOLDLOCK` on SQL Server).
-2. Locks every application row of the vendor the same way.
-3. Reads the vendor's `dmscs.ApiClient` rows with a locking read (`FOR UPDATE` on PostgreSQL,
-   `UPDLOCK, HOLDLOCK` on SQL Server).
+2. Locks every application row of the vendor (`FOR UPDATE` on PostgreSQL; on SQL Server
+   `XLOCK, ROWLOCK` through a forced seek on `UX_Application_VendorId_ApplicationName`, without
+   `HOLDLOCK`, so no key ranges are held).
+3. Reads the vendor's `dmscs.ApiClient` rows with a locking read (`FOR UPDATE` on PostgreSQL; on
+   SQL Server `UPDLOCK, ROWLOCK` through forced seeks on the same application index and
+   `UX_ApiClient_ApplicationId_Name`, again without `HOLDLOCK`).
 4. If any of them is not a deleted client, rolls back and reports `FailureClientsChanged`, which
    the request answers with the retriable `409`. Otherwise deletes the vendor and commits.
 
@@ -679,7 +689,8 @@ These bounds do not hold for a client removed by a vendor deletion made before t
 client's `dmscs.OpenIddictApplication` row, credentials and tokens remain. With no
 `dmscs.ApiClient` row the client counts as approved and can keep obtaining new tokens. Deploying
 this version does not cut it off, no CMS API reaches it, and this version provides no cleanup for
-it.
+it. [OPERATIONS.md](../../../docs/OPERATIONS.md#finding-provider-clients-that-no-api-client-references)
+lists such clients as candidates for an operator to review.
 
 ### `503 temporarily_unavailable`: retry and confirm
 

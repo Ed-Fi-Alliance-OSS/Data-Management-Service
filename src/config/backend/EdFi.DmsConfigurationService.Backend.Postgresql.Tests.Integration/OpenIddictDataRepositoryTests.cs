@@ -774,6 +774,16 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         public async Task CommitAsync() => await _transaction.CommitAsync();
 
         /// <summary>
+        /// Reads the database clock in UTC inside the holder's transaction, while it still holds the
+        /// row lock.
+        /// </summary>
+        public async Task<DateTime> ReadUtcClockAsync() =>
+            await _connection.ExecuteScalarAsync<DateTime>(
+                "SELECT clock_timestamp() AT TIME ZONE 'UTC'",
+                transaction: _transaction
+            );
+
+        /// <summary>
         /// Ends the holder's transaction by rolling it back: nothing it wrote survives.
         /// </summary>
         public async Task ReleaseAsync() => await _transaction.RollbackAsync();
@@ -1384,9 +1394,10 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     /// filter, so it counts. The pre-revoked token carries the sentinel date; without the status
     /// predicate the result is 4 and the sentinel is overwritten. The bystander is a real registered
     /// application, so only the ApplicationId predicate keeps its tokens valid. The revocation runs
-    /// in a session whose time zone is fourteen hours ahead of UTC, and the transaction's own
-    /// timestamp is read in UTC alongside it, so a redemption date written in session-local time
-    /// is caught without depending on the clock.
+    /// in a session whose time zone is fourteen hours ahead of UTC, so a redemption date written in
+    /// session-local time falls outside the bounds read in UTC from the database clock just before
+    /// and just after the revoking statement. The lower bound is read after the transaction began,
+    /// so it also excludes the transaction's start time.
     /// </summary>
     [TestFixture]
     public class Given_RevokeTokensForApplicationAsync_For_An_Application_With_Outstanding_Tokens
@@ -1399,6 +1410,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         private int _result;
         private DateTime _transactionUtcTimestamp;
         private DateTime _transactionLocalTimestamp;
+        private DateTime _beforeStatementUtc;
+        private DateTime _afterStatementUtc;
 
         [SetUp]
         public async Task Setup()
@@ -1437,15 +1450,20 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "SET LOCAL TIME ZONE 'Pacific/Kiritimati'",
                 transaction: transaction
             );
+            _beforeStatementUtc = await connection.ExecuteScalarAsync<DateTime>(
+                "SELECT clock_timestamp() AT TIME ZONE 'UTC'",
+                transaction: transaction
+            );
             _result = await _repository.RevokeTokensForApplicationAsync(
                 applicationId,
                 connection,
                 transaction
             );
-            (_transactionUtcTimestamp, _transactionLocalTimestamp) = await connection.QuerySingleAsync<(
-                DateTime,
-                DateTime
-            )>("SELECT CURRENT_TIMESTAMP AT TIME ZONE 'UTC', LOCALTIMESTAMP", transaction: transaction);
+            (_afterStatementUtc, _transactionUtcTimestamp, _transactionLocalTimestamp) =
+                await connection.QuerySingleAsync<(DateTime, DateTime, DateTime)>(
+                    "SELECT clock_timestamp() AT TIME ZONE 'UTC', CURRENT_TIMESTAMP AT TIME ZONE 'UTC', LOCALTIMESTAMP",
+                    transaction: transaction
+                );
             await transaction.CommitAsync();
         }
 
@@ -1472,10 +1490,16 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             _transactionLocalTimestamp.Should().Be(_transactionUtcTimestamp.AddHours(14));
 
         [Test]
-        public async Task It_stores_their_redemption_dates_as_the_transaction_timestamp_in_utc() =>
-            (await RedemptionDatesAsync(_unrevokedTokenIds))
-                .Should()
-                .Equal(_transactionUtcTimestamp, _transactionUtcTimestamp, _transactionUtcTimestamp);
+        public void It_read_its_lower_bound_after_the_transaction_began() =>
+            _beforeStatementUtc.Should().BeAfter(_transactionUtcTimestamp);
+
+        [Test]
+        public async Task It_stores_one_redemption_date_from_the_revoking_statement_in_utc()
+        {
+            List<DateTime?> redemptionDates = await RedemptionDatesAsync(_unrevokedTokenIds);
+            redemptionDates.Distinct().Should().ContainSingle();
+            redemptionDates[0].Should().BeOnOrAfter(_beforeStatementUtc).And.BeOnOrBefore(_afterStatementUtc);
+        }
 
         [Test]
         public async Task It_preserves_the_already_revoked_tokens_redemption_date()
@@ -2777,6 +2801,9 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     /// the holder's backend; the holder then inserts a token and commits, so the reset has to
     /// revoke it. A reset that does not write the application row first finishes before the probe
     /// sees it waiting, and one that revokes before that write never sees the holder's token.
+    /// The holder reads the database clock just before it commits: the reset's transaction began
+    /// before that and its revoking statement started after it, so the redemption dates must
+    /// follow it.
     /// </summary>
     [TestFixture]
     public class Given_A_Grant_Committed_While_The_Reset_Waits : OpenIddictDataRepositoryTests
@@ -2787,6 +2814,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         private Guid[] _earlierTokenIds = null!;
         private Guid _bystanderTokenId;
         private ClientResetResult _result = null!;
+        private DateTime _beforeGrantCommitUtc;
+        private DateTime _afterResetUtc;
 
         [SetUp]
         public async Task Setup()
@@ -2825,9 +2854,14 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 reset.IsCompleted.Should().BeFalse("the reset is waiting on the row lock the holder owns");
 
                 await holder.InsertTokenAsync(_committedWhileWaitingTokenId);
+                _beforeGrantCommitUtc = await holder.ReadUtcClockAsync();
                 await holder.CommitAsync();
 
                 _result = await reset;
+                await using NpgsqlConnection clock = await DataSource!.OpenConnectionAsync();
+                _afterResetUtc = await clock.ExecuteScalarAsync<DateTime>(
+                    "SELECT clock_timestamp() AT TIME ZONE 'UTC'"
+                );
             }
             finally
             {
@@ -2848,6 +2882,15 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [Test]
         public async Task It_revokes_the_earlier_tokens() =>
             (await TokenStatusesAsync(_repository, _earlierTokenIds)).Should().Equal("revoked", "revoked");
+
+        [Test]
+        public async Task It_dates_the_revocations_after_the_grant_it_waited_for_committed() =>
+            (await RedemptionDatesAsync([.. _earlierTokenIds, _committedWhileWaitingTokenId]))
+                .Should()
+                .HaveCount(3)
+                .And.AllSatisfy(redemptionDate =>
+                    redemptionDate.Should().BeAfter(_beforeGrantCommitUtc).And.BeOnOrBefore(_afterResetUtc)
+                );
 
         [Test]
         public async Task It_stores_the_new_secret_hash() =>

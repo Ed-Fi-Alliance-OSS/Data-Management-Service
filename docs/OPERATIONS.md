@@ -1292,3 +1292,99 @@ must not be deleted.
 
 Recovery never deletes realm roles or client scopes. Those are shared by every
 client in the realm, so a failed attempt leaves nothing about them to repair.
+
+### Finding provider clients that no API client references
+
+A provider client can also lose its `ApiClient` row without any log line. A
+`DELETE /v3/vendors/{id}` made before DMS-1493 removed the vendor's rows without
+deleting their provider clients, and those clients keep working credentials (see
+[OWASP-AUTH-COVERAGE.md](OWASP-AUTH-COVERAGE.md)). The comparison below lists
+**candidates** for review. It changes nothing, and it cannot say why a client has
+no row: current rows do not record an earlier vendor deletion, and many provider
+clients legitimately have none. Expect these among the results:
+
+* clients registered through `POST /connect/register`, which carry
+  `IdentitySettings:ConfigServiceRole` (`cms-client` by default) instead of the
+  `IdentitySettings:ClientRole` (`dms-client`) given to API clients;
+* bootstrap and administrative clients created by deployment scripts or by hand;
+* for Keycloak, the realm's built-in clients (`account`, `account-console`,
+  `admin-cli`, `broker`, `realm-management`, `security-admin-console`) and the
+  clients of any other application that uses the realm;
+* a client created while the comparison runs, whose row is not yet committed.
+
+Compare against every Configuration Service database whose clients live in the
+same provider. All tenants of one database share its `dmscs.ApiClient` table, so
+the queries need no tenant filter. A Keycloak realm can also be shared by several
+Configuration Service deployments, each with its own database.
+
+**`self-contained`.** The provider clients are in the same database, and
+`ApiClient.ClientUuid` is their `Id`. The query lists each provider client with
+no API client row, with its roles. PostgreSQL:
+
+```sql
+SELECT oa."Id", oa."ClientId", oa."DisplayName", oa."CreatedAt",
+       string_agg(r."Name", ', ' ORDER BY r."Name") AS "Roles"
+FROM dmscs."OpenIddictApplication" oa
+LEFT JOIN dmscs."OpenIddictClientRole" cr ON cr."ClientId" = oa."Id"
+LEFT JOIN dmscs."OpenIddictRole" r ON r."Id" = cr."RoleId"
+WHERE NOT EXISTS (SELECT 1 FROM dmscs."ApiClient" ac WHERE ac."ClientUuid" = oa."Id")
+GROUP BY oa."Id", oa."ClientId", oa."DisplayName", oa."CreatedAt"
+ORDER BY oa."CreatedAt";
+```
+
+SQL Server:
+
+```sql
+SELECT oa.Id, oa.ClientId, oa.DisplayName, oa.CreatedAt,
+       STRING_AGG(r.Name, ', ') WITHIN GROUP (ORDER BY r.Name) AS Roles
+FROM dmscs.OpenIddictApplication oa
+LEFT JOIN dmscs.OpenIddictClientRole cr ON cr.ClientId = oa.Id
+LEFT JOIN dmscs.OpenIddictRole r ON r.Id = cr.RoleId
+WHERE NOT EXISTS (SELECT 1 FROM dmscs.ApiClient ac WHERE ac.ClientUuid = oa.Id)
+GROUP BY oa.Id, oa.ClientId, oa.DisplayName, oa.CreatedAt
+ORDER BY oa.CreatedAt;
+```
+
+**`keycloak`.** `ApiClient.ClientUuid` holds the client's internal `id`, not its
+OAuth `clientId`, so compare on `id`. Collect the UUIDs from every Configuration
+Service database that uses the realm into one file:
+
+```shell
+psql "<connection string>" -At -c 'SELECT "ClientUuid" FROM dmscs."ApiClient"' >> cms-client-uuids.txt
+sqlcmd -S <server> -d <database> -h -1 -W -Q "SET NOCOUNT ON; SELECT ClientUuid FROM dmscs.ApiClient" >> cms-client-uuids.txt
+```
+
+List the realm's clients with the admin CLI, which returns all of them. The
+Admin REST equivalent is `GET {keycloak}/admin/realms/{realm}/clients?briefRepresentation=true`;
+when paging with `first` and `max`, continue until a page is short.
+
+```shell
+kcadm.sh config credentials --server <keycloak url> --realm master --user <admin user>
+kcadm.sh get clients -r <realm> --fields id,clientId --format csv --noquotes > realm-clients.csv
+```
+
+Then list the realm clients whose `id` no database holds, leaving out the
+built-ins. SQL Server prints UUIDs in upper case, so the comparison ignores case:
+
+```powershell
+$builtIn = 'account', 'account-console', 'admin-cli', 'broker', 'realm-management', 'security-admin-console'
+$cms = Get-Content cms-client-uuids.txt | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ }
+Import-Csv realm-clients.csv -Header Id, ClientId |
+    Where-Object { $_.Id.ToLowerInvariant() -notin $cms -and $_.ClientId -notin $builtIn }
+```
+
+To see what a candidate was created for, read the realm roles of its service
+account. `dms-client` points to an API client, `cms-client` to a registration, and
+a client without a service account was not created by the Configuration Service:
+
+```shell
+kcadm.sh get clients/<id>/service-account-user -r <realm> --fields id,username
+kcadm.sh get users/<service account user id>/role-mappings/realm -r <realm> --fields name
+```
+
+Treat every result as a candidate until an operator has established who owns it.
+A role, a name or a missing row is not proof. Deleting a client that another
+deployment, tenant database or application still uses cuts it off. Deciding to
+delete one needs the same independent evidence of ownership and recorded approval
+as [the one rule for deleting a client during recovery](#the-one-rule-for-deleting-a-client-during-recovery);
+nothing in this procedure deletes or changes a client.
