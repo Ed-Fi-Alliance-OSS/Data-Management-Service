@@ -37,6 +37,17 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly QualifiedResourceName DescriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
     private static readonly DateTimeOffset LastModifiedAt = new(2026, 7, 31, 12, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset CacheContentCreatedAt = new(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        123,
+        456,
+        TimeSpan.Zero
+    );
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create(
         "tenant-cache-read",
         7
@@ -675,6 +686,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 [ContentVersion],
                 [StreamEtag],
                 [LastModifiedAt],
+                [ContentCreatedAt],
                 [DocumentJson],
                 [ComputedAt]
             )
@@ -687,6 +699,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 @contentVersion,
                 @streamEtag,
                 @lastModifiedAt,
+                @contentCreatedAt,
                 @documentJson,
                 @computedAt
             );
@@ -715,6 +728,10 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 ),
             },
             new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt.UtcDateTime },
+            new SqlParameter("@contentCreatedAt", SqlDbType.DateTime2)
+            {
+                Value = CacheContentCreatedAt.UtcDateTime,
+            },
             new SqlParameter("@documentJson", SqlDbType.NVarChar, -1)
             {
                 Value = new JsonObject { ["value"] = $"cache-{contentVersion}" }.ToJsonString(),
@@ -772,6 +789,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 [ContentVersion],
                 [StreamEtag],
                 [LastModifiedAt],
+                [ContentCreatedAt],
                 [DocumentJson],
                 [ComputedAt]
             )
@@ -784,6 +802,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 [cache].[ContentVersion],
                 [cache].[StreamEtag],
                 @lastModifiedAt,
+                @contentCreatedAt,
                 [cache].[DocumentJson],
                 @computedAt
             FROM OPENJSON(@cacheRowsJson)
@@ -812,6 +831,10 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 Value = resourceKey.ResourceVersion,
             },
             new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt.UtcDateTime },
+            new SqlParameter("@contentCreatedAt", SqlDbType.DateTime2)
+            {
+                Value = CacheContentCreatedAt.UtcDateTime,
+            },
             new SqlParameter("@computedAt", SqlDbType.DateTime2)
             {
                 Value = LastModifiedAt.AddMinutes(1).UtcDateTime,

@@ -109,6 +109,19 @@ internal static class CompactDescriptorCacheScenario
         StoredDescriptor original = await ReadStoredAsync();
         original.DocumentId.Should().BeGreaterThan(int.MaxValue);
         ((long)original.DescriptorId).Should().NotBe(original.DocumentId);
+
+        // A creation value distinct from every stamp. Updating only ContentCreatedAt allocates no version
+        // and leaves ContentLastModifiedAt alone, so the descriptor keeps its stored observation.
+        bool isPostgresql = mappingSet.Key.Dialect == SqlDialect.Pgsql;
+        DateTimeOffset plantedCreatedAt = isPostgresql
+            ? new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero).AddTicks(1_234_560)
+            : new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero).AddTicks(1_234_567);
+        await ExecuteSql(
+            $"UPDATE {Table("Descriptor")} SET {Q("ContentCreatedAt")} = "
+                + (isPostgresql ? "'2001-02-03T04:05:06.123456+00:00'" : "'2001-02-03T04:05:06.1234567'")
+                + $" WHERE {Q("DocumentId")} = {original.DocumentId};"
+        );
+        (await ReadStoredAsync()).Should().Be(original);
         var context = new DocumentCacheMaterializationTargetContext(
             new DocumentCacheProjectionTargetKey("", new DataStoreId(1)),
             mappingSet,
@@ -287,6 +300,8 @@ internal static class CompactDescriptorCacheScenario
                 .StreamEtag.Should()
                 .Be($"{stored.Version}-{mappingSet.Key.EffectiveSchemaHash[..8]}.j._.n.i");
             candidate.LastModifiedAt.UtcDateTime.Should().Be(stored.At);
+            candidate.ContentCreatedAt.Should().Be(plantedCreatedAt);
+            candidate.ContentCreatedAt.Should().NotBe(candidate.LastModifiedAt);
             return candidate;
         }
 
@@ -332,7 +347,8 @@ internal static class CompactDescriptorCacheScenario
             (await CountAsync("DocumentProjectionWork")).Should().Be(0);
             await using DbCommand cache = connection.CreateCommand();
             cache.CommandText =
-                $"SELECT {Q("DocumentId")}, {Q("ContentVersion")}, {Q("DocumentJson")}, {Q("StreamEtag")} FROM {Table("DocumentCache")};";
+                $"SELECT {Q("DocumentId")}, {Q("ContentVersion")}, {Q("DocumentJson")}, {Q("StreamEtag")}, "
+                + $"{Q("ContentCreatedAt")}, {Q("LastModifiedAt")} FROM {Table("DocumentCache")};";
             await using DbDataReader cacheReader = await cache.ExecuteReaderAsync();
             (await cacheReader.ReadAsync()).Should().BeTrue();
             cacheReader.GetInt64(0).Should().Be(original.DocumentId);
@@ -342,6 +358,8 @@ internal static class CompactDescriptorCacheScenario
                 .Should()
                 .BeTrue();
             cacheReader.GetString(3).Should().Be(candidate.StreamEtag);
+            cacheReader.GetDateTime(4).Ticks.Should().Be(plantedCreatedAt.UtcTicks);
+            cacheReader.GetDateTime(5).Should().Be(stored.At);
             (await cacheReader.ReadAsync()).Should().BeFalse();
             return candidate;
         }

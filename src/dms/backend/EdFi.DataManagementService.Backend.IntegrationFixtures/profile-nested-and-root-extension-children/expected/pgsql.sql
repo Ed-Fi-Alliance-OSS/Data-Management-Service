@@ -291,6 +291,7 @@ CREATE TABLE IF NOT EXISTS "dms"."DocumentCache"
     "ContentVersion" bigint NOT NULL,
     "StreamEtag" varchar(64) NOT NULL,
     "LastModifiedAt" timestamp with time zone NOT NULL,
+    "ContentCreatedAt" timestamp with time zone NOT NULL,
     "DocumentJson" jsonb NOT NULL,
     "ComputedAt" timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT "PK_DocumentCache" PRIMARY KEY ("DocumentId")

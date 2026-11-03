@@ -25,12 +25,34 @@ public sealed class Given_DocumentCacheAdminMssqlRebuildOnline
             enabled: true,
             async () =>
             {
+                DateTimeOffset staleContentCreatedAt = new(1999, 9, 9, 9, 9, 9, TimeSpan.Zero);
                 IReadOnlyList<DocumentCacheAdminCliSeededDocument> documents =
                     await InsertProjectedDescriptorRowsAsync(
                         target,
                         "MssqlRebuildTracking",
-                        documentCount: 3
+                        documentCount: 3,
+                        staleContentCreatedAt
                     );
+                // A distinct creation sentinel per descriptor; the seventh digit proves datetime2(7).
+                Dictionary<long, DateTimeOffset> sentinelByDocumentId = documents
+                    .Select((document, index) => (document, index))
+                    .ToDictionary(
+                        pair => pair.document.DocumentId,
+                        pair =>
+                            new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero)
+                                .AddTicks(1_234_567)
+                                .AddDays(pair.index)
+                    );
+                foreach (DocumentCacheAdminCliSeededDocument document in documents)
+                {
+                    await target.State.SetMssqlDescriptorContentCreatedAtAsync(
+                        document,
+                        sentinelByDocumentId[document.DocumentId]
+                    );
+                }
+                (await target.State.ReadMssqlCachedContentCreatedAtByDocumentIdAsync())
+                    .Values.Should()
+                    .OnlyContain(value => value == staleContentCreatedAt);
                 await target.State.SetLifecycleAsync("Tracking", cacheAheadRecoveryRequired: false);
 
                 DocumentCacheAdminCliProcessResult result = await RunRebuildOnlineAsync(target);
@@ -62,6 +84,12 @@ public sealed class Given_DocumentCacheAdminMssqlRebuildOnline
                 cachedJsonByDocumentId
                     .Values.Should()
                     .OnlyContain(json => json.Contains("MssqlRebuildTracking"));
+                (await target.State.ReadMssqlCachedContentCreatedAtByDocumentIdAsync())
+                    .Should()
+                    .BeEquivalentTo(
+                        sentinelByDocumentId,
+                        "the rebuild recovers each descriptor's creation time from the source, not the cleared rows"
+                    );
             }
         );
     }
@@ -157,7 +185,8 @@ public sealed class Given_DocumentCacheAdminMssqlRebuildOnline
     > InsertProjectedDescriptorRowsAsync(
         DocumentCacheAdminCliTarget target,
         string codeValuePrefix,
-        int documentCount
+        int documentCount,
+        DateTimeOffset? staleContentCreatedAt = null
     )
     {
         List<DocumentCacheAdminCliSeededDocument> documents = [];
@@ -170,7 +199,8 @@ public sealed class Given_DocumentCacheAdminMssqlRebuildOnline
                 );
             await target.State.InsertMssqlDocumentCacheAsync(
                 document,
-                documentJson: $$"""{"value":"stale-cache-{{index}}"}"""
+                documentJson: $$"""{"value":"stale-cache-{{index}}"}""",
+                contentCreatedAtOverride: staleContentCreatedAt
             );
             await target.State.InsertMssqlProjectionWorkAsync(document);
             documents.Add(document);

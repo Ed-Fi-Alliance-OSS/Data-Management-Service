@@ -369,10 +369,11 @@ public class Given_CoreDdlMetadata_For_CdcSourceInventory(SqlDialect dialect)
                 "ContentVersion",
                 "StreamEtag",
                 "LastModifiedAt",
+                "ContentCreatedAt",
                 "DocumentJson",
                 "ComputedAt"
             );
-        documentCache.Columns.Select(column => column.Ordinal).Should().Equal(Enumerable.Range(1, 10));
+        documentCache.Columns.Select(column => column.Ordinal).Should().Equal(Enumerable.Range(1, 11));
         var lastModifiedAt = documentCache.Columns.Single(column =>
             column.ColumnName.Value == "LastModifiedAt"
         );
@@ -380,6 +381,14 @@ public class Given_CoreDdlMetadata_For_CdcSourceInventory(SqlDialect dialect)
             .ProviderDataType.Should()
             .Be(dialect == SqlDialect.Pgsql ? "timestamp with time zone" : "datetime2(7)");
         lastModifiedAt.IsNullable.Should().BeFalse();
+
+        var contentCreatedAt = documentCache.Columns.Single(column =>
+            column.ColumnName.Value == "ContentCreatedAt"
+        );
+        contentCreatedAt
+            .ProviderDataType.Should()
+            .Be(dialect == SqlDialect.Pgsql ? "timestamp with time zone" : "datetime2(7)");
+        contentCreatedAt.IsNullable.Should().BeFalse();
 
         var documentJson = documentCache.Columns.Single(column => column.ColumnName.Value == "DocumentJson");
         var streamEtag = documentCache.Columns.Single(column => column.ColumnName.Value == "StreamEtag");

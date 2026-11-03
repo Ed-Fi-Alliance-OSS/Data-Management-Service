@@ -90,14 +90,16 @@ result and validates:
 DocumentCache.DocumentUuid == Document.DocumentUuid for DocumentId
 DocumentJson.id == DocumentUuid
 DocumentCache.LastModifiedAt == authoritative owner ContentLastModifiedAt
+DocumentCache.ContentCreatedAt == authoritative owner ContentCreatedAt
 DocumentJson._lastModifiedDate == formatted owner ContentLastModifiedAt
 StreamEtag == DMS served-ETag composition for the fixed stream representation
 ```
 
 Initial and current-source metadata reads retain document UUID, resource identity and
 `ContentVersion`, joining the mapped ordinary root or `dms.Descriptor` by `DocumentId` for
-its authoritative timestamp. Descriptor-reference expansion separately uses `DescriptorId`.
-The materializer compares the final source observation with the acquisition and rejects a
+both authoritative owner timestamps, `ContentLastModifiedAt` and `ContentCreatedAt`.
+Descriptor-reference expansion separately uses `DescriptorId`. The materializer compares the
+final source observation, including the creation time, with the acquisition and rejects a
 candidate changed by a normal write or restamp; it does not publish mixed stamps and content.
 A missing owner remains distinct from a missing document: the current-source reread classifies
 concurrent disappearance or version change before treating a stable missing owner as a processing
@@ -106,8 +108,8 @@ remain unchanged; removing the document timestamp changes neither enqueueing nor
 CDC payload contract.
 
 An invariant failure produces no cache write. `LastModifiedAt` remains payload and
-diagnostic metadata; `ComputedAt` remains operational metadata. Neither is a freshness or
-ordering predicate.
+diagnostic metadata, and `ContentCreatedAt` is copied owner metadata; `ComputedAt` remains
+operational metadata. None of them is a freshness or ordering predicate.
 
 ## Durable Work and Lifecycle
 

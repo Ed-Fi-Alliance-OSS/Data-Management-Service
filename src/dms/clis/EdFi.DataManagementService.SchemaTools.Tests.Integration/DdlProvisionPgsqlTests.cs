@@ -2379,6 +2379,7 @@ internal static class PgsqlDocumentProjectionTestSupport
                 "ContentVersion",
                 "StreamEtag",
                 "LastModifiedAt",
+                "ContentCreatedAt",
                 "DocumentJson"
             )
             SELECT
@@ -2390,6 +2391,7 @@ internal static class PgsqlDocumentProjectionTestSupport
                 document."ContentVersion",
                 'etag-' || document."ContentVersion"::text,
                 widget."ContentLastModifiedAt",
+                widget."ContentCreatedAt",
                 '{{documentJson}}'::jsonb
             FROM dms."Document" document
             INNER JOIN testproject."Widget" widget

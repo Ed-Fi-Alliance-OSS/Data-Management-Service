@@ -852,6 +852,7 @@ internal sealed class MssqlDocumentCacheWriter(
                 [ContentVersion] = [document].[ContentVersion],
                 [StreamEtag] = @streamEtag,
                 [LastModifiedAt] = @lastModifiedAt,
+                [ContentCreatedAt] = @contentCreatedAt,
                 [DocumentJson] = @documentJson,
                 [ComputedAt] = sysutcdatetime()
             FROM [dms].[DocumentCache] AS [cache]
@@ -895,6 +896,7 @@ internal sealed class MssqlDocumentCacheWriter(
                 [ContentVersion],
                 [StreamEtag],
                 [LastModifiedAt],
+                [ContentCreatedAt],
                 [DocumentJson],
                 [ComputedAt]
             )
@@ -907,6 +909,7 @@ internal sealed class MssqlDocumentCacheWriter(
                 [document].[ContentVersion],
                 @streamEtag,
                 @lastModifiedAt,
+                @contentCreatedAt,
                 @documentJson,
                 sysutcdatetime()
             FROM [dms].[Document] AS [document]
@@ -1103,6 +1106,12 @@ internal sealed class MssqlDocumentCacheWriter(
             new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2)
             {
                 Value = candidate.LastModifiedAt.UtcDateTime,
+            }
+        );
+        command.Parameters.Add(
+            new SqlParameter("@contentCreatedAt", SqlDbType.DateTime2)
+            {
+                Value = candidate.ContentCreatedAt.UtcDateTime,
             }
         );
         command.Parameters.Add(

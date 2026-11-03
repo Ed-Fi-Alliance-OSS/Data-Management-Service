@@ -83,6 +83,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 new("ContentVersion", "bigint"),
                 new("StreamEtag", "varchar(64)"),
                 new("LastModifiedAt", "datetime2(7)"),
+                new("ContentCreatedAt", "datetime2(7)"),
                 new("DocumentJson", "nvarchar(max)"),
                 new("ComputedAt", "datetime2(7)"),
             ],

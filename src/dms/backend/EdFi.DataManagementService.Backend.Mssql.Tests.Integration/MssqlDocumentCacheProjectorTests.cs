@@ -1085,6 +1085,7 @@ public class Given_A_Mssql_DocumentCacheProjector
                     "5.0.0",
                     contentVersion,
                     source.LastModifiedAt,
+                    new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
                     $"etag-{contentVersion}",
                     new JsonObject
                     {

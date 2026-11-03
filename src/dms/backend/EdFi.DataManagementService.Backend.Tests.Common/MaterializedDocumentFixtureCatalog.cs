@@ -118,6 +118,7 @@ public static class MaterializedDocumentFixtureCatalog
         if (expectedCacheRow is not null && streamEtagExpectation is not null)
         {
             ValidateExpectedCacheRow(expectedCacheRow, expectedCacheRowPath!);
+            ValidateCacheRowCreationTimestamp(expectedCacheRow, sourceSetup, expectedCacheRowPath!);
             ValidateStreamEtagExpectation(streamEtagExpectation);
             ValidateStreamEtagConsistency(expectedCacheRow, streamEtagExpectation, expectedStreamEtagPath!);
             ValidatePublicCdcDocument(
@@ -246,6 +247,13 @@ public static class MaterializedDocumentFixtureCatalog
             {
                 throw new InvalidOperationException($"Source setup '{path}' has an invalid ContentVersion.");
             }
+
+            if (document.ContentCreatedAt == default)
+            {
+                throw new InvalidOperationException(
+                    $"Source setup '{path}' document {document.DocumentId} must declare contentCreatedAt."
+                );
+            }
         }
 
         foreach (
@@ -334,6 +342,35 @@ public static class MaterializedDocumentFixtureCatalog
         {
             throw new InvalidOperationException(
                 $"Expected cache row '{path}' documentJson._lastModifiedDate must match lastModifiedAt at whole-second UTC precision."
+            );
+        }
+    }
+
+    private static void ValidateCacheRowCreationTimestamp(
+        MaterializedDocumentCacheRow expectedCacheRow,
+        MaterializedDocumentSourceSetup sourceSetup,
+        string path
+    )
+    {
+        if (expectedCacheRow.ContentCreatedAt == default)
+        {
+            throw new InvalidOperationException(
+                $"Expected cache row '{path}' must declare contentCreatedAt."
+            );
+        }
+
+        var sourceDocument =
+            sourceSetup.Documents.SingleOrDefault(document =>
+                document.DocumentId == expectedCacheRow.DocumentId
+            )
+            ?? throw new InvalidOperationException(
+                $"Expected cache row '{path}' has no source document with DocumentId {expectedCacheRow.DocumentId}."
+            );
+
+        if (expectedCacheRow.ContentCreatedAt != sourceDocument.ContentCreatedAt)
+        {
+            throw new InvalidOperationException(
+                $"Expected cache row '{path}' contentCreatedAt must equal its source document's contentCreatedAt."
             );
         }
     }
@@ -550,15 +587,16 @@ public sealed record MaterializedDocumentSourceSetup(
 );
 
 /// <summary>
-/// Fixture identity/version metadata. ContentLastModifiedAt is seeded on the owning root or descriptor,
-/// never on dms.Document.
+/// Fixture identity/version metadata. ContentLastModifiedAt and ContentCreatedAt are seeded on the owning
+/// root or descriptor, never on dms.Document.
 /// </summary>
 public sealed record MaterializedDocumentSourceDocument(
     long DocumentId,
     string DocumentUuid,
     short ResourceKeyId,
     long ContentVersion,
-    DateTimeOffset ContentLastModifiedAt
+    DateTimeOffset ContentLastModifiedAt,
+    DateTimeOffset ContentCreatedAt
 );
 
 public sealed record MaterializedDocumentSourceTableRow(
@@ -588,6 +626,7 @@ public sealed record MaterializedDocumentCacheRow(
     string ResourceVersion,
     long ContentVersion,
     DateTimeOffset LastModifiedAt,
+    DateTimeOffset ContentCreatedAt,
     string StreamEtag,
     JsonObject DocumentJson
 );

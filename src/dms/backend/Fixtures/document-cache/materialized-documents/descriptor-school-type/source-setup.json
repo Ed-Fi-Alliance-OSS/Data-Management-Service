@@ -5,7 +5,8 @@
       "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000000301",
       "resourceKeyId": 13,
       "contentVersion": 222,
-      "contentLastModifiedAt": "2026-07-30T14:15:16Z"
+      "contentLastModifiedAt": "2026-07-30T14:15:16Z",
+      "contentCreatedAt": "2025-03-04T05:06:01.654321Z"
     }
   ],
   "descriptors": [

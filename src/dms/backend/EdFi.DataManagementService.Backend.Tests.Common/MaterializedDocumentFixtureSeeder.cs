@@ -208,7 +208,8 @@ public sealed class MaterializedDocumentFixtureSeeder(
                     {_dialect.Quote("EffectiveBeginDate")} date NULL,
                     {_dialect.Quote("EffectiveEndDate")} date NULL,
                     {_dialect.Quote("ContentVersion")} bigint NOT NULL,
-                    {_dialect.Quote("ContentLastModifiedAt")} {_dialect.TimestampWithOffsetColumnType} NOT NULL
+                    {_dialect.Quote("ContentLastModifiedAt")} {_dialect.TimestampWithOffsetColumnType} NOT NULL,
+                    {_dialect.Quote("ContentCreatedAt")} {_dialect.TimestampWithOffsetColumnType} NOT NULL
                     """
                 ),
                 []
@@ -251,6 +252,9 @@ public sealed class MaterializedDocumentFixtureSeeder(
                 columns.Add($"{_dialect.Quote("ContentVersion")} bigint NOT NULL");
                 columns.Add(
                     $"{_dialect.Quote("ContentLastModifiedAt")} {_dialect.TimestampWithOffsetColumnType} NOT NULL"
+                );
+                columns.Add(
+                    $"{_dialect.Quote("ContentCreatedAt")} {_dialect.TimestampWithOffsetColumnType} NOT NULL"
                 );
             }
 
@@ -369,6 +373,7 @@ public sealed class MaterializedDocumentFixtureSeeder(
             );
             values["ContentVersion"] = document.ContentVersion;
             values["ContentLastModifiedAt"] = DocumentTimestampValue(document.ContentLastModifiedAt);
+            values["ContentCreatedAt"] = DocumentTimestampValue(document.ContentCreatedAt);
 
             var insert = BuildInsertCommand("dms", "Descriptor", values);
             commands.Add(
@@ -417,6 +422,7 @@ public sealed class MaterializedDocumentFixtureSeeder(
                 );
                 values["ContentVersion"] = document.ContentVersion;
                 values["ContentLastModifiedAt"] = DocumentTimestampValue(document.ContentLastModifiedAt);
+                values["ContentCreatedAt"] = DocumentTimestampValue(document.ContentCreatedAt);
             }
 
             commands.Add(BuildInsertCommand(row.Schema, row.Table, values));
@@ -474,7 +480,8 @@ public sealed class MaterializedDocumentFixtureSeeder(
         {
             new(_dialect.ParameterName(0), document.ContentVersion),
             DocumentTimestampParameter(1, document.ContentLastModifiedAt),
-            new(_dialect.ParameterName(2), document.DocumentId),
+            DocumentTimestampParameter(2, document.ContentCreatedAt),
+            new(_dialect.ParameterName(3), document.DocumentId),
         };
 
         commands.Add(
@@ -482,8 +489,9 @@ public sealed class MaterializedDocumentFixtureSeeder(
                 $"""
                 UPDATE {_dialect.QualifiedTable(schema, table)}
                 SET {_dialect.Quote("ContentVersion")} = {parameters[0].Name},
-                    {_dialect.Quote("ContentLastModifiedAt")} = {parameters[1].Name}
-                WHERE {_dialect.Quote("DocumentId")} = {parameters[2].Name}
+                    {_dialect.Quote("ContentLastModifiedAt")} = {parameters[1].Name},
+                    {_dialect.Quote("ContentCreatedAt")} = {parameters[2].Name}
+                WHERE {_dialect.Quote("DocumentId")} = {parameters[3].Name}
                 """,
                 parameters
             )

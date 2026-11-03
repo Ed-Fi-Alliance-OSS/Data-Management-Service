@@ -40,6 +40,20 @@ public class Given_MssqlDocumentCacheWriterParameterBinding
         parameters["@streamEtag"].Value.Should().Be("etag-23");
     }
 
+    [Test]
+    public void It_binds_the_creation_timestamp_as_datetime2_in_utc_to_the_tick()
+    {
+        IReadOnlyDictionary<string, SqlParameter> parameters = BuildCandidateParameters();
+
+        // 09:05:06.1234567+05:00 is 04:05:06.1234567 UTC; the seventh digit survives the binding.
+        var expected = new DateTime(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc).AddTicks(1_234_567);
+        parameters["@contentCreatedAt"].SqlDbType.Should().Be(SqlDbType.DateTime2);
+        var value = parameters["@contentCreatedAt"].Value.Should().BeOfType<DateTime>().Subject;
+        value.Ticks.Should().Be(expected.Ticks);
+        value.Kind.Should().Be(DateTimeKind.Utc);
+        parameters["@contentCreatedAt"].Value.Should().NotBe(parameters["@lastModifiedAt"].Value);
+    }
+
     private static IReadOnlyDictionary<string, SqlParameter> BuildCandidateParameters()
     {
         DocumentCacheMaterializationCandidate candidate = new(
@@ -50,6 +64,7 @@ public class Given_MssqlDocumentCacheWriterParameterBinding
             "5.0.0-学",
             23,
             new DateTimeOffset(2026, 7, 31, 12, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2001, 2, 3, 9, 5, 6, TimeSpan.FromHours(5)).AddTicks(1_234_567),
             "etag-23",
             new JsonObject { ["value"] = "candidate" }
         );

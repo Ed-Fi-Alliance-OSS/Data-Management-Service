@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
@@ -548,10 +549,12 @@ internal sealed class DocumentCacheAdminCliStateInspector(
         return new(documentId, documentUuid, contentVersion);
     }
 
+    // The cache copies the descriptor's ContentCreatedAt unless a stale override is given.
     public Task InsertPostgresqlDocumentCacheAsync(
         DocumentCacheAdminCliSeededDocument document,
         long? cacheContentVersion = null,
-        string documentJson = """{"seeded":true}"""
+        string documentJson = """{"seeded":true}""",
+        DateTimeOffset? contentCreatedAtOverride = null
     )
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -568,6 +571,7 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                     "ContentVersion",
                     "StreamEtag",
                     "LastModifiedAt",
+                    "ContentCreatedAt",
                     "DocumentJson",
                     "ComputedAt"
                 )
@@ -580,6 +584,7 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                     @contentVersion,
                     @streamEtag,
                     descriptor."ContentLastModifiedAt",
+                    COALESCE(@contentCreatedAtOverride, descriptor."ContentCreatedAt"),
                     @documentJson::jsonb,
                     @computedAt
                 FROM "dms"."Document" AS document
@@ -599,14 +604,20 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                     Value = $"cli-etag-{document.DocumentId}",
                 },
                 new NpgsqlParameter("documentJson", NpgsqlDbType.Jsonb) { Value = documentJson },
-                new NpgsqlParameter("computedAt", NpgsqlDbType.TimestampTz) { Value = DateTimeOffset.UtcNow }
+                new NpgsqlParameter("computedAt", NpgsqlDbType.TimestampTz) { Value = DateTimeOffset.UtcNow },
+                new NpgsqlParameter("contentCreatedAtOverride", NpgsqlDbType.TimestampTz)
+                {
+                    Value = (object?)contentCreatedAtOverride ?? DBNull.Value,
+                }
             );
     }
 
+    // The cache copies the descriptor's ContentCreatedAt unless a stale override is given.
     public Task InsertMssqlDocumentCacheAsync(
         DocumentCacheAdminCliSeededDocument document,
         long? cacheContentVersion = null,
-        string documentJson = """{"seeded":true}"""
+        string documentJson = """{"seeded":true}""",
+        DateTimeOffset? contentCreatedAtOverride = null
     )
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -623,6 +634,7 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                     [ContentVersion],
                     [StreamEtag],
                     [LastModifiedAt],
+                    [ContentCreatedAt],
                     [DocumentJson],
                     [ComputedAt]
                 )
@@ -635,6 +647,7 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                     @contentVersion,
                     @streamEtag,
                     [descriptor].[ContentLastModifiedAt],
+                    COALESCE(@contentCreatedAtOverride, [descriptor].[ContentCreatedAt]),
                     @documentJson,
                     @computedAt
                 FROM [dms].[Document] AS [document]
@@ -648,9 +661,90 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 new SqlParameter("contentVersion", cacheContentVersion ?? document.ContentVersion),
                 new SqlParameter("streamEtag", $"cli-etag-{document.DocumentId}"),
                 new SqlParameter("documentJson", documentJson),
-                new SqlParameter("computedAt", DateTime.UtcNow)
+                new SqlParameter("computedAt", DateTime.UtcNow),
+                new SqlParameter("contentCreatedAtOverride", SqlDbType.DateTime2)
+                {
+                    Value = (object?)contentCreatedAtOverride?.UtcDateTime ?? DBNull.Value,
+                }
             );
     }
+
+    // A creation-only UPDATE: it allocates no content version and leaves ContentLastModifiedAt alone.
+    public Task SetPostgresqlDescriptorContentCreatedAtAsync(
+        DocumentCacheAdminCliSeededDocument document,
+        DateTimeOffset contentCreatedAt
+    ) =>
+        RequirePostgresqlDatabase()
+            .ExecuteNonQueryAsync(
+                """
+                UPDATE "dms"."Descriptor"
+                SET "ContentCreatedAt" = @contentCreatedAt
+                WHERE "DocumentId" = @documentId;
+                """,
+                new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = document.DocumentId },
+                new NpgsqlParameter("contentCreatedAt", NpgsqlDbType.TimestampTz) { Value = contentCreatedAt }
+            );
+
+    // A creation-only UPDATE: it allocates no content version and leaves ContentLastModifiedAt alone.
+    public Task SetMssqlDescriptorContentCreatedAtAsync(
+        DocumentCacheAdminCliSeededDocument document,
+        DateTimeOffset contentCreatedAt
+    ) =>
+        RequireMssqlDatabase()
+            .ExecuteNonQueryAsync(
+                """
+                UPDATE [dms].[Descriptor]
+                SET [ContentCreatedAt] = @contentCreatedAt
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("documentId", document.DocumentId),
+                new SqlParameter("contentCreatedAt", SqlDbType.DateTime2)
+                {
+                    Value = contentCreatedAt.UtcDateTime,
+                }
+            );
+
+    public async Task<
+        IReadOnlyDictionary<long, DateTimeOffset>
+    > ReadPostgresqlCachedContentCreatedAtByDocumentIdAsync() =>
+        ToContentCreatedAtByDocumentId(
+            await RequirePostgresqlDatabase()
+                .QueryRowsAsync(
+                    """
+                    SELECT "DocumentId", "ContentCreatedAt"
+                    FROM "dms"."DocumentCache";
+                    """
+                )
+        );
+
+    public async Task<
+        IReadOnlyDictionary<long, DateTimeOffset>
+    > ReadMssqlCachedContentCreatedAtByDocumentIdAsync() =>
+        ToContentCreatedAtByDocumentId(
+            await RequireMssqlDatabase()
+                .QueryRowsAsync(
+                    """
+                    SELECT [DocumentId], [ContentCreatedAt]
+                    FROM [dms].[DocumentCache];
+                    """
+                )
+        );
+
+    private static IReadOnlyDictionary<long, DateTimeOffset> ToContentCreatedAtByDocumentId(
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows
+    ) =>
+        rows.ToDictionary(
+            row => RequireInt64(row, "DocumentId"),
+            row =>
+                row["ContentCreatedAt"] switch
+                {
+                    DateTimeOffset offset => offset.ToUniversalTime(),
+                    DateTime dateTime => new DateTimeOffset(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)),
+                    var other => throw new InvalidOperationException(
+                        $"Unexpected DocumentCache.ContentCreatedAt value type '{other?.GetType().Name}'."
+                    ),
+                }
+        );
 
     public Task InsertPostgresqlProjectionWorkAsync(
         DocumentCacheAdminCliSeededDocument document,

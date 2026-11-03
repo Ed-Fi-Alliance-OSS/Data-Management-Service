@@ -243,6 +243,7 @@ public class Given_DocumentCacheMaterializer_InvariantValidation
             concreteResourceModel,
             ContentVersion,
             sourceLastModifiedAt ?? LastModifiedAt,
+            new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
             readPlan
         );
 
@@ -362,7 +363,8 @@ public class Given_DocumentCacheMaterializer_InvariantValidation
                                 found.Metadata.DocumentUuid,
                                 found.Metadata.ResourceKeyId,
                                 found.Metadata.ContentVersion,
-                                found.Metadata.ContentLastModifiedAt
+                                found.Metadata.ContentLastModifiedAt,
+                                found.Metadata.ContentCreatedAt
                             )
                         )
                     ),

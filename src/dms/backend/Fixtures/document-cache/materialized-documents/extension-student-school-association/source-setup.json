@@ -5,42 +5,48 @@
       "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000001101",
       "resourceKeyId": 310,
       "contentVersion": 333,
-      "contentLastModifiedAt": "2026-07-31T10:11:12.987654Z"
+      "contentLastModifiedAt": "2026-07-31T10:11:12.987654Z",
+      "contentCreatedAt": "2025-03-04T05:06:02.654322Z"
     },
     {
       "documentId": 971201,
       "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000001201",
       "resourceKeyId": 244,
       "contentVersion": 201,
-      "contentLastModifiedAt": "2026-07-30T10:11:12Z"
+      "contentLastModifiedAt": "2026-07-30T10:11:12Z",
+      "contentCreatedAt": "2025-03-04T05:06:03.654323Z"
     },
     {
       "documentId": 971202,
       "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000001202",
       "resourceKeyId": 282,
       "contentVersion": 202,
-      "contentLastModifiedAt": "2026-07-30T10:11:13Z"
+      "contentLastModifiedAt": "2026-07-30T10:11:13Z",
+      "contentCreatedAt": "2025-03-04T05:06:04.654324Z"
     },
     {
       "documentId": 971301,
       "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000001301",
       "resourceKeyId": 356,
       "contentVersion": 203,
-      "contentLastModifiedAt": "2026-07-30T10:11:14Z"
+      "contentLastModifiedAt": "2026-07-30T10:11:14Z",
+      "contentCreatedAt": "2025-03-04T05:06:05.654325Z"
     },
     {
       "documentId": 971302,
       "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000001302",
       "resourceKeyId": 103,
       "contentVersion": 204,
-      "contentLastModifiedAt": "2026-07-30T10:11:15Z"
+      "contentLastModifiedAt": "2026-07-30T10:11:15Z",
+      "contentCreatedAt": "2025-03-04T05:06:06.654326Z"
     },
     {
       "documentId": 971303,
       "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000001303",
       "resourceKeyId": 123,
       "contentVersion": 205,
-      "contentLastModifiedAt": "2026-07-30T10:11:16Z"
+      "contentLastModifiedAt": "2026-07-30T10:11:16Z",
+      "contentCreatedAt": "2025-03-04T05:06:07.654327Z"
     }
   ],
   "descriptors": [

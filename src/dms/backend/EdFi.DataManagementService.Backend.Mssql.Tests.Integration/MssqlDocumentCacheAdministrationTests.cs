@@ -34,6 +34,17 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
     private static readonly DateTime ObservedAt = new(2026, 8, 1, 12, 0, 0, DateTimeKind.Utc);
     private static readonly DateTimeOffset ObservedAtOffset = new(ObservedAt);
     private static readonly DateTimeOffset FirstEnqueuedAt = ObservedAtOffset.AddMinutes(-5);
+    private static readonly DateTimeOffset CacheContentCreatedAt = new(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        123,
+        456,
+        TimeSpan.Zero
+    );
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("TenantA", 1);
     private static readonly DocumentCacheAdministrativeTargetKey AdministrativeTargetKey =
@@ -1401,6 +1412,7 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
                     @contentVersion AS [ContentVersion],
                     @streamEtag AS [StreamEtag],
                     @lastModifiedAt AS [LastModifiedAt],
+                    @contentCreatedAt AS [ContentCreatedAt],
                     @documentJson AS [DocumentJson],
                     @computedAt AS [ComputedAt]
             ) AS source
@@ -1421,6 +1433,7 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
                     [ContentVersion],
                     [StreamEtag],
                     [LastModifiedAt],
+                    [ContentCreatedAt],
                     [DocumentJson],
                     [ComputedAt]
                 )
@@ -1433,6 +1446,7 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
                     source.[ContentVersion],
                     source.[StreamEtag],
                     source.[LastModifiedAt],
+                    source.[ContentCreatedAt],
                     source.[DocumentJson],
                     source.[ComputedAt]
                 );
@@ -1454,6 +1468,10 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
             new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = cacheContentVersion },
             new SqlParameter("@streamEtag", SqlDbType.VarChar, 64) { Value = $"etag-{cacheContentVersion}" },
             new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = ObservedAt },
+            new SqlParameter("@contentCreatedAt", SqlDbType.DateTime2)
+            {
+                Value = CacheContentCreatedAt.UtcDateTime,
+            },
             new SqlParameter("@documentJson", SqlDbType.NVarChar, -1)
             {
                 Value = new JsonObject { ["value"] = $"cache-{source.DocumentId}" }.ToJsonString(),
@@ -1683,6 +1701,7 @@ public class Given_A_Mssql_DocumentCacheAdministration_Workflow
                         resourceKey.ResourceVersion,
                         source.ContentVersion,
                         ObservedAtOffset,
+                        new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
                         $"etag-{source.ContentVersion}",
                         new JsonObject { ["value"] = $"rebuilt-{source.DocumentId}" }
                     )

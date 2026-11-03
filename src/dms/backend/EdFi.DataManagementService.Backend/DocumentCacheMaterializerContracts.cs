@@ -235,6 +235,7 @@ public sealed record DocumentCacheMaterializationCandidate
         string resourceVersion,
         long contentVersion,
         DateTimeOffset lastModifiedAt,
+        DateTimeOffset contentCreatedAt,
         string streamEtag,
         JsonObject documentJson
     )
@@ -249,6 +250,7 @@ public sealed record DocumentCacheMaterializationCandidate
             nameof(contentVersion)
         );
         LastModifiedAt = lastModifiedAt;
+        ContentCreatedAt = contentCreatedAt;
         StreamEtag = RequireNonBlank(streamEtag, nameof(streamEtag));
         DocumentJson = documentJson ?? throw new ArgumentNullException(nameof(documentJson));
     }
@@ -266,6 +268,12 @@ public sealed record DocumentCacheMaterializationCandidate
     public long ContentVersion { get; }
 
     public DateTimeOffset LastModifiedAt { get; }
+
+    /// <summary>
+    /// The authoritative owner's creation timestamp, copied to the cache row. It is resource
+    /// metadata only and never appears in <see cref="DocumentJson"/>.
+    /// </summary>
+    public DateTimeOffset ContentCreatedAt { get; }
 
     public string StreamEtag { get; }
 

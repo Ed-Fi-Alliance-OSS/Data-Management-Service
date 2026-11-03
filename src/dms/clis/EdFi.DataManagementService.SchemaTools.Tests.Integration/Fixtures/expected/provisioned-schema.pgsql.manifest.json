@@ -3110,10 +3110,20 @@
       "schema_name": "dms",
       "table_name": "DocumentCache",
       "column_name": "ComputedAt",
-      "ordinal_position": 10,
+      "ordinal_position": 11,
       "data_type": "timestamp with time zone",
       "is_nullable": false,
       "default_expression": "now()",
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "DocumentCache",
+      "column_name": "ContentCreatedAt",
+      "ordinal_position": 9,
+      "data_type": "timestamp with time zone",
+      "is_nullable": false,
+      "default_expression": null,
       "is_computed": false
     },
     {
@@ -3140,7 +3150,7 @@
       "schema_name": "dms",
       "table_name": "DocumentCache",
       "column_name": "DocumentJson",
-      "ordinal_position": 9,
+      "ordinal_position": 10,
       "data_type": "jsonb",
       "is_nullable": false,
       "default_expression": null,

@@ -351,7 +351,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
                 && sql.Contains("@filegroup_name = NULL")
                 && sql.Contains("@allow_partition_switch = 0")
                 && sql.Contains(
-                    "@captured_column_list = N'[DocumentId], [DocumentUuid], [ProjectName], [ResourceName], [ResourceVersion], [ContentVersion], [StreamEtag], [LastModifiedAt], [DocumentJson], [ComputedAt]'"
+                    "@captured_column_list = N'[DocumentId], [DocumentUuid], [ProjectName], [ResourceName], [ResourceVersion], [ContentVersion], [StreamEtag], [LastModifiedAt], [ContentCreatedAt], [DocumentJson], [ComputedAt]'"
                 )
             );
         enableCaptureSql
@@ -395,7 +395,7 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
                 && observation.SafeObservedValues["expected_partition_switch"]
                     == "disabled_when_source_partitioned"
                 && observation.SafeObservedValues["source_is_partitioned"] == "False"
-                && observation.SafeObservedValues["captured_column_count"] == "10"
+                && observation.SafeObservedValues["captured_column_count"] == "11"
             );
         _result
             .ProviderHistoryObservations.Should()

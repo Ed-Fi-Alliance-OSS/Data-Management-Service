@@ -412,6 +412,7 @@ internal sealed class DocumentCacheMaterializer(
                 source.ResourceVersion,
                 source.ContentVersion,
                 source.ContentLastModifiedAt,
+                source.ContentCreatedAt,
                 streamEtag,
                 documentJson
             )

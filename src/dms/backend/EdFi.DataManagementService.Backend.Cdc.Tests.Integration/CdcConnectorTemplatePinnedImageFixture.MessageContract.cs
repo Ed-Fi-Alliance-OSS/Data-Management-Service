@@ -90,6 +90,9 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                 "LastModifiedAt" or "ComputedAt" => DateTimeOffset
                     .Parse(row.GetProperty("lastModifiedAt").GetString()!, CultureInfo.InvariantCulture)
                     .UtcDateTime,
+                "ContentCreatedAt" => DateTimeOffset
+                    .Parse(row.GetProperty("contentCreatedAt").GetString()!, CultureInfo.InvariantCulture)
+                    .UtcDateTime,
                 "DocumentJson" => row.GetProperty("documentJson").GetRawText(),
                 _ => row.GetProperty(char.ToLowerInvariant(name[0]) + name[1..]).GetString()!,
             };
@@ -98,7 +101,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                 parameter.DbType = DbType.Int16;
             }
 
-            if (name is "LastModifiedAt" or "ComputedAt")
+            if (name is "LastModifiedAt" or "ContentCreatedAt" or "ComputedAt")
             {
                 parameter.DbType = Provider == CdcProvider.Postgresql ? DbType.DateTime : DbType.DateTime2;
             }
