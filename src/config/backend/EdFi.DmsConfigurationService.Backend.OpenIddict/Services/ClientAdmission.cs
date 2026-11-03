@@ -25,9 +25,10 @@ public enum ClientAdmission
     Unapproved,
 
     /// <summary>
-    /// No API client row, and the configured administrative role name is empty or equals the
-    /// configured client role name ignoring case, so role membership cannot classify the client.
-    /// Refused.
+    /// No API client row, and role membership cannot classify the client: the configured
+    /// administrative role name is empty, the database resolves it and the configured client role
+    /// name to one role row, or the two names collide after trailing white space is removed,
+    /// ignoring case, width, kana type and non-spacing marks. Refused.
     /// </summary>
     NoApiClientRowRoleConfiguration,
 

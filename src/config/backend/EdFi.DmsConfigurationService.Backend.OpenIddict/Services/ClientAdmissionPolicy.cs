@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
@@ -15,6 +16,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 public static class ClientAdmissionPolicy
 {
     /// <summary>
+    /// The engine-independent collision comparison of the two configured role names, applied
+    /// after trailing white space is removed.
+    /// </summary>
+    private const CompareOptions RoleNameCollisionOptions =
+        CompareOptions.IgnoreCase
+        | CompareOptions.IgnoreWidth
+        | CompareOptions.IgnoreKanaType
+        | CompareOptions.IgnoreNonSpace;
+
+    /// <summary>
     /// Decides the admission of a client that presented a valid secret.
     /// </summary>
     /// <remarks>
@@ -26,13 +37,17 @@ public static class ClientAdmissionPolicy
     /// </para>
     /// <para>
     /// A client with <see cref="ApiClientApprovalState.NoApiClientRow"/> is admitted only as an
-    /// administrative client: the role configuration must be able to classify it
-    /// (<paramref name="configServiceRole"/> nonempty and not equal to
-    /// <paramref name="clientRole"/> ignoring case, because SQL Server resolves two names that
-    /// differ only by case to one role row), it must hold <paramref name="configServiceRole"/>
-    /// (ordinal comparison, as the role claim is compared), and its registered scopes must be
-    /// nonempty and all Management API scopes (ordinal comparison). Holding
-    /// <paramref name="clientRole"/> as well does not disqualify it.
+    /// administrative client. First, the role configuration must be able to classify it:
+    /// <paramref name="configServiceRole"/> is nonempty, the database does not resolve the two
+    /// configured names to one role row (<paramref name="configuredRoleNamesShareARoleRow"/>
+    /// false), and the two names do not collide after trailing white space is removed, compared
+    /// with the invariant culture ignoring case, width, kana type and non-spacing marks. The
+    /// database answer is what makes membership sound under any deployed collation; the
+    /// comparison is a conservative restriction that refuses the same pairs on both engines.
+    /// Then the client must hold <paramref name="configServiceRole"/> (ordinal comparison, as the
+    /// role claim is compared), and its registered scopes must be nonempty and all Management API
+    /// scopes (ordinal comparison). Holding <paramref name="clientRole"/> as well does not
+    /// disqualify it.
     /// </para>
     /// </remarks>
     /// <param name="state">The approval state the client's credential carried.</param>
@@ -40,12 +55,17 @@ public static class ClientAdmissionPolicy
     /// <param name="scopes">The client's registered scope names. Read only for a client without an API client row.</param>
     /// <param name="configServiceRole">The configured administrative role name.</param>
     /// <param name="clientRole">The configured role name of DMS vendor clients.</param>
+    /// <param name="configuredRoleNamesShareARoleRow">
+    /// Whether the database resolves <paramref name="configServiceRole"/> and
+    /// <paramref name="clientRole"/> to one role row. Read only for a client without an API client row.
+    /// </param>
     public static ClientAdmission Decide(
         ApiClientApprovalState state,
         IReadOnlyCollection<string> roles,
         IReadOnlyCollection<string> scopes,
         string configServiceRole,
-        string clientRole
+        string clientRole,
+        bool configuredRoleNamesShareARoleRow
     ) =>
         state switch
         {
@@ -55,7 +75,8 @@ public static class ClientAdmissionPolicy
                 roles,
                 scopes,
                 configServiceRole,
-                clientRole
+                clientRole,
+                configuredRoleNamesShareARoleRow
             ),
             _ => ClientAdmission.UnknownApprovalState,
         };
@@ -64,12 +85,14 @@ public static class ClientAdmissionPolicy
         IReadOnlyCollection<string> roles,
         IReadOnlyCollection<string> scopes,
         string configServiceRole,
-        string clientRole
+        string clientRole,
+        bool configuredRoleNamesShareARoleRow
     )
     {
         if (
             string.IsNullOrEmpty(configServiceRole)
-            || string.Equals(configServiceRole, clientRole, StringComparison.OrdinalIgnoreCase)
+            || configuredRoleNamesShareARoleRow
+            || RoleNamesCollide(configServiceRole, clientRole)
         )
         {
             return ClientAdmission.NoApiClientRowRoleConfiguration;
@@ -91,4 +114,11 @@ public static class ClientAdmissionPolicy
             ? ClientAdmission.AdministrativeWithoutApiClientRow
             : ClientAdmission.NoApiClientRowNonAdministrativeScope;
     }
+
+    private static bool RoleNamesCollide(string configServiceRole, string clientRole) =>
+        CultureInfo.InvariantCulture.CompareInfo.Compare(
+            configServiceRole.TrimEnd(),
+            clientRole.TrimEnd(),
+            RoleNameCollisionOptions
+        ) == 0;
 }
