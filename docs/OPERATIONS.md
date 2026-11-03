@@ -674,7 +674,7 @@ For five of them, `local-dms.compose.yml` and `local-config.compose.yml` set the
 An empty `DatabaseSettings__EncryptionKey` stops the Configuration Service at startup.
 The others do not: the host starts and then fails requests, and an empty `IdentitySettings__EncryptionKey` fails only once the self-contained identity provider issues its first token.
 `published-dms.compose.yml` and `published-config.compose.yml` require both encryption-key variables instead, which feed three mappings: `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` feeds `ConfigurationServiceSettings__EncryptionKey` on `dms` and `DatabaseSettings__EncryptionKey` on `config`, and `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY` feeds `IdentitySettings__EncryptionKey` on `config`.
-Deleting either variable stops `docker compose config`, `up` and `down` with an error that names it.
+Deleting either variable stops `docker compose config`, `up` and `down` with an error that names it; only teardown through `start-published-dms.ps1 -d` supplies an inert placeholder for a missing value.
 In those files only the two client secrets still become empty strings.
 The sixth, `DatabaseSettings__DatabaseConnection`, is mapped only on `config` and has a default in `local-config.compose.yml` and `published-config.compose.yml`, so deleting its variable sends the Configuration Service to the bundled `dms-postgresql` database instead of the one the vault names.
 
@@ -712,12 +712,24 @@ string removed, the stock Configuration Service entry point skips its database w
 and .NET reports a connection error itself if the database is not ready yet, so keep
 a restart policy on `config`, as [Secrets](./SECRETS.md) describes.
 
-> **Limitation in the combined DMS and Configuration Service stack (observed with Docker
-> Compose v5.1.3).** The DMS launchers add `dms-cms-proxy.yml` after both service files, and
-> that file sets `environment` on `config`. With Compose v5.1.3, a later `!reset null` on a
-> `config` environment key is then not applied: the Configuration Service keys in this
+Where the override sits decides whether its `config` block applies.
+`DMS_PLUGINS_COMPOSE_FILES` is the DMS launchers' hook for DMS overlays: both launchers
+insert its files right after the DMS service file and before `local-config.compose.yml` or
+`published-config.compose.yml`. The `dms` block works there. A `config` reset in a file named
+there does not: the Configuration Service file comes later and sets those keys again,
+whichever Compose version you use. The launchers have no hook that adds a file after the
+Configuration Service file, so a `config` reset needs a file composed after it, and in the
+combined stack the separate limitation below applies even then.
+
+> **Limitation in the combined DMS and Configuration Service stack, observed in affected
+> Docker Compose versions.** This is independent of where the launchers insert overlays. The DMS
+> launchers add `dms-cms-proxy.yml` after both service files, and
+> that file sets `environment` on `config`. In an affected Compose version, a later `!reset null`
+> on a `config` environment key is then not applied: the Configuration Service keys in this
 > override can stay in the container, and their `.env` values outrank the vault values. The
-> `dms` resets are not affected. Before relying on the override, render the complete Compose
+> `dms` resets are not affected. This was verified locally with Compose v5.1.3 and has also
+> been reported with v5.5.1; do not assume another version behaves differently. Before relying
+> on the override, render the complete Compose
 > file sequence you deploy with, override included, and confirm that every key you reset is
 > absent. Check key names only, and do not publish or log the rendered configuration,
 > because it contains the secret values. For example, this PowerShell check keeps the
@@ -726,7 +738,7 @@ a restart policy on `config`, as [Secrets](./SECRETS.md) describes.
 > environment, so an empty result never passes for a render that did not include `config`:
 >
 > ```powershell
-> $composeFiles = '<first file>', '<next file>', '<your override, last>'  # every -f file, in deployment order
+> $composeFiles = '<first file>', '<next file>', '<your override>'  # every -f file, in the order your deployment passes them
 > $envFile = '<your env file>'
 > $resetKeys = 'DatabaseSettings__DatabaseConnection', 'DatabaseSettings__EncryptionKey',
 >     'IdentitySettings__ClientSecret', 'IdentitySettings__EncryptionKey'  # the config keys your override resets

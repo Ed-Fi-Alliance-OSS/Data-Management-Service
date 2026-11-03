@@ -414,18 +414,99 @@ Describe "Teardown down set keeps every volume-bearing compose file" {
 param(
     [Parameter(Mandatory)] [string] $StartScript,
     [Parameter(Mandatory)] [string] $EnvironmentFile,
-    [Parameter(Mandatory)] [string] $LogPath
+    [Parameter(Mandatory)] [string] $LogPath,
+    # DMS-1652: also render each down/stop client-side, run the shared E2E teardown instead of the
+    # primitive alone, forward an identity provider, or fail one project's down.
+    [switch] $Render,
+    [switch] $E2ETeardown,
+    [string] $IdentityProvider,
+    [string] $FailProject
 )
 
 $ErrorActionPreference = "Stop"
 
-function docker {
-    Add-Content -LiteralPath $env:DMS_TEARDOWN_CAPTURE_LOG -Value (($args | ForEach-Object { $_ }) -join " ")
+$global:GuardedNames = @('CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY', 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY', 'DATABASE_CONNECTION_STRING_ADMIN')
+$global:FailProject = $FailProject
+$global:RealDocker = if ($Render) { (Get-Command docker -CommandType Application | Select-Object -First 1).Source } else { $null }
+
+function global:Get-GuardedEnvironment {
+    $state = [ordered]@{}
+    foreach ($name in $global:GuardedNames) { $state[$name] = [Environment]::GetEnvironmentVariable($name) }
+    $state
+}
+
+# Global so the shared teardown module resolves it too.
+function global:docker {
+    $arguments = @($args | ForEach-Object { $_ })
+    Add-Content -LiteralPath $env:DMS_TEARDOWN_CAPTURE_LOG -Value ($arguments -join " ")
+    $verbIndex = -1
+    for ($i = 0; $i -lt $arguments.Count; $i++) { if ($arguments[$i] -in 'down', 'stop') { $verbIndex = $i; break } }
+    if ($global:RealDocker -and $arguments[0] -eq 'compose' -and $verbIndex -gt 0) {
+        # Render the exact definition the destructive command would act on, without running it.
+        # Only names are recorded; the rendered configuration holds secret values.
+        $definition = $arguments[0..($verbIndex - 1)]
+        $project = $definition[[Array]::IndexOf([string[]]$definition, '-p') + 1]
+        $ErrorActionPreference = 'Continue'
+        $rendered = & $global:RealDocker @definition config --format json 2>$null
+        $renderExitCode = $LASTEXITCODE
+        $config = if ($renderExitCode -eq 0) { ($rendered | Out-String) | ConvertFrom-Json } else { $null }
+        $namesOf = { param($Section) if ($config -and $config.PSObject.Properties[$Section]) { @($config.$Section.PSObject.Properties.Name) } else { @() } }
+        $record = [ordered]@{
+            Project        = $project
+            Verb           = $arguments[$verbIndex]
+            Arguments      = $arguments[$verbIndex..($arguments.Count - 1)] -join ' '
+            RenderExitCode = $renderExitCode
+            Services       = & $namesOf 'services'
+            Networks       = & $namesOf 'networks'
+            Volumes        = & $namesOf 'volumes'
+            Environment    = Get-GuardedEnvironment
+        }
+        Add-Content -LiteralPath "$($env:DMS_TEARDOWN_CAPTURE_LOG).renders.jsonl" -Value ($record | ConvertTo-Json -Compress -Depth 4)
+        $global:LASTEXITCODE = if ($project -eq $global:FailProject) { 1 } else { 0 }
+        return
+    }
     $global:LASTEXITCODE = 0
 }
 
 $env:DMS_TEARDOWN_CAPTURE_LOG = $LogPath
-& $StartScript -d -v -EnvironmentFile $EnvironmentFile
+if (-not $Render) {
+    & $StartScript -d -v -EnvironmentFile $EnvironmentFile
+    return
+}
+
+$teardownError = $null
+try {
+    if ($E2ETeardown) {
+        Import-Module (Join-Path (Split-Path $StartScript) 'e2e-teardown.psm1') -Force
+        Invoke-E2EEngineAwareTeardown -EnvironmentFile $EnvironmentFile -ComposeRoot (Split-Path $StartScript) -SkipLocalImageRemoval | Out-Null
+    }
+    else {
+        $parameters = @{ d = $true; v = $true; EnvironmentFile = $EnvironmentFile }
+        if ($IdentityProvider) { $parameters.IdentityProvider = $IdentityProvider }
+        & $StartScript @parameters
+    }
+}
+catch {
+    # Recorded, not rethrown: the cases assert on it, and on the environment it leaves behind.
+    $teardownError = $_.Exception.Message
+}
+
+# A later startup in this process must still meet the guards: render it after teardown.
+$startupErrorFile = "$LogPath.startup.stderr"
+Push-Location (Split-Path $StartScript)
+try {
+    $ErrorActionPreference = 'Continue'
+    & $global:RealDocker compose -f postgresql.compose.yml -f published-dms.compose.yml -f published-config.compose.yml --env-file $EnvironmentFile config --quiet 2> $startupErrorFile
+    $startupExitCode = $LASTEXITCODE
+}
+finally { Pop-Location }
+
+[ordered]@{
+    TeardownError         = $teardownError
+    EnvironmentAfter      = Get-GuardedEnvironment
+    StartupRenderExitCode = $startupExitCode
+    StartupRenderError    = (Get-Content -Raw -LiteralPath $startupErrorFile) ?? ''
+} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath "$LogPath.outcome.json"
 '@
     }
 
@@ -452,5 +533,167 @@ $env:DMS_TEARDOWN_CAPTURE_LOG = $LogPath
         $downCommands[0] | Should -Match "down --remove-orphans -v$" -Because "teardown removes the project's volumes"
         $downCommands[0] | Should -Match "-f keycloak\.compose\.yml" `
             -Because "keycloak.compose.yml carries the dms-keycloak named volume, so omitting it leaks ${Project}_dms-keycloak past down -v"
+    }
+
+    # DMS-1652: the published files require three values with ${VAR:?}. Teardown composes
+    # published-config.compose.yml for every stack, so these cases render each intercepted down
+    # with the real Docker CLI (client-side only) to prove removal works without them, still covers
+    # the complete definition, and leaves nothing behind that would satisfy a later startup.
+    Context "with published-file required values absent (DMS-1652)" {
+        BeforeAll {
+            $script:guardedNames = @('CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY', 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY', 'DATABASE_CONNECTION_STRING_ADMIN')
+            $script:placeholder = 'teardown-placeholder-not-used'
+            # The shared teardown's cleanup step loads these from the compose root's parent.
+            $engCopy = Split-Path $script:realComposeRoot
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../schema-package-utility.psm1') -Destination $engCopy
+            New-Item -ItemType Directory -Path (Join-Path $engCopy 'ci') -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $PSScriptRoot '../../ci/cdc-runbook-diagnostics.ps1') -Destination (Join-Path $engCopy 'ci')
+
+            function Write-TeardownEnvironmentFile {
+                param([string] $Name, [string[]] $Remove, [hashtable] $Set = @{})
+                $lines = @(Get-Content -LiteralPath $script:standardE2EEnvironmentFile)
+                foreach ($key in @($Remove) + @($Set.Keys)) {
+                    $lines = @($lines | Where-Object { $_ -notmatch "^\s*(export\s+)?$([regex]::Escape($key))=" })
+                }
+                foreach ($key in $Set.Keys) { $lines += "$key=$($Set[$key])" }
+                $path = Join-Path $TestDrive $Name
+                # LF like the committed env files, so no carriage return reaches a Compose value.
+                [IO.File]::WriteAllText($path, (($lines -join "`n") + "`n"), [Text.UTF8Encoding]::new($false))
+                $path
+            }
+
+            function Invoke-RenderedTeardown {
+                param([string] $Name, [string] $EnvironmentFile, [string[]] $Arguments = @(), [hashtable] $Ambient = @{})
+                $logPath = Join-Path $TestDrive "$Name.log"
+                # The child inherits this process environment: clear the guarded names so a
+                # developer's exported value cannot change the case, and restore them afterwards.
+                $saved = @{}
+                foreach ($name in $script:guardedNames) {
+                    $saved[$name] = [Environment]::GetEnvironmentVariable($name)
+                    Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+                }
+                try {
+                    foreach ($name in $Ambient.Keys) { [Environment]::SetEnvironmentVariable($name, $Ambient[$name]) }
+                    & pwsh -NoProfile -File $script:captureScript `
+                        -StartScript (Join-Path $script:realComposeRoot 'start-published-dms.ps1') `
+                        -EnvironmentFile $EnvironmentFile -LogPath $logPath -Render @Arguments | Out-Null
+                    $exitCode = $LASTEXITCODE
+                }
+                finally {
+                    foreach ($name in $script:guardedNames) {
+                        if ($null -eq $saved[$name]) { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
+                        else { [Environment]::SetEnvironmentVariable($name, $saved[$name]) }
+                    }
+                }
+                [pscustomobject]@{
+                    ExitCode = $exitCode
+                    Commands = @(if (Test-Path -LiteralPath $logPath) { Get-Content -LiteralPath $logPath })
+                    Renders  = @(if (Test-Path -LiteralPath "$logPath.renders.jsonl") { Get-Content -LiteralPath "$logPath.renders.jsonl" | ForEach-Object { $_ | ConvertFrom-Json } })
+                    Outcome  = Get-Content -Raw -LiteralPath "$logPath.outcome.json" | ConvertFrom-Json
+                }
+            }
+
+            function Assert-CompletePublishedDown {
+                param($Render)
+                $Render.Project | Should -Be 'dms-published'
+                $Render.Arguments | Should -BeExactly 'down --remove-orphans -v'
+                $Render.RenderExitCode | Should -Be 0 -Because 'Compose must accept the definition the down acts on'
+                $Render.Services | Should -Contain 'dms'
+                $Render.Services | Should -Contain 'config' -Because 'published-config.compose.yml stays in the down set'
+                $Render.Networks | Should -Contain 'cms-proxy' -Because 'the paired proxy network is removed only when dms-cms-proxy.yml is composed'
+                $Render.Volumes | Should -Contain 'dms-postgresql'
+                $Render.Volumes | Should -Contain 'dms-keycloak'
+            }
+
+            function Assert-NothingLeaked {
+                # MissingVariable is a pattern: with several values absent, Compose may name any of them first.
+                param($Outcome, [string] $MissingVariable)
+                foreach ($name in $script:guardedNames) {
+                    $Outcome.EnvironmentAfter.$name | Should -BeNullOrEmpty -Because "teardown must restore $name to absent"
+                }
+                $Outcome.StartupRenderExitCode | Should -Not -Be 0 -Because 'a later startup must still fail the guard'
+                $Outcome.StartupRenderError | Should -Match "required variable ($MissingVariable) is missing a value"
+            }
+        }
+
+        It "removes a Keycloak deployment that never set the identity key" {
+            $environmentFile = Write-TeardownEnvironmentFile -Name 'keycloak-no-identity-key.env' `
+                -Remove 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY' -Set @{ CONFIGURATION_SERVICE_IDENTITY_PROVIDER = 'keycloak' }
+
+            $result = Invoke-RenderedTeardown -Name 'keycloak-no-identity-key' -EnvironmentFile $environmentFile -Arguments @('-IdentityProvider', 'keycloak')
+
+            $result.ExitCode | Should -Be 0
+            $result.Outcome.TeardownError | Should -BeNullOrEmpty
+            $result.Renders.Count | Should -Be 1
+            Assert-CompletePublishedDown -Render $result.Renders[0]
+            # Only the missing value is supplied; the env file's own values are not overridden.
+            $result.Renders[0].Environment.CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY | Should -BeExactly $script:placeholder
+            $result.Renders[0].Environment.CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY | Should -BeNullOrEmpty
+            $result.Renders[0].Environment.DATABASE_CONNECTION_STRING_ADMIN | Should -BeNullOrEmpty
+            Assert-NothingLeaked -Outcome $result.Outcome -MissingVariable 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY'
+        }
+
+        It "runs the shared E2E teardown with an environment file that has none of the three values" {
+            $environmentFile = Write-TeardownEnvironmentFile -Name 'local-only.env' -Remove $script:guardedNames
+
+            $result = Invoke-RenderedTeardown -Name 'local-only' -EnvironmentFile $environmentFile -Arguments @('-E2ETeardown')
+
+            $result.ExitCode | Should -Be 0
+            $result.Outcome.TeardownError | Should -BeNullOrEmpty
+            @($result.Renders | ForEach-Object Project) | Should -Be @('dms-local', 'dms-published')
+            $local = $result.Renders[0]
+            $local.RenderExitCode | Should -Be 0
+            $local.Arguments | Should -BeExactly 'down --remove-orphans -v'
+            Assert-CompletePublishedDown -Render $result.Renders[1]
+            foreach ($name in $script:guardedNames) {
+                $local.Environment.$name | Should -BeNullOrEmpty -Because 'the local files keep their fallbacks and need no placeholder'
+                $result.Renders[1].Environment.$name | Should -BeExactly $script:placeholder
+            }
+            Assert-NothingLeaked -Outcome $result.Outcome -MissingVariable ($script:guardedNames -join '|')
+        }
+
+        It "keeps a value the caller exported instead of replacing it" {
+            $environmentFile = Write-TeardownEnvironmentFile -Name 'exported-identity-key.env' -Remove 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY'
+
+            $result = Invoke-RenderedTeardown -Name 'exported-identity-key' -EnvironmentFile $environmentFile `
+                -Ambient @{ CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY = 'caller-exported-value' }
+
+            $result.ExitCode | Should -Be 0
+            $result.Renders.Count | Should -Be 1
+            Assert-CompletePublishedDown -Render $result.Renders[0]
+            $result.Renders[0].Environment.CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY | Should -BeExactly 'caller-exported-value'
+            $result.Outcome.EnvironmentAfter.CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY | Should -BeExactly 'caller-exported-value'
+            $result.Outcome.StartupRenderExitCode | Should -Be 0 -Because "the caller's own value satisfies the guard, as Compose precedence allows"
+        }
+
+        It "restores the environment and reports the failure when the published down fails" {
+            $environmentFile = Write-TeardownEnvironmentFile -Name 'failed-down.env' -Remove $script:guardedNames
+
+            $result = Invoke-RenderedTeardown -Name 'failed-down' -EnvironmentFile $environmentFile -Arguments @('-E2ETeardown', '-FailProject', 'dms-published')
+
+            $result.ExitCode | Should -Be 0 -Because 'the capture script records the teardown failure instead of exiting'
+            $result.Outcome.TeardownError | Should -Match 'Failed to shut down Docker environment\. Exit code 1'
+            @($result.Renders | ForEach-Object Project) | Should -Be @('dms-local', 'dms-published')
+            Assert-CompletePublishedDown -Render $result.Renders[1]
+            Assert-NothingLeaked -Outcome $result.Outcome -MissingVariable ($script:guardedNames -join '|')
+        }
+
+        It "restores an earlier placeholder when resolving a later value fails, without invoking Docker" {
+            # The database key is absent, so its placeholder is set first; resolving the identity
+            # key's own required reference then throws before any Compose command runs.
+            $environmentFile = Write-TeardownEnvironmentFile -Name 'resolution-failure.env' `
+                -Remove 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY' `
+                -Set @{ CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY = '${DMS1652_ABSENT_REFERENCE:?required}' }
+
+            $result = Invoke-RenderedTeardown -Name 'resolution-failure' -EnvironmentFile $environmentFile
+
+            $result.ExitCode | Should -Be 0 -Because 'the capture script records the teardown failure instead of exiting'
+            $result.Outcome.TeardownError | Should -Not -BeNullOrEmpty
+            @($result.Commands | Where-Object { $_ -match '^compose .* (down|stop)( |$)' }) | Should -BeNullOrEmpty
+            $result.Renders.Count | Should -Be 0
+            foreach ($name in $script:guardedNames) {
+                $result.Outcome.EnvironmentAfter.$name | Should -BeNullOrEmpty -Because "teardown must restore $name to absent"
+            }
+        }
     }
 }

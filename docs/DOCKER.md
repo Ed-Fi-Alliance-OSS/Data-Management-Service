@@ -105,7 +105,7 @@ random generator, then use those credentials in the connection strings.
 | `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` | Encrypts the data store connection strings the Configuration Service stores and DMS decrypts. The Configuration Service and DMS must use the same value. **Changing it after data exists makes the stored connection strings unreadable**, so choose it before the first start. | Always |
 | `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY` | Protects the OpenIddict signing keys held in the Configuration Service database. Changing it after initialization breaks the active signing key; see [Signing key on rerun](../eng/docker-compose/README.md#signing-key-on-rerun--initdb). | Self-contained identity provider. The published Compose files require it even with Keycloak, which leaves it unused. |
 | `DATABASE_CONNECTION_STRING_ADMIN` | Carries database credentials. Inside the DMS container it is used only for the PostgreSQL readiness wait. `published-dms.compose.yml` requires a value; to keep it out of the container, see [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files). | Required by the published Compose file; read at runtime only with PostgreSQL |
-| `CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` | The Configuration Service's own database connection string, password included. The example connects as the PostgreSQL superuser; use a least-privilege login. | Always |
+| `CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` | The Configuration Service's own database connection string, password included. The example connects as the PostgreSQL superuser. When it is missing or empty, `published-config.compose.yml` and `local-config.compose.yml` fall back to a connection string for the bundled `dms-postgresql` service that uses the `postgres` account and `POSTGRES_PASSWORD`. Set it explicitly, with a least-privilege login. | Always |
 | `DMS_CONFIGURATION_SERVICE_CLIENT_SECRET` | The client secret DMS presents to the Configuration Service. | Always |
 | `CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET` | The Configuration Service's own client secret. | Always |
 | `DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET` | The admin client secret the setup scripts register and authenticate with. The scripts fall back to a public value when it is unset. | Setup scripts |
@@ -129,7 +129,18 @@ Other settings to review:
 `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY`, `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY`
 and `DATABASE_CONNECTION_STRING_ADMIN` with `${VAR:?message}` and supply no fallback. When one
 of them is missing or empty, `docker compose config`, `up` and `down` stop with an error that
-names the service, the environment key and the variable. The check is for presence only:
+names the service, the environment key and the variable. The guards apply to every service
+definition in the invocation, not only to the services it starts: `start-published-dms.ps1 -DmsOnly`
+starts only DMS, but it still composes `published-config.compose.yml` when the Configuration
+Service is part of its compose set (with `-EnableConfig`, `-SeparateConfigDatabase`, bootstrap
+mode, or the default self-contained identity provider) or when it finds an existing paired DMS and
+Configuration Service proxy network, so the Configuration Service guards apply then too.
+Teardown through
+`start-published-dms.ps1 -d` is the one exception: it always includes
+`published-config.compose.yml`, so for each of the three values that is missing it gives `stop`
+and `down` an inert placeholder, which removal does not use, and then restores the environment.
+A direct `docker compose down` with these files still needs all three, and startup through the
+script still requires them. The check is for presence only:
 example values, weak values and quoted whitespace-only values pass. Generate the encryption keys,
 and the credentials inside the admin connection string, with a cryptographically secure random
 generator. The local Compose files (`local-*.compose.yml`) keep their fallbacks.

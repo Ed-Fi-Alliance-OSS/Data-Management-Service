@@ -138,7 +138,9 @@ Describe 'Published Compose required secrets' {
             Assert-RequiredValueFailure -Result $result -Service 'dms' -Key $Key -Variable $Variable -Doc $Doc
         }
 
-        It 'is not satisfied by a value inherited from the calling process' {
+        It 'isolates each render from a value the calling process exports, and restores it afterwards' {
+            # Test-helper isolation only: Compose itself prefers an exported value over the env
+            # file, so outside this helper an exported value does satisfy the guard.
             $original = [Environment]::GetEnvironmentVariable('CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY')
             try {
                 $env:CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = 'ambient-value'
