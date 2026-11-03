@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -228,7 +229,8 @@ public class MssqlExceptionExtensionsTests
                 datastoreOptions,
                 NullLogger<ApiClientRepository>.Instance,
                 new TestAuditContext(),
-                tenantContextProvider
+                tenantContextProvider,
+                new NoOpUnapprovalTokenRevocation()
             );
             IApplicationRepository applicationRepository = new ApplicationRepository(
                 datastoreOptions,

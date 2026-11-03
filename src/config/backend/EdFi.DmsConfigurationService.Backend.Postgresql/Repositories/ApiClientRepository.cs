@@ -21,7 +21,8 @@ public class ApiClientRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<ApiClientRepository> logger,
     IAuditContext auditContext,
-    ITenantContextProvider tenantContextProvider
+    ITenantContextProvider tenantContextProvider,
+    IUnapprovalTokenRevocation unapprovalTokenRevocation
 ) : IApiClientRepository
 {
     private TenantContext TenantContext => tenantContextProvider.Context;
@@ -526,6 +527,36 @@ public class ApiClientRepository(
                     transaction
                 );
                 sentClaimSetIsCurrent = claimSetName is not null && claimSetName == command.SentClaimSetName;
+            }
+
+            // Read the stored client identifier within the current tenant; the read holds no lock past
+            // the statement. An un-approving update revokes the client's outstanding tokens in this
+            // transaction, before IsApproved is written, so the two commit together or not at all. It
+            // runs on every un-approving update, a repeat included, and uses the stored identifier: the
+            // update below may replace it. As on SQL Server, the revocation takes the identity provider's
+            // application row lock after the Application share lock above, when a completing update takes
+            // one, and before the client row lock below.
+            Guid? storedClientUuid = await connection.QuerySingleOrDefaultAsync<Guid?>(
+                $"""
+                SELECT "ClientUuid" FROM "dmscs"."ApiClient"
+                WHERE "Id" = @Id AND {TenantScopedApplicationCondition()};
+                """,
+                new { command.Id, TenantId },
+                transaction
+            );
+            if (storedClientUuid is null)
+            {
+                await transaction.RollbackAsync();
+                return new ApiClientUpdateResult.FailureNotFound();
+            }
+
+            if (!command.IsApproved)
+            {
+                await unapprovalTokenRevocation.RevokeOutstandingTokensAsync(
+                    storedClientUuid.Value,
+                    connection,
+                    transaction
+                );
             }
 
             // Lock the ApiClient within the current tenant; a move rewrites its education organization rows

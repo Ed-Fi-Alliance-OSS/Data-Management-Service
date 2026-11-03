@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -97,7 +98,8 @@ public class Given_sync_pending_times_written_in_a_session_outside_UTC
             ),
             NullLogger<ApiClientRepository>.Instance,
             new TestAuditContext(),
-            new TenantContextProvider()
+            new TenantContextProvider(),
+            new NoOpUnapprovalTokenRevocation()
         );
 
         await using (NpgsqlConnection newYorkWriter = new(newYorkSession.ConnectionString))

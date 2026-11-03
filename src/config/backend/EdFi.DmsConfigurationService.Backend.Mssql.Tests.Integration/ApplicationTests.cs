@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -688,7 +689,8 @@ public class ApplicationTests : DatabaseTest
             MssqlTestConfiguration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
             new TestAuditContext(),
-            new TenantContextProvider()
+            new TenantContextProvider(),
+            new NoOpUnapprovalTokenRevocation()
         );
 
         [SetUp]
@@ -772,7 +774,8 @@ public class ApplicationTests : DatabaseTest
             MssqlTestConfiguration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
             new TestAuditContext(),
-            new TenantContextProvider()
+            new TenantContextProvider(),
+            new NoOpUnapprovalTokenRevocation()
         );
 
         private readonly IDataStoreRepository _dataStoreRepository;
@@ -937,7 +940,8 @@ public class ApplicationTests : DatabaseTest
             MssqlTestConfiguration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
             new TestAuditContext(),
-            new TenantContextProvider()
+            new TenantContextProvider(),
+            new NoOpUnapprovalTokenRevocation()
         );
 
         private readonly IDataStoreRepository _dataStoreRepository;
@@ -1097,11 +1101,13 @@ public class ApplicationTests : DatabaseTest
             MssqlTestConfiguration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
             new TestAuditContext(),
-            new TenantContextProvider()
+            new TenantContextProvider(),
+            new NoOpUnapprovalTokenRevocation()
         );
 
         private readonly OpenIddictDataRepository _openIddictDataRepository = new(
-            MssqlTestConfiguration.DatabaseOptions
+            MssqlTestConfiguration.DatabaseOptions,
+            NullLogger<OpenIddictDataRepository>.Instance
         );
 
         [SetUp]

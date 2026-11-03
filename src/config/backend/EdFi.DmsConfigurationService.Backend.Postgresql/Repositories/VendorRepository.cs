@@ -410,19 +410,81 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             }
         }
 
-        public async Task<VendorDeleteResult> DeleteVendor(int id)
+        /// <summary>
+        /// Each lock is its own statement, so the statement after it takes a new snapshot and sees
+        /// whatever committed while it waited. Locking the vendor row FOR UPDATE waits for, and
+        /// then blocks, the FOR KEY SHARE lock that inserting an application under the vendor
+        /// takes on it; locking the application rows does the same for an ApiClient inserted into
+        /// or moved onto one of them.
+        /// </summary>
+        public async Task<VendorDeleteResult> DeleteVendor(
+            int id,
+            IReadOnlyCollection<VendorApiClient> cleanedClients
+        )
         {
             await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
             try
             {
-                var sql = $"""
+                int? vendorId = await connection.QuerySingleOrDefaultAsync<int?>(
+                    $"""
+                    SELECT v."Id" FROM "dmscs"."Vendor" v
+                    WHERE v."Id" = @Id AND {TenantContext.TenantWhereClause("v")}
+                    FOR UPDATE OF v;
+                    """,
+                    new { Id = id, TenantId },
+                    transaction
+                );
+                if (vendorId is null)
+                {
+                    await transaction.CommitAsync();
+                    return new VendorDeleteResult.FailureNotExists();
+                }
+
+                await connection.ExecuteAsync(
+                    """
+                    SELECT "Id" FROM "dmscs"."Application" WHERE "VendorId" = @Id ORDER BY "Id" FOR UPDATE;
+                    """,
+                    new { Id = id },
+                    transaction
+                );
+
+                var currentClients = await connection.QueryAsync<(int Id, Guid ClientUuid)>(
+                    """
+                    SELECT ac."Id", ac."ClientUuid"
+                    FROM "dmscs"."ApiClient" ac
+                    JOIN "dmscs"."Application" a ON a."Id" = ac."ApplicationId"
+                    WHERE a."VendorId" = @Id
+                    FOR UPDATE OF ac;
+                    """,
+                    new { Id = id },
+                    transaction
+                );
+
+                HashSet<(int, Guid)> cleaned =
+                [
+                    .. cleanedClients.Select(client => (client.Id, client.ClientUuid)),
+                ];
+                if (!currentClients.All(cleaned.Contains))
+                {
+                    await RollbackSafelyAsync(transaction);
+                    return new VendorDeleteResult.FailureClientsChanged();
+                }
+
+                var deleteSql = $"""
                     DELETE FROM "dmscs"."VendorNamespacePrefix" WHERE "VendorId" IN (
                         SELECT "Id" FROM "dmscs"."Vendor" WHERE "Id" = @Id AND {TenantContext.TenantWhereClause()}
                     );
                     DELETE FROM "dmscs"."Vendor" WHERE "Id" = @Id AND {TenantContext.TenantWhereClause()};
                     """;
 
-                var affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
+                var affectedRows = await connection.ExecuteAsync(
+                    deleteSql,
+                    new { Id = id, TenantId },
+                    transaction
+                );
+                await transaction.CommitAsync();
                 return affectedRows > 0
                     ? new VendorDeleteResult.Success()
                     : new VendorDeleteResult.FailureNotExists();
@@ -430,6 +492,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             catch (Exception ex)
             {
                 logger.LogError(ex, "Delete vendor failure");
+                await RollbackSafelyAsync(transaction);
                 return new VendorDeleteResult.FailureUnknown(ex.Message);
             }
         }

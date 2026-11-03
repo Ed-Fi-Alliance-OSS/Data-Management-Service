@@ -906,27 +906,134 @@ public class VendorModule : IEndpointModule
         return LoggingUtility.SanitizeForLog(input);
     }
 
+    /// <summary>
+    /// Deletes the vendor after deleting the identity-provider client of every ApiClient it owns.
+    /// The database delete cascades to the vendor's applications and ApiClient rows but cannot
+    /// reach the identity provider, so each provider client is deleted first, which also revokes
+    /// its outstanding tokens. The clients are read under the aggregate locks of the applications
+    /// that own them, the same lock set a vendor update takes, and the locks are held until the
+    /// vendor row is deleted.
+    ///
+    /// Those locks do not cover an application created under the vendor, or a client added to
+    /// one of its applications that had none, so the vendor row is deleted only when every client
+    /// the cascade would remove is one this request deleted from the provider. Otherwise, or when
+    /// SQL Server chooses the vendor transaction as a deadlock victim, that transaction rolls back
+    /// and the request answers a retriable conflict; the provider clients this request already
+    /// deleted stay deleted, and a retry reads the current clients and deletes them too.
+    ///
+    /// Any provider failure returns before the database is mutated, so the surviving vendor and
+    /// its ApiClient rows remain the work list for a retry. Provider clients deleted by an earlier
+    /// attempt stay deleted, and the retry treats them as already absent.
+    /// </summary>
     private static async Task<IResult> Delete(
         int id,
         HttpContext httpContext,
         IVendorRepository repository,
+        IIdentityProviderRepository clientRepository,
+        IApplicationLockManager lockManager,
         ILogger<VendorModule> logger
     )
     {
         logger.LogDebug("Entering Vendor Delete for id: {Id}", id);
-        VendorDeleteResult deleteResult = await repository.DeleteVendor(id);
-        return deleteResult switch
+
+        (IResult? lockFailure, VendorUpdateState? lockedState, IAsyncDisposable? heldLock) =
+            await AcquireVendorLocksAsync(id, repository, lockManager, httpContext, logger);
+        if (lockFailure is not null)
         {
-            VendorDeleteResult.Success => Results.NoContent(),
-            VendorDeleteResult.FailureNotExists => Results.Json(
-                FailureResponse.ForNotFound(
-                    $"Vendor {id} not found. It may have been recently deleted.",
-                    httpContext.TraceIdentifier
-                ),
-                statusCode: (int)HttpStatusCode.NotFound
-            ),
-            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
-        };
+            return lockFailure;
+        }
+
+        try
+        {
+            foreach (VendorApiClient client in lockedState!.Clients)
+            {
+                if (await DeleteProviderClientAsync(client) is { } clientFailure)
+                {
+                    return clientFailure;
+                }
+            }
+
+            VendorDeleteResult deleteResult = await repository.DeleteVendor(id, lockedState.Clients);
+            switch (deleteResult)
+            {
+                case VendorDeleteResult.Success:
+                    return Results.NoContent();
+                case VendorDeleteResult.FailureNotExists:
+                    return VendorNotFound(id, httpContext);
+                case VendorDeleteResult.FailureClientsChanged:
+                    logger.LogWarning(
+                        "The vendor row deletion for Vendor {Id} rolled back because its API clients changed or it lost a deadlock; provider clients already deleted stay deleted",
+                        id
+                    );
+                    return RetriableConflict(httpContext);
+                default:
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+        }
+        finally
+        {
+            await DisposeLockAsync(heldLock);
+        }
+
+        // Returns null once the provider client is deleted or proven already absent; any other
+        // outcome returns the response the caller receives.
+        async Task<IResult?> DeleteProviderClientAsync(VendorApiClient client)
+        {
+            ClientDeleteResult clientDeleteResult;
+            try
+            {
+                clientDeleteResult = await clientRepository.DeleteClientAsync(client.ClientUuid.ToString());
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(
+                    ex,
+                    "Deleting the identity-provider client of ApiClient {ApiClientId} of Vendor {Id} threw",
+                    client.Id,
+                    id
+                );
+                return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+
+            switch (clientDeleteResult)
+            {
+                case ClientDeleteResult.Success:
+                    return null;
+                case ClientDeleteResult.FailureClientNotFound:
+                    logger.LogInformation(
+                        "The identity-provider client of ApiClient {ApiClientId} of Vendor {Id} is already absent",
+                        client.Id,
+                        id
+                    );
+                    return null;
+                case ClientDeleteResult.FailureIdentityProvider failureIdentityProvider:
+                    logger.LogError(
+                        "Identity provider error deleting the client of ApiClient {ApiClientId} of Vendor {Id}: {Message}",
+                        client.Id,
+                        id,
+                        SanitizeForLog(failureIdentityProvider.IdentityProviderError.FailureMessage)
+                    );
+                    return FailureResults.BadGateway(
+                        "Identity provider error during client deletion",
+                        httpContext.TraceIdentifier
+                    );
+                case ClientDeleteResult.FailureUnknown failureUnknown:
+                    logger.LogError(
+                        "Error deleting the identity-provider client of ApiClient {ApiClientId} of Vendor {Id}: {Message}",
+                        client.Id,
+                        id,
+                        SanitizeForLog(failureUnknown.FailureMessage)
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                default:
+                    logger.LogError(
+                        "Unexpected result deleting the identity-provider client of ApiClient {ApiClientId} of Vendor {Id}",
+                        client.Id,
+                        id
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+        }
     }
 
     private static async Task<IResult> GetApplicationsByVendorId(

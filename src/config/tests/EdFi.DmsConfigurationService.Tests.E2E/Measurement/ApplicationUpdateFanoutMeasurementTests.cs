@@ -238,8 +238,14 @@ public sealed class OpenIddictFanoutProvider : FanoutProvider
             }
         );
         return SetupHooks.UseMssql
-            ? new MssqlOpenIddict.OpenIddictDataRepository(options)
-            : new PostgresqlOpenIddict.OpenIddictDataRepository(options);
+            ? new MssqlOpenIddict.OpenIddictDataRepository(
+                options,
+                NullLogger<MssqlOpenIddict.OpenIddictDataRepository>.Instance
+            )
+            : new PostgresqlOpenIddict.OpenIddictDataRepository(
+                options,
+                NullLogger<PostgresqlOpenIddict.OpenIddictDataRepository>.Instance
+            );
     }
 
     public override IIdentityProviderRepository CreateRepository() =>

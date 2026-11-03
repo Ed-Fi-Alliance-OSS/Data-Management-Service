@@ -179,6 +179,24 @@ public partial class StepDefinitions
         await PostIntrospection(new() { { "token", _token } }, BasicAuthorization(key, secret));
     }
 
+    /// <summary>
+    /// Introspects a captured token, authenticating as the captured credential pair. The
+    /// administrator's token and credentials stay current for the steps that follow.
+    /// </summary>
+    [When(
+        "an introspection of the token captured as {string} is attempted with the credentials captured as {string}"
+    )]
+    public async Task WhenAnIntrospectionOfTheTokenCapturedAsIsAttemptedWithTheCredentialsCapturedAs(
+        string tokenName,
+        string slot
+    )
+    {
+        string capturedToken = CapturedToken(tokenName);
+        _credentialSlots.Should().ContainKey(slot, $"credentials should have been captured as '{slot}'");
+        (string key, string secret) = _credentialSlots[slot];
+        await PostIntrospection(new() { { "token", capturedToken } }, BasicAuthorization(key, secret));
+    }
+
     [Then("the introspection response reports the current client as active with numeric exp and iat")]
     public async Task ThenTheIntrospectionResponseReportsTheCurrentClientAsActive()
     {

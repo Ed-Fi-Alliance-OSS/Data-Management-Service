@@ -23,6 +23,11 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
         ITenantContextProvider tenantContextProvider
     ) : IVendorRepository
     {
+        /// <summary>
+        /// "Transaction (Process ID ...) was deadlocked ... and has been chosen as the deadlock victim."
+        /// </summary>
+        private const int DeadlockVictimErrorNumber = 1205;
+
         private TenantContext TenantContext => tenantContextProvider.Context;
 
         private long? TenantId => TenantContext is TenantContext.Multitenant mt ? mt.TenantId : null;
@@ -408,26 +413,109 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories
             }
         }
 
-        public async Task<VendorDeleteResult> DeleteVendor(int id)
+        /// <summary>
+        /// Inserting an application validates its vendor, and inserting or moving an ApiClient
+        /// validates its application, with a shared lock on the referenced clustered row.
+        /// Exclusive locks held to the end of the transaction on the vendor row and on the
+        /// vendor's clustered application rows therefore block those writers, and the locking
+        /// reads wait for any uncommitted change to the vendor's application or ApiClient rows.
+        /// The reads seek the vendor's own index entries and hold no key ranges: a scan, which the
+        /// optimizer prefers on small tables, would lock other vendors' rows and the ranges new
+        /// rows are inserted into. The cascade delete still takes engine-chosen locks of its own.
+        /// </summary>
+        public async Task<VendorDeleteResult> DeleteVendor(
+            int id,
+            IReadOnlyCollection<VendorApiClient> cleanedClients
+        )
         {
             await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
+            await connection.OpenAsync();
+            await using var transaction = (SqlTransaction)await connection.BeginTransactionAsync();
             try
             {
-                var sql = $"""
+                int? vendorId = await connection.QuerySingleOrDefaultAsync<int?>(
+                    $"""
+                    SELECT v.Id FROM dmscs.Vendor v WITH (XLOCK, HOLDLOCK, ROWLOCK)
+                    WHERE v.Id = @Id AND {TenantContext.TenantWhereClause("v")};
+                    """,
+                    new { Id = id, TenantId },
+                    transaction
+                );
+                if (vendorId is null)
+                {
+                    await transaction.CommitAsync();
+                    return new VendorDeleteResult.FailureNotExists();
+                }
+
+                // ClaimSetName is outside the (VendorId, ApplicationName) index, so the lookup locks
+                // the clustered rows that an ApiClient's foreign key check reads, not only that index.
+                await connection.ExecuteAsync(
+                    """
+                    SELECT Id, ClaimSetName
+                    FROM dmscs.Application
+                        WITH (FORCESEEK(UX_Application_VendorId_ApplicationName(VendorId)), XLOCK, ROWLOCK)
+                    WHERE VendorId = @Id;
+                    """,
+                    new { Id = id },
+                    transaction
+                );
+
+                // ClientUuid is outside the (ApplicationId, Name) index, so the lookup also locks the
+                // clustered ApiClient rows that a client update or move must change.
+                var currentClients = await connection.QueryAsync<(int Id, Guid ClientUuid)>(
+                    """
+                    SELECT ac.Id, ac.ClientUuid
+                    FROM dmscs.Application a
+                        WITH (FORCESEEK(UX_Application_VendorId_ApplicationName(VendorId)))
+                    JOIN dmscs.ApiClient ac
+                        WITH (FORCESEEK(UX_ApiClient_ApplicationId_Name(ApplicationId)), UPDLOCK, ROWLOCK)
+                        ON ac.ApplicationId = a.Id
+                    WHERE a.VendorId = @Id;
+                    """,
+                    new { Id = id },
+                    transaction
+                );
+
+                HashSet<(int, Guid)> cleaned =
+                [
+                    .. cleanedClients.Select(client => (client.Id, client.ClientUuid)),
+                ];
+                if (!currentClients.All(cleaned.Contains))
+                {
+                    await RollbackSafelyAsync(transaction);
+                    return new VendorDeleteResult.FailureClientsChanged();
+                }
+
+                var deleteSql = $"""
                     DELETE FROM dmscs.VendorNamespacePrefix WHERE VendorId IN (
                         SELECT Id FROM dmscs.Vendor WHERE Id = @Id AND {TenantContext.TenantWhereClause()}
                     );
                     DELETE FROM dmscs.Vendor WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                     """;
 
-                var affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
+                var affectedRows = await connection.ExecuteAsync(
+                    deleteSql,
+                    new { Id = id, TenantId },
+                    transaction
+                );
+                await transaction.CommitAsync();
                 return affectedRows > 0
                     ? new VendorDeleteResult.Success()
                     : new VendorDeleteResult.FailureNotExists();
             }
+            catch (SqlException ex) when (ex.Number == DeadlockVictimErrorNumber)
+            {
+                // Either participant of a deadlock can be the victim, for example a client creation
+                // whose uncommitted row the client read waits on while the creation waits on these
+                // locks. The vendor transaction rolled back, so the delete can be retried.
+                logger.LogWarning(ex, "Delete vendor transaction was chosen as a deadlock victim");
+                await RollbackSafelyAsync(transaction);
+                return new VendorDeleteResult.FailureClientsChanged();
+            }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Delete vendor failure");
+                await RollbackSafelyAsync(transaction);
                 return new VendorDeleteResult.FailureUnknown(ex.Message);
             }
         }

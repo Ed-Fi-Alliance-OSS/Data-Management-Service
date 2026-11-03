@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -75,7 +76,8 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
             Configuration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
             new TestAuditContext(),
-            tenantContextProvider
+            tenantContextProvider,
+            new NoOpUnapprovalTokenRevocation()
         );
 
         var vendorResult = await new VendorRepository(
@@ -638,7 +640,8 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
                 Configuration.DatabaseOptions,
                 NullLogger<ApiClientRepository>.Instance,
                 new TestAuditContext(),
-                new TenantContextProvider()
+                new TenantContextProvider(),
+                new NoOpUnapprovalTokenRevocation()
             ).DeleteApiClient(SecondNarrowedClientId);
         }
 
@@ -679,7 +682,8 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
                 Configuration.DatabaseOptions,
                 NullLogger<ApiClientRepository>.Instance,
                 new TestAuditContext(),
-                otherTenant
+                otherTenant,
+                new NoOpUnapprovalTokenRevocation()
             ).DeleteApiClient(SecondNarrowedClientId);
         }
 
@@ -1228,7 +1232,8 @@ public abstract class ApiClientEducationOrganizationRepositoryTests : DatabaseTe
                 Configuration.DatabaseOptions,
                 NullLogger<ApiClientRepository>.Instance,
                 new TestAuditContext(),
-                otherTenant
+                otherTenant,
+                new NoOpUnapprovalTokenRevocation()
             );
 
             await SeedAsync(await CreateTenantProviderAsync("Owner"));

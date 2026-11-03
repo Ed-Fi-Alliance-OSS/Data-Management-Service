@@ -15,7 +15,20 @@ public interface IVendorRepository
     Task<VendorQueryResult> QueryVendor(VendorQuery query);
     Task<VendorGetResult> GetVendor(int id);
     Task<VendorUpdateResult> UpdateVendor(VendorUpdateCommand command);
-    Task<VendorDeleteResult> DeleteVendor(int id);
+
+    /// <summary>
+    /// Deletes the vendor, whose cascade removes its applications and ApiClient rows, only when
+    /// every ApiClient the cascade would remove is one of <paramref name="cleanedClients"/>,
+    /// matched by row id and client UUID. One transaction locks the vendor row, then every
+    /// application row of the vendor, then reads the vendor's ApiClient rows, so an application
+    /// inserted under the vendor, or an ApiClient inserted into or moved onto one of its
+    /// applications, either committed before the read and is seen by it, or waits until the
+    /// deletion has finished. Any other client leaves every row in place and returns
+    /// <see cref="VendorDeleteResult.FailureClientsChanged"/>, as does a SQL Server transaction
+    /// chosen as a deadlock victim.
+    /// </summary>
+    Task<VendorDeleteResult> DeleteVendor(int id, IReadOnlyCollection<VendorApiClient> cleanedClients);
+
     Task<VendorApplicationsResult> GetVendorApplications(int vendorId);
 
     /// <summary>
@@ -144,6 +157,13 @@ public record VendorDeleteResult
     /// Vendor id not found
     /// </summary>
     public record FailureNotExists() : VendorDeleteResult();
+
+    /// <summary>
+    /// The vendor transaction rolled back and deleted no vendor row: the vendor owns an ApiClient
+    /// outside the set the caller cleaned up, or, on SQL Server, the transaction was chosen as a
+    /// deadlock victim. A retry is safe.
+    /// </summary>
+    public record FailureClientsChanged() : VendorDeleteResult();
 
     /// <summary>
     /// Unexpected exception thrown and caught

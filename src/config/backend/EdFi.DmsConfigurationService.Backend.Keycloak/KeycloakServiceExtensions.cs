@@ -43,6 +43,10 @@ public static class KeycloakServiceExtensions
         services.AddScoped(x => new KeycloakContext(baseUrl, realm, ClientId, ClientSecret, RoleClaimType));
         services.AddScoped<IKeycloakClientFacade, KeycloakClientFacade>();
         services.AddTransient<IIdentityProviderRepository, KeycloakClientRepository>();
+
+        // Keycloak tokens are never stored by the Configuration Service, so un-approval has nothing
+        // to revoke; the registration is explicit so that ApiClientRepository always resolves one.
+        services.AddSingleton<IUnapprovalTokenRevocation, NoOpUnapprovalTokenRevocation>();
         services.AddTransient<ITokenManager, KeycloakTokenManager>();
 
         // Transient, not singleton: the managers depend on the scoped KeycloakContext, and the

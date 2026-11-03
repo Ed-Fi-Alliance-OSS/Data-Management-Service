@@ -3344,7 +3344,8 @@ public partial class ApiClientModuleTests
             int applicationId = 1,
             Action<IServiceCollection>? configureServices = null,
             string name = "Updated",
-            string extraProperties = ""
+            string extraProperties = "",
+            bool isApproved = true
         )
         {
             using var client = SetUpClient(configureServices: configureServices);
@@ -3356,7 +3357,7 @@ public partial class ApiClientModuleTests
                       "id": 1,
                       "applicationId": {{applicationId}},
                       "name": "{{name}}",
-                      "isApproved": true,
+                      "isApproved": {{(isApproved ? "true" : "false")}},
                       "dataStoreIds": [1]{{extraProperties}}
                     }
                     """,
@@ -3834,6 +3835,75 @@ public partial class ApiClientModuleTests
             _syncCalls.Should().BeEmpty();
             _deletedClientIds.Should().BeEmpty();
         }
+    }
+
+    /// <summary>
+    /// A repeated un-approval of a client that is already unapproved and not pending
+    /// synchronization. Its save revokes the client's tokens and fails, rolling the revocation
+    /// back. The request matches the stored client, so the row reads the same whether the save
+    /// committed or not, and no stored field records the revocation.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_ambiguous_repeated_unapproval_whose_client_reads_unchanged : UpdateUnderLockTestBase
+    {
+        private const string Sentinel = "SENTINEL_AMBIGUOUS_UNAPPROVAL_must_not_leak";
+
+        private List<string> _updatedClientUuids = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _updatedClientUuids = [];
+
+            A.CallTo(() => _apiClientRepository.GetApiClientById(A<int>.Ignored))
+                .Returns(
+                    new ApiClientGetResult.Success(
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client",
+                            ClientUuid = _existingUuid,
+                            Name = "Test",
+                            IsApproved = false,
+                            DataStoreIds = [1],
+                        }
+                    )
+                );
+
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _updatedClientUuids.Add(call.GetArgument<string>(0)!))
+                .Returns(new ClientUpdateResult.Success(_existingUuid));
+
+            A.CallTo(() => _apiClientRepository.UpdateApiClient(A<ApiClientUpdateCommand>.Ignored))
+                .Returns(new ApiClientUpdateResult.FailureUnknown(Sentinel));
+
+            A.CallTo(() => _apiClientRepository.GetApiClientResolutionState(A<int>.Ignored))
+                .Returns(
+                    new ApiClientResolutionResult.Success(
+                        new(1, "Test", false, "test-client", _existingUuid, [1], true, [1])
+                    )
+                );
+
+            await ActUpdateAsync(name: "Test", isApproved: false);
+        }
+
+        [Test]
+        public async Task It_does_not_report_success() =>
+            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+
+        [Test]
+        public void It_performs_no_compensation() => _updatedClientUuids.Should().HaveCount(1);
     }
 
     /// <summary>

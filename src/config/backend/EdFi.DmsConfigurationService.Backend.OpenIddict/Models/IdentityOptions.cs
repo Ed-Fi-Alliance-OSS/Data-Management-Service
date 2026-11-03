@@ -82,10 +82,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
 
         /// <summary>
         /// Maximum number of simultaneously active access tokens a single API client may hold.
-        /// Any value below 1 disables enforcement, allowing an unlimited number of tokens. A
-        /// disabling value also skips the application-existence check the enforcing path makes under
-        /// the client's row lock, so a client deleted mid-grant may still receive a usable token,
-        /// exactly as it could before this limit existed.
+        /// Any value below 1 disables enforcement, allowing an unlimited number of tokens. It
+        /// disables only the count: every grant still takes the client's application row lock and,
+        /// under it, re-checks that the client still exists, still holds the secret the grant
+        /// authenticated against, and is still approved. Grants for one client therefore serialize
+        /// whatever this value is, and can answer a lock timeout under heavy same-client contention.
         /// Applies to the self-contained identity provider only: the Keycloak provider persists
         /// no tokens, so the setting is inert there.
         /// </summary>

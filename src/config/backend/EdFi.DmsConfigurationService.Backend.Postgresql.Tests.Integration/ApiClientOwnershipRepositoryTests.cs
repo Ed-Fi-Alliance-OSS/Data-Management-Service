@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -381,7 +382,8 @@ public class ApiClientOwnershipRepositoryTests : DatabaseTest
             Configuration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
             new TestAuditContext(),
-            tenantContextProvider
+            tenantContextProvider,
+            new NoOpUnapprovalTokenRevocation()
         );
         var insert = await apiClientRepository.InsertApiClient(
             new ApiClientInsertCommand
