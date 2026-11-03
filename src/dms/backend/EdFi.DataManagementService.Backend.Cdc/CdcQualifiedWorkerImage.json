@@ -1,8 +1,8 @@
 {
-  "image": "edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d",
-  "companionCommit": "97cfeea89814f95aa94c6bbfd8859be2be035243",
-  "dmsFixtureCommit": "1823ae76ca54dbbed2e7dd54e63a457863fee673",
-  "runId": "34401105077",
+  "image": "edfialliance/ed-fi-kafka-connect@sha256:bfabcabfd28868d32ab0271b42b7d147b9566c89bfe1747716368208e8291921",
+  "companionCommit": "f4f1db3ca7c09a5b2d82830ca6ee264366ab0c71",
+  "dmsFixtureCommit": "672ca0c6e26cc81ab2bc32fcf2ffd09573f2e7f2",
+  "runId": "41711276619",
   "exporterVersion": "1.5.0",
   "exporterSha256": "0315f3f657876302c6205a98d4036ec775dca529c5d0419ca60ee669c688239f",
   "mappingSha256": "bc81eafc084baf3caf98341f218d288387c177b13759b756f42907df42bfb8ac",
@@ -24,6 +24,6 @@
   "taskRestart": true,
   "workerRestart": true,
   "workerInspection": true,
-  "qualificationRunUrl": "https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-Kafka-Connect/actions/runs/34401105077",
+  "qualificationRunUrl": "https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-Kafka-Connect/actions/runs/41711276619",
   "platform": "linux/amd64"
 }
