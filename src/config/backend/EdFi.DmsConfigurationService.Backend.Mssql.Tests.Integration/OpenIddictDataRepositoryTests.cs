@@ -469,7 +469,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
     /// <summary>
     /// Stores <paramref name="count"/> active tokens with enforcement off, so seeding a client up
-    /// to or past its limit is never itself refused.
+    /// to or past its limit is never itself refused. Each store authenticates with the API client
+    /// approval state the client holds now (<see cref="CurrentApiClientApprovalAsync"/>).
     /// </summary>
     protected static async Task SeedActiveTokensAsync(
         OpenIddictDataRepository repository,
@@ -477,6 +478,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         int count
     )
     {
+        ApiClientApprovalState approval = await CurrentApiClientApprovalAsync(repository, applicationId);
         for (int i = 0; i < count; i++)
         {
             TokenStoreOutcome outcome = await repository.StoreTokenAsync(
@@ -485,11 +487,29 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 $"seed-subject-{i}",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                approval
             );
 
             outcome.Should().Be(TokenStoreOutcome.Stored);
         }
+    }
+
+    /// <summary>
+    /// The API client approval state the application holds now. Seeding is not what the fixtures
+    /// that seed test, so a seeded store authenticates with whatever API client rows the fixture
+    /// arranged; a store a fixture tests names its expected state explicitly.
+    /// </summary>
+    protected static async Task<ApiClientApprovalState> CurrentApiClientApprovalAsync(
+        OpenIddictDataRepository repository,
+        Guid applicationId
+    )
+    {
+        using IDbConnection connection = await repository.CreateConnectionAsync();
+        ApplicationInfo application =
+            await repository.GetApplicationByIdAsync(applicationId, connection)
+            ?? throw new InvalidOperationException("The application to store a token for does not exist.");
+        return application.ApiClientApproval;
     }
 
     protected static async Task<int> TokenRowCountAsync(Guid applicationId)
@@ -576,6 +596,23 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             "UPDATE dmscs.ApiClient SET IsApproved = @IsApproved WHERE ClientId = @ClientId",
             new { ClientId = clientId, IsApproved = isApproved }
         );
+    }
+
+    /// <summary>
+    /// Removes the client's API client rows outside any API path, as a direct database change or an
+    /// earlier vendor deletion would, leaving its identity provider application in place.
+    /// </summary>
+    protected static async Task DeleteApiClientRowsAsync(string clientId)
+    {
+        await using SqlConnection connection = await OpenConnectionAsync();
+        (
+            await connection.ExecuteAsync(
+                "DELETE FROM dmscs.ApiClient WHERE ClientId = @ClientId",
+                new { ClientId = clientId }
+            )
+        )
+            .Should()
+            .BeGreaterThan(0);
     }
 
     protected static Task<int> ChangeStoredSecretAsync(
@@ -717,14 +754,16 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// The client changes that revoke its tokens and must refuse every grant that waited behind
-    /// them.
+    /// The client changes that must refuse every grant that waited behind them. All but
+    /// <see cref="ApiClientRowRemoval"/> revoke the client's tokens, as their lifecycle operations
+    /// do; the row removal stands for a direct database change, which revokes nothing.
     /// </summary>
     public enum LifecycleChange
     {
         CredentialReset,
         Deletion,
         UnApproval,
+        ApiClientRowRemoval,
     }
 
     /// <summary>
@@ -978,7 +1017,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-expired-valid",
                 past,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
             await _repository.StoreTokenAsync(
                 _expiredRevokedTokenId,
@@ -986,7 +1026,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-expired-revoked",
                 past,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
             await _repository.RevokeTokenAsync(_expiredRevokedTokenId, applicationId);
             await _repository.StoreTokenAsync(
@@ -995,7 +1036,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-unexpired",
                 future,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -1041,7 +1083,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-boundary",
                 _boundary,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -1096,7 +1139,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "revoke-owner-subject",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
             _redemptionDateBefore = await RedemptionDateAsync(_tokenId);
 
@@ -1149,7 +1193,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "revoke-victim-subject",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
             _result = await _repository.RevokeTokenAsync(_tokenId, otherApplicationId);
@@ -1206,7 +1251,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "revoke-repeat-subject",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
             _firstResult = await _repository.RevokeTokenAsync(_tokenId, applicationId);
             await SetRedemptionDateAsync(_tokenId, _originalRedemptionDate);
@@ -1254,7 +1300,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "revoke-unknown-subject",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
             _result = await _repository.RevokeTokenAsync(Guid.NewGuid(), applicationId);
@@ -1306,7 +1353,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "revoke-wrapper-owned",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
             await _dataRepository.StoreTokenAsync(
                 _foreignTokenId,
@@ -1314,7 +1362,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "revoke-wrapper-foreign",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
             _ownedResult = await tokenRepository.RevokeTokenAsync(_ownedTokenId, callerApplicationId);
@@ -1367,7 +1416,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             $"subject-{tokenId:N}",
             expiration,
             EnforcementDisabled,
-            RegisteredSecret
+            RegisteredSecret,
+            await CurrentApiClientApprovalAsync(repository, applicationId)
         );
 
         outcome.Should().Be(TokenStoreOutcome.Stored);
@@ -1775,7 +1825,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "status-owner-subject",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
             _status = await repository.GetTokenStatusForApplicationAsync(tokenId, applicationId);
@@ -1815,7 +1866,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "status-victim-subject",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
             _status = await repository.GetTokenStatusForApplicationAsync(tokenId, otherApplicationId);
@@ -1872,7 +1924,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-under-limit",
                 FarFuture,
                 3,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -1906,7 +1959,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-at-limit",
                 FarFuture,
                 3,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -1942,7 +1996,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-over-limit",
                 FarFuture,
                 3,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -1989,7 +2044,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-grant",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -2007,7 +2063,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                             $"expired-{i}",
                             FarPast,
                             EnforcementDisabled,
-                            RegisteredSecret
+                            RegisteredSecret,
+                            ApiClientApprovalState.NoApiClientRow
                         );
                     }
                 },
@@ -2032,7 +2089,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                             $"revoked-{i}",
                             FarFuture,
                             EnforcementDisabled,
-                            RegisteredSecret
+                            RegisteredSecret,
+                            ApiClientApprovalState.NoApiClientRow
                         );
                         await _repository.RevokeTokenAsync(tokenId, applicationId);
                     }
@@ -2070,7 +2128,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         "expiring-soon",
                         DateTimeOffset.UtcNow.AddMinutes(2),
                         EnforcementDisabled,
-                        RegisteredSecret
+                        RegisteredSecret,
+                        ApiClientApprovalState.NoApiClientRow
                     ),
                 "future-boundary"
             );
@@ -2089,7 +2148,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         "just-expired",
                         DateTimeOffset.UtcNow.AddMinutes(-2),
                         EnforcementDisabled,
-                        RegisteredSecret
+                        RegisteredSecret,
+                        ApiClientApprovalState.NoApiClientRow
                     ),
                 "past-boundary"
             );
@@ -2135,7 +2195,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-first",
                 FarFuture,
                 1,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
             _second = await _repository.StoreTokenAsync(
                 Guid.NewGuid(),
@@ -2143,7 +2204,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-second",
                 FarFuture,
                 1,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -2201,7 +2263,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "wrapper-subject",
                 FarFuture,
                 Limit,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
         [Test]
@@ -2253,7 +2316,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-disabled",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
             outcome.Should().Be(TokenStoreOutcome.Stored);
@@ -2288,7 +2352,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         "subject-disabled-lock",
                         FarFuture,
                         maxActiveTokens,
-                        RegisteredSecret
+                        RegisteredSecret,
+                        ApiClientApprovalState.NoApiClientRow
                     )
                 );
                 probe = WaitUntilASessionIsBlockedBy(holder.SessionId, GrantBlockedObservationTimeout);
@@ -2351,7 +2416,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-secret-changed",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -2396,7 +2462,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-limit-secret-changed",
                 FarFuture,
                 Limit,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -2440,7 +2507,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-un-approved",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.Approved
             );
         }
 
@@ -2479,7 +2547,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-deleted",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -2524,7 +2593,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-current",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.Approved
             );
         }
 
@@ -2538,12 +2608,14 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
     /// <summary>
     /// Concurrency: a grant that arrives while a credential reset,
-    /// deletion or un-approval transaction is still open. The transaction makes its change and
-    /// revokes the client's tokens, then holds at a gate; the lock manager must show the grant
+    /// deletion or un-approval transaction, or one removing the client's API client row, is still
+    /// open. The transaction makes its change, revokes the client's tokens unless it only removes
+    /// the row, then holds at a gate; the lock manager must show the grant
     /// waiting on that transaction's session, and once it commits the grant must refuse without
     /// storing. The grant authenticated against <see cref="RegisteredSecret"/>, and the client
     /// starts with an approved API client row that the un-approval sets to false inside the held
-    /// transaction. A store path that skips both the lock and the re-validation, as the
+    /// transaction and the row removal deletes. A store path that skips both the lock and the
+    /// re-validation, as the
     /// limit-disabled path used to, finishes before the probe sees it waiting. Under locking read
     /// committed, the CMS database's default, a plain read of the changed rows also waits on this
     /// transaction and then sees its commit, so on SQL Server this fixture guards the refusal after
@@ -2557,6 +2629,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     [TestFixture(LifecycleChange.Deletion, 15)]
     [TestFixture(LifecycleChange.UnApproval, EnforcementDisabled)]
     [TestFixture(LifecycleChange.UnApproval, 15)]
+    [TestFixture(LifecycleChange.ApiClientRowRemoval, EnforcementDisabled)]
+    [TestFixture(LifecycleChange.ApiClientRowRemoval, 15)]
     public class Given_A_Grant_Blocked_By_A_Lifecycle_Transaction(LifecycleChange change, int maxActiveTokens)
         : OpenIddictDataRepositoryTests
     {
@@ -2616,7 +2690,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         "subject-blocked-grant",
                         FarFuture,
                         maxActiveTokens,
-                        RegisteredSecret
+                        RegisteredSecret,
+                        ApiClientApprovalState.Approved
                     )
                 );
                 probe = WaitUntilASessionIsBlockedBy(lifecycleSessionId, GrantBlockedObservationTimeout);
@@ -2648,8 +2723,9 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
         /// <summary>
         /// The statements of the lifecycle operation for this change, in its order: a reset or a
-        /// deletion writes the application row first, an un-approval locks it first and writes
-        /// <c>ApiClient</c> last. Each one revokes the client's tokens before the gate.
+        /// deletion writes the application row first, an un-approval or a row removal locks it first
+        /// and writes <c>ApiClient</c> last. Each one but the row removal revokes the client's tokens
+        /// before the gate.
         /// </summary>
         private async Task ApplyChangeAsync(IDbConnection connection, IDbTransaction transaction)
         {
@@ -2689,6 +2765,20 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         .Should()
                         .Be(1);
                     break;
+                case LifecycleChange.ApiClientRowRemoval:
+                    (await _repository.LockApplicationAsync(_applicationId, connection, transaction))
+                        .Should()
+                        .BeTrue();
+                    (
+                        await connection.ExecuteAsync(
+                            "DELETE FROM dmscs.ApiClient WHERE ClientId = @ClientId",
+                            new { ClientId = _clientId },
+                            transaction
+                        )
+                    )
+                        .Should()
+                        .Be(1);
+                    break;
             }
 
             async Task RevokeAsync() =>
@@ -2716,8 +2806,241 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             (await TokenRowCountAsync(_applicationId)).Should().Be(1);
 
         [Test]
-        public async Task It_commits_the_revocation_of_the_earlier_token() =>
-            (await _repository.GetTokenStatusAsync(_earlierTokenId)).Should().Be("revoked");
+        public async Task It_leaves_the_earlier_token_as_the_change_left_it() =>
+            (await _repository.GetTokenStatusAsync(_earlierTokenId))
+                .Should()
+                .Be(change == LifecycleChange.ApiClientRowRemoval ? "valid" : "revoked");
+    }
+
+    /// <summary>
+    /// Under the application row lock a store admits only the API client approval state the grant
+    /// authenticated with, with the token limit on or off. A row that vanished after a row-backed
+    /// client authenticated, or a row that appeared after a client without one authenticated, is
+    /// refused; so is an approved row that appeared, and the next grant authenticates afresh. A
+    /// missing or changed row is logged at Warning; an un-approval keeps the Debug line.
+    /// </summary>
+    [TestFixture("row-removed", 15, TokenStoreOutcome.ClientChanged, "api-client-row", LogLevel.Warning)]
+    [TestFixture(
+        "row-removed",
+        EnforcementDisabled,
+        TokenStoreOutcome.ClientChanged,
+        "api-client-row",
+        LogLevel.Warning
+    )]
+    [TestFixture("no-row", 15, TokenStoreOutcome.Stored, "", LogLevel.None)]
+    [TestFixture("no-row", EnforcementDisabled, TokenStoreOutcome.Stored, "", LogLevel.None)]
+    [TestFixture("unapproved-row-appeared", 15, TokenStoreOutcome.ClientChanged, "approval", LogLevel.Debug)]
+    [TestFixture(
+        "unapproved-row-appeared",
+        EnforcementDisabled,
+        TokenStoreOutcome.ClientChanged,
+        "approval",
+        LogLevel.Debug
+    )]
+    [TestFixture(
+        "approved-row-appeared",
+        15,
+        TokenStoreOutcome.ClientChanged,
+        "api-client-row",
+        LogLevel.Warning
+    )]
+    [TestFixture(
+        "approved-row-appeared",
+        EnforcementDisabled,
+        TokenStoreOutcome.ClientChanged,
+        "api-client-row",
+        LogLevel.Warning
+    )]
+    public class Given_A_Store_Against_The_Api_Client_State_Under_The_Lock(
+        string scenario,
+        int maxActiveTokens,
+        TokenStoreOutcome expectedOutcome,
+        string expectedReason,
+        LogLevel expectedLevel
+    ) : OpenIddictDataRepositoryTests
+    {
+        private ILogger<OpenIddictDataRepository> _logger = null!;
+        private Guid _applicationId;
+        private TokenStoreOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = A.Fake<ILogger<OpenIddictDataRepository>>();
+            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions, _logger);
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(repository, clientId);
+
+            ApiClientApprovalState authenticated = ApiClientApprovalState.NoApiClientRow;
+            switch (scenario)
+            {
+                case "row-removed":
+                    await AddApiClientRowAsync(repository, clientId);
+                    authenticated = ApiClientApprovalState.Approved;
+                    await DeleteApiClientRowsAsync(clientId);
+                    break;
+                case "unapproved-row-appeared":
+                    await AddApiClientRowAsync(repository, clientId, isApproved: false);
+                    break;
+                case "approved-row-appeared":
+                    await AddApiClientRowAsync(repository, clientId);
+                    break;
+            }
+
+            _outcome = await repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                _applicationId,
+                "subject-api-client-state",
+                FarFuture,
+                maxActiveTokens,
+                RegisteredSecret,
+                authenticated
+            );
+        }
+
+        private IReadOnlyList<(LogLevel Level, string Message)> RefusalLines() =>
+            Fake.GetCalls(_logger)
+                .Where(call => call.Method.Name == nameof(ILogger.Log))
+                .Select(call =>
+                    (call.GetArgument<LogLevel>(0), call.Arguments[2]?.ToString() ?? string.Empty)
+                )
+                .Where(line => line.Item2.StartsWith("Refused to store a token", StringComparison.Ordinal))
+                .ToList();
+
+        [Test]
+        public void It_answers_the_expected_outcome() => _outcome.Should().Be(expectedOutcome);
+
+        [Test]
+        public async Task It_stores_a_token_only_when_the_state_is_unchanged() =>
+            (await TokenRowCountAsync(_applicationId))
+                .Should()
+                .Be(expectedOutcome == TokenStoreOutcome.Stored ? 1 : 0);
+
+        [Test]
+        public void It_logs_the_refusal_category_once_at_its_level()
+        {
+            if (expectedOutcome == TokenStoreOutcome.Stored)
+            {
+                RefusalLines().Should().BeEmpty();
+                return;
+            }
+
+            RefusalLines()
+                .Should()
+                .Equal(
+                    (
+                        expectedLevel,
+                        $"Refused to store a token for application {_applicationId}: re-validation under the application row lock failed ({expectedReason})"
+                    )
+                );
+        }
+    }
+
+    /// <summary>
+    /// The full-application load and the token store each run after authentication, on their own
+    /// connections. A row-backed client whose API client row is removed in either gap is refused
+    /// as an unknown client is, and stores nothing, with the token limit on or off. The removal runs
+    /// inside the intercepted call, before it is forwarded, so the order is fixed without timing.
+    /// </summary>
+    [TestFixture("application-load", 15)]
+    [TestFixture("application-load", EnforcementDisabled)]
+    [TestFixture("token-store", 15)]
+    [TestFixture("token-store", EnforcementDisabled)]
+    public class Given_A_Grant_Whose_Api_Client_Row_Is_Removed_After_Authentication(
+        string gap,
+        int maxActiveTokens
+    ) : OpenIddictDataRepositoryTests
+    {
+        private Guid _applicationId;
+        private IOpenIddictDataRepository _observedRepository = null!;
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(repository, clientId);
+            await AddApiClientRowAsync(repository, clientId);
+
+            (OpenIddictTokenManager manager, _observedRepository) = CreateTokenManagerOver(
+                repository,
+                new IdentityOptions { BearerTokenPerClientLimit = maxActiveTokens }
+            );
+            if (gap == "application-load")
+            {
+                A.CallTo(() => _observedRepository.GetApplicationByClientIdAsync(clientId))
+                    .ReturnsLazily(async () =>
+                    {
+                        await DeleteApiClientRowsAsync(clientId);
+                        return await repository.GetApplicationByClientIdAsync(clientId);
+                    });
+            }
+            else
+            {
+                A.CallTo(() =>
+                        _observedRepository.StoreTokenAsync(
+                            A<Guid>._,
+                            A<Guid>._,
+                            A<string>._,
+                            A<DateTimeOffset>._,
+                            A<int>._,
+                            A<string>._,
+                            A<ApiClientApprovalState>._
+                        )
+                    )
+                    .ReturnsLazily(async call =>
+                    {
+                        await DeleteApiClientRowsAsync(clientId);
+                        return await repository.StoreTokenAsync(
+                            call.GetArgument<Guid>(0),
+                            call.GetArgument<Guid>(1),
+                            call.GetArgument<string>(2)!,
+                            call.GetArgument<DateTimeOffset>(3),
+                            call.GetArgument<int>(4),
+                            call.GetArgument<string>(5)!,
+                            call.GetArgument<ApiClientApprovalState>(6)
+                        );
+                    });
+            }
+
+            _result = await RequestGrantAsync(manager, clientId);
+        }
+
+        [Test]
+        public void It_refuses_the_grant_as_an_unknown_client_is_refused() =>
+            _result
+                .Should()
+                .BeEquivalentTo(
+                    new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    )
+                );
+
+        [Test]
+        public async Task It_stores_no_token() => (await TokenRowCountAsync(_applicationId)).Should().Be(0);
+
+        // Removed before the load, the change is caught there and the store is never reached.
+        // Removed before the store, the store is reached with the state the client authenticated
+        // with, and refuses under the lock.
+        [Test]
+        public void It_reaches_the_store_only_when_the_row_vanished_there() =>
+            A.CallTo(() =>
+                    _observedRepository.StoreTokenAsync(
+                        A<Guid>._,
+                        _applicationId,
+                        A<string>._,
+                        A<DateTimeOffset>._,
+                        maxActiveTokens,
+                        RegisteredSecret,
+                        ApiClientApprovalState.Approved
+                    )
+                )
+                .MustHaveHappened(gap == "token-store" ? 1 : 0, Times.Exactly);
     }
 
     // Credential reset through its production caller,
@@ -2910,7 +3233,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-old-secret",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.Approved
             );
             _newSecretOutcome = await _repository.StoreTokenAsync(
                 _newSecretTokenId,
@@ -2918,7 +3242,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-new-secret",
                 FarFuture,
                 maxActiveTokens,
-                ResetSecretHash
+                ResetSecretHash,
+                ApiClientApprovalState.Approved
             );
         }
 
@@ -3334,7 +3659,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-before-deletion",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.Approved
             );
             _deleteResult = await CreateClientRepository(_repository)
                 .DeleteClientAsync(applicationId.ToString());
@@ -3344,7 +3670,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-after-deletion",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.Approved
             );
         }
 
@@ -3882,7 +4209,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-before-un-approval",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.Approved
             );
             _updateResult = await CreateApiClientRepository(CreateUnapprovalParticipant(_repository))
                 .UpdateApiClient(UpdateCommandFor(apiClient, isApproved: false));
@@ -3892,7 +4220,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-after-un-approval",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.Approved
             );
         }
 
@@ -4010,7 +4339,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         "subject-blocked-grant",
                         FarFuture,
                         maxActiveTokens,
-                        RegisteredSecret
+                        RegisteredSecret,
+                        ApiClientApprovalState.Approved
                     )
                 );
                 probe = WaitUntilASessionIsBlockedBy(updateSessionId, GrantBlockedObservationTimeout);
@@ -4247,7 +4577,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                                 $"race-subject-{i}",
                                 FarFuture,
                                 Limit,
-                                RegisteredSecret
+                                RegisteredSecret,
+                                ApiClientApprovalState.NoApiClientRow
                             )
                         )
                     )
@@ -4315,7 +4646,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         "subject-serialized",
                         FarFuture,
                         5,
-                        RegisteredSecret
+                        RegisteredSecret,
+                        ApiClientApprovalState.NoApiClientRow
                     )
                 );
 
@@ -4360,7 +4692,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         "subject-a",
                         FarFuture,
                         5,
-                        RegisteredSecret
+                        RegisteredSecret,
+                        ApiClientApprovalState.NoApiClientRow
                     )
                 );
 
@@ -4372,7 +4705,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     "subject-b",
                     FarFuture,
                     5,
-                    RegisteredSecret
+                    RegisteredSecret,
+                    ApiClientApprovalState.NoApiClientRow
                 );
 
                 otherOutcome.Should().Be(TokenStoreOutcome.Stored);
@@ -4413,7 +4747,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     "subject-lock-timeout",
                     FarFuture,
                     5,
-                    RegisteredSecret
+                    RegisteredSecret,
+                    ApiClientApprovalState.NoApiClientRow
                 );
 
                 outcome.Should().Be(TokenStoreOutcome.LockTimeout);
@@ -4462,7 +4797,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-deleted",
                 FarFuture,
                 5,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
             outcome.Should().Be(TokenStoreOutcome.ClientNotFound);
@@ -4490,7 +4826,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                                 $"deleted-race-subject-{i}",
                                 FarFuture,
                                 3,
-                                RegisteredSecret
+                                RegisteredSecret,
+                                ApiClientApprovalState.NoApiClientRow
                             )
                         )
                     )
@@ -4539,7 +4876,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     "subject-existing",
                     FarPast,
                     EnforcementDisabled,
-                    RegisteredSecret
+                    RegisteredSecret,
+                    ApiClientApprovalState.NoApiClientRow
                 )
             )
                 .Should()
@@ -4568,7 +4906,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     "subject-victim",
                     FarFuture,
                     5,
-                    RegisteredSecret
+                    RegisteredSecret,
+                    ApiClientApprovalState.NoApiClientRow
                 )
             );
 
@@ -4621,7 +4960,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     "subject-pool",
                     FarFuture,
                     EnforcementDisabled,
-                    RegisteredSecret
+                    RegisteredSecret,
+                    ApiClientApprovalState.NoApiClientRow
                 )
             )
                 .Should()

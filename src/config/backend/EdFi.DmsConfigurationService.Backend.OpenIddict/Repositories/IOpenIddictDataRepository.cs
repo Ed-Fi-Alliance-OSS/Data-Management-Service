@@ -153,31 +153,42 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         /// <summary>
         /// Stores a new token, unless the application already holds the maximum number of active
         /// tokens. Every store runs in one transaction that locks the application row, then reads
-        /// the stored client secret and the approval in a separate statement (on PostgreSQL a
-        /// scalar read inside the locking statement would use the snapshot taken before it
-        /// blocked), and inserts only when the secret still equals
-        /// <paramref name="expectedClientSecret"/> ordinally and the client is still approved. When
-        /// <paramref name="maxActiveTokens"/> is below 1 the active-token count is skipped; the lock
-        /// and the re-validation are not.
+        /// the stored client secret and the API client approval state in a separate statement (on
+        /// PostgreSQL a scalar read inside the locking statement would use the snapshot taken before
+        /// it blocked), and inserts only when the secret still equals
+        /// <paramref name="expectedClientSecret"/> ordinally and the state still equals
+        /// <paramref name="expectedApiClientApproval"/>. When <paramref name="maxActiveTokens"/> is
+        /// below 1 the active-token count is skipped; the lock and the re-validation are not.
         /// </summary>
+        /// <param name="expectedApiClientApproval">
+        /// The API client approval state the grant authenticated with:
+        /// <see cref="ApiClientApprovalState.Approved"/> or
+        /// <see cref="ApiClientApprovalState.NoApiClientRow"/>. Any other value is a programming
+        /// error, rejected before a connection is opened.
+        /// </param>
         /// <returns>
         /// <see cref="TokenStoreOutcome.Stored"/> when the token was written,
         /// <see cref="TokenStoreOutcome.LimitExceeded"/> when the application already holds at
         /// least <paramref name="maxActiveTokens"/> active tokens,
         /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists,
         /// <see cref="TokenStoreOutcome.ClientChanged"/> when its stored secret no longer matches
-        /// <paramref name="expectedClientSecret"/> or the client is no longer approved, or
+        /// <paramref name="expectedClientSecret"/> or its API client approval state is no longer
+        /// <paramref name="expectedApiClientApproval"/>, or
         /// <see cref="TokenStoreOutcome.LockTimeout"/> when a database lock wait during the store ran
         /// out, whether behind a competing grant for this application or another writer such as the
         /// expired-token sweep, or the store was chosen as a deadlock victim of such a writer.
         /// </returns>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="expectedApiClientApproval"/> is neither approved nor no API client row.
+        /// </exception>
         Task<TokenStoreOutcome> StoreTokenAsync(
             Guid tokenId,
             Guid applicationId,
             string subject,
             DateTimeOffset expiration,
             int maxActiveTokens,
-            string expectedClientSecret
+            string expectedClientSecret,
+            ApiClientApprovalState expectedApiClientApproval
         );
 
         Task<string?> GetTokenStatusAsync(Guid tokenId);

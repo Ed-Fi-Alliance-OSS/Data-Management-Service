@@ -3588,7 +3588,8 @@ public class OpenIddictTokenManagerTests
                     A<string>._,
                     A<DateTimeOffset>._,
                     A<int>._,
-                    A<string>._
+                    A<string>._,
+                    A<ApiClientApprovalState>._
                 )
             )
             .Invokes(
@@ -3598,7 +3599,8 @@ public class OpenIddictTokenManagerTests
                     string subject,
                     DateTimeOffset expiration,
                     int maxActiveTokens,
-                    string expectedClientSecret
+                    string expectedClientSecret,
+                    ApiClientApprovalState expectedApiClientApproval
                 ) =>
                     capture(
                         new StoredTokenCall(
@@ -3607,7 +3609,8 @@ public class OpenIddictTokenManagerTests
                             subject,
                             expiration,
                             maxActiveTokens,
-                            expectedClientSecret
+                            expectedClientSecret,
+                            expectedApiClientApproval
                         )
                     )
             )
@@ -3620,7 +3623,8 @@ public class OpenIddictTokenManagerTests
         string Subject,
         DateTimeOffset Expiration,
         int MaxActiveTokens,
-        string ExpectedClientSecret
+        string ExpectedClientSecret,
+        ApiClientApprovalState ExpectedApiClientApproval
     );
 
     private const string GrantClientId = "grant-client";
@@ -3887,7 +3891,8 @@ public class OpenIddictTokenManagerTests
                     A<string>._,
                     A<DateTimeOffset>._,
                     A<int>._,
-                    A<string>._
+                    A<string>._,
+                    A<ApiClientApprovalState>._
                 )
             )
             .MustNotHaveHappened();
@@ -3900,7 +3905,8 @@ public class OpenIddictTokenManagerTests
                     A<string>._,
                     A<DateTimeOffset>._,
                     A<int>._,
-                    A<string>._
+                    A<string>._,
+                    A<ApiClientApprovalState>._
                 )
             )
             .MustHaveHappenedOnceExactly();
@@ -5968,7 +5974,8 @@ public class OpenIddictTokenManagerTests
                                 A<string>._,
                                 A<DateTimeOffset>._,
                                 A<int>._,
-                                A<string>._
+                                A<string>._,
+                                A<ApiClientApprovalState>._
                             )
                         )
                         .MustHaveHappenedOnceExactly()
@@ -6066,7 +6073,8 @@ public class OpenIddictTokenManagerTests
                         A<string>._,
                         A<DateTimeOffset>._,
                         A<int>._,
-                        A<string>._
+                        A<string>._,
+                        A<ApiClientApprovalState>._
                     )
                 )
                 .MustNotHaveHappened();
@@ -6141,7 +6149,8 @@ public class OpenIddictTokenManagerTests
                         A<string>._,
                         A<DateTimeOffset>._,
                         A<int>._,
-                        A<string>._
+                        A<string>._,
+                        A<ApiClientApprovalState>._
                     )
                 )
                 .MustNotHaveHappened();
@@ -6179,7 +6188,8 @@ public class OpenIddictTokenManagerTests
                         A<string>._,
                         A<DateTimeOffset>._,
                         A<int>._,
-                        A<string>._
+                        A<string>._,
+                        A<ApiClientApprovalState>._
                     )
                 )
                 .MustNotHaveHappened();
@@ -6214,13 +6224,15 @@ public class OpenIddictTokenManagerTests
     /// <summary>
     /// The three endpoints that authenticate a client, run in turn against the credential client.
     /// The token endpoint can mint and store; revocation and introspection are given a token of the
-    /// client's own, so each gets as far as its token-store call when authentication succeeds.
+    /// client's own, so each gets as far as its token-store call when authentication succeeds. The
+    /// token store call, when one is made, is captured.
     /// </summary>
     private sealed record AuthenticatedOperations(
         TokenResult Token,
         TokenRevocationResult Revocation,
         TokenIntrospectionResult Introspection,
-        Guid Jti
+        Guid Jti,
+        StoredTokenCall? Stored
     );
 
     private async Task<AuthenticatedOperations> RunTheAuthenticatingOperationsAsync(
@@ -6228,7 +6240,8 @@ public class OpenIddictTokenManagerTests
     )
     {
         StubActiveKeyPair();
-        ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
+        StoredTokenCall? stored = null;
+        ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => stored = call);
         (string token, Guid jti) = ArrangeRevocableToken(StoredCredentialClientId);
         OpenIddictTokenManager manager = NewTokenManager(
             new IdentityOptions
@@ -6249,7 +6262,7 @@ public class OpenIddictTokenManagerTests
             IntrospectionRequestFor(CredentialClientId, token),
             CancellationToken.None
         );
-        return new AuthenticatedOperations(tokenResult, revocation, introspection, jti);
+        return new AuthenticatedOperations(tokenResult, revocation, introspection, jti, stored);
     }
 
     // Each state a client may proceed with is admitted by all three endpoints. A client with no API
@@ -6278,6 +6291,12 @@ public class OpenIddictTokenManagerTests
 
         [Test]
         public void It_issues_a_token() => _operations.Token.Should().BeOfType<TokenResult.Success>();
+
+        // The store re-validates under the application row lock against exactly the state the client
+        // authenticated with, so that state has to reach it.
+        [Test]
+        public void It_stores_the_token_with_the_state_the_client_authenticated_with() =>
+            _operations.Stored!.ExpectedApiClientApproval.Should().Be(approval);
 
         [Test]
         public void It_revokes_the_token_for_the_authenticated_application()
@@ -6353,7 +6372,8 @@ public class OpenIddictTokenManagerTests
                         A<string>._,
                         A<DateTimeOffset>._,
                         A<int>._,
-                        A<string>._
+                        A<string>._,
+                        A<ApiClientApprovalState>._
                     )
                 )
                 .MustNotHaveHappened();
@@ -6373,6 +6393,76 @@ public class OpenIddictTokenManagerTests
                 .AllBe(
                     $"Client {StoredCredentialClientId} (application {_applicationId}) authenticated but is not admitted (UnknownApprovalState); refused"
                 );
+    }
+
+    // Between authentication and the full load, the client's API client approval state can change.
+    // The load must find the admissible state the client authenticated with. Anything else is
+    // answered as an unknown client, before any key, mint or store, and is logged: an un-approval of
+    // a row-backed client at Debug, a row that appeared or vanished, or a state with no name, at
+    // Warning.
+    [TestFixture(ApiClientApprovalState.Approved, ApiClientApprovalState.NoApiClientRow, LogLevel.Warning)]
+    [TestFixture(ApiClientApprovalState.NoApiClientRow, ApiClientApprovalState.Approved, LogLevel.Warning)]
+    [TestFixture(ApiClientApprovalState.Approved, ApiClientApprovalState.Unapproved, LogLevel.Debug)]
+    [TestFixture(ApiClientApprovalState.NoApiClientRow, ApiClientApprovalState.Unapproved, LogLevel.Warning)]
+    [TestFixture(ApiClientApprovalState.Approved, UndefinedApprovalState, LogLevel.Warning)]
+    public class Given_GetAccessTokenAsync_OnTheCredentialPath_WhenTheApiClientApprovalChangedBeforeTheLoad(
+        ApiClientApprovalState authenticated,
+        ApiClientApprovalState loaded,
+        LogLevel expectedLevel
+    ) : OpenIddictTokenManagerTests
+    {
+        private ILogger<OpenIddictTokenManager> _logger = null!;
+        private TokenResult _result = null!;
+
+        private string ExpectedMessage =>
+            $"Client {StoredCredentialClientId} API client approval changed between authentication ({authenticated}) and application load ({loaded}); refused";
+
+        [SetUp]
+        public async Task Act()
+        {
+            _logger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            Guid applicationId = ArrangeCredentialClient(approval: authenticated).Id;
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(CredentialClientId))
+                .Returns(CredentialApplication(applicationId, StoredCredentialClientId, loaded));
+            StubActiveKeyPair();
+
+            _result = await NewTokenManager(
+                    new IdentityOptions
+                    {
+                        Authority = TestIssuer,
+                        Audience = TestAudience,
+                        EncryptionKey = TestEncryptionKey,
+                    },
+                    _logger
+                )
+                .GetAccessTokenAsync(CredentialGrant());
+        }
+
+        [Test]
+        public void It_returns_an_invalid_client_authentication_failure() =>
+            _result.Should().BeEquivalentTo(_invalidClient);
+
+        // No signing key, roles, mint or store: the repository saw the credential read and the
+        // full-application load, and nothing after the refusal.
+        [Test]
+        public void It_reads_only_the_credential_and_the_application() =>
+            Fake.GetCalls(_tokenRepository)
+                .Select(call => call.Method.Name)
+                .Should()
+                .Equal(
+                    nameof(IOpenIddictTokenRepository.GetClientCredentialAsync),
+                    nameof(IOpenIddictTokenRepository.GetApplicationByClientIdAsync)
+                );
+
+        [Test]
+        public void It_logs_the_change_once_at_its_level() =>
+            LogMessagesAt(_logger, expectedLevel).Should().Equal(ExpectedMessage);
+
+        [Test]
+        public void It_does_not_log_the_change_at_the_other_level() =>
+            LogMessagesAt(_logger, expectedLevel == LogLevel.Warning ? LogLevel.Debug : LogLevel.Warning)
+                .Should()
+                .NotContain(ExpectedMessage);
     }
 
     /// <summary>
@@ -6647,11 +6737,20 @@ public class OpenIddictTokenManagerTests
                     A<string>._,
                     A<DateTimeOffset>._,
                     A<int>._,
-                    A<string>._
+                    A<string>._,
+                    A<ApiClientApprovalState>._
                 )
             )
             .ReturnsLazily(
-                (Guid tokenId, Guid _, string _, DateTimeOffset _, int _, string _) =>
+                (
+                    Guid tokenId,
+                    Guid _,
+                    string _,
+                    DateTimeOffset _,
+                    int _,
+                    string _,
+                    ApiClientApprovalState _
+                ) =>
                 {
                     storedTokenIds.Add(tokenId);
                     return TokenStoreOutcome.Stored;

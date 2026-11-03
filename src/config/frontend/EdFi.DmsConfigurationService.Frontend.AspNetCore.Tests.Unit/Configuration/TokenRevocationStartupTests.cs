@@ -1716,7 +1716,8 @@ public class TokenRevocationStartupTests
                         A<string>._,
                         A<DateTimeOffset>._,
                         A<int>._,
-                        A<string>._
+                        A<string>._,
+                        A<ApiClientApprovalState>._
                     )
                 )
                 .Returns(TokenStoreOutcome.Stored);

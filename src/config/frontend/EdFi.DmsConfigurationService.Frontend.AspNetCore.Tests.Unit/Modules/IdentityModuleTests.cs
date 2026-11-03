@@ -7305,7 +7305,8 @@ public class Given_TokenEndpoint_requests_that_fail_client_authentication
                     A<string>._,
                     A<DateTimeOffset>._,
                     A<int>._,
-                    A<string>._
+                    A<string>._,
+                    A<ApiClientApprovalState>._
                 )
             )
             .Returns(TokenStoreOutcome.Stored);

@@ -299,7 +299,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 (TokenStoreOutcome outcome, string token) = await GenerateJwtTokenAsync(
                     applicationInfo,
                     canonicalClientId,
-                    listOfScopes
+                    listOfScopes,
+                    authenticatedClient.ApiClientApproval
                 );
 
                 if (outcome == TokenStoreOutcome.LimitExceeded)
@@ -327,9 +328,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
 
                 if (outcome is TokenStoreOutcome.ClientNotFound or TokenStoreOutcome.ClientChanged)
                 {
-                    // The application row was deleted, its secret reset, or the client un-approved
-                    // between the lookup above and the store, so answer exactly as the unknown-client
-                    // and wrong-secret cases above answer.
+                    // The application row was deleted, its secret reset, the client un-approved, or
+                    // its API client row removed or added between the lookup above and the store, so
+                    // answer exactly as the unknown-client and wrong-secret cases above answer.
                     return new TokenResult.FailureAuthentication(
                         InvalidClientError,
                         "Invalid client or Invalid client credentials"
@@ -1033,9 +1034,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// Loads the full application for a client that authenticated from its credential alone,
         /// under the client id the request named. Returns <c>null</c>
         /// when the application is no longer the one that authenticated: gone, replaced under the
-        /// same client id, no longer in an admissible approval state, or holding a different stored
-        /// secret. The stored secrets are compared as stored strings; no secret is derived again and
-        /// neither value leaves this method. A change after this check is not detected here.
+        /// same client id, in an API client approval state other than the admissible one it
+        /// authenticated with, or holding a different stored secret. The stored secrets are compared
+        /// as stored strings; no secret is derived again and neither value leaves this method. A
+        /// change after this check is not detected here; the store re-validates under the lock.
         /// </summary>
         private async Task<ApplicationInfo?> LoadAuthenticatedApplicationAsync(
             AuthenticatedClient authenticatedClient,
@@ -1050,15 +1052,47 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 return null;
             }
 
+            bool isTheSameApplication = applicationInfo.Id == authenticatedClient.ApplicationId;
+            bool approvalUnchanged =
+                IsAdmissibleApproval(applicationInfo.ApiClientApproval)
+                && applicationInfo.ApiClientApproval == authenticatedClient.ApiClientApproval;
+            if (isTheSameApplication && !approvalUnchanged)
+            {
+                LogApprovalChangedBeforeLoad(authenticatedClient, applicationInfo.ApiClientApproval);
+            }
+
             bool isTheAuthenticatedApplication =
-                applicationInfo.Id == authenticatedClient.ApplicationId
-                && IsAdmissibleApproval(applicationInfo.ApiClientApproval)
+                isTheSameApplication
+                && approvalUnchanged
                 && string.Equals(
                     applicationInfo.ClientSecret ?? string.Empty,
                     authenticatedClient.VerifiedStoredSecret,
                     StringComparison.Ordinal
                 );
             return isTheAuthenticatedApplication ? applicationInfo : null;
+        }
+
+        /// <summary>
+        /// The application's API client approval state changed between authentication and the full
+        /// load. An un-approval of a row-backed client is an ordinary lifecycle event and goes to
+        /// Debug; a row that appeared or disappeared, or a state with no name, is a data-integrity
+        /// signal and goes to Warning.
+        /// </summary>
+        private void LogApprovalChangedBeforeLoad(
+            AuthenticatedClient authenticatedClient,
+            ApiClientApprovalState loaded
+        )
+        {
+            bool isUnApproval =
+                authenticatedClient.ApiClientApproval == ApiClientApprovalState.Approved
+                && loaded == ApiClientApprovalState.Unapproved;
+            _logger.Log(
+                isUnApproval ? LogLevel.Debug : LogLevel.Warning,
+                "Client {ClientId} API client approval changed between authentication ({Authenticated}) and application load ({Loaded}); refused",
+                LoggingUtility.SanitizeForLog(authenticatedClient.EffectiveClientId),
+                authenticatedClient.ApiClientApproval,
+                loaded
+            );
         }
 
         /// <summary>
@@ -1114,7 +1148,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         private async Task<(TokenStoreOutcome Outcome, string Token)> GenerateJwtTokenAsync(
             ApplicationInfo applicationInfo,
             string clientId,
-            string scope
+            string scope,
+            ApiClientApprovalState authenticatedApproval
         )
         {
             var tokenId = Guid.NewGuid();
@@ -1150,7 +1185,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 ? -1
                 : _identityOptions.Value.BearerTokenPerClientLimit;
             // The stored hash LoadAuthenticatedApplicationAsync matched against the verified secret.
-            // The store refuses the grant when it no longer matches under the application row lock.
+            // The store refuses the grant when it, or the API client approval state the client
+            // authenticated with, no longer matches under the application row lock.
             string authenticatedStoredSecret = applicationInfo.ClientSecret ?? string.Empty;
             TokenStoreOutcome outcome = await _tokenRepository.StoreTokenAsync(
                 tokenId,
@@ -1158,7 +1194,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 clientId,
                 expiration,
                 maxActiveTokens,
-                authenticatedStoredSecret
+                authenticatedStoredSecret,
+                authenticatedApproval
             );
 
             return (outcome, tokenString);
