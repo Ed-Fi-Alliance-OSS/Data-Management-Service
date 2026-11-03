@@ -2684,7 +2684,13 @@ public class RevocationOwnershipTests
         string clientId
     ) =>
         A.CallTo(() => tokenRepository.GetApplicationByClientIdAsync(clientId))
-            .Returns(new ApplicationInfo { ClientId = clientId, IsApproved = true });
+            .Returns(
+                new ApplicationInfo
+                {
+                    ClientId = clientId,
+                    ApiClientApproval = ApiClientApprovalState.Approved,
+                }
+            );
 
     /// <summary>
     /// A faked token repository whose client credential, unless a test arranges one, is read from
@@ -2710,7 +2716,7 @@ public class RevocationOwnershipTests
                 application.Id,
                 application.ClientId,
                 application.ClientSecret,
-                application.IsApproved
+                application.ApiClientApproval
             )
             : null;
 
@@ -3032,7 +3038,13 @@ public class RevocationOwnershipTests
             // The mis-cased lookup resolves to the application registered under the canonical
             // spelling, which is what a case-insensitive collation does.
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(NonCanonicalClientId))
-                .Returns(new ApplicationInfo { ClientId = OwnerClientId, IsApproved = true });
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        ClientId = OwnerClientId,
+                        ApiClientApproval = ApiClientApprovalState.Approved,
+                    }
+                );
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
             _jti = Guid.NewGuid();
@@ -3143,8 +3155,8 @@ public class RevocationOwnershipTests
         {
             // No application is registered for this client_id, so the lookup fails regardless of
             // what the secret hasher would say. Explicit, because FakeItEasy's default dummy
-            // resolver constructs a real (empty) ApplicationInfo — with IsApproved defaulting to
-            // true — for an unconfigured call, rather than returning null.
+            // resolver constructs a real (empty) ApplicationInfo for an unconfigured call, rather
+            // than returning null.
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync("unregistered-client"))
                 .Returns((ApplicationInfo?)null);
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
@@ -3261,7 +3273,13 @@ public class RevocationOwnershipTests
         public async Task Setup()
         {
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(OwnerClientId))
-                .Returns(new ApplicationInfo { ClientId = OwnerClientId, IsApproved = false });
+                .Returns(
+                    new ApplicationInfo
+                    {
+                        ClientId = OwnerClientId,
+                        ApiClientApproval = ApiClientApprovalState.Unapproved,
+                    }
+                );
             A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
 
             _factory = CreateFactory(_tokenRepository, _secretHasher);
@@ -3707,7 +3725,7 @@ public class RevocationOwnershipTests
                 {
                     ClientId = clientId,
                     ClientSecret = storedHash,
-                    IsApproved = true,
+                    ApiClientApproval = ApiClientApprovalState.Approved,
                 }
             );
     }
@@ -3811,7 +3829,7 @@ public class RevocationOwnershipTests
                     {
                         ClientId = OwnerClientId,
                         ClientSecret = _truncatedHash,
-                        IsApproved = true,
+                        ApiClientApproval = ApiClientApprovalState.Approved,
                     }
                 );
 
@@ -3965,12 +3983,17 @@ public class RevocationOwnershipTests
                         _ownerApplicationId,
                         StoredOwnerClientId,
                         storedHash,
-                        IsApproved: true
+                        ApiClientApprovalState.Approved
                     )
                 );
             A.CallTo(() => _tokenRepository.GetClientCredentialAsync(UnapprovedCallerId))
                 .Returns(
-                    new ClientCredential(Guid.NewGuid(), UnapprovedCallerId, storedHash, IsApproved: false)
+                    new ClientCredential(
+                        Guid.NewGuid(),
+                        UnapprovedCallerId,
+                        storedHash,
+                        ApiClientApprovalState.Unapproved
+                    )
                 );
             A.CallTo(() => _tokenRepository.GetClientCredentialAsync(FaultingCallerId))
                 .Throws(new InvalidOperationException("credential store unavailable"));
@@ -4244,7 +4267,7 @@ public class IntrospectionOwnershipTests
                     {
                         Id = OwnerApplicationId,
                         ClientId = OwnerClientId,
-                        IsApproved = true,
+                        ApiClientApproval = ApiClientApprovalState.Approved,
                     }
                 );
             A.CallTo(() => SecretHasher.VerifySecretAsync(A<string>._, A<string>._)).Returns(true);
@@ -4372,7 +4395,7 @@ public class IntrospectionOwnershipTests
                     {
                         Id = OwnerApplicationId,
                         ClientId = OwnerClientId,
-                        IsApproved = true,
+                        ApiClientApproval = ApiClientApprovalState.Approved,
                     }
                 );
     }
@@ -7254,7 +7277,9 @@ public class Given_TokenEndpoint_requests_that_fail_client_authentication
             Id = Guid.NewGuid(),
             ClientId = clientId,
             ClientSecret = storedHash,
-            IsApproved = isApproved,
+            ApiClientApproval = isApproved
+                ? ApiClientApprovalState.Approved
+                : ApiClientApprovalState.Unapproved,
             ProtocolMappers = "[]",
             Permissions = [Scope],
             Scopes = [Scope],
@@ -7340,14 +7365,16 @@ public class Given_TokenEndpoint_requests_that_fail_client_authentication
         A.CallTo(() => _tokenRepository.GetClientCredentialAsync(AbsentClientId))
             .Returns((ClientCredential?)null);
         A.CallTo(() => _tokenRepository.GetClientCredentialAsync(KnownClientId))
-            .Returns(new ClientCredential(known.Id, known.ClientId, known.ClientSecret, known.IsApproved));
+            .Returns(
+                new ClientCredential(known.Id, known.ClientId, known.ClientSecret, known.ApiClientApproval)
+            );
         A.CallTo(() => _tokenRepository.GetClientCredentialAsync(UnapprovedClientId))
             .Returns(
                 new ClientCredential(
                     unapproved.Id,
                     unapproved.ClientId,
                     unapproved.ClientSecret,
-                    unapproved.IsApproved
+                    unapproved.ApiClientApproval
                 )
             );
         ArrangeIssuance();

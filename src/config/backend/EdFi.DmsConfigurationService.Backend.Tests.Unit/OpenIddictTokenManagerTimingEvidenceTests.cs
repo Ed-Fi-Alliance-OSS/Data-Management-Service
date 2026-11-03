@@ -61,7 +61,7 @@ public class Given_in_process_token_requests_measured_for_timing_evidence
         private readonly Task<ClientCredential?> _absent = Task.FromResult<ClientCredential?>(null);
 
         private readonly Task<ClientCredential?> _known = Task.FromResult<ClientCredential?>(
-            new ClientCredential(Guid.NewGuid(), knownClientId, storedHash, IsApproved: true)
+            new ClientCredential(Guid.NewGuid(), knownClientId, storedHash, ApiClientApprovalState.Approved)
         );
 
         private readonly long _waitTicks = (long)(absentLookupWait.TotalSeconds * Stopwatch.Frequency);

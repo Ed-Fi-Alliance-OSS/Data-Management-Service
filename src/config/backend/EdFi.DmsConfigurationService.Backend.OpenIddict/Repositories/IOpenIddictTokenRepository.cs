@@ -124,10 +124,15 @@ public interface IOpenIddictTokenRepository
     /// <see cref="GetApplicationByClientIdAsync"/> also loads an application's scopes, permissions,
     /// data stores and protocol mappers, so it does more work when the client exists than when it
     /// does not; the token manager authenticates from this narrow read and loads the full
-    /// application only once the secret has been verified and the client is approved.
+    /// application only once the secret has been verified and the client's API client approval
+    /// state is one it may proceed with.
     /// </summary>
     /// <param name="clientId">The client ID to search for.</param>
-    /// <returns>The credential, or <c>null</c> when no application is registered under the client id.</returns>
+    /// <returns>
+    /// The credential, or <c>null</c> when no application is registered under the client id. Its
+    /// <see cref="ClientCredential.ApiClientApproval"/> reports a client with no API client row as
+    /// <see cref="ApiClientApprovalState.NoApiClientRow"/>, never as approved.
+    /// </returns>
     Task<ClientCredential?> GetClientCredentialAsync(string clientId);
 
     /// <summary>

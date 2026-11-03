@@ -924,11 +924,23 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// The stored client id, or the requested one when the stored value is empty.
         /// </param>
         /// <param name="VerifiedStoredSecret">The stored secret the presented secret was verified against.</param>
+        /// <param name="ApiClientApproval">
+        /// The API client approval state the client authenticated with; only an admissible state
+        /// (<see cref="IsAdmissibleApproval"/>) ever reaches this record.
+        /// </param>
         private sealed record AuthenticatedClient(
             Guid ApplicationId,
             string EffectiveClientId,
-            string VerifiedStoredSecret
+            string VerifiedStoredSecret,
+            ApiClientApprovalState ApiClientApproval
         );
+
+        /// <summary>
+        /// The API client approval states a client may proceed with. Every other value, named or
+        /// not, is refused: there is no allow-by-default.
+        /// </summary>
+        private static bool IsAdmissibleApproval(ApiClientApprovalState state) =>
+            state is ApiClientApprovalState.Approved or ApiClientApprovalState.NoApiClientRow;
 
         /// <summary>
         /// Reads the client's credential and verifies the secret against the stored (potentially
@@ -969,17 +981,38 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 return null;
             }
 
-            if (!credential.IsApproved)
+            string effectiveClientId = CanonicalClientId(credential.StoredClientId, clientId);
+            switch (credential.ApiClientApproval)
             {
-                return null;
-            }
+                case ApiClientApprovalState.Approved:
+                // A client without an API client row is still admitted here, as it was before
+                // the state was distinguished from an approval.
+                case ApiClientApprovalState.NoApiClientRow:
+                    return new AuthenticatedClient(
+                        credential.ApplicationId,
+                        effectiveClientId,
+                        credential.StoredClientSecret,
+                        credential.ApiClientApproval
+                    );
 
-            return new AuthenticatedClient(
-                credential.ApplicationId,
-                CanonicalClientId(credential.StoredClientId, clientId),
-                credential.StoredClientSecret
-            );
+                case ApiClientApprovalState.Unapproved:
+                    return null;
+
+                default:
+                    // Answered as an unapproved client is, so the response discloses nothing; the
+                    // line fires only after the presented secret verified.
+                    _logger.LogWarning(
+                        "Client {ClientId} (application {ApplicationId}) authenticated but is not admitted ({Admission}); refused",
+                        LoggingUtility.SanitizeForLog(effectiveClientId),
+                        credential.ApplicationId,
+                        UnknownApprovalStateAdmission
+                    );
+                    return null;
+            }
         }
+
+        /// <summary>The fixed category logged for an API client approval state that has no name.</summary>
+        private const string UnknownApprovalStateAdmission = "UnknownApprovalState";
 
         /// <summary>
         /// Verifies <paramref name="presentedSecret"/> against a stored secret, or against the
@@ -1000,9 +1033,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// Loads the full application for a client that authenticated from its credential alone,
         /// under the client id the request named. Returns <c>null</c>
         /// when the application is no longer the one that authenticated: gone, replaced under the
-        /// same client id, no longer approved, or holding a different stored secret. The stored
-        /// secrets are compared as stored strings; no secret is derived again and neither value
-        /// leaves this method. A change after this check is not detected here.
+        /// same client id, no longer in an admissible approval state, or holding a different stored
+        /// secret. The stored secrets are compared as stored strings; no secret is derived again and
+        /// neither value leaves this method. A change after this check is not detected here.
         /// </summary>
         private async Task<ApplicationInfo?> LoadAuthenticatedApplicationAsync(
             AuthenticatedClient authenticatedClient,
@@ -1019,7 +1052,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
 
             bool isTheAuthenticatedApplication =
                 applicationInfo.Id == authenticatedClient.ApplicationId
-                && applicationInfo.IsApproved
+                && IsAdmissibleApproval(applicationInfo.ApiClientApproval)
                 && string.Equals(
                     applicationInfo.ClientSecret ?? string.Empty,
                     authenticatedClient.VerifiedStoredSecret,

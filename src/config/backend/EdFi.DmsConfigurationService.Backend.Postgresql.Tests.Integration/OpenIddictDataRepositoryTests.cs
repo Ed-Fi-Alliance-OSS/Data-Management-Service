@@ -261,31 +261,21 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             _noRowById.IsTokenLimitExempt.Should().BeTrue();
 
         [Test]
-        public void It_reports_api_client_row_presence_in_both_lookups()
+        public void It_reports_the_api_client_approval_in_both_lookups()
         {
-            _apiClientByClientId.HasNoApiClientRow.Should().BeFalse();
-            _apiClientById.HasNoApiClientRow.Should().BeFalse();
+            ApiClientApprovalState expected = isApproved
+                ? ApiClientApprovalState.Approved
+                : ApiClientApprovalState.Unapproved;
+            _apiClientByClientId.ApiClientApproval.Should().Be(expected);
+            _apiClientById.ApiClientApproval.Should().Be(expected);
         }
 
+        // No API client row is its own state in both lookups, never an approval.
         [Test]
-        public void It_reports_api_client_row_absence_in_both_lookups()
+        public void It_reports_no_api_client_row_in_both_lookups()
         {
-            _noRowByClientId.HasNoApiClientRow.Should().BeTrue();
-            _noRowById.HasNoApiClientRow.Should().BeTrue();
-        }
-
-        [Test]
-        public void It_preserves_api_client_approval_in_both_lookups()
-        {
-            _apiClientByClientId.IsApproved.Should().Be(isApproved);
-            _apiClientById.IsApproved.Should().Be(isApproved);
-        }
-
-        [Test]
-        public void It_preserves_default_approval_for_no_row_clients_in_both_lookups()
-        {
-            _noRowByClientId.IsApproved.Should().BeTrue();
-            _noRowById.IsApproved.Should().BeTrue();
+            _noRowByClientId.ApiClientApproval.Should().Be(ApiClientApprovalState.NoApiClientRow);
+            _noRowById.ApiClientApproval.Should().Be(ApiClientApprovalState.NoApiClientRow);
         }
     }
 
@@ -407,7 +397,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         }
 
         [Test]
-        public void It_reports_no_api_client_row() => _application.HasNoApiClientRow.Should().BeTrue();
+        public void It_reports_no_api_client_row() =>
+            _application.ApiClientApproval.Should().Be(ApiClientApprovalState.NoApiClientRow);
 
         [Test]
         public void It_does_not_exempt_the_application() =>
@@ -4957,20 +4948,23 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         );
 
     // The credential query must report what the full lookup reports for every registration the
-    // schema allows: no API client (approved by default, not absent), an approved or unapproved
-    // one, and either of those linked to several data stores, which fans out the full lookup's
-    // joins but must not change the approval.
-    [TestFixture("no-api-client", true)]
-    [TestFixture("approved", true)]
-    [TestFixture("unapproved", false)]
-    [TestFixture("approved-over-two-data-stores", true)]
-    [TestFixture("unapproved-over-two-data-stores", false)]
-    public class Given_A_Client_Credential_Lookup(string registration, bool expectedApproval)
-        : OpenIddictDataRepositoryTests
+    // schema allows: no API client (its own state, neither approved nor absent), an approved or
+    // unapproved one, and either of those linked to several data stores, which fans out the full
+    // lookups' joins but must not change the approval.
+    [TestFixture("no-api-client", ApiClientApprovalState.NoApiClientRow)]
+    [TestFixture("approved", ApiClientApprovalState.Approved)]
+    [TestFixture("unapproved", ApiClientApprovalState.Unapproved)]
+    [TestFixture("approved-over-two-data-stores", ApiClientApprovalState.Approved)]
+    [TestFixture("unapproved-over-two-data-stores", ApiClientApprovalState.Unapproved)]
+    public class Given_A_Client_Credential_Lookup(
+        string registration,
+        ApiClientApprovalState expectedApproval
+    ) : OpenIddictDataRepositoryTests
     {
         private Guid _applicationId;
         private ClientCredential _credential = null!;
         private ApplicationInfo _application = null!;
+        private ApplicationInfo _applicationById = null!;
         private ClientCredential? _throughWrapper;
 
         [SetUp]
@@ -5002,6 +4996,12 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             _application =
                 await repository.GetApplicationByClientIdAsync(clientId)
                 ?? throw new InvalidOperationException("Seeded application was not found.");
+            using (var connection = await repository.CreateConnectionAsync())
+            {
+                _applicationById =
+                    await repository.GetApplicationByIdAsync(_applicationId, connection)
+                    ?? throw new InvalidOperationException("Seeded application was not found by id.");
+            }
 
             OpenIddictTokenRepository tokenRepository = new(repository);
             _throughWrapper = await tokenRepository.GetClientCredentialAsync(clientId);
@@ -5013,7 +5013,14 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
         [Test]
         public void It_reports_the_approval_of_the_registration() =>
-            _credential.IsApproved.Should().Be(expectedApproval);
+            _credential.ApiClientApproval.Should().Be(expectedApproval);
+
+        [Test]
+        public void It_reports_the_same_approval_from_both_full_lookups()
+        {
+            _application.ApiClientApproval.Should().Be(expectedApproval);
+            _applicationById.ApiClientApproval.Should().Be(expectedApproval);
+        }
 
         [Test]
         public void It_reads_the_stored_secret() =>
@@ -5028,7 +5035,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         _application.Id,
                         _application.ClientId,
                         _application.ClientSecret,
-                        _application.IsApproved
+                        _application.ApiClientApproval
                     )
                 );
 

@@ -367,6 +367,19 @@ UPDATE ""dmscs"".""OpenIddictApplication""
         }
 
         // Methods used by OpenIddictTokenRepository
+
+        /// <summary>
+        /// The approval column both full lookups report, over the joined API client rows. The join
+        /// through <c>ApiClientDataStore</c> repeats an API client row once per data store, which
+        /// changes neither the empty count nor the all-approved aggregate. The values are those of
+        /// <see cref="ApiClientApprovalState"/>.
+        /// </summary>
+        private const string GroupedApiClientApprovalSql = """
+            CASE WHEN COUNT(ac."Id") = 0 THEN 2
+                 WHEN BOOL_AND(ac."IsApproved") THEN 1
+                 ELSE 0 END AS "ApiClientApproval"
+            """;
+
         public async Task<ApplicationInfo?> GetApplicationByClientIdAsync(string clientId)
         {
             await using var connection = new NpgsqlConnection(_connectionString);
@@ -377,8 +390,9 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                          a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""::jsonb::text AS ""ProtocolMappers"",
                          COALESCE(array_agg(DISTINCT s.""Name"") FILTER (WHERE s.""Name"" IS NOT NULL), ARRAY[]::text[]) AS ""Scopes"",
                          COALESCE(array_agg(DISTINCT acd.""DataStoreId"") FILTER (WHERE acd.""DataStoreId"" IS NOT NULL), ARRAY[]::int[]) AS ""DataStoreIds"",
-                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved"",
-                         COUNT(ac.""Id"") = 0 AS ""HasNoApiClientRow""
+                         "
+                + GroupedApiClientApprovalSql
+                + @"
                   FROM ""dmscs"".""OpenIddictApplication"" a
                   LEFT JOIN ""dmscs"".""OpenIddictApplicationScope"" aps ON a.""Id"" = aps.""ApplicationId""
                   LEFT JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""
@@ -396,9 +410,10 @@ UPDATE ""dmscs"".""OpenIddictApplication""
 
         /// <summary>
         /// One statement: the application's id, stored client id and stored secret, and the
-        /// approval <see cref="GetApplicationByClientIdAsync"/> reports (every API client
-        /// registered under the client id approved; approved when there is none). The client id
-        /// is matched exactly, as that lookup matches it. A stored null becomes an empty string.
+        /// approval state <see cref="GetApplicationByClientIdAsync"/> reports (over every API
+        /// client registered under the client id; no API client row when there is none). The
+        /// client id is matched exactly, as that lookup matches it. A stored null becomes an empty
+        /// string.
         /// The statement is driven by the requested client id and always returns one row, with no
         /// application id when none is registered, so an unknown client id makes the same
         /// application and API client index probes as a registered one. A registered id also
@@ -413,10 +428,10 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                 @"SELECT a.""Id"" AS ""ApplicationId"",
                          COALESCE(a.""ClientId"", '') AS ""StoredClientId"",
                          COALESCE(a.""ClientSecret"", '') AS ""StoredClientSecret"",
-                         COALESCE(
-                             (SELECT BOOL_AND(ac.""IsApproved"") FROM ""dmscs"".""ApiClient"" ac WHERE ac.""ClientId"" = r.""ClientId""),
-                             true
-                         ) AS ""IsApproved""
+                         (SELECT CASE WHEN COUNT(*) = 0 THEN 2
+                                      WHEN BOOL_AND(ac.""IsApproved"") THEN 1
+                                      ELSE 0 END
+                          FROM ""dmscs"".""ApiClient"" ac WHERE ac.""ClientId"" = r.""ClientId"") AS ""ApiClientApproval""
                   FROM (SELECT @ClientId AS ""ClientId"") r
                   LEFT JOIN ""dmscs"".""OpenIddictApplication"" a ON a.""ClientId"" = r.""ClientId""";
 
@@ -429,7 +444,7 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                     applicationId,
                     row.StoredClientId ?? string.Empty,
                     row.StoredClientSecret ?? string.Empty,
-                    row.IsApproved
+                    (ApiClientApprovalState)row.ApiClientApproval
                 )
                 : null;
         }
@@ -438,7 +453,7 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             Guid? ApplicationId,
             string? StoredClientId,
             string? StoredClientSecret,
-            bool IsApproved
+            int ApiClientApproval
         );
 
         public async Task<ApplicationInfo?> GetApplicationByIdAsync(
@@ -452,8 +467,9 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                          a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""::jsonb::text AS ""ProtocolMappers"",
                          COALESCE(array_agg(DISTINCT s.""Name"") FILTER (WHERE s.""Name"" IS NOT NULL), ARRAY[]::text[]) AS ""Scopes"",
                          COALESCE(array_agg(DISTINCT acd.""DataStoreId"") FILTER (WHERE acd.""DataStoreId"" IS NOT NULL), ARRAY[]::int[]) AS ""DataStoreIds"",
-                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved"",
-                         COUNT(ac.""Id"") = 0 AS ""HasNoApiClientRow""
+                         "
+                + GroupedApiClientApprovalSql
+                + @"
                   FROM ""dmscs"".""OpenIddictApplication"" a
                   LEFT JOIN ""dmscs"".""OpenIddictApplicationScope"" aps ON a.""Id"" = aps.""ApplicationId""
                   LEFT JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""

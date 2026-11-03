@@ -55,7 +55,12 @@ public class OpenIddictTokenRepositoryCredentialTests
         public async Task Setup()
         {
             _dataRepository = A.Fake<IOpenIddictDataRepository>();
-            _stored = new ClientCredential(Guid.NewGuid(), ClientId, StoredSecret, IsApproved: true);
+            _stored = new ClientCredential(
+                Guid.NewGuid(),
+                ClientId,
+                StoredSecret,
+                ApiClientApprovalState.Approved
+            );
             A.CallTo(() => _dataRepository.GetClientCredentialAsync(ClientId)).Returns(_stored);
             A.CallTo(() => _dataRepository.GetClientCredentialAsync("absent-client"))
                 .Returns((ClientCredential?)null);
@@ -98,7 +103,7 @@ public class OpenIddictTokenRepositoryCredentialTests
                         Id = applicationId,
                         ClientId = ClientId,
                         ClientSecret = StoredSecret,
-                        IsApproved = true,
+                        ApiClientApproval = ApiClientApprovalState.Approved,
                         ProtocolMappers = "[]",
                     }
                 );
@@ -157,7 +162,14 @@ public class OpenIddictTokenRepositoryCredentialTests
             _dataRepository = A.Fake<IOpenIddictDataRepository>();
             Guid applicationId = ArrangeGrantableClient(_dataRepository);
             A.CallTo(() => _dataRepository.GetClientCredentialAsync(ClientId))
-                .Returns(new ClientCredential(applicationId, ClientId, StoredSecret, IsApproved: true));
+                .Returns(
+                    new ClientCredential(
+                        applicationId,
+                        ClientId,
+                        StoredSecret,
+                        ApiClientApprovalState.Approved
+                    )
+                );
 
             _result = await GrantThroughAsync(TokenRepositoryOver(engine, _dataRepository));
         }

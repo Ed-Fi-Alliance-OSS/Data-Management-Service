@@ -391,14 +391,14 @@ UPDATE dmscs.OpenIddictApplication
 
         /// <summary>
         /// One statement and no further queries: the application's id, stored client id and
-        /// stored secret, and the approval <see cref="GetApplicationByClientIdAsync"/> reports
-        /// (every API client registered under the client id approved; approved when there is
-        /// none). The client id is matched with the same predicate as that lookup, so under the
-        /// database's collation. A stored null becomes an empty string. The statement is driven by
-        /// the requested client id and always returns one row, with no application id when none is
-        /// registered, so an unknown client id makes the same application and API client index
-        /// probes as a registered one. A registered id also reads its matched rows, which an
-        /// unknown id does not.
+        /// stored secret, and the approval state <see cref="GetApplicationByClientIdAsync"/>
+        /// reports (over every API client registered under the client id; no API client row when
+        /// there is none). The client id is matched with the same predicate as that lookup, so
+        /// under the database's collation. A stored null becomes an empty string. The statement is
+        /// driven by the requested client id and always returns one row, with no application id
+        /// when none is registered, so an unknown client id makes the same application and API
+        /// client index probes as a registered one. A registered id also reads its matched rows,
+        /// which an unknown id does not.
         /// </summary>
         public async Task<ClientCredential?> GetClientCredentialAsync(string clientId)
         {
@@ -409,9 +409,11 @@ UPDATE dmscs.OpenIddictApplication
                 SELECT a.Id AS ApplicationId,
                        COALESCE(a.ClientId, N'') AS StoredClientId,
                        COALESCE(a.ClientSecret, N'') AS StoredClientSecret,
-                       CAST(COALESCE((SELECT MIN(CAST(ac.IsApproved AS INT))
-                                      FROM dmscs.ApiClient ac
-                                      WHERE ac.ClientId = r.ClientId), 1) AS BIT) AS IsApproved
+                       (SELECT CASE WHEN COUNT(*) = 0 THEN 2
+                                    WHEN MIN(CAST(ac.IsApproved AS INT)) = 1 THEN 1
+                                    ELSE 0 END
+                        FROM dmscs.ApiClient ac
+                        WHERE ac.ClientId = r.ClientId) AS ApiClientApproval
                 FROM (SELECT @ClientId AS ClientId) r
                 LEFT JOIN dmscs.OpenIddictApplication a ON a.ClientId = r.ClientId
                 """;
@@ -425,7 +427,7 @@ UPDATE dmscs.OpenIddictApplication
                     applicationId,
                     row.StoredClientId ?? string.Empty,
                     row.StoredClientSecret ?? string.Empty,
-                    row.IsApproved
+                    (ApiClientApprovalState)row.ApiClientApproval
                 )
                 : null;
         }
@@ -449,13 +451,11 @@ UPDATE dmscs.OpenIddictApplication
             string applicationSql = $"""
                 SELECT a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
                        a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers,
-                       CAST(COALESCE((SELECT MIN(CAST(ac.IsApproved AS INT))
-                                      FROM dmscs.ApiClient ac
-                                      WHERE ac.ClientId = a.ClientId), 1) AS BIT) AS IsApproved,
-                       CAST(CASE WHEN EXISTS (SELECT 1
-                                              FROM dmscs.ApiClient ac
-                                              WHERE ac.ClientId = a.ClientId)
-                                 THEN 0 ELSE 1 END AS BIT) AS HasNoApiClientRow
+                       (SELECT CASE WHEN COUNT(*) = 0 THEN 2
+                                    WHEN MIN(CAST(ac.IsApproved AS INT)) = 1 THEN 1
+                                    ELSE 0 END
+                        FROM dmscs.ApiClient ac
+                        WHERE ac.ClientId = a.ClientId) AS ApiClientApproval
                 FROM dmscs.OpenIddictApplication a
                 WHERE {predicate}
                 """;
@@ -508,8 +508,7 @@ UPDATE dmscs.OpenIddictApplication
                 Scopes = scopes.Distinct().ToArray(),
                 DataStoreIds = dataStoreIds.ToArray(),
                 ProtocolMappers = row.ProtocolMappers ?? string.Empty,
-                IsApproved = row.IsApproved,
-                HasNoApiClientRow = row.HasNoApiClientRow,
+                ApiClientApproval = (ApiClientApprovalState)row.ApiClientApproval,
             };
         }
 
@@ -806,15 +805,14 @@ UPDATE dmscs.OpenIddictApplication
             string? Type,
             DateTime CreatedAt,
             string? ProtocolMappers,
-            bool IsApproved,
-            bool HasNoApiClientRow
+            int ApiClientApproval
         );
 
         private sealed record ClientCredentialRow(
             Guid? ApplicationId,
             string? StoredClientId,
             string? StoredClientSecret,
-            bool IsApproved
+            int ApiClientApproval
         );
 
         private static string[] DeserializeStringArray(string? json) =>

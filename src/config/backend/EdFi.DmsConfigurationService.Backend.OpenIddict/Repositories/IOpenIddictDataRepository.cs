@@ -230,7 +230,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         /// Reads only what client authentication needs, before the presented secret is verified:
         /// the credential of the application registered under <paramref name="clientId"/>, or
         /// <c>null</c> when none is. The statement makes the same index probes whether or not the
-        /// client id is registered; a registered id also reads its matched rows.
+        /// client id is registered; a registered id also reads its matched rows. A client with no
+        /// API client row reports <see cref="ApiClientApprovalState.NoApiClientRow"/>, never an
+        /// approval.
         /// </summary>
         Task<ClientCredential?> GetClientCredentialAsync(string clientId);
 

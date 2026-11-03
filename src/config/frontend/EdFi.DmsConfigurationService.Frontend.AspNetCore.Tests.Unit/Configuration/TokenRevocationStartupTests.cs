@@ -1690,7 +1690,12 @@ public class TokenRevocationStartupTests
 
             A.CallTo(() => Repository.GetClientCredentialAsync(ClientId))
                 .ReturnsLazily(() =>
-                    new ClientCredential(ApplicationId, ClientId, _storedSecret, IsApproved: true)
+                    new ClientCredential(
+                        ApplicationId,
+                        ClientId,
+                        _storedSecret,
+                        ApiClientApprovalState.Approved
+                    )
                 );
             A.CallTo(() => Repository.GetApplicationByClientIdAsync(ClientId))
                 .ReturnsLazily(() =>
@@ -1699,6 +1704,7 @@ public class TokenRevocationStartupTests
                         Id = ApplicationId,
                         ClientId = ClientId,
                         ClientSecret = _storedSecret,
+                        ApiClientApproval = ApiClientApprovalState.Approved,
                         Permissions = ["edfi_admin_api/full_access"],
                     }
                 );

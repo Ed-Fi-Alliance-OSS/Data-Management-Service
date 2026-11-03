@@ -16,13 +16,14 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 /// store holds none.
 /// </param>
 /// <param name="StoredClientSecret">The stored (normally hashed) secret; empty when the store holds none.</param>
-/// <param name="IsApproved">
-/// Whether every API client registered for the application is approved; <c>true</c> when it has
-/// none.
+/// <param name="ApiClientApproval">
+/// The approval of every API client registered under the client id, or
+/// <see cref="ApiClientApprovalState.NoApiClientRow"/> when there is none. That state is not an
+/// approval.
 /// </param>
 public sealed record ClientCredential(
     Guid ApplicationId,
     string StoredClientId,
     string StoredClientSecret,
-    bool IsApproved
+    ApiClientApprovalState ApiClientApproval
 );
