@@ -904,8 +904,12 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
     ) {
         $project = "dms-$flavor"
         Remove-Item (Join-Path $script:root '.cdc-deployments') -Recurse -Force
+        # The published Compose files refuse to render without the encryption keys and the admin connection string.
         @('DMS_HTTP_PORTS=8080', 'POSTGRES_PASSWORD=fixture-password', 'POSTGRES_DB_NAME=fixture',
-            'DMS_CONFIGURATION_SERVICE_CLIENT_SECRET=fixture-secret', 'CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET=fixture-secret') |
+            'DMS_CONFIGURATION_SERVICE_CLIENT_SECRET=fixture-secret', 'CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET=fixture-secret',
+            'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=fixture-database-encryption-key-0123456789',
+            'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY=fixture-identity-encryption-key-0123456789',
+            'DATABASE_CONNECTION_STRING_ADMIN=host=fixture;port=5432;username=fixture-admin;password=fixture-password;database=fixture;') |
             Set-Content (Join-Path $script:root '.env.custom')
         Register-CdcDeploymentHandoff (New-TestHandoff -id 42 -project $project -provider $provider) (Join-Path $script:root 'custom-state-42')
         $script:live = @('connector-42')

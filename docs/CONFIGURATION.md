@@ -1105,8 +1105,8 @@ qualifier above.
 >     skipping the readiness wait and starts .NET without waiting.
 >   - `DATABASE_CONNECTION_STRING_ADMIN`, which that wait connects with. It is
 >     optional: without a host the script skips the wait.
->     The shipped Compose files give it a default, so leaving it out there takes a
->     `!reset null` override; see
+>     `local-dms.compose.yml` gives it a default and `published-dms.compose.yml`
+>     requires a value, so leaving it out there takes a `!reset null` override; see
 >     [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files).
 >   - `AppSettings__ApiSchema__UseCustomPath` and `AppSettings__ApiSchema__Path`, which decide
 >     whether and where it downloads the schema packages. A plugin that supplies

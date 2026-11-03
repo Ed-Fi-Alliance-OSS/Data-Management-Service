@@ -271,6 +271,7 @@ jobs:
             "eng/docker-compose/tests/InstanceE2EForwarding.Tests.ps1",
             "eng/docker-compose/tests/oauth-token-contract/TokenContractE2E.Tests.ps1",
             "eng/docker-compose/tests/ContainerEntryPointDatabaseWait.Tests.ps1",
+            "eng/docker-compose/tests/PublishedComposeSecrets.Tests.ps1",
             "eng/ci/tests/BuildScriptTestGuards.Tests.ps1",
             "eng/ci/tests/Sanitize-E2EArtifacts.Tests.ps1",
             "eng/ci/tests/DmsPullRequestMssqlWorkflow.Tests.ps1",

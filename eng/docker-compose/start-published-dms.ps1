@@ -535,18 +535,47 @@ if ($d) {
     else {
         Write-Output "Shutting down"
     }
-    if ($CdcKafkaInfrastructure -and -not $v) {
-        docker compose $files --env-file $EnvironmentFile -p dms-published --profile cdc-managed-worker stop
+    # The published files require these values with ${VAR:?} (DMS-1652), and stop/down interpolate
+    # every file in the set, including published-config.compose.yml, which teardown always composes.
+    # A stack that never needed a value (Keycloak without the Configuration Service, or an env file
+    # written for the local files) could then not be removed. Removal never uses the values, so each
+    # one Compose would see as missing gets an inert placeholder for these commands only, and the
+    # caller's environment is restored afterwards. Startup keeps the guards.
+    $savedTeardownValues = @{}
+    try {
+        # Inside the try, so a failure while resolving restores anything already set. Sequential, as
+        # Compose reads the env file: a reference sees only the declarations before it.
+        $teardownEvaluation = Resolve-DotenvFileSequentially -Path $EnvironmentFile
+        foreach ($name in 'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY', 'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY', 'DATABASE_CONNECTION_STRING_ADMIN') {
+            if ([string]::IsNullOrEmpty((Get-SequentialEffectiveValue -Evaluation $teardownEvaluation -Name $name))) {
+                $savedTeardownValues[$name] = [System.Environment]::GetEnvironmentVariable($name)
+                [System.Environment]::SetEnvironmentVariable($name, 'teardown-placeholder-not-used')
+            }
+        }
+        if ($CdcKafkaInfrastructure -and -not $v) {
+            docker compose $files --env-file $EnvironmentFile -p dms-published --profile cdc-managed-worker stop
+        }
+        elseif ($CdcKafkaInfrastructure) {
+            docker compose $files --env-file $EnvironmentFile -p dms-published --profile cdc-managed-worker down $downArgs
+        }
+        else { docker compose $files --env-file $EnvironmentFile -p dms-published down $downArgs }
+        $teardownExitCode = $LASTEXITCODE
     }
-    elseif ($CdcKafkaInfrastructure) {
-        docker compose $files --env-file $EnvironmentFile -p dms-published --profile cdc-managed-worker down $downArgs
+    finally {
+        foreach ($name in $savedTeardownValues.Keys) {
+            if ($null -eq $savedTeardownValues[$name]) {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+            }
+            else {
+                [System.Environment]::SetEnvironmentVariable($name, $savedTeardownValues[$name])
+            }
+        }
     }
-    else { docker compose $files --env-file $EnvironmentFile -p dms-published down $downArgs }
     # Fail before workspace removal: a failed down can leave services running against the
     # bind-mounted .bootstrap schema and claims, so removing the workspace would pull it
     # out from under a live stack.
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to shut down Docker environment. Exit code $LASTEXITCODE"
+    if ($teardownExitCode -ne 0) {
+        throw "Failed to shut down Docker environment. Exit code $teardownExitCode"
     }
     if ($v) {
         Remove-BootstrapWorkspaceIfRequested -RemoveBootstrap:$RemoveBootstrap

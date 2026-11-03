@@ -25,7 +25,7 @@ services:
       # interpolation cannot branch on the engine, and an MSSQL run always supplies
       # CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING explicitly through the .env.mssql overlay.
       DatabaseSettings__DatabaseConnection: ${CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING:-host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=${CONFIGURATION_SERVICE_DATABASE_NAME:-${POSTGRES_DB_NAME}};}
-      DatabaseSettings__EncryptionKey: ${CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY:-}
+      DatabaseSettings__EncryptionKey: ${CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY:?set a unique key of at least 32 characters, shared by DMS and the Configuration Service (see docs/DOCKER.md)}
       DatabaseSettings__AllowLegacyConnectionStrings: ${CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS:-true}
       IdentitySettings__AllowRegistration: ${CONFIGURATION_SERVICE_IDENTITY_ALLOW_REGISTRATION:-false}
       IdentitySettings__ConfigServiceRole: ${CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE:-cms-client}
@@ -74,7 +74,7 @@ services:
       JobSettings__RetentionBatchSize: ${CONFIGURATION_SERVICE_JOBS_RETENTION_BATCH_SIZE:-500}
       SecretsSettings__CacheExpirationSeconds: ${CONFIGURATION_SERVICE_SECRETS_CACHE_EXPIRATION_SECONDS:-300}
       SecretsSettings__ResolveTimeoutSeconds: ${CONFIGURATION_SERVICE_SECRETS_RESOLVE_TIMEOUT_SECONDS:-10}
-      IdentitySettings__EncryptionKey: ${CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY:-}
+      IdentitySettings__EncryptionKey: ${CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY:?set a unique key; required even when the Keycloak identity provider leaves it unused (see docs/DOCKER.md)}
       IdentitySettings__ClientSecretHashingIterations: ${CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS:-210000}
       IdentitySettings__TokenCleanup__Enabled: ${CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_ENABLED:-true}
       IdentitySettings__TokenCleanup__IntervalMinutes: ${CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_INTERVAL_MINUTES:-30}

@@ -6,8 +6,10 @@ The [Dockerfile](../src/dms/Dockerfile) in `src/dms` builds the Ed-Fi API (DMS) 
 directly from source code, and
 [Nuget.Dockerfile](../src/dms/Nuget.Dockerfile) build the image from the
 pre-built NuGet packages. The source code version is primarily used in local
-and end-to-end testing; the NuGet package version is intended for production-like
-environments and for publishing to [Docker Hub](https://hub.docker.com/u/edfialliance).
+and end-to-end testing; the NuGet package version is the image published to
+[Docker Hub](https://hub.docker.com/u/edfialliance). Running either image through the
+repository's Docker Compose stack is local development and testing, not a hardened
+deployment; see [Local development only](#local-development-only).
 
 The runtime base image is `mcr.microsoft.com/dotnet/aspnet` on Alpine, running
 .NET 10. This image is maintained by Microsoft and considered trusted. Use of the
@@ -22,7 +24,9 @@ is `postgresql`, `src/dms/run.sh` waits for PostgreSQL by parsing host, port, an
 username from `DATABASE_CONNECTION_STRING_ADMIN`.
 The wait is skipped when `DATABASE_CONNECTION_STRING_ADMIN` is absent or yields no
 host, and DMS starts without waiting.
-The shipped Docker Compose files set a default for the variable; to leave it out there, see [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files).
+`local-dms.compose.yml` sets a default for the variable. `published-dms.compose.yml` has no
+default and requires a value; to keep it out of the container there, see
+[Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files).
 
 ```none
 AppSettings__Datastore=<Database engine: postgresql or mssql. Defaults to postgresql>
@@ -77,6 +81,70 @@ We provide a Docker Compose based local deployment out of the box. See
 [docker-compose/README.md](../eng/docker-compose/README.md) for detailed
 instructions.
 
+## Local development only
+
+The `eng/docker-compose` stack exists for local development and testing. The values in
+`eng/docker-compose/.env.example`, and the fallbacks in its Compose files, are public. The
+published Docker Hub images are the release deliverable, but running them through this stack
+does not make it a hardened deployment. The stock Compose files publish the host ports of the
+services that hold credentials on `127.0.0.1` only; Swagger UI publishes its host port on all
+interfaces. That limits access through those host ports to the local machine. It does not
+isolate the services from other containers on the stack's Docker networks.
+
+### Before a shared or exposed deployment
+
+Replace every credential and key in this table, and review the settings listed after it.
+Generate passwords, client secrets and encryption-key material with a cryptographically secure
+random generator, then use those credentials in the connection strings.
+
+| Setting | What it protects or does | When it applies |
+| --- | --- | --- |
+| `POSTGRES_PASSWORD` | PostgreSQL superuser password. `postgresql.compose.yml` falls back to a public value when it is unset. | PostgreSQL |
+| `MSSQL_SA_PASSWORD` | SQL Server `sa` password. `mssql.compose.yml` falls back to a public value when it is unset. | SQL Server |
+| `KEYCLOAK_ADMIN`, `KEYCLOAK_ADMIN_PASSWORD` | Keycloak administrator account. `keycloak.compose.yml` falls back to `admin` for both when they are unset. | Keycloak |
+| `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` | Encrypts the data store connection strings the Configuration Service stores and DMS decrypts. The Configuration Service and DMS must use the same value. **Changing it after data exists makes the stored connection strings unreadable**, so choose it before the first start. | Always |
+| `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY` | Protects the OpenIddict signing keys held in the Configuration Service database. Changing it after initialization breaks the active signing key; see [Signing key on rerun](../eng/docker-compose/README.md#signing-key-on-rerun--initdb). | Used by the self-contained identity provider. Required whenever `published-config.compose.yml` is included, even with Keycloak, which leaves it unused; a Keycloak invocation that omits that file does not require it. For teardown, see [What the published Compose files enforce](#what-the-published-compose-files-enforce). |
+| `DATABASE_CONNECTION_STRING_ADMIN` | Carries database credentials. Inside the DMS container it is used only for the PostgreSQL readiness wait. `published-dms.compose.yml` requires a value; to keep it out of the container, see [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files). | Required by the published Compose file; read at runtime only with PostgreSQL |
+| `CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING` | The Configuration Service's own database connection string, password included. The example connects as the PostgreSQL superuser. When it is missing or empty, `published-config.compose.yml` and `local-config.compose.yml` fall back to a connection string for the bundled `dms-postgresql` service that uses the `postgres` account and `POSTGRES_PASSWORD`. Set it explicitly, with a least-privilege login. | Always |
+| `DMS_CONFIGURATION_SERVICE_CLIENT_SECRET` | The client secret DMS presents to the Configuration Service. | Always |
+| `CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET` | The Configuration Service's own client secret. | Always |
+| `DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET` | The admin client secret the setup scripts register and authenticate with. The scripts fall back to a public value when it is unset. | Setup scripts |
+| `CDC_DATABASE_PASSWORD` | The CDC worker's database password. | Change data capture |
+| `CDC_WORKER_KEY` | **An identifier, not a credential.** It labels the CDC worker container and names its Kafka Connect group. It does not need to be secret. | Change data capture |
+
+Other settings to review:
+
+- Set `CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS=false` once every stored connection
+  string has been re-encrypted; see [CONFIGURATION.md](./CONFIGURATION.md).
+- Do not enable development certificates (`IdentitySettings__UseDevelopmentCertificates`).
+- `.env.example` sets `DMS_JWT_REQUIRE_HTTPS_METADATA` and
+  `CONFIGURATION_SERVICE_IDENTITY_REQUIRE_HTTPS` to `false` for the stack's private-network
+  identity provider. Review both.
+- Swagger UI publishes its host port (`DMS_SWAGGER_UI_PORT`) on all interfaces.
+- Port exposure, TLS termination and reverse proxies are the operator's responsibility.
+
+### What the published Compose files enforce
+
+`published-config.compose.yml` and `published-dms.compose.yml` read
+`CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY`, `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY`
+and `DATABASE_CONNECTION_STRING_ADMIN` with `${VAR:?message}` and supply no fallback. When one
+of them is missing or empty, `docker compose config`, `up` and `down` stop with an error that
+names the service, the environment key and the variable. The guards apply to every service
+definition in the invocation, not only to the services it starts: `start-published-dms.ps1 -DmsOnly`
+starts only DMS, but it still composes `published-config.compose.yml` when the Configuration
+Service is part of its compose set (with `-EnableConfig`, `-SeparateConfigDatabase`, bootstrap
+mode, or the default self-contained identity provider) or when it finds an existing paired DMS and
+Configuration Service proxy network, so the Configuration Service guards apply then too.
+Teardown through
+`start-published-dms.ps1 -d` is the one exception: it always includes
+`published-config.compose.yml`, so for each of the three values that is missing it gives `stop`
+and `down` an inert placeholder, which removal does not use, and then restores the environment.
+A direct `docker compose down` with these files still needs all three, and startup through the
+script still requires them. The check is for presence only:
+example values, weak values and quoted whitespace-only values pass. Generate the encryption keys,
+and the credentials inside the admin connection string, with a cryptographically secure random
+generator. The local Compose files (`local-*.compose.yml`) keep their fallbacks.
+
 ## Identity Provider Configuration
 
 The Ed-Fi API supports two identity provider modes: **keycloak** and **self-contained (OpenIddict)**. The relevant environment variables are:
@@ -122,7 +190,7 @@ the in-network URL the Configuration Service calls. Self-contained mode uses one
 |------------------------------------|------------------------------------------------------------------|------------------------------------------------------|-----------------------------------------------|
 | `IdentityProvider`                 | Selects the identity provider                                    | `keycloak`                                           | `self-contained`                              |
 | `Authority`                        | Identity provider issuer. In self-contained mode, also the base URL for every advertised discovery endpoint: omit `AppSettings:PathBase` from this value, and keep DMS `JwtAuthentication:MetadataAddress` on the same origin (scheme, host, and port). DMS `JwtAuthentication:Authority` must exactly match the issuer. | `http://dms-keycloak:8080/realms/edfi` | `http://ed-fi-api-config:8081` |
-| `EncryptionKey`                    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
+| `EncryptionKey`                    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` (public example; generate your own) |
 | `TokenCleanup:Enabled`            | Enables the expired-token cleanup sweep (self-contained only)    | _(not used)_                                         | `true`                                        |
 | `TokenCleanup:IntervalMinutes`    | Minutes between expired-token cleanup sweeps (self-contained only) | _(not used)_                                       | `30`                                          |
 | `BearerTokenPerClientLimit`        | Maximum active access tokens one limited client may hold (self-contained only; default `15`); further grants are rejected with HTTP 429. Exemption requires no live `dmscs.ApiClient` row and nonempty registered scopes consisting only of recognized Configuration Service admin scopes. Ed-Fi API clients remain limited. Below 1 disables enforcement globally. Compose variable: `CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT` | _(not used)_ | `15` |
