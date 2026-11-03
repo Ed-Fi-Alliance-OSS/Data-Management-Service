@@ -41,9 +41,10 @@ image-only runner, its resource packaging, observations, and prerequisite diagno
 
 `upsertVariant` optionally names a file under this root. The loader validates the
 shared E18 files first, then applies only the variant's signed `contentVersion`,
-paired source/expected timestamps, and additive `documentProperties`. Additions
+paired source/expected timestamps (`lastModifiedAt`/`expectedLastModifiedAt` and
+`contentCreatedAt`/`expectedDocumentCreatedAt`), and additive `documentProperties`. Additions
 cannot overwrite shared document fields or reserved metadata. Expected timestamps
-are explicit whole-second values checked against the cache timestamp, so rounding
+are explicit whole-second values checked against the cache timestamps, so rounding
 across the year boundary is not accepted. Variant files are test inputs, not new
 materializer goldens. The shared opaque ETag is deliberately unchanged even when a
 synthetic variant changes the version or body: these scenarios test copying, not
@@ -58,16 +59,18 @@ digits; SQL Server supplies seven. Numeric data includes adjacent integers beyon
 exact decimal/exponent values, mixed nested arrays, Unicode strings, and absent
 versus explicitly null sibling properties. Updates also supply uppercase source
 UUIDs and a distinct before row to detect stale metadata or body selection.
-Provider upsert templates include `ComputedAt`
-distinct from `LastModifiedAt` to prove that computation metadata does not leak.
+Provider upsert templates bind `ContentCreatedAt` beside `LastModifiedAt`, with that
+provider's timestamp logical schema, and include `ComputedAt` distinct from both published
+timestamps to prove that computation metadata does not leak.
 The nested-field variant preserves resource properties named `source`, `schema`,
 `payload`, `deleted`, and `_etag` inside objects and collection items. Transport-field
-exclusions apply to the eight envelope properties; complete semantic equality and the
+exclusions apply to the nine envelope properties; complete semantic equality and the
 explicit `document._etag` assertion check the document body and injected ETag placement.
 
 Each scenario independently asserts the complete semantic public envelope, derived
 topic and unquoted UTF-8 key, exact required logical BYTES schema/version and
-converter defensive copy, whole-second document time and cleared Connect metadata,
+converter defensive copy, whole-second document and creation times (the creation time
+absent from `document`) and cleared Connect metadata,
 and opaque ETag placement/internal-field exclusion. Public JSON object order and
 equivalent numeric spelling/scale are not golden byte contracts. Byte equality is
 asserted separately only across the transform-to-converter boundary.
@@ -432,7 +435,8 @@ and records only allowlisted schema descriptors, operation kinds, canonical UUID
 boolean source-identity checks and numeric offsets. It never serializes documents,
 server/database names, connection strings, credentials or exception details, and
 fails closed after 4096 observations. This permits assertions about actual Debezium
-UUID/JSON/ZonedTimestamp/INT64 schemas and delete-before key availability. The raw
+UUID/JSON/ZonedTimestamp/INT64 schemas, the `ContentCreatedAt` timestamp schema, and
+delete-before key availability. The raw
 observer file lives only in the isolated container and is removed during cleanup;
 its bounded observations are included in the NUnit attachment.
 It supplies source-shape evidence, not a second transformer or provider pipeline.
@@ -475,7 +479,8 @@ Neither source-table heartbeat values nor Kafka offsets substitute for that fenc
 
 The pass-through source observer validates the database-qualified relational topics
 and source partition by equality flags, retaining no database/server names. It records
-plain STRING UUID/JSON schemas, IsoTimestamp/INT64 schemas, fractional-precision flags
+plain STRING UUID/JSON schemas, IsoTimestamp/INT64 schemas (for both `LastModifiedAt` and
+`ContentCreatedAt`), fractional-precision flags
 and bounded before-image availability categories. The live canonical UUID before
 images and changed JSON LOB before images are available in this matrix; MC-04 owns
 injected unavailable-marker delete evidence. The actual native heartbeat has a
@@ -713,6 +718,12 @@ the original shared upsert works. No E18 or authoritative goldens are copied or 
 The catalog covers source/work-table rejection, ConfigException, retained upsert/delete
 key types, required row schemas/runtime types, unavailable markers, invalid document JSON
 and embedded metadata, UTC/logical timestamp failures, and direct converter handshakes.
+The `ContentCreatedAt` cases mirror the `LastModifiedAt` set one for one:
+`FIELD-CONTENTCREATEDAT-{MISSING,NULL}` expect `MISSING_REQUIRED_FIELD`;
+`FIELD-CONTENTCREATEDAT-{OPTIONAL,NAME}` and `CREATED-TIME-{NUMERIC,PLAIN,MICRO}` expect
+`UNSUPPORTED_REQUIRED_FIELD_SHAPE`; and
+`CREATED-TIME-{NON-UTC,LOCAL,INVALID,EMPTY,UNAVAILABLE,RUNTIME-NUMBER}` expect
+`INVALID_CONTENT_CREATED_AT`.
 Artifact-owned reason accessors are asserted for transforms; converter/configuration
 failures use Kafka exception categories with runner-owned stage reasons, never exception prose.
 
