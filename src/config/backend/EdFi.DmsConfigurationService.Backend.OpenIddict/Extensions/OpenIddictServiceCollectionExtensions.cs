@@ -33,6 +33,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     configuration.GetValue<string>("IdentitySettings:Audience") ?? string.Empty;
                 options.Authority =
                     configuration.GetValue<string>("IdentitySettings:Authority") ?? string.Empty;
+                // Bound as configured, without trimming or case folding: token issuance compares
+                // role names ordinally, as the ServicePolicy compares the role claim.
+                options.ConfigServiceRole =
+                    configuration.GetValue<string>("IdentitySettings:ConfigServiceRole") ?? string.Empty;
+                options.ClientRole =
+                    configuration.GetValue<string>("IdentitySettings:ClientRole") ?? string.Empty;
                 options.TokenExpirationMinutes = configuration.GetValue<int>(
                     "IdentitySettings:TokenExpirationMinutes",
                     30
