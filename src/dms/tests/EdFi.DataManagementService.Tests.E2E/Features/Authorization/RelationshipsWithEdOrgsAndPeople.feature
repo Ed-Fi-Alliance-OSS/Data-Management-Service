@@ -1276,7 +1276,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
 
         @ResetClaimsetsAfterScenario
         @e2e-ci-shard-2
-        Scenario: 39Ensure a missing or existing academic record yields the same denial without a student school association
+        Scenario: 39 Ensure a missing or existing academic record yields the same denial without a student school association
              When a POST request is made to "/ed-fi/courseTranscripts" with
                   """
                   {
@@ -1307,7 +1307,12 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   ]
                   }
                   """
-             Given a claim set is uploaded to CMS that grants "StudentAcademicRecord" access to "E2E-DMS1659-AcademicRecordSeed"
+             # The upload replaces the claims hierarchy (EdFiSandbox no longer exists), so one claim set
+             # carries both the unrestricted seed resource and the relationship-secured resource under test.
+             Given a claim set "E2E-DMS1659-AcademicRecordSeed" is uploaded to CMS with these resource claims
+                  | resource              | authorizationStrategies          |
+                  | StudentAcademicRecord | NoFurtherAuthorizationRequired   |
+                  | CourseTranscript      | RelationshipsWithEdOrgsAndPeople |
                And the claim set upload to CMS should be successful
                And the claimSet "E2E-DMS1659-AcademicRecordSeed" is authorized with educationOrganizationIds "5255901001"
              When a POST request is made to "/ed-fi/studentAcademicRecords" with
@@ -1320,7 +1325,6 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   }
                   """
              Then it should respond with 201
-             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "5255901001"
              When a POST request is made to "/ed-fi/courseTranscripts" with
                   """
                   {
