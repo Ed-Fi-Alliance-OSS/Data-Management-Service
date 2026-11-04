@@ -92,16 +92,10 @@ public class Given_the_shipped_identity_settings_keys
         List<string> shippedKeys =
         [
             .. configuration
-                .AsEnumerable()
-                .Where(entry =>
-                    entry.Key.StartsWith(SectionPrefix, StringComparison.OrdinalIgnoreCase)
-                    && entry.Value is not null
-                )
-                .Select(entry => entry.Key),
+                .Providers.OfType<RecordingJsonConfigurationProvider>()
+                .Single()
+                .LeafKeys.Where(key => key.StartsWith(SectionPrefix, StringComparison.OrdinalIgnoreCase)),
         ];
-
-        // Enumerating the configuration reads every key, so forget those reads before the readers run.
-        readKeys.Clear();
 
         using ServiceProvider provider = new ServiceCollection()
             .AddOpenIddictIdentityOptions(configuration)
@@ -142,6 +136,10 @@ public class Given_the_shipped_identity_settings_keys
         HashSet<string> readKeys
     ) : JsonConfigurationProvider(source)
     {
+        // The provider stores only leaves, including a key whose JSON value is null, which
+        // AsEnumerable reports the same way as a section. Listing them reads none of them.
+        public IEnumerable<string> LeafKeys => Data.Keys;
+
         public override bool TryGet(string key, out string? value)
         {
             readKeys.Add(key);
