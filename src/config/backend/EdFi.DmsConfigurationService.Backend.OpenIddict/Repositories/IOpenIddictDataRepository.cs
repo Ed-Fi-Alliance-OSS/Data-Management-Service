@@ -154,6 +154,15 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         /// </summary>
         Task<IEnumerable<string>> GetApplicationScopesAsync(Guid applicationId);
 
+        /// <summary>
+        /// True when one role row matches both <paramref name="firstRoleName"/> and
+        /// <paramref name="secondRoleName"/> under the role-resolution comparison: the predicate
+        /// <see cref="FindRoleIdByNameAsync"/> evaluates, under the column's collation, read on a
+        /// connection of its own. False when the names match different rows or no row. The
+        /// argument order does not matter.
+        /// </summary>
+        Task<bool> RoleNamesShareARoleRowAsync(string firstRoleName, string secondRoleName);
+
         // Token operations
         Task<TokenInfo?> GetTokenByIdAsync(Guid tokenId);
 

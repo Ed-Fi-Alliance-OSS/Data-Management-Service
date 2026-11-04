@@ -514,6 +514,19 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             );
         }
 
+        public async Task<bool> RoleNamesShareARoleRowAsync(string firstRoleName, string secondRoleName)
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            return await connection.ExecuteScalarAsync<bool>(
+                @"SELECT EXISTS (
+                      SELECT 1 FROM ""dmscs"".""OpenIddictRole""
+                      WHERE ""Name"" = @FirstRoleName AND ""Name"" = @SecondRoleName)",
+                new { FirstRoleName = firstRoleName, SecondRoleName = secondRoleName }
+            );
+        }
+
         public async Task<TokenInfo?> GetTokenByIdAsync(Guid tokenId)
         {
             await using var connection = new NpgsqlConnection(_connectionString);

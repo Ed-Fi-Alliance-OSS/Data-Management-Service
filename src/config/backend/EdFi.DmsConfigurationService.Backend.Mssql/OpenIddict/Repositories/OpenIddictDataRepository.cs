@@ -543,6 +543,20 @@ UPDATE dmscs.OpenIddictApplication
             );
         }
 
+        public async Task<bool> RoleNamesShareARoleRowAsync(string firstRoleName, string secondRoleName)
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            return await connection.ExecuteScalarAsync<bool>(
+                @"SELECT CASE WHEN EXISTS (
+                             SELECT 1 FROM dmscs.OpenIddictRole
+                             WHERE Name = @FirstRoleName AND Name = @SecondRoleName)
+                         THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END",
+                new { FirstRoleName = firstRoleName, SecondRoleName = secondRoleName }
+            );
+        }
+
         public async Task<TokenInfo?> GetTokenByIdAsync(Guid tokenId)
         {
             await using var connection = new SqlConnection(_connectionString);

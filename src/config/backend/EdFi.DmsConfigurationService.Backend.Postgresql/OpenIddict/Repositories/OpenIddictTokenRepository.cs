@@ -93,6 +93,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
             return await dataRepository.GetApplicationScopesAsync(applicationId);
         }
 
+        public async Task<bool> RoleNamesShareARoleRowAsync(string firstRoleName, string secondRoleName)
+        {
+            return await dataRepository.RoleNamesShareARoleRowAsync(firstRoleName, secondRoleName);
+        }
+
         public async Task<ClientCredential?> GetClientCredentialAsync(string clientId)
         {
             return await dataRepository.GetClientCredentialAsync(clientId);

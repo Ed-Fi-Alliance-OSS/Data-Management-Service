@@ -162,4 +162,15 @@ public interface IOpenIddictTokenRepository
     /// application has the ID.
     /// </returns>
     Task<IEnumerable<string>> GetApplicationScopesAsync(Guid applicationId);
+
+    /// <summary>
+    /// Gets whether two role names resolve to one stored role row.
+    /// </summary>
+    /// <param name="firstRoleName">One role name.</param>
+    /// <param name="secondRoleName">The other role name.</param>
+    /// <returns>
+    /// True when one role row matches both names under the comparison role resolution uses; false
+    /// when they match different rows or none.
+    /// </returns>
+    Task<bool> RoleNamesShareARoleRowAsync(string firstRoleName, string secondRoleName);
 }

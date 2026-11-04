@@ -21,7 +21,7 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 /// <summary>
 /// Each engine's shipped token repository forwards the credential read to the data repository it
 /// wraps, and a grant through it reads the credential before the full application. It forwards the
-/// application scopes read the same way.
+/// application scopes read and the shared role row read the same way.
 /// </summary>
 public class OpenIddictTokenRepositoryCredentialTests
 {
@@ -108,6 +108,43 @@ public class OpenIddictTokenRepositoryCredentialTests
         [Test]
         public void It_reads_the_scopes_once_for_the_application() =>
             A.CallTo(() => _dataRepository.GetApplicationScopesAsync(_applicationId))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_makes_no_other_read() => Fake.GetCalls(_dataRepository).Should().ContainSingle();
+    }
+
+    [TestFixture("postgresql", true)]
+    [TestFixture("postgresql", false)]
+    [TestFixture("mssql", true)]
+    [TestFixture("mssql", false)]
+    public class Given_a_shared_role_row_read_through_a_token_repository(string engine, bool stored)
+        : OpenIddictTokenRepositoryCredentialTests
+    {
+        private const string FirstRoleName = "first-role";
+        private const string SecondRoleName = "second-role";
+        private IOpenIddictDataRepository _dataRepository = null!;
+        private bool _forwarded;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _dataRepository = A.Fake<IOpenIddictDataRepository>();
+            A.CallTo(() => _dataRepository.RoleNamesShareARoleRowAsync(FirstRoleName, SecondRoleName))
+                .Returns(stored);
+            A.CallTo(() => _dataRepository.RoleNamesShareARoleRowAsync(SecondRoleName, FirstRoleName))
+                .Returns(!stored);
+            IOpenIddictTokenRepository tokenRepository = TokenRepositoryOver(engine, _dataRepository);
+
+            _forwarded = await tokenRepository.RoleNamesShareARoleRowAsync(FirstRoleName, SecondRoleName);
+        }
+
+        [Test]
+        public void It_returns_the_wrapped_repositorys_answer() => _forwarded.Should().Be(stored);
+
+        [Test]
+        public void It_reads_once_with_both_names_in_order() =>
+            A.CallTo(() => _dataRepository.RoleNamesShareARoleRowAsync(FirstRoleName, SecondRoleName))
                 .MustHaveHappenedOnceExactly();
 
         [Test]

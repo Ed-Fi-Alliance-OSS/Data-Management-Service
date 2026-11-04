@@ -4994,6 +4994,47 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         return (roles, clientRoles);
     }
 
+    /// <summary>
+    /// The collation the role name column compares under: its own, else the database default.
+    /// Stated in the role-name fixtures' assertion messages.
+    /// </summary>
+    protected async Task<string> RoleNameCollationAsync()
+    {
+        await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<string>(
+                @"SELECT COALESCE(c.collation_name, d.datcollate)
+                  FROM information_schema.columns c
+                  CROSS JOIN pg_database d
+                  WHERE c.table_schema = 'dmscs' AND c.table_name = 'OpenIddictRole'
+                    AND c.column_name = 'Name' AND d.datname = current_database()"
+            ) ?? "(unknown)";
+    }
+
+    /// <summary>How many distinct role rows the given clients hold between them.</summary>
+    protected async Task<int> DistinctRoleIdCountAsync(params Guid[] clientIds)
+    {
+        await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<int>(
+            @"SELECT COUNT(DISTINCT ""RoleId"") FROM ""dmscs"".""OpenIddictClientRole""
+              WHERE ""ClientId"" = ANY(@ClientIds)",
+            new { ClientIds = clientIds }
+        );
+    }
+
+    /// <summary>
+    /// Role rows whose stored name is exactly one of <paramref name="roleNames"/>, compared by
+    /// bytes so the count does not depend on the column collation.
+    /// </summary>
+    protected async Task<int> RoleRowCountByExactNameAsync(params string[] roleNames)
+    {
+        await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<int>(
+            @"SELECT COUNT(*) FROM ""dmscs"".""OpenIddictRole""
+              WHERE convert_to(""Name"", 'UTF8') IN (SELECT convert_to(n, 'UTF8') FROM unnest(@RoleNames) n)",
+            new { RoleNames = roleNames }
+        );
+    }
+
     protected async Task<(int Scopes, int ApplicationScopes)> ScopeRowCountsAsync(string scopeName)
     {
         await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
@@ -5567,6 +5608,213 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [Test]
         public void It_returns_no_names_for_an_unknown_application() =>
             _unknownApplication.Should().BeEmpty();
+    }
+
+    // DMS-1494 §4.5 clause 2: whether two role names share a role row, read with the predicate role
+    // resolution uses. PostgreSQL's deterministic collation equates only identical strings, so every
+    // case, width, padding and overlength variant reads as a different row. The SQL Server fixture
+    // of the same name pins the engine where they share one. Role rows are not reset between tests,
+    // so the names carry a fresh suffix; each keeps the distinguishing feature the spec names.
+    [TestFixture]
+    public class Given_Role_Names_Compared_Against_Stored_Role_Rows : OpenIddictDataRepositoryTests
+    {
+        private const bool PaddingCaseAndWidthEquate = false;
+        private OpenIddictDataRepository _repository = null!;
+        private string _collation = null!;
+        private string _cmsClient = null!;
+        private string _dmsClient = null!;
+        private string _admin = null!;
+        private string _absent = null!;
+        private string _hundred = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(
+                Configuration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string suffix = Guid.NewGuid().ToString("N");
+            _cmsClient = $"cms-client-{suffix}";
+            _dmsClient = $"dms-client-{suffix}";
+            _admin = $"Admin-{suffix}";
+            _absent = $"absent-role-{suffix}";
+            _hundred = suffix + new string('x', 100 - suffix.Length);
+            await _repository.ExecuteInTransactionAsync(
+                async (connection, transaction) =>
+                {
+                    foreach (string name in new[] { _cmsClient, _admin, _hundred })
+                    {
+                        await _repository.InsertRoleAsync(Guid.NewGuid(), name, connection, transaction);
+                    }
+                }
+            );
+            _collation = await RoleNameCollationAsync();
+        }
+
+        private async Task ExpectAsync(string first, string second, bool expected)
+        {
+            (await _repository.RoleNamesShareARoleRowAsync(first, second))
+                .Should()
+                .Be(expected, $"the role name column compares under collation {_collation}");
+            (await _repository.RoleNamesShareARoleRowAsync(second, first))
+                .Should()
+                .Be(expected, $"the argument order does not matter (collation {_collation})");
+        }
+
+        [Test]
+        public void It_seeds_a_one_hundred_character_name() => _hundred.Length.Should().Be(100);
+
+        [Test]
+        public Task It_matches_a_name_with_itself() => ExpectAsync(_cmsClient, _cmsClient, true);
+
+        [Test]
+        public Task It_does_not_match_distinct_names() => ExpectAsync(_cmsClient, _dmsClient, false);
+
+        [Test]
+        public Task It_reports_a_trailing_space_variant() =>
+            ExpectAsync(_cmsClient, _cmsClient + " ", PaddingCaseAndWidthEquate);
+
+        [Test]
+        public Task It_reports_a_trailing_ideographic_space_variant() =>
+            ExpectAsync(_cmsClient, _cmsClient + "　", PaddingCaseAndWidthEquate);
+
+        [Test]
+        public Task It_reports_a_case_variant() =>
+            ExpectAsync(_admin, "a" + _admin[1..], PaddingCaseAndWidthEquate);
+
+        [Test]
+        public Task It_reports_a_full_width_variant() =>
+            ExpectAsync(_admin, "Ａ" + _admin[1..], PaddingCaseAndWidthEquate);
+
+        [Test]
+        public Task It_does_not_match_a_leading_space_variant() =>
+            ExpectAsync(_cmsClient, " " + _cmsClient, false);
+
+        [Test]
+        public Task It_does_not_match_a_class_with_no_row() => ExpectAsync(_absent, _absent + " ", false);
+
+        [Test]
+        public Task It_does_not_truncate_an_overlength_name_with_a_repeated_significant_character() =>
+            ExpectAsync(_hundred, _hundred + "x", false);
+
+        [Test]
+        public Task It_does_not_truncate_an_overlength_name_with_another_significant_character() =>
+            ExpectAsync(_hundred, _hundred + "y", false);
+
+        [Test]
+        public Task It_reports_an_overlength_name_with_a_trailing_space() =>
+            ExpectAsync(_hundred, _hundred + " ", PaddingCaseAndWidthEquate);
+
+        [Test]
+        public Task It_reports_an_overlength_name_with_a_trailing_ideographic_space() =>
+            ExpectAsync(_hundred, _hundred + "　", PaddingCaseAndWidthEquate);
+
+        [Test]
+        public async Task It_gives_the_same_answers_through_the_token_repository()
+        {
+            OpenIddictTokenRepository tokenRepository = new(_repository);
+            (await tokenRepository.RoleNamesShareARoleRowAsync(_cmsClient, _cmsClient)).Should().BeTrue();
+            (await tokenRepository.RoleNamesShareARoleRowAsync(_cmsClient, _cmsClient + " "))
+                .Should()
+                .Be(PaddingCaseAndWidthEquate, $"collation {_collation}");
+            (await tokenRepository.RoleNamesShareARoleRowAsync(_cmsClient, _dmsClient)).Should().BeFalse();
+        }
+    }
+
+    // DMS-1494 F15, the precondition for the bypass: through the production creation path, a
+    // registration-shaped client takes the administrative role name and a vendor-shaped client a
+    // variant of it. On PostgreSQL the variant creates its own role row, so membership tells the
+    // two kinds apart; the SQL Server fixture of the same name pins the reuse there.
+    [TestFixture("trailing-space")]
+    [TestFixture("full-width")]
+    public class Given_Clients_Created_With_A_Role_Name_Variant(string variant)
+        : OpenIddictDataRepositoryTests
+    {
+        private const bool VendorReusesTheAdministrativeRow = false;
+        private string _collation = null!;
+        private string _administrativeRole = null!;
+        private string _vendorRole = null!;
+        private ClientCreateResult _administrativeResult = null!;
+        private ClientCreateResult _vendorResult = null!;
+        private string[] _administrativeRoles = null!;
+        private string[] _vendorRoles = null!;
+        private int _distinctRoleIds;
+        private int _roleRows;
+        private bool _shareARoleRow;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(
+                Configuration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string suffix = Guid.NewGuid().ToString("N");
+            (_administrativeRole, _vendorRole) = variant switch
+            {
+                "trailing-space" => ($"cms-client-{suffix}", $"cms-client-{suffix} "),
+                "full-width" => ($"Admin-{suffix}", $"Ａdmin-{suffix}"),
+                _ => throw new ArgumentOutOfRangeException(nameof(variant), variant, null),
+            };
+            OpenIddictClientRepository clientRepository = CreateClientRepository(repository);
+
+            _administrativeResult = await clientRepository.CreateClientAsync(
+                $"registered-{suffix}",
+                "registered-secret",
+                _administrativeRole,
+                "Registered Client",
+                "edfi_admin_api/full_access",
+                "",
+                ""
+            );
+            _vendorResult = await clientRepository.CreateClientAsync(
+                $"vendor-{suffix}",
+                "vendor-secret",
+                _vendorRole,
+                "Vendor Client",
+                "EdFiSandbox",
+                "uri://ed-fi.org",
+                "255901"
+            );
+
+            Guid administrativeId = ((ClientCreateResult.Success)_administrativeResult).ClientUuid;
+            Guid vendorId = ((ClientCreateResult.Success)_vendorResult).ClientUuid;
+            _administrativeRoles = (await repository.GetClientRolesAsync(administrativeId)).ToArray();
+            _vendorRoles = (await repository.GetClientRolesAsync(vendorId)).ToArray();
+            _distinctRoleIds = await DistinctRoleIdCountAsync(administrativeId, vendorId);
+            _roleRows = await RoleRowCountByExactNameAsync(_administrativeRole, _vendorRole);
+            _shareARoleRow = await repository.RoleNamesShareARoleRowAsync(_administrativeRole, _vendorRole);
+            _collation = await RoleNameCollationAsync();
+        }
+
+        [Test]
+        public void It_creates_both_clients()
+        {
+            _administrativeResult.Should().BeOfType<ClientCreateResult.Success>();
+            _vendorResult.Should().BeOfType<ClientCreateResult.Success>();
+        }
+
+        [Test]
+        public void It_gives_the_administrative_client_the_administrative_role() =>
+            _administrativeRoles.Should().Equal(_administrativeRole);
+
+        [Test]
+        public void It_gives_the_vendor_its_own_role_row() =>
+            _vendorRoles
+                .Should()
+                .Equal([_vendorRole], $"the role name column compares under collation {_collation}");
+
+        [Test]
+        public void It_holds_two_role_rows_between_the_clients() =>
+            _distinctRoleIds.Should().Be(2, $"collation {_collation}");
+
+        [Test]
+        public void It_stores_both_names() => _roleRows.Should().Be(2, $"collation {_collation}");
+
+        [Test]
+        public void It_reads_the_names_as_not_sharing_a_role_row() =>
+            _shareARoleRow.Should().Be(VendorReusesTheAdministrativeRow, $"collation {_collation}");
     }
 
     // Through the token manager, the credential query decides authentication: a successful grant
