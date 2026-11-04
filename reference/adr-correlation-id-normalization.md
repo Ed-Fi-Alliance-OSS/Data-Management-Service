@@ -299,8 +299,9 @@ forging.
   a backslash, and the loss of the `ReplaceLineEndings` marker that CodeQL models as a sanitizer
   in the four copies lacking it.
 - **Client-facing documentation** (as opposed to the host-facing `docs/CONFIGURATION.md` and
-  `docs/LOGGING.md`) is tracked by [DMS-1540](https://edfi.atlassian.net/browse/DMS-1540)
-  in the separate [Ed-Fi documentation repository](https://github.com/Ed-Fi-Alliance-OSS/ed-fi-alliance-oss.github.io).
+  `docs/LOGGING.md`) belongs in the separate
+  [Ed-Fi documentation repository](https://github.com/Ed-Fi-Alliance-OSS/ed-fi-alliance-oss.github.io).
+  [DMS-1540](https://edfi.atlassian.net/browse/DMS-1540) tracks that work.
 
 ## Defects found and their lessons
 
