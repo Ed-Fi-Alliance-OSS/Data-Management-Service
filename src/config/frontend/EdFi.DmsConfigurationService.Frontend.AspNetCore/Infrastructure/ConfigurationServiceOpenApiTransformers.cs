@@ -17,15 +17,6 @@ public static class ConfigurationServiceOpenApiTransformers
 {
     private const string EdFiWebsite = "https://www.ed-fi.org/";
 
-    private const string CmsExtensionsReferenceUrl =
-        "https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/API-CLIENT-AND-INSTANCE-CONFIGURATION.md#confirmed-cms-only-extensions-to-management-api-v3";
-
-    private const string ApiDescription =
-        "API for configuring and managing the Ed-Fi API.\n\n"
-        + "This API intentionally extends the shared Ed-Fi Management API v3 contract with "
-        + "CMS-only response fields and OAuth scopes. See the "
-        + $"[confirmed CMS-only extensions]({CmsExtensionsReferenceUrl}).";
-
     public const string SecuritySchemeName = "oauth2_client_credentials";
 
     public const string ClientCredentialsSchemeName = "client_secret_basic";
@@ -47,7 +38,7 @@ public static class ConfigurationServiceOpenApiTransformers
         document.Info = new OpenApiInfo
         {
             Title = "Ed-Fi API Configuration Service API",
-            Description = ApiDescription,
+            Description = "API for configuring and managing the Ed-Fi API.",
             Contact = new OpenApiContact { Url = new Uri(new Uri(EdFiWebsite), "what-is-ed-fi/contact/") },
             Version = "1",
         };

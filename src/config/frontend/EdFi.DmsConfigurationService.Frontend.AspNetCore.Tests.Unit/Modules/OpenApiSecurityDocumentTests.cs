@@ -154,12 +154,7 @@ public class OpenApiSecurityDocumentTests
             info.GetProperty("description")
                 .GetString()
                 .Should()
-                .Be(
-                    "API for configuring and managing the Ed-Fi API.\n\n"
-                        + "This API intentionally extends the shared Ed-Fi Management API v3 contract with "
-                        + "CMS-only response fields and OAuth scopes. See the "
-                        + "[confirmed CMS-only extensions](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/API-CLIENT-AND-INSTANCE-CONFIGURATION.md#confirmed-cms-only-extensions-to-management-api-v3)."
-                );
+                .Be("API for configuring and managing the Ed-Fi API.");
             info.GetProperty("contact")
                 .GetProperty("url")
                 .GetString()
