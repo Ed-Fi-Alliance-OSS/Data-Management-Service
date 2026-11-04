@@ -21,6 +21,7 @@ public class Given_CdcDocumentObserver_Metadata(CdcProvider provider, string res
 {
     private readonly Guid _uuid = Guid.Parse("9622f938-2c1a-4f99-9bc4-10970b1c2649");
     private readonly DateTime _timestamp = new(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc);
+    private readonly DateTime _createdAt = new(2000, 1, 2, 3, 4, 5, DateTimeKind.Utc);
     private DbCommand _command = null!;
     private CdcDocumentObserver _observer = null!;
     private DataTable _rows = null!;
@@ -38,6 +39,7 @@ public class Given_CdcDocumentObserver_Metadata(CdcProvider provider, string res
                 typeof(short),
                 typeof(long),
                 typeof(DateTime),
+                typeof(DateTime),
                 typeof(string),
                 typeof(string),
                 typeof(string),
@@ -53,6 +55,7 @@ public class Given_CdcDocumentObserver_Metadata(CdcProvider provider, string res
             (short)73,
             901L,
             _timestamp,
+            _createdAt,
             "schema-hash",
             "Ed-Fi",
             resourceName,
@@ -96,6 +99,8 @@ public class Given_CdcDocumentObserver_Metadata(CdcProvider provider, string res
         sql.Should()
             .Contain("student.\"ContentLastModifiedAt\"")
             .And.Contain("descriptor.\"ContentLastModifiedAt\"");
+        sql.Should().NotContain("d.\"ContentCreatedAt\"");
+        sql.Should().Contain("student.\"ContentCreatedAt\"").And.Contain("descriptor.\"ContentCreatedAt\"");
         sql.Should()
             .Contain("LEFT JOIN \"edfi\".\"Student\" student ON student.\"DocumentId\" = d.\"DocumentId\"");
         sql.Should()
@@ -121,6 +126,7 @@ public class Given_CdcDocumentObserver_Metadata(CdcProvider provider, string res
                     73,
                     901,
                     new DateTimeOffset(_timestamp),
+                    new DateTimeOffset(_createdAt),
                     "schema-hash",
                     "Ed-Fi",
                     resourceName,
@@ -132,7 +138,9 @@ public class Given_CdcDocumentObserver_Metadata(CdcProvider provider, string res
     [Test]
     public async Task It_does_not_report_a_surviving_document_with_missing_owner_as_deleted()
     {
+        // A missing owner row leaves both owner-sourced timestamps null.
         _rows.Rows[0][4] = DBNull.Value;
+        _rows.Rows[0][5] = DBNull.Value;
         Func<Task> act = () => _observer.ReadSourceAsync(_uuid, CancellationToken.None);
         await act.Should()
             .ThrowAsync<InvalidOperationException>()

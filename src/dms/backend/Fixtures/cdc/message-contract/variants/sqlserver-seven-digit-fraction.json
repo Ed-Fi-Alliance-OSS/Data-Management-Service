@@ -1,5 +1,7 @@
 {
   "formatVersion": 1,
   "lastModifiedAt": "2026-12-31T23:59:59.9999999Z",
-  "expectedLastModifiedAt": "2026-12-31T23:59:59Z"
+  "expectedLastModifiedAt": "2026-12-31T23:59:59Z",
+  "contentCreatedAt": "2025-12-31T23:59:59.9999999Z",
+  "expectedDocumentCreatedAt": "2025-12-31T23:59:59Z"
 }

@@ -2239,6 +2239,95 @@
       "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
     },
     {
+      "name": "FIELD-CONTENTCREATEDAT-MISSING",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ContentCreatedAt"
+          ],
+          "remove": true
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentCreatedAt"
+          ],
+          "remove": true
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-CONTENTCREATEDAT-NULL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentCreatedAt"
+          ],
+          "value": null
+        }
+      ],
+      "reason": "MISSING_REQUIRED_FIELD"
+    },
+    {
+      "name": "FIELD-CONTENTCREATEDAT-OPTIONAL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ContentCreatedAt",
+            "optional"
+          ],
+          "value": true
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "FIELD-CONTENTCREATEDAT-NAME",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ContentCreatedAt",
+            "name"
+          ],
+          "value": "contract.UnsupportedField"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
       "name": "VERSION-INT32",
       "base": "upsert",
       "mode": "transform",
@@ -2870,6 +2959,215 @@
         }
       ],
       "reason": "INVALID_LAST_MODIFIED_AT"
+    },
+    {
+      "name": "CREATED-TIME-NON-UTC",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentCreatedAt"
+          ],
+          "value": "2026-08-01T01:02:03+01:00"
+        }
+      ],
+      "reason": "INVALID_CONTENT_CREATED_AT"
+    },
+    {
+      "name": "CREATED-TIME-LOCAL",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentCreatedAt"
+          ],
+          "value": "2026-08-01T01:02:03"
+        }
+      ],
+      "reason": "INVALID_CONTENT_CREATED_AT"
+    },
+    {
+      "name": "CREATED-TIME-INVALID",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentCreatedAt"
+          ],
+          "value": "MC06-SECRET-SENTINEL"
+        }
+      ],
+      "reason": "INVALID_CONTENT_CREATED_AT"
+    },
+    {
+      "name": "CREATED-TIME-EMPTY",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentCreatedAt"
+          ],
+          "value": ""
+        }
+      ],
+      "reason": "INVALID_CONTENT_CREATED_AT"
+    },
+    {
+      "name": "CREATED-TIME-UNAVAILABLE",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentCreatedAt"
+          ],
+          "value": "__debezium_unavailable_value"
+        }
+      ],
+      "reason": "INVALID_CONTENT_CREATED_AT"
+    },
+    {
+      "name": "CREATED-TIME-NUMERIC",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ContentCreatedAt"
+          ],
+          "value": {
+            "type": "INT64",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentCreatedAt"
+          ],
+          "value": 123456
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "CREATED-TIME-PLAIN",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ContentCreatedAt"
+          ],
+          "value": {
+            "type": "STRING",
+            "optional": false
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentCreatedAt"
+          ],
+          "value": "2026-08-01T01:02:03Z"
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "CREATED-TIME-MICRO",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "valueSchema",
+            "fields",
+            "after",
+            "fields",
+            "ContentCreatedAt"
+          ],
+          "value": {
+            "type": "INT64",
+            "optional": false,
+            "name": "io.debezium.time.MicroTimestamp",
+            "version": 1
+          }
+        },
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentCreatedAt"
+          ],
+          "value": 123456
+        }
+      ],
+      "reason": "UNSUPPORTED_REQUIRED_FIELD_SHAPE"
+    },
+    {
+      "name": "CREATED-TIME-RUNTIME-NUMBER",
+      "base": "upsert",
+      "mode": "transform",
+      "expected": "failed",
+      "patches": [
+        {
+          "target": "input",
+          "path": [
+            "value",
+            "after",
+            "ContentCreatedAt"
+          ],
+          "value": {
+            "$javaType": "INT64",
+            "value": 123456
+          }
+        }
+      ],
+      "reason": "INVALID_CONTENT_CREATED_AT"
     },
     {
       "name": "DIAGNOSTIC-TOPIC",

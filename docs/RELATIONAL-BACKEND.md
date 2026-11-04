@@ -326,7 +326,8 @@ package.
 **Cached `ContentCreatedAt` (DMS-1657).** `dms.DocumentCache.ContentCreatedAt` (non-null, same
 types as the owner column) carries a copy of each resource owner's `ContentCreatedAt`. The cache
 materializer writes it on every projection, direct fill and rebuild, never a cache-side default,
-so a rebuild recovers it from the owner. A database provisioned before this change fails the
+so a rebuild recovers it from the owner. CDC publishes the cached value as the envelope's
+`documentCreatedAt` (DMS-1658). A database provisioned before DMS-1657 fails the
 DocumentCache inventory check (`ContentCreatedAt` column missing), so its cache target stays
 unavailable. CDC setup, `cdc-validate` and the guarded start, restart and resume pre-checks also
 fail closed on it; as with the `dms.Document` shape change above, established CDC deployments have
@@ -334,7 +335,7 @@ no supported upgrade or cutover path. Rerunning `ddl provision` does not add the
 provisioning is create-only. Drop and recreate the database from current DDL. Canonical reads and
 writes are unaffected.
 
-Database template packages built before this change lack the cache column, and the two queries
+Database template packages built before DMS-1657 lack the cache column, and the two queries
 above do not detect it. On the source and restored catalogs of every rebuilt package, also confirm
 that this returns one row:
 

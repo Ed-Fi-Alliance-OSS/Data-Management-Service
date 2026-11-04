@@ -24,6 +24,8 @@ public class Given_CdcEnvelopeExpectations
             32,
             901,
             new DateTimeOffset(2026, 9, 28, 12, 30, 45, TimeSpan.FromHours(-5)).AddTicks(1234567),
+            // Seven-digit fraction just before the next second: it must truncate, never round.
+            new DateTimeOffset(2025, 3, 4, 0, 6, 1, TimeSpan.FromHours(-5)).AddTicks(9999999),
             "abcdef0123456789",
             "EdFi",
             "Student",
@@ -49,7 +51,7 @@ public class Given_CdcEnvelopeExpectations
             """
             {"contractVersion":1,"documentUuid":"abcdef00-0000-0000-0000-000000000001",
              "projectName":"EdFi","resourceName":"Student","resourceVersion":"5.2.0","contentVersion":901,
-             "lastModifiedAt":"2026-09-28T17:30:45Z",
+             "lastModifiedAt":"2026-09-28T17:30:45Z","documentCreatedAt":"2025-03-04T05:06:01Z",
              "document":{"id":"abcdef00-0000-0000-0000-000000000001","studentUniqueId":"cdc-unique",
              "firstName":"Original","lastSurname":"CDC","birthDate":"2010-05-01",
              "_etag":"901-abcdef01.j._.l.i","_lastModifiedDate":"2026-09-28T17:30:45Z"}}
@@ -76,6 +78,33 @@ public class Given_CdcEnvelopeExpectations
             .Should()
             .BeTrue();
         envelope.GetProperty("resourceName").GetString().Should().Be("SchoolTypeDescriptor");
+        envelope.GetProperty("documentCreatedAt").GetString().Should().Be("2025-03-04T05:06:01Z");
+    }
+
+    [Test]
+    public void It_maps_a_changed_creation_time_only_to_documentCreatedAt()
+    {
+        JsonObject original = JsonNode
+            .Parse(CdcEnvelopeExpectations.Create(CdcApiResource.Student, _body, _source).GetRawText())!
+            .AsObject();
+        JsonObject changed = JsonNode
+            .Parse(
+                CdcEnvelopeExpectations
+                    .Create(
+                        CdcApiResource.Student,
+                        _body,
+                        _source with
+                        {
+                            ContentCreatedAt = _source.ContentCreatedAt.AddSeconds(1),
+                        }
+                    )
+                    .GetRawText()
+            )!
+            .AsObject();
+        changed["documentCreatedAt"]!.GetValue<string>().Should().Be("2025-03-04T05:06:02Z");
+        original.Remove("documentCreatedAt");
+        changed.Remove("documentCreatedAt");
+        JsonNode.DeepEquals(original, changed).Should().BeTrue();
     }
 
     [Test]

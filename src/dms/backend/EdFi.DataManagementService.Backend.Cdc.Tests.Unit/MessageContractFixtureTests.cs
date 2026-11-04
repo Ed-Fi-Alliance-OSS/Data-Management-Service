@@ -61,7 +61,8 @@ public class Given_MessageContractFixtureCatalog
                   "resourceName": "StudentSchoolAssociation",
                   "resourceVersion": "1.0",
                   "contentVersion": 222,
-                  "lastModifiedAt": "2026-07-30T14:15:16Z"
+                  "lastModifiedAt": "2026-07-30T14:15:16Z",
+                  "documentCreatedAt": "2025-03-04T05:06:10Z"
                 }
                 """
             )!
@@ -75,6 +76,42 @@ public class Given_MessageContractFixtureCatalog
             fixture.ExpectedEnvelope,
             JsonSerializer.SerializeToElement(expected)
         );
+    }
+
+    // Each E18 fraction is .654..., so rounding instead of truncating would give the next second.
+    [TestCase("ordinary-link-bearing-student-school-association", "2025-03-04T05:06:10Z")]
+    [TestCase("descriptor-school-type", "2025-03-04T05:06:01Z")]
+    [TestCase("extension-student-school-association", "2025-03-04T05:06:02Z")]
+    [TestCase("school-address-property-absence", "2025-03-04T05:06:12Z")]
+    public void It_publishes_the_truncated_creation_second_from_the_cache_row(
+        string materializedCase,
+        string expected
+    )
+    {
+        MessageContractFixture[] fixtures = _fixtures
+            .Where(f =>
+                f.ScenarioId.EndsWith('-' + materializedCase.ToUpperInvariant(), StringComparison.Ordinal)
+            )
+            .ToArray();
+        fixtures.Should().HaveCount(2);
+        foreach (MessageContractFixture fixture in fixtures)
+        {
+            JsonElement envelope = fixture.ExpectedEnvelope;
+            envelope.GetProperty("documentCreatedAt").GetString().Should().Be(expected);
+            envelope
+                .GetProperty("lastModifiedAt")
+                .GetString()
+                .Should()
+                .NotBe(envelope.GetProperty("documentCreatedAt").GetString());
+            envelope.GetProperty("document").TryGetProperty("documentCreatedAt", out _).Should().BeFalse();
+            fixture
+                .SourceRecord.GetProperty("value")
+                .GetProperty("after")
+                .GetProperty("ContentCreatedAt")
+                .GetString()
+                .Should()
+                .Be(fixture.CacheRow.GetProperty("contentCreatedAt").GetString());
+        }
     }
 
     [Test]
@@ -125,6 +162,9 @@ public class Given_MessageContractFixtureCatalog
             .Be(uuidName);
         LogicalName(fields.GetProperty("DocumentJson")).Should().Be(jsonName);
         LogicalName(fields.GetProperty("LastModifiedAt")).Should().Be(timeName);
+        LogicalName(fields.GetProperty("ContentCreatedAt")).Should().Be(timeName);
+        fields.GetProperty("ContentCreatedAt").GetProperty("type").GetString().Should().Be("STRING");
+        fields.GetProperty("ContentCreatedAt").GetProperty("optional").GetBoolean().Should().BeFalse();
         fields.GetProperty("ContentVersion").GetProperty("type").GetString().Should().Be("INT64");
         record
             .GetProperty("valueSchema")
@@ -141,6 +181,7 @@ public class Given_MessageContractFixtureCatalog
                 fields.GetProperty("DocumentUuid"),
                 fields.GetProperty("DocumentJson"),
                 fields.GetProperty("LastModifiedAt"),
+                fields.GetProperty("ContentCreatedAt"),
             }.Where(schema => schema.TryGetProperty("name", out _))
         )
         {
@@ -244,11 +285,12 @@ public class Given_MessageContractFixtureCatalog
             .Be(long.MinValue);
     }
 
-    [TestCase("PG", "2026-12-31T23:59:59.999999Z")]
-    [TestCase("SQL", "2026-12-31T23:59:59.9999999Z")]
+    [TestCase("PG", "2026-12-31T23:59:59.999999Z", "2025-12-31T23:59:59.999999Z")]
+    [TestCase("SQL", "2026-12-31T23:59:59.9999999Z", "2025-12-31T23:59:59.9999999Z")]
     public void It_keeps_provider_fractional_input_separate_from_the_explicit_expected_second(
         string provider,
-        string timestamp
+        string timestamp,
+        string createdTimestamp
     )
     {
         MessageContractFixture fixture = _fixtures.Single(f =>
@@ -261,6 +303,18 @@ public class Given_MessageContractFixtureCatalog
             .GetString()
             .Should()
             .Be(timestamp);
+        fixture
+            .SourceRecord.GetProperty("value")
+            .GetProperty("after")
+            .GetProperty("ContentCreatedAt")
+            .GetString()
+            .Should()
+            .Be(createdTimestamp);
+        fixture
+            .ExpectedEnvelope.GetProperty("documentCreatedAt")
+            .GetString()
+            .Should()
+            .Be("2025-12-31T23:59:59Z");
         fixture
             .ExpectedEnvelope.GetProperty("lastModifiedAt")
             .GetString()
@@ -495,6 +549,22 @@ public class Given_MessageContractFixtureArtifactFiles
     [TestCase(
         """{"formatVersion":1,"expectedLastModifiedAt":"2026-12-31T23:59:59Z"}""",
         "variant-timestamp-pair"
+    )]
+    [TestCase(
+        """{"formatVersion":1,"contentCreatedAt":"2025-12-31T23:59:59.9999999Z","expectedDocumentCreatedAt":"2026-01-01T00:00:00Z"}""",
+        "variant-created-time"
+    )]
+    [TestCase(
+        """{"formatVersion":1,"expectedDocumentCreatedAt":"2025-12-31T23:59:59Z"}""",
+        "variant-timestamp-pair"
+    )]
+    [TestCase(
+        """{"formatVersion":1,"contentCreatedAt":"2025-12-31T23:59:59.9999999Z"}""",
+        "variant-timestamp-pair"
+    )]
+    [TestCase(
+        """{"formatVersion":1,"contentCreatedAt":"2025-12-31T23:59:59+00:00","expectedDocumentCreatedAt":"2025-12-31T23:59:59Z"}""",
+        "cache-created-timestamp"
     )]
     [TestCase("""{"formatVersion":1,"unknown":"synthetic-secret"}""", "variant-field")]
     public void It_rejects_invalid_variants_with_bounded_diagnostics(string json, string reason)

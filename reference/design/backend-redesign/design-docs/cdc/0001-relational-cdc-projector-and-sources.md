@@ -108,7 +108,8 @@ remain unchanged; removing the document timestamp changes neither enqueueing nor
 CDC payload contract.
 
 An invariant failure produces no cache write. `LastModifiedAt` remains payload and
-diagnostic metadata, and `ContentCreatedAt` is copied owner metadata; `ComputedAt` remains
+diagnostic metadata, and `ContentCreatedAt` is copied owner metadata, published as envelope
+`documentCreatedAt`; `ComputedAt` remains
 operational metadata. None of them is a freshness or ordering predicate.
 
 ## Durable Work and Lifecycle

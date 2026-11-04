@@ -401,6 +401,38 @@ public sealed class Given_CdcConnectorTelemetry(CdcProvider provider)
         await AssertUnavailable();
     }
 
+    [Test]
+    public async Task It_accepts_a_candidate_digest_only_from_an_explicitly_supplied_inventory()
+    {
+        UseCandidateDigest();
+        _adapter = new(_client, _connect, _worker, _clock, new HashSet<string> { CandidateDigest });
+
+        Read(await Collect()).CurrentLagMilliseconds.Should().Be(5);
+    }
+
+    [Test]
+    public async Task It_rejects_a_candidate_digest_with_the_embedded_inventory()
+    {
+        UseCandidateDigest();
+
+        await AssertUnavailable();
+    }
+
+    // A new image under qualification is, by definition, not yet the embedded qualified pin.
+    private const string CandidateDigest =
+        "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+
+    private void UseCandidateDigest()
+    {
+        CdcQualifiedWorkerImage.Digest.Should().NotBe(CandidateDigest);
+        _pass.Dispose();
+        _request = CdcDeploymentRequestTestData.Request(
+            provider,
+            worker: CdcDeploymentRequestTestData.Worker(digest: CandidateDigest)
+        );
+        _pass = new(_request, "telemetry-test", 10);
+    }
+
     [TestCase("reassignment")]
     [TestCase("task-restarting")]
     [TestCase("connector-stopped")]

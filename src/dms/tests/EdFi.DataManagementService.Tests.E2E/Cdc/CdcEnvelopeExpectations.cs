@@ -51,6 +51,8 @@ internal static class CdcEnvelopeExpectations
                 ["resourceVersion"] = source.ResourceVersion,
                 ["contentVersion"] = source.ContentVersion,
                 ["lastModifiedAt"] = timestamp,
+                // Envelope-only: the owner's creation time has no counterpart inside the document.
+                ["documentCreatedAt"] = LastModifiedDateFormatter.Format(source.ContentCreatedAt),
                 ["document"] = document,
             }
         );
