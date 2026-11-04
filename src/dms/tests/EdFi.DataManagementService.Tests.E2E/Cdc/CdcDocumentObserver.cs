@@ -108,6 +108,23 @@ internal sealed class CdcDocumentObserver(CdcProvider provider, Func<DbConnectio
         return Convert.ToInt64(value, CultureInfo.InvariantCulture);
     }
 
+    // The clocks the stamping triggers use: PostgreSQL now(), SQL Server sysutcdatetime().
+    public async Task<DateTimeOffset> ReadClockAsync(CancellationToken token)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        await using DbConnection connection = CreateConnection();
+        await connection.OpenAsync(deadline.Token);
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandTimeout = 30;
+        command.CommandText =
+            provider == CdcProvider.Postgresql ? "SELECT now();" : "SELECT SYSUTCDATETIME();";
+        object value =
+            await command.ExecuteScalarAsync(deadline.Token)
+            ?? throw new InvalidOperationException("CDC_API_DATABASE_CLOCK_MISSING");
+        return ReadTimestamp(value);
+    }
+
     private async Task<IReadOnlyList<T>> ReadAsync<T>(
         string sql,
         object id,
