@@ -3530,13 +3530,17 @@ public class OpenIddictTokenManagerTests
                 Audience = TestAudience,
                 EncryptionKey = "test-encryption-key",
                 BearerTokenPerClientLimit = limit,
+                ConfigServiceRole = AdministrativeRole,
+                ClientRole = VendorRole,
             },
             logger
         );
 
     /// <summary>
     /// Arranges an approved client with a matching secret and a usable signing key, which is what
-    /// GetAccessTokenAsync needs before it reaches StoreTokenAsync.
+    /// GetAccessTokenAsync needs before it reaches StoreTokenAsync. A client without an API client
+    /// row is arranged as an administrative one, so that it is admitted: it holds
+    /// <see cref="AdministrativeRole"/>, and its scopes read answers <paramref name="scopes"/>.
     /// </summary>
     private Guid ArrangeGrantableClient(bool hasNoApiClientRow = false, params string[] scopes)
     {
@@ -3567,10 +3571,26 @@ public class OpenIddictTokenManagerTests
                 }
             );
 
-        A.CallTo(() => _tokenRepository.GetClientRolesAsync(applicationId)).Returns([]);
+        string[] roles = hasNoApiClientRow ? [AdministrativeRole] : [];
+        A.CallTo(() => _tokenRepository.GetClientRolesAsync(applicationId)).Returns(roles);
+        A.CallTo(() => _tokenRepository.GetApplicationScopesAsync(applicationId)).Returns(scopes);
 
         return applicationId;
     }
+
+    /// <summary>
+    /// Makes the admission scopes read answer <paramref name="scopes"/> while the full application
+    /// keeps its own. The two are separate reads, so a scope change between them can leave an
+    /// admitted administrative client whose loaded scopes do not qualify for the exemption.
+    /// </summary>
+    private void ArrangeAdmissionScopes(Guid applicationId, params string[] scopes) =>
+        A.CallTo(() => _tokenRepository.GetApplicationScopesAsync(applicationId)).Returns(scopes);
+
+    /// <summary>The administrative role name the fixtures configure.</summary>
+    private const string AdministrativeRole = "cms-client";
+
+    /// <summary>The DMS vendor client role name the fixtures configure.</summary>
+    private const string VendorRole = "dms-client";
 
     private static List<KeyValuePair<string, string>> GrantCredentials() =>
         [new("client_id", GrantClientId), new("client_secret", GrantClientSecret)];
@@ -3759,7 +3779,10 @@ public class OpenIddictTokenManagerTests
     }
 
     // Rows whose registered scopes include the requested admin scope: the token is issued, and the
-    // limit decision comes from the registered scopes, never from the request.
+    // limit decision comes from the registered scopes, never from the request. A client without an
+    // API client row whose scopes do not qualify is refused at admission, so for those rows the
+    // admission read answers an admin scope while the full application keeps the registered set: the
+    // decision must come from the loaded application, not from the request or from admission.
     [TestFixture(true, "edfi_admin_api/full_access,EdFiSandbox")]
     [TestFixture(true, "EDFI_ADMIN_API/full_access")]
     [TestFixture(true, "edfi_admin_api/full_access,edfi_admin_api/sis")]
@@ -3775,10 +3798,11 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            ArrangeGrantableClient(
+            Guid applicationId = ArrangeGrantableClient(
                 hasNoApiClientRow: hasNoApiClientRow,
                 scopes: registeredScopes.Split(',', StringSplitOptions.RemoveEmptyEntries)
             );
+            ArrangeAdmissionScopes(applicationId, FullAccessScope);
             ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => _call = call);
             var credentials = GrantCredentials();
             // A request cannot make an API or mixed-scope credential exempt by asking for admin scopes.
@@ -3797,7 +3821,8 @@ public class OpenIddictTokenManagerTests
 
     // Registered scopes that do not qualify for exemption, issued through the defaults of an omitted
     // scope: the configured limit applies. The empty row guards the nonempty-scopes requirement,
-    // since every element of an empty set is trivially an admin scope.
+    // since every element of an empty set is trivially an admin scope. The client is admitted on an
+    // admission read answering an admin scope, and the limit follows the loaded application's scopes.
     [TestFixture("")]
     [TestFixture("EdFiSandbox")]
     [TestFixture("edfi_admin_api")]
@@ -3813,10 +3838,11 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            ArrangeGrantableClient(
+            Guid applicationId = ArrangeGrantableClient(
                 hasNoApiClientRow: true,
                 scopes: registeredScopes.Split(',', StringSplitOptions.RemoveEmptyEntries)
             );
+            ArrangeAdmissionScopes(applicationId, FullAccessScope);
             ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => _call = call);
 
             _result = await CreateTokenManagerWithTokenLimit(1).GetAccessTokenAsync(GrantCredentials());
@@ -3833,7 +3859,8 @@ public class OpenIddictTokenManagerTests
     // Rows whose registered scopes do not include the requested admin scope. Before DMS-1492 the
     // empty intersection fell back to the registered scopes and the token was stored under the
     // configured limit; now the request is refused before the store, where the limit is applied,
-    // so asking for an admin scope can never reach an exemption decision at all.
+    // so asking for an admin scope can never reach an exemption decision at all. The client is
+    // admitted on an admission read answering an admin scope, so the scope check is what refuses it.
     [TestFixture("")]
     [TestFixture("EdFiSandbox")]
     [TestFixture("edfi_admin_api")]
@@ -3848,10 +3875,11 @@ public class OpenIddictTokenManagerTests
         [SetUp]
         public async Task Act()
         {
-            ArrangeGrantableClient(
+            Guid applicationId = ArrangeGrantableClient(
                 hasNoApiClientRow: true,
                 scopes: registeredScopes.Split(',', StringSplitOptions.RemoveEmptyEntries)
             );
+            ArrangeAdmissionScopes(applicationId, FullAccessScope);
             ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
             var credentials = GrantCredentials();
             // A request cannot make an API or mixed-scope credential exempt by asking for admin scopes.
@@ -5897,7 +5925,10 @@ public class OpenIddictTokenManagerTests
     /// <summary>
     /// Arranges a client whose presented secret matches, in the given approval state (approved
     /// unless a test says otherwise), and the full application stored for it in the same state.
-    /// Returns the application.
+    /// Its admission evidence is that of a registration-created administrative client: it holds
+    /// <see cref="AdministrativeRole"/> and its scopes read answers the application's scopes, so a
+    /// client without an API client row is admitted unless a test arranges otherwise. Returns the
+    /// application.
     /// </summary>
     private ApplicationInfo ArrangeCredentialClient(
         string storedClientId = StoredCredentialClientId,
@@ -5912,7 +5943,9 @@ public class OpenIddictTokenManagerTests
         A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(CredentialClientId))
             .Returns(application);
         A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, StoredCredentialHash)).Returns(true);
-        A.CallTo(() => _tokenRepository.GetClientRolesAsync(applicationId)).Returns(["cms-client"]);
+        A.CallTo(() => _tokenRepository.GetClientRolesAsync(applicationId)).Returns([AdministrativeRole]);
+        A.CallTo(() => _tokenRepository.GetApplicationScopesAsync(applicationId))
+            .Returns(application.Scopes ?? []);
         return application;
     }
 
@@ -6000,21 +6033,35 @@ public class OpenIddictTokenManagerTests
 
     // Absent, wrong secret and unapproved must be answered identically, and none of them may reach
     // the full application, the roles or the token store: that is the work the credential path
-    // keeps off failed authentication.
+    // keeps off failed authentication. A client without an API client row is classified only after
+    // its secret verified: with a wrong secret it reads no admission evidence and logs nothing, and
+    // an orphaned vendor client is answered exactly as the unapproved one, after reading it.
     [TestFixture("absent")]
     [TestFixture("wrong_secret")]
     [TestFixture("unapproved")]
+    [TestFixture("wrong_secret_without_row")]
+    [TestFixture("orphan")]
     public class Given_GetAccessTokenAsync_OnTheCredentialPath_WhenAuthenticationFails(string failure)
         : OpenIddictTokenManagerTests
     {
+        private ILogger<OpenIddictTokenManager> _logger = null!;
+        private Guid _applicationId;
         private TokenResult _result = null!;
+
+        private int AdmissionReads => failure == "orphan" ? 1 : 0;
 
         [SetUp]
         public async Task Act()
         {
-            Guid applicationId = Guid.NewGuid();
-            ApiClientApprovalState approval =
-                failure == "unapproved" ? ApiClientApprovalState.Unapproved : ApiClientApprovalState.Approved;
+            _logger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            _applicationId = Guid.NewGuid();
+            Guid applicationId = _applicationId;
+            ApiClientApprovalState approval = failure switch
+            {
+                "unapproved" => ApiClientApprovalState.Unapproved,
+                "wrong_secret_without_row" or "orphan" => ApiClientApprovalState.NoApiClientRow,
+                _ => ApiClientApprovalState.Approved,
+            };
             A.CallTo(() => _tokenRepository.GetClientCredentialAsync(CredentialClientId))
                 .Returns(
                     failure == "absent"
@@ -6027,9 +6074,14 @@ public class OpenIddictTokenManagerTests
                         )
                 );
             A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, StoredCredentialHash))
-                .Returns(failure != "wrong_secret");
+                .Returns(failure is not ("wrong_secret" or "wrong_secret_without_row"));
+            // An orphaned vendor client: the DMS client role and a vendor scope.
+            A.CallTo(() => _tokenRepository.GetClientRolesAsync(applicationId)).Returns([VendorRole]);
+            A.CallTo(() => _tokenRepository.GetApplicationScopesAsync(applicationId))
+                .Returns(["EdFiSandbox"]);
 
-            _result = await CreateConfiguredTokenManager().GetAccessTokenAsync(CredentialGrant());
+            _result = await NewTokenManager(RoleNamedOptions(), _logger)
+                .GetAccessTokenAsync(CredentialGrant());
         }
 
         [Test]
@@ -6061,8 +6113,44 @@ public class OpenIddictTokenManagerTests
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(A<string>._)).MustNotHaveHappened();
 
         [Test]
-        public void It_does_not_read_roles() =>
-            A.CallTo(() => _tokenRepository.GetClientRolesAsync(A<Guid>._)).MustNotHaveHappened();
+        public void It_reads_roles_only_to_classify_a_verified_client_without_a_row() =>
+            A.CallTo(() => _tokenRepository.GetClientRolesAsync(A<Guid>._))
+                .MustHaveHappened(AdmissionReads, Times.Exactly);
+
+        [Test]
+        public void It_reads_the_registered_scopes_only_to_classify_a_verified_client_without_a_row() =>
+            A.CallTo(() => _tokenRepository.GetApplicationScopesAsync(A<Guid>._))
+                .MustHaveHappened(AdmissionReads, Times.Exactly);
+
+        [Test]
+        public void It_asks_whether_the_role_names_share_a_row_only_for_a_verified_client_without_a_row() =>
+            A.CallTo(() => _tokenRepository.RoleNamesShareARoleRowAsync(A<string>._, A<string>._))
+                .MustHaveHappened(AdmissionReads, Times.Exactly);
+
+        // Only the orphan reached a decision, after its secret verified; every other failure
+        // stays silent, so the line cannot tell a wrong secret from an orphan.
+        [Test]
+        public void It_logs_only_the_refusal_of_a_verified_client() =>
+            LogMessagesAt(_logger, LogLevel.Warning).Should().Equal(ExpectedWarnings);
+
+        private IEnumerable<string> ExpectedWarnings =>
+            failure == "orphan"
+                ?
+                [
+                    NotAdmittedMessage(
+                        CredentialClientId,
+                        _applicationId,
+                        ClientAdmission.NoApiClientRowHoldsClientRoleOnly
+                    ),
+                ]
+                : [];
+
+        [Test]
+        public void It_logs_nothing_else() =>
+            Fake.GetCalls(_logger)
+                .Count(call => call.Method.Name == nameof(ILogger.Log))
+                .Should()
+                .Be(AdmissionReads);
 
         [Test]
         public void It_does_not_store_a_token() =>
@@ -6236,7 +6324,9 @@ public class OpenIddictTokenManagerTests
     );
 
     private async Task<AuthenticatedOperations> RunTheAuthenticatingOperationsAsync(
-        ILogger<OpenIddictTokenManager> logger
+        ILogger<OpenIddictTokenManager> logger,
+        string configServiceRole = AdministrativeRole,
+        string clientRole = VendorRole
     )
     {
         StubActiveKeyPair();
@@ -6244,12 +6334,7 @@ public class OpenIddictTokenManagerTests
         ArrangeStoreOutcome(TokenStoreOutcome.Stored, call => stored = call);
         (string token, Guid jti) = ArrangeRevocableToken(StoredCredentialClientId);
         OpenIddictTokenManager manager = NewTokenManager(
-            new IdentityOptions
-            {
-                Authority = TestIssuer,
-                Audience = TestAudience,
-                EncryptionKey = TestEncryptionKey,
-            },
+            RoleNamedOptions(configServiceRole, clientRole),
             logger
         );
 
@@ -6265,8 +6350,26 @@ public class OpenIddictTokenManagerTests
         return new AuthenticatedOperations(tokenResult, revocation, introspection, jti, stored);
     }
 
+    /// <summary>
+    /// Options that mint with the test issuer, audience and key, and configure the role names a
+    /// client without an API client row is classified by.
+    /// </summary>
+    private static IdentityOptions RoleNamedOptions(
+        string configServiceRole = AdministrativeRole,
+        string clientRole = VendorRole
+    ) =>
+        new()
+        {
+            Authority = TestIssuer,
+            Audience = TestAudience,
+            EncryptionKey = TestEncryptionKey,
+            ConfigServiceRole = configServiceRole,
+            ClientRole = clientRole,
+        };
+
     // Each state a client may proceed with is admitted by all three endpoints. A client with no API
-    // client row is still admitted at this point; it is a distinct state, not an approval.
+    // client row is admitted here because the arranged one is administrative; it is a distinct
+    // state, not an approval.
     [TestFixture(ApiClientApprovalState.Approved)]
     [TestFixture(ApiClientApprovalState.NoApiClientRow)]
     public class Given_The_Authenticating_Endpoints_For_An_Admissible_Approval_State(
@@ -6395,6 +6498,576 @@ public class OpenIddictTokenManagerTests
                 );
     }
 
+    /// <summary>
+    /// Arranges the admission evidence of the credential client: its stored roles, its registered
+    /// scopes, and the database's answer to whether the configured role names share a role row.
+    /// </summary>
+    private void ArrangeAdmissionEvidence(
+        Guid applicationId,
+        string[] roles,
+        string[] scopes,
+        bool roleNamesShareARoleRow = false
+    )
+    {
+        A.CallTo(() => _tokenRepository.GetClientRolesAsync(applicationId)).Returns(roles);
+        A.CallTo(() => _tokenRepository.GetApplicationScopesAsync(applicationId)).Returns(scopes);
+        A.CallTo(() => _tokenRepository.RoleNamesShareARoleRowAsync(A<string>._, A<string>._))
+            .Returns(roleNamesShareARoleRow);
+    }
+
+    private static string NotAdmittedMessage(
+        string clientId,
+        Guid applicationId,
+        ClientAdmission admission
+    ) =>
+        $"Client {clientId} (application {applicationId}) authenticated but is not admitted ({admission}); refused";
+
+    private static string AdmittedWithoutARowMessage(Guid applicationId) =>
+        $"Client {StoredCredentialClientId} (application {applicationId}) admitted as an administrative client without an API client row";
+
+    // A client without an API client row that is administrative, as registration creates one (the
+    // administrative role and full access) or as the bootstrap does (both roles and one admin
+    // scope), is admitted by all three endpoints, and the admission is logged at Debug only.
+    [TestFixture("registration")]
+    [TestFixture("bootstrap")]
+    public class Given_The_Authenticating_Endpoints_For_An_Administrative_Client_Without_An_Api_Client_Row(
+        string kind
+    ) : OpenIddictTokenManagerTests
+    {
+        private ILogger<OpenIddictTokenManager> _logger = null!;
+        private Guid _applicationId;
+        private AuthenticatedOperations _operations = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _logger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            _applicationId = ArrangeCredentialClient(approval: ApiClientApprovalState.NoApiClientRow).Id;
+            if (kind == "bootstrap")
+            {
+                ArrangeAdmissionEvidence(_applicationId, [AdministrativeRole, VendorRole], [ReadOnlyScope]);
+            }
+            else
+            {
+                ArrangeAdmissionEvidence(_applicationId, [AdministrativeRole], [FullAccessScope]);
+            }
+
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, _applicationId)).Returns(true);
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, _applicationId))
+                .Returns("valid");
+
+            _operations = await RunTheAuthenticatingOperationsAsync(_logger);
+        }
+
+        [Test]
+        public void It_issues_a_token() => _operations.Token.Should().BeOfType<TokenResult.Success>();
+
+        [Test]
+        public void It_stores_the_token_expecting_no_api_client_row() =>
+            _operations.Stored!.ExpectedApiClientApproval.Should().Be(ApiClientApprovalState.NoApiClientRow);
+
+        [Test]
+        public void It_revokes_the_token_for_the_authenticated_application()
+        {
+            _operations.Revocation.Should().BeOfType<TokenRevocationResult.Completed>();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(_operations.Jti, _applicationId))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_reads_the_introspected_tokens_status_for_the_authenticated_application()
+        {
+            _operations.Introspection.Should().NotBeOfType<TokenIntrospectionResult.InvalidClient>();
+            A.CallTo(() =>
+                    _tokenRepository.GetTokenStatusForApplicationAsync(_operations.Jti, _applicationId)
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_reads_the_registered_scopes_once_per_request() =>
+            A.CallTo(() => _tokenRepository.GetApplicationScopesAsync(_applicationId))
+                .MustHaveHappened(3, Times.Exactly);
+
+        [Test]
+        public void It_asks_about_the_configured_role_names_once_per_request() =>
+            A.CallTo(() => _tokenRepository.RoleNamesShareARoleRowAsync(AdministrativeRole, VendorRole))
+                .MustHaveHappened(3, Times.Exactly);
+
+        [Test]
+        public void It_logs_each_admission_at_debug() =>
+            LogMessagesAt(_logger, LogLevel.Debug)
+                .Where(message => message == AdmittedWithoutARowMessage(_applicationId))
+                .Should()
+                .HaveCount(3);
+
+        [Test]
+        public void It_logs_no_warning() => LogCountAt(_logger, LogLevel.Warning).Should().Be(0);
+    }
+
+    // A client without an API client row that is not administrative is refused by all three
+    // endpoints, after the secret verified and the evidence was read, with exactly the answer an
+    // unapproved client gets. Nothing runs after the refusal, and each refusal is one Warning
+    // naming its fixed category.
+    [TestFixture("orphaned-vendor", ClientAdmission.NoApiClientRowHoldsClientRoleOnly)]
+    [TestFixture("vendor-with-an-admin-named-scope", ClientAdmission.NoApiClientRowHoldsClientRoleOnly)]
+    [TestFixture("no-roles", ClientAdmission.NoApiClientRowNoAdministrativeRole)]
+    [TestFixture("no-scopes", ClientAdmission.NoApiClientRowNoScopes)]
+    [TestFixture("mixed-scopes", ClientAdmission.NoApiClientRowNonAdministrativeScope)]
+    [TestFixture("role-names-share-a-row", ClientAdmission.NoApiClientRowRoleConfiguration)]
+    public class Given_The_Authenticating_Endpoints_For_A_Refused_Client_Without_An_Api_Client_Row(
+        string kind,
+        ClientAdmission expectedAdmission
+    ) : OpenIddictTokenManagerTests
+    {
+        private ILogger<OpenIddictTokenManager> _logger = null!;
+        private Guid _applicationId;
+        private AuthenticatedOperations _operations = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _logger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            _applicationId = ArrangeCredentialClient(approval: ApiClientApprovalState.NoApiClientRow).Id;
+            switch (kind)
+            {
+                case "orphaned-vendor":
+                    ArrangeAdmissionEvidence(_applicationId, [VendorRole], ["EdFiSandbox"]);
+                    break;
+                case "vendor-with-an-admin-named-scope":
+                    ArrangeAdmissionEvidence(_applicationId, [VendorRole], [FullAccessScope]);
+                    break;
+                case "no-roles":
+                    ArrangeAdmissionEvidence(_applicationId, [], [FullAccessScope]);
+                    break;
+                case "no-scopes":
+                    ArrangeAdmissionEvidence(_applicationId, [AdministrativeRole], []);
+                    break;
+                case "mixed-scopes":
+                    ArrangeAdmissionEvidence(
+                        _applicationId,
+                        [AdministrativeRole],
+                        [FullAccessScope, "EdFiSandbox"]
+                    );
+                    break;
+                default:
+                    // Registration-shaped, under distinct role names the database resolves to one row.
+                    ArrangeAdmissionEvidence(
+                        _applicationId,
+                        [AdministrativeRole],
+                        [FullAccessScope],
+                        roleNamesShareARoleRow: true
+                    );
+                    break;
+            }
+
+            _operations = await RunTheAuthenticatingOperationsAsync(_logger);
+        }
+
+        [Test]
+        public void It_refuses_the_token_request_as_an_unapproved_client_is_refused() =>
+            _operations.Token.Should().BeEquivalentTo(_invalidClient);
+
+        [Test]
+        public void It_refuses_the_revocation_as_invalid_client() =>
+            _operations.Revocation.Should().BeOfType<TokenRevocationResult.InvalidClient>();
+
+        [Test]
+        public void It_refuses_the_introspection_as_invalid_client() =>
+            _operations.Introspection.Should().BeOfType<TokenIntrospectionResult.InvalidClient>();
+
+        [Test]
+        public void It_reads_each_piece_of_evidence_once_per_request()
+        {
+            A.CallTo(() => _tokenRepository.GetClientRolesAsync(_applicationId))
+                .MustHaveHappened(3, Times.Exactly);
+            A.CallTo(() => _tokenRepository.GetApplicationScopesAsync(_applicationId))
+                .MustHaveHappened(3, Times.Exactly);
+            A.CallTo(() => _tokenRepository.RoleNamesShareARoleRowAsync(AdministrativeRole, VendorRole))
+                .MustHaveHappened(3, Times.Exactly);
+        }
+
+        [Test]
+        public void It_does_no_work_after_the_refusal()
+        {
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetActivePrivateKeyAsync(A<string>._)).MustNotHaveHappened();
+            StoreMustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, A<Guid>._))
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public void It_logs_one_warning_per_request_naming_the_category() =>
+            LogMessagesAt(_logger, LogLevel.Warning)
+                .Should()
+                .Equal(
+                    Enumerable.Repeat(
+                        NotAdmittedMessage(StoredCredentialClientId, _applicationId, expectedAdmission),
+                        3
+                    )
+                );
+
+        [Test]
+        public void It_does_not_log_an_admission() =>
+            LogMessagesAt(_logger, LogLevel.Debug)
+                .Should()
+                .NotContain(AdmittedWithoutARowMessage(_applicationId));
+    }
+
+    // The order on the no-row path: the credential, the secret, then the admission evidence (roles,
+    // registered scopes, the role-name answer). A refused client stops there; an admitted one goes on
+    // to the full application and the store.
+    [TestFixture(false)]
+    [TestFixture(true)]
+    public class Given_GetAccessTokenAsync_OnTheCredentialPath_ForAClientWithoutAnApiClientRow(
+        bool administrative
+    ) : OpenIddictTokenManagerTests
+    {
+        private Guid _applicationId;
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _applicationId = ArrangeCredentialClient(approval: ApiClientApprovalState.NoApiClientRow).Id;
+            ArrangeAdmissionEvidence(
+                _applicationId,
+                administrative ? [AdministrativeRole] : [VendorRole],
+                administrative ? [FullAccessScope] : ["EdFiSandbox"]
+            );
+            StubActiveKeyPair();
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
+
+            _result = await NewTokenManager(RoleNamedOptions()).GetAccessTokenAsync(CredentialGrant());
+        }
+
+        [Test]
+        public void It_answers_by_classification() =>
+            (_result is TokenResult.Success).Should().Be(administrative);
+
+        [Test]
+        public void It_verifies_the_secret_before_reading_any_evidence() =>
+            A.CallTo(() => _tokenRepository.GetClientCredentialAsync(CredentialClientId))
+                .MustHaveHappenedOnceExactly()
+                .Then(
+                    A.CallTo(() => _secretHasher.VerifySecretAsync(CallerSecret, StoredCredentialHash))
+                        .MustHaveHappenedOnceExactly()
+                )
+                .Then(A.CallTo(() => _tokenRepository.GetClientRolesAsync(_applicationId)).MustHaveHappened())
+                .Then(
+                    A.CallTo(() => _tokenRepository.GetApplicationScopesAsync(_applicationId))
+                        .MustHaveHappenedOnceExactly()
+                )
+                .Then(
+                    A.CallTo(() =>
+                            _tokenRepository.RoleNamesShareARoleRowAsync(AdministrativeRole, VendorRole)
+                        )
+                        .MustHaveHappenedOnceExactly()
+                );
+
+        [Test]
+        public void It_reads_nothing_after_a_refusal_and_goes_on_after_an_admission() =>
+            Fake.GetCalls(_tokenRepository)
+                .Select(call => call.Method.Name)
+                .Take(5)
+                .Should()
+                .Equal(ExpectedCalls);
+
+        private IEnumerable<string> ExpectedCalls =>
+            administrative
+                ?
+                [
+                    nameof(IOpenIddictTokenRepository.GetClientCredentialAsync),
+                    nameof(IOpenIddictTokenRepository.GetClientRolesAsync),
+                    nameof(IOpenIddictTokenRepository.GetApplicationScopesAsync),
+                    nameof(IOpenIddictTokenRepository.RoleNamesShareARoleRowAsync),
+                    nameof(IOpenIddictTokenRepository.GetApplicationByClientIdAsync),
+                ]
+                :
+                [
+                    nameof(IOpenIddictTokenRepository.GetClientCredentialAsync),
+                    nameof(IOpenIddictTokenRepository.GetClientRolesAsync),
+                    nameof(IOpenIddictTokenRepository.GetApplicationScopesAsync),
+                    nameof(IOpenIddictTokenRepository.RoleNamesShareARoleRowAsync),
+                ];
+    }
+
+    // Role names that the engine-independent comparison treats as one (case, trailing space, full
+    // width) leave a client without an API client row unclassifiable, so the registration-shaped
+    // client is refused. Under the same options a row-backed client is decided by its row alone.
+    [TestFixture(AdministrativeRole, "CMS-Client", ApiClientApprovalState.NoApiClientRow)]
+    [TestFixture(AdministrativeRole, "cms-client ", ApiClientApprovalState.NoApiClientRow)]
+    [TestFixture("Admin", "Ａdmin", ApiClientApprovalState.NoApiClientRow)]
+    [TestFixture(AdministrativeRole, "CMS-Client", ApiClientApprovalState.Approved)]
+    [TestFixture(AdministrativeRole, "CMS-Client", ApiClientApprovalState.Unapproved)]
+    public class Given_The_Authenticating_Endpoints_Under_Colliding_Role_Names(
+        string configServiceRole,
+        string clientRole,
+        ApiClientApprovalState approval
+    ) : OpenIddictTokenManagerTests
+    {
+        private ILogger<OpenIddictTokenManager> _logger = null!;
+        private Guid _applicationId;
+        private AuthenticatedOperations _operations = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _logger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            _applicationId = ArrangeCredentialClient(approval: approval).Id;
+            ArrangeAdmissionEvidence(_applicationId, [configServiceRole], [FullAccessScope]);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, _applicationId)).Returns(true);
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, _applicationId))
+                .Returns("valid");
+
+            _operations = await RunTheAuthenticatingOperationsAsync(_logger, configServiceRole, clientRole);
+        }
+
+        [Test]
+        public void It_admits_only_the_approved_client()
+        {
+            bool admitted = approval == ApiClientApprovalState.Approved;
+            (_operations.Token is TokenResult.Success).Should().Be(admitted);
+            (_operations.Revocation is TokenRevocationResult.Completed).Should().Be(admitted);
+            (_operations.Introspection is TokenIntrospectionResult.InvalidClient).Should().Be(!admitted);
+        }
+
+        [Test]
+        public void It_refuses_the_others_as_an_unapproved_client_is_refused()
+        {
+            if (approval == ApiClientApprovalState.Approved)
+            {
+                return;
+            }
+
+            _operations.Token.Should().BeEquivalentTo(_invalidClient);
+            _operations.Revocation.Should().BeOfType<TokenRevocationResult.InvalidClient>();
+        }
+
+        [Test]
+        public void It_logs_the_role_configuration_refusal_only_for_the_client_without_a_row() =>
+            LogMessagesAt(_logger, LogLevel.Warning)
+                .Should()
+                .Equal(
+                    approval == ApiClientApprovalState.NoApiClientRow
+                        ? Enumerable.Repeat(
+                            NotAdmittedMessage(
+                                StoredCredentialClientId,
+                                _applicationId,
+                                ClientAdmission.NoApiClientRowRoleConfiguration
+                            ),
+                            3
+                        )
+                        : []
+                );
+
+        [Test]
+        public void It_reads_no_admission_evidence_for_a_row_backed_client() =>
+            A.CallTo(() => _tokenRepository.GetApplicationScopesAsync(A<Guid>._))
+                .MustHaveHappened(approval == ApiClientApprovalState.NoApiClientRow ? 3 : 0, Times.Exactly);
+    }
+
+    // The role names come from the options the manager was built with, not from a default.
+    [TestFixture("operator", true)]
+    [TestFixture(AdministrativeRole, false)]
+    public class Given_GetAccessTokenAsync_WithAConfiguredAdministrativeRoleName(
+        string heldRole,
+        bool admitted
+    ) : OpenIddictTokenManagerTests
+    {
+        private ILogger<OpenIddictTokenManager> _logger = null!;
+        private Guid _applicationId;
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _logger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            _applicationId = ArrangeCredentialClient(approval: ApiClientApprovalState.NoApiClientRow).Id;
+            ArrangeAdmissionEvidence(_applicationId, [heldRole], [FullAccessScope]);
+            StubActiveKeyPair();
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
+
+            _result = await NewTokenManager(RoleNamedOptions(configServiceRole: "operator"), _logger)
+                .GetAccessTokenAsync(CredentialGrant());
+        }
+
+        [Test]
+        public void It_admits_only_the_holder_of_the_configured_role() =>
+            (_result is TokenResult.Success).Should().Be(admitted);
+
+        [Test]
+        public void It_asks_about_the_configured_role_names_in_order() =>
+            A.CallTo(() => _tokenRepository.RoleNamesShareARoleRowAsync("operator", VendorRole))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_logs_a_refusal_only_for_the_holder_of_another_role() =>
+            LogMessagesAt(_logger, LogLevel.Warning).Should().Equal(ExpectedWarnings);
+
+        private IEnumerable<string> ExpectedWarnings =>
+            admitted
+                ? []
+                :
+                [
+                    NotAdmittedMessage(
+                        StoredCredentialClientId,
+                        _applicationId,
+                        ClientAdmission.NoApiClientRowNoAdministrativeRole
+                    ),
+                ];
+    }
+
+    // The refusal line carries the sanitized canonical client id, the application id and the fixed
+    // category, and nothing the evidence held: no role or scope value, no secret.
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_ForARefusedClientWithoutAnApiClientRowWhoseIdCarriesControlCharacters
+        : OpenIddictTokenManagerTests
+    {
+        private const string ForgingClientId = "Orphan\r\nForged\u0007Client";
+
+        private ILogger<OpenIddictTokenManager> _logger = null!;
+        private Guid _applicationId;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _logger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            _applicationId = ArrangeCredentialClient(
+                storedClientId: ForgingClientId,
+                approval: ApiClientApprovalState.NoApiClientRow
+            ).Id;
+            ArrangeAdmissionEvidence(_applicationId, [VendorRole], ["EdFiSandbox"]);
+
+            _ = await NewTokenManager(RoleNamedOptions(), _logger).GetAccessTokenAsync(CredentialGrant());
+        }
+
+        [Test]
+        public void It_logs_the_sanitized_client_id() =>
+            LogMessagesAt(_logger, LogLevel.Warning)
+                .Should()
+                .Equal(
+                    NotAdmittedMessage(
+                        "OrphanForgedClient",
+                        _applicationId,
+                        ClientAdmission.NoApiClientRowHoldsClientRoleOnly
+                    )
+                );
+
+        [Test]
+        public void It_logs_only_the_fixed_placeholders() =>
+            Fake.GetCalls(_logger)
+                .Where(call => call.Method.Name == nameof(ILogger.Log))
+                .Select(call => call.Arguments[2])
+                .OfType<IEnumerable<KeyValuePair<string, object?>>>()
+                .Single()
+                .Select(pair => pair.Key)
+                .Should()
+                .BeEquivalentTo("ClientId", "ApplicationId", "Admission", "{OriginalFormat}");
+
+        [Test]
+        public void It_logs_no_role_scope_or_secret_value() =>
+            AllLoggedText(_logger)
+                .Should()
+                .NotContain(VendorRole)
+                .And.NotContain("EdFiSandbox")
+                .And.NotContain(CallerSecret)
+                .And.NotContain(StoredCredentialHash);
+    }
+
+    // A failed admission read is a dependency failure, handled where a failed credential read is:
+    // the token endpoint's generic failure, the client-authentication boundary for revocation and
+    // introspection. It is never a refusal: a registration-shaped client is arranged, so a read
+    // failure answered as an empty or false result would either refuse it or admit it.
+    [TestFixture("roles")]
+    [TestFixture("scopes")]
+    [TestFixture("role-names")]
+    public class Given_The_Authenticating_Endpoints_When_An_Admission_Read_Fails(string read)
+        : OpenIddictTokenManagerTests
+    {
+        private ILogger<OpenIddictTokenManager> _logger = null!;
+        private AuthenticatedOperations _operations = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _logger = A.Fake<ILogger<OpenIddictTokenManager>>();
+            Guid applicationId = ArrangeCredentialClient(approval: ApiClientApprovalState.NoApiClientRow).Id;
+            ArrangeAdmissionEvidence(applicationId, [AdministrativeRole], [FullAccessScope]);
+            switch (read)
+            {
+                case "roles":
+                    A.CallTo(() => _tokenRepository.GetClientRolesAsync(applicationId))
+                        .Throws(DependencyFailure());
+                    break;
+                case "scopes":
+                    A.CallTo(() => _tokenRepository.GetApplicationScopesAsync(applicationId))
+                        .Throws(DependencyFailure());
+                    break;
+                default:
+                    A.CallTo(() => _tokenRepository.RoleNamesShareARoleRowAsync(A<string>._, A<string>._))
+                        .Throws(DependencyFailure());
+                    break;
+            }
+
+            _operations = await RunTheAuthenticatingOperationsAsync(_logger);
+        }
+
+        [Test]
+        public void It_answers_the_token_request_with_the_generic_failure() =>
+            _operations
+                .Token.Should()
+                .BeEquivalentTo(new TokenResult.FailureUnknown(DependencyFailure().Message));
+
+        [Test]
+        public void It_reports_the_revocation_client_authentication_boundary_unavailable() =>
+            _operations
+                .Revocation.Should()
+                .BeOfType<TokenRevocationResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("client-authentication");
+
+        [Test]
+        public void It_reports_the_introspection_client_authentication_boundary_unavailable() =>
+            _operations
+                .Introspection.Should()
+                .BeOfType<TokenIntrospectionResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("client-authentication");
+
+        [Test]
+        public void It_logs_no_refusal_and_no_admission()
+        {
+            LogCountAt(_logger, LogLevel.Warning).Should().Be(0);
+            LogCountAt(_logger, LogLevel.Debug).Should().Be(0);
+        }
+
+        // The revocation and introspection boundaries name exception types only; the token
+        // endpoint's generic failure logs its exception, as it does for a failed credential read.
+        [Test]
+        public void It_logs_the_boundary_errors_with_type_names_only() =>
+            LogMessagesAt(_logger, LogLevel.Error)
+                .Where(message => !message.StartsWith("Unknown error while retrieving access token"))
+                .Should()
+                .HaveCount(2)
+                .And.OnlyContain(message =>
+                    message.Contains(typeof(InvalidOperationException).FullName!)
+                    && !message.Contains(ExceptionSentinel)
+                );
+
+        [Test]
+        public void It_does_no_work_after_the_failure()
+        {
+            A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(A<string>._)).MustNotHaveHappened();
+            StoreMustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, A<Guid>._))
+                .MustNotHaveHappened();
+        }
+    }
+
     // Between authentication and the full load, the client's API client approval state can change.
     // The load must find the admissible state the client authenticated with. Anything else is
     // answered as an unknown client, before any key, mint or store, and is logged: an un-approval of
@@ -6426,15 +7099,7 @@ public class OpenIddictTokenManagerTests
                 .Returns(CredentialApplication(applicationId, StoredCredentialClientId, loaded));
             StubActiveKeyPair();
 
-            _result = await NewTokenManager(
-                    new IdentityOptions
-                    {
-                        Authority = TestIssuer,
-                        Audience = TestAudience,
-                        EncryptionKey = TestEncryptionKey,
-                    },
-                    _logger
-                )
+            _result = await NewTokenManager(RoleNamedOptions(), _logger)
                 .GetAccessTokenAsync(CredentialGrant());
         }
 
@@ -6442,17 +7107,28 @@ public class OpenIddictTokenManagerTests
         public void It_returns_an_invalid_client_authentication_failure() =>
             _result.Should().BeEquivalentTo(_invalidClient);
 
-        // No signing key, roles, mint or store: the repository saw the credential read and the
-        // full-application load, and nothing after the refusal.
+        // No signing key, mint or store: the repository saw the credential read, the admission
+        // reads a client without an API client row is classified by, the full-application load,
+        // and nothing after the refusal.
         [Test]
-        public void It_reads_only_the_credential_and_the_application() =>
-            Fake.GetCalls(_tokenRepository)
-                .Select(call => call.Method.Name)
-                .Should()
-                .Equal(
+        public void It_reads_only_the_credential_the_admission_evidence_and_the_application() =>
+            Fake.GetCalls(_tokenRepository).Select(call => call.Method.Name).Should().Equal(ExpectedCalls);
+
+        private IEnumerable<string> ExpectedCalls =>
+            authenticated == ApiClientApprovalState.NoApiClientRow
+                ?
+                [
                     nameof(IOpenIddictTokenRepository.GetClientCredentialAsync),
-                    nameof(IOpenIddictTokenRepository.GetApplicationByClientIdAsync)
-                );
+                    nameof(IOpenIddictTokenRepository.GetClientRolesAsync),
+                    nameof(IOpenIddictTokenRepository.GetApplicationScopesAsync),
+                    nameof(IOpenIddictTokenRepository.RoleNamesShareARoleRowAsync),
+                    nameof(IOpenIddictTokenRepository.GetApplicationByClientIdAsync),
+                ]
+                :
+                [
+                    nameof(IOpenIddictTokenRepository.GetClientCredentialAsync),
+                    nameof(IOpenIddictTokenRepository.GetApplicationByClientIdAsync),
+                ];
 
         [Test]
         public void It_logs_the_change_once_at_its_level() =>

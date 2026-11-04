@@ -199,6 +199,37 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     protected static Task<TokenResult> RequestGrantAsync(OpenIddictTokenManager manager, string clientId) =>
         manager.GetAccessTokenAsync([new("client_id", clientId), new("client_secret", "plain-secret")]);
 
+    /// <summary>
+    /// The configured administrative and DMS client role names of one fixture. Role rows are not
+    /// respawned between tests, so each fixture takes names of its own.
+    /// </summary>
+    protected sealed record ConfiguredRoleNames(string Administrative, string Client)
+    {
+        public static ConfiguredRoleNames Fresh()
+        {
+            string suffix = Guid.NewGuid().ToString("N");
+            return new($"cms-client-{suffix}", $"dms-client-{suffix}");
+        }
+    }
+
+    /// <summary>Options that classify a client without an API client row by <paramref name="roles"/>.</summary>
+    protected static IdentityOptions RoleNamedOptions(
+        ConfiguredRoleNames roles,
+        int? bearerTokenPerClientLimit = null
+    )
+    {
+        IdentityOptions options = new()
+        {
+            ConfigServiceRole = roles.Administrative,
+            ClientRole = roles.Client,
+        };
+        if (bearerTokenPerClientLimit is { } limit)
+        {
+            options.BearerTokenPerClientLimit = limit;
+        }
+        return options;
+    }
+
     [TestFixture]
     public class Given_width_aliases_in_a_width_insensitive_database : OpenIddictDataRepositoryTests
     {
@@ -354,6 +385,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             (await TokenRowCountAsync(_applicationId)).Should().Be(15);
     }
 
+    // A client without an API client row reaches the exemption only as an administrative client, so
+    // the no-row rows hold the configured administrative role.
     [TestFixture(false, 1)]
     [TestFixture(true, -1)]
     [TestFixture(true, 0)]
@@ -376,13 +409,18 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 clientId,
                 hasApiClientRow ? "EdFiSandbox" : "edfi_admin_api/readonly_access"
             );
+            ConfiguredRoleNames roles = ConfiguredRoleNames.Fresh();
             if (hasApiClientRow)
             {
                 await AddApiClientRowAsync(repository, clientId);
             }
+            else
+            {
+                await AddClientRoleAsync(repository, _applicationId, roles.Administrative);
+            }
             OpenIddictTokenManager manager = CreateTokenManager(
                 repository,
-                new IdentityOptions { BearerTokenPerClientLimit = configuredLimit }
+                RoleNamedOptions(roles, configuredLimit)
             );
             _grants =
             [
@@ -400,15 +438,24 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             (await TokenRowCountAsync(_applicationId)).Should().Be(3);
     }
 
-    [TestFixture("EdFiSandbox")]
-    [TestFixture("edfi_admin_api/sis")]
-    public class Given_No_Api_Client_Row_With_Non_Admin_Scopes(string registeredScope)
+    // A client without an API client row whose registered scopes are not all Management API scopes is
+    // not administrative, whatever role it holds: refused before the store, so nothing is stored and
+    // the limit is never reached. The administrative-role rows prove the scope evidence is required.
+    [TestFixture("EdFiSandbox", "none")]
+    [TestFixture("EdFiSandbox", "client")]
+    [TestFixture("EdFiSandbox", "administrative")]
+    [TestFixture("edfi_admin_api/sis", "none")]
+    [TestFixture("edfi_admin_api/sis", "client")]
+    [TestFixture("edfi_admin_api/sis", "administrative")]
+    public class Given_No_Api_Client_Row_With_Non_Admin_Scopes(string registeredScope, string heldRole)
         : OpenIddictDataRepositoryTests
     {
         private Guid _applicationId;
         private ApplicationInfo _application = null!;
         private TokenResult _firstGrant = null!;
         private TokenResult _secondGrant = null!;
+        private IOpenIddictDataRepository _observedRepository = null!;
+        private string _clientId = null!;
 
         [SetUp]
         public async Task Setup()
@@ -417,17 +464,26 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<OpenIddictDataRepository>.Instance
             );
-            string clientId = Guid.NewGuid().ToString();
-            _applicationId = await RegisterApplicationAsync(repository, clientId, registeredScope);
+            _clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(repository, _clientId, registeredScope);
+            ConfiguredRoleNames roles = ConfiguredRoleNames.Fresh();
+            if (heldRole != "none")
+            {
+                await AddClientRoleAsync(
+                    repository,
+                    _applicationId,
+                    heldRole == "administrative" ? roles.Administrative : roles.Client
+                );
+            }
             _application =
-                await repository.GetApplicationByClientIdAsync(clientId)
+                await repository.GetApplicationByClientIdAsync(_clientId)
                 ?? throw new InvalidOperationException("Seeded no-row application was not found.");
-            OpenIddictTokenManager manager = CreateTokenManager(
+            (OpenIddictTokenManager manager, _observedRepository) = CreateTokenManagerOver(
                 repository,
-                new IdentityOptions { BearerTokenPerClientLimit = 1 }
+                RoleNamedOptions(roles, bearerTokenPerClientLimit: 1)
             );
-            _firstGrant = await RequestGrantAsync(manager, clientId);
-            _secondGrant = await RequestGrantAsync(manager, clientId);
+            _firstGrant = await RequestGrantAsync(manager, _clientId);
+            _secondGrant = await RequestGrantAsync(manager, _clientId);
         }
 
         [Test]
@@ -443,16 +499,25 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             _application.Scopes.Should().BeEquivalentTo(registeredScope);
 
         [Test]
-        public void It_admits_the_first_grant() => _firstGrant.Should().BeOfType<TokenResult.Success>();
+        public void It_refuses_both_grants_as_an_unknown_client_is_refused()
+        {
+            _firstGrant.Should().BeEquivalentTo(InvalidClient);
+            _secondGrant.Should().BeEquivalentTo(InvalidClient);
+        }
 
         [Test]
-        public void It_refuses_the_second_grant_with_the_configured_limit() =>
-            _secondGrant.Should().BeEquivalentTo(new TokenResult.FailureTokenLimitExceeded(1));
+        public void It_never_loads_the_full_application() =>
+            A.CallTo(() => _observedRepository.GetApplicationByClientIdAsync(_clientId))
+                .MustNotHaveHappened();
 
         [Test]
-        public async Task It_stores_exactly_one_token() =>
-            (await TokenRowCountAsync(_applicationId)).Should().Be(1);
+        public async Task It_stores_no_token() => (await TokenRowCountAsync(_applicationId)).Should().Be(0);
     }
+
+    protected static readonly TokenResult.FailureAuthentication InvalidClient = new(
+        "invalid_client",
+        "Invalid client or Invalid client credentials"
+    );
 
     /// <summary>
     /// Any value below 1 turns enforcement off, which is what seeding and the sweep fixtures want.
@@ -634,14 +699,17 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     /// <summary>
     /// The production lifecycle caller, <see cref="OpenIddictClientRepository"/>, over
     /// <paramref name="dataRepository"/>: the real engine repository, or a fake wrapping it to
-    /// inject a failure. Only the secret hashing is faked.
+    /// inject a failure. Only the secret hashing is faked: every new secret hashes to
+    /// <paramref name="secretHash"/>. A client created to authenticate through
+    /// <see cref="CreateTokenManagerOver"/> passes <see cref="RegisteredSecret"/>.
     /// </summary>
     protected static OpenIddictClientRepository CreateClientRepository(
-        IOpenIddictDataRepository dataRepository
+        IOpenIddictDataRepository dataRepository,
+        string secretHash = ResetSecretHash
     )
     {
         IClientSecretHasher secretHasher = A.Fake<IClientSecretHasher>();
-        A.CallTo(() => secretHasher.HashSecretAsync(A<string>._)).Returns(ResetSecretHash);
+        A.CallTo(() => secretHasher.HashSecretAsync(A<string>._)).Returns(secretHash);
         return new OpenIddictClientRepository(
             NullLogger<OpenIddictClientRepository>.Instance,
             secretHasher,
@@ -5934,16 +6002,23 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
     // Through the token manager, the credential query decides authentication: a successful grant
     // reads the credential and then the full application once each; a failed one never reads the
-    // full application.
+    // full application. A client without an API client row is admitted only as an administrative
+    // client (the configured administrative role and a Management API scope); an orphaned vendor
+    // client (the DMS client role and a vendor scope) is refused as an unapproved one is.
     [TestFixture("approved")]
     [TestFixture("unapproved")]
     [TestFixture("wrong-secret")]
     [TestFixture("absent")]
+    [TestFixture("administrative-no-row")]
+    [TestFixture("orphaned-vendor-no-row")]
     public class Given_Grants_Through_The_Credential_Path(string outcome) : OpenIddictDataRepositoryTests
     {
         private string _clientId = null!;
+        private Guid _applicationId;
         private IOpenIddictDataRepository _observedRepository = null!;
         private TokenResult _result = null!;
+
+        private bool Admitted => outcome is "approved" or "administrative-no-row";
 
         [SetUp]
         public async Task Setup()
@@ -5953,9 +6028,24 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 NullLogger<OpenIddictDataRepository>.Instance
             );
             _clientId = Guid.NewGuid().ToString();
-            if (outcome != "absent")
+            ConfiguredRoleNames roles = ConfiguredRoleNames.Fresh();
+            if (outcome == "administrative-no-row")
             {
-                await RegisterApplicationAsync(repository, _clientId);
+                _applicationId = await RegisterApplicationAsync(
+                    repository,
+                    _clientId,
+                    "edfi_admin_api/full_access"
+                );
+                await AddClientRoleAsync(repository, _applicationId, roles.Administrative);
+            }
+            else if (outcome == "orphaned-vendor-no-row")
+            {
+                _applicationId = await RegisterApplicationAsync(repository, _clientId, "EdFiSandbox");
+                await AddClientRoleAsync(repository, _applicationId, roles.Client);
+            }
+            else if (outcome != "absent")
+            {
+                _applicationId = await RegisterApplicationAsync(repository, _clientId);
                 await AddApiClientWithDataStoresAsync(
                     repository,
                     _clientId,
@@ -5966,7 +6056,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
             (OpenIddictTokenManager manager, _observedRepository) = CreateTokenManagerOver(
                 repository,
-                new IdentityOptions()
+                RoleNamedOptions(roles)
             );
             _result = await manager.GetAccessTokenAsync([
                 new("client_id", _clientId),
@@ -5977,20 +6067,13 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [Test]
         public void It_answers_the_grant()
         {
-            if (outcome == "approved")
+            if (Admitted)
             {
                 _result.Should().BeOfType<TokenResult.Success>();
             }
             else
             {
-                _result
-                    .Should()
-                    .BeEquivalentTo(
-                        new TokenResult.FailureAuthentication(
-                            "invalid_client",
-                            "Invalid client or Invalid client credentials"
-                        )
-                    );
+                _result.Should().BeEquivalentTo(InvalidClient);
             }
         }
 
@@ -6002,6 +6085,153 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [Test]
         public void It_reads_the_full_application_only_after_a_successful_authentication() =>
             A.CallTo(() => _observedRepository.GetApplicationByClientIdAsync(_clientId))
-                .MustHaveHappened(outcome == "approved" ? 1 : 0, Times.Exactly);
+                .MustHaveHappened(Admitted ? 1 : 0, Times.Exactly);
+
+        [Test]
+        public async Task It_stores_a_token_only_for_an_admitted_client() =>
+            (await TokenRowCountAsync(_applicationId)).Should().Be(Admitted ? 1 : 0);
+
+        [Test]
+        public void It_reads_the_scopes_only_to_classify_a_verified_client_without_a_row() =>
+            A.CallTo(() => _observedRepository.GetApplicationScopesAsync(A<Guid>._))
+                .MustHaveHappened(
+                    outcome is "administrative-no-row" or "orphaned-vendor-no-row" ? 1 : 0,
+                    Times.Exactly
+                );
+    }
+
+    // DMS-1494 §4.5 end to end. The configured client role name is a variant of the administrative
+    // one, and a vendor-shaped client is created through the production path with that variant and
+    // an admin-named scope, without an API client row. On SQL Server the collation resolves the variant
+    // to the administrative role row, so the vendor holds the administrative role and only the role
+    // configuration can refuse it: the database's answer (clause 2) and the engine-independent
+    // comparison (clause 3) both do. Under the same options a row-backed client is decided by its row.
+    [TestFixture("trailing-space")]
+    [TestFixture("full-width")]
+    public class Given_Grants_Under_Role_Names_That_Collide_Through_The_Manager(string variant)
+        : OpenIddictDataRepositoryTests
+    {
+        private const bool TheDatabaseResolvesBothNamesToOneRow = true;
+        private string _collation = null!;
+        private Guid _vendorId;
+        private Guid _administrativeId;
+        private Guid _approvedId;
+        private Guid _unapprovedId;
+        private string _vendorClientId = null!;
+        private string _administrativeClientId = null!;
+        private bool _shareARoleRow;
+        private IOpenIddictDataRepository _observedRepository = null!;
+        private TokenResult _vendorGrant = null!;
+        private TokenResult _administrativeGrant = null!;
+        private TokenResult _approvedGrant = null!;
+        private TokenResult _unapprovedGrant = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string suffix = Guid.NewGuid().ToString("N");
+            ConfiguredRoleNames roles = variant switch
+            {
+                "trailing-space" => new($"cms-client-{suffix}", $"cms-client-{suffix} "),
+                "full-width" => new($"Admin-{suffix}", $"Ａdmin-{suffix}"),
+                _ => throw new ArgumentOutOfRangeException(nameof(variant), variant, null),
+            };
+            OpenIddictClientRepository clientRepository = CreateClientRepository(
+                repository,
+                RegisteredSecret
+            );
+
+            _administrativeClientId = $"registered-{suffix}";
+            _administrativeId = CreatedId(
+                await clientRepository.CreateClientAsync(
+                    _administrativeClientId,
+                    "registered-secret",
+                    roles.Administrative,
+                    "Registered Client",
+                    "edfi_admin_api/full_access",
+                    "",
+                    ""
+                )
+            );
+            _vendorClientId = $"vendor-{suffix}";
+            _vendorId = CreatedId(
+                await clientRepository.CreateClientAsync(
+                    _vendorClientId,
+                    "vendor-secret",
+                    roles.Client,
+                    "Vendor Client",
+                    "edfi_admin_api/full_access",
+                    "uri://ed-fi.org",
+                    "255901"
+                )
+            );
+            // API client rows hold a client id of at most 36 characters.
+            string approvedClientId = Guid.NewGuid().ToString();
+            _approvedId = await RegisterApplicationAsync(repository, approvedClientId);
+            await AddApiClientRowAsync(repository, approvedClientId);
+            string unapprovedClientId = Guid.NewGuid().ToString();
+            _unapprovedId = await RegisterApplicationAsync(repository, unapprovedClientId);
+            await AddApiClientRowAsync(repository, unapprovedClientId, isApproved: false);
+            _shareARoleRow = await repository.RoleNamesShareARoleRowAsync(roles.Administrative, roles.Client);
+            _collation = await RoleNameCollationAsync();
+
+            (OpenIddictTokenManager manager, _observedRepository) = CreateTokenManagerOver(
+                repository,
+                RoleNamedOptions(roles)
+            );
+            _vendorGrant = await RequestGrantAsync(manager, _vendorClientId);
+            _administrativeGrant = await RequestGrantAsync(manager, _administrativeClientId);
+            _approvedGrant = await RequestGrantAsync(manager, approvedClientId);
+            _unapprovedGrant = await RequestGrantAsync(manager, unapprovedClientId);
+        }
+
+        private static Guid CreatedId(ClientCreateResult result) =>
+            result.Should().BeOfType<ClientCreateResult.Success>().Subject.ClientUuid;
+
+        [Test]
+        public void It_answers_whether_the_database_resolves_both_names_to_one_row() =>
+            _shareARoleRow.Should().Be(TheDatabaseResolvesBothNamesToOneRow, $"collation {_collation}");
+
+        [Test]
+        public void It_refuses_the_vendor_client_without_a_row() =>
+            _vendorGrant.Should().BeEquivalentTo(InvalidClient);
+
+        [Test]
+        public void It_refuses_the_administrative_client_without_a_row_under_the_colliding_names() =>
+            _administrativeGrant.Should().BeEquivalentTo(InvalidClient);
+
+        [Test]
+        public void It_never_loads_the_full_application_of_a_refused_client()
+        {
+            A.CallTo(() => _observedRepository.GetApplicationByClientIdAsync(_vendorClientId))
+                .MustNotHaveHappened();
+            A.CallTo(() => _observedRepository.GetApplicationByClientIdAsync(_administrativeClientId))
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_stores_no_token_for_a_client_without_a_row()
+        {
+            (await TokenRowCountAsync(_vendorId)).Should().Be(0);
+            (await TokenRowCountAsync(_administrativeId)).Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_admits_the_approved_row_backed_client()
+        {
+            _approvedGrant.Should().BeOfType<TokenResult.Success>();
+            (await TokenRowCountAsync(_approvedId)).Should().Be(1);
+        }
+
+        [Test]
+        public async Task It_refuses_the_unapproved_row_backed_client()
+        {
+            _unapprovedGrant.Should().BeEquivalentTo(InvalidClient);
+            (await TokenRowCountAsync(_unapprovedId)).Should().Be(0);
+        }
     }
 }
