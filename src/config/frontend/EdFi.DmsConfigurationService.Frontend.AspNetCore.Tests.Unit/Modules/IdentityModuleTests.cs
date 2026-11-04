@@ -32,6 +32,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
@@ -4118,6 +4119,525 @@ public class RevocationOwnershipTests
         public void It_revokes_nothing_for_a_failed_or_unavailable_authentication() =>
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._))
                 .MustHaveHappenedOnceExactly();
+    }
+}
+
+/// <summary>
+/// DMS-1494 AC3 at the OAuth endpoints, through the shipped self-contained host: its own token manager,
+/// secret hasher, placeholder and signing-key services, and the role names it binds from
+/// appsettings.Test.json (<c>ConfigServiceRole = "test-role"</c>, <c>ClientRole = "dms-client"</c>).
+/// Only the token repository is a fake. A vendor-shaped client without an API client row (an orphan)
+/// that presents its correct secret receives, on <c>/connect/token</c>, <c>/connect/revoke</c> and
+/// <c>/connect/introspect</c>, through form and through Basic credentials, exactly the status,
+/// challenge, content type and body bytes an unapproved client receives, and the manager logs one
+/// Warning naming the refusal. A registration-shaped client without a row (the configured
+/// administrative role and a Management API scope only) is admitted on all three, logged at Debug
+/// and never at Warning. The requests share one host per engine, because each host start is costly
+/// and every request is independent of the others.
+/// </summary>
+[TestFixture("postgresql")]
+[TestFixture("mssql")]
+public class Given_OAuth_endpoints_and_clients_without_an_API_client_row(string datastore)
+{
+    private const string AdministrativeClientId = "administrative-no-row-client";
+    private const string AdministrativeSecret = "Administrative-No-Row-Secret-0123456789";
+    private const string OrphanClientId = "orphaned-vendor-client";
+    private const string OrphanSecret = "Orphaned-Vendor-Secret-0123456789";
+    private const string UnapprovedClientId = "unapproved-vendor-client";
+    private const string UnapprovedSecret = "Unapproved-Vendor-Secret-0123456789";
+
+    /// <summary>The role names appsettings.Test.json configures. The host binds them; this fixture does not.</summary>
+    private const string ConfiguredServiceRole = "test-role";
+    private const string ConfiguredClientRole = "dms-client";
+
+    private const string AdministrativeScope = "edfi_admin_api/full_access";
+    private const string VendorScope = "EdFiSandbox";
+    private const string BasicChallenge = "Basic realm=\"EdFi.DmsConfigurationService\"";
+
+    private const string InvalidClientBody = """
+        {
+          "error": "invalid_client",
+          "error_description": "Invalid client or Invalid client credentials"
+        }
+        """;
+
+    private const string TokenEndpoint = "/connect/token";
+    private const string RevokeEndpoint = "/connect/revoke";
+    private const string IntrospectEndpoint = "/connect/introspect";
+    private const string AdmittedMessageSuffix =
+        "admitted as an administrative client without an API client row";
+
+    private static readonly string[] _endpoints = [TokenEndpoint, RevokeEndpoint, IntrospectEndpoint];
+    private static readonly string[] _credentialPaths = ["form", "basic"];
+    private static readonly string _managerCategory = typeof(OpenIddictTokenManager).FullName!;
+
+    public static IEnumerable<TestCaseData> Requests() =>
+        from endpoint in _endpoints
+        from path in _credentialPaths
+        select new TestCaseData(endpoint, path);
+
+    public static IEnumerable<string> CredentialPaths() => _credentialPaths;
+
+    /// <summary>One response as the caller receives it, and what the token manager logged while answering it.</summary>
+    private sealed record Observed(
+        HttpStatusCode Status,
+        string? ContentType,
+        string[] Challenges,
+        byte[] Body,
+        RevocationLogCapture.Record[] ManagerLogs
+    )
+    {
+        public string Text => Encoding.UTF8.GetString(Body);
+
+        public RevocationLogCapture.Record[] AtOrAbove(LogLevel level) =>
+            [.. ManagerLogs.Where(record => record.Level >= level)];
+    }
+
+    private readonly IOpenIddictTokenRepository _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+    private readonly RevocationLogCapture _logs = new();
+    private readonly Guid _administrativeApplicationId = Guid.NewGuid();
+    private readonly Guid _orphanApplicationId = Guid.NewGuid();
+    private readonly Guid _unapprovedApplicationId = Guid.NewGuid();
+    private readonly Dictionary<(string Endpoint, string Path), Observed> _administrative = [];
+    private readonly Dictionary<(string Endpoint, string Path), Observed> _orphan = [];
+    private readonly Dictionary<(string Endpoint, string Path), Observed> _unapproved = [];
+    private readonly Dictionary<string, string> _storedSecrets = [];
+    private WebApplicationFactory<Program> _factory = null!;
+    private HttpClient _client = null!;
+    private OpenIddictIdentityOptions _boundOptions = null!;
+
+    /// <summary>
+    /// A client as both repository reads return it. The stored secret is read lazily, because it is
+    /// hashed by the host's own hasher once the host has started.
+    /// </summary>
+    private void ArrangeClient(
+        string clientId,
+        Guid applicationId,
+        ApiClientApprovalState approval,
+        string role,
+        string scope
+    )
+    {
+        A.CallTo(() => _tokenRepository.GetClientCredentialAsync(clientId))
+            .ReturnsLazily(() =>
+                new ClientCredential(applicationId, clientId, _storedSecrets[clientId], approval)
+            );
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(clientId))
+            .ReturnsLazily(() =>
+                new ApplicationInfo
+                {
+                    Id = applicationId,
+                    ClientId = clientId,
+                    ClientSecret = _storedSecrets[clientId],
+                    ApiClientApproval = approval,
+                    ProtocolMappers = "[]",
+                    Permissions = [scope],
+                    Scopes = [scope],
+                }
+            );
+        A.CallTo(() => _tokenRepository.GetClientRolesAsync(applicationId)).Returns(new[] { role });
+        A.CallTo(() => _tokenRepository.GetApplicationScopesAsync(applicationId)).Returns(new[] { scope });
+    }
+
+    /// <summary>
+    /// One signing key for issuance and verification, the three clients, distinct role rows for the
+    /// configured names, a store that accepts the token, and the administrative client's token state.
+    /// </summary>
+    private void ArrangeRepository()
+    {
+        using RSA rsa = RSA.Create(2048);
+        string keyId = Guid.NewGuid().ToString();
+        PublicKeyInfo[] publicKeys =
+        [
+            new PublicKeyInfo { KeyId = keyId, PublicKey = rsa.ExportSubjectPublicKeyInfo() },
+        ];
+        A.CallTo(() => _tokenRepository.GetActivePrivateKeyAsync(A<string>._))
+            .Returns(
+                new PrivateKeyInfo
+                {
+                    KeyId = keyId,
+                    PrivateKey = Convert.ToBase64String(rsa.ExportPkcs8PrivateKey()),
+                }
+            );
+        A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync()).Returns(publicKeys);
+        A.CallTo(() => _tokenRepository.GetActivePublicKeysAsync(A<CancellationToken>._)).Returns(publicKeys);
+
+        ArrangeClient(
+            AdministrativeClientId,
+            _administrativeApplicationId,
+            ApiClientApprovalState.NoApiClientRow,
+            ConfiguredServiceRole,
+            AdministrativeScope
+        );
+        ArrangeClient(
+            OrphanClientId,
+            _orphanApplicationId,
+            ApiClientApprovalState.NoApiClientRow,
+            ConfiguredClientRole,
+            VendorScope
+        );
+        ArrangeClient(
+            UnapprovedClientId,
+            _unapprovedApplicationId,
+            ApiClientApprovalState.Unapproved,
+            ConfiguredClientRole,
+            VendorScope
+        );
+
+        A.CallTo(() => _tokenRepository.RoleNamesShareARoleRowAsync(A<string>._, A<string>._)).Returns(false);
+        A.CallTo(() =>
+                _tokenRepository.StoreTokenAsync(
+                    A<Guid>._,
+                    A<Guid>._,
+                    A<string>._,
+                    A<DateTimeOffset>._,
+                    A<int>._,
+                    A<string>._,
+                    A<ApiClientApprovalState>._
+                )
+            )
+            .Returns(TokenStoreOutcome.Stored);
+        A.CallTo(() =>
+                _tokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, _administrativeApplicationId)
+            )
+            .Returns("valid");
+        A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, _administrativeApplicationId))
+            .Returns(true);
+    }
+
+    private async Task<Observed> Send(
+        string endpoint,
+        string path,
+        string clientId,
+        string secret,
+        string token
+    )
+    {
+        int logsBefore = _logs.Records.Count;
+        using HttpRequestMessage request = new(HttpMethod.Post, endpoint);
+        List<KeyValuePair<string, string>> form =
+            endpoint == TokenEndpoint
+                ? [new("grant_type", "client_credentials"), new("scope", AdministrativeScope)]
+                : [new("token", token)];
+        if (path == "basic")
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue(
+                "Basic",
+                Convert.ToBase64String(Encoding.UTF8.GetBytes($"{clientId}:{secret}"))
+            );
+        }
+        else
+        {
+            form.Add(new("client_id", clientId));
+            form.Add(new("client_secret", secret));
+        }
+
+        request.Content = new FormUrlEncodedContent(form);
+        using HttpResponseMessage response = await _client.SendAsync(request);
+        byte[] body = await response.Content.ReadAsByteArrayAsync();
+        return new Observed(
+            response.StatusCode,
+            response.Content.Headers.ContentType?.ToString(),
+            response.Headers.TryGetValues("WWW-Authenticate", out IEnumerable<string>? challenges)
+                ? [.. challenges]
+                : [],
+            body,
+            [.. _logs.Records.Skip(logsBefore).Where(record => record.Category == _managerCategory)]
+        );
+    }
+
+    [OneTimeSetUp]
+    public async Task Setup()
+    {
+        ArrangeRepository();
+
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        {
+            builder.UseEnvironment("Test");
+            // UseSetting, because AddServices reads the provider and the engine before the host is built.
+            builder.UseSetting("AppSettings:IdentityProvider", "self-contained");
+            builder.UseSetting("AppSettings:Datastore", datastore);
+            // The database signing-key path requires a key; the faked repository ignores its value.
+            builder.UseSetting("IdentitySettings:EncryptionKey", "test-encryption-key");
+            // Every level from this provider, Debug included, whatever the configured category levels.
+            builder.ConfigureLogging(logging =>
+                logging.AddFilter<RevocationLogCapture>(category: null, LogLevel.Trace)
+            );
+            // Applied after Program's own registrations, so only the repository is replaced.
+            builder.ConfigureTestServices(services =>
+            {
+                services.RemoveAll<IOpenIddictTokenRepository>();
+                services.AddSingleton(_tokenRepository);
+                services.AddSingleton<ILoggerProvider>(_logs);
+            });
+        });
+        _client = _factory.CreateClient();
+
+        _boundOptions = _factory.Services.GetRequiredService<IOptions<OpenIddictIdentityOptions>>().Value;
+        IClientSecretHasher hasher = _factory.Services.GetRequiredService<IClientSecretHasher>();
+        _storedSecrets[AdministrativeClientId] = await hasher.HashSecretAsync(AdministrativeSecret);
+        _storedSecrets[OrphanClientId] = await hasher.HashSecretAsync(OrphanSecret);
+        _storedSecrets[UnapprovedClientId] = await hasher.HashSecretAsync(UnapprovedSecret);
+
+        foreach (string path in _credentialPaths)
+        {
+            Observed issued = await Send(
+                TokenEndpoint,
+                path,
+                AdministrativeClientId,
+                AdministrativeSecret,
+                string.Empty
+            );
+            _administrative[(TokenEndpoint, path)] = issued;
+            string accessToken =
+                issued.Status == HttpStatusCode.OK
+                    ? JsonNode.Parse(issued.Text)!["access_token"]!.GetValue<string>()
+                    : "no-token-was-issued";
+
+            // The refused clients present the administrative client's live token, so the only
+            // difference between their requests and the admitted ones is the credential.
+            foreach (string endpoint in _endpoints)
+            {
+                _orphan[(endpoint, path)] = await Send(
+                    endpoint,
+                    path,
+                    OrphanClientId,
+                    OrphanSecret,
+                    accessToken
+                );
+                _unapproved[(endpoint, path)] = await Send(
+                    endpoint,
+                    path,
+                    UnapprovedClientId,
+                    UnapprovedSecret,
+                    accessToken
+                );
+            }
+
+            _administrative[(IntrospectEndpoint, path)] = await Send(
+                IntrospectEndpoint,
+                path,
+                AdministrativeClientId,
+                AdministrativeSecret,
+                accessToken
+            );
+            _administrative[(RevokeEndpoint, path)] = await Send(
+                RevokeEndpoint,
+                path,
+                AdministrativeClientId,
+                AdministrativeSecret,
+                accessToken
+            );
+        }
+    }
+
+    [OneTimeTearDown]
+    public void TearDown()
+    {
+        _client?.Dispose();
+        _factory?.Dispose();
+    }
+
+    private static object? Value(RevocationLogCapture.Record record, string key) =>
+        record.State.Single(pair => pair.Key == key).Value;
+
+    /// <summary>The precondition the admitted client depends on: the host bound the test configuration's names.</summary>
+    [Test]
+    public void It_binds_the_role_names_the_test_configuration_sets()
+    {
+        _boundOptions.ConfigServiceRole.Should().Be(ConfiguredServiceRole);
+        _boundOptions.ClientRole.Should().Be(ConfiguredClientRole);
+    }
+
+    [TestCaseSource(nameof(Requests))]
+    public void It_answers_the_orphan_with_the_unapproved_clients_status(string endpoint, string path) =>
+        _orphan[(endpoint, path)].Status.Should().Be(_unapproved[(endpoint, path)].Status);
+
+    [TestCaseSource(nameof(Requests))]
+    public void It_answers_the_orphan_with_the_unapproved_clients_challenge(string endpoint, string path) =>
+        _orphan[(endpoint, path)].Challenges.Should().Equal(_unapproved[(endpoint, path)].Challenges);
+
+    [TestCaseSource(nameof(Requests))]
+    public void It_answers_the_orphan_with_the_unapproved_clients_content_type(
+        string endpoint,
+        string path
+    ) => _orphan[(endpoint, path)].ContentType.Should().Be(_unapproved[(endpoint, path)].ContentType);
+
+    [TestCaseSource(nameof(Requests))]
+    public void It_answers_the_orphan_with_the_unapproved_clients_body_bytes(string endpoint, string path) =>
+        _orphan[(endpoint, path)]
+            .Body.Should()
+            .Equal(_unapproved[(endpoint, path)].Body, _orphan[(endpoint, path)].Text);
+
+    [TestCaseSource(nameof(Requests))]
+    public void It_answers_400_through_the_form_and_401_through_basic(string endpoint, string path) =>
+        _orphan[(endpoint, path)]
+            .Status.Should()
+            .Be(path == "basic" ? HttpStatusCode.Unauthorized : HttpStatusCode.BadRequest);
+
+    [TestCaseSource(nameof(Requests))]
+    public void It_challenges_only_the_basic_attempt(string endpoint, string path)
+    {
+        string[] expected = path == "basic" ? [BasicChallenge] : [];
+
+        _orphan[(endpoint, path)].Challenges.Should().Equal(expected);
+    }
+
+    [TestCaseSource(nameof(Requests))]
+    public void It_answers_the_orphan_in_the_oauth_error_format(string endpoint, string path) =>
+        MediaTypeHeaderValue
+            .Parse(_orphan[(endpoint, path)].ContentType!)
+            .MediaType.Should()
+            .Be("application/json");
+
+    [TestCaseSource(nameof(Requests))]
+    public void It_returns_the_exact_invalid_client_body_to_the_orphan(string endpoint, string path)
+    {
+        JsonNode actual = JsonNode.Parse(_orphan[(endpoint, path)].Text)!;
+
+        JsonNode.DeepEquals(actual, JsonNode.Parse(InvalidClientBody)).Should().BeTrue(actual.ToJsonString());
+    }
+
+    [TestCaseSource(nameof(Requests))]
+    public void It_logs_one_warning_naming_the_orphans_refusal(string endpoint, string path)
+    {
+        RevocationLogCapture.Record warning = _orphan[(endpoint, path)]
+            .AtOrAbove(LogLevel.Warning)
+            .Should()
+            .ContainSingle()
+            .Subject;
+
+        warning.Level.Should().Be(LogLevel.Warning);
+        warning
+            .Message.Should()
+            .Be(
+                $"Client {OrphanClientId} (application {_orphanApplicationId}) authenticated but is not admitted (NoApiClientRowHoldsClientRoleOnly); refused"
+            );
+        Value(warning, "Admission").Should().Be(ClientAdmission.NoApiClientRowHoldsClientRoleOnly);
+    }
+
+    /// <summary>An unapproved client stays silent, as before, so the Warning cannot tell a wrong secret from it.</summary>
+    [TestCaseSource(nameof(Requests))]
+    public void It_logs_no_warning_for_the_unapproved_client(string endpoint, string path) =>
+        _unapproved[(endpoint, path)].AtOrAbove(LogLevel.Warning).Should().BeEmpty();
+
+    [TestCaseSource(nameof(CredentialPaths))]
+    public void It_issues_a_token_to_the_administrative_client(string path)
+    {
+        Observed issued = _administrative[(TokenEndpoint, path)];
+
+        issued.Status.Should().Be(HttpStatusCode.OK, issued.Text);
+        JsonNode.Parse(issued.Text)!["access_token"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+    }
+
+    [TestCaseSource(nameof(CredentialPaths))]
+    public void It_reports_the_administrative_clients_own_token_as_active(string path)
+    {
+        Observed introspected = _administrative[(IntrospectEndpoint, path)];
+
+        introspected.Status.Should().Be(HttpStatusCode.OK, introspected.Text);
+        JsonNode body = JsonNode.Parse(introspected.Text)!;
+        body["active"]!.GetValue<bool>().Should().BeTrue(introspected.Text);
+        body["client_id"]!.GetValue<string>().Should().Be(AdministrativeClientId);
+    }
+
+    [TestCaseSource(nameof(CredentialPaths))]
+    public void It_revokes_the_administrative_clients_own_token(string path)
+    {
+        Observed revoked = _administrative[(RevokeEndpoint, path)];
+
+        revoked.Status.Should().Be(HttpStatusCode.OK, revoked.Text);
+        revoked.Body.Should().BeEmpty();
+    }
+
+    [TestCaseSource(nameof(Requests))]
+    public void It_logs_no_warning_for_the_administrative_client(string endpoint, string path) =>
+        _administrative[(endpoint, path)].AtOrAbove(LogLevel.Warning).Should().BeEmpty();
+
+    [TestCaseSource(nameof(Requests))]
+    public void It_logs_the_administrative_admission_once_at_debug(string endpoint, string path)
+    {
+        RevocationLogCapture.Record admitted = _administrative[(endpoint, path)]
+            .ManagerLogs.Where(record =>
+                record.Message.EndsWith(AdmittedMessageSuffix, StringComparison.Ordinal)
+            )
+            .Should()
+            .ContainSingle()
+            .Subject;
+
+        admitted.Level.Should().Be(LogLevel.Debug);
+        admitted
+            .Message.Should()
+            .Be(
+                $"Client {AdministrativeClientId} (application {_administrativeApplicationId}) {AdmittedMessageSuffix}"
+            );
+    }
+
+    /// <summary>Every no-row classification asked about the names the host bound, and no others.</summary>
+    [Test]
+    public void It_classifies_no_row_clients_with_the_bound_role_names()
+    {
+        int noRowRequests = 2 * _endpoints.Length * _credentialPaths.Length;
+        A.CallTo(() =>
+                _tokenRepository.RoleNamesShareARoleRowAsync(ConfiguredServiceRole, ConfiguredClientRole)
+            )
+            .MustHaveHappened(noRowRequests, Times.Exactly);
+        A.CallTo(() => _tokenRepository.RoleNamesShareARoleRowAsync(A<string>._, A<string>._))
+            .MustHaveHappened(noRowRequests, Times.Exactly);
+    }
+
+    [Test]
+    public void It_reads_no_admission_evidence_for_the_unapproved_client()
+    {
+        A.CallTo(() => _tokenRepository.GetClientRolesAsync(_unapprovedApplicationId)).MustNotHaveHappened();
+        A.CallTo(() => _tokenRepository.GetApplicationScopesAsync(_unapprovedApplicationId))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public void It_never_loads_the_full_application_of_a_refused_client()
+    {
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(OrphanClientId)).MustNotHaveHappened();
+        A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(UnapprovedClientId))
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public void It_stores_each_administrative_token_under_the_no_row_state()
+    {
+        A.CallTo(() =>
+                _tokenRepository.StoreTokenAsync(
+                    A<Guid>._,
+                    _administrativeApplicationId,
+                    A<string>._,
+                    A<DateTimeOffset>._,
+                    A<int>._,
+                    A<string>._,
+                    ApiClientApprovalState.NoApiClientRow
+                )
+            )
+            .MustHaveHappened(_credentialPaths.Length, Times.Exactly);
+        A.CallTo(() =>
+                _tokenRepository.StoreTokenAsync(
+                    A<Guid>._,
+                    A<Guid>._,
+                    A<string>._,
+                    A<DateTimeOffset>._,
+                    A<int>._,
+                    A<string>._,
+                    A<ApiClientApprovalState>._
+                )
+            )
+            .MustHaveHappened(_credentialPaths.Length, Times.Exactly);
+    }
+
+    [Test]
+    public void It_revokes_only_the_administrative_clients_tokens()
+    {
+        A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, _administrativeApplicationId))
+            .MustHaveHappened(_credentialPaths.Length, Times.Exactly);
+        A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._))
+            .MustHaveHappened(_credentialPaths.Length, Times.Exactly);
     }
 }
 
