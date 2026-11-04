@@ -33,8 +33,9 @@ client row; clients with a row are unaffected.
 > [!IMPORTANT]
 > Role memberships are written when a client is created and read under the current
 > role names. Changing or reusing either role name can turn an old vendor client's
-> membership into the administrative role. Audit role memberships first, and
-> re-create or re-role every client whose membership no longer matches its kind;
+> membership into the administrative role, whether or not the client has an API
+> client row. Audit the role memberships of every client first, and re-create or
+> re-role every client whose membership no longer matches its kind;
 > see [Auditing role memberships before a role-name change](./OPERATIONS.md#auditing-role-memberships-before-a-role-name-change).
 
 ### Supported Scopes

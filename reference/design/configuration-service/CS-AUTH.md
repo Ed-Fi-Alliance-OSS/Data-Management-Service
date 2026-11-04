@@ -266,16 +266,19 @@ memberships a new meaning, on either engine, whether or not the names ever colli
 
 - From `ConfigServiceRole = A, ClientRole = B` to `ConfigServiceRole = B, ClientRole = C`, vendor
   clients created earlier hold `B`, which is now the administrative role. Without an API client
-  row and with only administrative scopes, such a client is admitted as administrative, and the
-  same membership also meets the `ServicePolicy` role requirement.
+  row and with only administrative scopes, such a client is admitted as administrative. With an
+  API client row the membership matters as well: an approved vendor client that holds `B` now
+  meets the `ServicePolicy` role requirement and, with an administrative scope, reaches protected
+  Configuration Service endpoints.
 - On SQL Server, vendor clients created while `ClientRole` collided with `ConfigServiceRole` hold
   the administrative role row even after the names are corrected.
 - Reusing a retired name for either role makes the old holders of that name count again.
 
 No code path can tell these clients apart from administrative ones, and no provenance is
-recorded. **Whenever either role name is changed or a previously used name is reused, audit role
-memberships before the new configuration takes effect**, and re-create or re-role every client
-whose membership no longer matches its kind. The procedure is in
+recorded. **Whenever either role name is changed or a previously used name is reused, audit the
+role memberships of every client, with or without an API client row, before the new
+configuration takes effect**, and re-create or re-role every client whose membership no longer
+matches its kind. The procedure is in
 [OPERATIONS.md](../../../docs/OPERATIONS.md#auditing-role-memberships-before-a-role-name-change).
 
 #### Admission logging
@@ -298,9 +301,11 @@ whose membership no longer matches its kind. The procedure is in
 
 The lines are written only after the presented secret verified, so a wrong secret never produces
 one. They carry the sanitized client id and the application id, never a role, scope or secret.
-An unapproved client stays silent, as before. An API client row that appears or disappears
-between authentication and the store is logged by the store at Warning (`api-client-row`, see
-[Logging](#logging) under lifecycle revocation).
+An unapproved client stays silent, as before. A change to the client's API client rows between
+authentication and the store is logged by the store (see [Logging](#logging) under lifecycle
+revocation): at Warning as `api-client-row` when the rows disappeared or an approved row
+appeared, and at Debug as `approval` when the stored state is `Unapproved`, including an
+unapproved row that appeared for a client admitted without one.
 
 ## Token revocation
 
@@ -770,7 +775,7 @@ before the participant runs. The participant's handling is defensive.
 | Reset or deletion committed | Information | `Revoked {Count} outstanding tokens for client {ClientUuid}`, written after the commit |
 | Un-approval participant ran | Information | `Marked {Count} outstanding tokens for client {ClientUuid} revoked in the pending un-approval transaction; a rollback preserves their previous state` |
 | Un-approval with no application row | Information | `No identity provider application exists for client {ClientUuid}; its stored tokens are marked revoked in the pending un-approval transaction regardless` |
-| Grant refused on re-validation | Debug; Warning for `api-client-row` | `Refused to store a token for application {ApplicationId}: re-validation under the application row lock failed ({RefusalReason})`, where the reason is `missing`, `secret`, `approval` (an API client row is now unapproved) or `api-client-row` (an API client row appeared or disappeared after the client authenticated) |
+| Grant refused on re-validation | Debug; Warning for `api-client-row` | `Refused to store a token for application {ApplicationId}: re-validation under the application row lock failed ({RefusalReason})`, where the reason is `missing`, `secret`, `approval` (the stored state is `Unapproved`, also when an unapproved row appeared after the client authenticated without one) or `api-client-row` (any other difference from the state the client authenticated with: its rows disappeared, or an approved row appeared) |
 | Grant lock wait timed out (both engines), or grant chosen as a deadlock victim (SQL Server); answered `409` | Warning | `Timed out waiting for, or deadlocked on, a database lock while storing a token grant for client {ClientId}` |
 | Grant chosen as a deadlock victim (PostgreSQL); answered `500` | Error | `Unknown error while retrieving access token`, with the exception |
 
@@ -827,18 +832,27 @@ or the un-approval of a client handled before DMS-1493 was deployed revokes its 
 a client already deleted through `DELETE /v3/apiClients/{id}` or `DELETE /v3/applications/{id}`
 cannot be addressed again, and its tokens are left to expire.
 
-These bounds do not hold for a client removed by a vendor deletion made before this change.
+A client removed by a vendor deletion made before DMS-1493 is a separate case.
 `DELETE /v3/vendors/{id}` then removed the CMS rows without deleting the provider client, so the
 client's `dmscs.OpenIddictApplication` row, credentials and tokens remain. Before DMS-1494 a
-client with no `dmscs.ApiClient` row counted as approved and could keep obtaining new tokens. It
-is now refused at `/connect/token`, `/connect/revoke` and `/connect/introspect` unless its roles
-and scopes qualify it as an administrative client (see
-[Approval states and clients without an API client row](#approval-states-and-clients-without-an-api-client-row)).
-A vendor client holds only `IdentitySettings:ClientRole` and is refused with the
-`NoApiClientRowHoldsClientRoleOnly` Warning. Tokens it was issued before the upgrade are not
-revoked: CMS accepts them until `exp` + 5 minutes and DMS until `exp` + `ClockSkewSeconds`, as
-for any token never marked revoked. No CMS API reaches it, and
-this version provides no cleanup for it. [OPERATIONS.md](../../../docs/OPERATIONS.md#finding-provider-clients-that-no-api-client-references)
+client with no `dmscs.ApiClient` row counted as approved and could keep obtaining new tokens, so
+no bound applied to it. Since DMS-1494 the outcome depends on its roles and scopes (see
+[Approval states and clients without an API client row](#approval-states-and-clients-without-an-api-client-row)):
+
+- **Refused clients.** A client that does not qualify for the administrative exception is
+  refused at `/connect/token`, `/connect/revoke` and `/connect/introspect`. A vendor client holds
+  only `IdentitySettings:ClientRole` and is refused with the `NoApiClientRowHoldsClientRoleOnly`
+  Warning. Tokens it was issued before the upgrade are not revoked: CMS accepts them until
+  `exp` + 5 minutes and DMS until `exp` + `ClockSkewSeconds`, as for any token never marked
+  revoked. After that it has no access.
+- **Clients that qualify.** A client that holds `IdentitySettings:ConfigServiceRole` and only
+  Management API scopes is admitted as administrative and keeps obtaining new tokens, so these
+  bounds do not hold for it. That includes a vendor client whose membership a role-name change
+  turned administrative (see [Changing or reusing a role name](#changing-or-reusing-a-role-name));
+  the role-membership audit finds such clients.
+
+No CMS API reaches either kind, and this version provides no cleanup for them.
+[OPERATIONS.md](../../../docs/OPERATIONS.md#finding-provider-clients-that-no-api-client-references)
 lists such clients as candidates for an operator to review.
 
 ### `503 temporarily_unavailable`: retry and confirm

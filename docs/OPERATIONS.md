@@ -1428,7 +1428,10 @@ either name, or reusing a name either role used before, therefore gives existing
 memberships a new meaning, on both database engines and whether or not the names
 ever collided. For example, after changing `ConfigServiceRole = A, ClientRole = B`
 to `ConfigServiceRole = B, ClientRole = C`, every vendor client created earlier
-holds `B`, now the administrative role. Nothing in the product detects this.
+holds `B`, now the administrative role. This affects clients with an API client
+row as well: an approved vendor client that holds `B` now meets the Management API
+role requirement and, with an administrative scope, reaches protected Configuration
+Service endpoints. Nothing in the product detects this.
 
 **Whenever either role name is changed, or a previously used name is reused,
 audit role memberships before the new configuration takes effect.** The names are
@@ -1438,18 +1441,22 @@ read at startup, so finish the audit before any instance starts with them.
    before in this deployment.
 2. On every Configuration Service database the deployment uses, run the
    `self-contained` query in
-   [Finding provider clients that no API client references](#finding-provider-clients-that-no-api-client-references).
-   It lists each client without an API client row, with its roles; these are the
-   clients the new names can admit. To review the clients that have a row as well,
-   run it without its `WHERE NOT EXISTS` line.
+   [Finding provider clients that no API client references](#finding-provider-clients-that-no-api-client-references)
+   **with its `WHERE NOT EXISTS` line removed**, so that it lists **every**
+   client with its roles, whether or not it has an API client row. The audit must
+   cover all clients: a role-name change affects clients with a row as much as
+   clients without one.
 3. Establish what each listed client is from ownership records, not from its role:
    current data does not say whether a client was created as a vendor client or as
-   an administrative one. Under the new names, a client is admitted only if it
-   holds the new `ConfigServiceRole` and only Management API scopes.
+   an administrative one. Under the new names, a client without an API client row
+   is admitted only if it holds the new `ConfigServiceRole` and only Management
+   API scopes, and any client that holds the new `ConfigServiceRole` meets the
+   Management API role requirement.
 4. Re-create or re-role every client whose membership no longer matches its kind:
-   - a vendor client that holds the new `ConfigServiceRole` name, including one
-     created on SQL Server while `ClientRole` collided with `ConfigServiceRole`,
-     which holds the administrative role row;
+   - a vendor client, with or without an API client row, that holds the new
+     `ConfigServiceRole` name, including one created on SQL Server while
+     `ClientRole` collided with `ConfigServiceRole`, which holds the
+     administrative role row;
    - an administrative client that holds only a retired name.
 
    Re-roling changes `dmscs.OpenIddictClientRole` rows; re-creating an
