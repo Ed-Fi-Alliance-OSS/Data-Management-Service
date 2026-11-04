@@ -1274,8 +1274,9 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/courseTranscripts/{id}"
              Then it should respond with 204
 
+        @ResetClaimsetsAfterScenario
         @e2e-ci-shard-2
-        Scenario: 39 Ensure a missing or existing academic record yields the same denial without a student school association
+        Scenario: 39Ensure a missing or existing academic record yields the same denial without a student school association
              When a POST request is made to "/ed-fi/courseTranscripts" with
                   """
                   {
@@ -1309,10 +1310,17 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              Given a claim set is uploaded to CMS that grants "StudentAcademicRecord" access to "E2E-DMS1659-AcademicRecordSeed"
                And the claim set upload to CMS should be successful
                And the claimSet "E2E-DMS1659-AcademicRecordSeed" is authorized with educationOrganizationIds "5255901001"
-               And the system has these "studentacademicrecords"
-                  | studentReference            | educationOrganizationReference            | schoolYearTypeReference | termDescriptor                            |
-                  | { "studentUniqueId": "52" } | { "educationOrganizationId": 5255901001 } | {"schoolYear": 2023}    | "uri://ed-fi.org/TermDescriptor#Semester" |
-               And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "5255901001"
+             When a POST request is made to "/ed-fi/studentAcademicRecords" with
+                  """
+                  {
+                    "studentReference": { "studentUniqueId": "52" },
+                    "educationOrganizationReference": { "educationOrganizationId": 5255901001 },
+                    "schoolYearTypeReference": { "schoolYear": 2023 },
+                    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Semester"
+                  }
+                  """
+             Then it should respond with 201
+             Given the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "5255901001"
              When a POST request is made to "/ed-fi/courseTranscripts" with
                   """
                   {
