@@ -47,8 +47,6 @@ This is the riskiest EdOrg-only operation slice because it intersects target res
 
 ## Acceptance Criteria
 
-The original slice criteria below predate DMS-1659. A supplied missing document reference follows the authorization-before-reference rule in [Slice 3 Answer 2.4](03-edorg-only-post-create.md#answers-2); genuinely absent/null proposed values retain element-required. The original criteria are retained for historical context.
-
 - PUT succeeds only when the caller is authorized for stored values and, when required, proposed values.
 - POST-as-update succeeds only when the caller is authorized for stored values and, when required, proposed values.
 - Stored-value authorization executes before update DML, profile merge persistence, or guarded no-op success.
@@ -60,7 +58,7 @@ The original slice criteria below predate DMS-1659. A supplied missing document 
 - `If-Match` and target current-state interactions preserve the final authorization-before-mutation behavior required by `auth.md` and the namespace authorization deferred-guard notes.
 - Inverted strategy tests prove stored and proposed checks both swap Source/Target hierarchy filtering.
 - Missing/null stored EdOrg values produce relationship invalid-data failure metadata.
-- Missing/null proposed EdOrg values produce relationship element-required failure metadata.
+- Genuinely absent/null proposed EdOrg values produce relationship element-required failure metadata. Supplied references whose targets are missing follow [Slice 3 Answer 2.4](03-edorg-only-post-create.md#answers-2).
 - PostgreSQL and SQL Server both abort unauthorized update batches with the established AUTH1 mechanism.
 
 ## Tests Required

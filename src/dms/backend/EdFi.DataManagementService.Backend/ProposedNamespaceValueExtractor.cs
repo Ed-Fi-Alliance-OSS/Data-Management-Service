@@ -111,11 +111,10 @@ internal static class ProposedNamespaceValueExtractor
 
         if (
             deferredMissingDocumentReferencePaths.Count > 0
-            && TryFindDeferredBodyNamespacePath(
+            && (rootBinding.Source is not WriteValueSource.Precomputed || boundValue is null)
+            && ProposedAuthorizationReferenceProvenance.TryGetDeferredBodyPath(
                 rootRow.TableWritePlan,
-                rootBinding,
                 bindingIndex,
-                boundValue,
                 deferredMissingDocumentReferencePaths,
                 out var bodyNamespacePath
             )
@@ -141,64 +140,6 @@ internal static class ProposedNamespaceValueExtractor
                     + $"'{namespaceColumn.Value}' but found '{boundValue.GetType().Name}'."
             ),
         };
-    }
-
-    /// <summary>
-    /// Locates the request-body path to authorize when the namespace is derived from a reference whose
-    /// missing-document failure was deferred, so the finalized row carries no value for it. Returns
-    /// <see langword="false"/> for every other case, which keeps the finalized-row value.
-    /// </summary>
-    private static bool TryFindDeferredBodyNamespacePath(
-        TableWritePlan rootPlan,
-        WriteColumnBinding rootBinding,
-        int bindingIndex,
-        object? boundValue,
-        IReadOnlySet<string> deferredPaths,
-        out JsonPathExpression bodyPath
-    )
-    {
-        bodyPath = default;
-
-        switch (rootBinding.Source)
-        {
-            case WriteValueSource.ReferenceDerived referenceDerived
-                when deferredPaths.Contains(referenceDerived.ReferenceSource.ReferenceObjectPath.Canonical):
-                bodyPath =
-                    rootBinding.Column.SourceJsonPath ?? referenceDerived.ReferenceSource.ReferenceJsonPath;
-                return true;
-
-            case WriteValueSource.Precomputed when boundValue is null:
-                // A null key-unified canonical means no member supplied a value; the flattener never takes
-                // one from a deferred member. Authorize the first deferred reference member. Any one is
-                // enough: Core's equality-constraint validation rejects a request whose unified members
-                // disagree, so every supplied member carries the same namespace.
-                foreach (var plan in rootPlan.KeyUnificationPlans)
-                {
-                    if (plan.CanonicalBindingIndex != bindingIndex)
-                    {
-                        continue;
-                    }
-
-                    foreach (var member in plan.MembersInOrder)
-                    {
-                        if (
-                            member is KeyUnificationMemberWritePlan.ReferenceDerivedMember referenceMember
-                            && deferredPaths.Contains(
-                                referenceMember.ReferenceSource.ReferenceObjectPath.Canonical
-                            )
-                        )
-                        {
-                            bodyPath = referenceMember.RelativePath;
-                            return true;
-                        }
-                    }
-                }
-
-                return false;
-
-            default:
-                return false;
-        }
     }
 
     private static ProposedNamespaceValueExtractionResult ConvertBodyNamespace(

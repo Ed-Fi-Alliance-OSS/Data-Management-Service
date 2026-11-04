@@ -23,6 +23,7 @@ public class Given_ProposedAuthorizationFailureClassification
 
     [TestCase(ReportedSchoolIdIndex, "$.reportedSchoolReference")]
     [TestCase(UnifiedSchoolIdIndex, "$.schoolReference")]
+    [TestCase(UnifiedSchoolIdIndex, "$.otherSchoolReference")]
     public void It_authorizes_a_deferred_edorg_from_its_submitted_identity_without_changing_the_root(
         int bindingIndex,
         string referencePath
@@ -31,7 +32,7 @@ public class Given_ProposedAuthorizationFailureClassification
         var writePlan = CreateWritePlan();
         var rootRow = CreateRootRow(writePlan);
         var body = JsonNode.Parse(
-            """{"reportedSchoolReference":{"schoolId":900},"schoolReference":{"schoolId":900}}"""
+            """{"reportedSchoolReference":{"schoolId":900},"schoolReference":{"schoolId":900},"otherSchoolReference":{"schoolId":900}}"""
         )!;
 
         var result = RelationshipAuthorizationProposedValueExtractor.Extract(

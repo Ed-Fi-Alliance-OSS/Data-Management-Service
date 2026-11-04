@@ -26,6 +26,7 @@ internal static class RelationshipAuthorizationProblemDetailsScenario
     private const string RootChildEndpoint = "/data/authz/authorizationRootChildResources";
     private const string NullableEndpoint = "/data/authz/authorizationNullableResources";
     private const string StudentAssessmentsEndpoint = "/data/ed-fi/studentAssessments";
+    private const string CourseOfferingsEndpoint = "/data/ed-fi/courseOfferings";
 
     private const string AuthorizationType = "urn:ed-fi:api:security:authorization";
     private const string StoredNullType =
@@ -208,7 +209,7 @@ internal static class RelationshipAuthorizationProblemDetailsScenario
     }
 
     /// <summary>
-    /// RelationshipsWithEdOrgsOnly on create and update of the root-child resource and StudentAssessment only.
+    /// RelationshipsWithEdOrgsOnly on create and update of the root-child resource, StudentAssessment and CourseOffering.
     /// Every seed resource (schools, students, assessments, descriptors) stays unrestricted.
     /// </summary>
     public static IClaimSetProvider CreateMissingReferenceClaimSetProvider(FixtureContext fixture) =>
@@ -216,7 +217,10 @@ internal static class RelationshipAuthorizationProblemDetailsScenario
             fixture,
             static (resource, action) =>
                 action is "Create" or "Update"
-                && resource.ResourceName is "AuthorizationRootChildResource" or "StudentAssessment"
+                && resource.ResourceName
+                    is "AuthorizationRootChildResource"
+                        or "StudentAssessment"
+                        or "CourseOffering"
                     ? _relationshipWithEdOrgsOnlyStrategy
                     : _noFurtherAuthorizationRequiredStrategy
         );
@@ -234,6 +238,7 @@ internal static class RelationshipAuthorizationProblemDetailsScenario
     {
         await SeedReferenceDataAsync(harness);
         await SeedStudentAssessmentDependenciesAsync(harness);
+        await SeedCourseOfferingDependenciesAsync(harness);
 
         // AC1/AC3 on POST-create: the root-child SchoolId subject.
         AssertMissingAndUnrelatedAreIndistinguishable(
@@ -301,6 +306,29 @@ internal static class RelationshipAuthorizationProblemDetailsScenario
             ),
             "ReportedSchool"
         );
+
+        // DS 5.2 unifies SchoolId from schoolReference and sessionReference. With School 999,
+        // both contributors are unresolved; School 300 supplies a resolved, unrelated contributor.
+        AssertMissingAndUnrelatedAreIndistinguishable(
+            await PostForProblemAsync(harness, CourseOfferingsEndpoint, CourseOfferingBody(999)),
+            await PostForProblemAsync(harness, CourseOfferingsEndpoint, CourseOfferingBody(300)),
+            "SchoolId"
+        );
+
+        // A missing School equal to the claim must pass authorization and expose the deferred
+        // reference conflict. Reclassifying a null denial alone cannot satisfy this assertion.
+        using (
+            HttpResponseMessage response = await PostJsonAsync(
+                harness,
+                CourseOfferingsEndpoint,
+                CourseOfferingBody((int)ClaimEducationOrganizationId)
+            )
+        )
+        {
+            response
+                .StatusCode.Should()
+                .Be(HttpStatusCode.Conflict, await response.Content.ReadAsStringAsync());
+        }
 
         // AC2: an omitted or whole-null optional reference is genuine absence.
         AssertReportedSchoolRequired(
@@ -459,6 +487,54 @@ internal static class RelationshipAuthorizationProblemDetailsScenario
         body["id"] = resourceId;
         return body;
     }
+
+    private static async Task SeedCourseOfferingDependenciesAsync(ApiIntegrationHarness harness)
+    {
+        await CreateDescriptorAsync(
+            harness,
+            "/data/ed-fi/courseIdentificationSystemDescriptors",
+            "uri://ed-fi.org/CourseIdentificationSystemDescriptor",
+            "LEA course code"
+        );
+        using HttpResponseMessage response = await PostJsonAsync(
+            harness,
+            "/data/ed-fi/courses",
+            new JsonObject
+            {
+                ["courseCode"] = "DMS-1659",
+                ["courseTitle"] = "Authorization regression",
+                ["numberOfParts"] = 1,
+                ["educationOrganizationReference"] = new JsonObject { ["educationOrganizationId"] = 100 },
+                ["identificationCodes"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["identificationCode"] = "DMS-1659",
+                        ["courseIdentificationSystemDescriptor"] =
+                            "uri://ed-fi.org/CourseIdentificationSystemDescriptor#LEA course code",
+                    }
+                ),
+            }
+        );
+        response.StatusCode.Should().Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
+    }
+
+    private static JsonObject CourseOfferingBody(int schoolId) =>
+        new()
+        {
+            ["localCourseCode"] = "DMS-1659",
+            ["schoolReference"] = new JsonObject { ["schoolId"] = schoolId },
+            ["sessionReference"] = new JsonObject
+            {
+                ["schoolId"] = schoolId,
+                ["schoolYear"] = 2025,
+                ["sessionName"] = "Missing session",
+            },
+            ["courseReference"] = new JsonObject
+            {
+                ["courseCode"] = "DMS-1659",
+                ["educationOrganizationId"] = 100,
+            },
+        };
 
     private static async Task SeedStudentAssessmentDependenciesAsync(ApiIntegrationHarness harness)
     {

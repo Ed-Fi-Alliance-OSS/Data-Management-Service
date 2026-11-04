@@ -1306,7 +1306,9 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   ]
                   }
                   """
-             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "5255901001"
+             Given a claim set is uploaded to CMS that grants "StudentAcademicRecord" access to "E2E-DMS1659-AcademicRecordSeed"
+               And the claim set upload to CMS should be successful
+               And the claimSet "E2E-DMS1659-AcademicRecordSeed" is authorized with educationOrganizationIds "5255901001"
                And the system has these "studentacademicrecords"
                   | studentReference            | educationOrganizationReference            | schoolYearTypeReference | termDescriptor                            |
                   | { "studentUniqueId": "52" } | { "educationOrganizationId": 5255901001 } | {"schoolYear": 2023}    | "uri://ed-fi.org/TermDescriptor#Semester" |

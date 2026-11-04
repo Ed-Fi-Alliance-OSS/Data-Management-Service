@@ -487,15 +487,26 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
     [TestCase(SqlDialect.Pgsql, false, RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing)]
     [TestCase(SqlDialect.Mssql, true, RelationshipAuthorizationSubjectFailureKind.NoRelationship)]
     [TestCase(SqlDialect.Mssql, false, RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing)]
-    public async Task It_classifies_a_null_proposed_subject_by_its_deferred_reference_provenance(
+    public async Task It_binds_the_submitted_edorg_identity_before_mapping_a_deferred_reference_denial(
         SqlDialect dialect,
         bool schoolReferenceWasDeferred,
         RelationshipAuthorizationSubjectFailureKind expectedFailureKind
     )
     {
         var request = CreateDeferredSchoolReferenceRequest(dialect);
+        if (!schoolReferenceWasDeferred)
+        {
+            request = request with { SelectedBody = new JsonObject() };
+        }
         var session = new ScriptedWriteSession(new FakeDbException("AUTH1", "AUTH1")) { Dialect = dialect };
-        var sut = CreateSut(CreateProposedMissingFailureExtractor(dialect));
+        var sut = CreateSut(
+            CreateProposedFailureExtractor(
+                dialect,
+                schoolReferenceWasDeferred
+                    ? RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    : RelationshipAuthorizationAuth1SubjectFailureKind.ProposedValueMissing
+            )
+        );
 
         var act = async () =>
             await sut.ResolveAsync(
@@ -518,6 +529,15 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         failedSubject.FailureKind.Should().Be(expectedFailureKind);
         failedSubject.RootBinding.ColumnName.Should().Be("SchoolId");
         failedSubject.SecurableElements.Should().ContainSingle().Which.ReadableName.Should().Be("SchoolId");
+        session
+            .Commands.Should()
+            .ContainSingle()
+            .Which.Parameters.Should()
+            .ContainSingle(parameter =>
+                parameter.Name.Contains("relationshipAuthorization_0_0_SchoolId", StringComparison.Ordinal)
+            )
+            .Which.Value.Should()
+            .Be(schoolReferenceWasDeferred ? 999 : null);
     }
 
     [TestCase(SqlDialect.Pgsql)]
@@ -559,7 +579,7 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         ProposedRelationshipAuthorizationCommand
             .TryMapFailure(
                 SqlDialect.Pgsql,
-                CreateProposedMissingFailureExtractor(SqlDialect.Pgsql),
+                CreateProposedFailureExtractor(SqlDialect.Pgsql),
                 unresolvedCheck,
                 new FakeDbException("AUTH1", "AUTH1"),
                 out var relationshipFailure,
@@ -755,6 +775,16 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
                 scalarRootPlan.ColumnBindings[0],
                 scalarRootPlan.ColumnBindings[1] with
                 {
+                    Column = scalarRootPlan.ColumnBindings[1].Column with
+                    {
+                        SourceJsonPath = new JsonPathExpression(
+                            "$.schoolReference.schoolId",
+                            [
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("schoolId"),
+                            ]
+                        ),
+                    },
                     Source = new WriteValueSource.ReferenceDerived(
                         new ReferenceDerivedValueSourceMetadata(
                             BindingIndex: 0,
@@ -874,24 +904,22 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
     }
 
     /// <summary>
-    /// The AUTH1 failure the proposed SQL raises for a null subject, in each provider's transport shape:
+    /// An AUTH1 subject failure in each provider's transport shape:
     /// PostgreSQL carries the payload as the message under the AUTH1 SQLSTATE; SQL Server embeds it after
     /// the marker in a raised error's message.
     /// </summary>
-    private static StubProviderFailureExtractor CreateProposedMissingFailureExtractor(SqlDialect dialect)
+    private static StubProviderFailureExtractor CreateProposedFailureExtractor(
+        SqlDialect dialect,
+        RelationshipAuthorizationAuth1SubjectFailureKind failureKind =
+            RelationshipAuthorizationAuth1SubjectFailureKind.ProposedValueMissing
+    )
     {
         var payload = RelationshipAuthorizationAuth1FailurePayloadCodec.Encode(
             new RelationshipAuthorizationAuth1FailurePayload(
                 RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(
                     RelationalWriteOperationKind.Put
                 ),
-                [
-                    new RelationshipAuthorizationAuth1SubjectFailure(
-                        0,
-                        0,
-                        RelationshipAuthorizationAuth1SubjectFailureKind.ProposedValueMissing
-                    ),
-                ]
+                [new RelationshipAuthorizationAuth1SubjectFailure(0, 0, failureKind)]
             )
         );
 

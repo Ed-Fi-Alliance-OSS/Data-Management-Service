@@ -22,6 +22,59 @@ namespace EdFi.DataManagementService.Backend;
 internal static class ProposedAuthorizationReferenceProvenance
 {
     /// <summary>
+    /// Locates the effective body value for a deferred reference-derived binding. Callers retain any
+    /// finalized key-unified contributor before using this fallback. Core validates equality of supplied
+    /// unified members, so the first deferred member is sufficient when the canonical value is null.
+    /// </summary>
+    public static bool TryGetDeferredBodyPath(
+        TableWritePlan rootPlan,
+        int bindingIndex,
+        IReadOnlySet<string> deferredPaths,
+        out JsonPathExpression bodyPath
+    )
+    {
+        bodyPath = default;
+        var binding = rootPlan.ColumnBindings[bindingIndex];
+
+        switch (binding.Source)
+        {
+            case WriteValueSource.ReferenceDerived referenceDerived
+                when deferredPaths.Contains(referenceDerived.ReferenceSource.ReferenceObjectPath.Canonical):
+                bodyPath =
+                    binding.Column.SourceJsonPath ?? referenceDerived.ReferenceSource.ReferenceJsonPath;
+                return true;
+
+            case WriteValueSource.Precomputed:
+                foreach (var plan in rootPlan.KeyUnificationPlans)
+                {
+                    if (plan.CanonicalBindingIndex != bindingIndex)
+                    {
+                        continue;
+                    }
+
+                    foreach (var member in plan.MembersInOrder)
+                    {
+                        if (
+                            member is KeyUnificationMemberWritePlan.ReferenceDerivedMember referenceMember
+                            && deferredPaths.Contains(
+                                referenceMember.ReferenceSource.ReferenceObjectPath.Canonical
+                            )
+                        )
+                        {
+                            bodyPath = referenceMember.RelativePath;
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
     /// Classifies one finalized root binding. Returns <see langword="false"/> with a diagnostic when the
     /// binding's reference metadata cannot be reconciled with the write plan; otherwise returns
     /// <see langword="true"/> with an empty diagnostic.

@@ -206,7 +206,7 @@ internal static class RelationshipAuthorizationProposedValueExtractor
                     isNullBecauseDeferredMissingReference
                     && !subject.IsPersonSubject
                     && requestBody is not null
-                    && TryGetDeferredEdOrgBodyPath(
+                    && ProposedAuthorizationReferenceProvenance.TryGetDeferredBodyPath(
                         rootRow.TableWritePlan,
                         binding.BindingIndex,
                         deferredPaths,
@@ -273,49 +273,6 @@ internal static class RelationshipAuthorizationProposedValueExtractor
                 authorized.ExecutableShape
             )
         );
-    }
-
-    private static bool TryGetDeferredEdOrgBodyPath(
-        TableWritePlan rootPlan,
-        int bindingIndex,
-        IReadOnlySet<string> deferredPaths,
-        out JsonPathExpression bodyPath
-    )
-    {
-        bodyPath = default;
-        switch (rootPlan.ColumnBindings[bindingIndex].Source)
-        {
-            case WriteValueSource.ReferenceDerived referenceDerived:
-                bodyPath = referenceDerived.ReferenceSource.ReferenceJsonPath;
-                return true;
-            case WriteValueSource.Precomputed:
-                foreach (var plan in rootPlan.KeyUnificationPlans)
-                {
-                    if (plan.CanonicalBindingIndex != bindingIndex)
-                    {
-                        continue;
-                    }
-
-                    foreach (var member in plan.MembersInOrder)
-                    {
-                        if (
-                            member is KeyUnificationMemberWritePlan.ReferenceDerivedMember referenceMember
-                            && deferredPaths.Contains(
-                                referenceMember.ReferenceSource.ReferenceObjectPath.Canonical
-                            )
-                        )
-                        {
-                            // Core validates equality of supplied unified members. A nonnull finalized
-                            // contributor bypasses this fallback before any body value is considered.
-                            bodyPath = referenceMember.RelativePath;
-                            return true;
-                        }
-                    }
-                }
-                return false;
-            default:
-                return false;
-        }
     }
 
     private static ProposedRuntimeValue GetRuntimeValue(
