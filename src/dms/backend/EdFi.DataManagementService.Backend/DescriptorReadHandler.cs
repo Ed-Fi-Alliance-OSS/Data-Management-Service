@@ -2042,10 +2042,17 @@ internal sealed class DescriptorReadHandler(
         string prelude = $"""
             DROP TABLE IF EXISTS {quotedTable};
             {create} {quotedTable} ({columns}){lifetime};
-            INSERT INTO {quotedTable}
-            {PlanSqlStatementText.AsTerminatedStatement(plannedQuery.Plan.PageDocumentIdSql)}
 
             """;
+        // SQL Server rejects FETCH NEXT 0 rows; mirrors the resource path's zero-size page handling.
+        if (!HasZeroLimit(plannedQuery))
+        {
+            prelude += $"""
+                INSERT INTO {quotedTable}
+                {PlanSqlStatementText.AsTerminatedStatement(plannedQuery.Plan.PageDocumentIdSql)}
+
+                """;
+        }
         string pageSql = $"SELECT * FROM {quotedTable}";
         string versionSql = BuildPageRowsSql(dialect, pageSql, DescriptorRowProjection.DocumentVersions);
         string pageRowsSql = BuildPageRowsSql(dialect, pageSql, projection);
@@ -2060,6 +2067,33 @@ internal sealed class DescriptorReadHandler(
             prelude + countSql + boundarySql + BuildAcquisitionSql(versionSql, pageRowsSql),
             BuildQueryParameters(plannedQuery)
         );
+    }
+
+    private static bool HasZeroLimit(PageKeysetSpec.Query plannedQuery)
+    {
+        foreach (var parameter in plannedQuery.Plan.PageParametersInOrder)
+        {
+            if (parameter.Role is not QuerySqlParameterRole.Limit)
+            {
+                continue;
+            }
+
+            return plannedQuery.ParameterValues.TryGetValue(parameter.ParameterName, out var limit)
+                && limit switch
+                {
+                    byte typedLimit => typedLimit == 0,
+                    sbyte typedLimit => typedLimit == 0,
+                    short typedLimit => typedLimit == 0,
+                    ushort typedLimit => typedLimit == 0,
+                    int typedLimit => typedLimit == 0,
+                    uint typedLimit => typedLimit == 0,
+                    long typedLimit => typedLimit == 0,
+                    ulong typedLimit => typedLimit == 0,
+                    _ => false,
+                };
+        }
+
+        return false;
     }
 
     private static string BuildAcquisitionSql(string versionSql, string rowSql) =>

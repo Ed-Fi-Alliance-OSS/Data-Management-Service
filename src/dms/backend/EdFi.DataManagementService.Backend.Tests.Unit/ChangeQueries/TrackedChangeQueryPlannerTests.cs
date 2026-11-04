@@ -1146,6 +1146,102 @@ public class Given_TrackedChangeQueryPlanner
         plan.TotalCount.Should().Be(expectedTotalCount);
     }
 
+    [TestCase(SqlDialect.Mssql, ChangeQueryEndpointOperation.Deletes)]
+    [TestCase(SqlDialect.Pgsql, ChangeQueryEndpointOperation.Deletes)]
+    [TestCase(SqlDialect.Mssql, ChangeQueryEndpointOperation.KeyChanges)]
+    [TestCase(SqlDialect.Pgsql, ChangeQueryEndpointOperation.KeyChanges)]
+    public void It_plans_only_the_count_statement_for_limit_zero_with_total_count(
+        SqlDialect dialect,
+        ChangeQueryEndpointOperation operation
+    )
+    {
+        TrackedChangeQueryPlan plan = PlanZeroLimit(dialect, operation, totalCount: true);
+
+        plan.IsEmpty.Should().BeFalse();
+        plan.IncludesTotalCount.Should().BeTrue();
+        string sql = NormalizeSql(plan.Command!.CommandText);
+        sql.Should().Contain("COUNT(1)");
+        sql.Should().NotContain("FETCH NEXT");
+        sql.Should().NotContain("LIMIT @Limit");
+        sql.Should().NotContain("OFFSET");
+        sql.Should().NotContain("__Id");
+        sql.Should().NotContain(";");
+        plan.SelectsNoRows.Should().BeTrue();
+    }
+
+    [TestCase(SqlDialect.Mssql, ChangeQueryEndpointOperation.Deletes)]
+    [TestCase(SqlDialect.Pgsql, ChangeQueryEndpointOperation.Deletes)]
+    [TestCase(SqlDialect.Mssql, ChangeQueryEndpointOperation.KeyChanges)]
+    [TestCase(SqlDialect.Pgsql, ChangeQueryEndpointOperation.KeyChanges)]
+    public void It_keeps_a_non_empty_plan_marked_as_selecting_no_rows_for_limit_zero_without_total_count(
+        SqlDialect dialect,
+        ChangeQueryEndpointOperation operation
+    )
+    {
+        // Non-empty on purpose: an empty plan would short-circuit the repository before its parameter-budget check.
+        TrackedChangeQueryPlan plan = PlanZeroLimit(dialect, operation, totalCount: false);
+
+        plan.IsEmpty.Should().BeFalse();
+        plan.Command.Should().NotBeNull();
+        plan.IncludesTotalCount.Should().BeFalse();
+        plan.SelectsNoRows.Should().BeTrue();
+    }
+
+    [TestCase(SqlDialect.Mssql)]
+    [TestCase(SqlDialect.Pgsql)]
+    public void It_does_not_mark_positive_limits_as_selecting_no_rows(SqlDialect dialect)
+    {
+        // Non-regression guard: only limit=0 changes shape.
+        TrackedChangeQueryPlan plan = PlanZeroLimit(
+            dialect,
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: true,
+            limit: 1
+        );
+
+        plan.SelectsNoRows.Should().BeFalse();
+        NormalizeSql(plan.Command!.CommandText)
+            .Should()
+            .Contain(
+                dialect == SqlDialect.Mssql ? "FETCH NEXT @Limit ROWS ONLY" : "LIMIT @Limit OFFSET @Offset"
+            );
+    }
+
+    private static TrackedChangeQueryPlan PlanZeroLimit(
+        SqlDialect dialect,
+        ChangeQueryEndpointOperation operation,
+        bool totalCount,
+        int limit = 0
+    )
+    {
+        TrackedChangeColumnInfo schoolIdColumn = ValueColumn(
+            "SchoolId",
+            "$.schoolId",
+            TrackedChangeColumnRole.Scalar,
+            TrackedChangeColumnOrigin.Identity,
+            canonicalStorageColumn: new DbColumnName("SchoolId")
+        );
+        ChangeQueryResponseField[] fields = [ScalarField("schoolId", schoolIdColumn)];
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            operation,
+            totalCount,
+            trackedChangeTable: CreateTrackedChangeTable(TrackedChangeTableKind.Resource, [schoolIdColumn]),
+            paginationParameters: new PaginationParameters(
+                Limit: limit,
+                Offset: 0,
+                TotalCount: totalCount,
+                MaximumPageSize: 500
+            ),
+            resourceModel: CreateRegularResourceModel(RootColumn("SchoolId", "$.schoolId"))
+        );
+
+        return new TrackedChangeQueryPlanner(dialect).Plan(
+            request,
+            fields,
+            TrackedChangeAuthorizationSql.None
+        );
+    }
+
     private static IRelationalTrackedChangeQueryRequest CreateRequest(
         ChangeQueryEndpointOperation operation,
         TrackedChangeTableKind trackedChangeTableKind,
