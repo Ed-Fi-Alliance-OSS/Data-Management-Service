@@ -33,6 +33,9 @@ application, the following defaults are automatically assigned:
 > reads `GET /v3/tenants`, which this scope does not grant, so a multi-tenant
 > DMS needs `edfi_admin_api/readonly_access`.
 
+The `readonly_access` and `authMetadata_readonly_access` scopes are confirmed CMS-only extensions;
+see [Confirmed CMS-only extensions](./API-CLIENT-AND-INSTANCE-CONFIGURATION.md#confirmed-cms-only-extensions-to-management-api-v3).
+
 ### How the Configuration Service Evaluates Token Scopes
 
 A token's `scope` may be one space-delimited string or an array. An array reaches the
