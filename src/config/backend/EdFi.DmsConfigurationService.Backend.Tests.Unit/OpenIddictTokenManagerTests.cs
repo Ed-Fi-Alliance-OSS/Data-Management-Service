@@ -3717,10 +3717,10 @@ public class OpenIddictTokenManagerTests
             _after = DateTimeOffset.UtcNow;
 
             string json = result.Should().BeOfType<TokenResult.Success>().Subject.Token;
-            System.Text.Json.JsonElement response = System.Text.Json.JsonDocument.Parse(json).RootElement;
-            _expiresIn = response.GetProperty("expires_in").GetInt32();
+            using System.Text.Json.JsonDocument response = System.Text.Json.JsonDocument.Parse(json);
+            _expiresIn = response.RootElement.GetProperty("expires_in").GetInt32();
             _accessToken = new JwtSecurityTokenHandler().ReadJwtToken(
-                response.GetProperty("access_token").GetString()
+                response.RootElement.GetProperty("access_token").GetString()
             );
         }
 
@@ -3767,10 +3767,8 @@ public class OpenIddictTokenManagerTests
                 .GetAccessTokenAsync(GrantCredentials());
 
             string json = result.Should().BeOfType<TokenResult.Success>().Subject.Token;
-            _expiresIn = System
-                .Text.Json.JsonDocument.Parse(json)
-                .RootElement.GetProperty("expires_in")
-                .GetInt64();
+            using System.Text.Json.JsonDocument response = System.Text.Json.JsonDocument.Parse(json);
+            _expiresIn = response.RootElement.GetProperty("expires_in").GetInt64();
         }
 
         [Test]
