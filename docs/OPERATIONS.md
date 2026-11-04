@@ -1297,8 +1297,14 @@ client in the realm, so a failed attempt leaves nothing about them to repair.
 
 A provider client can also lose its `ApiClient` row without any log line. A
 `DELETE /v3/vendors/{id}` made before DMS-1493 removed the vendor's rows without
-deleting their provider clients, and those clients keep working credentials (see
-[OWASP-AUTH-COVERAGE.md](OWASP-AUTH-COVERAGE.md)). The comparison below lists
+deleting their provider clients, and those clients keep their credentials (see
+[OWASP-AUTH-COVERAGE.md](OWASP-AUTH-COVERAGE.md)). In `self-contained` mode, since
+DMS-1494, a client without an API client row is refused at `/connect/token`,
+`/connect/revoke` and `/connect/introspect` unless its roles and scopes qualify it
+as an administrative client
+([CS-AUTH](../reference/design/configuration-service/CS-AUTH.md#approval-states-and-clients-without-an-api-client-row)),
+so a vendor candidate obtains no new token. In `keycloak` mode its credentials keep
+working. The comparison below lists
 **candidates** for review. It changes nothing, and it cannot say why a client has
 no row: current rows do not record an earlier vendor deletion, and many provider
 clients legitimately have none. Expect these among the results:
@@ -1311,6 +1317,28 @@ clients legitimately have none. Expect these among the results:
   `admin-cli`, `broker`, `realm-management`, `security-admin-console`) and the
   clients of any other application that uses the realm;
 * a client created while the comparison runs, whose row is not yet committed.
+
+**Recognizing a refused candidate (`self-contained`).** When such a client presents
+its correct secret and is refused, the Configuration Service logs at Warning:
+
+```text
+Client {ClientId} (application {ApplicationId}) authenticated but is not admitted ({Admission}); refused
+```
+
+The application id is the `OpenIddictApplication.Id` the query below prints.
+`NoApiClientRowHoldsClientRoleOnly` is the shape of an orphaned vendor client: it
+holds `IdentitySettings:ClientRole` but not `IdentitySettings:ConfigServiceRole`.
+`NoApiClientRowNoAdministrativeRole`, `NoApiClientRowNoScopes` and
+`NoApiClientRowNonAdministrativeScope` usually mean an administrative client made
+by hand without the administrative role or with other scopes. A legitimate one is
+fixed by giving it `ConfigServiceRole` and only Management API scopes, or by
+re-creating it through `POST /connect/register` or `setup-openiddict.ps1`.
+`NoApiClientRowRoleConfiguration` names the configuration, not the client: the two
+role names resolve to one role row or collide, and every administrative client
+without a row is refused until non-colliding names are configured. A role-name
+change requires the
+[role-membership audit](#auditing-role-memberships-before-a-role-name-change).
+A wrong secret never produces this line, and an unapproved client stays silent.
 
 Compare against every Configuration Service database whose clients live in the
 same provider. All tenants of one database share its `dmscs.ApiClient` table, so
@@ -1388,3 +1416,52 @@ deployment, tenant database or application still uses cuts it off. Deciding to
 delete one needs the same independent evidence of ownership and recorded approval
 as [the one rule for deleting a client during recovery](#the-one-rule-for-deleting-a-client-during-recovery);
 nothing in this procedure deletes or changes a client.
+
+### Auditing role memberships before a role-name change
+
+In `self-contained` mode a client without an API client row is admitted as
+administrative by its role membership
+([CS-AUTH](../reference/design/configuration-service/CS-AUTH.md#changing-or-reusing-a-role-name)).
+Memberships are written when a client is created and read under the current
+`IdentitySettings:ConfigServiceRole` and `IdentitySettings:ClientRole`. Changing
+either name, or reusing a name either role used before, therefore gives existing
+memberships a new meaning, on both database engines and whether or not the names
+ever collided. For example, after changing `ConfigServiceRole = A, ClientRole = B`
+to `ConfigServiceRole = B, ClientRole = C`, every vendor client created earlier
+holds `B`, now the administrative role. Nothing in the product detects this.
+
+**Whenever either role name is changed, or a previously used name is reused,
+audit role memberships before the new configuration takes effect.** The names are
+read at startup, so finish the audit before any instance starts with them.
+
+1. Record the current names, the new names, and every name either role has used
+   before in this deployment.
+2. On every Configuration Service database the deployment uses, run the
+   `self-contained` query in
+   [Finding provider clients that no API client references](#finding-provider-clients-that-no-api-client-references).
+   It lists each client without an API client row, with its roles; these are the
+   clients the new names can admit. To review the clients that have a row as well,
+   run it without its `WHERE NOT EXISTS` line.
+3. Establish what each listed client is from ownership records, not from its role:
+   current data does not say whether a client was created as a vendor client or as
+   an administrative one. Under the new names, a client is admitted only if it
+   holds the new `ConfigServiceRole` and only Management API scopes.
+4. Re-create or re-role every client whose membership no longer matches its kind:
+   - a vendor client that holds the new `ConfigServiceRole` name, including one
+     created on SQL Server while `ClientRole` collided with `ConfigServiceRole`,
+     which holds the administrative role row;
+   - an administrative client that holds only a retired name.
+
+   Re-roling changes `dmscs.OpenIddictClientRole` rows; re-creating an
+   administrative client goes through `POST /connect/register` or
+   `setup-openiddict.ps1`. Deleting a client follows
+   [the one rule for deleting a client during recovery](#the-one-rule-for-deleting-a-client-during-recovery).
+5. Start the Configuration Service with the new names only when every listed
+   client's membership matches its kind.
+
+The two names must also not collide. When they resolve to one role row in the
+database, or are equal after trailing white space is removed and case, width, kana
+type and non-spacing marks are ignored (for example `cms-client` and `CMS-Client`,
+or `cms-client` with a trailing space), every client without an API client row is
+refused with the `NoApiClientRowRoleConfiguration` Warning. Clients with an API
+client row are unaffected.

@@ -16,7 +16,9 @@ gated by `IdentitySettings:AllowRegistration`:
 - When `false`, the endpoint returns `403 Forbidden`.
 
 Registered clients are assigned the scope `edfi_admin_api/full_access` and the
-role defined in `IdentitySettings:ConfigServiceRole`.
+role defined in `IdentitySettings:ConfigServiceRole`. They have no `dmscs.ApiClient` row; in
+`self-contained` mode that role and scope are what admit them at the token endpoints (see
+[Approval states and clients without an API client row](#approval-states-and-clients-without-an-api-client-row)).
 
 ## Token Endpoints
 
@@ -160,6 +162,145 @@ Its `403` when registration is disabled is fixed by the bootstrap rules above, a
 
 As at `/connect/revoke` and `/connect/introspect`, an OAuth answer carries no `correlationId` member and no correlation header.
 Only an exception that the exception handler answers carries the `TraceId` response header.
+
+### Approval states and clients without an API client row
+
+This section applies to `self-contained` mode, where the Configuration Service authenticates the
+client itself; it covers `/connect/token`, `/connect/revoke` and `/connect/introspect`
+([DMS-1494](https://edfi.atlassian.net/browse/DMS-1494)). After a client presents a valid secret,
+its approval is one of three states, computed over every `dmscs.ApiClient` row under its
+`ClientId`:
+
+| State | Meaning | Decision |
+| --- | --- | --- |
+| `Approved` | At least one row exists, and every row is approved | Admitted |
+| `Unapproved` | At least one row exists, and at least one row is not approved | Refused, without a log line |
+| `NoApiClientRow` | No row exists: the identity provider knows the client, the Management API does not | Refused, unless the client is administrative (below) |
+
+Before DMS-1494 a client with no row counted as approved. That covered the administrative
+clients, which never have a row, but also any vendor client whose `dmscs.ApiClient` row was gone,
+such as one left by a vendor deletion made before DMS-1493 (see
+[Propagation and clock skew](#propagation-and-clock-skew)).
+
+#### The administrative exception
+
+A client with no API client row is admitted only when every one of these holds:
+
+1. `IdentitySettings:ConfigServiceRole` is not empty.
+2. The database does not resolve `IdentitySettings:ConfigServiceRole` and
+   `IdentitySettings:ClientRole` to one `dmscs.OpenIddictRole` row.
+3. The two names do not collide: after trailing white space is removed, they differ under the
+   invariant culture when case, width, kana type and non-spacing marks are ignored.
+4. The client holds the `ConfigServiceRole` role, compared ordinally, as the `ServicePolicy`
+   compares the role claim. Holding `ClientRole` as well does not disqualify it.
+5. The client's registered scopes are not empty, and each is, ordinally, one of
+   `edfi_admin_api/full_access`, `edfi_admin_api/readonly_access` and
+   `edfi_admin_api/authMetadata_readonly_access`.
+
+Clients registered through `POST /connect/register`, and the bootstrap clients
+`setup-openiddict.ps1` creates with its default scope, meet conditions 4 and 5. A vendor client
+holds only `ClientRole` and fails condition 4. The requested `scope`, the `Tenant` header and
+the client's type are not inputs. Conditions 1 to 3 depend only on the configuration and the
+database, so when one fails, every client without a row is refused; clients with a row are never
+affected by them.
+
+Each checkpoint lists the states it admits and refuses every other value; there is no
+allow-by-default branch:
+
+- **Credential check** (all three endpoints, after the secret verifies): `Approved` is admitted;
+  `NoApiClientRow` is admitted only through the exception above; anything else is refused.
+- **Application load** (`/connect/token`): the full application's state must be `Approved` or
+  `NoApiClientRow` and equal the state the client authenticated with.
+- **Store under the application row lock** (`/connect/token`): the same comparison, see
+  [One lock serializes grants and lifecycle changes](#one-lock-serializes-grants-and-lifecycle-changes).
+  An API client row created or deleted after the client authenticated therefore refuses that
+  grant.
+
+A refusal is answered exactly as an unapproved client is answered: `invalid_client` at
+`/connect/token`, under the status rules of the table above, and the same answer at
+`/connect/revoke` and `/connect/introspect`. The response does not reveal which condition
+failed or that the client has no row.
+
+#### Role-name collision checks and their collation limits
+
+The exception classifies a client by its role membership. That is sound only if the role row a
+client holds under `ConfigServiceRole` can never be the row vendor creation resolves `ClientRole`
+to. Role rows are found by name under the column's collation, and `UX_OpenIddictRole_Name`
+allows one row per class of names the collation treats as equal.
+
+- **Condition 2 provides the soundness.** It asks the database whether one role row matches both
+  names, with the predicate vendor creation uses to find a role. It therefore follows whatever
+  collation is deployed, on either engine, including trailing-space padding and case, width,
+  accent and kana sensitivity. SQL Server's `SQL_Latin1_General_CP1_CI_AS`, for example, resolves
+  `cms-client` and `cms-client␠` (a trailing space), or `Admin` and `Ａdmin` (a full-width `Ａ`),
+  to one row. When no row of that class exists yet, no client can hold the administrative role
+  through it, and membership decides.
+- **Condition 3 is for consistency between engines, not for soundness.** It is a conservative
+  restriction that refuses, on both engines, case, width, kana and accent variants and trailing
+  spaces, U+3000 and tabs, although PostgreSQL would keep such names as two role rows. It does not
+  model any database collation. It does not reproduce every equality of SQL Server's collations,
+  and what the invariant culture treats as equal can differ between ICU, NLS and .NET versions.
+  Leading white space is significant on both engines and is not a collision.
+- **Collation-dependent results.** For a pair of names condition 3 does not catch, the result
+  depends on the deployed collation: SQL Server refuses through condition 2 a pair its collation
+  equates, while PostgreSQL keeps two role rows and decides on membership. Neither admits a
+  client that membership cannot classify. The two engines are not claimed to give identical
+  results under every collation.
+
+While either name is empty, `IdentitySettings` validation fails and the Configuration Service
+reports invalid configuration instead of serving requests, so condition 1 is a defensive check in
+the shipped host. The exception itself does
+not require `ClientRole` to be nonempty: a `ConfigServiceRole` of only white space passes
+condition 1 but collides with an empty `ClientRole` under condition 3.
+
+A deployment whose names fail condition 2 or 3 keeps working for every client with an API client
+row, but its registration-created and bootstrap clients are refused at all three endpoints,
+each with the `NoApiClientRowRoleConfiguration` Warning. Configure non-colliding names, then audit
+role memberships as described below.
+
+#### Changing or reusing a role name
+
+Role memberships are written when a client is created and read under the current
+configuration. Changing either role name, or reusing a name that was used before, gives existing
+memberships a new meaning, on either engine, whether or not the names ever collided:
+
+- From `ConfigServiceRole = A, ClientRole = B` to `ConfigServiceRole = B, ClientRole = C`, vendor
+  clients created earlier hold `B`, which is now the administrative role. Without an API client
+  row and with only administrative scopes, such a client is admitted as administrative, and the
+  same membership also meets the `ServicePolicy` role requirement.
+- On SQL Server, vendor clients created while `ClientRole` collided with `ConfigServiceRole` hold
+  the administrative role row even after the names are corrected.
+- Reusing a retired name for either role makes the old holders of that name count again.
+
+No code path can tell these clients apart from administrative ones, and no provenance is
+recorded. **Whenever either role name is changed or a previously used name is reused, audit role
+memberships before the new configuration takes effect**, and re-create or re-role every client
+whose membership no longer matches its kind. The procedure is in
+[OPERATIONS.md](../../../docs/OPERATIONS.md#auditing-role-memberships-before-a-role-name-change).
+
+#### Admission logging
+
+| Event | Level | Message |
+| --- | --- | --- |
+| Client without an API client row admitted as administrative | Debug | `Client {ClientId} (application {ApplicationId}) admitted as an administrative client without an API client row` |
+| Client refused after its secret verified, for any reason other than an unapproved row | Warning | `Client {ClientId} (application {ApplicationId}) authenticated but is not admitted ({Admission}); refused` |
+
+`{Admission}` is a fixed category:
+
+| Category | Cause |
+| --- | --- |
+| `NoApiClientRowRoleConfiguration` | Condition 1, 2 or 3 fails |
+| `NoApiClientRowHoldsClientRoleOnly` | The client holds `ClientRole` but not `ConfigServiceRole`: the shape of a vendor client whose API client row is gone |
+| `NoApiClientRowNoAdministrativeRole` | The client holds neither role |
+| `NoApiClientRowNoScopes` | The client holds `ConfigServiceRole` but has no registered scopes |
+| `NoApiClientRowNonAdministrativeScope` | The client holds `ConfigServiceRole`, but a registered scope is not one of the three administrative scopes |
+| `UnknownApprovalState` | The approval state is not one of the three named states (defensive; the shipped SQL cannot produce it) |
+
+The lines are written only after the presented secret verified, so a wrong secret never produces
+one. They carry the sanitized client id and the application id, never a role, scope or secret.
+An unapproved client stays silent, as before. An API client row that appears or disappears
+between authentication and the store is logged by the store at Warning (`api-client-row`, see
+[Logging](#logging) under lifecycle revocation).
 
 ## Token revocation
 
@@ -466,10 +607,12 @@ and holds it until its transaction ends:
   answers `409` (`temporarily_unavailable`, retriable) on both engines. A grant chosen as a
   deadlock victim answers `409` on SQL Server only; on PostgreSQL the deadlock reaches the token
   endpoint's generic failure path and answers `500`. In a separate statement after the lock is
-  granted, it reads the stored client secret and the client's approval: approved when every
-  `dmscs.ApiClient` row under the client's `ClientId` is approved, or when there is none. It stores
-  the token only when the row exists, the stored secret equals the hash the grant authenticated
-  against, and the client is approved. The secret is compared ordinally in code, so SQL Server's
+  granted, it reads the stored client secret and the client's approval state (see
+  [Approval states and clients without an API client row](#approval-states-and-clients-without-an-api-client-row)).
+  It stores the token only when the row exists, the stored secret equals the hash the grant
+  authenticated against, and the stored approval state is the one the grant authenticated with:
+  `Approved`, or `NoApiClientRow` for an administrative client admitted without an API client
+  row. Any other stored state is refused. The secret is compared ordinally in code, so SQL Server's
   case-insensitive default collation cannot weaken the check. Otherwise it stores nothing and
   answers `invalid_client`, exactly as a wrong secret is answered. When the active-token limit is
   enforced, the count is checked in the same transaction.
@@ -627,7 +770,7 @@ before the participant runs. The participant's handling is defensive.
 | Reset or deletion committed | Information | `Revoked {Count} outstanding tokens for client {ClientUuid}`, written after the commit |
 | Un-approval participant ran | Information | `Marked {Count} outstanding tokens for client {ClientUuid} revoked in the pending un-approval transaction; a rollback preserves their previous state` |
 | Un-approval with no application row | Information | `No identity provider application exists for client {ClientUuid}; its stored tokens are marked revoked in the pending un-approval transaction regardless` |
-| Grant refused on re-validation | Debug | `Refused to store a token for application {ApplicationId}: re-validation under the application row lock failed ({RefusalReason})`, where the reason is `missing`, `secret` or `approval` |
+| Grant refused on re-validation | Debug; Warning for `api-client-row` | `Refused to store a token for application {ApplicationId}: re-validation under the application row lock failed ({RefusalReason})`, where the reason is `missing`, `secret`, `approval` (an API client row is now unapproved) or `api-client-row` (an API client row appeared or disappeared after the client authenticated) |
 | Grant lock wait timed out (both engines), or grant chosen as a deadlock victim (SQL Server); answered `409` | Warning | `Timed out waiting for, or deadlocked on, a database lock while storing a token grant for client {ClientId}` |
 | Grant chosen as a deadlock victim (PostgreSQL); answered `500` | Error | `Unknown error while retrieving access token`, with the exception |
 
@@ -686,10 +829,16 @@ cannot be addressed again, and its tokens are left to expire.
 
 These bounds do not hold for a client removed by a vendor deletion made before this change.
 `DELETE /v3/vendors/{id}` then removed the CMS rows without deleting the provider client, so the
-client's `dmscs.OpenIddictApplication` row, credentials and tokens remain. With no
-`dmscs.ApiClient` row the client counts as approved and can keep obtaining new tokens. Deploying
-this version does not cut it off, no CMS API reaches it, and this version provides no cleanup for
-it. [OPERATIONS.md](../../../docs/OPERATIONS.md#finding-provider-clients-that-no-api-client-references)
+client's `dmscs.OpenIddictApplication` row, credentials and tokens remain. Before DMS-1494 a
+client with no `dmscs.ApiClient` row counted as approved and could keep obtaining new tokens. It
+is now refused at `/connect/token`, `/connect/revoke` and `/connect/introspect` unless its roles
+and scopes qualify it as an administrative client (see
+[Approval states and clients without an API client row](#approval-states-and-clients-without-an-api-client-row)).
+A vendor client holds only `IdentitySettings:ClientRole` and is refused with the
+`NoApiClientRowHoldsClientRoleOnly` Warning. Tokens it was issued before the upgrade are not
+revoked: CMS accepts them until `exp` + 5 minutes and DMS until `exp` + `ClockSkewSeconds`, as
+for any token never marked revoked. No CMS API reaches it, and
+this version provides no cleanup for it. [OPERATIONS.md](../../../docs/OPERATIONS.md#finding-provider-clients-that-no-api-client-references)
 lists such clients as candidates for an operator to review.
 
 ### `503 temporarily_unavailable`: retry and confirm
