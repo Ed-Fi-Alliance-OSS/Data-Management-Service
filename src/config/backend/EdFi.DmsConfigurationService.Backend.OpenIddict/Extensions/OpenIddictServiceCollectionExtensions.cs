@@ -55,10 +55,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     configuration.GetValue<string>("IdentitySettings:CertificatePassword") ?? string.Empty;
                 options.EncryptionKey =
                     configuration.GetValue<string>("IdentitySettings:EncryptionKey") ?? string.Empty;
-                options.KeyFormatCacheSize = configuration.GetValue<int>(
-                    "IdentitySettings:KeyFormatCacheSize",
-                    100
-                );
                 options.ClientSecretHashingIterations = configuration.GetValue<int>(
                     "IdentitySettings:ClientSecretHashingIterations",
                     options.ClientSecretHashingIterations
@@ -107,6 +103,21 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                 .Validate(
                     options => options.ClientSecretHashingIterations > 0,
                     "IdentitySettings:ClientSecretHashingIterations must be greater than zero."
+                )
+                .ValidateOnStart();
+
+            // A non-positive lifetime mints tokens that are already expired when issued, with a zero or
+            // negative expires_in; validators then accept them only within their clock skew. A
+            // lifetime above the maximum overflows expires_in. Both fail startup instead.
+            services
+                .AddOptions<IdentityOptions>()
+                .Validate(
+                    options => options.TokenExpirationMinutes > 0,
+                    "IdentitySettings:TokenExpirationMinutes must be greater than zero."
+                )
+                .Validate(
+                    options => options.TokenExpirationMinutes <= IdentityOptions.MaxTokenExpirationMinutes,
+                    $"IdentitySettings:TokenExpirationMinutes must be at most {IdentityOptions.MaxTokenExpirationMinutes}."
                 )
                 .ValidateOnStart();
 

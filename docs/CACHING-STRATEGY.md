@@ -243,18 +243,17 @@ built-in stampede protection
 - **Key:** `ConfigServiceToken` (static string, single entry)
 - **Value:** `string` - the OAuth access token (e.g., `"eyJhbGciOiJSUzI1NiIs..."`)
 
-**TTL:** 25 minutes (fixed, safely less than typical 30-minute token lifetime)
+**TTL:** `CacheSettings:TokenCacheExpirationSeconds`, default 1500 seconds (25 minutes), less than the default 30-minute token lifetime
 
 **Cache Operations:**
 
-| Operation | Method                     | Description            |
-| --------- | -------------------------- | ---------------------- |
-| Get       | `TryGetValue(key, out t)`  | Retrieves cached token |
-| Set       | `Set(key, tok, TimeSpan)`  | Stores with lifetime   |
+| Operation     | Method                                    | Description                                                                       |
+| ------------- | ----------------------------------------- | --------------------------------------------------------------------------------- |
+| Get or create | `GetOrCreateAsync(key, factory, options)` | Returns the cached token, or fetches one (a single caller at a time) and caches it |
 
 **Invalidation Strategy:**
 
-- TTL matches the token's `expires_in` value from the Configuration Service response
+- TTL is `CacheSettings:TokenCacheExpirationSeconds` (default 1500); the token's `expires_in` is not consulted, so the token lifetime must not be shorter than this TTL: the Configuration Service's `IdentitySettings:TokenExpirationMinutes` in self-contained mode, or the Keycloak access-token lifespan in Keycloak mode
 - No manual invalidation - relies on automatic expiration
 - Cache-aside pattern: fetches new token when cache miss occurs
 

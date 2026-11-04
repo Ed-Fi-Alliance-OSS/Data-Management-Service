@@ -3,9 +3,15 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
+using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Configuration;
@@ -49,5 +55,95 @@ public class Given_the_shipped_identity_settings
             .Get<IdentitySettings>()!;
 
         settings.RequireHttpsMetadata.Should().BeTrue();
+    }
+}
+
+/// <summary>
+/// Every IdentitySettings key in the shipped appsettings.json must be read by the code. "Read" is
+/// defined by the readers themselves, not by a list of key names: the configuration provider records
+/// each key a reader asks for, so a key the file carries that no reader asks for fails here, and so
+/// does a reader whose key string is renamed while the file keeps the old name, unless another
+/// reader still asks for that key: Authority and Audience are read by two binders, so renaming one
+/// of them in a single binder passes here. The readers run here are the section's three binders: the
+/// OpenIddict identity options binder, the frontend IdentitySettings class, and the client secret
+/// validation options. Code elsewhere that reads a single key directly, such as the Authority, reads
+/// a key one of these binders also reads.
+/// </summary>
+[TestFixture]
+public class Given_the_shipped_identity_settings_keys
+{
+    private const string SectionPrefix = "IdentitySettings:";
+
+    private List<string> _unreadKeys = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var readKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        IConfigurationRoot configuration = new ConfigurationBuilder()
+            .Add(
+                new RecordingJsonConfigurationSource(
+                    Path.Combine(AppContext.BaseDirectory, "appsettings.json"),
+                    readKeys
+                )
+            )
+            .Build();
+
+        List<string> shippedKeys =
+        [
+            .. configuration
+                .Providers.OfType<RecordingJsonConfigurationProvider>()
+                .Single()
+                .LeafKeys.Where(key => key.StartsWith(SectionPrefix, StringComparison.OrdinalIgnoreCase)),
+        ];
+
+        using ServiceProvider provider = new ServiceCollection()
+            .AddOpenIddictIdentityOptions(configuration)
+            .BuildServiceProvider();
+        _ = provider.GetRequiredService<IOptions<IdentityOptions>>().Value;
+
+        // The calls ConfigureIdentityProvider and the client secret validation registration make.
+        _ = configuration.GetSection("IdentitySettings").Get<IdentitySettings>();
+        _ = configuration
+            .GetSection(ClientSecretValidationOptions.SectionName)
+            .Get<ClientSecretValidationOptions>();
+
+        _unreadKeys = [.. shippedKeys.Where(key => !readKeys.Contains(key))];
+    }
+
+    [Test]
+    public void It_reads_every_shipped_identity_settings_key()
+    {
+        // BeEmpty names only the first item, so list every unread key in the reason.
+        _unreadKeys
+            .Should()
+            .BeEmpty("no reader reads these shipped keys: {0}", string.Join(", ", _unreadKeys));
+    }
+
+    private sealed class RecordingJsonConfigurationSource(string path, HashSet<string> readKeys)
+        : IConfigurationSource
+    {
+        public IConfigurationProvider Build(IConfigurationBuilder builder)
+        {
+            var source = new JsonConfigurationSource { Path = path, Optional = false };
+            source.ResolveFileProvider();
+            return new RecordingJsonConfigurationProvider(source, readKeys);
+        }
+    }
+
+    private sealed class RecordingJsonConfigurationProvider(
+        JsonConfigurationSource source,
+        HashSet<string> readKeys
+    ) : JsonConfigurationProvider(source)
+    {
+        // The provider stores only leaves, including a key whose JSON value is null, which
+        // AsEnumerable reports the same way as a section. Listing them reads none of them.
+        public IEnumerable<string> LeafKeys => Data.Keys;
+
+        public override bool TryGet(string key, out string? value)
+        {
+            readKeys.Add(key);
+            return base.TryGet(key, out value);
+        }
     }
 }

@@ -30,6 +30,8 @@ param (
     [string] $ClaimName = "namespacePrefixes",
     [string] $ClaimValue = "http://ed-fi.org",
     [string] $EncryptionKey = "ENV:CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY",
+    # Accepted for parity with setup-keycloak.ps1 and not applied: the Configuration Service sets the
+    # token lifetime from IdentitySettings:TokenExpirationMinutes.
     [int] $TokenLifespan = 1800,
     [switch] $InitDb = $false,
     [switch] $InsertData = $false,
@@ -70,7 +72,7 @@ if ($PSBoundParameters.ContainsKey("NewClientSecretEnvironmentVariable")) {
     }
 }
 
-Write-Verbose "TokenLifespan is not applied by setup-openiddict.ps1; OpenIddict token lifetime is configured by the service. Requested value: $TokenLifespan"
+Write-Verbose "TokenLifespan is not applied by setup-openiddict.ps1; set the Configuration Service's IdentitySettings:TokenExpirationMinutes instead. Requested value: $TokenLifespan seconds"
 
 # Warn about retired variable names before an ENV: indirection below can fail on a missing replacement.
 if (-not $SkipLegacyEnvironmentVariableWarning) {
