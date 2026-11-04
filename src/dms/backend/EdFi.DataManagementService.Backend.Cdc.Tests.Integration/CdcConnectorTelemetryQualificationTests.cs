@@ -252,6 +252,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             metrics,
             new CdcConnectRestAdapter(_httpClient),
             inspector,
+            TimeProvider.System,
+            // The candidate image is trusted explicitly; it is not yet the embedded qualified pin.
             new HashSet<string> { digest }
         );
         var collected = await telemetry.CollectAsync(request, telemetryPass, token);

@@ -1023,30 +1023,6 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         return timestamp;
     }
 
-    private async Task<DateTimeOffset> ReadDescriptorContentCreatedAtAsync(
-        long documentId,
-        CancellationToken token
-    )
-    {
-        await using DbConnection connection = _providerOperations.OpenConnection(
-            await ConnectionStringAsync(token)
-        );
-        await connection.OpenAsync(token);
-        await using DbCommand command = connection.CreateCommand();
-        command.CommandText =
-            $"SELECT {Quote("ContentCreatedAt")} FROM {Quote("dms")}.{Quote("Descriptor")} WHERE {Quote("DocumentId")} = @documentId;";
-        command.Parameters.Add(_providerOperations.Parameter("documentId", documentId));
-        object value =
-            await command.ExecuteScalarAsync(token)
-            ?? throw new InvalidOperationException("Missing ContentCreatedAt.");
-        return value switch
-        {
-            DateTimeOffset offset => offset.ToUniversalTime(),
-            DateTime dateTime => new(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)),
-            _ => throw new InvalidOperationException("Unexpected ContentCreatedAt type."),
-        };
-    }
-
     private async Task BackdateOwnerAsync(long documentId, DateTimeOffset timestamp, CancellationToken token)
     {
         await using DbConnection connection = _providerOperations.OpenConnection(
@@ -1107,22 +1083,14 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
             .GetString()
             .Should()
             .Be(description);
-        record
-            .Value.GetProperty("documentCreatedAt")
-            .GetString()
-            .Should()
-            .Be(
-                LastModifiedDateFormatter.Format(
-                    await ReadDescriptorContentCreatedAtAsync(source.DocumentId, token)
-                )
-            );
         await using DbConnection connection = _providerOperations.OpenConnection(
             await ConnectionStringAsync(token)
         );
         await connection.OpenAsync(token);
         await using DbCommand command = connection.CreateCommand();
+        // The owner's ContentCreatedAt is the authoritative creation time the envelope must carry.
         command.CommandText =
-            $"SELECT {Quote("DocumentUuid")}, {Quote("ContentVersion")}, {Quote("LastModifiedAt")}, {Quote("DocumentJson")}, {Quote("StreamEtag")} FROM {Quote("dms")}.{Quote("DocumentCache")} WHERE {Quote("DocumentId")} = @documentId;";
+            $"SELECT cache.{Quote("DocumentUuid")}, cache.{Quote("ContentVersion")}, cache.{Quote("LastModifiedAt")}, cache.{Quote("DocumentJson")}, cache.{Quote("StreamEtag")}, descriptor.{Quote("ContentCreatedAt")} FROM {Quote("dms")}.{Quote("DocumentCache")} cache JOIN {Quote("dms")}.{Quote("Descriptor")} descriptor ON descriptor.{Quote("DocumentId")} = cache.{Quote("DocumentId")} WHERE cache.{Quote("DocumentId")} = @documentId;";
         command.Parameters.Add(_providerOperations.Parameter("documentId", source.DocumentId));
         await using DbDataReader reader = await command.ExecuteReaderAsync(token);
         (await reader.ReadAsync(token)).Should().BeTrue();
@@ -1135,6 +1103,11 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         reader.GetString(4).Should().Be(expectedBody["_etag"]!.GetValue<string>());
         expectedBody.Remove("_etag");
         JsonNode.DeepEquals(expectedBody, JsonNode.Parse(reader.GetString(3))).Should().BeTrue();
+        record
+            .Value.GetProperty("documentCreatedAt")
+            .GetString()
+            .Should()
+            .Be(LastModifiedDateFormatter.Format(reader.GetDateTime(5)));
         (await reader.ReadAsync(token)).Should().BeFalse();
     }
 

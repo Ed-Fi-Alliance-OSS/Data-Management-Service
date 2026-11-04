@@ -36,18 +36,6 @@ public sealed class CdcConnectorTelemetryAdapter(
     )
         : this(client, connect, worker, TimeProvider.System, CdcQualifiedWorkerImage.Digests) { }
 
-    /// <summary>
-    /// Trusts an explicit digest inventory, for example a candidate image under qualification that
-    /// is not yet the embedded qualified pin.
-    /// </summary>
-    public CdcConnectorTelemetryAdapter(
-        HttpClient client,
-        ICdcConnectTransport connect,
-        ICdcWorkerInspectionTransport worker,
-        IReadOnlySet<string> qualifiedDigests
-    )
-        : this(client, connect, worker, TimeProvider.System, qualifiedDigests) { }
-
     public CdcConnectorTelemetryAdapter(
         HttpClient client,
         ICdcConnectTransport connect,

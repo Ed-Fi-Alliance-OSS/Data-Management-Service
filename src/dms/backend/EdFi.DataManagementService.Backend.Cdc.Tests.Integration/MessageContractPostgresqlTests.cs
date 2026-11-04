@@ -143,7 +143,7 @@ public sealed class Given_MessageContractPostgresql
         );
         _public["LIVE"].Records.Should().HaveCount(7);
         // Updates reuse each row's contentCreatedAt, so these exact comparisons also prove an
-        // update republishes documentCreatedAt unchanged while lastModifiedAt advances.
+        // update republishes documentCreatedAt unchanged while lastModifiedAt changes.
         foreach (MessageContractProviderRow row in _rows.Skip(1).Concat(_updates))
         {
             MessageContractKafkaRecord record = _public["LIVE"]
