@@ -240,9 +240,9 @@ services:
   fetch-plugins:
     # Pinned by digest, as every third-party image in this directory already is. An operator may
     # re-pin to an image they have approved; a mutable tag would leave the step that verifies the
-    # package digest running on bytes nobody pinned. This one is alpine:3.22, carrying BusyBox
+    # package digest running on bytes nobody pinned. This one is alpine:3.24.3, carrying BusyBox
     # 1.37.0, whose wget, sha256sum and unzip are the four commands below.
-    image: alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    image: alpine@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
     environment:
       PLUGIN_PACKAGE_URL: ${PLUGIN_PACKAGE_URL:?set the .nupkg download address}
       PLUGIN_PACKAGE_SHA256: ${PLUGIN_PACKAGE_SHA256:?set the SHA-256 of the pinned .nupkg}
@@ -357,7 +357,7 @@ spec:
   initContainers:
     - name: fetch-plugins
       # Pinned by digest for the same reason the Compose recipe pins it.
-      image: alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+      image: alpine@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
       env:
         # Supply these from a ConfigMap, or from a Secret when the feed address
         # carries credentials. They are the deployment's own values, exactly as the
