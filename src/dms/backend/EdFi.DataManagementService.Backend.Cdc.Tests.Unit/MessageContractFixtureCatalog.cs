@@ -156,8 +156,8 @@ public static class MessageContractFixtureCatalog
         if (variant.TryGetProperty("contentCreatedAt", out _))
         {
             row["contentCreatedAt"] = Text(variant, "contentCreatedAt");
-            // Read now so an unpaired raw value fails; the loader compares it after truncation.
-            _ = Text(variant, "expectedDocumentCreatedAt");
+            // An unpaired raw value would let the expected second come from this catalog's truncation.
+            Require(variant.TryGetProperty("expectedDocumentCreatedAt", out _), "variant-timestamp-pair");
         }
         else
         {

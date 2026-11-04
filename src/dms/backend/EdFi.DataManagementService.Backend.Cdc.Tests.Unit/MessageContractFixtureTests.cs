@@ -559,6 +559,10 @@ public class Given_MessageContractFixtureArtifactFiles
         "variant-timestamp-pair"
     )]
     [TestCase(
+        """{"formatVersion":1,"contentCreatedAt":"2025-12-31T23:59:59.9999999Z"}""",
+        "variant-timestamp-pair"
+    )]
+    [TestCase(
         """{"formatVersion":1,"contentCreatedAt":"2025-12-31T23:59:59+00:00","expectedDocumentCreatedAt":"2025-12-31T23:59:59Z"}""",
         "cache-created-timestamp"
     )]
