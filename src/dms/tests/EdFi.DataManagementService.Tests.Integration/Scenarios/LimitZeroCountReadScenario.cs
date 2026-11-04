@@ -18,7 +18,6 @@ internal static class LimitZeroCountReadScenario
     private const string TotalCountHeader = "Total-Count";
     private const string StudentsEndpoint = "/data/ed-fi/students";
     private const string SchoolsEndpoint = "/data/ed-fi/schools";
-    private const string AvailableChangeVersionsEndpoint = "/changeQueries/v1/availableChangeVersions";
 
     public static async Task SeedGradeLevelDescriptorsAsync(ApiIntegrationHarness harness)
     {
@@ -53,6 +52,10 @@ internal static class LimitZeroCountReadScenario
     public static Task It_returns_a_zero_total_count_for_limit_zero_on_an_empty_descriptor_collection(
         ApiIntegrationHarness harness
     ) => AssertPageAsync(harness, $"{AcademicSubjectEndpoint}?limit=0&totalCount=true", 0, "0");
+
+    public static Task It_returns_an_empty_page_without_a_total_count_header_for_limit_zero_on_an_empty_descriptor_collection(
+        ApiIntegrationHarness harness
+    ) => AssertPageAsync(harness, $"{AcademicSubjectEndpoint}?limit=0", 0, null);
 
     public static Task It_returns_one_item_and_the_total_count_for_limit_one_with_total_count(
         ApiIntegrationHarness harness
@@ -104,13 +107,16 @@ internal static class LimitZeroCountReadScenario
         await AssertPageAsync(harness, $"{StudentsEndpoint}/deletes?limit=0", 0, null);
     }
 
-    public static async Task It_returns_the_total_count_for_student_deletes_with_limit_zero_in_a_change_version_window(
+    public static async Task It_returns_the_total_count_for_student_deletes_with_limit_zero_in_a_change_version_window_that_excludes_a_change(
         ApiIntegrationHarness harness
     )
     {
         await SeedTrackedChangesAsync(harness);
-        string window = await GetChangeVersionWindowAsync(harness);
-        await AssertChangeQueryCountAsync(harness, $"{StudentsEndpoint}/deletes", window, "2");
+        string path = $"{StudentsEndpoint}/deletes";
+        await AssertChangeQueryCountAsync(harness, path, string.Empty, "2");
+
+        string window = await GetWindowExcludingTheLatestChangeAsync(harness, path);
+        await AssertChangeQueryCountAsync(harness, path, window, "1");
     }
 
     public static async Task It_returns_an_empty_page_and_the_total_count_for_student_key_changes_with_limit_zero(
@@ -129,13 +135,16 @@ internal static class LimitZeroCountReadScenario
         await AssertPageAsync(harness, $"{StudentsEndpoint}/keyChanges?limit=0", 0, null);
     }
 
-    public static async Task It_returns_the_total_count_for_student_key_changes_with_limit_zero_in_a_change_version_window(
+    public static async Task It_returns_the_total_count_for_student_key_changes_with_limit_zero_in_a_change_version_window_that_excludes_a_change(
         ApiIntegrationHarness harness
     )
     {
         await SeedTrackedChangesAsync(harness);
-        string window = await GetChangeVersionWindowAsync(harness);
-        await AssertChangeQueryCountAsync(harness, $"{StudentsEndpoint}/keyChanges", window, "2");
+        string path = $"{StudentsEndpoint}/keyChanges";
+        await AssertChangeQueryCountAsync(harness, path, string.Empty, "2");
+
+        string window = await GetWindowExcludingTheLatestChangeAsync(harness, path);
+        await AssertChangeQueryCountAsync(harness, path, window, "1");
     }
 
     public static async Task It_returns_a_zero_total_count_for_limit_zero_on_a_resource_with_no_tracked_deletes(
@@ -154,18 +163,32 @@ internal static class LimitZeroCountReadScenario
         await AssertChangeQueryCountAsync(harness, $"{GradeLevelEndpoint}/deletes", string.Empty, "1");
     }
 
-    private static async Task<string> GetChangeVersionWindowAsync(ApiIntegrationHarness harness)
+    /// <summary>
+    /// Reads the two tracked changes at the endpoint and returns a window that ends at the lower of their change
+    /// versions, so exactly one of the two falls inside the window.
+    /// </summary>
+    private static async Task<string> GetWindowExcludingTheLatestChangeAsync(
+        ApiIntegrationHarness harness,
+        string path
+    )
     {
-        using HttpResponseMessage response = await harness.HttpClient.GetAsync(
-            AvailableChangeVersionsEndpoint
-        );
+        using HttpResponseMessage response = await harness.HttpClient.GetAsync($"{path}?limit=500");
         string body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.OK, body);
 
-        long newest = JsonDocument.Parse(body).RootElement.GetProperty("newestChangeVersion").GetInt64();
+        long[] changeVersions =
+        [
+            .. JsonDocument
+                .Parse(body)
+                .RootElement.EnumerateArray()
+                .Select(item => item.GetProperty("changeVersion").GetInt64()),
+        ];
 
-        return $"&minChangeVersion=0&maxChangeVersion={newest}";
+        changeVersions.Should().HaveCount(2, body);
+        changeVersions.Distinct().Should().HaveCount(2, body);
+
+        return $"&minChangeVersion=0&maxChangeVersion={changeVersions.Min()}";
     }
 
     /// <summary>

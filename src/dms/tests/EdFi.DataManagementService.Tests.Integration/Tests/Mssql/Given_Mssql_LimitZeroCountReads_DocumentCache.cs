@@ -12,7 +12,8 @@ using EdFi.DataManagementService.Tests.Integration.Scenarios;
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 
 /// <summary>
-/// Descriptor collection reads with <c>limit=0</c> when document cache read acceleration is enabled, with and without <c>totalCount</c>.
+/// Descriptor collection reads with <c>limit=0</c> when document cache read acceleration is enabled,
+/// with and without <c>totalCount</c>.
 /// </summary>
 public sealed class Given_Mssql_LimitZeroCountReads_DocumentCache : MssqlApiIntegrationTestBase
 {
@@ -44,6 +45,12 @@ public sealed class Given_Mssql_LimitZeroCountReads_DocumentCache : MssqlApiInte
     [Test]
     public Task It_returns_a_zero_total_count_for_limit_zero_on_an_empty_descriptor_collection() =>
         LimitZeroCountReadScenario.It_returns_a_zero_total_count_for_limit_zero_on_an_empty_descriptor_collection(
+            Harness
+        );
+
+    [Test]
+    public Task It_returns_an_empty_page_without_a_total_count_header_for_limit_zero_on_an_empty_descriptor_collection() =>
+        LimitZeroCountReadScenario.It_returns_an_empty_page_without_a_total_count_header_for_limit_zero_on_an_empty_descriptor_collection(
             Harness
         );
 

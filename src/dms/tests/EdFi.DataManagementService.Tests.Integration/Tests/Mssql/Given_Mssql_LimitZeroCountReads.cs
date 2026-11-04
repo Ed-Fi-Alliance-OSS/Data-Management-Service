@@ -12,7 +12,8 @@ using EdFi.DataManagementService.Tests.Integration.Scenarios;
 namespace EdFi.DataManagementService.Tests.Integration.Tests.Mssql;
 
 /// <summary>
-/// Descriptor collection reads with <c>limit=0</c>, answered relationally, with and without <c>totalCount</c>.
+/// Collection reads with <c>limit=0</c> on descriptor endpoints and on <c>/deletes</c> and <c>/keyChanges</c>,
+/// answered relationally, with and without <c>totalCount</c>.
 /// </summary>
 public sealed class Given_Mssql_LimitZeroCountReads : MssqlApiIntegrationTestBase
 {
@@ -46,6 +47,12 @@ public sealed class Given_Mssql_LimitZeroCountReads : MssqlApiIntegrationTestBas
         );
 
     [Test]
+    public Task It_returns_an_empty_page_without_a_total_count_header_for_limit_zero_on_an_empty_descriptor_collection() =>
+        LimitZeroCountReadScenario.It_returns_an_empty_page_without_a_total_count_header_for_limit_zero_on_an_empty_descriptor_collection(
+            Harness
+        );
+
+    [Test]
     public Task It_returns_one_item_and_the_total_count_for_limit_one_with_total_count() =>
         LimitZeroCountReadScenario.It_returns_one_item_and_the_total_count_for_limit_one_with_total_count(
             Harness
@@ -64,8 +71,8 @@ public sealed class Given_Mssql_LimitZeroCountReads : MssqlApiIntegrationTestBas
         );
 
     [Test]
-    public Task It_returns_the_total_count_for_student_deletes_with_limit_zero_in_a_change_version_window() =>
-        LimitZeroCountReadScenario.It_returns_the_total_count_for_student_deletes_with_limit_zero_in_a_change_version_window(
+    public Task It_returns_the_total_count_for_student_deletes_with_limit_zero_in_a_change_version_window_that_excludes_a_change() =>
+        LimitZeroCountReadScenario.It_returns_the_total_count_for_student_deletes_with_limit_zero_in_a_change_version_window_that_excludes_a_change(
             Harness
         );
 
@@ -82,8 +89,8 @@ public sealed class Given_Mssql_LimitZeroCountReads : MssqlApiIntegrationTestBas
         );
 
     [Test]
-    public Task It_returns_the_total_count_for_student_key_changes_with_limit_zero_in_a_change_version_window() =>
-        LimitZeroCountReadScenario.It_returns_the_total_count_for_student_key_changes_with_limit_zero_in_a_change_version_window(
+    public Task It_returns_the_total_count_for_student_key_changes_with_limit_zero_in_a_change_version_window_that_excludes_a_change() =>
+        LimitZeroCountReadScenario.It_returns_the_total_count_for_student_key_changes_with_limit_zero_in_a_change_version_window_that_excludes_a_change(
             Harness
         );
 

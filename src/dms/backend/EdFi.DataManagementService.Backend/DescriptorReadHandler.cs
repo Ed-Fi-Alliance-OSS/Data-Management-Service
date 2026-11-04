@@ -2044,7 +2044,9 @@ internal sealed class DescriptorReadHandler(
             {create} {quotedTable} ({columns}){lifetime};
 
             """;
-        // SQL Server rejects FETCH NEXT 0 rows; mirrors the resource path's zero-size page handling.
+        // SQL Server rejects FETCH NEXT 0 rows, so a zero limit skips page selection, as the resource
+        // path does for a zero-size page. Only the limit is checked: cursor pages use TOP (@pageSize),
+        // which accepts 0.
         if (!HasZeroLimit(plannedQuery))
         {
             prelude += $"""
@@ -2079,18 +2081,7 @@ internal sealed class DescriptorReadHandler(
             }
 
             return plannedQuery.ParameterValues.TryGetValue(parameter.ParameterName, out var limit)
-                && limit switch
-                {
-                    byte typedLimit => typedLimit == 0,
-                    sbyte typedLimit => typedLimit == 0,
-                    short typedLimit => typedLimit == 0,
-                    ushort typedLimit => typedLimit == 0,
-                    int typedLimit => typedLimit == 0,
-                    uint typedLimit => typedLimit == 0,
-                    long typedLimit => typedLimit == 0,
-                    ulong typedLimit => typedLimit == 0,
-                    _ => false,
-                };
+                && HydrationBatchBuilder.IsZeroPageSelectionSizeValue(limit);
         }
 
         return false;
