@@ -311,8 +311,8 @@ public class Given_A_Mssql_RelationalPost_Create_Authorization_With_A_Synthetic_
         MissingReferenceScenarios.It_returns_no_relationship_before_deferred_missing_reference_when_the_supplied_school_is_unresolved();
 
     [Test]
-    public Task It_denies_an_unresolved_school_equal_to_a_caller_claim_as_no_relationship() =>
-        MissingReferenceScenarios.It_denies_an_unresolved_school_equal_to_a_caller_claim_as_no_relationship();
+    public Task It_reports_the_deferred_reference_conflict_when_the_submitted_school_matches_a_claim() =>
+        MissingReferenceScenarios.It_reports_the_deferred_reference_conflict_when_the_submitted_school_matches_a_claim();
 
     [Test]
     public Task It_denies_an_unresolved_school_under_inverted_filtering_as_no_relationship() =>

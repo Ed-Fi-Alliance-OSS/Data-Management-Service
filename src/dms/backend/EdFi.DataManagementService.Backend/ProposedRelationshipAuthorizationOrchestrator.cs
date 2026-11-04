@@ -55,7 +55,8 @@ internal sealed class ProposedRelationshipAuthorizationOrchestrator(IRelationalW
                         request.OperationKind
                     ),
                     request.TargetContext,
-                    mergeResult.DeferredMissingDocumentReferencePaths
+                    mergeResult.DeferredMissingDocumentReferencePaths,
+                    request.SelectedBody
                 );
 
                 switch (extractionResult)

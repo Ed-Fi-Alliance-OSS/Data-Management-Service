@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Frozen;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -57,9 +58,8 @@ internal abstract record ProposedRelationshipAuthorizationExtractionResult
 internal static class RelationshipAuthorizationProposedValueExtractor
 {
     /// <summary>
-    /// Extracts runtime values and marks each null subject value that is null only because its submitted
-    /// document reference could not be resolved, so a proposed-missing denial for that subject can be
-    /// reported as no-relationship instead.
+    /// Extracts finalized runtime values. For a deferred reference, authorize a submitted EdOrg identity
+    /// directly; person DocumentId anchors remain null and carry provenance for failure classification.
     /// </summary>
     public static ProposedRelationshipAuthorizationExtractionResult Extract(
         RelationshipAuthorizationResult.Authorized authorized,
@@ -67,7 +67,8 @@ internal static class RelationshipAuthorizationProposedValueExtractor
         RootWriteRowBuffer rootRow,
         int emittedAuth1Index,
         RelationalWriteTargetContext? targetContext = null,
-        IReadOnlySet<string>? deferredPaths = null
+        IReadOnlySet<string>? deferredPaths = null,
+        JsonNode? requestBody = null
     )
     {
         ArgumentNullException.ThrowIfNull(writePlan);
@@ -201,6 +202,48 @@ internal static class RelationshipAuthorizationProposedValueExtractor
                     return Invalid(provenanceFailureMessage);
                 }
 
+                if (
+                    isNullBecauseDeferredMissingReference
+                    && !subject.IsPersonSubject
+                    && requestBody is not null
+                    && TryGetDeferredEdOrgBodyPath(
+                        rootRow.TableWritePlan,
+                        binding.BindingIndex,
+                        deferredPaths,
+                        out var bodyPath
+                    )
+                )
+                {
+                    var column = rootRow.TableWritePlan.ColumnBindings[binding.BindingIndex].Column;
+                    if (column.ScalarType is not { } scalarType)
+                    {
+                        return Invalid(
+                            $"Proposed EdOrg column '{column.ColumnName.Value}' has no scalar type."
+                        );
+                    }
+
+                    RelationalWriteFlattener.TryGetRelativeLeafNode(requestBody, bodyPath, out var bodyNode);
+                    if (bodyNode is not null && bodyNode is not JsonValue)
+                    {
+                        return Invalid($"Proposed EdOrg value at '{bodyPath.Canonical}' must be scalar.");
+                    }
+                    runtimeValue = new ProposedRelationshipAuthorizationRuntimeValue.SubjectValue(
+                        bodyNode is null
+                            ? null
+                            : RelationalWriteFlattener.ConvertRequestDerivedJsonValue(
+                                (JsonValue)bodyNode,
+                                scalarType,
+                                new RelationalWriteFlattener.RequestDerivedScalarConversionContext(
+                                    bodyPath.Canonical,
+                                    $"Proposed EdOrg column '{column.ColumnName.Value}'"
+                                )
+                            )
+                    );
+                    // SQL can now evaluate direct claim equality and hierarchy membership normally.
+                    // An actually omitted/null body value must retain element-required classification.
+                    isNullBecauseDeferredMissingReference = false;
+                }
+
                 runtimeSubjects.Add(
                     new ProposedRelationshipAuthorizationRuntimeSubject(
                         subjectOrdinal,
@@ -230,6 +273,49 @@ internal static class RelationshipAuthorizationProposedValueExtractor
                 authorized.ExecutableShape
             )
         );
+    }
+
+    private static bool TryGetDeferredEdOrgBodyPath(
+        TableWritePlan rootPlan,
+        int bindingIndex,
+        IReadOnlySet<string> deferredPaths,
+        out JsonPathExpression bodyPath
+    )
+    {
+        bodyPath = default;
+        switch (rootPlan.ColumnBindings[bindingIndex].Source)
+        {
+            case WriteValueSource.ReferenceDerived referenceDerived:
+                bodyPath = referenceDerived.ReferenceSource.ReferenceJsonPath;
+                return true;
+            case WriteValueSource.Precomputed:
+                foreach (var plan in rootPlan.KeyUnificationPlans)
+                {
+                    if (plan.CanonicalBindingIndex != bindingIndex)
+                    {
+                        continue;
+                    }
+
+                    foreach (var member in plan.MembersInOrder)
+                    {
+                        if (
+                            member is KeyUnificationMemberWritePlan.ReferenceDerivedMember referenceMember
+                            && deferredPaths.Contains(
+                                referenceMember.ReferenceSource.ReferenceObjectPath.Canonical
+                            )
+                        )
+                        {
+                            // Core validates equality of supplied unified members. A nonnull finalized
+                            // contributor bypasses this fallback before any body value is considered.
+                            bodyPath = referenceMember.RelativePath;
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            default:
+                return false;
+        }
     }
 
     private static ProposedRuntimeValue GetRuntimeValue(

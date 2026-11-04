@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
@@ -19,6 +20,91 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 public class Given_ProposedAuthorizationFailureClassification
 {
     private const int EmittedAuth1Index = 3;
+
+    [TestCase(ReportedSchoolIdIndex, "$.reportedSchoolReference")]
+    [TestCase(UnifiedSchoolIdIndex, "$.schoolReference")]
+    public void It_authorizes_a_deferred_edorg_from_its_submitted_identity_without_changing_the_root(
+        int bindingIndex,
+        string referencePath
+    )
+    {
+        var writePlan = CreateWritePlan();
+        var rootRow = CreateRootRow(writePlan);
+        var body = JsonNode.Parse(
+            """{"reportedSchoolReference":{"schoolId":900},"schoolReference":{"schoolId":900}}"""
+        )!;
+
+        var result = RelationshipAuthorizationProposedValueExtractor.Extract(
+            CreateAuthorized(EdOrgCheck(7, bindingIndex)),
+            writePlan,
+            rootRow,
+            EmittedAuth1Index,
+            deferredPaths: Deferred(referencePath),
+            requestBody: body
+        );
+
+        var subject = result
+            .Should()
+            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.Ready>()
+            .Subject.RuntimeCheck.Strategies[0]
+            .Subjects[0];
+        subject
+            .RuntimeValue.Should()
+            .Be(new ProposedRelationshipAuthorizationRuntimeValue.SubjectValue(900L));
+        subject.IsNullBecauseDeferredMissingReference.Should().BeFalse();
+        rootRow.Values[bindingIndex].Should().Be(new FlattenedWriteValue.Literal(null));
+    }
+
+    [TestCase("{}")]
+    [TestCase("{\"reportedSchoolReference\":{\"schoolId\":null}}")]
+    public void It_keeps_a_truly_absent_or_null_edorg_element_required_even_when_its_reference_is_deferred(
+        string json
+    )
+    {
+        var writePlan = CreateWritePlan();
+        RelationshipAuthorizationCheckSpec[] checkSpecs = [EdOrgCheck(7, ReportedSchoolIdIndex)];
+        var result = RelationshipAuthorizationProposedValueExtractor.Extract(
+            CreateAuthorized(checkSpecs),
+            writePlan,
+            CreateRootRow(writePlan),
+            EmittedAuth1Index,
+            deferredPaths: Deferred("$.reportedSchoolReference"),
+            requestBody: JsonNode.Parse(json)!
+        );
+        var runtimeCheck = result
+            .Should()
+            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.Ready>()
+            .Subject.RuntimeCheck;
+
+        ProposedAuthorizationFailureClassification
+            .CorrectRelationshipFailure(MapFailure(checkSpecs, Missing(0, 0)), runtimeCheck)
+            .FailedStrategies[0]
+            .FailedSubjects[0]
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing);
+    }
+
+    [Test]
+    public void It_preserves_a_finalized_unified_edorg_over_a_deferred_body_value()
+    {
+        var writePlan = CreateWritePlan();
+        var result = RelationshipAuthorizationProposedValueExtractor.Extract(
+            CreateAuthorized(EdOrgCheck(7, UnifiedSchoolIdIndex)),
+            writePlan,
+            CreateRootRow(writePlan, unifiedSchoolId: 100L),
+            EmittedAuth1Index,
+            deferredPaths: Deferred("$.schoolReference"),
+            requestBody: JsonNode.Parse("""{"schoolReference":{"schoolId":900}}""")!
+        );
+
+        result
+            .Should()
+            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.Ready>()
+            .Subject.RuntimeCheck.Strategies[0]
+            .Subjects[0]
+            .RuntimeValue.Should()
+            .Be(new ProposedRelationshipAuthorizationRuntimeValue.SubjectValue(100L));
+    }
 
     [Test]
     public void It_marks_only_the_null_binding_derived_from_the_matching_deferred_reference()

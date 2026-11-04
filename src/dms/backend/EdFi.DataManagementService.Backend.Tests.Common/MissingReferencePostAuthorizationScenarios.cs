@@ -64,10 +64,10 @@ internal sealed class MissingReferencePostAuthorizationScenarios(
         await assertNoCreateSideEffects(unrelatedSeed);
     }
 
-    public async Task It_denies_an_unresolved_school_equal_to_a_caller_claim_as_no_relationship()
+    public async Task It_reports_the_deferred_reference_conflict_when_the_submitted_school_matches_a_claim()
     {
-        // The unresolved reference is bound as null, so a supplied id that happens to equal a claim does not
-        // authorize through direct claim equality; it is still the no-relationship denial.
+        // Direct claim equality authorizes the submitted EdOrg identity even though its reference is
+        // unresolved. Authorization then permits the missing-reference conflict, without any DML.
         var seed = CreateRootChildSeed(
             $"{rootChildUuidPrefix}-0000-0000-0000-000000000014",
             114,
@@ -82,12 +82,14 @@ internal sealed class MissingReferencePostAuthorizationScenarios(
             RelationshipAuthorizationCrudTestSupport.EdOrgOnlyStrategyNames
         );
 
-        var failure = result.Should().BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>().Subject;
-        failure
-            .RelationshipFailure.FailedStrategies.SelectMany(static strategy => strategy.FailedSubjects)
-            .Select(static subject => subject.FailureKind)
+        result
             .Should()
-            .Equal(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
+            .BeOfType<UpsertResult.UpsertFailureReference>()
+            .Which.InvalidDocumentReferences.Select(static reference =>
+                (reference.Path.Value, reference.Reason)
+            )
+            .Should()
+            .Equal(("$.schoolReference", DocumentReferenceFailureReason.Missing));
         await assertNoCreateSideEffects(seed);
     }
 

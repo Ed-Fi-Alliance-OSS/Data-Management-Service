@@ -1381,6 +1381,115 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
+    [TestCase(RelationalWriteOperationKind.Put, "collection")]
+    [TestCase(RelationalWriteOperationKind.Put, "separate-table")]
+    [TestCase(RelationalWriteOperationKind.Put, "validation")]
+    [TestCase(RelationalWriteOperationKind.Post, "collection")]
+    [TestCase(RelationalWriteOperationKind.Post, "separate-table")]
+    [TestCase(RelationalWriteOperationKind.Post, "validation")]
+    public async Task It_returns_immutable_identity_before_deferred_profile_failure_with_pending_authorization(
+        RelationalWriteOperationKind operationKind,
+        string failureKind
+    )
+    {
+        var writableBody = JsonNode.Parse("""{"schoolId":255902,"name":"Lincoln High"}""")!;
+        var request = CreateRequest(
+            operationKind,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, UpdateDocumentUuid, 44L),
+            selectedBody: writableBody
+        );
+        _profileMergeSynthesizer.AuthorizationRootTableStateToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255902
+        ).TablesInDependencyOrder[0];
+        if (failureKind == "validation")
+        {
+            _profileMergeSynthesizer.ValidationFailuresToReturn =
+            [
+                new WriteValidationFailure(new JsonPath("$._ext.sample.member"), "Key-unification conflict"),
+            ];
+        }
+        else
+        {
+            _profileMergeSynthesizer.RejectionToReturn = new ProfileCreatabilityRejection(
+                failureKind == "collection" ? "$.addresses[*]" : "$._ext.sample",
+                "Profile forbids creation."
+            );
+        }
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = BuildVisiblePresentRootProfileWriteContext(
+                    writableBody,
+                    request.WritePlan
+                ),
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        const string message =
+            "Identifying values for the School resource cannot be changed. Delete and recreate the resource item instead.";
+        RelationalWriteExecutorResult expected =
+            operationKind is RelationalWriteOperationKind.Put
+                ? new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureImmutableIdentity(message)
+                )
+                : new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureImmutableIdentity(message)
+                );
+        result.Should().BeEquivalentTo(expected);
+        _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase(RelationalWriteOperationKind.Put)]
+    [TestCase(RelationalWriteOperationKind.Post)]
+    public async Task It_returns_stale_if_match_before_a_profiled_deferred_missing_reference_after_authorization(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var writableBody = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!;
+        var request = CreateRequest(
+            operationKind,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, UpdateDocumentUuid, 44L),
+            documentReferences: [RelationalAccessTestData.CreateDocumentReference("$.schoolReference")],
+            selectedBody: writableBody,
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+        _profileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = BuildVisiblePresentRootProfileWriteContext(
+                    writableBody,
+                    request.WritePlan
+                ),
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        RelationalWriteExecutorResult expected =
+            operationKind is RelationalWriteOperationKind.Put
+                ? new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
+                : new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch());
+        result.Should().BeEquivalentTo(expected);
+        _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
     [Test]
     public async Task It_defers_profile_missing_collection_references_until_proposed_authorization()
     {

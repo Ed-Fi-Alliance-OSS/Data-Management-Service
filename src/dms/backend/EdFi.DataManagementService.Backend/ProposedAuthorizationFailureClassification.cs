@@ -12,7 +12,8 @@ namespace EdFi.DataManagementService.Backend;
 /// Corrects the classification of a validated proposed authorization failure using request-local runtime
 /// provenance. The AUTH1 SQL reports every null proposed subject as proposed-missing; a subject that is null
 /// only because its submitted reference could not be resolved was supplied, so it is reported as
-/// no-relationship — the same outcome as an existing but unrelated reference.
+/// no-relationship. This corrects the missing-value classification; it does not independently resolve a
+/// terminal person behind a missing transitive first hop.
 /// </summary>
 /// <remarks>
 /// Only the failure kind (and its diagnostic hint) of marked proposed-missing subjects changes. Strategy and

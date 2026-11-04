@@ -1275,7 +1275,7 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              Then it should respond with 204
 
         @e2e-ci-shard-2
-        Scenario: 39 Ensure client can not create a courseTranscripts with out student school association
+        Scenario: 39 Ensure a missing or existing academic record yields the same denial without a student school association
              When a POST request is made to "/ed-fi/courseTranscripts" with
                   """
                   {
@@ -1302,7 +1302,42 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
                   "status": 403,
                   "validationErrors": {},
                   "errors": [
-                    "No relationships have been established between the caller's education organization id claim ('5255901001') and one or more of the following properties of the resource item: 'EducationOrganizationId', 'StudentUniqueId'."
+                    "No relationships have been established between the caller's education organization id claim ('5255901001') and the resource item's 'StudentUniqueId' value."
+                  ]
+                  }
+                  """
+             Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with educationOrganizationIds "5255901001"
+               And the system has these "studentacademicrecords"
+                  | studentReference            | educationOrganizationReference            | schoolYearTypeReference | termDescriptor                            |
+                  | { "studentUniqueId": "52" } | { "educationOrganizationId": 5255901001 } | {"schoolYear": 2023}    | "uri://ed-fi.org/TermDescriptor#Semester" |
+               And the claimSet "EdFiSandbox" is authorized with educationOrganizationIds "5255901001"
+             When a POST request is made to "/ed-fi/courseTranscripts" with
+                  """
+                  {
+                      "courseAttemptResultDescriptor": "uri://ed-fi.org/CourseAttemptResultDescriptor#Pass",
+                      "courseReference": {
+                        "courseCode": "ACC-test-Course1",
+                        "educationOrganizationId": 5255901001
+                      },
+                      "studentAcademicRecordReference": {
+                        "educationOrganizationId": 5255901001,
+                        "schoolYear": 2023,
+                        "studentUniqueId": "52",
+                        "termDescriptor": "uri://ed-fi.org/TermDescriptor#Semester"
+                      }
+                    }
+                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                  "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                  "type": "urn:ed-fi:api:security:authorization",
+                  "title": "Authorization Denied",
+                  "status": 403,
+                  "validationErrors": {},
+                  "errors": [
+                    "No relationships have been established between the caller's education organization id claim ('5255901001') and the resource item's 'StudentUniqueId' value."
                   ]
                   }
                   """

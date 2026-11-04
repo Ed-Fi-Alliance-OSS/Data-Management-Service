@@ -2193,7 +2193,8 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                         request.OperationKind
                     ),
                     request.TargetContext,
-                    mergeResult.DeferredMissingDocumentReferencePaths
+                    mergeResult.DeferredMissingDocumentReferencePaths,
+                    request.SelectedBody
                 );
 
                 return extractionResult switch
