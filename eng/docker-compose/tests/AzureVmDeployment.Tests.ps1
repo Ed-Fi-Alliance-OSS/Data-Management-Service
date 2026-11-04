@@ -16,7 +16,7 @@ Describe "Azure VM lifecycle safety" {
         $script:legacyEnvWarningSource = Join-Path $script:azureVmRoot "compose/legacy-env-warning.sh"
         # Matches the pin in compose/keycloak.compose.yml, as `docker compose config --images` and
         # `docker inspect --format {{.Config.Image}}` both report a tag@digest reference.
-        $script:keycloakImage = "quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b"
+        $script:keycloakImage = "quay.io/keycloak/keycloak:26.8.1@sha256:3f3c5f8e03c614774b4bd9173b88391fefa4153bfc010d8012d59ad825377332"
     }
 
     BeforeEach {
@@ -53,8 +53,8 @@ Describe "Azure VM lifecycle safety" {
 printf '%s\n' "$*" >> "$DOCKER_LOG"
 
 state="${DOCKER_STATE_DIR:?}"
-configured="${DOCKER_CONFIGURED_KEYCLOAK:-quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b}"
-deployed="${DOCKER_DEPLOYED_KEYCLOAK:-quay.io/keycloak/keycloak:26.8.1@sha256:a78d6b79572168cb25886b80a8b5b8d4ed4390743e3eecb810538683e209dd6b}"
+configured="${DOCKER_CONFIGURED_KEYCLOAK:-quay.io/keycloak/keycloak:26.8.1@sha256:3f3c5f8e03c614774b4bd9173b88391fefa4153bfc010d8012d59ad825377332}"
+deployed="${DOCKER_DEPLOYED_KEYCLOAK:-quay.io/keycloak/keycloak:26.8.1@sha256:3f3c5f8e03c614774b4bd9173b88391fefa4153bfc010d8012d59ad825377332}"
 
 if [ "${1:-}" = "compose" ] && [[ "$*" == *" config --images"* ]]; then
   printf '%s\n' "$configured" "${DOCKER_CONFIGURED_POSTGRES-postgres:18.6-alpine}"
