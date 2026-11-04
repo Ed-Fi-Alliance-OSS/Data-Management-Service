@@ -158,6 +158,13 @@ public sealed class RelationalChangeQueryRepository(
             return new TrackedChangeQueryResult([], null, failure);
         }
 
+        // limit=0 without totalCount selects nothing and counts nothing, so no SQL runs. This sits after the
+        // budget check so limit=0 is judged exactly like limit=1.
+        if (plan.SelectsNoRows && !plan.IncludesTotalCount)
+        {
+            return new TrackedChangeQueryResult([], null);
+        }
+
         return await _commandExecutor
             .ExecuteReaderAsync(
                 plan.Command!,

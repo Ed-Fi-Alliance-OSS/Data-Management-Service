@@ -513,6 +513,129 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
             .MustNotHaveHappened();
     }
 
+    // Order guard: a limit=0 request must reach the parameter-budget check exactly like limit=1, so a
+    // shortcut for the empty page can never turn an over-budget failure into an empty success.
+    [TestCase(true)]
+    [TestCase(false)]
+    public async Task It_returns_security_configuration_for_limit_zero_when_mssql_authorization_parameters_exceed_command_limit(
+        bool totalCount
+    )
+    {
+        var executor = A.Fake<IRelationalCommandExecutor>();
+        A.CallTo(() => executor.Dialect).Returns(SqlDialect.Mssql);
+        A.CallTo(() =>
+                executor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<TrackedChangeQueryResult>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .Returns(Task.FromResult(new TrackedChangeQueryResult([], null)));
+
+        ConcreteResourceModel resourceModel = CreateAuthorizedSchoolResourceModel();
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: totalCount,
+            trackedChangeTable: CreateAuthorizedSchoolTrackedTable(),
+            resourceInfo: CreateResourceInfo(_schoolResource, isDescriptor: false),
+            resourceModel: resourceModel,
+            evaluators:
+            [
+                new AuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.NamespaceBased,
+                    [],
+                    FilterOperator.Or
+                ),
+                new AuthorizationStrategyEvaluator(
+                    AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
+                    [],
+                    FilterOperator.Or
+                ),
+            ],
+            authorizationContext: new RelationalAuthorizationContext(
+                CreateClaimEducationOrganizationIds(1050),
+                CreateNamespacePrefixes(1050)
+            ),
+            dialect: SqlDialect.Mssql,
+            limit: 0
+        );
+
+        TrackedChangeQueryResult result = await new RelationalChangeQueryRepository(
+            executor,
+            A.Fake<IRelationalParameterConfigurator>()
+        ).QueryTrackedChanges(request);
+
+        var failure = result
+            .AuthorizationFailure.Should()
+            .BeOfType<ChangeQueryAuthorizationFailure.SecurityConfiguration>()
+            .Subject;
+        failure.UnavailableStrategyNames.Should().BeEmpty();
+        failure
+            .Errors.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Contain("exceed the SQL Server parameter limit");
+        A.CallTo(() =>
+                executor.ExecuteReaderAsync(
+                    A<RelationalCommand>._,
+                    A<Func<IRelationalCommandReader, CancellationToken, Task<TrackedChangeQueryResult>>>._,
+                    A<CancellationToken>._
+                )
+            )
+            .MustNotHaveHappened();
+    }
+
+    [Test]
+    public async Task It_returns_empty_without_sql_for_limit_zero_without_total_count()
+    {
+        var executor = new InMemoryRelationalCommandExecutor([]);
+        var sut = new RelationalChangeQueryRepository(executor, A.Fake<IRelationalParameterConfigurator>());
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: false,
+            trackedChangeTable: CreateSchoolTrackedTable(),
+            resourceInfo: CreateResourceInfo(_schoolResource, isDescriptor: false),
+            resourceModel: CreateRegularResourceModel(),
+            limit: 0
+        );
+
+        TrackedChangeQueryResult result = await sut.QueryTrackedChanges(request);
+
+        result.AuthorizationFailure.Should().BeNull();
+        result.Items.Should().BeEmpty();
+        result.TotalCount.Should().BeNull();
+        executor.Commands.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_executes_only_the_count_statement_for_limit_zero_with_total_count()
+    {
+        var executor = new InMemoryRelationalCommandExecutor([
+            new InMemoryRelationalCommandExecution([
+                InMemoryRelationalResultSet.Create(RelationalAccessTestData.CreateRow(("__TotalCount", 7L))),
+            ]),
+        ]);
+        var sut = new RelationalChangeQueryRepository(executor, A.Fake<IRelationalParameterConfigurator>());
+        IRelationalTrackedChangeQueryRequest request = CreateRequest(
+            ChangeQueryEndpointOperation.Deletes,
+            totalCount: true,
+            trackedChangeTable: CreateSchoolTrackedTable(),
+            resourceInfo: CreateResourceInfo(_schoolResource, isDescriptor: false),
+            resourceModel: CreateRegularResourceModel(),
+            limit: 0
+        );
+
+        TrackedChangeQueryResult result = await sut.QueryTrackedChanges(request);
+
+        result.Items.Should().BeEmpty();
+        result.TotalCount.Should().Be(7L);
+        executor.Commands.Should().ContainSingle();
+        string sql = executor.Commands[0].CommandText;
+        sql.Should().Contain("COUNT(1)");
+        sql.Should().NotContain("FETCH NEXT");
+        sql.Should().NotContain("LIMIT @Limit");
+    }
+
     [Test]
     public async Task It_returns_security_configuration_when_mssql_namespace_prefix_count_exceeds_scalar_limit()
     {
@@ -627,7 +750,8 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
         ConcreteResourceModel resourceModel,
         IReadOnlyList<AuthorizationStrategyEvaluator>? evaluators = null,
         RelationalAuthorizationContext? authorizationContext = null,
-        SqlDialect dialect = SqlDialect.Pgsql
+        SqlDialect dialect = SqlDialect.Pgsql,
+        int? limit = 25
     )
     {
         var request = A.Fake<IRelationalTrackedChangeQueryRequest>();
@@ -636,7 +760,12 @@ public class Given_RelationalChangeQueryRepositoryTrackedChanges
         A.CallTo(() => request.Operation).Returns(operation);
         A.CallTo(() => request.PaginationParameters)
             .Returns(
-                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: totalCount, MaximumPageSize: 500)
+                new PaginationParameters(
+                    Limit: limit,
+                    Offset: 0,
+                    TotalCount: totalCount,
+                    MaximumPageSize: 500
+                )
             );
         A.CallTo(() => request.ChangeVersionRange).Returns(ChangeVersionRange.None);
         A.CallTo(() => request.TraceId).Returns(new TraceId("tracked-change-repository-test"));
