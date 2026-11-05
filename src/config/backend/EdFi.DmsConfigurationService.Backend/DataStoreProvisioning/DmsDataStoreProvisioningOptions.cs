@@ -9,7 +9,9 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// The <c>DmsDataStoreProvisioning</c> section (spec 4.3). The feature is off unless <see cref="Enabled"/>
 /// is true; <see cref="DmsDataStoreProvisioningOptionsValidator"/> enforces the static rules at startup
 /// when it is. Environmental checks (reachability, privileges, files, staging visibility) belong to
-/// readiness (7.3), not to this class.
+/// readiness (7.3), not to this class. Nested sections and collections are nullable because
+/// configuration binding preserves an explicit null; the validator reports a null section as missing
+/// rather than throwing.
 /// </summary>
 public sealed class DmsDataStoreProvisioningOptions
 {
@@ -39,22 +41,22 @@ public sealed class DmsDataStoreProvisioningOptions
     /// Operator-listed identity or CMS databases on the target server that may never be selected as a
     /// target. The CMS catalog database name is always added at registration time.
     /// </summary>
-    public string[] AdditionalProtectedDatabaseNames { get; set; } = [];
+    public string[]? AdditionalProtectedDatabaseNames { get; set; } = [];
 
-    /// <summary>Absolute path of the trust policy JSON in the delivered schema (F-P5, D-4).</summary>
+    /// <summary>Path of the trust policy JSON in the delivered schema (F-P5, D-4); fully qualified on the CMS host.</summary>
     public string? TrustPolicyPath { get; set; }
 
-    /// <summary>Absolute path of the read-only directory holding the allowlisted packages and their sibling attestations (D-3).</summary>
+    /// <summary>Path of the read-only directory holding the allowlisted packages and their sibling attestations (D-3); fully qualified on the CMS host.</summary>
     public string? ArtifactDirectory { get; set; }
 
     /// <summary>
     /// The allowlist: exactly the two entries <c>Minimal</c> and <c>Sample</c>, keyed by wire value
     /// (case-sensitive), each naming one package id and version (AC 3).
     /// </summary>
-    public Dictionary<string, TemplateAllowlistEntry> Templates { get; set; } = new(StringComparer.Ordinal);
+    public Dictionary<string, TemplateAllowlistEntry?>? Templates { get; set; } = new(StringComparer.Ordinal);
 
     /// <summary>What both allowlisted manifests must declare (D-20).</summary>
-    public CompatibilityExpectations Compatibility { get; set; } = new();
+    public CompatibilityExpectations? Compatibility { get; set; } = new();
 
     /// <summary>Bound for one <c>psql</c> replay or one <c>RESTORE</c>.</summary>
     public TimeSpan RestoreTimeout { get; set; } = TimeSpan.FromMinutes(30);
@@ -77,9 +79,9 @@ public sealed class DmsDataStoreProvisioningOptions
     /// <summary>Bounded cleanup retries (6.11).</summary>
     public int CleanupAttempts { get; set; } = 3;
 
-    public PostgresqlOptions Postgresql { get; set; } = new();
+    public PostgresqlOptions? Postgresql { get; set; } = new();
 
-    public MssqlOptions Mssql { get; set; } = new();
+    public MssqlOptions? Mssql { get; set; } = new();
 
     public sealed class TemplateAllowlistEntry
     {
@@ -97,7 +99,7 @@ public sealed class DmsDataStoreProvisioningOptions
         public string? EffectiveSchemaHash { get; set; }
 
         /// <summary>The exact resource-schema set the deployment serves; must include <c>edfi</c>.</summary>
-        public string[] Projects { get; set; } = [];
+        public string[]? Projects { get; set; } = [];
 
         /// <summary>When set, both manifests must match.</summary>
         public string? ApiSchemaFormatVersion { get; set; }
@@ -108,7 +110,7 @@ public sealed class DmsDataStoreProvisioningOptions
 
     public sealed class PostgresqlOptions
     {
-        /// <summary>The <c>psql</c> executable; probed at startup (D-9).</summary>
+        /// <summary>The <c>psql</c> executable, fully qualified on the CMS host; probed at startup (D-9).</summary>
         public string? PsqlPath { get; set; } = "/usr/bin/psql";
 
         /// <summary>The lowest <c>psql</c> major version accepted (D-9).</summary>
@@ -117,10 +119,10 @@ public sealed class DmsDataStoreProvisioningOptions
 
     public sealed class MssqlOptions
     {
-        /// <summary>CMS-side staging directory, owned by the CMS process user, mode <c>2750</c> (D-18).</summary>
+        /// <summary>CMS-side staging directory, fully qualified on the CMS host, owned by the CMS process user, mode <c>2750</c> (D-18).</summary>
         public string? StagingPath { get; set; }
 
-        /// <summary>The same directory as the SQL Server host sees it.</summary>
+        /// <summary>The same directory as the SQL Server host sees it, in that host's path convention.</summary>
         public string? StagingServerPath { get; set; }
 
         /// <summary>Octal mode for every staged file and the probe (Unix only); no group or other write bits.</summary>

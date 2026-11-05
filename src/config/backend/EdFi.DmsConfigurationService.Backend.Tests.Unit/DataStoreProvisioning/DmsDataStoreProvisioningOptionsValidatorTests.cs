@@ -19,6 +19,10 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
 
     private const string ValidHash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
+    /// <summary>A path that is fully qualified under the test host's own rules, whichever platform runs the tests.</summary>
+    private static string LocalPath(string leaf) =>
+        Path.GetFullPath(Path.Combine(Path.GetTempPath(), "dms-1438-validator-tests", leaf));
+
     private static ValidateOptionsResult Validate(
         DmsDataStoreProvisioningOptions options,
         ISecretResolver? secretResolver = null
@@ -31,8 +35,9 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
             Provider = PostgresqlProvider,
             AdminConnectionString = "Host=db.internal;Port=5432;Username=cms_admin;Password=pw;Pooling=false",
             AdditionalProtectedDatabaseNames = ["EdFi_Admin"],
-            TrustPolicyPath = "/etc/dms/template-trust-policy.json",
-            ArtifactDirectory = "/var/lib/dms/templates",
+            TrustPolicyPath = LocalPath("template-trust-policy.json"),
+            ArtifactDirectory = LocalPath("templates"),
+            Postgresql = new() { PsqlPath = LocalPath("psql") },
             Templates = new(StringComparer.Ordinal)
             {
                 ["Minimal"] = new()
@@ -60,11 +65,11 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
         options.Provider = MssqlProvider;
         options.AdminConnectionString =
             "Server=db.internal,1433;User Id=sa;Password=pw;TrustServerCertificate=true";
-        options.Templates["Minimal"].PackageId = "EdFi.Api.Minimal.Template.MsSql.5.2.0";
-        options.Templates["Sample"].PackageId = "EdFi.Api.Populated.Template.MsSql.5.2.0";
+        options.Templates!["Minimal"]!.PackageId = "EdFi.Api.Minimal.Template.MsSql.5.2.0";
+        options.Templates!["Sample"]!.PackageId = "EdFi.Api.Populated.Template.MsSql.5.2.0";
         options.Mssql = new()
         {
-            StagingPath = "/var/opt/dms-template-staging",
+            StagingPath = LocalPath("staging"),
             StagingServerPath = "/var/opt/dms-template-staging",
             StagingFileMode = "0640",
         };
@@ -101,11 +106,11 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
             _options.SessionTerminationTimeout.Should().Be(TimeSpan.FromSeconds(30));
             _options.OutcomeResolutionAttempts.Should().Be(3);
             _options.CleanupAttempts.Should().Be(3);
-            _options.Postgresql.PsqlPath.Should().Be("/usr/bin/psql");
-            _options.Postgresql.MinimumPsqlMajorVersion.Should().Be(18);
-            _options.Mssql.StagingFileMode.Should().Be("0640");
-            _options.AdditionalProtectedDatabaseNames.Should().BeEmpty();
-            _options.Templates.Should().BeEmpty();
+            _options.Postgresql!.PsqlPath.Should().Be("/usr/bin/psql");
+            _options.Postgresql!.MinimumPsqlMajorVersion.Should().Be(18);
+            _options.Mssql!.StagingFileMode.Should().Be("0640");
+            _options.AdditionalProtectedDatabaseNames!.Should().BeEmpty();
+            _options.Templates!.Should().BeEmpty();
         }
     }
 
@@ -210,18 +215,18 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
                 ["AdminConnectionString"] = options => options.AdminConnectionString = " ",
                 ["TrustPolicyPath"] = options => options.TrustPolicyPath = null,
                 ["ArtifactDirectory"] = options => options.ArtifactDirectory = "",
-                ["Templates:Minimal:PackageId"] = options => options.Templates["Minimal"].PackageId = null,
+                ["Templates:Minimal:PackageId"] = options => options.Templates!["Minimal"]!.PackageId = null,
                 ["Templates:Minimal:PackageVersion"] = options =>
-                    options.Templates["Minimal"].PackageVersion = " ",
-                ["Templates:Sample:PackageId"] = options => options.Templates["Sample"].PackageId = "",
+                    options.Templates!["Minimal"]!.PackageVersion = " ",
+                ["Templates:Sample:PackageId"] = options => options.Templates!["Sample"]!.PackageId = "",
                 ["Templates:Sample:PackageVersion"] = options =>
-                    options.Templates["Sample"].PackageVersion = null,
+                    options.Templates!["Sample"]!.PackageVersion = null,
                 ["Compatibility:DataStandardVersion"] = options =>
-                    options.Compatibility.DataStandardVersion = null,
+                    options.Compatibility!.DataStandardVersion = null,
                 ["Compatibility:EffectiveSchemaHash"] = options =>
-                    options.Compatibility.EffectiveSchemaHash = "",
-                ["Compatibility:Projects"] = options => options.Compatibility.Projects = [],
-                ["Postgresql:PsqlPath"] = options => options.Postgresql.PsqlPath = null,
+                    options.Compatibility!.EffectiveSchemaHash = "",
+                ["Compatibility:Projects"] = options => options.Compatibility!.Projects = [],
+                ["Postgresql:PsqlPath"] = options => options.Postgresql!.PsqlPath = null,
             };
 
             foreach ((string key, Action<DmsDataStoreProvisioningOptions> remove) in removals)
@@ -233,9 +238,9 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
 
             Dictionary<string, Action<DmsDataStoreProvisioningOptions>> mssqlRemovals = new()
             {
-                ["Mssql:StagingPath"] = options => options.Mssql.StagingPath = null,
-                ["Mssql:StagingServerPath"] = options => options.Mssql.StagingServerPath = " ",
-                ["Mssql:StagingFileMode"] = options => options.Mssql.StagingFileMode = null,
+                ["Mssql:StagingPath"] = options => options.Mssql!.StagingPath = null,
+                ["Mssql:StagingServerPath"] = options => options.Mssql!.StagingServerPath = " ",
+                ["Mssql:StagingFileMode"] = options => options.Mssql!.StagingFileMode = null,
             };
 
             foreach ((string key, Action<DmsDataStoreProvisioningOptions> remove) in mssqlRemovals)
@@ -422,7 +427,7 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
             )
             {
                 DmsDataStoreProvisioningOptions options = ValidPostgresql();
-                options.Templates["Minimal"].PackageId = id;
+                options.Templates!["Minimal"]!.PackageId = id;
                 _ids[id] = Failures(options);
             }
 
@@ -440,7 +445,7 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
             )
             {
                 DmsDataStoreProvisioningOptions options = ValidPostgresql();
-                options.Templates["Minimal"].PackageVersion = version;
+                options.Templates!["Minimal"]!.PackageVersion = version;
                 _versions[version] = Failures(options);
             }
         }
@@ -518,20 +523,20 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
         public void Setup()
         {
             DmsDataStoreProvisioningOptions same = ValidPostgresql();
-            same.Templates["Sample"].PackageId = "edfi.api.minimal.template.postgresql.5.2.0";
+            same.Templates!["Sample"]!.PackageId = "edfi.api.minimal.template.postgresql.5.2.0";
             _sameIdAndVersion = Failures(same);
 
             DmsDataStoreProvisioningOptions sameId = ValidPostgresql();
-            sameId.Templates["Sample"].PackageId = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0";
-            sameId.Templates["Sample"].PackageVersion = "1.0.336";
+            sameId.Templates!["Sample"]!.PackageId = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0";
+            sameId.Templates!["Sample"]!.PackageVersion = "1.0.336";
             _sameIdDifferentVersion = Failures(sameId);
 
             DmsDataStoreProvisioningOptions suffix = ValidPostgresql();
-            suffix.Templates["Sample"].PackageId = "EdFi.Api.Populated.Template.PostgreSql.6.1.0";
+            suffix.Templates!["Sample"]!.PackageId = "EdFi.Api.Populated.Template.PostgreSql.6.1.0";
             _dataStandardSuffixMismatch = Failures(suffix);
 
             DmsDataStoreProvisioningOptions extra = ValidPostgresql();
-            extra.Templates["Custom"] = new()
+            extra.Templates!["Custom"] = new()
             {
                 PackageId = "EdFi.Api.Custom.5.2.0",
                 PackageVersion = "1.0.0",
@@ -539,13 +544,13 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
             _extraEntry = Failures(extra);
 
             DmsDataStoreProvisioningOptions missing = ValidPostgresql();
-            missing.Templates.Remove("Sample");
+            missing.Templates!.Remove("Sample");
             _missingSample = Failures(missing);
 
             DmsDataStoreProvisioningOptions lowercase = ValidPostgresql();
-            TemplateAllowlistEntry sample = lowercase.Templates["Sample"];
-            lowercase.Templates.Remove("Sample");
-            lowercase.Templates["sample"] = sample;
+            TemplateAllowlistEntry? sample = lowercase.Templates!["Sample"];
+            lowercase.Templates!.Remove("Sample");
+            lowercase.Templates!["sample"] = sample;
             _lowercaseKey = Failures(lowercase);
         }
 
@@ -606,20 +611,20 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
         {
             Dictionary<string, Action<DmsDataStoreProvisioningOptions>> cases = new()
             {
-                ["ds not dotted"] = o => o.Compatibility.DataStandardVersion = "5",
-                ["ds with letters"] = o => o.Compatibility.DataStandardVersion = "5.2.0-pre",
-                ["hash uppercase"] = o => o.Compatibility.EffectiveSchemaHash = ValidHash.ToUpperInvariant(),
-                ["hash short"] = o => o.Compatibility.EffectiveSchemaHash = ValidHash[..63],
-                ["projects without edfi"] = o => o.Compatibility.Projects = ["tpdm"],
-                ["projects duplicated by case"] = o => o.Compatibility.Projects = ["edfi", "EdFi"],
-                ["projects blank entry"] = o => o.Compatibility.Projects = ["edfi", " "],
-                ["projects uppercase edfi"] = o => o.Compatibility.Projects = ["EDFI"],
-                ["format version blank"] = o => o.Compatibility.ApiSchemaFormatVersion = " ",
-                ["mapping version blank"] = o => o.Compatibility.RelationalMappingVersion = "",
+                ["ds not dotted"] = o => o.Compatibility!.DataStandardVersion = "5",
+                ["ds with letters"] = o => o.Compatibility!.DataStandardVersion = "5.2.0-pre",
+                ["hash uppercase"] = o => o.Compatibility!.EffectiveSchemaHash = ValidHash.ToUpperInvariant(),
+                ["hash short"] = o => o.Compatibility!.EffectiveSchemaHash = ValidHash[..63],
+                ["projects without edfi"] = o => o.Compatibility!.Projects = ["tpdm"],
+                ["projects duplicated by case"] = o => o.Compatibility!.Projects = ["edfi", "EdFi"],
+                ["projects blank entry"] = o => o.Compatibility!.Projects = ["edfi", " "],
+                ["projects uppercase edfi"] = o => o.Compatibility!.Projects = ["EDFI"],
+                ["format version blank"] = o => o.Compatibility!.ApiSchemaFormatVersion = " ",
+                ["mapping version blank"] = o => o.Compatibility!.RelationalMappingVersion = "",
                 ["format and mapping set"] = o =>
                 {
-                    o.Compatibility.ApiSchemaFormatVersion = "1.0.0";
-                    o.Compatibility.RelationalMappingVersion = "v3";
+                    o.Compatibility!.ApiSchemaFormatVersion = "1.0.0";
+                    o.Compatibility!.RelationalMappingVersion = "v3";
                 },
             };
 
@@ -858,14 +863,17 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
         [SetUp]
         public void Setup()
         {
+            string otherConventionLocal = OperatingSystem.IsWindows()
+                ? "/var/lib/dms/templates"
+                : @"C:\dms\templates";
             Dictionary<string, Action<DmsDataStoreProvisioningOptions>> cases = new()
             {
                 ["relative trust policy"] = o => o.TrustPolicyPath = "config/trust.json",
                 ["relative artifact directory"] = o => o.ArtifactDirectory = "templates",
-                ["relative psql"] = o => o.Postgresql.PsqlPath = "psql",
-                ["windows artifact directory"] = o => o.ArtifactDirectory = @"C:\dms\templates",
-                ["unc artifact directory"] = o => o.ArtifactDirectory = @"\\fileserver\dms\templates",
-                ["psql major below one"] = o => o.Postgresql.MinimumPsqlMajorVersion = 0,
+                ["relative psql"] = o => o.Postgresql!.PsqlPath = "psql",
+                ["other convention artifact directory"] = o => o.ArtifactDirectory = otherConventionLocal,
+                ["host qualified artifact directory"] = o => o.ArtifactDirectory = LocalPath("elsewhere"),
+                ["psql major below one"] = o => o.Postgresql!.MinimumPsqlMajorVersion = 0,
                 ["blank protected name"] = o => o.AdditionalProtectedDatabaseNames = ["EdFi_Admin", ""],
             };
 
@@ -876,48 +884,94 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
                 _failures[label] = Failures(options);
             }
 
-            DmsDataStoreProvisioningOptions relativeStaging = ValidMssql();
-            relativeStaging.Mssql.StagingPath = "staging";
-            _failures["relative staging"] = Failures(relativeStaging);
+            Dictionary<string, Action<DmsDataStoreProvisioningOptions>> mssqlCases = new()
+            {
+                ["relative staging"] = o => o.Mssql!.StagingPath = "staging",
+                ["other convention staging"] = o => o.Mssql!.StagingPath = otherConventionLocal,
+                ["windows server path"] = o => o.Mssql!.StagingServerPath = @"D:\dms-staging",
+                ["unix server path"] = o => o.Mssql!.StagingServerPath = "/var/opt/dms-template-staging",
+                ["unc server path"] = o => o.Mssql!.StagingServerPath = @"\\fileserver\dms-staging",
+                ["relative server path"] = o => o.Mssql!.StagingServerPath = "staging",
+            };
 
-            DmsDataStoreProvisioningOptions windowsServerPath = ValidMssql();
-            windowsServerPath.Mssql.StagingServerPath = @"D:\dms-staging";
-            _failures["windows server path"] = Failures(windowsServerPath);
+            foreach ((string label, Action<DmsDataStoreProvisioningOptions> mutate) in mssqlCases)
+            {
+                DmsDataStoreProvisioningOptions options = ValidMssql();
+                mutate(options);
+                _failures[label] = Failures(options);
+            }
         }
 
         [Test]
-        public void It_requires_absolute_paths()
+        public void It_requires_local_paths_to_be_fully_qualified_on_the_host()
         {
             using AssertionScope scope = new();
             _failures["relative trust policy"]
                 .Should()
                 .ContainSingle()
                 .Which.Should()
-                .Be($"{Section}:TrustPolicyPath must be an absolute path.");
+                .Be(
+                    $"{Section}:TrustPolicyPath must be a fully qualified path on the Configuration Service host."
+                );
             _failures["relative artifact directory"]
                 .Should()
                 .ContainSingle()
                 .Which.Should()
-                .Be($"{Section}:ArtifactDirectory must be an absolute path.");
+                .Be(
+                    $"{Section}:ArtifactDirectory must be a fully qualified path on the Configuration Service host."
+                );
             _failures["relative psql"]
                 .Should()
                 .ContainSingle()
                 .Which.Should()
-                .Be($"{Section}:Postgresql:PsqlPath must be an absolute path.");
+                .Be(
+                    $"{Section}:Postgresql:PsqlPath must be a fully qualified path on the Configuration Service host."
+                );
             _failures["relative staging"]
                 .Should()
                 .ContainSingle()
                 .Which.Should()
-                .Be($"{Section}:Mssql:StagingPath must be an absolute path.");
+                .Be(
+                    $"{Section}:Mssql:StagingPath must be a fully qualified path on the Configuration Service host."
+                );
         }
 
         [Test]
-        public void It_accepts_windows_and_unc_absolute_paths_regardless_of_platform()
+        public void It_rejects_a_local_path_in_the_other_platforms_convention()
         {
-            _failures["windows artifact directory"].Should().BeEmpty();
-            _failures["unc artifact directory"].Should().BeEmpty();
-            _failures["windows server path"].Should().BeEmpty();
+            _failures["other convention artifact directory"]
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .StartWith($"{Section}:ArtifactDirectory must be a fully qualified path");
+            _failures["other convention staging"]
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .StartWith($"{Section}:Mssql:StagingPath must be a fully qualified path");
         }
+
+        [Test]
+        public void It_accepts_a_host_qualified_local_path() =>
+            _failures["host qualified artifact directory"].Should().BeEmpty();
+
+        [Test]
+        public void It_accepts_server_paths_in_either_convention()
+        {
+            _failures["windows server path"].Should().BeEmpty();
+            _failures["unix server path"].Should().BeEmpty();
+            _failures["unc server path"].Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_rejects_a_relative_server_path() =>
+            _failures["relative server path"]
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(
+                    $"{Section}:Mssql:StagingServerPath must be an absolute path in the database server's convention."
+                );
 
         [Test]
         public void It_requires_a_positive_psql_major_floor() =>
@@ -963,7 +1017,7 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
             )
             {
                 DmsDataStoreProvisioningOptions options = ValidMssql();
-                options.Mssql.StagingFileMode = mode;
+                options.Mssql!.StagingFileMode = mode;
                 _failures[mode] = Failures(options);
             }
         }
@@ -1044,13 +1098,13 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
             options.Provider = PostgresqlProvider;
             options.TrustPolicyPath = PathValue;
             options.ArtifactDirectory = PathValue;
-            options.Postgresql.PsqlPath = PathValue;
-            options.Templates["Minimal"].PackageId = PackageId;
-            options.Templates["Sample"].PackageVersion = Version;
-            options.Compatibility.EffectiveSchemaHash = Hash;
-            options.Compatibility.DataStandardVersion = Version;
-            options.Compatibility.Projects = [Project, Project];
-            options.Mssql.StagingFileMode = Mode;
+            options.Postgresql!.PsqlPath = PathValue;
+            options.Templates!["Minimal"]!.PackageId = PackageId;
+            options.Templates!["Sample"]!.PackageVersion = Version;
+            options.Compatibility!.EffectiveSchemaHash = Hash;
+            options.Compatibility!.DataStandardVersion = Version;
+            options.Compatibility!.Projects = [Project, Project];
+            options.Mssql!.StagingFileMode = Mode;
             options.RestoreTimeout = TimeSpan.FromDays(1);
             _failures = Failures(options);
         }
@@ -1080,5 +1134,191 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
         [Test]
         public void It_names_the_section_in_every_message() =>
             _failures.Should().OnlyContain(message => message.StartsWith(Section + ":"));
+    }
+
+    [TestFixture]
+    public class Given_null_sections_entries_and_collections
+    {
+        private readonly Dictionary<string, string[]> _failures = [];
+        private ValidateOptionsResult _disabledWithNulls = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            Dictionary<string, Action<DmsDataStoreProvisioningOptions>> cases = new()
+            {
+                ["null Minimal entry"] = o => o.Templates!["Minimal"] = null,
+                ["null Templates"] = o => o.Templates = null,
+                ["null Compatibility"] = o => o.Compatibility = null,
+                ["null Projects"] = o => o.Compatibility!.Projects = null,
+                ["null project element"] = o => o.Compatibility!.Projects = ["edfi", null!],
+                ["null Postgresql"] = o => o.Postgresql = null,
+                ["null protected names"] = o => o.AdditionalProtectedDatabaseNames = null,
+                ["null protected element"] = o => o.AdditionalProtectedDatabaseNames = [null!],
+            };
+
+            foreach ((string label, Action<DmsDataStoreProvisioningOptions> mutate) in cases)
+            {
+                DmsDataStoreProvisioningOptions options = ValidPostgresql();
+                mutate(options);
+                _failures[label] = Failures(options);
+            }
+
+            DmsDataStoreProvisioningOptions nullMssql = ValidMssql();
+            nullMssql.Mssql = null;
+            _failures["null Mssql"] = Failures(nullMssql);
+
+            _disabledWithNulls = Validate(
+                new DmsDataStoreProvisioningOptions
+                {
+                    Enabled = false,
+                    Templates = null,
+                    Compatibility = null,
+                    Postgresql = null,
+                    Mssql = null,
+                    AdditionalProtectedDatabaseNames = null,
+                }
+            );
+        }
+
+        [Test]
+        public void It_reports_a_null_allowlist_entry_as_required() =>
+            _failures["null Minimal entry"]
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be($"{Section}:Templates:Minimal is required.");
+
+        [Test]
+        public void It_reports_a_null_templates_section() =>
+            _failures["null Templates"]
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be($"{Section}:Templates must define exactly the entries Minimal and Sample.");
+
+        [Test]
+        public void It_reports_a_null_compatibility_section() =>
+            _failures["null Compatibility"]
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be($"{Section}:Compatibility is required.");
+
+        [Test]
+        public void It_reports_null_projects_as_required() =>
+            _failures["null Projects"]
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be($"{Section}:Compatibility:Projects is required.");
+
+        [Test]
+        public void It_treats_a_null_project_element_as_blank() =>
+            _failures["null project element"]
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be($"{Section}:Compatibility:Projects must not contain blank entries.");
+
+        [Test]
+        public void It_reports_a_null_provider_section()
+        {
+            _failures["null Postgresql"]
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be($"{Section}:Postgresql is required.");
+            _failures["null Mssql"]
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be($"{Section}:Mssql is required.");
+        }
+
+        [Test]
+        public void It_treats_null_protected_names_as_none() =>
+            _failures["null protected names"].Should().BeEmpty();
+
+        [Test]
+        public void It_treats_a_null_protected_element_as_blank() =>
+            _failures["null protected element"]
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be($"{Section}:AdditionalProtectedDatabaseNames must not contain blank entries.");
+
+        [Test]
+        public void It_keeps_the_disabled_short_circuit_with_null_sections() =>
+            _disabledWithNulls.Succeeded.Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_values_with_a_trailing_line_break
+    {
+        private readonly Dictionary<string, string[]> _failures = [];
+
+        /// <summary>The grammar rule each field must report, not a later rule that happens to fail as well.</summary>
+        private static readonly Dictionary<string, string> _expectedRule = new()
+        {
+            ["Provider"] = "must be exactly postgresql or mssql.",
+            ["Templates:Minimal:PackageId"] =
+                "must match the NuGet package id grammar and be at most 100 characters.",
+            ["Templates:Minimal:PackageVersion"] =
+                "must be a three- or four-part numeric version with an optional prerelease suffix.",
+            ["Compatibility:DataStandardVersion"] = "must be a dotted numeric version such as 5.2.0.",
+            ["Compatibility:EffectiveSchemaHash"] = "must be 64 lowercase hexadecimal characters.",
+            ["Mssql:StagingFileMode"] = "must be three or four octal digits such as 0640.",
+        };
+
+        [SetUp]
+        public void Setup()
+        {
+            foreach ((string ending, string suffix) in new[] { ("LF", "\n"), ("CRLF", "\r\n") })
+            {
+                Dictionary<string, Action<DmsDataStoreProvisioningOptions>> cases = new()
+                {
+                    ["Provider"] = o => o.Provider = "postgresql" + suffix,
+                    ["Templates:Minimal:PackageId"] = o =>
+                        o.Templates!["Minimal"]!.PackageId =
+                            "EdFi.Api.Minimal.Template.PostgreSql.5.2.0" + suffix,
+                    ["Templates:Minimal:PackageVersion"] = o =>
+                        o.Templates!["Minimal"]!.PackageVersion = "1.0.335" + suffix,
+                    ["Compatibility:DataStandardVersion"] = o =>
+                        o.Compatibility!.DataStandardVersion = "5.2.0" + suffix,
+                    ["Compatibility:EffectiveSchemaHash"] = o =>
+                        o.Compatibility!.EffectiveSchemaHash = ValidHash + suffix,
+                };
+
+                foreach ((string key, Action<DmsDataStoreProvisioningOptions> mutate) in cases)
+                {
+                    DmsDataStoreProvisioningOptions options = ValidPostgresql();
+                    mutate(options);
+                    _failures[$"{ending} {key}"] = Failures(options);
+                }
+
+                DmsDataStoreProvisioningOptions mssql = ValidMssql();
+                mssql.Mssql!.StagingFileMode = "0640" + suffix;
+                _failures[$"{ending} Mssql:StagingFileMode"] = Failures(mssql);
+            }
+        }
+
+        [Test]
+        public void It_rejects_each_constrained_field_with_lf_or_crlf()
+        {
+            using AssertionScope scope = new();
+            foreach ((string label, string[] failures) in _failures)
+            {
+                string key = label[(label.IndexOf(' ') + 1)..];
+                failures
+                    .Should()
+                    .ContainSingle("{0}", label)
+                    .Which.Should()
+                    .Be($"{Section}:{key} {_expectedRule[key]}");
+            }
+        }
+
+        [Test]
+        public void It_covers_both_endings_for_every_field() => _failures.Should().HaveCount(12);
     }
 }
