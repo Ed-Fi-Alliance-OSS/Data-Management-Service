@@ -1620,10 +1620,6 @@ Describe "the validation record" {
             $script:text | Should -Not -Match [char]0x2014
         }
 
-        It "has no scoping section when the results carry no note" {
-            $script:text | Should -Not -Match "Scope of this run"
-        }
-
         It "is byte-identical when generated twice" {
             (& $script:render @($script:pgFolder)) | Should -BeExactly $script:text
         }
@@ -1631,14 +1627,8 @@ Describe "the validation record" {
 
     Context "both engines" {
         BeforeAll {
-            $script:mssqlNote = [ordered]@{
-                reference       = "DMS-1611"
-                statement       = "This lane ran without descriptors."
-                evidence        = "A baseline publish with the opt-out answered 500 to 229 descriptor count reads and exited 2."
-                provenElsewhere = "Descriptor reads from a SQL Server snapshot are proven directly elsewhere."
-            }
             $script:pg = & $script:newRunFolder "postgresql" $script:both $null
-            $script:ms = & $script:newRunFolder "mssql" $script:both { param($c) $c.Details["scopingNote"] = @($script:mssqlNote) }
+            $script:ms = & $script:newRunFolder "mssql" $script:both $null
             $script:bothText = & $script:render @($script:ms, $script:pg)
         }
 
@@ -1651,15 +1641,6 @@ Describe "the validation record" {
             (& $script:rowOf $script:bothText 6) | Should -Match "\| PASS \|"
         }
 
-        It "reads the scoping note from the results and only for the engine that carries it" {
-            $script:bothText | Should -Match "### Scope of this run"
-            $script:bothText | Should -Match "This lane ran without descriptors\. \(DMS-1611\)"
-            $script:bothText | Should -Match "229 descriptor count reads and exited 2"
-            $script:bothText | Should -Match "proven directly elsewhere"
-            ([regex]::Matches($script:bothText, "### Scope of this run")).Count | Should -Be 1
-            $script:bothText | Should -Match "scoped run, see Scope of this run"
-        }
-
         It "refuses runs that advertise different DMS versions" {
             $other = & $script:newRunFolder "mssql" $script:both { param($c) $c.Version = "8.2.0" }
             { & $script:render @($script:pg, $other) } | Should -Throw "*different DMS versions*"
@@ -1670,7 +1651,7 @@ Describe "the validation record" {
         }
     }
 
-    Context "a published-image run with a failed SQL Server probe" {
+    Context "a published-image run" {
         BeforeAll {
             $script:digest = "sha256:" + ("c" * 64)
             $script:csDigest = "sha256:" + ("d" * 64)
@@ -1685,14 +1666,8 @@ Describe "the validation record" {
                     ConfigurationServiceImageRevision = "5b8049c4c6854b68dfa7c9df96b1ef4cf8ffd189"
                 }
             }
-            $script:probeNote = New-InteropDescriptorScopingNote -ProbeStatusCode 500 -ProbeErrorText "The number of rows provided for a FETCH clause must be greater then zero." -ResourceCount 229 -DescriptorCount 3187 -TargetCount 2
             $script:pubPg = & $script:newRunFolder "postgresql" $script:both $script:published
-            $script:pubMs = & $script:newRunFolder "mssql" $script:both {
-                param($c)
-                & $script:published $c
-                $c.Details["scopingNote"] = @($script:probeNote)
-                $c.Details["descriptorProbe"] = [ordered]@{ path = "/data/ed-fi/gradeLevelDescriptors?limit=0&totalCount=true"; statusCode = 500; outcome = "Failed"; includeDescriptors = $false }
-            }
+            $script:pubMs = & $script:newRunFolder "mssql" $script:both $script:published
             $script:pubText = & $script:render @($script:pubPg, $script:pubMs)
         }
 
@@ -1705,31 +1680,6 @@ Describe "the validation record" {
 
         It "rebuilds the published command from the manifest" {
             $script:pubText | Should -Match "-DmsImageTag 8\.1\.0-beta2\.23 -ConfigurationServiceImage edfialliance/ed-fi-api-configuration-service@$($script:csDigest)"
-        }
-
-        It "renders the probe status, the DMS error text, the pre-seed counts, and the DMS-1611 reference" {
-            $script:pubText | Should -Match "### Scope of this run"
-            $script:pubText | Should -Match "\(DMS-1611\)"
-            $script:pubText | Should -Match "GET /data/ed-fi/gradeLevelDescriptors\?limit=0&totalCount=true against the source primary answered 500"
-            $script:pubText | Should -Match "must be greater then zero"
-            $script:pubText | Should -Match "copied 3187 descriptors from 229 resources into each of 2 targets"
-        }
-
-        It "leaves the PostgreSQL lane unscoped and writes no probe section" {
-            ([regex]::Matches($script:pubText, "### Scope of this run")).Count | Should -Be 1
-            $script:pubText | Should -Not -Match "### Descriptor probe"
-        }
-
-        It "records a passed probe as a probe section and no scoping note" {
-            $passed = & $script:newRunFolder "mssql" $script:both {
-                param($c)
-                & $script:published $c
-                $c.Details["descriptorProbe"] = [ordered]@{ path = "/data/ed-fi/gradeLevelDescriptors?limit=0&totalCount=true"; statusCode = 200; outcome = "Passed"; includeDescriptors = $true }
-            }
-            $text = & $script:render @($passed)
-            $text | Should -Match "### Descriptor probe"
-            $text | Should -Match "answered 200, so the lane published descriptors"
-            $text | Should -Not -Match "### Scope of this run"
         }
     }
 
@@ -1986,137 +1936,15 @@ Describe "Start-InteropStack with published images" {
     }
 }
 
-Describe "the descriptor probe decision" {
-    It "scopes SQL Server when the probe answers 500" {
-        $scope = Resolve-InteropDescriptorScope -Engine mssql -ProbeStatusCode 500
-        $scope.Probed | Should -BeTrue
-        $scope.Scoped | Should -BeTrue
-        $scope.IncludeDescriptors | Should -BeFalse
-        $scope.Outcome | Should -Be "Failed"
-    }
-
-    It "runs SQL Server with descriptors when the probe answers 200" {
-        $scope = Resolve-InteropDescriptorScope -Engine mssql -ProbeStatusCode 200
-        $scope.Scoped | Should -BeFalse
-        $scope.IncludeDescriptors | Should -BeTrue
-        $scope.Outcome | Should -Be "Passed"
-    }
-
-    It "never scopes PostgreSQL, whatever status it is given or not given" {
-        foreach ($status in $null, 200, 500) {
-            $scope = Resolve-InteropDescriptorScope -Engine postgresql -ProbeStatusCode $status
-            $scope.Probed | Should -BeFalse
-            $scope.Scoped | Should -BeFalse
-            $scope.IncludeDescriptors | Should -BeTrue
-        }
-    }
-
-    It "stops on any other SQL Server status, rather than guessing" {
-        foreach ($status in 204, 400, 401, 403, 404, 429, 502, 503) {
-            { Resolve-InteropDescriptorScope -Engine mssql -ProbeStatusCode $status } | Should -Throw "*neither the 500 of the known defect nor a 200*"
-        }
-    }
-
-    It "stops on SQL Server when no probe status was given" {
-        { Resolve-InteropDescriptorScope -Engine mssql } | Should -Throw "*needs the descriptor probe status*"
-    }
-
-    It "chooses --includeDescriptors=true exactly when descriptors are published" {
-        Get-InteropPublisherDescriptorOption -IncludeDescriptors $true | Should -Be @("--includeDescriptors=true")
-        @(Get-InteropPublisherDescriptorOption -IncludeDescriptors $false).Count | Should -Be 0
-    }
-
-    It "feeds the option choice from the decision, so a 500 drops the option and a 200 keeps it" {
-        $scoped = Resolve-InteropDescriptorScope -Engine mssql -ProbeStatusCode 500
-        $passed = Resolve-InteropDescriptorScope -Engine mssql -ProbeStatusCode 200
-        @(Get-InteropPublisherDescriptorOption -IncludeDescriptors $scoped.IncludeDescriptors).Count | Should -Be 0
-        @(Get-InteropPublisherDescriptorOption -IncludeDescriptors $passed.IncludeDescriptors) | Should -Be @("--includeDescriptors=true")
-    }
-}
-
-Describe "descriptor pre-seeding" {
-    It "lists descriptor collections only, in a stable order, with extensions included" {
-        $paths = @(
-            "/ed-fi/gradeLevelDescriptors", "/ed-fi/gradeLevelDescriptors/{id}", "/ed-fi/gradeLevelDescriptors/deletes",
-            "/tpdm/credentialTypeDescriptors", "/ed-fi/absenceEventCategoryDescriptors", "/ed-fi/schools", "/ed-fi/descriptors"
-        )
-        Get-InteropDescriptorResourcePath -SpecificationPath $paths | Should -Be @(
-            "/ed-fi/absenceEventCategoryDescriptors", "/ed-fi/gradeLevelDescriptors", "/tpdm/credentialTypeDescriptors"
-        )
-        @(Get-InteropDescriptorResourcePath -SpecificationPath @("/ed-fi/schools")).Count | Should -Be 0
-    }
-
-    It "drops the server-owned properties from a descriptor body and keeps the rest" {
-        $item = [pscustomobject]@{
-            id = "abc"; _etag = "1"; _lastModifiedDate = "2026-01-01T00:00:00Z"
-            codeValue = "Tenth Grade"; namespace = "uri://ed-fi.org/GradeLevelDescriptor"; shortDescription = "Tenth Grade"; _ext = @{ tpdm = @{ x = 1 } }
-        }
-        $body = ConvertTo-InteropDescriptorBody -Item $item
-        @($body.Keys) | Should -Be @("codeValue", "namespace", "shortDescription", "_ext")
-        $body["codeValue"] | Should -Be "Tenth Grade"
-    }
-
-    It "copies every page of every resource with a positive limit, and nothing without a descriptor path" {
-        $script:posts = [System.Collections.Generic.List[string]]::new()
-        $script:reads = [System.Collections.Generic.List[string]]::new()
-        Mock -ModuleName PublisherSnapshotInterop Invoke-InteropDmsRequest {
-            if ($Path -like "/metadata/specifications/descriptors-spec.json") {
-                return [pscustomobject]@{ paths = [pscustomobject]@{ "/ed-fi/aDescriptors" = 1; "/ed-fi/aDescriptors/{id}" = 1; "/ed-fi/bDescriptors" = 1 } }
-            }
-            if ($Method -eq "Post") { $null = $script:posts.Add($Path); return $null }
-            $null = $script:reads.Add($Path)
-            if ($Path -like "*aDescriptors?limit=500&offset=0") { return @(1..500 | ForEach-Object { [pscustomobject]@{ id = "$_"; codeValue = "c$_" } }) }
-            if ($Path -like "*aDescriptors?limit=500&offset=500") { return @(1..3 | ForEach-Object { [pscustomobject]@{ id = "$_"; codeValue = "d$_" } }) }
-            return @([pscustomobject]@{ id = "z"; codeValue = "z" })
-        }
-
-        $copied = Copy-InteropDescriptor -DmsUrl "http://x" -SourceToken "s" -TargetToken "t"
-
-        $copied.ResourceCount | Should -Be 2
-        $copied.DescriptorCount | Should -Be 504
-        $script:posts.Count | Should -Be 504
-        @($script:posts | Select-Object -Unique) | Should -Be @("/data/ed-fi/aDescriptors", "/data/ed-fi/bDescriptors")
-        @($script:reads | Where-Object { $_ -like "*limit=0*" }).Count | Should -Be 0
-    }
-
-    It "refuses to pre-seed from a specification with no descriptor collection" {
-        Mock -ModuleName PublisherSnapshotInterop Invoke-InteropDmsRequest { return [pscustomobject]@{ paths = [pscustomobject]@{ "/ed-fi/schools" = 1 } } }
-        { Copy-InteropDescriptor -DmsUrl "http://x" -SourceToken "s" -TargetToken "t" } | Should -Throw "*lists no descriptor collection*"
-    }
-
-    It "extracts the DMS error text from a problem body, and falls back to the raw start of anything else" {
-        Get-InteropProbeErrorText -Content '{"detail":"The number of rows provided for a FETCH clause must be greater then zero.","title":"System Error"}' |
-            Should -Be "The number of rows provided for a FETCH clause must be greater then zero. System Error"
-        Get-InteropProbeErrorText -Content '{"title":"System Error","errors":["boom"]}' | Should -Be "System Error boom"
-        Get-InteropProbeErrorText -Content '{"message":"The server encountered an unexpected condition.","traceId":"0HNQ:00000001"}' | Should -Be "The server encountered an unexpected condition."
-        Get-InteropProbeErrorText -Content "Internal Server Error" | Should -Be "Internal Server Error"
-        Get-InteropProbeErrorText -Content "" | Should -Be ""
-        (Get-InteropProbeErrorText -Content ("x" * 1000)).Length | Should -Be 300
-    }
-
-    It "builds a scoping note that carries the reference, probe status, error text, and counts" {
-        $note = New-InteropDescriptorScopingNote -ProbeStatusCode 500 -ProbeErrorText "FETCH clause" -ResourceCount 229 -DescriptorCount 3187 -TargetCount 2
-        $note["reference"] | Should -Be "DMS-1611"
-        $note["statement"] | Should -Match "without --includeDescriptors"
-        $note["evidence"] | Should -Match "limit=0&totalCount=true against the source primary answered 500 with the DMS error text `"FETCH clause`""
-        $note["evidence"] | Should -Match "copied 3187 descriptors from 229 resources into each of 2 targets"
-    }
-}
-
-Describe "Set-InteropSourceArrangement descriptor handling" {
+Describe "Set-InteropSourceArrangement baseline publishes" {
     BeforeAll {
         $script:arrangementCalls = [System.Collections.Generic.List[object]]::new()
         $script:runArrangement = {
-            param([bool]$IncludeDescriptors)
             $script:arrangementCalls.Clear()
             Mock -ModuleName PublisherSnapshotInterop Write-InteropStep {}
             Mock -ModuleName PublisherSnapshotInterop Invoke-InteropDmsWrite { return $null }
             Mock -ModuleName PublisherSnapshotInterop Get-InteropClassPeriod { return [pscustomobject]@{ id = [guid]::NewGuid().ToString() } }
             Mock -ModuleName PublisherSnapshotInterop Get-InteropClientToken { return "token-$($Client.Role)" }
-            Mock -ModuleName PublisherSnapshotInterop Copy-InteropDescriptor {
-                $null = $script:arrangementCalls.Add([pscustomobject]@{ Kind = "Copy"; Token = $TargetToken })
-                return [pscustomobject]@{ ResourceCount = 3; DescriptorCount = 30 }
-            }
             Mock -ModuleName PublisherSnapshotInterop Invoke-InteropPublisher {
                 $null = $script:arrangementCalls.Add([pscustomobject]@{ Kind = "Publish"; Name = $RunName; Option = @($Option) })
                 return [pscustomobject]@{ ExitCode = 0; Folder = "f" }
@@ -2132,38 +1960,18 @@ Describe "Set-InteropSourceArrangement descriptor handling" {
             $targetC = [pscustomobject]@{ Role = "target-c-writer" }
             Set-InteropSourceArrangement -DmsUrl "http://x" -CmsUrl "http://c" -AdminToken "a" -Engine mssql -EnvironmentValues @{} -RunFolder "r" -RunToken "t1" `
                 -SourceDataStoreId 1 -SourceReader $reader -TargetWriter $targetB -SourceWriterToken "w" -SourceReaderToken "rt" -PublisherImage "img" `
-                -AdditionalBaselineTargetWriter @($targetC) -IncludeDescriptors $IncludeDescriptors
+                -AdditionalBaselineTargetWriter @($targetC)
         }
     }
 
-    It "pre-seeds each target and publishes the baselines without --includeDescriptors when scoped" {
-        $arrangement = & $script:runArrangement $false
+    It "publishes every baseline with --ignoreIsolation=true and --includeDescriptors=true" {
+        $null = & $script:runArrangement
 
-        @($script:arrangementCalls | Where-Object Kind -EQ "Copy").Count | Should -Be 2
-        @($script:arrangementCalls | Where-Object Kind -EQ "Copy" | ForEach-Object Token) | Should -Be @("token-target-b-writer", "token-target-c-writer")
         $publishes = @($script:arrangementCalls | Where-Object Kind -EQ "Publish")
         $publishes.Count | Should -Be 2
         foreach ($publish in $publishes) {
-            $publish.Option | Should -Be @("--ignoreIsolation=true")
-        }
-        @($arrangement.DescriptorPreSeed).Count | Should -Be 2
-    }
-
-    It "pre-seeds before the first baseline publish, so the baseline never needs a descriptor the target lacks" {
-        $null = & $script:runArrangement $false
-        $script:arrangementCalls[0].Kind | Should -Be "Copy"
-        $firstPublish = $script:arrangementCalls.FindIndex({ param($c) $c.Kind -eq "Publish" })
-        @($script:arrangementCalls[0..($firstPublish - 1)] | Where-Object Kind -EQ "Copy").Count | Should -Be 2
-    }
-
-    It "publishes the baselines with --includeDescriptors=true and copies nothing when descriptors are included" {
-        $arrangement = & $script:runArrangement $true
-
-        @($script:arrangementCalls | Where-Object Kind -EQ "Copy").Count | Should -Be 0
-        foreach ($publish in @($script:arrangementCalls | Where-Object Kind -EQ "Publish")) {
             $publish.Option | Should -Be @("--ignoreIsolation=true", "--includeDescriptors=true")
         }
-        @($arrangement.DescriptorPreSeed).Count | Should -Be 0
     }
 }
 
@@ -2237,24 +2045,5 @@ Describe "New-InteropDataStore provisioning" {
 
         $thrown.Exception.Message | Should -Not -BeLike "*ran out of memory*"
         Should -Invoke -ModuleName PublisherSnapshotInterop Invoke-InteropScriptCaptured -Times 1 -Exactly
-    }
-}
-
-
-Describe "Get-InteropDmsExceptionText" {
-    BeforeAll {
-        $script:failedLine = '{"Level":"Error","RenderedMessage":"HttpRequestFailed: DMS core request failed: GET /ed-fi/x responded 500 in 109 ms with TraceId \"0HNQ:00000001\"","Exception":"Microsoft.Data.SqlClient.SqlException (0x80131904): The number of rows provided for a FETCH clause must be greater then zero.\n   at System.Foo()"}'
-    }
-
-    It "returns the first line of the exception message for the matching trace id" {
-        Get-InteropDmsExceptionText -Line @('{"Level":"Information"}', $script:failedLine) -TraceId "0HNQ:00000001" |
-            Should -Be "The number of rows provided for a FETCH clause must be greater then zero."
-    }
-
-    It "returns nothing for another trace id, a line without an exception, or an unparseable line" {
-        Get-InteropDmsExceptionText -Line @($script:failedLine) -TraceId "0HNQ:00000002" | Should -Be ""
-        Get-InteropDmsExceptionText -Line @('{"RenderedMessage":"TraceId 0HNQ:00000001"}') -TraceId "0HNQ:00000001" | Should -Be ""
-        Get-InteropDmsExceptionText -Line @("not json 0HNQ:00000001") -TraceId "0HNQ:00000001" | Should -Be ""
-        Get-InteropDmsExceptionText -Line @() -TraceId "0HNQ:00000001" | Should -Be ""
     }
 }

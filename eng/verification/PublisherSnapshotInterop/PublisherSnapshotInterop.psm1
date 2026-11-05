@@ -1614,309 +1614,6 @@ function Copy-InteropSchoolYear {
     return $items.Count
 }
 
-# The descriptor read the SQL Server lane probes with before it decides whether descriptors can be published.
-# Publisher v1.4.0 counts every descriptor resource with limit=0, and DMS answers that read with 500 on SQL Server
-# while the DMS-1611 defect is present (OFFSET ... FETCH NEXT 0 ROWS is invalid T-SQL).
-$script:DescriptorProbePath = "/data/ed-fi/gradeLevelDescriptors?limit=0&totalCount=true"
-$script:DescriptorPageSize = 500
-
-<#
-.SYNOPSIS
-    Decides whether the Publisher lane publishes descriptors, from the engine and the descriptor probe status.
-
-.DESCRIPTION
-    Only SQL Server is probed. PostgreSQL never scopes, whatever status a caller passes, because the defect is
-    SQL Server's. On SQL Server a 500 scopes the lane (no --includeDescriptors, targets pre-seeded), and a 200 runs
-    the lane with descriptors. Any other status stops the run: it is neither the known defect nor a healthy
-    answer, and guessing would either hide a new fault or publish through it.
-#>
-function Resolve-InteropDescriptorScope {
-    [CmdletBinding()]
-    [OutputType([pscustomobject])]
-    param(
-        [Parameter(Mandatory)]
-        [ValidateSet("postgresql", "mssql")]
-        [string]$Engine,
-
-        [Nullable[int]]$ProbeStatusCode = $null
-    )
-
-    if ($Engine -ne "mssql") {
-        return [pscustomobject]@{ Probed = $false; Scoped = $false; IncludeDescriptors = $true; Outcome = "NotProbed"; ProbeStatusCode = $null }
-    }
-    if ($null -eq $ProbeStatusCode) {
-        throw "The SQL Server lane needs the descriptor probe status before it can decide whether to publish descriptors."
-    }
-
-    switch ([int]$ProbeStatusCode) {
-        500 { return [pscustomobject]@{ Probed = $true; Scoped = $true; IncludeDescriptors = $false; Outcome = "Failed"; ProbeStatusCode = 500 } }
-        200 { return [pscustomobject]@{ Probed = $true; Scoped = $false; IncludeDescriptors = $true; Outcome = "Passed"; ProbeStatusCode = 200 } }
-        default { throw "The descriptor probe answered $ProbeStatusCode, which is neither the 500 of the known defect nor a 200. Investigate before running the lane." }
-    }
-}
-
-<#
-.SYNOPSIS
-    Returns the Publisher option that includes descriptors, or nothing when the lane is scoped without them.
-#>
-function Get-InteropPublisherDescriptorOption {
-    [CmdletBinding()]
-    [OutputType([string[]])]
-    param(
-        [Parameter(Mandatory)]
-        [bool]$IncludeDescriptors
-    )
-
-    if ($IncludeDescriptors) {
-        return [string[]]@("--includeDescriptors=true")
-    }
-
-    return [string[]]@()
-}
-
-<#
-.SYNOPSIS
-    Extracts the DMS error text from a problem response body, or the start of the body when it is not JSON.
-#>
-function Get-InteropProbeErrorText {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [AllowEmptyString()]
-        [string]$Content = ""
-    )
-
-    $body = $null
-    try { $body = ConvertFrom-Json -InputObject $Content -ErrorAction Stop } catch { $body = $null }
-
-    $texts = [System.Collections.Generic.List[string]]::new()
-    if ($body -is [pscustomobject]) {
-        foreach ($name in "detail", "title", "message") {
-            if ($null -ne $body.PSObject.Properties[$name] -and $body.PSObject.Properties[$name].Value) {
-                $texts.Add([string]$body.PSObject.Properties[$name].Value)
-            }
-        }
-        if ($null -ne $body.PSObject.Properties["errors"]) {
-            foreach ($entry in @($body.errors)) {
-                if ($entry) { $texts.Add([string]$entry) }
-            }
-        }
-    }
-
-    $text = (@($texts | Select-Object -Unique) -join " ").Trim()
-    if (-not $text) {
-        $text = $Content.Trim()
-    }
-    if ($text.Length -gt 300) {
-        $text = $text.Substring(0, 300)
-    }
-
-    return $text
-}
-
-<#
-.SYNOPSIS
-    Reads the exception text DMS logged for a failed request, by the request's trace id, from DMS JSON log lines.
-
-.DESCRIPTION
-    A DMS 500 answers with a generic message and a trace id; the cause is only in the DMS log, on the
-    HttpRequestFailed line that names the same trace id. Returns the first line of the exception message (the part
-    after the exception type), or an empty string when no line matches.
-#>
-function Get-InteropDmsExceptionText {
-    [CmdletBinding()]
-    [OutputType([string])]
-    param(
-        [AllowEmptyCollection()]
-        [string[]]$Line = @(),
-
-        [Parameter(Mandatory)]
-        [string]$TraceId
-    )
-
-    foreach ($text in $Line) {
-        if (-not $text -or -not $text.Contains($TraceId)) {
-            continue
-        }
-        $entry = $null
-        try { $entry = ConvertFrom-Json -InputObject $text -ErrorAction Stop } catch { continue }
-        if ($null -eq $entry.PSObject.Properties["Exception"] -or -not $entry.Exception) {
-            continue
-        }
-        $first = ([string]$entry.Exception -split "\r?\n")[0]
-        $cause = if ($first -match "^[A-Za-z0-9_.]+Exception(?: \(0x[0-9A-Fa-f]+\))?: (?<cause>.+)$") { $Matches["cause"] } else { $first }
-        return $cause.Trim()
-    }
-
-    return ""
-}
-
-<#
-.SYNOPSIS
-    Builds the scoping note the validation record renders for a SQL Server lane that ran without descriptors.
-#>
-function New-InteropDescriptorScopingNote {
-    [CmdletBinding()]
-    [OutputType([System.Collections.Specialized.OrderedDictionary])]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory dictionary; nothing is changed.')]
-    param(
-        [Parameter(Mandatory)]
-        [int]$ProbeStatusCode,
-
-        [AllowEmptyString()]
-        [string]$ProbeErrorText = "",
-
-        [Parameter(Mandatory)]
-        [int]$ResourceCount,
-
-        [Parameter(Mandatory)]
-        [int]$DescriptorCount,
-
-        [Parameter(Mandatory)]
-        [int]$TargetCount
-    )
-
-    $path = $script:DescriptorProbePath
-    $errorClause = if ($ProbeErrorText) { " with the DMS error text `"$ProbeErrorText`"" } else { "" }
-    return [ordered]@{
-        reference       = "DMS-1611"
-        statement       = "This lane ran the isolated Publisher runs without --includeDescriptors, so it did not exercise descriptor extraction through the Publisher. Each target was pre-seeded with the source's descriptors through the API instead."
-        evidence        = "Before the lane, one read of GET $path against the source primary answered $ProbeStatusCode$errorClause. The Publisher counts every descriptor resource with this read (limit=0) and retries the failure, so a publish with descriptors cannot complete against this DMS image on SQL Server. The pre-seed copied $DescriptorCount descriptors from $ResourceCount resources into each of $TargetCount targets."
-        provenElsewhere = "The defect is in the descriptor count read, not in snapshot routing: the same read fails against the primary, before any snapshot is involved. The PostgreSQL run in this record publishes descriptors through the snapshot."
-    }
-}
-
-<#
-.SYNOPSIS
-    Lists the descriptor collection paths (for example /ed-fi/gradeLevelDescriptors) of a descriptors OpenAPI
-    specification, in a stable order.
-
-.DESCRIPTION
-    Only collection paths count: a path with a parameter, or one that ends in a sub-resource such as /deletes or
-    /keyChanges, is not a collection.
-#>
-function Get-InteropDescriptorResourcePath {
-    [CmdletBinding()]
-    [OutputType([string[]])]
-    param(
-        [Parameter(Mandatory)]
-        [AllowEmptyCollection()]
-        [string[]]$SpecificationPath
-    )
-
-    return [string[]]@($SpecificationPath |
-            Where-Object { $_ -match "^/[A-Za-z0-9-]+/[A-Za-z0-9]+Descriptors$" } |
-            Sort-Object -Unique)
-}
-
-<#
-.SYNOPSIS
-    Reduces a descriptor read back from the source to the body that creates it on a target.
-
-.DESCRIPTION
-    The server owns id, _etag, and _lastModifiedDate, so they never go into a POST body. Every other property,
-    including extensions, is kept.
-#>
-function ConvertTo-InteropDescriptorBody {
-    [CmdletBinding()]
-    [OutputType([System.Collections.Specialized.OrderedDictionary])]
-    param(
-        [Parameter(Mandatory)]
-        [pscustomobject]$Item
-    )
-
-    $body = [ordered]@{}
-    foreach ($property in $Item.PSObject.Properties) {
-        if ($property.Name -in @("id", "_etag", "_lastModifiedDate")) {
-            continue
-        }
-        $body[$property.Name] = $property.Value
-    }
-
-    return $body
-}
-
-<#
-.SYNOPSIS
-    Sends the descriptor probe read to the source primary and returns the status code and error text.
-#>
-function Invoke-InteropDescriptorProbe {
-    [CmdletBinding()]
-    [OutputType([pscustomobject])]
-    param(
-        [Parameter(Mandatory)]
-        [string]$DmsUrl,
-
-        [Parameter(Mandatory)]
-        [string]$Token
-    )
-
-    $probe = Invoke-InteropDmsProbe -DmsUrl $DmsUrl -Path $script:DescriptorProbePath -Token $Token
-    $errorText = ""
-    if ($probe.StatusCode -ge 400) {
-        $errorText = Get-InteropProbeErrorText -Content $probe.Content
-        # The response carries only a generic message and a trace id; the cause is in the DMS log.
-        $body = $null
-        try { $body = ConvertFrom-Json -InputObject $probe.Content -ErrorAction Stop } catch { $body = $null }
-        if ($body -is [pscustomobject] -and $null -ne $body.PSObject.Properties["traceId"] -and $body.traceId) {
-            try {
-                $logged = Get-InteropDmsExceptionText -Line @(& docker logs ed-fi-api --since 5m 2>&1 | ForEach-Object { "$_" }) -TraceId ([string]$body.traceId)
-                if ($logged) { $errorText = $logged }
-            }
-            catch { Write-InteropStep "Could not read the DMS log for the probe's trace id: $($_.Exception.Message)" }
-        }
-    }
-    return [pscustomobject]@{ Path = $script:DescriptorProbePath; StatusCode = $probe.StatusCode; ErrorText = $errorText }
-}
-
-<#
-.SYNOPSIS
-    Copies every descriptor of the source to a target through the API, as the school years are copied, and returns
-    how many resources and descriptors were copied.
-
-.DESCRIPTION
-    The descriptor resources come from the source's own descriptors specification, so an extension's descriptors are
-    included. Each resource is read in pages with a positive limit, which SQL Server accepts. The reader token reads
-    the source and the writer token writes the target.
-#>
-function Copy-InteropDescriptor {
-    [CmdletBinding()]
-    [OutputType([pscustomobject])]
-    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Harness setup step on a throwaway local stack; -WhatIf adds no value.')]
-    param(
-        [Parameter(Mandatory)]
-        [string]$DmsUrl,
-
-        [Parameter(Mandatory)]
-        [string]$SourceToken,
-
-        [Parameter(Mandatory)]
-        [string]$TargetToken
-    )
-
-    $specification = Invoke-InteropDmsRequest -DmsUrl $DmsUrl -Path "/metadata/specifications/descriptors-spec.json" -Token $SourceToken
-    $resourcePath = @(Get-InteropDescriptorResourcePath -SpecificationPath @($specification.paths.PSObject.Properties.Name))
-    if ($resourcePath.Count -eq 0) {
-        throw "The descriptors specification lists no descriptor collection, so there is nothing to pre-seed."
-    }
-
-    $descriptorCount = 0
-    foreach ($resource in $resourcePath) {
-        $offset = 0
-        do {
-            $response = Invoke-InteropDmsRequest -DmsUrl $DmsUrl -Path "/data$resource`?limit=$script:DescriptorPageSize&offset=$offset" -Token $SourceToken
-            $page = @(foreach ($entry in $response) { $entry })
-            foreach ($item in $page) {
-                $null = Invoke-InteropDmsRequest -DmsUrl $DmsUrl -Path "/data$resource" -Token $TargetToken -Method Post -Body (ConvertTo-InteropDescriptorBody -Item $item)
-            }
-            $descriptorCount += $page.Count
-            $offset += $script:DescriptorPageSize
-        } while ($page.Count -eq $script:DescriptorPageSize)
-    }
-
-    return [pscustomobject]@{ ResourceCount = $resourcePath.Count; DescriptorCount = $descriptorCount }
-}
-
 <#
 .SYNOPSIS
     Proves the Debug override reached DMS: a header-less GET must log "Selected Primary target for data store <id>".
@@ -3214,9 +2911,7 @@ function Add-InteropArrangementToManifest {
     Sequence:
       0. Create the run-specific base set through the source writer: the descriptors and school the markers
          need, and every marker document that exists at the baseline.
-      0b. When the lane runs without descriptors (IncludeDescriptors false), copy the source's descriptors to every
-         target through the API.
-      1. Baseline publish (Run A, --ignoreIsolation=true, plus --includeDescriptors=true unless scoped) so the target holds the
+      1. Baseline publish (Run A, --ignoreIsolation=true --includeDescriptors=true) so the target holds the
          starting state, and the same baseline into every AdditionalBaselineTargetWriter. T0 is the source's
          newest change version read right after them.
       2. Pre-snapshot changes on the primary: U1 (update), D1 (delete), K1 (key change).
@@ -3271,9 +2966,7 @@ function Set-InteropSourceArrangement {
         [Parameter(Mandatory)]
         [string]$PublisherImage,
 
-        [pscustomobject[]]$AdditionalBaselineTargetWriter = @(),
-
-        [bool]$IncludeDescriptors = $true
+        [pscustomobject[]]$AdditionalBaselineTargetWriter = @()
     )
 
     $markers = @(New-InteropArrangementPlan -RunToken $RunToken)
@@ -3304,23 +2997,9 @@ function Set-InteropSourceArrangement {
         $marker.DocumentId = [string]$document.id
     }
 
-    # Without --includeDescriptors the Publisher does not carry descriptors, so each target gets the source's
-    # descriptors (including the two created above) through the API before the baseline publish needs them.
-    $descriptorPreSeed = @()
-    if (-not $IncludeDescriptors) {
-        Write-InteropStep "Arrangement 0b: pre-seeding every target with the source's descriptors (the lane runs without --includeDescriptors)."
-        foreach ($seedWriter in @($TargetWriter) + @($AdditionalBaselineTargetWriter)) {
-            $seedToken = Get-InteropClientToken -DmsUrl $DmsUrl -Client $seedWriter
-            $copied = Copy-InteropDescriptor -DmsUrl $DmsUrl -SourceToken $SourceReaderToken -TargetToken $seedToken
-            Write-InteropStep "Copied $($copied.DescriptorCount) descriptors from $($copied.ResourceCount) resources to '$($seedWriter.Role)'."
-            $descriptorPreSeed += $copied
-        }
-    }
-    $descriptorOption = Get-InteropPublisherDescriptorOption -IncludeDescriptors $IncludeDescriptors
-
     Write-InteropStep "Arrangement 1: baseline publish (Run A, --ignoreIsolation=true) so the target holds the starting state."
     $runA = Invoke-InteropPublisher -RunFolder $RunFolder -RunName "baseline-a" -Image $PublisherImage `
-        -SourceClient $SourceReader -TargetClient $TargetWriter -Option (@("--ignoreIsolation=true") + $descriptorOption)
+        -SourceClient $SourceReader -TargetClient $TargetWriter -Option @("--ignoreIsolation=true", "--includeDescriptors=true")
     if ($runA.ExitCode -ne 0) {
         throw "The baseline publish (Run A) exited $($runA.ExitCode); expected 0. See $($runA.Folder)."
     }
@@ -3329,7 +3008,7 @@ function Set-InteropSourceArrangement {
     # The source primary keeps changing after T0, so a target cannot be rebuilt at T0 later.
     $additionalBaselines = @(foreach ($extraWriter in $AdditionalBaselineTargetWriter) {
             $extraRun = Invoke-InteropPublisher -RunFolder $RunFolder -RunName "baseline-a-$($extraWriter.Role)" -Image $PublisherImage `
-                -SourceClient $SourceReader -TargetClient $extraWriter -Option (@("--ignoreIsolation=true") + $descriptorOption)
+                -SourceClient $SourceReader -TargetClient $extraWriter -Option @("--ignoreIsolation=true", "--includeDescriptors=true")
             if ($extraRun.ExitCode -ne 0) {
                 throw "The baseline publish into '$($extraWriter.Role)' exited $($extraRun.ExitCode); expected 0. See $($extraRun.Folder)."
             }
@@ -3396,7 +3075,6 @@ function Set-InteropSourceArrangement {
         PrimaryNewestChangeVersion  = $primaryVersion
         BaselinePublisher           = $runA
         AdditionalBaselinePublisher = $additionalBaselines
-        DescriptorPreSeed           = @($descriptorPreSeed)
         Snapshot                    = $snapshot
         DerivativeId                = $derivativeId
         Manifest                    = $manifestArrangement
@@ -5416,19 +5094,6 @@ function Invoke-InteropIsolatedScenario {
 
     $result = New-InteropResult -Scenario "Isolated" -Engine $Engine -RunId $RunId
 
-    # SQL Server only: one descriptor count read to the source primary decides whether this lane can publish
-    # descriptors. PostgreSQL is never probed and never scoped.
-    $probe = $null
-    if ($Engine -eq "mssql") {
-        Write-InteropStep "Isolated 0: probing the source primary with $script:DescriptorProbePath."
-        $probe = Invoke-InteropDescriptorProbe -DmsUrl $DmsUrl -Token $SourceReaderToken
-        Write-InteropStep "The descriptor probe answered $($probe.StatusCode)."
-    }
-    $scope = Resolve-InteropDescriptorScope -Engine $Engine -ProbeStatusCode $(if ($null -ne $probe) { $probe.StatusCode } else { $null })
-    $descriptorOption = Get-InteropPublisherDescriptorOption -IncludeDescriptors $scope.IncludeDescriptors
-    if ($scope.Scoped) {
-        Write-InteropStep "The probe failed (DMS-1611): the lane runs without --includeDescriptors and each target is pre-seeded with the source's descriptors."
-    }
     $dataStores = [System.Collections.Generic.List[object]]::new()
     $clients = [System.Collections.Generic.List[object]]::new()
 
@@ -5455,8 +5120,7 @@ function Invoke-InteropIsolatedScenario {
         $arrangement = Set-InteropSourceArrangement -DmsUrl $DmsUrl -CmsUrl $CmsUrl -AdminToken $AdminToken -Engine $Engine `
             -EnvironmentValues $EnvironmentValues -RunFolder $RunFolder -RunToken $RunToken -SourceDataStoreId $SourceStore.Id `
             -SourceReader $SourceReader -TargetWriter $targets["b"].Writer -SourceWriterToken $SourceWriterToken `
-            -SourceReaderToken $SourceReaderToken -PublisherImage $PublisherImage -AdditionalBaselineTargetWriter @($targets["c"].Writer) `
-            -IncludeDescriptors $scope.IncludeDescriptors
+            -SourceReaderToken $SourceReaderToken -PublisherImage $PublisherImage -AdditionalBaselineTargetWriter @($targets["c"].Writer)
 
         $window = "--lastChangeVersionProcessed=$($arrangement.StartingChangeVersion)"
         $runObservation = @{}
@@ -5467,7 +5131,7 @@ function Invoke-InteropIsolatedScenario {
             $target = $targets[$control.Label]
             $observations = @()
             foreach ($mode in @(
-                    @{ Name = "cursor"; Option = (@($window) + $descriptorOption) }
+                    @{ Name = "cursor"; Option = @($window, "--includeDescriptors=true") }
                     @{ Name = "offset"; Option = @($window, "--disableCursorPaging=true", "--includeOnly=/ed-fi/classPeriods") }
                 )) {
                 Write-InteropStep "Isolated $($control.Label.ToUpperInvariant()): $($control.Text), $($mode.Name) paging."
@@ -5511,20 +5175,6 @@ function Invoke-InteropIsolatedScenario {
     $details["targetStateB"] = $stateB
     $details["targetStateC"] = $stateC
     $details["expectationOverride"] = @($ExpectationOverride.Keys)
-    if ($null -ne $probe) {
-        $details["descriptorProbe"] = [ordered]@{
-            path               = $probe.Path
-            statusCode         = $probe.StatusCode
-            outcome            = $scope.Outcome
-            includeDescriptors = $scope.IncludeDescriptors
-        }
-    }
-    if ($scope.Scoped) {
-        $preSeed = @($arrangement.DescriptorPreSeed)
-        $details["descriptorPreSeed"] = @($preSeed | ForEach-Object { [ordered]@{ resources = $_.ResourceCount; descriptors = $_.DescriptorCount } })
-        $details["scopingNote"] = @(New-InteropDescriptorScopingNote -ProbeStatusCode $probe.StatusCode -ProbeErrorText $probe.ErrorText `
-                -ResourceCount $preSeed[0].ResourceCount -DescriptorCount $preSeed[0].DescriptorCount -TargetCount $preSeed.Count)
-    }
     foreach ($label in "b", "c") {
         $details["run$($label.ToUpperInvariant())"] = @($runObservation[$label] | ForEach-Object {
                 [ordered]@{
@@ -5590,7 +5240,6 @@ function Get-InteropRecordCriterion {
             Number      = 2
             Title       = "Publisher runs isolated without the opt-out"
             Scenario    = "Isolated"
-            Scoped      = $true
             Requirement = @(
                 "^Run B exit codes"
                 "^Run B Primary selections"
@@ -5607,7 +5256,6 @@ function Get-InteropRecordCriterion {
             Number      = 3
             Title       = "Post-snapshot writes are excluded"
             Scenario    = "Isolated"
-            Scoped      = $true
             Requirement = @(
                 foreach ($marker in "I2", "U2", "D2", "K2") {
                     "^Run B target reflects $marker$"
@@ -5620,7 +5268,6 @@ function Get-InteropRecordCriterion {
             Number      = 4
             Title       = "Every Publisher source surface used the snapshot within one extraction"
             Scenario    = "Isolated"
-            Scoped      = $true
             Requirement = @(
                 foreach ($surface in $surfaces) { "^Run B issued $surface at least once" }
                 "^Run B selected the Snapshot"
@@ -5631,7 +5278,6 @@ function Get-InteropRecordCriterion {
             Number      = 5
             Title       = "No-snapshot Publisher behavior recorded"
             Scenario    = "NoSnapshot"
-            Scoped      = $false
             Requirement = @(
                 "^Publisher exit code$"
                 "^availableChangeVersions status codes$"
@@ -5873,33 +5519,6 @@ function Get-InteropRecordVersionOutcome {
     return [pscustomobject]@{ Outcome = $outcome; Evidence = $evidence }
 }
 
-# Reads the scoping notes a run's results carry (details.scopingNote), so the record never claims coverage
-# the run did not have.
-function Get-InteropRecordScopingNote {
-    [CmdletBinding()]
-    [OutputType([object[]])]
-    param(
-        [Parameter(Mandatory)]
-        [pscustomobject]$Run
-    )
-
-    $notes = [System.Collections.Generic.List[object]]::new()
-    foreach ($results in $Run.Results.Values) {
-        $details = $results["details"]
-        if ($null -eq $details -or -not $details.Contains("scopingNote")) {
-            continue
-        }
-        foreach ($note in @($details["scopingNote"])) {
-            if ($null -eq $note -or [string]::IsNullOrWhiteSpace([string]$note["statement"])) {
-                throw "A scopingNote in $($results['fileName']) has no statement."
-            }
-            $notes.Add($note)
-        }
-    }
-
-    return $notes.ToArray()
-}
-
 <#
 .SYNOPSIS
     Renders the validation record markdown from loaded runs. Pure: no file or Docker access.
@@ -6104,37 +5723,6 @@ function ConvertTo-InteropValidationRecord {
         & $add '```'
         & $add ""
 
-        $notes = @(Get-InteropRecordScopingNote -Run $item)
-        if ($notes.Count -gt 0) {
-            & $add "### Scope of this run"
-            & $add ""
-            foreach ($note in $notes) {
-                $reference = if ($note.Contains("reference") -and $note["reference"]) { " ($(Protect-InteropRecordText -Text ([string]$note['reference'])))" } else { "" }
-                & $add "$(Protect-InteropRecordText -Text ([string]$note['statement']))$reference"
-                foreach ($field in "evidence", "provenElsewhere") {
-                    if ($note.Contains($field) -and $note[$field]) {
-                        & $add ""
-                        & $add (Protect-InteropRecordText -Text ([string]$note[$field]))
-                    }
-                }
-                & $add ""
-            }
-        }
-
-        foreach ($results in $item.Results.Values) {
-            $details = $results["details"]
-            if ($null -eq $details -or -not $details.Contains("descriptorProbe")) {
-                continue
-            }
-            $probe = $details["descriptorProbe"]
-            if ($probe["outcome"] -eq "Passed") {
-                & $add "### Descriptor probe"
-                & $add ""
-                & $add "Before the lane, one read of ``GET $(Get-InteropRecordCell -Text $probe['path'])`` against the source primary answered $($probe['statusCode']), so the lane published descriptors with ``--includeDescriptors=true`` and needed no scoping (DMS-1611 is not present in this image)."
-                & $add ""
-            }
-        }
-
         & $add "### Acceptance criteria outcomes"
         & $add ""
         & $add "| # | Criterion | Outcome | Evidence |"
@@ -6144,11 +5732,7 @@ function ConvertTo-InteropValidationRecord {
         $evidenceLists = [System.Collections.Generic.List[object]]::new()
         foreach ($criterion in $criteria) {
             $outcome = Get-InteropRecordOutcome -Run $item -Criterion $criterion
-            $evidence = $outcome.Evidence
-            if ($criterion.Scoped -and $notes.Count -gt 0 -and $outcome.Outcome -ne "not run") {
-                $evidence += "; scoped run, see Scope of this run"
-            }
-            & $add "| $($criterion.Number) | $(Get-InteropRecordCell -Text $criterion.Title) | $($outcome.Outcome) | $(Get-InteropRecordCell -Text $evidence) |"
+            & $add "| $($criterion.Number) | $(Get-InteropRecordCell -Text $criterion.Title) | $($outcome.Outcome) | $(Get-InteropRecordCell -Text $outcome.Evidence) |"
             $evidenceLists.Add([pscustomobject]@{ Criterion = $criterion; Outcome = $outcome })
         }
         & $add ""
@@ -6246,7 +5830,5 @@ Export-ModuleMember -Function `
     Get-InteropPublisherRunObservation, Get-InteropTargetMarkerState, Get-InteropTargetMarkerStateMap, Read-InteropPublisherRun, `
     Get-InteropIsolatedAssertion, Invoke-InteropIsolatedScenario, `
     Test-InteropSqlServerMemoryFailure, Assert-InteropPublishedImageSelection, Assert-InteropPublishedDiscoveryVersion, Assert-InteropPublishedImage, Select-InteropRepoDigest, Get-InteropContainerImage, `
-    Resolve-InteropDescriptorScope, Get-InteropPublisherDescriptorOption, Get-InteropProbeErrorText, Get-InteropDmsExceptionText, New-InteropDescriptorScopingNote, `
-    Get-InteropDescriptorResourcePath, ConvertTo-InteropDescriptorBody, Invoke-InteropDescriptorProbe, Copy-InteropDescriptor, `
     Protect-InteropRecordText, Assert-InteropRecordHasNoSecret, Read-InteropRun, Get-InteropRecordCriterion, Get-InteropHarnessCommand, `
     ConvertTo-InteropValidationRecord, Write-InteropValidationRecord
