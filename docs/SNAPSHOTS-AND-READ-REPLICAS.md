@@ -219,6 +219,7 @@ DELETE http://localhost:8081/v3/dataStoreDerivatives/<id>
 DMS caches the data store configuration, including the derivatives, and reloads it every `CacheSettings:DataStoreCacheExpirationSeconds`.
 A registration, a replacement, or a removal reaches DMS at the next reload, not at the moment CMS answers.
 Plan for a wait of up to that many seconds before you start an extraction, which is ten minutes at the default of `600`.
+If `CacheSettings:DataStoreCacheRefreshEnabled` is `false`, or `CacheSettings:DataStoreCacheExpirationSeconds` is `0` or negative, DMS does not reload on a schedule, so restart DMS after you register, replace, or remove a derivative.
 
 Until the registration takes effect, a read with `Use-Snapshot: true` is answered with Snapshot Not Found `404`.
 A removal behaves the same way in the other direction: the snapshot keeps being served until the cache reloads.
@@ -274,7 +275,7 @@ When you retire a snapshot, do both of these, in this order:
 
 Removing the row matters even when you give every snapshot a new name.
 A derivative row that remains after its database is gone keeps pooled connections to the old database open, and it keeps answering `Use-Snapshot: true` reads with `404`.
-Removal reaches DMS at the next data store cache reload, so wait for it before you drop a database that a running extraction might still read.
+Removal reaches DMS at the next data store cache reload, or at a restart when DMS does not reload on a schedule, so wait for it before you drop a database that a running extraction might still read.
 
 On PostgreSQL, retire a snapshot with these statements, run one at a time, because `DROP DATABASE` does not run inside a multi-statement transaction.
 

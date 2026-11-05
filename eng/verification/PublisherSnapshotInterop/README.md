@@ -249,6 +249,7 @@ DMS caches data store configuration, for 600 seconds by default.
 The harness sets 10 seconds, so a registered snapshot reads as Active, and a removed one as Absent, within about 11 seconds.
 A stack the harness did not start keeps the default, so its snapshot waits time out with `Timed out after <n> seconds waiting for the snapshot state`.
 Outside the harness, reads reach a newly registered snapshot only after the cache expires, which took about 559 seconds on a default stack.
+With `DataStoreCacheRefreshEnabled` set to `false`, or a cache expiration of `0` or less, they reach it only after DMS restarts.
 
 ### What the Publisher logs without a snapshot
 
