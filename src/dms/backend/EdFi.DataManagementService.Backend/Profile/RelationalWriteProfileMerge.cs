@@ -30,7 +30,8 @@ internal sealed record RelationalWriteProfileMergeRequest
         RelationalWriteCurrentState? currentState,
         ProfileAppliedWriteRequest profileRequest,
         ProfileAppliedWriteContext? profileAppliedContext,
-        ResolvedReferenceSet resolvedReferences
+        ResolvedReferenceSet resolvedReferences,
+        bool allowMissingDocumentReferencesForPrecedence = false
     )
     {
         WritePlan = writePlan ?? throw new ArgumentNullException(nameof(writePlan));
@@ -42,6 +43,7 @@ internal sealed record RelationalWriteProfileMergeRequest
         ProfileAppliedContext = profileAppliedContext;
         ResolvedReferences =
             resolvedReferences ?? throw new ArgumentNullException(nameof(resolvedReferences));
+        AllowMissingDocumentReferencesForPrecedence = allowMissingDocumentReferencesForPrecedence;
 
         if (
             !ReferenceEquals(
@@ -104,6 +106,14 @@ internal sealed record RelationalWriteProfileMergeRequest
     public ProfileAppliedWriteContext? ProfileAppliedContext { get; init; }
 
     public ResolvedReferenceSet ResolvedReferences { get; init; }
+
+    /// <summary>
+    /// Whether a submitted document reference whose target is missing was deferred so proposed
+    /// authorization can run first. The merge lookups then treat it as an unresolved value rather than
+    /// a lookup failure. Only the root table is finalized for authorization; the write never reaches DML
+    /// or guarded no-op success, and collection matching need not resolve missing reference identities.
+    /// </summary>
+    public bool AllowMissingDocumentReferencesForPrecedence { get; init; }
 }
 
 internal interface IRelationalWriteProfileMergeSynthesizer
@@ -121,10 +131,10 @@ internal interface IRelationalWriteProfileMergeSynthesizer
 /// <see cref="RelationalWriteGuardedNoOp.IsNoOpCandidate"/>; comparable rowsets are produced
 /// from the same post-merge values that execution would persist (per-row
 /// <see cref="RelationalWriteMergeSupport.ProjectComparableValues"/>). Returns a
-/// <see cref="ProfileMergeOutcome"/> discriminated union so the executor can short-circuit
-/// to a typed <see cref="UpsertResult.UpsertFailureProfileDataPolicy"/> /
+/// <see cref="ProfileMergeOutcome"/> discriminated union so the executor can return
+/// a typed <see cref="UpsertResult.UpsertFailureProfileDataPolicy"/> /
 /// <see cref="UpdateResult.UpdateFailureProfileDataPolicy"/> on a separate-table
-/// create-denied outcome without throwing.
+/// create-denied outcome after proposed authorization, without throwing or executing DML.
 /// </summary>
 internal sealed class RelationalWriteProfileMergeSynthesizer(
     IProfileRootTableBindingClassifier classifier,
@@ -157,6 +167,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         var resolvedReferenceLookups = FlatteningResolvedReferenceLookupSet.Create(
             request.WritePlan,
             request.ResolvedReferences,
+            request.AllowMissingDocumentReferencesForPrecedence,
             storedDescriptorRows: request.CurrentState?.DescriptorRowsInPlanOrder
         );
 
@@ -209,64 +220,63 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         var rootTable = request.WritePlan.TablePlansInDependencyOrder[0];
         var rootBuilder = tableStateBuilders[rootTable.TableModel.Table];
         var rootTableState = SynthesizeRootTable(request, resolvedReferenceLookups);
-        foreach (var currentRow in rootTableState.CurrentRows)
+        if (request.AllowMissingDocumentReferencesForPrecedence)
         {
-            rootBuilder.AddCurrentRow(currentRow);
+            // Every proposed authorization subject binds to the finalized root, including namespace,
+            // custom-view bases and People first-hop anchors. Preserve the normal root overlay and
+            // key unification, but do not match collections whose reference identities may be unresolved.
+            // The executor runs authorization-only and returns the deferred reference conflict if allowed.
+            return new ProfileMergeOutcome { AuthorizationRootTableState = rootTableState };
         }
-        foreach (var mergedRow in rootTableState.MergedRows)
+
+        try
         {
-            rootBuilder.AddMergedRow(mergedRow);
-        }
+            foreach (var currentRow in rootTableState.CurrentRows)
+            {
+                rootBuilder.AddCurrentRow(currentRow);
+            }
+            foreach (var mergedRow in rootTableState.MergedRows)
+            {
+                rootBuilder.AddMergedRow(mergedRow);
+            }
 
-        // Project the merged root row down to physical-row-identity slot order. The walker
-        // forwards these to nested-collection synthesis, where ParentKeyPart.Index is a
-        // physical-identity slot ordinal — not a binding ordinal — so binding-indexed
-        // values would only happen to align when the root identity column is binding 0.
-        // The projection requires every PhysicalRowIdentityColumn to be present in
-        // ColumnBindings; the root will satisfy that whenever any top-level collection
-        // table actually binds a ParentKeyPart, so skip the projection when it cannot run
-        // (synthetic non-collection root plans omit some bindings) and pass an empty
-        // identity slice the walker will not consume.
-        IReadOnlyList<FlattenedWriteValue> rootRowValues =
-            rootTableState.MergedRows.Length > 0
-                ? rootTableState.MergedRows[0].Values
-                : request.FlattenedWriteSet.RootRow.Values;
-        IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues = CanProjectPhysicalRowIdentity(
-            rootTable
-        )
-            ? RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(rootTable, rootRowValues)
-            : [];
+            // Project the merged root row down to physical-row-identity slot order. The walker
+            // forwards these to nested-collection synthesis, where ParentKeyPart.Index is a
+            // physical-identity slot ordinal — not a binding ordinal — so binding-indexed
+            // values would only happen to align when the root identity column is binding 0.
+            // The projection requires every PhysicalRowIdentityColumn to be present in
+            // ColumnBindings; the root will satisfy that whenever any top-level collection
+            // table actually binds a ParentKeyPart, so skip the projection when it cannot run
+            // (synthetic non-collection root plans omit some bindings) and pass an empty
+            // identity slice the walker will not consume.
+            IReadOnlyList<FlattenedWriteValue> rootRowValues =
+                rootTableState.MergedRows.Length > 0
+                    ? rootTableState.MergedRows[0].Values
+                    : request.FlattenedWriteSet.RootRow.Values;
+            IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues =
+                CanProjectPhysicalRowIdentity(rootTable)
+                    ? RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(rootTable, rootRowValues)
+                    : [];
 
-        // 1a. Top-level collection merge — runs unconditionally so that stored-only
-        //     "delete-all-visible" scenarios (spec Section 7.7) are driven from the union
-        //     of request-side, stored-side, and DB-side sources rather than only when
-        //     request-side candidates are present.
-        // Build the root walker context. The walker owns top-level collection synthesis
-        // directly: WalkChildren reads the per-merge indexes and dispatches through the
-        // planner per scope.
-        var rootContext = new ProfileCollectionWalkerContext(
-            ContainingScopeAddress: new ScopeInstanceAddress("$", []),
-            ParentPhysicalIdentityValues: [.. parentPhysicalRowIdentityValues],
-            RequestSubstructure: request.FlattenedWriteSet.RootRow,
-            ParentRequestNode: request.WritableRequestBody
-        );
+            // 1a. Top-level collection merge — runs unconditionally so that stored-only
+            //     "delete-all-visible" scenarios (spec Section 7.7) are driven from the union
+            //     of request-side, stored-side, and DB-side sources rather than only when
+            //     request-side candidates are present.
+            // Build the root walker context. The walker owns top-level collection synthesis
+            // directly: WalkChildren reads the per-merge indexes and dispatches through the
+            // planner per scope.
+            var rootContext = new ProfileCollectionWalkerContext(
+                ContainingScopeAddress: new ScopeInstanceAddress("$", []),
+                ParentPhysicalIdentityValues: [.. parentPhysicalRowIdentityValues],
+                RequestSubstructure: request.FlattenedWriteSet.RootRow,
+                ParentRequestNode: request.WritableRequestBody
+            );
 
-        var walker = new ProfileCollectionWalker(
-            request,
-            resolvedReferenceLookups,
-            tableStateBuilders,
-            (
-                tablePlan,
-                scopeAddress,
-                separateScopeParentPhysicalIdentityValues,
-                buffer,
-                scopedRequestNode,
-                requestScope,
-                storedScope,
-                currentRowProjection
-            ) =>
-                SynthesizeSeparateScopeInstance(
-                    request,
+            var walker = new ProfileCollectionWalker(
+                request,
+                resolvedReferenceLookups,
+                tableStateBuilders,
+                (
                     tablePlan,
                     scopeAddress,
                     separateScopeParentPhysicalIdentityValues,
@@ -274,92 +284,120 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                     scopedRequestNode,
                     requestScope,
                     storedScope,
-                    currentRowProjection,
+                    currentRowProjection
+                ) =>
+                    SynthesizeSeparateScopeInstance(
+                        request,
+                        tablePlan,
+                        scopeAddress,
+                        separateScopeParentPhysicalIdentityValues,
+                        buffer,
+                        scopedRequestNode,
+                        requestScope,
+                        storedScope,
+                        currentRowProjection,
+                        resolvedReferenceLookups
+                    )
+            );
+
+            var collectionOutcome = walker.WalkChildren(rootContext, WalkMode.Normal);
+            if (collectionOutcome is not null)
+            {
+                return collectionOutcome.Value with { AuthorizationRootTableState = rootTableState };
+            }
+
+            // 2. Per-separate-table merge for every non-root table in dependency order. Plans may
+            //    legitimately carry non-RootExtension tables that the current request did not
+            //    exercise; those are silently skipped here so the no-profile persister can handle
+            //    their rows unchanged.
+
+            for (
+                var tableIndex = 1;
+                tableIndex < request.WritePlan.TablePlansInDependencyOrder.Length;
+                tableIndex++
+            )
+            {
+                var tablePlan = request.WritePlan.TablePlansInDependencyOrder[tableIndex];
+                if (tablePlan.TableModel.IdentityMetadata.TableKind is not DbTableKind.RootExtension)
+                {
+                    // This loop handles only root-attached RootExtension tables. Plans may carry
+                    // unused Collection / ExtensionCollection / CollectionExtensionScope tables
+                    // (e.g., a multi-table School plan where the profiled request touches only
+                    // root scopes). The synthesizer silently leaves them untouched so their rows
+                    // flow through the no-profile persister path unchanged.
+                    continue;
+                }
+
+                var separateTableResult = SynthesizeSeparateTable(
+                    request,
+                    tablePlan,
+                    [.. parentPhysicalRowIdentityValues],
                     resolvedReferenceLookups
-                )
-        );
+                );
 
-        var collectionOutcome = walker.WalkChildren(rootContext, WalkMode.Normal);
-        if (collectionOutcome is not null)
-        {
-            return collectionOutcome.Value;
-        }
-
-        // 2. Per-separate-table merge for every non-root table in dependency order. Plans may
-        //    legitimately carry non-RootExtension tables that the current request did not
-        //    exercise; those are silently skipped here so the no-profile persister can handle
-        //    their rows unchanged.
-
-        for (
-            var tableIndex = 1;
-            tableIndex < request.WritePlan.TablePlansInDependencyOrder.Length;
-            tableIndex++
-        )
-        {
-            var tablePlan = request.WritePlan.TablePlansInDependencyOrder[tableIndex];
-            if (tablePlan.TableModel.IdentityMetadata.TableKind is not DbTableKind.RootExtension)
-            {
-                // This loop handles only root-attached RootExtension tables. Plans may carry
-                // unused Collection / ExtensionCollection / CollectionExtensionScope tables
-                // (e.g., a multi-table School plan where the profiled request touches only
-                // root scopes). The synthesizer silently leaves them untouched so their rows
-                // flow through the no-profile persister path unchanged.
-                continue;
-            }
-
-            var separateTableResult = SynthesizeSeparateTable(
-                request,
-                tablePlan,
-                [.. parentPhysicalRowIdentityValues],
-                resolvedReferenceLookups
-            );
-
-            if (separateTableResult.Rejection is not null)
-            {
-                return ProfileMergeOutcome.Reject(separateTableResult.Rejection);
-            }
-
-            if (separateTableResult.TableState is not null)
-            {
-                var separateBuilder = tableStateBuilders[tablePlan.TableModel.Table];
-                foreach (var currentRow in separateTableResult.TableState.CurrentRows)
+                if (separateTableResult.Rejection is not null)
                 {
-                    separateBuilder.AddCurrentRow(currentRow);
+                    return ProfileMergeOutcome.Reject(separateTableResult.Rejection) with
+                    {
+                        AuthorizationRootTableState = rootTableState,
+                    };
                 }
-                foreach (var mergedRow in separateTableResult.TableState.MergedRows)
+
+                if (separateTableResult.TableState is not null)
                 {
-                    separateBuilder.AddMergedRow(mergedRow);
+                    var separateBuilder = tableStateBuilders[tablePlan.TableModel.Table];
+                    foreach (var currentRow in separateTableResult.TableState.CurrentRows)
+                    {
+                        separateBuilder.AddCurrentRow(currentRow);
+                    }
+                    foreach (var mergedRow in separateTableResult.TableState.MergedRows)
+                    {
+                        separateBuilder.AddMergedRow(mergedRow);
+                    }
+                }
+
+                var rootExtensionCollectionOutcome = WalkRootExtensionCollectionChildren(
+                    request,
+                    tablePlan,
+                    separateTableResult,
+                    walker
+                );
+                if (rootExtensionCollectionOutcome is not null)
+                {
+                    return rootExtensionCollectionOutcome.Value with
+                    {
+                        AuthorizationRootTableState = rootTableState,
+                    };
                 }
             }
 
-            var rootExtensionCollectionOutcome = WalkRootExtensionCollectionChildren(
-                request,
-                tablePlan,
-                separateTableResult,
-                walker
+            // 3. Finalize: iterate TablePlansInDependencyOrder and emit one TableState per
+            //    touched table. Untouched tables (HasContent == false) are dropped so the output
+            //    matches the existing top-level behavior of skipping no-op scopes.
+            var tableStates = new List<RelationalWriteMergedTableState>();
+            foreach (var plan in request.WritePlan.TablePlansInDependencyOrder)
+            {
+                var builder = tableStateBuilders[plan.TableModel.Table];
+                if (builder.HasContent)
+                {
+                    tableStates.Add(builder.Build());
+                }
+            }
+
+            return ProfileMergeOutcome.Success(
+                new RelationalWriteMergeResult([.. tableStates], supportsGuardedNoOp: true)
             );
-            if (rootExtensionCollectionOutcome is not null)
-            {
-                return rootExtensionCollectionOutcome.Value;
-            }
         }
-
-        // 3. Finalize: iterate TablePlansInDependencyOrder and emit one TableState per
-        //    touched table. Untouched tables (HasContent == false) are dropped so the output
-        //    matches the existing top-level behavior of skipping no-op scopes.
-        var tableStates = new List<RelationalWriteMergedTableState>();
-        foreach (var plan in request.WritePlan.TablePlansInDependencyOrder)
+        catch (RelationalWriteRequestValidationException exception)
         {
-            var builder = tableStateBuilders[plan.TableModel.Table];
-            if (builder.HasContent)
+            // Only request validation after root finalization is deferred. Planner/invariant failures
+            // still propagate, and no partial child rowset can reach persistence.
+            return new ProfileMergeOutcome
             {
-                tableStates.Add(builder.Build());
-            }
+                AuthorizationRootTableState = rootTableState,
+                ValidationFailure = exception,
+            };
         }
-
-        return ProfileMergeOutcome.Success(
-            new RelationalWriteMergeResult([.. tableStates], supportsGuardedNoOp: true)
-        );
     }
 
     /// <summary>

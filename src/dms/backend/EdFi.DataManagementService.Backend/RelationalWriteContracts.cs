@@ -878,6 +878,30 @@ public sealed record RelationalWriteExecutorRequest
     /// collection-key reservation. Never set for a PUT, which cannot create.
     /// </summary>
     public RelationalWriteExecutorResult? DeferredCreateOwnershipFailureResult { get; init; }
+
+    /// <summary>
+    /// Whether the resolved attempt still has proposed authorization that can deny or fail closed.
+    /// Stored-only checks and self-basis checks already satisfied by the stored phase need no deferral.
+    /// </summary>
+    internal bool HasPendingProposedAuthorization =>
+        ProposedRelationshipAuthorization
+            is RelationshipAuthorizationResult.Authorized
+                or RelationshipAuthorizationResult.NoClaims
+        || ProposedNamespaceAuthorization is not null
+        || (
+            TargetContext is RelationalWriteTargetContext.CreateNew
+            && DeferredCreateOwnershipFailureResult is not null
+        )
+        || (
+            CustomViewAuthorization is { } customView
+            && customView.ProposedChecks.Any(check =>
+                TargetContext is not RelationalWriteTargetContext.ExistingDocument
+                || check.CheckTarget is not CustomViewAuthorizationCheckTarget.ProposedSelfBasisUnavailable
+                || !customView.StoredChecks.Any(stored =>
+                    stored.ConfiguredStrategy == check.ConfiguredStrategy
+                )
+            )
+        );
 }
 
 /// <summary>

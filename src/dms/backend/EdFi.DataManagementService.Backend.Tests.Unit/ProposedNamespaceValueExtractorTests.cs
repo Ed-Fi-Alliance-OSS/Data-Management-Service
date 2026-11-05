@@ -137,6 +137,47 @@ public class Given_a_proposed_namespace_value_extractor
         ReadyNamespace(result).Should().Be("uri://ed-fi.org/Survey");
     }
 
+    [TestCase(true)]
+    [TestCase(false)]
+    public void It_uses_the_column_source_path_when_available_and_otherwise_the_reference_path(
+        bool hasColumnSourcePath
+    )
+    {
+        var rootRow = CreateRootRow(new FlattenedWriteValue.Literal(null), ReferenceDerivedNamespaceSource());
+        var binding = rootRow.TableWritePlan.ColumnBindings[1];
+        rootRow = rootRow with
+        {
+            TableWritePlan = rootRow.TableWritePlan with
+            {
+                ColumnBindings = rootRow.TableWritePlan.ColumnBindings.SetItem(
+                    1,
+                    binding with
+                    {
+                        Column = binding.Column with
+                        {
+                            SourceJsonPath = hasColumnSourcePath
+                                ? new JsonPathExpression(
+                                    "$.namespace",
+                                    [new JsonPathSegment.Property("namespace")]
+                                )
+                                : null,
+                        },
+                    }
+                ),
+            },
+        };
+
+        var result = Extract(
+            rootRow,
+            """{ "namespace": "uri://ed-fi.org/Column", "surveyReference": { "namespace": "uri://ed-fi.org/Reference" } }""",
+            "$.surveyReference"
+        );
+
+        ReadyNamespace(result)
+            .Should()
+            .Be(hasColumnSourcePath ? "uri://ed-fi.org/Column" : "uri://ed-fi.org/Reference");
+    }
+
     [Test]
     public void It_keeps_the_row_value_for_a_resolved_reference_derived_column()
     {

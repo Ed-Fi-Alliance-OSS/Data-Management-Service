@@ -849,13 +849,15 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the response body is
                   """
                   {
-                      "detail": "Access to the requested data could not be authorized. The values of one or more of the following properties are required for authorization purposes: 'SchoolId', 'StudentUniqueId'. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-                      "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
+                      "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                      "type": "urn:ed-fi:api:security:authorization",
                       "title": "Authorization Denied",
                       "status": 403,
                       "correlationId": null,
                       "validationErrors": {},
-                      "errors": []
+                      "errors": [
+                        "No relationships have been established between the caller's education organization id claims ('4255901001', '4255902001') and one or more of the following properties of the resource item: 'SchoolId', 'StudentUniqueId'."
+                      ]
                   }
                   """
 
@@ -1272,8 +1274,9 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
              When a DELETE request is made to "/ed-fi/courseTranscripts/{id}"
              Then it should respond with 204
 
+        @ResetClaimsetsAfterScenario
         @e2e-ci-shard-2
-        Scenario: 39 Ensure client can not create a courseTranscripts with out student school association
+        Scenario: 39 Ensure a missing or existing academic record yields the same denial without a student school association
              When a POST request is made to "/ed-fi/courseTranscripts" with
                   """
                   {
@@ -1294,12 +1297,62 @@ Feature: RelationshipsWithEdOrgsAndPeople Authorization
               And the response body is
                   """
                   {
-                  "detail": "Access to the requested data could not be authorized. The values of one or more of the following properties are required for authorization purposes: 'EducationOrganizationId', 'StudentUniqueId'. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
-                  "type": "urn:ed-fi:api:security:authorization:relationships:access-denied:element-required",
+                  "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                  "type": "urn:ed-fi:api:security:authorization",
                   "title": "Authorization Denied",
                   "status": 403,
                   "validationErrors": {},
-                  "errors": []
+                  "errors": [
+                    "No relationships have been established between the caller's education organization id claim ('5255901001') and the resource item's 'StudentUniqueId' value."
+                  ]
+                  }
+                  """
+             # The upload replaces the claims hierarchy (EdFiSandbox no longer exists), so one claim set
+             # carries both the unrestricted seed resource and the relationship-secured resource under test.
+             Given a claim set "E2E-DMS1659-AcademicRecordSeed" is uploaded to CMS with these resource claims
+                  | resource              | authorizationStrategies          |
+                  | StudentAcademicRecord | NoFurtherAuthorizationRequired   |
+                  | CourseTranscript      | RelationshipsWithEdOrgsAndPeople |
+               And the claim set upload to CMS should be successful
+               And the claimSet "E2E-DMS1659-AcademicRecordSeed" is authorized with educationOrganizationIds "5255901001"
+             When a POST request is made to "/ed-fi/studentAcademicRecords" with
+                  """
+                  {
+                    "studentReference": { "studentUniqueId": "52" },
+                    "educationOrganizationReference": { "educationOrganizationId": 5255901001 },
+                    "schoolYearTypeReference": { "schoolYear": 2023 },
+                    "termDescriptor": "uri://ed-fi.org/TermDescriptor#Semester"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/ed-fi/courseTranscripts" with
+                  """
+                  {
+                      "courseAttemptResultDescriptor": "uri://ed-fi.org/CourseAttemptResultDescriptor#Pass",
+                      "courseReference": {
+                        "courseCode": "ACC-test-Course1",
+                        "educationOrganizationId": 5255901001
+                      },
+                      "studentAcademicRecordReference": {
+                        "educationOrganizationId": 5255901001,
+                        "schoolYear": 2023,
+                        "studentUniqueId": "52",
+                        "termDescriptor": "uri://ed-fi.org/TermDescriptor#Semester"
+                      }
+                    }
+                  """
+             Then it should respond with 403
+              And the response body is
+                  """
+                  {
+                  "detail": "Access to the requested data could not be authorized. Hint: You may need to create a corresponding 'StudentSchoolAssociation' item.",
+                  "type": "urn:ed-fi:api:security:authorization",
+                  "title": "Authorization Denied",
+                  "status": 403,
+                  "validationErrors": {},
+                  "errors": [
+                    "No relationships have been established between the caller's education organization id claim ('5255901001') and the resource item's 'StudentUniqueId' value."
+                  ]
                   }
                   """
 

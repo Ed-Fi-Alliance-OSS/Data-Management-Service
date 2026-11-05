@@ -1174,10 +1174,13 @@ public class Given_Default_Relational_Write_Executor
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
 
-    [Test]
-    public async Task It_keeps_profile_missing_document_reference_failures_immediate()
+    [TestCase("$.schoolReference")]
+    [TestCase("$.addresses[0].schoolReference")]
+    public async Task It_returns_reference_conflict_after_profile_authorization_passes_without_dml(
+        string referencePath
+    )
     {
-        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(referencePath);
         var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
         var request = CreateRequest(
             RelationalWriteOperationKind.Post,
@@ -1192,6 +1195,7 @@ public class Given_Default_Relational_Write_Executor
                     writableBody,
                     request.WritePlan
                 ),
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
             }
         );
 
@@ -1210,9 +1214,526 @@ public class Given_Default_Relational_Write_Executor
                     )
                 )
             );
+        _writeFlattener.CapturedInput!.AllowMissingDocumentReferencesForPrecedence.Should().BeTrue();
+        _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _profileMergeSynthesizer
+            .CapturedRequest!.AllowMissingDocumentReferencesForPrecedence.Should()
+            .BeTrue();
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _noProfilePersister
+            .CapturedMergeResult!.DeferredMissingDocumentReferencePaths.Should()
+            .BeEquivalentTo(referencePath);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_defers_a_profile_missing_document_reference_until_proposed_authorization()
+    {
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
+        var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Put,
+            documentReferences: [documentReference],
+            selectedBody: writableBody
+        );
+        var relationshipFailure = CreateProposedSchoolIdRelationshipFailure(request);
+        _noProfilePersister.ProposedAuthorizationExceptionToThrow =
+            new RelationalWriteRelationshipAuthorizationNotAuthorizedException(relationshipFailure);
+        _profileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = BuildVisiblePresentRootProfileWriteContext(
+                    writableBody,
+                    request.WritePlan
+                ),
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>()
+            .Which.RelationshipFailure.Should()
+            .BeSameAs(relationshipFailure);
+        _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase("unconfigured")]
+    [TestCase("no-authorization-required")]
+    [TestCase("no-further-authorization-required")]
+    public async Task It_preserves_profile_missing_reference_precedence_without_pending_proposed_authorization(
+        string disposition
+    )
+    {
+        var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences: [RelationalAccessTestData.CreateDocumentReference("$.schoolReference")],
+            selectedBody: writableBody
+        );
+        var profileContext = BuildVisiblePresentRootProfileWriteContext(writableBody, request.WritePlan);
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = profileContext with
+                {
+                    Request = profileContext.Request with { RootResourceCreatable = false },
+                },
+                ProposedRelationshipAuthorization = disposition switch
+                {
+                    "no-authorization-required" =>
+                        new RelationshipAuthorizationResult.NoAuthorizationRequired([]),
+                    "no-further-authorization-required" =>
+                        new RelationshipAuthorizationResult.NoFurtherAuthorizationRequired([]),
+                    _ => null,
+                },
+            }
+        );
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureReference>()
+            .Which.InvalidDocumentReferences.Select(failure => failure.Path.Value)
+            .Should()
+            .Equal("$.schoolReference");
         _writeFlattener.FlattenCallCount.Should().Be(0);
         _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase("unconfigured", false)]
+    [TestCase("no-authorization-required", false)]
+    [TestCase("no-further-authorization-required", false)]
+    [TestCase("unconfigured", true)]
+    public async Task It_preserves_profile_child_failure_precedence_over_immutable_identity_without_pending_authorization(
+        string disposition,
+        bool validationFailure
+    )
+    {
+        var writableBody = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!;
+        var request = CreateRequest(RelationalWriteOperationKind.Put, selectedBody: writableBody);
+        _profileMergeSynthesizer.AuthorizationRootTableStateToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 155901,
+            mergedSchoolId: 255901
+        ).TablesInDependencyOrder[0];
+        _profileMergeSynthesizer.RejectionToReturn = validationFailure
+            ? null
+            : new ProfileCreatabilityRejection("$.addresses[*]", "Profile forbids collection creation.");
+        _profileMergeSynthesizer.ValidationFailuresToReturn = validationFailure
+            ? [new WriteValidationFailure(new JsonPath("$._ext.sample.member"), "Key-unification conflict")]
+            : [];
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = BuildVisiblePresentRootProfileWriteContext(
+                    writableBody,
+                    request.WritePlan
+                ),
+                ProposedRelationshipAuthorization = disposition switch
+                {
+                    "no-authorization-required" =>
+                        new RelationshipAuthorizationResult.NoAuthorizationRequired([]),
+                    "no-further-authorization-required" =>
+                        new RelationshipAuthorizationResult.NoFurtherAuthorizationRequired([]),
+                    _ => null,
+                },
+            }
+        );
+
+        var updateResult = result.Should().BeOfType<RelationalWriteExecutorResult.Update>().Which.Result;
+        if (validationFailure)
+        {
+            updateResult
+                .Should()
+                .BeEquivalentTo(
+                    new UpdateResult.UpdateFailureValidation(
+                        _profileMergeSynthesizer.ValidationFailuresToReturn
+                    )
+                );
+        }
+        else
+        {
+            updateResult.Should().BeOfType<UpdateResult.UpdateFailureProfileDataPolicy>();
+        }
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase(RelationalWriteOperationKind.Put, "collection")]
+    [TestCase(RelationalWriteOperationKind.Put, "separate-table")]
+    [TestCase(RelationalWriteOperationKind.Put, "validation")]
+    [TestCase(RelationalWriteOperationKind.Post, "collection")]
+    [TestCase(RelationalWriteOperationKind.Post, "separate-table")]
+    [TestCase(RelationalWriteOperationKind.Post, "validation")]
+    public async Task It_returns_immutable_identity_before_deferred_profile_failure_with_pending_authorization(
+        RelationalWriteOperationKind operationKind,
+        string failureKind
+    )
+    {
+        var writableBody = JsonNode.Parse("""{"schoolId":255902,"name":"Lincoln High"}""")!;
+        var request = CreateRequest(
+            operationKind,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, UpdateDocumentUuid, 44L),
+            selectedBody: writableBody
+        );
+        _profileMergeSynthesizer.AuthorizationRootTableStateToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255902
+        ).TablesInDependencyOrder[0];
+        if (failureKind == "validation")
+        {
+            _profileMergeSynthesizer.ValidationFailuresToReturn =
+            [
+                new WriteValidationFailure(new JsonPath("$._ext.sample.member"), "Key-unification conflict"),
+            ];
+        }
+        else
+        {
+            _profileMergeSynthesizer.RejectionToReturn = new ProfileCreatabilityRejection(
+                failureKind == "collection" ? "$.addresses[*]" : "$._ext.sample",
+                "Profile forbids creation."
+            );
+        }
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = BuildVisiblePresentRootProfileWriteContext(
+                    writableBody,
+                    request.WritePlan
+                ),
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        const string message =
+            "Identifying values for the School resource cannot be changed. Delete and recreate the resource item instead.";
+        RelationalWriteExecutorResult expected =
+            operationKind is RelationalWriteOperationKind.Put
+                ? new RelationalWriteExecutorResult.Update(
+                    new UpdateResult.UpdateFailureImmutableIdentity(message)
+                )
+                : new RelationalWriteExecutorResult.Upsert(
+                    new UpsertResult.UpsertFailureImmutableIdentity(message)
+                );
+        result.Should().BeEquivalentTo(expected);
+        _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase(RelationalWriteOperationKind.Put)]
+    [TestCase(RelationalWriteOperationKind.Post)]
+    public async Task It_returns_stale_if_match_before_a_profiled_deferred_missing_reference_after_authorization(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        var writableBody = JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!;
+        var request = CreateRequest(
+            operationKind,
+            targetContext: new RelationalWriteTargetContext.ExistingDocument(345L, UpdateDocumentUuid, 44L),
+            documentReferences: [RelationalAccessTestData.CreateDocumentReference("$.schoolReference")],
+            selectedBody: writableBody,
+            writePrecondition: new WritePrecondition.IfMatch("\"stale-etag\"")
+        );
+        _profileMergeSynthesizer.ResultToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 255901,
+            mergedSchoolId: 255901
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = BuildVisiblePresentRootProfileWriteContext(
+                    writableBody,
+                    request.WritePlan
+                ),
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        RelationalWriteExecutorResult expected =
+            operationKind is RelationalWriteOperationKind.Put
+                ? new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureETagMisMatch())
+                : new RelationalWriteExecutorResult.Upsert(new UpsertResult.UpsertFailureETagMisMatch());
+        result.Should().BeEquivalentTo(expected);
+        _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_defers_profile_missing_collection_references_until_proposed_authorization()
+    {
+        var documentReference = RelationalAccessTestData.CreateDocumentReference(
+            "$.addresses[0].schoolReference"
+        );
+        var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences: [documentReference],
+            selectedBody: writableBody
+        );
+
+        var relationshipFailure = CreateProposedSchoolIdRelationshipFailure(request);
+        _noProfilePersister.ProposedAuthorizationExceptionToThrow =
+            new RelationalWriteRelationshipAuthorizationNotAuthorizedException(relationshipFailure);
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = BuildVisiblePresentRootProfileWriteContext(
+                    writableBody,
+                    request.WritePlan
+                ),
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureRelationshipNotAuthorized>()
+            .Which.RelationshipFailure.Should()
+            .BeSameAs(relationshipFailure);
+        _writeFlattener.FlattenCallCount.Should().Be(1);
+        _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
         _targetLookupResolver.ResolveForPostCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(1);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase(RelationalWriteOperationKind.Post, true, true, true)]
+    [TestCase(RelationalWriteOperationKind.Post, false, true, true)]
+    [TestCase(RelationalWriteOperationKind.Put, true, true, true)]
+    [TestCase(RelationalWriteOperationKind.Put, false, true, true)]
+    [TestCase(RelationalWriteOperationKind.Post, true, true, false)]
+    [TestCase(RelationalWriteOperationKind.Post, false, true, false)]
+    [TestCase(RelationalWriteOperationKind.Put, true, true, false)]
+    [TestCase(RelationalWriteOperationKind.Put, false, true, false)]
+    [TestCase(RelationalWriteOperationKind.Post, true, false, false)]
+    [TestCase(RelationalWriteOperationKind.Put, true, false, false)]
+    public async Task It_authorizes_the_retained_profile_root_before_profile_rejection_without_dml(
+        RelationalWriteOperationKind operationKind,
+        bool authorizationSucceeds,
+        bool configureAuthorization,
+        bool validationFailure
+    )
+    {
+        var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
+        var request = CreateRequest(operationKind, selectedBody: writableBody);
+        _profileMergeSynthesizer.ValidationFailuresToReturn = validationFailure
+            ? [new WriteValidationFailure(new JsonPath("$._ext.sample.member"), "Key-unification conflict")]
+            : [];
+        _profileMergeSynthesizer.RejectionToReturn = validationFailure
+            ? null
+            : new ProfileCreatabilityRejection("$.addresses[*]", "Profile forbids collection creation.");
+        _profileMergeSynthesizer.AuthorizationRootTableStateToReturn = CreateMergeResult(
+            request.WritePlan.TablePlansInDependencyOrder[0],
+            currentSchoolId: 155901,
+            mergedSchoolId: 155901
+        ).TablesInDependencyOrder[0];
+        if (!authorizationSucceeds)
+        {
+            _noProfilePersister.ProposedAuthorizationExceptionToThrow =
+                new RelationalWriteRelationshipAuthorizationNotAuthorizedException(
+                    CreateProposedSchoolIdRelationshipFailure(request)
+                );
+        }
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = BuildVisiblePresentRootProfileWriteContext(
+                    writableBody,
+                    request.WritePlan
+                ),
+                ProposedRelationshipAuthorization = configureAuthorization
+                    ? CreateProposedSchoolIdRelationshipAuthorization(request)
+                    : null,
+            }
+        );
+
+        object actual = result switch
+        {
+            RelationalWriteExecutorResult.Upsert upsert => upsert.Result,
+            RelationalWriteExecutorResult.Update update => update.Result,
+            _ => throw new AssertionException("Expected an upsert or update result."),
+        };
+        var expectedType = (operationKind, authorizationSucceeds) switch
+        {
+            (RelationalWriteOperationKind.Post, true) => typeof(UpsertResult.UpsertFailureProfileDataPolicy),
+            (RelationalWriteOperationKind.Post, false) =>
+                typeof(UpsertResult.UpsertFailureRelationshipNotAuthorized),
+            (RelationalWriteOperationKind.Put, true) => typeof(UpdateResult.UpdateFailureProfileDataPolicy),
+            _ => typeof(UpdateResult.UpdateFailureRelationshipNotAuthorized),
+        };
+        if (validationFailure && authorizationSucceeds)
+        {
+            actual
+                .Should()
+                .BeEquivalentTo(
+                    operationKind is RelationalWriteOperationKind.Post
+                        ? (object)
+                            new UpsertResult.UpsertFailureValidation(
+                                _profileMergeSynthesizer.ValidationFailuresToReturn
+                            )
+                        : new UpdateResult.UpdateFailureValidation(
+                            _profileMergeSynthesizer.ValidationFailuresToReturn
+                        )
+                );
+        }
+        else
+        {
+            actual.Should().BeOfType(expectedType);
+        }
+        _noProfilePersister
+            .AuthorizeProposedRelationshipCallCount.Should()
+            .Be(configureAuthorization ? 1 : 0);
+        if (configureAuthorization)
+        {
+            _noProfilePersister.CapturedMergeResult!.SupportsGuardedNoOp.Should().BeFalse();
+        }
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.CommitCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_returns_profile_creatability_rejection_before_a_deferred_root_missing_reference()
+    {
+        // With a root-level missing reference deferred, the profile merge runs first, so its creatability
+        // rejection precedes the reference failure — the same order the no-profile path already uses.
+        var documentReference = RelationalAccessTestData.CreateDocumentReference("$.schoolReference");
+        var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            documentReferences: [documentReference],
+            selectedBody: writableBody
+        );
+        _profileMergeSynthesizer.RejectionToReturn = new ProfileCreatabilityRejection(
+            "$",
+            "Profile forbids creation of new visible scope '$'."
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = BuildVisiblePresentRootProfileWriteContext(
+                    writableBody,
+                    request.WritePlan
+                ),
+                ProposedRelationshipAuthorization = CreateProposedSchoolIdRelationshipAuthorization(request),
+            }
+        );
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureProfileDataPolicy>();
+        _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(1);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
+        _noProfilePersister.TryPersistCallCount.Should().Be(0);
+        _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
+    }
+
+    [TestCase(false, "relationship")]
+    [TestCase(true, "relationship")]
+    [TestCase(true, "namespace")]
+    [TestCase(true, "ownership")]
+    [TestCase(true, "none")]
+    public async Task It_keeps_profile_descriptor_reference_failures_immediate_without_disclosing_missing_documents(
+        bool missingSchool,
+        string authorizationKind
+    )
+    {
+        var descriptorReference = RelationalAccessTestData.CreateDescriptorReference(
+            "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
+            "$.schoolTypeDescriptor"
+        );
+        var writableBody = JsonNode.Parse("""{"name":"Lincoln High"}""")!;
+        var request = CreateRequest(
+            RelationalWriteOperationKind.Post,
+            descriptorReferences: [descriptorReference],
+            documentReferences: missingSchool
+                ? [RelationalAccessTestData.CreateDocumentReference("$.schoolReference")]
+                : [],
+            selectedBody: writableBody
+        );
+
+        var result = await _sut.ExecuteAsync(
+            request with
+            {
+                ProfileWriteContext = BuildVisiblePresentRootProfileWriteContext(
+                    writableBody,
+                    request.WritePlan
+                ),
+                ProposedRelationshipAuthorization = authorizationKind is "relationship"
+                    ? CreateProposedSchoolIdRelationshipAuthorization(request)
+                    : null,
+                ProposedNamespaceAuthorization = authorizationKind is "namespace"
+                    ? CreateProposedNamespaceAuthorization()
+                    : null,
+                DeferredCreateOwnershipFailureResult = authorizationKind is "ownership"
+                    ? CreateOwnershipDenial(OwnershipAuthorizationFailureKind.OwnershipTokenMismatch)
+                    : null,
+            }
+        );
+
+        result
+            .Should()
+            .BeOfType<RelationalWriteExecutorResult.Upsert>()
+            .Which.Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureReference>();
+        var referenceFailure = ((RelationalWriteExecutorResult.Upsert)result)
+            .Result.Should()
+            .BeOfType<UpsertResult.UpsertFailureReference>()
+            .Subject;
+        referenceFailure
+            .InvalidDocumentReferences.Select(failure => failure.Path.Value)
+            .Should()
+            .Equal(
+                missingSchool && authorizationKind is "none" ? ["$.schoolReference"] : Array.Empty<string>()
+            );
+        referenceFailure
+            .InvalidDescriptorReferences.Select(failure => failure.Path.Value)
+            .Should()
+            .Equal("$.schoolTypeDescriptor");
+        _writeFlattener.FlattenCallCount.Should().Be(0);
+        _profileMergeSynthesizer.SynthesizeCallCount.Should().Be(0);
+        _noProfilePersister.AuthorizeProposedRelationshipCallCount.Should().Be(0);
         _noProfilePersister.TryPersistCallCount.Should().Be(0);
         _writeSessionFactory.Session.RollbackCallCount.Should().Be(1);
     }
@@ -7683,6 +8204,7 @@ public class Given_Default_Relational_Write_Executor
 
         var result = RelationshipAuthorizationProposedValueExtractor.Extract(
             CreateTwoStrategyTwoSubjectRelationshipAuthorization(request),
+            request.WritePlan,
             rootRow,
             emittedAuth1Index: 0
         );
@@ -7726,6 +8248,7 @@ public class Given_Default_Relational_Write_Executor
 
         var result = RelationshipAuthorizationProposedValueExtractor.Extract(
             CreateTransitivePeopleProposedRelationshipAuthorization(request),
+            request.WritePlan,
             rootRow,
             emittedAuth1Index: 0
         );
@@ -7785,6 +8308,7 @@ public class Given_Default_Relational_Write_Executor
 
         var result = RelationshipAuthorizationProposedValueExtractor.Extract(
             CreateSelfPeopleExistingTargetRelationshipAuthorization(request, securableElementKind),
+            request.WritePlan,
             rootRow,
             emittedAuth1Index: 0,
             targetContext: new RelationalWriteTargetContext.ExistingDocument(
@@ -7831,6 +8355,7 @@ public class Given_Default_Relational_Write_Executor
 
         var result = RelationshipAuthorizationProposedValueExtractor.Extract(
             CreateTwoSingleSubjectStrategyRelationshipAuthorization(request),
+            request.WritePlan,
             rootRow,
             emittedAuth1Index: 0
         );
@@ -7867,6 +8392,7 @@ public class Given_Default_Relational_Write_Executor
 
         var result = RelationshipAuthorizationProposedValueExtractor.Extract(
             CreateSingleStrategyTwoSubjectRelationshipAuthorization(request),
+            request.WritePlan,
             rootRow,
             emittedAuth1Index: 0
         );
@@ -7899,6 +8425,7 @@ public class Given_Default_Relational_Write_Executor
 
         var result = RelationshipAuthorizationProposedValueExtractor.Extract(
             CreateTwoSingleSubjectStrategyRelationshipAuthorization(request),
+            request.WritePlan,
             rootRow,
             emittedAuth1Index: 0
         );
@@ -7934,6 +8461,7 @@ public class Given_Default_Relational_Write_Executor
 
         var result = RelationshipAuthorizationProposedValueExtractor.Extract(
             CreateProposedSchoolIdRelationshipAuthorization(request),
+            request.WritePlan,
             rootRow,
             emittedAuth1Index: 0
         );
@@ -9505,6 +10033,10 @@ public class Given_Default_Relational_Write_Executor
 
         public ProfileCreatabilityRejection? RejectionToReturn { get; set; }
 
+        public WriteValidationFailure[] ValidationFailuresToReturn { get; set; } = [];
+
+        public RelationalWriteMergedTableState? AuthorizationRootTableStateToReturn { get; set; }
+
         public Exception? ExceptionToThrow { get; set; }
 
         public ProfileMergeOutcome Synthesize(RelationalWriteProfileMergeRequest request)
@@ -9517,9 +10049,23 @@ public class Given_Default_Relational_Write_Executor
                 throw ExceptionToThrow;
             }
 
+            if (ValidationFailuresToReturn.Length > 0)
+            {
+                return new ProfileMergeOutcome
+                {
+                    AuthorizationRootTableState = AuthorizationRootTableStateToReturn,
+                    ValidationFailure = new RelationalWriteRequestValidationException(
+                        ValidationFailuresToReturn
+                    ),
+                };
+            }
+
             if (RejectionToReturn is not null)
             {
-                return ProfileMergeOutcome.Reject(RejectionToReturn);
+                return ProfileMergeOutcome.Reject(RejectionToReturn) with
+                {
+                    AuthorizationRootTableState = AuthorizationRootTableStateToReturn,
+                };
             }
 
             return ProfileMergeOutcome.Success(

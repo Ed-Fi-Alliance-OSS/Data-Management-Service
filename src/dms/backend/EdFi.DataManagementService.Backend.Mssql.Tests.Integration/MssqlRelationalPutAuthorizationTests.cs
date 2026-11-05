@@ -3,97 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Collections.Immutable;
-using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
-
-file sealed class AuthorizationRootChildStoredProjectionInvoker(ImmutableArray<string> hiddenMemberPaths)
-    : IStoredStateProjectionInvoker
-{
-    public ProfileAppliedWriteContext ProjectStoredState(
-        JsonNode storedDocument,
-        ProfileAppliedWriteRequest request,
-        IReadOnlyList<CompiledScopeDescriptor> scopeCatalog
-    )
-    {
-        _ = scopeCatalog;
-
-        return new ProfileAppliedWriteContext(
-            Request: request,
-            VisibleStoredBody: storedDocument,
-            StoredScopeStates:
-            [
-                new StoredScopeState(
-                    Address: new ScopeInstanceAddress("$", []),
-                    Visibility: ProfileVisibilityKind.VisiblePresent,
-                    HiddenMemberPaths: hiddenMemberPaths
-                ),
-            ],
-            VisibleStoredCollectionRows: []
-        );
-    }
-}
-
-file static class MssqlAuthorizationRootChildProfileTestSupport
-{
-    private static readonly QualifiedResourceName AuthorizationRootChildResource = new(
-        "Authz",
-        RelationshipAuthorizationCrudTestSupport.RootAndChildEdOrgResourceName
-    );
-
-    public static JsonNode CreateRootSchoolHiddenBody(AuthorizationRootChildSeed seed) =>
-        new JsonObject { ["authorizationRootChildId"] = seed.AuthorizationRootChildId, ["name"] = seed.Name };
-
-    public static BackendProfileWriteContext CreateRootSchoolHiddenProfileContext(
-        MappingSet mappingSet,
-        JsonNode writableRequestBody
-    ) => CreateRootProfileContext(mappingSet, writableRequestBody, ["schoolReference"]);
-
-    public static BackendProfileWriteContext CreateRootSchoolVisibleProfileContext(
-        MappingSet mappingSet,
-        JsonNode writableRequestBody
-    ) => CreateRootProfileContext(mappingSet, writableRequestBody, []);
-
-    private static BackendProfileWriteContext CreateRootProfileContext(
-        MappingSet mappingSet,
-        JsonNode writableRequestBody,
-        ImmutableArray<string> hiddenMemberPaths
-    )
-    {
-        var scopeCatalog = CompiledScopeAdapterFactory.BuildFromWritePlan(
-            mappingSet.WritePlansByResource[AuthorizationRootChildResource]
-        );
-
-        return new BackendProfileWriteContext(
-            Request: new ProfileAppliedWriteRequest(
-                WritableRequestBody: writableRequestBody,
-                RootResourceCreatable: true,
-                RequestScopeStates:
-                [
-                    new RequestScopeState(
-                        Address: new ScopeInstanceAddress("$", []),
-                        Visibility: ProfileVisibilityKind.VisiblePresent,
-                        Creatable: true
-                    ),
-                ],
-                VisibleRequestCollectionItems: []
-            ),
-            ProfileName: "authorization-root-child-hidden-school-profile",
-            CompiledScopeCatalog: scopeCatalog,
-            StoredStateProjectionInvoker: new AuthorizationRootChildStoredProjectionInvoker(hiddenMemberPaths)
-        );
-    }
-}
 
 [TestFixture]
 [NonParallelizable]
@@ -133,6 +50,32 @@ public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg
     ];
 
     private MssqlRelationalQueryAuthorizationTestContext _context = null!;
+
+    private MissingReferenceWriteAuthorizationScenarios MissingReferenceScenarios =>
+        new(
+            _context.MappingSet,
+            seed => _context.CreateAuthorizationRootChildAsync(seed),
+            (seed, documentUuid, claims, strategies, profile, body) =>
+                _context.UpdateAuthorizationRootChildByIdAsync(
+                    seed,
+                    documentUuid,
+                    claims,
+                    strategies,
+                    backendProfileWriteContext: profile,
+                    requestBody: body
+                ),
+            (seed, claims, strategies, profile, body) =>
+                _context.UpsertAuthorizationRootChildAsync(
+                    seed,
+                    claims,
+                    strategies,
+                    backendProfileWriteContext: profile,
+                    requestBody: body
+                ),
+            _context.ReadAuthorizationRootChildSideEffectStateAsync,
+            _context.CountDocumentRowsAsync,
+            _context.CountAuthorizationRootChildRowsByNaturalKeyAsync
+        );
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -468,14 +411,11 @@ public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg
         RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
             await _context.CreateAuthorizationRootChildAsync(existingSeed)
         );
-        var writeBody = MssqlAuthorizationRootChildProfileTestSupport.CreateRootSchoolHiddenBody(
-            proposedSeed
+        var writeBody = AuthorizationRootChildProfileTestSupport.CreateRootSchoolHiddenBody(proposedSeed);
+        var profileContext = AuthorizationRootChildProfileTestSupport.CreateRootSchoolHiddenProfileContext(
+            _context.MappingSet,
+            writeBody.DeepClone()
         );
-        var profileContext =
-            MssqlAuthorizationRootChildProfileTestSupport.CreateRootSchoolHiddenProfileContext(
-                _context.MappingSet,
-                writeBody.DeepClone()
-            );
 
         var result = await _context.UpdateAuthorizationRootChildByIdAsync(
             proposedSeed,
@@ -510,11 +450,10 @@ public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg
         var writeBody = RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(
             proposedSeed
         );
-        var profileContext =
-            MssqlAuthorizationRootChildProfileTestSupport.CreateRootSchoolVisibleProfileContext(
-                _context.MappingSet,
-                writeBody.DeepClone()
-            );
+        var profileContext = AuthorizationRootChildProfileTestSupport.CreateRootSchoolVisibleProfileContext(
+            _context.MappingSet,
+            writeBody.DeepClone()
+        );
 
         var result = await _context.UpdateAuthorizationRootChildByIdAsync(
             proposedSeed,
@@ -653,6 +592,56 @@ public class Given_A_MssqlRelationalPutAuthorizationTests_With_A_Synthetic_EdOrg
         var after = await _context.ReadAuthorizationRootChildSideEffectStateAsync(existingSeed.DocumentUuid);
         after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
     }
+
+    [Test]
+    public Task It_denies_a_missing_proposed_school_on_put_and_preserves_stored_state() =>
+        MissingReferenceScenarios.It_denies_a_missing_proposed_school_on_put_and_preserves_stored_state();
+
+    [TestCase(999, "P1")]
+    [TestCase(999, "Missing")]
+    [TestCase(300, "P1")]
+    [TestCase(300, "Missing")]
+    public Task It_denies_profiled_put_before_collection_reference_failures_and_preserves_stored_state(
+        int proposedSchoolId,
+        string classPeriodName
+    ) =>
+        MissingReferenceScenarios.It_denies_profiled_put_before_collection_reference_failures_and_preserves_stored_state(
+            proposedSchoolId,
+            classPeriodName
+        );
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public Task It_returns_a_missing_child_reference_conflict_after_profiled_put_authorization_without_changing_rows(
+        bool schoolVisible
+    ) =>
+        MissingReferenceScenarios.It_returns_a_missing_child_reference_conflict_after_profiled_put_authorization_without_changing_rows(
+            schoolVisible
+        );
+
+    [Test]
+    public Task Given_A_Custom_View_Strategy_It_Denies_An_Update_Whose_Proposed_School_Is_Unresolved_Like_An_Excluded_School() =>
+        MissingReferenceScenarios.Given_A_Custom_View_Strategy_It_Denies_An_Update_Whose_Proposed_School_Is_Unresolved_Like_An_Excluded_School(
+            _customViewStrategy
+        );
+
+    [Test]
+    public Task It_denies_profiled_put_identically_before_non_creatable_collection_inserts() =>
+        MissingReferenceScenarios.It_denies_profiled_put_identically_before_non_creatable_collection_inserts();
+
+    [Test]
+    public Task It_enforces_non_creatable_collection_policy_after_authorized_profiled_put() =>
+        MissingReferenceScenarios.It_enforces_non_creatable_collection_policy_after_authorized_profiled_put();
+
+    [TestCase(999)]
+    [TestCase(300)]
+    [TestCase(100)]
+    public Task It_authorizes_profiled_put_before_multiple_missing_collection_reference_failures(
+        int proposedSchoolId
+    ) =>
+        MissingReferenceScenarios.It_authorizes_profiled_put_before_multiple_missing_collection_reference_failures(
+            proposedSchoolId
+        );
 
     private static void AssertUpdateRelationshipDenied(
         UpdateResult result,
@@ -1435,6 +1424,32 @@ public class Given_A_MssqlRelationalPostAsUpdateAuthorizationTests_With_A_Synthe
 
     private MssqlRelationalQueryAuthorizationTestContext _context = null!;
 
+    private MissingReferenceWriteAuthorizationScenarios MissingReferenceScenarios =>
+        new(
+            _context.MappingSet,
+            seed => _context.CreateAuthorizationRootChildAsync(seed),
+            (seed, documentUuid, claims, strategies, profile, body) =>
+                _context.UpdateAuthorizationRootChildByIdAsync(
+                    seed,
+                    documentUuid,
+                    claims,
+                    strategies,
+                    backendProfileWriteContext: profile,
+                    requestBody: body
+                ),
+            (seed, claims, strategies, profile, body) =>
+                _context.UpsertAuthorizationRootChildAsync(
+                    seed,
+                    claims,
+                    strategies,
+                    backendProfileWriteContext: profile,
+                    requestBody: body
+                ),
+            _context.ReadAuthorizationRootChildSideEffectStateAsync,
+            _context.CountDocumentRowsAsync,
+            _context.CountAuthorizationRootChildRowsByNaturalKeyAsync
+        );
+
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
@@ -1688,14 +1703,11 @@ public class Given_A_MssqlRelationalPostAsUpdateAuthorizationTests_With_A_Synthe
         RelationalQueryAuthorizationAssertions.AssertInsertSuccess(
             await _context.CreateAuthorizationRootChildAsync(existingSeed)
         );
-        var writeBody = MssqlAuthorizationRootChildProfileTestSupport.CreateRootSchoolHiddenBody(
-            candidateSeed
+        var writeBody = AuthorizationRootChildProfileTestSupport.CreateRootSchoolHiddenBody(candidateSeed);
+        var profileContext = AuthorizationRootChildProfileTestSupport.CreateRootSchoolHiddenProfileContext(
+            _context.MappingSet,
+            writeBody.DeepClone()
         );
-        var profileContext =
-            MssqlAuthorizationRootChildProfileTestSupport.CreateRootSchoolHiddenProfileContext(
-                _context.MappingSet,
-                writeBody.DeepClone()
-            );
 
         var result = await _context.UpsertAuthorizationRootChildAsync(
             candidateSeed,
@@ -1735,11 +1747,10 @@ public class Given_A_MssqlRelationalPostAsUpdateAuthorizationTests_With_A_Synthe
         var writeBody = RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(
             candidateSeed
         );
-        var profileContext =
-            MssqlAuthorizationRootChildProfileTestSupport.CreateRootSchoolVisibleProfileContext(
-                _context.MappingSet,
-                writeBody.DeepClone()
-            );
+        var profileContext = AuthorizationRootChildProfileTestSupport.CreateRootSchoolVisibleProfileContext(
+            _context.MappingSet,
+            writeBody.DeepClone()
+        );
 
         var result = await _context.UpsertAuthorizationRootChildAsync(
             candidateSeed,
@@ -1893,6 +1904,73 @@ public class Given_A_MssqlRelationalPostAsUpdateAuthorizationTests_With_A_Synthe
         after.Should().BeEquivalentTo(before, options => options.WithStrictOrdering());
         (await _context.CountDocumentRowsAsync(candidateSeed.DocumentUuid)).Should().Be(0);
     }
+
+    [Test]
+    public Task It_denies_a_missing_proposed_school_on_post_as_update_and_preserves_stored_state() =>
+        MissingReferenceScenarios.It_denies_a_missing_proposed_school_on_post_as_update_and_preserves_stored_state();
+
+    [TestCase(999, "P1")]
+    [TestCase(999, "Missing")]
+    [TestCase(300, "P1")]
+    [TestCase(300, "Missing")]
+    public Task It_denies_profiled_post_as_update_before_collection_reference_failures_and_preserves_stored_state(
+        int proposedSchoolId,
+        string classPeriodName
+    ) =>
+        MissingReferenceScenarios.It_denies_profiled_post_as_update_before_collection_reference_failures_and_preserves_stored_state(
+            proposedSchoolId,
+            classPeriodName
+        );
+
+    [TestCase(999, "P1")]
+    [TestCase(999, "Missing")]
+    [TestCase(300, "P1")]
+    [TestCase(300, "Missing")]
+    public Task It_denies_profiled_post_create_before_collection_reference_failures_without_side_effects(
+        int proposedSchoolId,
+        string classPeriodName
+    ) =>
+        MissingReferenceScenarios.It_denies_profiled_post_create_before_collection_reference_failures_without_side_effects(
+            proposedSchoolId,
+            classPeriodName
+        );
+
+    [Test]
+    public Task It_returns_a_missing_child_reference_conflict_after_profiled_post_as_update_authorization_without_side_effects() =>
+        MissingReferenceScenarios.It_returns_a_missing_child_reference_conflict_after_profiled_post_as_update_authorization_without_side_effects();
+
+    [Test]
+    public Task It_returns_a_missing_child_reference_conflict_after_profiled_post_create_authorization_without_side_effects() =>
+        MissingReferenceScenarios.It_returns_a_missing_child_reference_conflict_after_profiled_post_create_authorization_without_side_effects();
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public Task It_denies_profiled_post_identically_before_non_creatable_collection_inserts(bool createNew) =>
+        MissingReferenceScenarios.It_denies_profiled_post_identically_before_non_creatable_collection_inserts(
+            createNew
+        );
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public Task It_enforces_non_creatable_collection_policy_after_authorized_profiled_post(bool createNew) =>
+        MissingReferenceScenarios.It_enforces_non_creatable_collection_policy_after_authorized_profiled_post(
+            createNew
+        );
+
+    [TestCase(false, 999)]
+    [TestCase(false, 300)]
+    [TestCase(false, 100)]
+    [TestCase(true, 999)]
+    [TestCase(true, 300)]
+    [TestCase(true, 100)]
+    public Task It_authorizes_profiled_post_before_multiple_missing_collection_reference_failures(
+        bool createNew,
+        int proposedSchoolId
+    ) =>
+        MissingReferenceScenarios.It_authorizes_profiled_post_before_multiple_missing_collection_reference_failures(
+            createNew,
+            proposedSchoolId
+        );
 
     private static void AssertUpsertRelationshipDenied(
         UpsertResult result,

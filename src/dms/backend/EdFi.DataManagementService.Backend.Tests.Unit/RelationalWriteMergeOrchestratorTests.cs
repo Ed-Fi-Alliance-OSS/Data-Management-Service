@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -16,6 +17,203 @@ using FluentAssertions;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
+
+[TestFixture("none", false)]
+[TestFixture("no-authorization-required", false)]
+[TestFixture("no-further-authorization-required", false)]
+[TestFixture("empty-custom-view", false)]
+[TestFixture("stored-custom-view", false)]
+[TestFixture("paired-self-basis-update", false)]
+[TestFixture("ownership-update", false)]
+[TestFixture("namespace", true)]
+[TestFixture("relationship", true)]
+[TestFixture("no-claims", true)]
+[TestFixture("custom-view", true)]
+[TestFixture("self-basis-create", true)]
+[TestFixture("ownership-create", true)]
+public class Given_RelationalWriteMergeOrchestrator_with_a_retained_root_and_child_policy_failure(
+    string disposition,
+    bool deferFailure
+)
+{
+    private RelationalWriteMergeBoundary _boundary = null!;
+    private RelationalWriteMergedTableState _retainedRoot = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var harness = RelationalWriteMergeOrchestratorTestSupport.CreateHarness();
+        var request = harness.ProfileRequest;
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var rootTable = rootPlan.TableModel.Table;
+        var strategy = new ConfiguredAuthorizationStrategy("SchoolWithTestAuthorization", 0);
+        var storedCheck = new SingleRecordCustomViewAuthorizationCheckSpec(
+            strategy,
+            0,
+            CustomViewAuthorizationCheckValueSource.Stored,
+            new DbTableName(new DbSchemaName("auth"), "SchoolWithTestAuthorization"),
+            new DbColumnName("DocumentId"),
+            [],
+            new CustomViewAuthorizationCheckTarget.Stored(rootTable, new DbColumnName("DocumentId")),
+            request.WritePlan.Model.Resource,
+            ["SchoolId"],
+            "Test hint"
+        );
+        var proposedCheck = storedCheck with
+        {
+            Index = 1,
+            ValueSource = CustomViewAuthorizationCheckValueSource.Proposed,
+            CheckTarget = new CustomViewAuthorizationCheckTarget.Proposed(
+                rootTable,
+                new CustomViewAuthorizationProposedValueBinding(
+                    rootTable,
+                    new DbColumnName("SchoolId"),
+                    "SchoolId",
+                    "schoolId"
+                )
+            ),
+        };
+        var ownershipFailure = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureOwnershipNotAuthorized(
+                new OwnershipAuthorizationFailure(
+                    OwnershipAuthorizationFailureKind.OwnershipTokenMismatch,
+                    0,
+                    "OwnershipBased"
+                )
+            )
+        );
+        request = disposition switch
+        {
+            "no-authorization-required" => request with
+            {
+                ProposedRelationshipAuthorization =
+                    new RelationshipAuthorizationResult.NoAuthorizationRequired([]),
+            },
+            "no-further-authorization-required" => request with
+            {
+                ProposedRelationshipAuthorization =
+                    new RelationshipAuthorizationResult.NoFurtherAuthorizationRequired([]),
+            },
+            "empty-custom-view" => request with { CustomViewAuthorization = new([]) },
+            "stored-custom-view" => request with { CustomViewAuthorization = new([storedCheck]) },
+            "paired-self-basis-update" => request with
+            {
+                TargetContext = new RelationalWriteTargetContext.ExistingDocument(
+                    1,
+                    new DocumentUuid(Guid.NewGuid()),
+                    1
+                ),
+                CustomViewAuthorization = new([
+                    storedCheck,
+                    proposedCheck with
+                    {
+                        CheckTarget = new CustomViewAuthorizationCheckTarget.ProposedSelfBasisUnavailable(
+                            rootTable
+                        ),
+                    },
+                ]),
+            },
+            "ownership-update" => request with
+            {
+                TargetContext = new RelationalWriteTargetContext.ExistingDocument(
+                    1,
+                    new DocumentUuid(Guid.NewGuid()),
+                    1
+                ),
+                DeferredCreateOwnershipFailureResult = ownershipFailure,
+            },
+            "namespace" => request with
+            {
+                ProposedNamespaceAuthorization = new(
+                    [
+                        new NamespaceAuthorizationCheckSpec(
+                            0,
+                            NamespaceAuthorizationCheckValueSource.Proposed,
+                            rootTable,
+                            new DbColumnName("Name")
+                        ),
+                    ],
+                    NamespacePrefixParameterizationFactory.Create(
+                        SqlDialect.Pgsql,
+                        ["uri://ed-fi.org/"],
+                        "prefixes"
+                    )
+                ),
+            },
+            "relationship" => request with
+            {
+                ProposedRelationshipAuthorization =
+                    Given_Default_Relational_Write_Executor.CreateProposedSchoolIdRelationshipAuthorization(
+                        new RelationalWriteExecutorInput(
+                            request.MappingSet,
+                            request.OperationKind,
+                            request.TargetRequest,
+                            request.WritePlan,
+                            request.ExistingDocumentReadPlan,
+                            request.SelectedBody,
+                            request.AllowIdentityUpdates,
+                            request.TraceId,
+                            request.ReferenceResolutionRequest
+                        )
+                    ),
+            },
+            "no-claims" => request with
+            {
+                ProposedRelationshipAuthorization = new RelationshipAuthorizationResult.NoClaims([], []),
+            },
+            "custom-view" => request with { CustomViewAuthorization = new([proposedCheck]) },
+            "self-basis-create" => request with
+            {
+                CustomViewAuthorization = new([
+                    proposedCheck with
+                    {
+                        CheckTarget = new CustomViewAuthorizationCheckTarget.ProposedSelfBasisUnavailable(
+                            rootTable
+                        ),
+                    },
+                ]),
+            },
+            "ownership-create" => request with { DeferredCreateOwnershipFailureResult = ownershipFailure },
+            _ => request,
+        };
+        _retainedRoot = new RelationalWriteMergedTableState(rootPlan, [], []);
+        A.CallTo(() => harness.ProfileSynthesizer.Synthesize(A<RelationalWriteProfileMergeRequest>._))
+            .Returns(
+                ProfileMergeOutcome.Reject(
+                    new ProfileCreatabilityRejection("$.children[*]", "Not creatable")
+                ) with
+                {
+                    AuthorizationRootTableState = _retainedRoot,
+                }
+            );
+
+        _boundary = harness.Sut.Resolve(
+            request,
+            request.TargetContext,
+            currentState: null,
+            RelationalWriteMergeOrchestratorTestSupport.CreateResolvedReferences()
+        );
+    }
+
+    [Test]
+    public void It_defers_the_policy_failure_only_when_proposed_authorization_can_still_deny()
+    {
+        var failure = new RelationalWriteExecutorResult.Upsert(
+            new UpsertResult.UpsertFailureProfileDataPolicy("test-write-profile")
+        );
+        _boundary
+            .Should()
+            .BeEquivalentTo(
+                deferFailure
+                    ? new RelationalWriteMergeBoundary(
+                        new RelationalWriteMergeResult([_retainedRoot], supportsGuardedNoOp: false),
+                        ImmediateResult: null,
+                        DeferredProfileFailureResult: failure
+                    )
+                    : new RelationalWriteMergeBoundary(null, failure)
+            );
+    }
+}
 
 internal static class RelationalWriteMergeOrchestratorTestSupport
 {
@@ -28,7 +226,9 @@ internal static class RelationalWriteMergeOrchestratorTestSupport
     public sealed record Harness(
         RelationalWriteMergeOrchestrator Sut,
         RelationalWriteExecutorRequest Request,
-        RelationalWriteExecutorRequest ProfileRequest
+        RelationalWriteExecutorRequest ProfileRequest,
+        IRelationalWriteFlattener Flattener,
+        IRelationalWriteProfileMergeSynthesizer ProfileSynthesizer
     );
 
     public static Harness CreateHarness()
@@ -108,7 +308,9 @@ internal static class RelationalWriteMergeOrchestratorTestSupport
                 profileSynthesizer
             ),
             request,
-            profileRequest
+            profileRequest,
+            flattener,
+            profileSynthesizer
         );
     }
 
@@ -247,25 +449,34 @@ public class Given_RelationalWriteMergeOrchestrator_with_missing_reference_defer
 }
 
 [TestFixture]
-public class Given_RelationalWriteMergeOrchestrator_with_a_profile_write_context
+public class Given_RelationalWriteMergeOrchestrator_with_a_profile_write_context_and_missing_reference_deferral_enabled
 {
+    private RelationalWriteMergeOrchestratorTestSupport.Harness _harness = null!;
     private RelationalWriteMergeResult _result = null!;
 
     [SetUp]
     public void Setup()
     {
-        var harness = RelationalWriteMergeOrchestratorTestSupport.CreateHarness();
+        _harness = RelationalWriteMergeOrchestratorTestSupport.CreateHarness();
         var resolvedReferences = RelationalWriteMergeOrchestratorTestSupport.CreateResolvedReferences(
             RelationalWriteMergeOrchestratorTestSupport.CreateDocumentFailure(
                 "$.assessmentReference",
                 DocumentReferenceFailureReason.Missing
+            ),
+            RelationalWriteMergeOrchestratorTestSupport.CreateDocumentFailure(
+                "$.sections[1].assessmentReference",
+                DocumentReferenceFailureReason.Missing
+            ),
+            RelationalWriteMergeOrchestratorTestSupport.CreateDocumentFailure(
+                "$.incompatibleReference",
+                DocumentReferenceFailureReason.IncompatibleTargetType
             )
         );
 
-        _result = harness
+        _result = _harness
             .Sut.Resolve(
-                harness.ProfileRequest,
-                harness.ProfileRequest.TargetContext,
+                _harness.ProfileRequest,
+                _harness.ProfileRequest.TargetContext,
                 currentState: null,
                 resolvedReferences,
                 allowMissingDocumentReferencesForPrecedence: true
@@ -274,8 +485,85 @@ public class Given_RelationalWriteMergeOrchestrator_with_a_profile_write_context
     }
 
     [Test]
+    public void It_carries_exactly_the_missing_document_reference_paths()
+    {
+        _result
+            .DeferredMissingDocumentReferencePaths.Should()
+            .BeEquivalentTo("$.assessmentReference", "$.sections[1].assessmentReference");
+        _result.DeferredMissingDocumentReferencePaths.Contains("$.ASSESSMENTREFERENCE").Should().BeFalse();
+    }
+
+    [Test]
+    public void It_flattens_the_profile_writable_body_with_deferral_enabled()
+    {
+        A.CallTo(() =>
+                _harness.Flattener.Flatten(
+                    A<FlatteningInput>.That.Matches(input =>
+                        input.AllowMissingDocumentReferencesForPrecedence
+                    )
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public void It_builds_the_profile_merge_lookups_with_deferral_enabled()
+    {
+        A.CallTo(() =>
+                _harness.ProfileSynthesizer.Synthesize(
+                    A<RelationalWriteProfileMergeRequest>.That.Matches(request =>
+                        request.AllowMissingDocumentReferencesForPrecedence
+                    )
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+}
+
+[TestFixture]
+public class Given_RelationalWriteMergeOrchestrator_with_a_profile_write_context_and_missing_reference_deferral_disabled
+{
+    private RelationalWriteMergeOrchestratorTestSupport.Harness _harness = null!;
+    private RelationalWriteMergeResult _result = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _harness = RelationalWriteMergeOrchestratorTestSupport.CreateHarness();
+        var resolvedReferences = RelationalWriteMergeOrchestratorTestSupport.CreateResolvedReferences(
+            RelationalWriteMergeOrchestratorTestSupport.CreateDocumentFailure(
+                "$.assessmentReference",
+                DocumentReferenceFailureReason.Missing
+            )
+        );
+
+        _result = _harness
+            .Sut.Resolve(
+                _harness.ProfileRequest,
+                _harness.ProfileRequest.TargetContext,
+                currentState: null,
+                resolvedReferences,
+                allowMissingDocumentReferencesForPrecedence: false
+            )
+            .MergeResult!;
+    }
+
+    [Test]
     public void It_carries_no_deferred_missing_document_reference_paths()
     {
         _result.DeferredMissingDocumentReferencePaths.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_does_not_enable_deferral_for_the_profile_merge()
+    {
+        A.CallTo(() =>
+                _harness.ProfileSynthesizer.Synthesize(
+                    A<RelationalWriteProfileMergeRequest>.That.Matches(request =>
+                        !request.AllowMissingDocumentReferencesForPrecedence
+                    )
+                )
+            )
+            .MustHaveHappenedOnceExactly();
     }
 }

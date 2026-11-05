@@ -114,6 +114,29 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
 
     private PostgresqlRelationalQueryAuthorizationTestContext _context = null!;
 
+    private MissingReferencePostAuthorizationScenarios MissingReferenceScenarios =>
+        new(
+            (seed, claims, strategies, profile, body) =>
+                _context.UpsertAuthorizationRootChildAsync(
+                    seed,
+                    claims,
+                    strategies,
+                    backendProfileWriteContext: profile,
+                    requestBody: body
+                ),
+            AssertNoCreateSideEffectsAsync,
+            seed => PostStudentAcademicRecordAsync(seed),
+            AssertNoPeopleCreateSideEffectsAsync,
+            (seed, strategies) => PostStudentSchoolAsync(seed, strategies),
+            AssertNoStudentSchoolCreateSideEffectsAsync,
+            AssertPeopleRelationshipDenied,
+            AssertDirectStudentRelationshipDenied,
+            _authorizedStudentAcademicRecordSeed,
+            _unauthorizedStudentAcademicRecordSeed,
+            _customViewStrategy,
+            "cccccccc"
+        );
+
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
@@ -275,21 +298,20 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
     }
 
     [Test]
-    public async Task It_returns_403_before_deferred_missing_reference_when_proposed_edorg_value_is_missing()
-    {
-        var seed = CreateRootChildSeed(
-            "cccccccc-0000-0000-0000-000000000003",
-            103,
-            "missing-reference",
-            999,
-            []
-        );
+    public Task It_returns_no_relationship_before_deferred_missing_reference_when_the_supplied_school_is_unresolved() =>
+        MissingReferenceScenarios.It_returns_no_relationship_before_deferred_missing_reference_when_the_supplied_school_is_unresolved();
 
-        var result = await PostRootChildAsync(seed);
+    [Test]
+    public Task It_reports_the_deferred_reference_conflict_when_the_submitted_school_matches_a_claim() =>
+        MissingReferenceScenarios.It_reports_the_deferred_reference_conflict_when_the_submitted_school_matches_a_claim();
 
-        AssertRelationshipDenied(result, RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing);
-        await AssertNoCreateSideEffectsAsync(seed);
-    }
+    [Test]
+    public Task It_denies_an_unresolved_school_under_inverted_filtering_as_no_relationship() =>
+        MissingReferenceScenarios.It_denies_an_unresolved_school_under_inverted_filtering_as_no_relationship();
+
+    [Test]
+    public Task Given_A_Custom_View_Strategy_It_Denies_A_Create_Whose_Proposed_School_Is_Unresolved_Like_An_Excluded_School() =>
+        MissingReferenceScenarios.Given_A_Custom_View_Strategy_It_Denies_A_Create_Whose_Proposed_School_Is_Unresolved_Like_An_Excluded_School();
 
     [Test]
     public async Task It_returns_deferred_missing_reference_after_proposed_edorg_values_authorize()
@@ -498,27 +520,20 @@ public class Given_A_Postgresql_RelationalPost_Create_Authorization_With_A_Synth
     }
 
     [Test]
-    public async Task It_returns_403_before_deferred_people_missing_reference_when_proposed_value_is_missing()
-    {
-        var seed = CreateAuthorizationStudentAcademicRecordSeed(
-            "cccccccc-0000-0000-0000-000000000205",
-            205,
-            "people-missing-reference",
-            _authorizedStudentAcademicRecordSeed
-        ) with
-        {
-            StudentUniqueId = "missing-student",
-        };
+    public Task It_returns_no_relationship_before_deferred_people_missing_reference_when_the_supplied_first_hop_is_unresolved() =>
+        MissingReferenceScenarios.It_returns_no_relationship_before_deferred_people_missing_reference_when_the_supplied_first_hop_is_unresolved();
 
-        var result = await PostStudentAcademicRecordAsync(seed);
+    [Test]
+    public Task It_denies_an_unresolved_direct_person_reference_as_no_relationship() =>
+        MissingReferenceScenarios.It_denies_an_unresolved_direct_person_reference_as_no_relationship();
 
-        AssertPeopleRelationshipDenied(
-            result,
-            RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing,
-            [ClaimEducationOrganizationId]
-        );
-        await AssertNoPeopleCreateSideEffectsAsync(seed);
-    }
+    [Test]
+    public Task It_denies_an_unresolved_direct_person_with_an_authorized_school_in_a_mixed_and_strategy() =>
+        MissingReferenceScenarios.It_denies_an_unresolved_direct_person_with_an_authorized_school_in_a_mixed_and_strategy();
+
+    [Test]
+    public Task It_reports_every_or_strategy_for_an_unresolved_direct_person() =>
+        MissingReferenceScenarios.It_reports_every_or_strategy_for_an_unresolved_direct_person();
 
     /// <summary>
     /// Ownership AND-composes ahead of the relationship OR group, so when both are configured and the
