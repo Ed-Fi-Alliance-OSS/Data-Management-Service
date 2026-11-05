@@ -1598,7 +1598,9 @@ Describe "the validation record" {
             $script:text | Should -Match "SnapshotAndReadReplicaRouting.feature``? 06 and 07"
             $script:text | Should -Match "SnapshotFailures.feature`` 01"
             $script:text | Should -Match "SnapshotFailures.feature`` 02"
-            $script:text | Should -Match "header-absent and header-false cases"
+            # A false header is proven where the selection middleware parses it; the integration cases send it only on writes.
+            $script:text | Should -Match "UseSnapshotHeaderTests.cs`` ``It_does_not_read_anything_else_as_a_request``"
+            $script:text | Should -Not -Match "header-false"
             (& $script:rowOf $script:text 7) | Should -Match "\| cited \|"
             foreach ($number in 8, 9, 10, 11, 12, 13) {
                 (& $script:rowOf $script:text $number) | Should -Match "\| cited \|"

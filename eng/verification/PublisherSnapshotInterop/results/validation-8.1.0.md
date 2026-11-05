@@ -41,14 +41,14 @@ A cited row is not a PASS of this record.
 
 The per-request behavior is proven by the CI suites below and is re-run at the release candidate.
 The runs in this record do not re-prove it.
-CI of record: `Run PostgreSQL DMS E2E (self-contained, Shard 1)`, `Run SQL Server DMS E2E (self-contained, representative)`, and the API integration suite (`Given_Postgresql_DerivativeRouting` and `Given_Mssql_DerivativeRouting`).
+CI of record: `Run PostgreSQL DMS E2E (self-contained, Shard 1)`, `Run SQL Server DMS E2E (self-contained, representative)`, the API integration suite (`Given_Postgresql_DerivativeRouting` and `Given_Mssql_DerivativeRouting`), and `Run Unit Tests` (`UseSnapshotHeaderTests`).
 
 | Behavior | Cited scenarios |
 | --- | --- |
 | `405` with `Allow: GET` for POST, PUT, and DELETE that ask for a snapshot | `SnapshotAndReadReplicaRouting.feature` 06 and 07; `DerivativeRoutingScenario.cs` `It_rejects_the_invalid_mutation_shapes_that_ask_for_a_snapshot` |
 | Snapshot Not Found when the snapshot is not configured | `SnapshotFailures.feature` 01; `SnapshotAndReadReplicaRouting.feature` 09 (an unknown resource keeps its endpoint `404`); `DerivativeRoutingScenario.cs` `It_returns_not_found_when_no_snapshot_is_configured` |
 | Snapshot Not Found when the snapshot cannot be reached | `SnapshotFailures.feature` 02 |
-| `Use-Snapshot` absent or `false` does not select the snapshot | `SnapshotAndReadReplicaRouting.feature` 01 and 08; `DerivativeRoutingScenario.cs` header-absent and header-false cases in `It_keeps_the_route_semantics_answer_for_the_invalid_shapes` and `It_leaves_a_valid_write_alone_without_a_snapshot_request` |
+| `Use-Snapshot` absent or `false` does not select the snapshot | `SnapshotAndReadReplicaRouting.feature` 01 and 08 (header absent); `UseSnapshotHeaderTests.cs` `It_does_not_read_anything_else_as_a_request` (`false` and every other value that is not boolean true, read by the same parser the target selection uses) |
 | Snapshot precedence over a read replica, and automatic replica selection | `SnapshotAndReadReplicaRouting.feature` 01 and 05; `DerivativeRoutingScenario.cs` `It_serves_an_eligible_read_from_the_replica` and `It_prefers_the_snapshot_over_the_replica` |
 | `/deletes`, `/keyChanges`, and `availableChangeVersions` served by the selected target | `SnapshotAndReadReplicaRouting.feature` 03, 04, and 05 |
 
