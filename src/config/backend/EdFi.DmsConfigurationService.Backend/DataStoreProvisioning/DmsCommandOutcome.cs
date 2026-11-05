@@ -21,7 +21,11 @@ public enum DmsCommandFailureClass
     /// <summary>The object no longer exists.</summary>
     DoesNotExist,
 
-    /// <summary>Any other error the server returned while reachable.</summary>
+    /// <summary>
+    /// Any other error that proves the intended effect did not commit, such as a syntax or constraint error
+    /// returned in the command's own response. Server reachability alone is not that proof: an error that
+    /// leaves the commit in doubt is reported as <see cref="DmsCommandOutcome.Unknown"/>, not as a failure.
+    /// </summary>
     Rejected,
 }
 

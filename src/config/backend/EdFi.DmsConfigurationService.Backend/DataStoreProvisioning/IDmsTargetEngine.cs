@@ -132,8 +132,10 @@ public interface IDmsTargetEngine
 
     /// <summary>
     /// On the holder session: drops the selected target after re-verifying <paramref name="instance"/> under
-    /// <paramref name="target"/> (6.6 step 5; 6.7 compensation). Never issued on retry, on a target found by
-    /// inspection, after a committed or unresolved marker, or after lock loss.
+    /// <paramref name="target"/>. Two callers: owned deletion (6.6 step 5), which by its nature drops a target
+    /// found by inspection whose marker equals the expected identity, after fencing and verified exclusivity;
+    /// and compensation (6.7), which is never issued on retry, on a target found by inspection, after a
+    /// committed or unresolved marker, or after lock loss.
     /// </summary>
     Task<DmsCommandOutcome> DropInstanceAsync(
         IDmsTargetLockHolder holder,
