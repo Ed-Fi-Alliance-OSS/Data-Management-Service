@@ -164,12 +164,18 @@ Each run writes a folder `runs/<UTC timestamp>-<engine>/`, which git ignores:
 - `results-Isolated.json` and `results-NoSnapshot.json` (`results.json` when one scenario runs) hold every assertion: its name, expected and observed values, outcome, and evidence.
 - `publisher-<run>/` holds each Publisher run: its redacted arguments, console and Publisher logs, exit code, and the DMS requests attributed to it.
 
-The validation record is generated from one run folder per engine and committed to `results/`:
+The validation record is generated from one run folder per engine and committed to `results/`.
+The runs cannot observe the release gate, so its status (`Satisfied` or `Pending`) and one line of evidence per gate item are inputs.
+Check each gate item when you write the record; this is the 8.1.0 record's input:
 
 ```powershell
 Import-Module ./eng/verification/PublisherSnapshotInterop/PublisherSnapshotInterop.psm1 -Force
 $runs = "./eng/verification/PublisherSnapshotInterop/runs"
-Write-InteropValidationRecord -RunFolder "$runs/<postgresql run>", "$runs/<mssql run>"
+Write-InteropValidationRecord -RunFolder "$runs/<postgresql run>", "$runs/<mssql run>" `
+    -GateStatus Satisfied -GateEvidence @(
+        "DMS-1369 is Done (PR #1257, ``55e914e2f``).",
+        "DMS-1371 is Done (DMS-side PR #1205, ``b0b68972c``; the upstream packages are at ``1.0.335``)."
+    )
 ```
 
 It writes `results/validation-<Discovery version>.md`, for example `validation-8.1.0.md`.

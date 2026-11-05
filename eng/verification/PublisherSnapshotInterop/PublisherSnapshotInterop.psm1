@@ -5565,13 +5565,30 @@ function Get-InteropRecordVersionOutcome {
     Output is deterministic (engines in a fixed order, assertions in recorded order) apart from the run
     timestamps it reports. Every free-text value passes through Protect-InteropRecordText, and the finished
     text is scanned before it is returned.
+
+    The release gate is an input, because the runs cannot observe it: -GateStatus states whether the gate is
+    satisfied, and -GateEvidence gives one line per gate item, written as it should appear in the record.
+
+.PARAMETER GateStatus
+    Satisfied or Pending.
+
+.PARAMETER GateEvidence
+    One markdown line per gate item, for example "DMS-1369 is Done (PR #1257, `55e914e2f`)."
 #>
 function ConvertTo-InteropValidationRecord {
     [CmdletBinding()]
     [OutputType([string])]
     param(
         [Parameter(Mandatory)]
-        [pscustomobject[]]$Run
+        [pscustomobject[]]$Run,
+
+        [Parameter(Mandatory)]
+        [ValidateSet("Satisfied", "Pending")]
+        [string]$GateStatus,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string[]]$GateEvidence
     )
 
     $runs = @($script:RecordEngineOrder | ForEach-Object { $engine = $_; $Run | Where-Object { $_.Manifest["engine"] -eq $engine } })
@@ -5613,7 +5630,7 @@ function ConvertTo-InteropValidationRecord {
     & $add ""
     & $add "DMS $dmsVersion, validated against Ed-Fi API Publisher $publisherTag with snapshot isolation."
     & $add "The record states what the harness ran, what each run proved, and what is proven by the CI suites instead."
-    & $add "Regenerate it with ``Write-InteropValidationRecord`` from the module ``eng/verification/PublisherSnapshotInterop/PublisherSnapshotInterop.psm1``, passing the run folder of each engine."
+    & $add "Regenerate it with ``Write-InteropValidationRecord`` from the module ``eng/verification/PublisherSnapshotInterop/PublisherSnapshotInterop.psm1``, passing the run folder of each engine and the release gate status with its evidence."
     & $add ""
 
     # Per-engine pass summary, used by the summary table and the cross-engine criterion.
@@ -5650,11 +5667,13 @@ function ConvertTo-InteropValidationRecord {
     & $add ""
     & $add "The release gate for the runtime changes is tracked in ``$script:GateEpicPath`` under Follow-on Stories (spawned by DMS-1190)."
     & $add ""
-    & $add "- DMS-1369 is Done (PR #1257, ``55e914e2f``)."
-    & $add "- DMS-1371 is Done (DMS-side PR #1205, ``b0b68972c``; the upstream packages are at ``1.0.335``)."
+    foreach ($line in $GateEvidence) {
+        & $add "- $(Protect-InteropRecordText -Text $line)"
+    }
     & $add ""
-    & $add "The gate is satisfied on main."
-    & $add "It is re-confirmed when the 8.1 release candidate is assembled."
+    & $add $(if ($GateStatus -eq "Satisfied") { "The gate is satisfied on main." } else { "The gate is pending." })
+    $releaseLine = if ($dmsVersions[0] -match "^(\d+\.\d+)") { $Matches[1] } else { $dmsVersions[0] }
+    & $add "It is re-confirmed when the $(Protect-InteropRecordText -Text $releaseLine) release candidate is assembled."
     & $add ""
 
     & $add "## Acceptance criteria outside the per-engine runs"
@@ -5675,7 +5694,7 @@ function ConvertTo-InteropValidationRecord {
     & $add "| 7 | Per-request contract still green | cited | the CI scenarios in Per-request contract below |"
     & $add "| 8 | Operator workflow complete | cited | ``docs/SNAPSHOTS-AND-READ-REPLICAS.md`` |"
     & $add "| 9 | Stale 503 statement removed | cited | ``docs/SNAPSHOTS-AND-READ-REPLICAS.md`` and ``docs/API-CLIENT-AND-INSTANCE-CONFIGURATION.md`` |"
-    & $add "| 10 | Release notes complete | cited | ``docs/changelog/8.1.0.md`` |"
+    & $add "| 10 | Release notes complete | cited | ``docs/changelog/$(Protect-InteropRecordText -Text $dmsVersions[0]).md`` |"
     & $add "| 11 | Gate status recorded honestly | cited | Release gate status above |"
     & $add "| 12 | Repeatable with troubleshooting | cited | ``eng/verification/PublisherSnapshotInterop/README.md`` |"
     & $add "| 13 | Markdown and script lint clean | cited | the repository's markdown and PSScriptAnalyzer checks and the Pester step of the pull request CI |"
@@ -5806,10 +5825,12 @@ function ConvertTo-InteropValidationRecord {
     Invoke it after the harness has run, with one run folder per engine (the folders -Scenario All wrote):
 
         Import-Module ./eng/verification/PublisherSnapshotInterop/PublisherSnapshotInterop.psm1
-        Write-InteropValidationRecord -RunFolder <postgresql run folder>, <mssql run folder>
+        Write-InteropValidationRecord -RunFolder <postgresql run folder>, <mssql run folder> `
+            -GateStatus Satisfied -GateEvidence <one line per gate item>
 
     The record goes to eng/verification/PublisherSnapshotInterop/results by default. The DMS version in the
-    file name is the Discovery version the runs advertise.
+    file name is the Discovery version the runs advertise. The release gate status and its evidence are
+    inputs; see ConvertTo-InteropValidationRecord.
 #>
 function Write-InteropValidationRecord {
     [CmdletBinding()]
@@ -5819,11 +5840,19 @@ function Write-InteropValidationRecord {
         [Parameter(Mandatory)]
         [string[]]$RunFolder,
 
+        [Parameter(Mandatory)]
+        [ValidateSet("Satisfied", "Pending")]
+        [string]$GateStatus,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string[]]$GateEvidence,
+
         [string]$OutputFolder = (Join-Path $PSScriptRoot "results")
     )
 
     $runs = @($RunFolder | ForEach-Object { Read-InteropRun -RunFolder $_ })
-    $text = ConvertTo-InteropValidationRecord -Run $runs
+    $text = ConvertTo-InteropValidationRecord -Run $runs -GateStatus $GateStatus -GateEvidence $GateEvidence
     $version = [string]$runs[0].Manifest["versions"]["dmsDiscoveryVersion"]
     $safeVersion = ($version -replace "[^A-Za-z0-9.+-]", "-")
     if (-not $safeVersion) {

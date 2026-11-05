@@ -2,7 +2,7 @@
 
 DMS 8.1.0, validated against Ed-Fi API Publisher v1.4.0 with snapshot isolation.
 The record states what the harness ran, what each run proved, and what is proven by the CI suites instead.
-Regenerate it with `Write-InteropValidationRecord` from the module `eng/verification/PublisherSnapshotInterop/PublisherSnapshotInterop.psm1`, passing the run folder of each engine.
+Regenerate it with `Write-InteropValidationRecord` from the module `eng/verification/PublisherSnapshotInterop/PublisherSnapshotInterop.psm1`, passing the run folder of each engine and the release gate status with its evidence.
 
 ## Summary
 

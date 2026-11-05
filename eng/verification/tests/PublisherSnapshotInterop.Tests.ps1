@@ -1527,7 +1527,12 @@ Describe "the validation record" {
             $folder
         }
         $script:both = @("Isolated", "NoSnapshot")
-        $script:render = { param($Folders) ConvertTo-InteropValidationRecord -Run @($Folders | ForEach-Object { Read-InteropRun -RunFolder $_ }) }
+        # The release gate is an input: the generator states what it is given and never decides it.
+        $script:gateEvidence = @("DMS-1369 is Done (PR #1257).", "DMS-1371 is Done (DMS-side PR #1205).")
+        $script:render = {
+            param($Folders, $GateStatus = "Satisfied", $GateEvidence = $script:gateEvidence)
+            ConvertTo-InteropValidationRecord -Run @($Folders | ForEach-Object { Read-InteropRun -RunFolder $_ }) -GateStatus $GateStatus -GateEvidence $GateEvidence
+        }
         $script:rowOf = { param($Text, $Number) ($Text -split "`n" | Where-Object { $_ -match "^\| $Number \|" }) }
     }
 
@@ -1606,12 +1611,36 @@ Describe "the validation record" {
             $script:text | Should -Match "29-snapshot-support.md`` section API Publisher Interoperability"
         }
 
-        It "states the gate as satisfied and never as pending" {
-            $script:text | Should -Match "epics/10-update-tracking-change-queries/EPIC.md"
-            $script:text | Should -Match "DMS-1369 is Done \(PR #1257, ``55e914e2f``\)"
-            $script:text | Should -Match "DMS-1371 is Done \(DMS-side PR #1205, ``b0b68972c``; the upstream packages are at ``1.0.335``\)"
-            $script:text | Should -Match "re-confirmed when the 8.1 release candidate is assembled"
-            $script:text | Should -Not -Match "(?i)pending"
+        It "states the gate status and evidence it is given: <Status>" -TestCases @(
+            @{ Status = "Satisfied"; Sentence = "The gate is satisfied on main."; Other = "The gate is pending." }
+            @{ Status = "Pending"; Sentence = "The gate is pending."; Other = "The gate is satisfied on main." }
+        ) {
+            param($Status, $Sentence, $Other)
+            $folder = & $script:newRunFolder "postgresql" $script:both $null
+            $evidence = @("First gate item is Done (PR #1).", "Second gate item is still open upstream.")
+
+            $text = & $script:render @($folder) $Status $evidence
+
+            $text | Should -Match "epics/10-update-tracking-change-queries/EPIC.md"
+            $text | Should -Match "\n- First gate item is Done \(PR #1\)\.\r?\n- Second gate item is still open upstream\.\r?\n"
+            $text | Should -Match ([regex]::Escape($Sentence))
+            $text | Should -Not -Match ([regex]::Escape($Other))
+        }
+
+        It "names the release candidate after the Discovery version of the runs" {
+            $folder = & $script:newRunFolder "postgresql" $script:both { param($c) $c.Version = "8.2.0" }
+
+            $text = & $script:render @($folder)
+
+            $text | Should -Match "re-confirmed when the 8.2 release candidate is assembled"
+            $text | Should -Not -Match "8\.1"
+        }
+
+        It "refuses to render a gate with no evidence" {
+            $folder = & $script:newRunFolder "postgresql" $script:both $null
+            $run = Read-InteropRun -RunFolder $folder
+
+            { ConvertTo-InteropValidationRecord -Run @($run) -GateStatus Satisfied -GateEvidence @() } | Should -Throw
         }
 
         It "carries no story file, task list, task number, or host path" {
@@ -1740,7 +1769,7 @@ Describe "the validation record" {
         }
 
         It "keeps the fake secret, the fake connection string, a bearer token, and a host path out of the record" {
-            $text = ConvertTo-InteropValidationRecord -Run @($script:hostileRun)
+            $text = ConvertTo-InteropValidationRecord -Run @($script:hostileRun) -GateStatus Satisfied -GateEvidence $script:gateEvidence
             $text | Should -Not -Match "FAKE-SECRET-VALUE"
             $text | Should -Not -Match "FakePassw0rd"
             $text | Should -Not -Match "Server=localhost"
@@ -1758,9 +1787,9 @@ Describe "the validation record" {
         }
 
         It "refuses to produce a record when the sanitizer is bypassed" {
-            InModuleScope PublisherSnapshotInterop -Parameters @{ Run = $script:hostileRun } {
+            InModuleScope PublisherSnapshotInterop -Parameters @{ Run = $script:hostileRun; Evidence = $script:gateEvidence } {
                 Mock Protect-InteropRecordText { $Text }
-                { ConvertTo-InteropValidationRecord -Run @($Run) } | Should -Throw "*refusing to produce it*"
+                { ConvertTo-InteropValidationRecord -Run @($Run) -GateStatus Satisfied -GateEvidence $Evidence } | Should -Throw "*refusing to produce it*"
             }
         }
 
@@ -1784,7 +1813,7 @@ Describe "the validation record" {
         It "writes a validation file named for the DMS version from the run folders and creates the output folder" {
             $folder = & $script:newRunFolder "postgresql" $script:both $null
             $out = Join-Path $script:recordRoot "out-$([guid]::NewGuid().ToString('N'))"
-            $path = Write-InteropValidationRecord -RunFolder @($folder) -OutputFolder $out
+            $path = Write-InteropValidationRecord -RunFolder @($folder) -OutputFolder $out -GateStatus Satisfied -GateEvidence $script:gateEvidence
             (Split-Path -Leaf $path) | Should -Be "validation-8.1.0.md"
             (Get-Content -LiteralPath $path -Raw) | Should -Be (& $script:render @($folder))
         }
