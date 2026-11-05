@@ -600,21 +600,6 @@ Describe "Get-InteropSourceSurfaces" {
     }
 }
 
-Describe "Compare-InteropSurfaceCount" {
-    It "returns nothing when the two sides agree" {
-        $counts = [ordered]@{ Partitions = 3; CursorPage = 4 }
-        @(Compare-InteropSurfaceCount -PublisherCount $counts -DmsCount $counts) | Should -BeNullOrEmpty
-    }
-
-    It "names a surface the two sides count differently" {
-        $difference = @(Compare-InteropSurfaceCount -PublisherCount ([ordered]@{ Partitions = 3 }) -DmsCount ([ordered]@{ Partitions = 2 }))
-        $difference.Count | Should -Be 1
-        $difference[0].Surface | Should -Be "Partitions"
-        $difference[0].Publisher | Should -Be 3
-        $difference[0].Dms | Should -Be 2
-    }
-}
-
 Describe "Get-InteropMarkerName" {
     It "puts the marker and the run token in the name, so a rerun cannot match stale data" {
         Get-InteropMarkerName -RunToken "20261103183005-ab12" -Marker "U1" | Should -Be "IP-U1-20261103183005-ab12"

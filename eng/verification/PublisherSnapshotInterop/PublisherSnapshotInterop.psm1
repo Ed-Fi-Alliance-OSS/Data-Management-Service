@@ -2279,70 +2279,6 @@ function Wait-InteropSnapshotState {
     throw "Timed out after $TimeoutSeconds seconds waiting for the snapshot state '$Expect' (last observed '$state')."
 }
 
-<#
-.SYNOPSIS
-    Self-check that the snapshot, not the primary, answers a Use-Snapshot read.
-
-.DESCRIPTION
-    Writes one distinguishable descriptor to the source primary AFTER the snapshot, then requires it present
-    without the header and absent with it, and requires availableChangeVersions (the surface that exposes
-    missing grants on both engines) to answer 200 through the snapshot with a lower newest change version
-    than the primary. Throws with the observed values on any mismatch; returns $true otherwise. The
-    descriptor stays in the source primary, so only call this where that is acceptable.
-#>
-function Test-InteropSnapshotServesSnapshotData {
-    [CmdletBinding()]
-    [OutputType([bool])]
-    param(
-        [Parameter(Mandatory)]
-        [string]$DmsUrl,
-
-        [Parameter(Mandatory)]
-        [string]$WriterToken,
-
-        [Parameter(Mandatory)]
-        [string]$ReaderToken,
-
-        [Parameter(Mandatory)]
-        [string]$RunToken
-    )
-
-    $codeValue = "Interop-After-$RunToken"
-    $null = Invoke-InteropDmsRequest -DmsUrl $DmsUrl -Path "/data/ed-fi/contentClassDescriptors" -Token $WriterToken -Method Post -Body ([ordered]@{
-            codeValue   = $codeValue
-            shortDescription = $codeValue
-            description = $codeValue
-            namespace   = "uri://ed-fi.org/ContentClassDescriptor"
-        })
-
-    $path = "/data/ed-fi/contentClassDescriptors?codeValue=$([uri]::EscapeDataString($codeValue))&limit=10"
-    $primary = Invoke-InteropDmsProbe -DmsUrl $DmsUrl -Path $path -Token $ReaderToken
-    $snapshot = Invoke-InteropDmsProbe -DmsUrl $DmsUrl -Path $path -Token $ReaderToken -UseSnapshot
-    $primaryCount = @((ConvertFrom-Json -InputObject $primary.Content) | ForEach-Object { $_ }).Count
-    $snapshotCount = @((ConvertFrom-Json -InputObject $snapshot.Content) | ForEach-Object { $_ }).Count
-
-    if ($primary.StatusCode -ne 200 -or $primaryCount -ne 1) {
-        throw "The post-snapshot document '$codeValue' should be present on the primary: HTTP $($primary.StatusCode), $primaryCount found."
-    }
-    if ($snapshot.StatusCode -ne 200 -or $snapshotCount -ne 0) {
-        throw "The post-snapshot document '$codeValue' must be absent through Use-Snapshot: HTTP $($snapshot.StatusCode), $snapshotCount found."
-    }
-
-    $primaryVersion = Invoke-InteropDmsProbe -DmsUrl $DmsUrl -Path "/changeQueries/v1/availableChangeVersions" -Token $ReaderToken
-    $snapshotVersion = Invoke-InteropDmsProbe -DmsUrl $DmsUrl -Path "/changeQueries/v1/availableChangeVersions" -Token $ReaderToken -UseSnapshot
-    if ($primaryVersion.StatusCode -ne 200 -or $snapshotVersion.StatusCode -ne 200) {
-        throw "availableChangeVersions answered HTTP $($primaryVersion.StatusCode) on the primary and $($snapshotVersion.StatusCode) through the snapshot; a 500 through the snapshot means the read-only login lacks a grant."
-    }
-    $primaryNewest = [long](ConvertFrom-Json -InputObject $primaryVersion.Content).newestChangeVersion
-    $snapshotNewest = [long](ConvertFrom-Json -InputObject $snapshotVersion.Content).newestChangeVersion
-    if ($snapshotNewest -ge $primaryNewest) {
-        throw "The snapshot's newest change version ($snapshotNewest) should be below the primary's ($primaryNewest) after a post-snapshot write."
-    }
-
-    Write-InteropStep "Snapshot isolation confirmed: '$codeValue' on the primary only; newest change version $snapshotNewest (snapshot) versus $primaryNewest (primary)."
-    return $true
-}
-
 #endregion
 
 #region Source data arrangement
@@ -3868,30 +3804,6 @@ function Get-InteropSourceSurfaces {
     }
 
     return [pscustomobject]@{ Counts = $counts; Unclassified = $unclassified.ToArray(); GetByIdLines = $getById.ToArray() }
-}
-
-<#
-.SYNOPSIS
-    Compares per-surface counts from the Publisher log and from the DMS side, returning the differences.
-#>
-function Compare-InteropSurfaceCount {
-    [CmdletBinding()]
-    [OutputType([pscustomobject[]])]
-    param(
-        [Parameter(Mandatory)]
-        [System.Collections.IDictionary]$PublisherCount,
-
-        [Parameter(Mandatory)]
-        [System.Collections.IDictionary]$DmsCount
-    )
-
-    foreach ($name in $script:SourceSurfaceNames) {
-        $publisher = if ($PublisherCount.Contains($name)) { [int]$PublisherCount[$name] } else { 0 }
-        $dms = if ($DmsCount.Contains($name)) { [int]$DmsCount[$name] } else { 0 }
-        if ($publisher -ne $dms) {
-            [pscustomobject]@{ Surface = $name; Publisher = $publisher; Dms = $dms }
-        }
-    }
 }
 
 #endregion
@@ -5881,11 +5793,11 @@ Export-ModuleMember -Function `
     Get-InteropSqlServerSnapshotSql, Get-InteropSnapshotRemovalSql, Get-InteropSnapshotWaitBound, `
     Resolve-InteropSnapshotProbeState, Test-InteropSeedRaceFailure, Invoke-InteropScriptCaptured, Invoke-InteropSql, `
     New-InteropSnapshot, Remove-InteropSnapshot, Register-InteropSnapshotDerivative, Remove-InteropSnapshotDerivative, `
-    Get-InteropResponseText, Invoke-InteropDmsProbe, Wait-InteropSnapshotState, Test-InteropSnapshotServesSnapshotData, `
+    Get-InteropResponseText, Invoke-InteropDmsProbe, Wait-InteropSnapshotState, `
     Get-InteropPublisherContainerName, Get-InteropPublisherArgument, ConvertFrom-InteropDockerTimestamp, Get-InteropLogWindow, `
     Assert-InteropFileHasNoSecret, Invoke-InteropPublisher, Get-InteropRequestSurface, ConvertFrom-InteropSelectionLine, `
     ConvertFrom-InteropLogTimestamp, Get-InteropDmsLogLine, Get-InteropTargetSelections, ConvertTo-InteropDmsRequest, `
-    Get-InteropSurfaceCount, Get-InteropPublisherLineSurface, Get-InteropSourceSurfaces, Compare-InteropSurfaceCount, `
+    Get-InteropSurfaceCount, Get-InteropPublisherLineSurface, Get-InteropSourceSurfaces, `
     Get-InteropMarkerName, New-InteropArrangementPlan, Get-InteropMarkerExpectation, Get-InteropMarkerMismatch, `
     Get-InteropClassPeriodPath, New-InteropClassPeriodBody, ConvertTo-InteropArrangementManifest, Invoke-InteropDmsWrite, `
     Get-InteropClassPeriod, Get-InteropChangeVersion, Get-InteropMarkerObservation, Test-InteropArrangementVisibility, `
