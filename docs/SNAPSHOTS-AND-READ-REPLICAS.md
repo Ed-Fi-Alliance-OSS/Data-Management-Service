@@ -57,6 +57,12 @@ In both, replace the placeholders:
 - `<reader>` is the name of the read-only login.
 - `<RO_PASSWORD>` is a generated password for that login, with 16 to 128 letters and digits.
 
+Take the snapshot at a quiet time, with no long-running writes in flight.
+A snapshot reports its newest change version from the change-version sequence, and the sequence also counts versions handed to transactions that had not committed when the snapshot was taken.
+A client that records that value as processed, as the Publisher does, starts its next incremental run above it and never receives those changes, and nothing reports an error.
+On PostgreSQL, `pg_dump` also reads the sequence outside the point in time it copies the data from, so a change committed while the dump runs is missed the same way.
+See [Disregarding uncommitted transactions when using snapshots](../reference/design/backend-redesign/design-docs/change-queries.md#disregarding-uncommitted-transactions-when-using-snapshots).
+
 ### PostgreSQL
 
 PostgreSQL has no database snapshot, so the recipe copies the database with `pg_dump` and `pg_restore`.
@@ -318,6 +324,7 @@ A snapshot is what you want when the source keeps changing during the run.
 The reads of one extraction are the change window from `/availableChangeVersions`, the `/partitions` probe, total counts, GET-many pages, `/deletes`, and `/keyChanges`.
 All of them carry the header and are served by the same snapshot.
 A write committed to the primary after the snapshot was created does not appear in the extraction.
+A write still uncommitted when the snapshot was taken can be skipped by the next incremental run too, so take the snapshot at a quiet time, as [Creating the source](#creating-the-source) describes.
 
 DMS serves GET-by-id from a snapshot too.
 The Publisher reads a record from its source by id only when its target answers a `POST` with `400` and `<X> reference could not be resolved.`, for a resource listed in its `authorizationFailureHandling` setting.
