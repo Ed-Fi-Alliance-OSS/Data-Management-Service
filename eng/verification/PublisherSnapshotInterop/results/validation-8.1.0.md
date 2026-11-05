@@ -8,8 +8,8 @@ Regenerate it with `Write-InteropValidationRecord` from the module `eng/verifica
 
 | Engine | Run folder | Isolated | NoSnapshot | Started |
 | --- | --- | --- | --- | --- |
-| PostgreSQL | `20261105T005759Z-postgresql` | PASS (64 passed, 0 failed) | PASS (20 passed, 0 failed) | 2026-11-05 00:57:59 UTC |
-| SQL Server | `20261105T010330Z-mssql` | PASS (64 passed, 0 failed) | PASS (20 passed, 0 failed) | 2026-11-05 01:03:30 UTC |
+| PostgreSQL | `20261105T183444Z-postgresql` | PASS (64 passed, 0 failed) | PASS (20 passed, 0 failed) | 2026-11-05 18:34:44 UTC |
+| SQL Server | `20261105T183922Z-mssql` | PASS (64 passed, 0 failed) | PASS (20 passed, 0 failed) | 2026-11-05 18:39:22 UTC |
 
 ## Release gate status
 
@@ -71,7 +71,7 @@ The seven source surfaces a DMS-to-DMS extraction issues are GET-many, `/partiti
 | Configuration Service image | `edfialliance/ed-fi-api-configuration-service@sha256:e30a1d24a8061913555822accb099cce859cc5e2069ac3fc89e9bdcc1f8cb1c6` |
 | Configuration Service image digest | `sha256:e30a1d24a8061913555822accb099cce859cc5e2069ac3fc89e9bdcc1f8cb1c6` |
 | Configuration Service image source revision | `362997658568acb32fa37c547b7e64bb150c5247` |
-| DMS repository commit when the run started | `06d4dd2eac80` |
+| DMS repository commit when the run started | `83f33e376d07` |
 | Discovery version | `8.1.0` |
 | Publisher image | `edfialliance/ods-api-publisher:v1.4.0@sha256:cacbeff911a5484bea98d09ea4eebdc6301ae9e12511c0e505318ea190d4d59c` |
 | Publisher image digest | `sha256:cacbeff911a5484bea98d09ea4eebdc6301ae9e12511c0e505318ea190d4d59c` |
@@ -79,7 +79,7 @@ The seven source surfaces a DMS-to-DMS extraction issues are GET-many, `/partiti
 | Identity provider | `self-contained` |
 | Engine | `postgresql` |
 | Engine version | `PostgreSQL 18.6` |
-| Run started | `2026-11-05 00:57:59 UTC` |
+| Run started | `2026-11-05 18:34:44 UTC` |
 
 ### Non-default settings
 
@@ -103,11 +103,11 @@ pwsh eng/verification/Invoke-PublisherSnapshotInteropCheck.ps1 -Engine postgresq
 
 | # | Criterion | Outcome | Evidence |
 | --- | --- | --- | --- |
-| 1 | Versions and configuration recorded | PASS | `20261105T005759Z-postgresql/manifest.json`, 9 of 9 fields recorded |
-| 2 | Publisher runs isolated without the opt-out | PASS | `20261105T005759Z-postgresql/results-Isolated.json`, 9 assertions |
-| 3 | Post-snapshot writes are excluded | PASS | `20261105T005759Z-postgresql/results-Isolated.json`, 12 assertions |
-| 4 | Every Publisher source surface used the snapshot within one extraction | PASS | `20261105T005759Z-postgresql/results-Isolated.json`, 9 assertions |
-| 5 | No-snapshot Publisher behavior recorded | PASS | `20261105T005759Z-postgresql/results-NoSnapshot.json`, 6 assertions |
+| 1 | Versions and configuration recorded | PASS | `20261105T183444Z-postgresql/manifest.json`, 9 of 9 fields recorded |
+| 2 | Publisher runs isolated without the opt-out | PASS | `20261105T183444Z-postgresql/results-Isolated.json`, 9 assertions |
+| 3 | Post-snapshot writes are excluded | PASS | `20261105T183444Z-postgresql/results-Isolated.json`, 12 assertions |
+| 4 | Every Publisher source surface used the snapshot within one extraction | PASS | `20261105T183444Z-postgresql/results-Isolated.json`, 9 assertions |
+| 5 | No-snapshot Publisher behavior recorded | PASS | `20261105T183444Z-postgresql/results-NoSnapshot.json`, 6 assertions |
 
 ### Assertions behind each outcome
 
@@ -171,7 +171,7 @@ Criterion 5, No-snapshot Publisher behavior recorded.
 | Configuration Service image | `edfialliance/ed-fi-api-configuration-service@sha256:e30a1d24a8061913555822accb099cce859cc5e2069ac3fc89e9bdcc1f8cb1c6` |
 | Configuration Service image digest | `sha256:e30a1d24a8061913555822accb099cce859cc5e2069ac3fc89e9bdcc1f8cb1c6` |
 | Configuration Service image source revision | `362997658568acb32fa37c547b7e64bb150c5247` |
-| DMS repository commit when the run started | `06d4dd2eac80` |
+| DMS repository commit when the run started | `83f33e376d07` |
 | Discovery version | `8.1.0` |
 | Publisher image | `edfialliance/ods-api-publisher:v1.4.0@sha256:cacbeff911a5484bea98d09ea4eebdc6301ae9e12511c0e505318ea190d4d59c` |
 | Publisher image digest | `sha256:cacbeff911a5484bea98d09ea4eebdc6301ae9e12511c0e505318ea190d4d59c` |
@@ -179,7 +179,7 @@ Criterion 5, No-snapshot Publisher behavior recorded.
 | Identity provider | `self-contained` |
 | Engine | `mssql` |
 | Engine version | `SQL Server 17.0.4075.5` |
-| Run started | `2026-11-05 01:03:30 UTC` |
+| Run started | `2026-11-05 18:39:22 UTC` |
 
 ### Non-default settings
 
@@ -202,11 +202,11 @@ pwsh eng/verification/Invoke-PublisherSnapshotInteropCheck.ps1 -Engine mssql -Sc
 
 | # | Criterion | Outcome | Evidence |
 | --- | --- | --- | --- |
-| 1 | Versions and configuration recorded | PASS | `20261105T010330Z-mssql/manifest.json`, 9 of 9 fields recorded |
-| 2 | Publisher runs isolated without the opt-out | PASS | `20261105T010330Z-mssql/results-Isolated.json`, 9 assertions |
-| 3 | Post-snapshot writes are excluded | PASS | `20261105T010330Z-mssql/results-Isolated.json`, 12 assertions |
-| 4 | Every Publisher source surface used the snapshot within one extraction | PASS | `20261105T010330Z-mssql/results-Isolated.json`, 9 assertions |
-| 5 | No-snapshot Publisher behavior recorded | PASS | `20261105T010330Z-mssql/results-NoSnapshot.json`, 6 assertions |
+| 1 | Versions and configuration recorded | PASS | `20261105T183922Z-mssql/manifest.json`, 9 of 9 fields recorded |
+| 2 | Publisher runs isolated without the opt-out | PASS | `20261105T183922Z-mssql/results-Isolated.json`, 9 assertions |
+| 3 | Post-snapshot writes are excluded | PASS | `20261105T183922Z-mssql/results-Isolated.json`, 12 assertions |
+| 4 | Every Publisher source surface used the snapshot within one extraction | PASS | `20261105T183922Z-mssql/results-Isolated.json`, 9 assertions |
+| 5 | No-snapshot Publisher behavior recorded | PASS | `20261105T183922Z-mssql/results-NoSnapshot.json`, 6 assertions |
 
 ### Assertions behind each outcome
 
