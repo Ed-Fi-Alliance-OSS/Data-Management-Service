@@ -1605,10 +1605,11 @@ Describe "the validation record" {
             }
         }
 
-        It "states the GET-by-id finding against the design" {
+        It "says why a DMS-to-DMS run issues no GET-by-id, cites the CI scenario, and files no finding against the design" {
             $script:text | Should -Match "SnapshotAndReadReplicaRouting.feature`` scenario 02"
-            $script:text | Should -Match "Publisher never issues a source GET-by-id against a DMS target"
-            $script:text | Should -Match "29-snapshot-support.md`` section API Publisher Interoperability"
+            $script:text | Should -Match "issues no GET-by-id"
+            $script:text | Should -Match "reference could not be resolved"
+            $script:text | Should -Not -Match "(?i)finding against|overstates"
         }
 
         It "states the gate status and evidence it is given: <Status>" -TestCases @(

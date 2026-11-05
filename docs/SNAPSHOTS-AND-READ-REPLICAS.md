@@ -319,7 +319,9 @@ All of them carry the header and are served by the same snapshot.
 A write committed to the primary after the snapshot was created does not appear in the extraction.
 
 DMS serves GET-by-id from a snapshot too.
-The Publisher does not issue GET-by-id against a DMS source, so that route does not appear in a run.
+The Publisher reads a record from its source by id only when its target answers a `POST` with `400` and `<X> reference could not be resolved.`, for a resource listed in its `authorizationFailureHandling` setting.
+The ODS/API sends that response and DMS does not, so a run from one DMS to another issues no GET-by-id.
+A run from a DMS source to an ODS/API target can, and that read carries `Use-Snapshot: true` like every other source read, so the same snapshot serves it.
 
 ### Troubleshooting: no snapshot is configured
 

@@ -2955,7 +2955,8 @@ function Add-InteropArrangementToManifest {
       3. Create and register the snapshot, wait for Active, and record its newest change version.
       4. Post-snapshot changes on the primary: I2 (insert), U2, D2, K2.
       5. The self-check (Test-InteropArrangementVisibility), then the manifest.
-    There is no GET-by-id arrangement: the Publisher never issues a source GET-by-id against a DMS target.
+    There is no GET-by-id arrangement: the Publisher never issues a source GET-by-id against a DMS target, because it
+    reads by id only after a target answers 400 "<X> reference could not be resolved.", which DMS never sends.
     The returned Snapshot carries the in-memory connection string; never log or write it.
 #>
 function Set-InteropSourceArrangement {
@@ -3124,7 +3125,7 @@ function Set-InteropSourceArrangement {
 
 # The source surfaces one Publisher extraction can issue against DMS. GetById is listed so a line or
 # request that would be a GET-by-id is reported rather than dropped, even though Publisher v1.4.0 never
-# issues one against a DMS target.
+# issues one against a DMS target (it reads by id only after an ODS/API target's 400 for an unresolved reference).
 $script:SourceSurfaceNames = @(
     "GetMany", "Partitions", "CursorPage", "TotalCount", "Deletes", "KeyChanges", "AvailableChangeVersions", "GetById"
 )
@@ -5718,11 +5719,10 @@ function ConvertTo-InteropValidationRecord {
 
     & $add "## GET-by-id"
     & $add ""
-    & $add "GET-by-id served from a snapshot is cited, not exercised through the Publisher: ``SnapshotAndReadReplicaRouting.feature`` scenario 02 proves it in CI."
-    & $add ""
-    & $add "Finding against ``29-snapshot-support.md`` section API Publisher Interoperability: the Publisher never issues a source GET-by-id against a DMS target."
-    & $add "That section lists GET-by-id among the requests one extraction issues, so it overstates what a Publisher extraction exercises."
-    & $add "The seven source surfaces a DMS extraction does issue are GET-many, ``/partitions``, cursor pages, ``totalCount``, ``/deletes``, ``/keyChanges``, and ``/availableChangeVersions``."
+    & $add "These runs publish from DMS to DMS, so the Publisher issues no GET-by-id."
+    & $add "It reads a record from its source by id only when its target answers a ``POST`` with ``400`` and ``<X> reference could not be resolved.``, which the ODS/API sends and DMS does not; that read carries ``Use-Snapshot: true`` like every other source read."
+    & $add "GET-by-id served from a snapshot is therefore cited, not exercised through the Publisher: ``SnapshotAndReadReplicaRouting.feature`` scenario 02 proves it in CI."
+    & $add "The seven source surfaces a DMS-to-DMS extraction issues are GET-many, ``/partitions``, cursor pages, ``totalCount``, ``/deletes``, ``/keyChanges``, and ``/availableChangeVersions``."
     & $add ""
 
     foreach ($item in $runs) {

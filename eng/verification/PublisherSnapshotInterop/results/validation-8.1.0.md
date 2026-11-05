@@ -54,11 +54,10 @@ CI of record: `Run PostgreSQL DMS E2E (self-contained, Shard 1)`, `Run SQL Serve
 
 ## GET-by-id
 
-GET-by-id served from a snapshot is cited, not exercised through the Publisher: `SnapshotAndReadReplicaRouting.feature` scenario 02 proves it in CI.
-
-Finding against `29-snapshot-support.md` section API Publisher Interoperability: the Publisher never issues a source GET-by-id against a DMS target.
-That section lists GET-by-id among the requests one extraction issues, so it overstates what a Publisher extraction exercises.
-The seven source surfaces a DMS extraction does issue are GET-many, `/partitions`, cursor pages, `totalCount`, `/deletes`, `/keyChanges`, and `/availableChangeVersions`.
+These runs publish from DMS to DMS, so the Publisher issues no GET-by-id.
+It reads a record from its source by id only when its target answers a `POST` with `400` and `<X> reference could not be resolved.`, which the ODS/API sends and DMS does not; that read carries `Use-Snapshot: true` like every other source read.
+GET-by-id served from a snapshot is therefore cited, not exercised through the Publisher: `SnapshotAndReadReplicaRouting.feature` scenario 02 proves it in CI.
+The seven source surfaces a DMS-to-DMS extraction issues are GET-many, `/partitions`, cursor pages, `totalCount`, `/deletes`, `/keyChanges`, and `/availableChangeVersions`.
 
 ## Engine: PostgreSQL
 
