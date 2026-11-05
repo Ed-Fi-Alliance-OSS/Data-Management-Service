@@ -54,7 +54,8 @@ In both, replace the placeholders:
 
 - `<source_db>` is the primary's database name.
 - `<snapshot_db>` is the name of the new database.
-- `<reader>` is the name of the read-only login.
+- `<reader>` is the name of a new read-only login for this snapshot.
+  Create a new one for every snapshot, because retiring a snapshot drops its login, which would cut off any newer snapshot that shared it.
 - `<RO_PASSWORD>` is a generated password for that login, with 16 to 128 letters and digits that mix uppercase letters, lowercase letters, and digits.
 
 Take the snapshot at a quiet time, with no long-running writes in flight.
@@ -167,8 +168,6 @@ The snapshot keeps the `CONNECT` it captured when it was created, so the reader 
 USE <source_db>;
 REVOKE CONNECT FROM <reader>;
 ```
-
-If you reuse the login for a later snapshot, run `GRANT CONNECT TO <reader>;` in the primary before you create that snapshot, and revoke it again afterward.
 
 The order matters.
 A SQL Server snapshot is read-only and inherits its users and permissions from the moment it was created.
