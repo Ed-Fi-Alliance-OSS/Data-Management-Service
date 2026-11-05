@@ -81,6 +81,14 @@ Describe "New-InteropReadOnlyPassword" {
     It "refuses a length too short to be a password" {
         { New-InteropReadOnlyPassword -Length 4 } | Should -Throw
     }
+
+    It "always mixes uppercase letters, lowercase letters, and digits, which the SQL Server password policy requires" {
+        # At the shortest length a uniformly random password misses one of the three classes often enough
+        # that 300 draws would catch a generator that only hopes for the mix.
+        $missing = @(1..300 | ForEach-Object { New-InteropReadOnlyPassword -Length 16 } |
+                Where-Object { $_ -cnotmatch "[A-Z]" -or $_ -cnotmatch "[a-z]" -or $_ -notmatch "[0-9]" })
+        $missing | Should -BeNullOrEmpty
+    }
 }
 
 Describe "Get-InteropSnapshotConnectionString" {
@@ -165,8 +173,9 @@ Describe "Get-InteropSqlServerReadOnlySql" {
         $script:mssqlGrantSql | Should -Match "^SET QUOTED_IDENTIFIER ON;"
     }
 
-    It "creates the login, then the user in the primary, with db_datareader" {
-        $script:mssqlGrantSql | Should -Match "CREATE LOGIN dms_snapshot_reader_1 WITH PASSWORD = N'$($script:password)', CHECK_POLICY = OFF, DEFAULT_DATABASE = master;"
+    It "creates the login with the password policy on, then the user in the primary, with db_datareader" {
+        $script:mssqlGrantSql | Should -Match "CREATE LOGIN dms_snapshot_reader_1 WITH PASSWORD = N'$($script:password)', DEFAULT_DATABASE = master;"
+        $script:mssqlGrantSql | Should -Not -Match "CHECK_POLICY"
         $script:mssqlGrantSql | Should -Match "USE src_db;\s+CREATE USER dms_snapshot_reader_1 FOR LOGIN dms_snapshot_reader_1;"
         $script:mssqlGrantSql | Should -Match "ALTER ROLE db_datareader ADD MEMBER dms_snapshot_reader_1;"
     }
@@ -176,6 +185,10 @@ Describe "Get-InteropSqlServerReadOnlySql" {
         $script:mssqlGrantSql | Should -Match "GRANT VIEW DEFINITION ON OBJECT::dms\.ChangeVersionSequence TO dms_snapshot_reader_1;"
     }
 
+    It "grants EXECUTE on dms.BigIntTable, which DMS binds for a client with 2000 or more claim EdOrg ids" {
+        $script:mssqlGrantSql | Should -Match "GRANT EXECUTE ON TYPE::dms\.BigIntTable TO dms_snapshot_reader_1;"
+    }
+
     It "never makes the user a writer or owner" {
         $script:mssqlGrantSql | Should -Not -Match "(?i)db_datawriter|db_owner|sysadmin"
     }
@@ -183,6 +196,41 @@ Describe "Get-InteropSqlServerReadOnlySql" {
     It "refuses a password that would break out of the SQL literal" {
         { Get-InteropSqlServerReadOnlySql -SourceDatabaseName "src_db" -LoginName "dms_snapshot_reader_1" -Password "x'; DROP LOGIN sa; --xxxxxxxxxxxx" } |
             Should -Throw "*16 to 128 letters and digits*"
+    }
+}
+
+Describe "Get-InteropSqlServerRevokePrimarySql" {
+    It "revokes the reader's CONNECT in the primary, so the snapshot's credential cannot read current data" {
+        $sql = Get-InteropSqlServerRevokePrimarySql -SourceDatabaseName "src_db" -LoginName "dms_snapshot_reader_1"
+        $sql | Should -Match "^SET QUOTED_IDENTIFIER ON;"
+        $sql | Should -Match "USE src_db;\s+REVOKE CONNECT FROM dms_snapshot_reader_1;"
+    }
+
+    It "refuses a login name that is not a plain identifier" {
+        { Get-InteropSqlServerRevokePrimarySql -SourceDatabaseName "src_db" -LoginName "x; DROP LOGIN sa" } | Should -Throw "*plain SQL identifier*"
+    }
+}
+
+Describe "New-InteropSnapshot on SQL Server" {
+    It "revokes the reader's CONNECT in the primary only after the snapshot exists" {
+        # The snapshot keeps the CONNECT it captured, so revoking first would lock the reader out of the snapshot too.
+        $script:sqlCalls = [System.Collections.Generic.List[string]]::new()
+        Mock -ModuleName PublisherSnapshotInterop Write-InteropStep {}
+        Mock -ModuleName PublisherSnapshotInterop Invoke-InteropSql {
+            $null = $script:sqlCalls.Add($Sql)
+            if ($Sql -match "sys\.database_files") { return "edfi_datamanagementservice" }
+        }
+
+        $null = New-InteropSnapshot -Engine mssql -EnvironmentValues @{} -TimestampUtc $script:stamp
+
+        $order = @(foreach ($pattern in "CREATE LOGIN", "AS SNAPSHOT OF", "REVOKE CONNECT") {
+                $index = -1
+                for ($i = 0; $i -lt $script:sqlCalls.Count; $i++) { if ($script:sqlCalls[$i] -match $pattern) { $index = $i; break } }
+                $index
+            })
+        $order | Should -Not -Contain -1
+        $order[1] | Should -BeGreaterThan $order[0]
+        $order[2] | Should -BeGreaterThan $order[1]
     }
 }
 

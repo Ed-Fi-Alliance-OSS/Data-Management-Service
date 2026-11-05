@@ -689,9 +689,25 @@ function New-InteropReadOnlyPassword {
         [int]$Length = 32
     )
 
-    $alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"
-    $characters = for ($index = 0; $index -lt $Length; $index++) {
-        $alphabet[[System.Security.Cryptography.RandomNumberGenerator]::GetInt32($alphabet.Length)]
+    # SQL Server's password policy, which the read-only login is created under, needs characters from three of
+    # four classes, so one character of each class is placed first and the rest is drawn from all of them.
+    $classes = @("ABCDEFGHJKLMNPQRSTUVWXYZ", "abcdefghjkmnpqrstuvwxyz", "23456789")
+    $alphabet = -join $classes
+    $pick = { param($From) $From[[System.Security.Cryptography.RandomNumberGenerator]::GetInt32($From.Length)] }
+    $characters = [System.Collections.Generic.List[char]]::new()
+    foreach ($class in $classes) {
+        $characters.Add((& $pick $class))
+    }
+    while ($characters.Count -lt $Length) {
+        $characters.Add((& $pick $alphabet))
+    }
+
+    # Shuffle (Fisher-Yates), so the guaranteed characters are not always the first three.
+    for ($index = $characters.Count - 1; $index -gt 0; $index--) {
+        $swap = [System.Security.Cryptography.RandomNumberGenerator]::GetInt32($index + 1)
+        $held = $characters[$index]
+        $characters[$index] = $characters[$swap]
+        $characters[$swap] = $held
     }
 
     return -join $characters
@@ -824,15 +840,49 @@ function Get-InteropSqlServerReadOnlySql {
 
     # EXECUTE on GetMaxChangeVersion serves availableChangeVersions; VIEW DEFINITION on the sequence is
     # needed because the function reads sys.sequences, and catalog views hide objects the caller cannot
-    # see (without it the function returns NULL).
+    # see (without it the function returns NULL). EXECUTE on dms.BigIntTable is needed because DMS binds a
+    # client's claim EdOrg ids as that table type once there are 2000 or more of them. The login keeps the
+    # password policy on; New-InteropReadOnlyPassword always meets it.
     return @(
         "SET QUOTED_IDENTIFIER ON;"
-        "CREATE LOGIN $LoginName WITH PASSWORD = N'$Password', CHECK_POLICY = OFF, DEFAULT_DATABASE = master;"
+        "CREATE LOGIN $LoginName WITH PASSWORD = N'$Password', DEFAULT_DATABASE = master;"
         "USE $SourceDatabaseName;"
         "CREATE USER $LoginName FOR LOGIN $LoginName;"
         "ALTER ROLE db_datareader ADD MEMBER $LoginName;"
         "GRANT EXECUTE ON OBJECT::dms.GetMaxChangeVersion TO $LoginName;"
         "GRANT VIEW DEFINITION ON OBJECT::dms.ChangeVersionSequence TO $LoginName;"
+        "GRANT EXECUTE ON TYPE::dms.BigIntTable TO $LoginName;"
+    ) -join "`n"
+}
+
+<#
+.SYNOPSIS
+    Builds the statement that takes the snapshot reader's CONNECT away in the primary.
+
+.DESCRIPTION
+    A SQL Server snapshot keeps the users and permissions it captured when it was created, so after the snapshot
+    exists the reader no longer needs the primary. Revoking CONNECT there leaves the snapshot's credential unable to
+    read current data. Run it only after CREATE DATABASE ... AS SNAPSHOT OF; revoking first would lock the reader out
+    of the snapshot as well.
+#>
+function Get-InteropSqlServerRevokePrimarySql {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$SourceDatabaseName,
+
+        [Parameter(Mandatory)]
+        [string]$LoginName
+    )
+
+    Assert-InteropSqlIdentifier -Value $SourceDatabaseName -What "source database name"
+    Assert-InteropSqlIdentifier -Value $LoginName -What "snapshot login name"
+
+    return @(
+        "SET QUOTED_IDENTIFIER ON;"
+        "USE $SourceDatabaseName;"
+        "REVOKE CONNECT FROM $LoginName;"
     ) -join "`n"
 }
 
@@ -2057,6 +2107,9 @@ function New-InteropSnapshot {
 
             $snapshotSql = Get-InteropSqlServerSnapshotSql -SnapshotName $snapshotName -SourceDatabaseName $sourceDatabase -LogicalFileName $logicalNames
             $null = Invoke-InteropSql -Engine $Engine -EnvironmentValues $EnvironmentValues -Sql $snapshotSql
+
+            $revokeSql = Get-InteropSqlServerRevokePrimarySql -SourceDatabaseName $sourceDatabase -LoginName $loginName
+            $null = Invoke-InteropSql -Engine $Engine -EnvironmentValues $EnvironmentValues -Sql $revokeSql
         }
     }
     catch {
@@ -5790,7 +5843,7 @@ Export-ModuleMember -Function `
     Copy-InteropSchoolYear, Assert-InteropSelectionLogging, Get-InteropVersion, Assert-InteropPublisherImage, Write-InteropRunManifest, `
     Assert-InteropSqlIdentifier, Get-InteropSnapshotName, Get-InteropSnapshotLoginName, New-InteropReadOnlyPassword, `
     Get-InteropSnapshotConnectionString, Get-InteropPostgresReadOnlySql, Get-InteropSqlServerReadOnlySql, `
-    Get-InteropSqlServerSnapshotSql, Get-InteropSnapshotRemovalSql, Get-InteropSnapshotWaitBound, `
+    Get-InteropSqlServerSnapshotSql, Get-InteropSqlServerRevokePrimarySql, Get-InteropSnapshotRemovalSql, Get-InteropSnapshotWaitBound, `
     Resolve-InteropSnapshotProbeState, Test-InteropSeedRaceFailure, Invoke-InteropScriptCaptured, Invoke-InteropSql, `
     New-InteropSnapshot, Remove-InteropSnapshot, Register-InteropSnapshotDerivative, Remove-InteropSnapshotDerivative, `
     Get-InteropResponseText, Invoke-InteropDmsProbe, Wait-InteropSnapshotState, `

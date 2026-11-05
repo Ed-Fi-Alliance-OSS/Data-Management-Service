@@ -55,7 +55,7 @@ In both, replace the placeholders:
 - `<source_db>` is the primary's database name.
 - `<snapshot_db>` is the name of the new database.
 - `<reader>` is the name of the read-only login.
-- `<RO_PASSWORD>` is a generated password for that login, with 16 to 128 letters and digits.
+- `<RO_PASSWORD>` is a generated password for that login, with 16 to 128 letters and digits that mix uppercase letters, lowercase letters, and digits.
 
 Take the snapshot at a quiet time, with no long-running writes in flight.
 A snapshot reports its newest change version from the change-version sequence, and the sequence also counts versions handed to transactions that had not committed when the snapshot was taken.
@@ -118,12 +118,19 @@ Check it after you create a snapshot, not only a resource read.
 
 SQL Server has native database snapshots.
 Run each block below as one batch, as an administrator with `sqlcmd`.
-Two of the blocks contain a `USE`, which lasts only for the batch it is in, so running their statements one at a time would run the statements after it in the wrong database.
+Three of the blocks contain a `USE`, which lasts only for the batch it is in, so running their statements one at a time would run the statements after it in the wrong database.
 Set `QUOTED_IDENTIFIER ON` for every batch, because `sqlcmd` defaults it to `OFF`, which breaks statements that touch the `dms` schema.
 For a Docker deployment, this is the command that runs a batch in the `dms-mssql` container, with the administrator password in the `SQLCMDPASSWORD` environment variable.
 
 ```text
 docker exec -e SQLCMDPASSWORD dms-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -h -1 -W -Q "SET QUOTED_IDENTIFIER ON; SET NOCOUNT ON; <sql>"
+```
+
+The second block holds the reader's password, so do not pass it with `-Q`, which leaves the password in the shell history and the process list.
+Save that block in a file that starts with `SET QUOTED_IDENTIFIER ON;`, and pass the file on standard input.
+
+```text
+docker exec -i -e SQLCMDPASSWORD dms-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -h -1 -W -i /dev/stdin < <file>
 ```
 
 First, read the logical name of each data file of the primary.
@@ -135,14 +142,16 @@ SELECT name FROM <source_db>.sys.database_files WHERE type_desc = N'ROWS' ORDER 
 
 Second, create the login, the user, and every grant in the primary.
 This must happen before the snapshot is created.
+The login keeps SQL Server's password policy, which is why `<RO_PASSWORD>` must mix uppercase letters, lowercase letters, and digits.
 
 ```sql
-CREATE LOGIN <reader> WITH PASSWORD = N'<RO_PASSWORD>', CHECK_POLICY = OFF, DEFAULT_DATABASE = master;
+CREATE LOGIN <reader> WITH PASSWORD = N'<RO_PASSWORD>', DEFAULT_DATABASE = master;
 USE <source_db>;
 CREATE USER <reader> FOR LOGIN <reader>;
 ALTER ROLE db_datareader ADD MEMBER <reader>;
 GRANT EXECUTE ON OBJECT::dms.GetMaxChangeVersion TO <reader>;
 GRANT VIEW DEFINITION ON OBJECT::dms.ChangeVersionSequence TO <reader>;
+GRANT EXECUTE ON TYPE::dms.BigIntTable TO <reader>;
 ```
 
 Third, create the snapshot, with one `(NAME, FILENAME)` pair for each logical file name from the first step.
@@ -151,8 +160,19 @@ Third, create the snapshot, with one `(NAME, FILENAME)` pair for each logical fi
 CREATE DATABASE <snapshot_db> ON (NAME = N'<logical_file_name>', FILENAME = N'/var/opt/mssql/data/<snapshot_db>_1.ss') AS SNAPSHOT OF <source_db>;
 ```
 
+Fourth, take the reader's access to the primary away.
+The snapshot keeps the `CONNECT` it captured when it was created, so the reader still reads the snapshot, but its credential can no longer read current data.
+
+```sql
+USE <source_db>;
+REVOKE CONNECT FROM <reader>;
+```
+
+If you reuse the login for a later snapshot, run `GRANT CONNECT TO <reader>;` in the primary before you create that snapshot, and revoke it again afterward.
+
 The order matters.
-A SQL Server snapshot is read-only and inherits its users and permissions from the moment it was created, so a grant run inside it fails and cannot be repaired afterward.
+A SQL Server snapshot is read-only and inherits its users and permissions from the moment it was created.
+A `REVOKE CONNECT` run before the snapshot is created locks the reader out of the snapshot too, and a grant run inside the snapshot fails and cannot be repaired afterward.
 
 ```text
 Msg 3906, Level 16, State 1, Server dms-mssql, Line 1
@@ -166,20 +186,24 @@ The minimum grant set for DMS reads on SQL Server, all applied in the primary be
 - Membership of the user in `db_datareader`.
 - `EXECUTE` on `dms.GetMaxChangeVersion`.
 - `VIEW DEFINITION` on `dms.ChangeVersionSequence`.
+- `EXECUTE` on the type `dms.BigIntTable`.
 
-If a grant is missing, `/changeQueries/v1/availableChangeVersions` answers `500` and the other reads still answer `200`.
+If a grant is missing, the affected read answers `500` and the DMS log carries one of these errors.
 
-| Missing grant | Error in the DMS log |
-| --- | --- |
-| `EXECUTE` on `dms.GetMaxChangeVersion` | `The EXECUTE permission was denied on the object 'GetMaxChangeVersion', database '<snapshot_db>', schema 'dms'.` |
-| `VIEW DEFINITION` on `dms.ChangeVersionSequence` | `System.Data.SqlTypes.SqlNullValueException: Data is Null. This method or property cannot be called on Null values.` |
+| Missing grant | Surface that fails | Error in the DMS log |
+| --- | --- | --- |
+| `EXECUTE` on `dms.GetMaxChangeVersion` | `/changeQueries/v1/availableChangeVersions` | `The EXECUTE permission was denied on the object 'GetMaxChangeVersion', database '<snapshot_db>', schema 'dms'.` |
+| `VIEW DEFINITION` on `dms.ChangeVersionSequence` | `/changeQueries/v1/availableChangeVersions` | `System.Data.SqlTypes.SqlNullValueException: Data is Null. This method or property cannot be called on Null values.` |
+| `EXECUTE` on `dms.BigIntTable` | Relationship-authorized reads by a client with 2000 or more education organization ids | `The EXECUTE permission was denied on the object 'BigIntTable', database '<snapshot_db>', schema 'dms'.` |
 
 Without `VIEW DEFINITION`, the function reads `sys.sequences`, the catalog view hides the sequence from the login, and the function returns `NULL`.
+DMS passes a client's education organization ids as the table type `dms.BigIntTable` once there are 2000 or more of them, so a check with an ordinary client does not reveal a missing `EXECUTE` on it.
 
 ### Read replicas
 
 A read replica is whatever your platform provides for streaming or managed replication.
 Its credentials must be read-only, and it serves the same reads as a snapshot, so the grants above apply to it as well.
+The SQL Server step that revokes `CONNECT` in the primary is for snapshots only: it relies on a snapshot keeping the permissions it captured, and a replica's permissions can follow the primary's.
 Register it with the type `ReadReplica`, as described next.
 
 ## Registering, replacing, and removing a derivative
