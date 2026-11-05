@@ -24,6 +24,36 @@ from the old prerelease Configuration Service table names.
 External Configuration Service callers must update from the old DMS instance route and JSON field
 names to the `dataStore*` routes and `dataStore*` payload fields.
 
+## Confirmed CMS-only extensions to Management API v3
+
+This section is the canonical reference for three intentional differences between the
+Configuration Service (CMS) and the shared
+[Ed-Fi Management API v3 contract](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-API-Specifications/blob/main/api-specifications/management/management-api-3.0.0.yaml).
+Each is a confirmed, intentional CMS-only extension, not an open gap. The three groups are settled:
+future specification or gap reviews must not re-flag them as unresolved differences.
+
+| Extension | What it is and why CMS has it |
+| --- | --- |
+| `connectionString` in `DataStore` and `DataStoreDerivative` responses, including nested `dataStoreDerivatives[].connectionString` | CMS returns encrypted connection strings so DMS can resolve and connect to the backend selected for a client's requests. It is an additional response field outside the shared response contract. CMS must retain it, and neither the shared contract nor Admin API is expected to adopt it. |
+| `clientUuid` in `ApiClient` resource responses, alongside `clientId` | CMS retains the identity-provider-associated UUID for provider client management and for DMS application context. It is excluded from the shared contract. `id` is the numeric management identifier, `clientId` is the OAuth client key, and `clientUuid` is the provider-associated UUID. The field applies to ApiClient resource responses only, not to credential-issuance or credential-reset responses. |
+| `edfi_admin_api/readonly_access` | CMS provides restricted administrative reads without granting administrative writes. This extra scope is not required or expected on Admin API. |
+| `edfi_admin_api/authMetadata_readonly_access` | CMS provides the configuration and authorization reads DMS uses to resolve client access and backend routing. This extra scope is not required or expected on Admin API. |
+
+The two scope rows are one extension group. `edfi_admin_api/full_access` is the shared
+scope; see [Supported Scopes](./ROLES-SCOPES.md#supported-scopes) for the endpoint and access
+matrix.
+
+Qualifications:
+
+- **Connection strings.** Stored values, secret references, and read failures are described in
+  [secret references in stored connection strings](./SECRETS.md#secret-references-in-stored-connection-strings).
+- **Scopes.** Scope matching and the tenant requirements of a multi-tenant DMS are described in
+  [Roles and Scopes](./ROLES-SCOPES.md#how-the-configuration-service-evaluates-token-scopes).
+- **Compatibility.** These differences are not an exhaustive CMS-versus-shared-schema inventory
+  or an executable validation profile. The relevant shared response schemas forbid additional
+  properties, so strict shared-schema validation does not accept CMS responses. Consumers must
+  account for the actual CMS response shapes.
+
 ## Ed-Fi DMS Data Stores
 
 ### Data Store Storage and Security
