@@ -10,6 +10,7 @@ using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
@@ -118,6 +119,7 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddTransient<IConnectionStringReader, ConnectionStringReader>();
         ConfigureJobOptions(webApplicationBuilder.Services, webApplicationBuilder.Configuration);
         ConfigureDatastore(webApplicationBuilder, logger);
+        ConfigureDmsDataStoreProvisioning(webApplicationBuilder, logger);
         ConfigureIdentityProvider(webApplicationBuilder, logger);
 
         var settingsSection = webApplicationBuilder.Configuration.GetSection("AppSettings");
@@ -272,6 +274,53 @@ public static class WebApplicationBuilderExtensions
         // by both engines
         webAppBuilder.Services.AddTransient<ITokenManager, OpenIddictTokenManager>();
         webAppBuilder.Services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
+    }
+
+    /// <summary>
+    /// Registers DMS data store provisioning (spec 4.4) by <c>DmsDataStoreProvisioning:Provider</c>, which is
+    /// read independently of <c>AppSettings:Datastore</c>: the target engine and the CMS catalog engine need
+    /// not match. Disabled (the shipped default): only the readiness singleton and the refusing provisioner,
+    /// no options validation, no startup work. Enabled: the section is bound and validated at startup, and the
+    /// engine adapter for the provider is registered. No adapter exists in this build, so the
+    /// <see cref="UnavailableDmsTargetEngine"/> stands in for either provider and readiness can never become
+    /// <c>Ready</c>; the provisioner refuses every call.
+    /// </summary>
+    private static void ConfigureDmsDataStoreProvisioning(
+        WebApplicationBuilder webAppBuilder,
+        Serilog.ILogger logger
+    )
+    {
+        IConfigurationSection section = webAppBuilder.Configuration.GetSection(
+            DmsDataStoreProvisioningOptions.SectionName
+        );
+
+        webAppBuilder.Services.AddSingleton<DmsDataStoreProvisionerReadiness>();
+        webAppBuilder.Services.AddSingleton<IDmsDataStoreProvisionerReadiness>(provider =>
+            provider.GetRequiredService<DmsDataStoreProvisionerReadiness>()
+        );
+        webAppBuilder.Services.AddSingleton<IDmsDataStoreProvisioner, DisabledDmsDataStoreProvisioner>();
+
+        if (!section.GetValue<bool>(nameof(DmsDataStoreProvisioningOptions.Enabled)))
+        {
+            logger.Information("DMS data store provisioning is disabled");
+            return;
+        }
+
+        webAppBuilder.Services.AddOptions<DmsDataStoreProvisioningOptions>().Bind(section).ValidateOnStart();
+        webAppBuilder.Services.AddSingleton<
+            IValidateOptions<DmsDataStoreProvisioningOptions>,
+            DmsDataStoreProvisioningOptionsValidator
+        >();
+
+        string? configuredProvider = section[nameof(DmsDataStoreProvisioningOptions.Provider)];
+        string targetProvider = string.IsNullOrWhiteSpace(configuredProvider)
+            ? "(unset)"
+            : configuredProvider;
+        logger.Information(
+            "DMS data store provisioning is enabled for target provider {Provider}; no engine adapter exists in this build, so the provisioner will refuse every call",
+            LoggingUtility.SanitizeForLog(targetProvider)
+        );
+        webAppBuilder.Services.AddSingleton<IDmsTargetEngine>(new UnavailableDmsTargetEngine(targetProvider));
     }
 
     /// <summary>

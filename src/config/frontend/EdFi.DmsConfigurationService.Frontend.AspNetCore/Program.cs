@@ -198,6 +198,8 @@ if (!ReportInvalidConfiguration(app))
         );
     }
     InitializeDatabase(app);
+    // After InitializeDatabase, so the readiness verdict is recorded once the catalog is in place (spec 4.4).
+    await DmsDataStoreProvisioningStartup.RunAsync(app.Services, app.Logger, CancellationToken.None);
     await InitializeClaimsData(app);
 }
 
