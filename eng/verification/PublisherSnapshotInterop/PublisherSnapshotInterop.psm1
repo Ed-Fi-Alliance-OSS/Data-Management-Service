@@ -43,6 +43,12 @@ $script:ConfigurationServiceImageRepository = "edfialliance/ed-fi-api-configurat
 $script:SelectionLoggerName = "EdFi.DataManagementService.Core.Middleware.SelectEffectiveDataStoreTargetMiddleware"
 $script:PostgresMaxConnections = 300
 
+# The HTTP ports of .env.example. An operator moves the DMS port by setting DMS_HTTP_PORTS in the shell. The
+# Configuration Service port cannot move: the stack's in-network URLs for it (the DMS base URL, the token
+# endpoint, the JWT authority) name 8081.
+$script:DefaultDmsHttpPort = "8080"
+$script:DefaultConfigurationServicePort = "8081"
+
 # Education organizations every harness client is authorized for. Later stages create their schools
 # with these ids so the seeded clients can reach them.
 $script:EducationOrganizationIds = @(930190101, 930190102, 930190103)
@@ -261,6 +267,26 @@ function Get-InteropEnvironmentOverride {
         $override["DMS_PLUGINS_COMPOSE_FILES"] = "$OverlayComposeFile;$PublishedOverlayComposeFile"
     }
 
+    # Compose takes a variable set in the shell over the environment file, so a DMS port moved in the shell (8080
+    # is often taken) moves the stack whatever the file says. The file carries the shell's value, so that the
+    # harness and the Publisher address the port DMS listens on.
+    $dmsPort = $env:DMS_HTTP_PORTS
+    if ($dmsPort) {
+        $port = 0
+        if ($dmsPort -notmatch "^\d{1,5}$" -or -not [int]::TryParse($dmsPort, [ref]$port) -or $port -lt 1 -or $port -gt 65535) {
+            throw "The shell sets DMS_HTTP_PORTS to '$dmsPort'; it must be one port number from 1 to 65535."
+        }
+        $override["DMS_HTTP_PORTS"] = $dmsPort
+    }
+
+    # A moved Configuration Service port would leave DMS unable to reach it and fail its health check, so refuse it.
+    $configurationServicePort = $env:CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS
+    if ($configurationServicePort -and $configurationServicePort -ne $script:DefaultConfigurationServicePort) {
+        throw "The shell sets CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS to '$configurationServicePort'. The stack's own URLs for the" +
+        " Configuration Service name port $script:DefaultConfigurationServicePort, so it cannot move: free port" +
+        " $script:DefaultConfigurationServicePort on the host and unset the variable."
+    }
+
     # SQL Server keeps the stock MSSQL_MEMORY_LIMIT_MB (4096). The run holds four DMS databases on one
     # instance, and below that limit SQL Server cannot compile the largest schema DDL batch for the third
     # or fourth of them (error 701).
@@ -342,7 +368,11 @@ function Get-InteropSourceDatabaseName {
 
 <#
 .SYNOPSIS
-    Resolves the host URLs of DMS and the Configuration Service from environment-file values.
+    Resolves the URLs of DMS and the Configuration Service from environment-file values.
+
+.DESCRIPTION
+    DmsUrl and CmsUrl are the host URLs. PublisherDmsUrl is DMS on the dms network, where the Publisher's container
+    reaches it; the compose files use one variable for the host port and the container port, so both follow it.
 #>
 function Get-InteropEndpoint {
     [CmdletBinding()]
@@ -352,12 +382,13 @@ function Get-InteropEndpoint {
         [hashtable]$EnvironmentValues
     )
 
-    $dmsPort = Get-EnvValue -EnvValues $EnvironmentValues -Name "DMS_HTTP_PORTS" -DefaultValue "8080"
-    $cmsPort = Get-EnvValue -EnvValues $EnvironmentValues -Name "CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS" -DefaultValue "8081"
+    $dmsPort = Get-EnvValue -EnvValues $EnvironmentValues -Name "DMS_HTTP_PORTS" -DefaultValue $script:DefaultDmsHttpPort
+    $cmsPort = Get-EnvValue -EnvValues $EnvironmentValues -Name "CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS" -DefaultValue $script:DefaultConfigurationServicePort
 
     return [pscustomobject]@{
-        DmsUrl = "http://localhost:$dmsPort"
-        CmsUrl = "http://localhost:$cmsPort"
+        DmsUrl          = "http://localhost:$dmsPort"
+        CmsUrl          = "http://localhost:$cmsPort"
+        PublisherDmsUrl = "http://ed-fi-api:$dmsPort"
     }
 }
 
@@ -405,7 +436,9 @@ function Get-InteropNonDefaultSetting {
 
         [string]$DmsImageTag = "",
 
-        [string]$ConfigurationServiceImage = ""
+        [string]$ConfigurationServiceImage = "",
+
+        [hashtable]$EnvironmentValues = @{}
     )
 
     $settings = [System.Collections.Generic.List[object]]::new()
@@ -424,6 +457,10 @@ function Get-InteropNonDefaultSetting {
     if ($DmsImageTag) {
         $settings.Add([pscustomobject]@{ Name = "DmsImageTag"; Value = $DmsImageTag; Default = "locally built image (ed-fi-api-local)"; Reason = "the run validates a published image; a locally built image advertises the pinned 8.0.0 Discovery version" })
         $settings.Add([pscustomobject]@{ Name = "ConfigurationServiceImage"; Value = $ConfigurationServiceImage; Default = "locally built image (ed-fi-api-config-local)"; Reason = "the Configuration Service image that matches the published Ed-Fi API image" })
+    }
+    $dmsPort = Get-EnvValue -EnvValues $EnvironmentValues -Name "DMS_HTTP_PORTS" -DefaultValue $script:DefaultDmsHttpPort
+    if ($dmsPort -ne $script:DefaultDmsHttpPort) {
+        $settings.Add([pscustomobject]@{ Name = "DMS_HTTP_PORTS"; Value = $dmsPort; Default = $script:DefaultDmsHttpPort; Reason = "set in the shell because the default port was taken on the host" })
     }
     if ($SkipStackStart) {
         $settings.Add([pscustomobject]@{ Name = "SkipStackStart"; Value = "true"; Default = "false"; Reason = "an existing stack was reused" })
@@ -2998,7 +3035,7 @@ function Set-InteropSourceArrangement {
     }
 
     Write-InteropStep "Arrangement 1: baseline publish (Run A, --ignoreIsolation=true) so the target holds the starting state."
-    $runA = Invoke-InteropPublisher -RunFolder $RunFolder -RunName "baseline-a" -Image $PublisherImage `
+    $runA = Invoke-InteropPublisher -RunFolder $RunFolder -RunName "baseline-a" -Image $PublisherImage -EnvironmentValues $EnvironmentValues `
         -SourceClient $SourceReader -TargetClient $TargetWriter -Option @("--ignoreIsolation=true", "--includeDescriptors=true")
     if ($runA.ExitCode -ne 0) {
         throw "The baseline publish (Run A) exited $($runA.ExitCode); expected 0. See $($runA.Folder)."
@@ -3007,7 +3044,7 @@ function Set-InteropSourceArrangement {
     # Further targets get the same baseline before any pre-snapshot change, so each holds the starting state.
     # The source primary keeps changing after T0, so a target cannot be rebuilt at T0 later.
     $additionalBaselines = @(foreach ($extraWriter in $AdditionalBaselineTargetWriter) {
-            $extraRun = Invoke-InteropPublisher -RunFolder $RunFolder -RunName "baseline-a-$($extraWriter.Role)" -Image $PublisherImage `
+            $extraRun = Invoke-InteropPublisher -RunFolder $RunFolder -RunName "baseline-a-$($extraWriter.Role)" -Image $PublisherImage -EnvironmentValues $EnvironmentValues `
                 -SourceClient $SourceReader -TargetClient $extraWriter -Option @("--ignoreIsolation=true", "--includeDescriptors=true")
             if ($extraRun.ExitCode -ne 0) {
                 throw "The baseline publish into '$($extraWriter.Role)' exited $($extraRun.ExitCode); expected 0. See $($extraRun.Folder)."
@@ -3293,11 +3330,10 @@ function Invoke-InteropPublisher {
         [Parameter(Mandatory)]
         [pscustomobject]$TargetClient,
 
+        [Parameter(Mandatory)]
+        [hashtable]$EnvironmentValues,
+
         [string[]]$Option = @(),
-
-        [string]$SourceUrl = "http://ed-fi-api:8080",
-
-        [string]$TargetUrl = "http://ed-fi-api:8080",
 
         [string]$Network = "dms",
 
@@ -3315,9 +3351,11 @@ function Invoke-InteropPublisher {
     $null = New-Item -ItemType Directory -Path $configFolder, $logFolder -Force
     Copy-Item -Path (Join-Path $PSScriptRoot "publisher-config/*.json") -Destination $configFolder
 
+    # The Publisher reads the source and writes the target through the same DMS, on the stack's port.
+    $dmsUrl = (Get-InteropEndpoint -EnvironmentValues $EnvironmentValues).PublisherDmsUrl
     $argumentParameters = @{
-        SourceUrl    = $SourceUrl
-        TargetUrl    = $TargetUrl
+        SourceUrl    = $dmsUrl
+        TargetUrl    = $dmsUrl
         SourceKey    = $SourceClient.Key
         SourceSecret = $SourceClient.Secret
         TargetKey    = $TargetClient.Key
@@ -4488,7 +4526,7 @@ function Invoke-InteropNoSnapshotScenario {
         $targetBefore = Get-InteropDocumentCount -Engine $Engine -EnvironmentValues $EnvironmentValues -DatabaseName $TargetStore.DatabaseName
 
         Write-InteropStep "NoSnapshot 4: Publisher run without --ignoreIsolation into the fresh target."
-        $run = Invoke-InteropPublisher -RunFolder $RunFolder -RunName "no-snapshot" -Image $PublisherImage `
+        $run = Invoke-InteropPublisher -RunFolder $RunFolder -RunName "no-snapshot" -Image $PublisherImage -EnvironmentValues $EnvironmentValues `
             -SourceClient $SourceReader -TargetClient $TargetWriter -Option @("--includeDescriptors=true")
 
         $targetAfter = Get-InteropDocumentCount -Engine $Engine -EnvironmentValues $EnvironmentValues -DatabaseName $TargetStore.DatabaseName
@@ -5135,7 +5173,7 @@ function Invoke-InteropIsolatedScenario {
                     @{ Name = "offset"; Option = @($window, "--disableCursorPaging=true", "--includeOnly=/ed-fi/classPeriods") }
                 )) {
                 Write-InteropStep "Isolated $($control.Label.ToUpperInvariant()): $($control.Text), $($mode.Name) paging."
-                $run = Invoke-InteropPublisher -RunFolder $RunFolder -RunName "$($control.Label)-$($mode.Name)" -Image $PublisherImage `
+                $run = Invoke-InteropPublisher -RunFolder $RunFolder -RunName "$($control.Label)-$($mode.Name)" -Image $PublisherImage -EnvironmentValues $EnvironmentValues `
                     -SourceClient $SourceReader -TargetClient $target.Writer -Option (@($mode.Option) + @($control.Extra))
                 $observations += Read-InteropPublisherRun -Run $run -SourceDataStoreId $SourceStore.Id
             }

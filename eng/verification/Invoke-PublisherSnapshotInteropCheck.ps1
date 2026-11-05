@@ -31,6 +31,11 @@
     The repository hardcodes the dms-local compose project and its container names, so the script
     refuses to start a stack when dms-local containers already exist.
 
+    DMS listens on 8080 and the Configuration Service on 8081. When 8080 is taken on the host, set DMS_HTTP_PORTS in
+    the shell before running: compose takes the shell value over the environment file, so the harness writes it into
+    the environment file too, addresses DMS on that port, and records it as a non-default setting. The Configuration
+    Service port cannot move, because the stack's own URLs for it name 8081.
+
     Isolated is the positive proof. It creates two fresh targets (B and C), runs the baseline publish
     (--ignoreIsolation=true) into both before any change, makes pre-snapshot changes (an update, a delete,
     and a key change: U1, D1, K1), creates and registers the snapshot, then makes post-snapshot changes
@@ -232,7 +237,7 @@ if ($published) {
     Write-InteropStep "Discovery reads $($versions.DmsDiscoveryVersion); DMS image $($versions.DmsImageName) ($($versions.DmsImageDigest)), Configuration Service image $($versions.ConfigurationServiceImageName) ($($versions.ConfigurationServiceImageDigest))."
 }
 $settings = Get-InteropNonDefaultSetting -Engine $Engine -PublisherImage $PublisherImage -SkipStackStart:$SkipStackStart -Rebuild:$Rebuild `
-    -DmsImageTag $DmsImageTag -ConfigurationServiceImage $ConfigurationServiceImage
+    -DmsImageTag $DmsImageTag -ConfigurationServiceImage $ConfigurationServiceImage -EnvironmentValues $environmentValues
 
 $failedAssertions = @()
 $manifestDataStores = @($sourceStore, $targetStore)

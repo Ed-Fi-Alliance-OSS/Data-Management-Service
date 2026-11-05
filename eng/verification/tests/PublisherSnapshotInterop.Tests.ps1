@@ -1946,7 +1946,7 @@ Describe "Set-InteropSourceArrangement baseline publishes" {
             Mock -ModuleName PublisherSnapshotInterop Get-InteropClassPeriod { return [pscustomobject]@{ id = [guid]::NewGuid().ToString() } }
             Mock -ModuleName PublisherSnapshotInterop Get-InteropClientToken { return "token-$($Client.Role)" }
             Mock -ModuleName PublisherSnapshotInterop Invoke-InteropPublisher {
-                $null = $script:arrangementCalls.Add([pscustomobject]@{ Kind = "Publish"; Name = $RunName; Option = @($Option) })
+                $null = $script:arrangementCalls.Add([pscustomobject]@{ Kind = "Publish"; Name = $RunName; Option = @($Option); EnvironmentValues = $EnvironmentValues })
                 return [pscustomobject]@{ ExitCode = 0; Folder = "f" }
             }
             Mock -ModuleName PublisherSnapshotInterop Get-InteropChangeVersion { return [pscustomobject]@{ Newest = 100 } }
@@ -1958,7 +1958,7 @@ Describe "Set-InteropSourceArrangement baseline publishes" {
             $reader = [pscustomobject]@{ Role = "source-reader" }
             $targetB = [pscustomobject]@{ Role = "target-b-writer" }
             $targetC = [pscustomobject]@{ Role = "target-c-writer" }
-            Set-InteropSourceArrangement -DmsUrl "http://x" -CmsUrl "http://c" -AdminToken "a" -Engine mssql -EnvironmentValues @{} -RunFolder "r" -RunToken "t1" `
+            Set-InteropSourceArrangement -DmsUrl "http://x" -CmsUrl "http://c" -AdminToken "a" -Engine mssql -EnvironmentValues @{ DMS_HTTP_PORTS = "8090" } -RunFolder "r" -RunToken "t1" `
                 -SourceDataStoreId 1 -SourceReader $reader -TargetWriter $targetB -SourceWriterToken "w" -SourceReaderToken "rt" -PublisherImage "img" `
                 -AdditionalBaselineTargetWriter @($targetC)
         }
@@ -1972,6 +1972,114 @@ Describe "Set-InteropSourceArrangement baseline publishes" {
         foreach ($publish in $publishes) {
             $publish.Option | Should -Be @("--ignoreIsolation=true", "--includeDescriptors=true")
         }
+    }
+
+    It "hands every baseline publish the stack's environment values, so the Publisher reaches DMS on the stack's port" {
+        $null = & $script:runArrangement
+
+        $publishes = @($script:arrangementCalls | Where-Object Kind -EQ "Publish")
+        $publishes.Count | Should -Be 2
+        foreach ($publish in $publishes) {
+            $publish.EnvironmentValues["DMS_HTTP_PORTS"] | Should -Be "8090"
+        }
+    }
+}
+
+Describe "DMS and Configuration Service ports" {
+    BeforeEach {
+        $script:savedPorts = @{}
+        foreach ($name in "DMS_HTTP_PORTS", "CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS") {
+            $script:savedPorts[$name] = [Environment]::GetEnvironmentVariable($name)
+            [Environment]::SetEnvironmentVariable($name, $null)
+        }
+    }
+
+    AfterEach {
+        foreach ($name in $script:savedPorts.Keys) {
+            [Environment]::SetEnvironmentVariable($name, $script:savedPorts[$name])
+        }
+    }
+
+    It "writes a DMS port set in the shell into the environment file, because compose takes the shell value over the file" {
+        $env:DMS_HTTP_PORTS = "8090"
+
+        $override = Get-InteropEnvironmentOverride -OverlayComposeFile "a.yml"
+
+        $override["DMS_HTTP_PORTS"] | Should -Be "8090"
+    }
+
+    It "keeps the DMS port of .env.example when the shell sets none" {
+        $override = Get-InteropEnvironmentOverride -OverlayComposeFile "a.yml"
+
+        $override.Contains("DMS_HTTP_PORTS") | Should -BeFalse
+    }
+
+    It "refuses a Configuration Service port moved in the shell, because the stack's own URLs name 8081" {
+        $env:CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS = "8091"
+
+        { Get-InteropEnvironmentOverride -OverlayComposeFile "a.yml" } | Should -Throw "*CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS*8081*"
+    }
+
+    It "accepts a Configuration Service port the shell sets to its default" {
+        $env:CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS = "8081"
+
+        $override = Get-InteropEnvironmentOverride -OverlayComposeFile "a.yml"
+
+        $override.Contains("CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS") | Should -BeFalse
+    }
+
+    It "refuses a shell DMS port that is not one port number, before the stack starts" -TestCases @(
+        @{ Value = "8090;8091" }
+        @{ Value = "http" }
+        @{ Value = "0" }
+        @{ Value = "65536" }
+    ) {
+        param($Value)
+        $env:DMS_HTTP_PORTS = $Value
+
+        { Get-InteropEnvironmentOverride -OverlayComposeFile "a.yml" } | Should -Throw "*DMS_HTTP_PORTS*"
+    }
+
+    It "addresses DMS on the stack's port from the host and from the Publisher's container" {
+        $endpoint = Get-InteropEndpoint -EnvironmentValues @{ DMS_HTTP_PORTS = "8090"; CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS = "8091" }
+
+        $endpoint.DmsUrl | Should -Be "http://localhost:8090"
+        $endpoint.CmsUrl | Should -Be "http://localhost:8091"
+        $endpoint.PublisherDmsUrl | Should -Be "http://ed-fi-api:8090"
+    }
+
+    It "addresses DMS on 8080 when the environment file names no port" {
+        (Get-InteropEndpoint -EnvironmentValues @{}).PublisherDmsUrl | Should -Be "http://ed-fi-api:8080"
+    }
+
+    It "gives every Publisher run in the module the stack's environment values" {
+        $tokens = $null
+        $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:harnessRoot "PublisherSnapshotInterop.psm1"), [ref]$tokens, [ref]$errors)
+        $errors | Should -BeNullOrEmpty
+
+        $calls = @($ast.FindAll({
+                    param($node)
+                    $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq "Invoke-InteropPublisher"
+                }, $true))
+        $calls.Count | Should -Be 4
+        foreach ($call in $calls) {
+            $named = @($call.CommandElements | Where-Object { $_ -is [System.Management.Automation.Language.CommandParameterAst] } | ForEach-Object ParameterName)
+            $named | Should -Contain "EnvironmentValues" -Because "line $($call.Extent.StartLineNumber) would otherwise address DMS on a fixed port"
+        }
+    }
+
+    It "records a moved DMS port as a non-default setting" {
+        $settings = @(Get-InteropNonDefaultSetting -Engine postgresql -EnvironmentValues @{ DMS_HTTP_PORTS = "8090" })
+
+        ($settings | Where-Object Name -EQ "DMS_HTTP_PORTS").Value | Should -Be "8090"
+        ($settings | Where-Object Name -EQ "DMS_HTTP_PORTS").Default | Should -Be "8080"
+    }
+
+    It "records no port setting when the stack uses the default DMS port" {
+        $settings = @(Get-InteropNonDefaultSetting -Engine postgresql -EnvironmentValues @{ DMS_HTTP_PORTS = "8080" })
+
+        @($settings | Where-Object Name -EQ "DMS_HTTP_PORTS").Count | Should -Be 0
     }
 }
 
