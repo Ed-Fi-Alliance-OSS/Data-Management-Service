@@ -111,8 +111,10 @@ Check it after you create a snapshot, not only a resource read.
 ### SQL Server
 
 SQL Server has native database snapshots.
-Run each statement as an administrator with `sqlcmd`, and set `QUOTED_IDENTIFIER ON` for every statement, because `sqlcmd` defaults it to `OFF`, which breaks statements that touch the `dms` schema.
-For a Docker deployment, this is the command that runs a statement in the `dms-mssql` container, with the administrator password in the `SQLCMDPASSWORD` environment variable.
+Run each block below as one batch, as an administrator with `sqlcmd`.
+Two of the blocks contain a `USE`, which lasts only for the batch it is in, so running their statements one at a time would run the statements after it in the wrong database.
+Set `QUOTED_IDENTIFIER ON` for every batch, because `sqlcmd` defaults it to `OFF`, which breaks statements that touch the `dms` schema.
+For a Docker deployment, this is the command that runs a batch in the `dms-mssql` container, with the administrator password in the `SQLCMDPASSWORD` environment variable.
 
 ```text
 docker exec -e SQLCMDPASSWORD dms-mssql /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -C -b -h -1 -W -Q "SET QUOTED_IDENTIFIER ON; SET NOCOUNT ON; <sql>"
@@ -202,6 +204,7 @@ Keep the id, because removing the derivative needs it.
 
 Use `"derivativeType":"ReadReplica"` to register a read replica.
 To replace a derivative, send `PUT /v3/dataStoreDerivatives/{id}` with the same fields plus the `id`, or remove the old one and register the new one.
+CMS answers the `PUT` with `204`.
 Either way, read the next two sections first, because replacing a derivative while someone is extracting from it breaks that extraction.
 
 Remove a derivative with its id.
@@ -220,7 +223,7 @@ Plan for a wait of up to that many seconds before you start an extraction, which
 Until the registration takes effect, a read with `Use-Snapshot: true` is answered with Snapshot Not Found `404`.
 A removal behaves the same way in the other direction: the snapshot keeps being served until the cache reloads.
 As an example of the size of the wait, a registration at the default of `600` took 559 seconds to take effect on both engines.
-With `CacheSettings:DataStoreCacheExpirationSeconds` set to `10`, it took between 4 and 11 seconds.
+With `CacheSettings:DataStoreCacheExpirationSeconds` set to `10`, it took 11 seconds or less.
 
 If a read that follows the `404` phase answers `500` instead of `200`, the derivative is registered and reachable but a read against it fails.
 That is a missing grant or a database problem, not a cache wait.
