@@ -217,10 +217,20 @@ deployment.
 **Clients orphaned by earlier vendor deletions.** Before this change, `DELETE /v3/vendors/{id}`
 removed the vendor's applications and API clients from the Configuration Service without deleting
 their clients from the identity provider. Those provider clients, with their credentials and
-tokens, still exist. With no `dmscs.ApiClient` row left, such a client counts as approved, so its
-credentials can keep obtaining new tokens; its exposure is not bounded by a token lifetime after
-deployment. Deploying this version does not cut these clients off, and no Configuration Service API
-reaches them. This version provides no cleanup for them.
+tokens, still exist. Before DMS-1494, a `self-contained` client with no `dmscs.ApiClient` row left
+counted as approved, so its credentials could keep obtaining new tokens. Since DMS-1494 such a
+client is refused at `/connect/token`, `/connect/revoke` and `/connect/introspect` with
+`invalid_client`, the answer an unapproved client gets, unless its roles and scopes qualify it as
+an administrative client. A vendor client holds only `IdentitySettings:ClientRole` and does not
+qualify; each refusal logs a Warning naming the client and the category
+`NoApiClientRowHoldsClientRoleOnly`. The tokens it already holds are not revoked, so its exposure
+ends one token lifetime, plus the applicable clock skew, after the deployment. In `keycloak` mode
+the Configuration Service does not read this state, and an orphaned Keycloak client keeps whatever
+access Keycloak grants it. No Configuration Service API reaches these clients, and this version
+provides no cleanup for them. See
+[CS-AUTH](../reference/design/configuration-service/CS-AUTH.md#approval-states-and-clients-without-an-api-client-row)
+for the rule and for role-name changes, which can make an old vendor membership count as
+administrative.
 [OPERATIONS.md](OPERATIONS.md#finding-provider-clients-that-no-api-client-references) describes a
 read-only comparison that lists candidates for an operator to review.
 

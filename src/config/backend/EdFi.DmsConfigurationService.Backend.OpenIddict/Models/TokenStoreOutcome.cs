@@ -29,8 +29,9 @@ public enum TokenStoreOutcome
 
     /// <summary>
     /// Nothing was written because, under the application row lock, the stored client secret no
-    /// longer matched the one the grant authenticated against, or the client was no longer
-    /// approved. The lifecycle operation that changed it committed before this store could run.
+    /// longer matched the one the grant authenticated against, or the client's API client approval
+    /// state was no longer the one it authenticated with. The change committed before this store
+    /// could run.
     /// </summary>
     ClientChanged,
 

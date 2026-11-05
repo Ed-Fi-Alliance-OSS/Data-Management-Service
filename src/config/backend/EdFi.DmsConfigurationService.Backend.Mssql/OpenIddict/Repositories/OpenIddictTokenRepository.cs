@@ -22,7 +22,8 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
             string subject,
             DateTimeOffset expiration,
             int maxActiveTokens,
-            string expectedClientSecret
+            string expectedClientSecret,
+            ApiClientApprovalState expectedApiClientApproval
         )
         {
             return await dataRepository.StoreTokenAsync(
@@ -31,7 +32,8 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
                 subject,
                 expiration,
                 maxActiveTokens,
-                expectedClientSecret
+                expectedClientSecret,
+                expectedApiClientApproval
             );
         }
 
@@ -84,6 +86,16 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
         public async Task<IEnumerable<string>> GetClientRolesAsync(Guid clientId)
         {
             return await dataRepository.GetClientRolesAsync(clientId);
+        }
+
+        public async Task<IEnumerable<string>> GetApplicationScopesAsync(Guid applicationId)
+        {
+            return await dataRepository.GetApplicationScopesAsync(applicationId);
+        }
+
+        public async Task<bool> RoleNamesShareARoleRowAsync(string firstRoleName, string secondRoleName)
+        {
+            return await dataRepository.RoleNamesShareARoleRowAsync(firstRoleName, secondRoleName);
         }
 
         public async Task<ClientCredential?> GetClientCredentialAsync(string clientId)

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
@@ -299,6 +300,165 @@ public class OpenIddictServiceCollectionExtensionsTests
         [Test]
         public void It_binds_the_negative_value_unchanged() =>
             _options.BearerTokenPerClientLimit.Should().Be(-1);
+    }
+
+    [TestFixture]
+    public class Given_the_role_names_are_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _options = BindIdentityOptions(
+                new Dictionary<string, string?>
+                {
+                    ["IdentitySettings:ConfigServiceRole"] = "operator",
+                    ["IdentitySettings:ClientRole"] = "vendor-client",
+                }
+            );
+
+        // The defaults are empty, so a role read under any other key would come back empty and fail here.
+        [Test]
+        public void It_binds_the_config_service_role() => _options.ConfigServiceRole.Should().Be("operator");
+
+        [Test]
+        public void It_binds_the_client_role() => _options.ClientRole.Should().Be("vendor-client");
+    }
+
+    [TestFixture]
+    public class Given_no_role_names_are_configured
+    {
+        private Action _validate = null!;
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _options = BindIdentityOptions([]);
+            _validate = ValidateAtStartup([]);
+        }
+
+        // Missing keys bind as empty and are left to the runtime restriction on the no-row path; the
+        // backend adds no validator for them.
+        [Test]
+        public void It_binds_an_empty_config_service_role() => _options.ConfigServiceRole.Should().BeEmpty();
+
+        [Test]
+        public void It_binds_an_empty_client_role() => _options.ClientRole.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_fail_startup_validation() => _validate.Should().NotThrow();
+    }
+
+    [TestFixture]
+    public class Given_role_names_that_differ_only_by_case
+    {
+        private Action _validate = null!;
+        private IdentityOptions _options = null!;
+
+        private static readonly Dictionary<string, string?> CollidingRoleNames = new()
+        {
+            ["IdentitySettings:ConfigServiceRole"] = "Admin",
+            // Mixed case on both sides, so folding either name to upper or lower case changes it.
+            ["IdentitySettings:ClientRole"] = "aDMIN",
+        };
+
+        [SetUp]
+        public void Setup()
+        {
+            _options = BindIdentityOptions(CollidingRoleNames);
+            _validate = ValidateAtStartup(CollidingRoleNames);
+        }
+
+        // Role names are compared ordinally at issuance, so the binder must not fold case or trim.
+        [Test]
+        public void It_keeps_the_config_service_role_spelling() =>
+            _options.ConfigServiceRole.Should().Be("Admin");
+
+        [Test]
+        public void It_keeps_the_client_role_spelling() => _options.ClientRole.Should().Be("aDMIN");
+
+        // A collision restricts only the no-row path at request time; it does not stop the host.
+        [Test]
+        public void It_does_not_fail_startup_validation() => _validate.Should().NotThrow();
+    }
+
+    // Each self-contained store registration carries the configured role names to the options the
+    // token manager receives.
+    [TestFixture("postgresql")]
+    [TestFixture("postgresql-jwt-settings")]
+    [TestFixture("mssql")]
+    public class Given_a_self_contained_store_registration_with_role_names(string registration)
+    {
+        private ServiceProvider _provider = null!;
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["IdentitySettings:Authority"] = "http://localhost",
+                        ["IdentitySettings:Audience"] = "account",
+                        ["IdentitySettings:ConfigServiceRole"] = "operator",
+                        ["IdentitySettings:ClientRole"] = "vendor-client",
+                    }
+                )
+                .Build();
+            ServiceCollection services = [];
+            _ = registration switch
+            {
+                "postgresql" => services.AddPostgresOpenIddictStores(configuration, "http://localhost"),
+                "postgresql-jwt-settings" => services.AddPostgresOpenIddictStores(
+                    configuration,
+                    "http://localhost",
+                    new JwtSettings { Issuer = "http://localhost", Audience = "account" }
+                ),
+                _ => services.AddMssqlOpenIddictStores(configuration, "http://localhost"),
+            };
+            _provider = services.BuildServiceProvider();
+            _options = _provider.GetRequiredService<IOptions<IdentityOptions>>().Value;
+        }
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_binds_the_config_service_role() => _options.ConfigServiceRole.Should().Be("operator");
+
+        [Test]
+        public void It_binds_the_client_role() => _options.ClientRole.Should().Be("vendor-client");
+    }
+
+    // Keycloak mode never registers the self-contained identity options, so the role binding never
+    // runs there and Keycloak keeps reading the role names from the frontend settings only.
+    [TestFixture]
+    public class Given_the_keycloak_registration
+    {
+        private ServiceCollection _services = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _services = [];
+            _services.AddKeycloakServices(
+                "http://keycloak.test/realms/edfi",
+                "cms-service",
+                "secret",
+                "role"
+            );
+        }
+
+        [Test]
+        public void It_registers_no_identity_options_configuration() =>
+            _services
+                .Should()
+                .NotContain(descriptor =>
+                    descriptor.ServiceType == typeof(IConfigureOptions<IdentityOptions>)
+                    || descriptor.ServiceType == typeof(IValidateOptions<IdentityOptions>)
+                );
     }
 
     [TestFixture]

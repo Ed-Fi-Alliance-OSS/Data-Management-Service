@@ -199,6 +199,37 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     protected static Task<TokenResult> RequestGrantAsync(OpenIddictTokenManager manager, string clientId) =>
         manager.GetAccessTokenAsync([new("client_id", clientId), new("client_secret", "plain-secret")]);
 
+    /// <summary>
+    /// The configured administrative and DMS client role names of one fixture. Role rows are not
+    /// respawned between tests, so each fixture takes names of its own.
+    /// </summary>
+    protected sealed record ConfiguredRoleNames(string Administrative, string Client)
+    {
+        public static ConfiguredRoleNames Fresh()
+        {
+            string suffix = Guid.NewGuid().ToString("N");
+            return new($"cms-client-{suffix}", $"dms-client-{suffix}");
+        }
+    }
+
+    /// <summary>Options that classify a client without an API client row by <paramref name="roles"/>.</summary>
+    protected static IdentityOptions RoleNamedOptions(
+        ConfiguredRoleNames roles,
+        int? bearerTokenPerClientLimit = null
+    )
+    {
+        IdentityOptions options = new()
+        {
+            ConfigServiceRole = roles.Administrative,
+            ClientRole = roles.Client,
+        };
+        if (bearerTokenPerClientLimit is { } limit)
+        {
+            options.BearerTokenPerClientLimit = limit;
+        }
+        return options;
+    }
+
     [TestFixture]
     public class Given_width_aliases_in_a_width_insensitive_database : OpenIddictDataRepositoryTests
     {
@@ -295,31 +326,21 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             _noRowById.IsTokenLimitExempt.Should().BeTrue();
 
         [Test]
-        public void It_reports_api_client_row_presence_in_both_lookups()
+        public void It_reports_the_api_client_approval_in_both_lookups()
         {
-            _apiClientByClientId.HasNoApiClientRow.Should().BeFalse();
-            _apiClientById.HasNoApiClientRow.Should().BeFalse();
+            ApiClientApprovalState expected = isApproved
+                ? ApiClientApprovalState.Approved
+                : ApiClientApprovalState.Unapproved;
+            _apiClientByClientId.ApiClientApproval.Should().Be(expected);
+            _apiClientById.ApiClientApproval.Should().Be(expected);
         }
 
+        // No API client row is its own state in both lookups, never an approval.
         [Test]
-        public void It_reports_api_client_row_absence_in_both_lookups()
+        public void It_reports_no_api_client_row_in_both_lookups()
         {
-            _noRowByClientId.HasNoApiClientRow.Should().BeTrue();
-            _noRowById.HasNoApiClientRow.Should().BeTrue();
-        }
-
-        [Test]
-        public void It_preserves_api_client_approval_in_both_lookups()
-        {
-            _apiClientByClientId.IsApproved.Should().Be(isApproved);
-            _apiClientById.IsApproved.Should().Be(isApproved);
-        }
-
-        [Test]
-        public void It_preserves_default_approval_for_no_row_clients_in_both_lookups()
-        {
-            _noRowByClientId.IsApproved.Should().BeTrue();
-            _noRowById.IsApproved.Should().BeTrue();
+            _noRowByClientId.ApiClientApproval.Should().Be(ApiClientApprovalState.NoApiClientRow);
+            _noRowById.ApiClientApproval.Should().Be(ApiClientApprovalState.NoApiClientRow);
         }
     }
 
@@ -364,6 +385,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             (await TokenRowCountAsync(_applicationId)).Should().Be(15);
     }
 
+    // A client without an API client row reaches the exemption only as an administrative client, so
+    // the no-row rows hold the configured administrative role.
     [TestFixture(false, 1)]
     [TestFixture(true, -1)]
     [TestFixture(true, 0)]
@@ -386,13 +409,18 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 clientId,
                 hasApiClientRow ? "EdFiSandbox" : "edfi_admin_api/readonly_access"
             );
+            ConfiguredRoleNames roles = ConfiguredRoleNames.Fresh();
             if (hasApiClientRow)
             {
                 await AddApiClientRowAsync(repository, clientId);
             }
+            else
+            {
+                await AddClientRoleAsync(repository, _applicationId, roles.Administrative);
+            }
             OpenIddictTokenManager manager = CreateTokenManager(
                 repository,
-                new IdentityOptions { BearerTokenPerClientLimit = configuredLimit }
+                RoleNamedOptions(roles, configuredLimit)
             );
             _grants =
             [
@@ -410,15 +438,24 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             (await TokenRowCountAsync(_applicationId)).Should().Be(3);
     }
 
-    [TestFixture("EdFiSandbox")]
-    [TestFixture("edfi_admin_api/sis")]
-    public class Given_No_Api_Client_Row_With_Non_Admin_Scopes(string registeredScope)
+    // A client without an API client row whose registered scopes are not all Management API scopes is
+    // not administrative, whatever role it holds: refused before the store, so nothing is stored and
+    // the limit is never reached. The administrative-role rows prove the scope evidence is required.
+    [TestFixture("EdFiSandbox", "none")]
+    [TestFixture("EdFiSandbox", "client")]
+    [TestFixture("EdFiSandbox", "administrative")]
+    [TestFixture("edfi_admin_api/sis", "none")]
+    [TestFixture("edfi_admin_api/sis", "client")]
+    [TestFixture("edfi_admin_api/sis", "administrative")]
+    public class Given_No_Api_Client_Row_With_Non_Admin_Scopes(string registeredScope, string heldRole)
         : OpenIddictDataRepositoryTests
     {
         private Guid _applicationId;
         private ApplicationInfo _application = null!;
         private TokenResult _firstGrant = null!;
         private TokenResult _secondGrant = null!;
+        private IOpenIddictDataRepository _observedRepository = null!;
+        private string _clientId = null!;
 
         [SetUp]
         public async Task Setup()
@@ -427,21 +464,31 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 MssqlTestConfiguration.DatabaseOptions,
                 NullLogger<OpenIddictDataRepository>.Instance
             );
-            string clientId = Guid.NewGuid().ToString();
-            _applicationId = await RegisterApplicationAsync(repository, clientId, registeredScope);
+            _clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(repository, _clientId, registeredScope);
+            ConfiguredRoleNames roles = ConfiguredRoleNames.Fresh();
+            if (heldRole != "none")
+            {
+                await AddClientRoleAsync(
+                    repository,
+                    _applicationId,
+                    heldRole == "administrative" ? roles.Administrative : roles.Client
+                );
+            }
             _application =
-                await repository.GetApplicationByClientIdAsync(clientId)
+                await repository.GetApplicationByClientIdAsync(_clientId)
                 ?? throw new InvalidOperationException("Seeded no-row application was not found.");
-            OpenIddictTokenManager manager = CreateTokenManager(
+            (OpenIddictTokenManager manager, _observedRepository) = CreateTokenManagerOver(
                 repository,
-                new IdentityOptions { BearerTokenPerClientLimit = 1 }
+                RoleNamedOptions(roles, bearerTokenPerClientLimit: 1)
             );
-            _firstGrant = await RequestGrantAsync(manager, clientId);
-            _secondGrant = await RequestGrantAsync(manager, clientId);
+            _firstGrant = await RequestGrantAsync(manager, _clientId);
+            _secondGrant = await RequestGrantAsync(manager, _clientId);
         }
 
         [Test]
-        public void It_reports_no_api_client_row() => _application.HasNoApiClientRow.Should().BeTrue();
+        public void It_reports_no_api_client_row() =>
+            _application.ApiClientApproval.Should().Be(ApiClientApprovalState.NoApiClientRow);
 
         [Test]
         public void It_does_not_exempt_the_application() =>
@@ -452,16 +499,25 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             _application.Scopes.Should().BeEquivalentTo(registeredScope);
 
         [Test]
-        public void It_admits_the_first_grant() => _firstGrant.Should().BeOfType<TokenResult.Success>();
+        public void It_refuses_both_grants_as_an_unknown_client_is_refused()
+        {
+            _firstGrant.Should().BeEquivalentTo(InvalidClient);
+            _secondGrant.Should().BeEquivalentTo(InvalidClient);
+        }
 
         [Test]
-        public void It_refuses_the_second_grant_with_the_configured_limit() =>
-            _secondGrant.Should().BeEquivalentTo(new TokenResult.FailureTokenLimitExceeded(1));
+        public void It_never_loads_the_full_application() =>
+            A.CallTo(() => _observedRepository.GetApplicationByClientIdAsync(_clientId))
+                .MustNotHaveHappened();
 
         [Test]
-        public async Task It_stores_exactly_one_token() =>
-            (await TokenRowCountAsync(_applicationId)).Should().Be(1);
+        public async Task It_stores_no_token() => (await TokenRowCountAsync(_applicationId)).Should().Be(0);
     }
+
+    protected static readonly TokenResult.FailureAuthentication InvalidClient = new(
+        "invalid_client",
+        "Invalid client or Invalid client credentials"
+    );
 
     /// <summary>
     /// Any value below 1 turns enforcement off, which is what seeding and the sweep fixtures want.
@@ -478,7 +534,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
     /// <summary>
     /// Stores <paramref name="count"/> active tokens with enforcement off, so seeding a client up
-    /// to or past its limit is never itself refused.
+    /// to or past its limit is never itself refused. Each store authenticates with the API client
+    /// approval state the client holds now (<see cref="CurrentApiClientApprovalAsync"/>).
     /// </summary>
     protected static async Task SeedActiveTokensAsync(
         OpenIddictDataRepository repository,
@@ -486,6 +543,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         int count
     )
     {
+        ApiClientApprovalState approval = await CurrentApiClientApprovalAsync(repository, applicationId);
         for (int i = 0; i < count; i++)
         {
             TokenStoreOutcome outcome = await repository.StoreTokenAsync(
@@ -494,11 +552,29 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 $"seed-subject-{i}",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                approval
             );
 
             outcome.Should().Be(TokenStoreOutcome.Stored);
         }
+    }
+
+    /// <summary>
+    /// The API client approval state the application holds now. Seeding is not what the fixtures
+    /// that seed test, so a seeded store authenticates with whatever API client rows the fixture
+    /// arranged; a store a fixture tests names its expected state explicitly.
+    /// </summary>
+    protected static async Task<ApiClientApprovalState> CurrentApiClientApprovalAsync(
+        OpenIddictDataRepository repository,
+        Guid applicationId
+    )
+    {
+        using IDbConnection connection = await repository.CreateConnectionAsync();
+        ApplicationInfo application =
+            await repository.GetApplicationByIdAsync(applicationId, connection)
+            ?? throw new InvalidOperationException("The application to store a token for does not exist.");
+        return application.ApiClientApproval;
     }
 
     protected static async Task<int> TokenRowCountAsync(Guid applicationId)
@@ -587,6 +663,23 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         );
     }
 
+    /// <summary>
+    /// Removes the client's API client rows outside any API path, as a direct database change or an
+    /// earlier vendor deletion would, leaving its identity provider application in place.
+    /// </summary>
+    protected static async Task DeleteApiClientRowsAsync(string clientId)
+    {
+        await using SqlConnection connection = await OpenConnectionAsync();
+        (
+            await connection.ExecuteAsync(
+                "DELETE FROM dmscs.ApiClient WHERE ClientId = @ClientId",
+                new { ClientId = clientId }
+            )
+        )
+            .Should()
+            .BeGreaterThan(0);
+    }
+
     protected static Task<int> ChangeStoredSecretAsync(
         OpenIddictDataRepository repository,
         Guid applicationId,
@@ -606,14 +699,17 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     /// <summary>
     /// The production lifecycle caller, <see cref="OpenIddictClientRepository"/>, over
     /// <paramref name="dataRepository"/>: the real engine repository, or a fake wrapping it to
-    /// inject a failure. Only the secret hashing is faked.
+    /// inject a failure. Only the secret hashing is faked: every new secret hashes to
+    /// <paramref name="secretHash"/>. A client created to authenticate through
+    /// <see cref="CreateTokenManagerOver"/> passes <see cref="RegisteredSecret"/>.
     /// </summary>
     protected static OpenIddictClientRepository CreateClientRepository(
-        IOpenIddictDataRepository dataRepository
+        IOpenIddictDataRepository dataRepository,
+        string secretHash = ResetSecretHash
     )
     {
         IClientSecretHasher secretHasher = A.Fake<IClientSecretHasher>();
-        A.CallTo(() => secretHasher.HashSecretAsync(A<string>._)).Returns(ResetSecretHash);
+        A.CallTo(() => secretHasher.HashSecretAsync(A<string>._)).Returns(secretHash);
         return new OpenIddictClientRepository(
             NullLogger<OpenIddictClientRepository>.Instance,
             secretHasher,
@@ -726,14 +822,16 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     }
 
     /// <summary>
-    /// The client changes that revoke its tokens and must refuse every grant that waited behind
-    /// them.
+    /// The client changes that must refuse every grant that waited behind them. All but
+    /// <see cref="ApiClientRowRemoval"/> revoke the client's tokens, as their lifecycle operations
+    /// do; the row removal stands for a direct database change, which revokes nothing.
     /// </summary>
     public enum LifecycleChange
     {
         CredentialReset,
         Deletion,
         UnApproval,
+        ApiClientRowRemoval,
     }
 
     /// <summary>
@@ -945,11 +1043,11 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         }
 
         [Test]
-        public async Task It_defaults_is_approved_to_true_without_api_clients()
+        public async Task It_reports_no_api_client_row_without_api_clients()
         {
             var application = await _repository.GetApplicationByClientIdAsync("integration-test-client");
 
-            application!.IsApproved.Should().BeTrue();
+            application!.ApiClientApproval.Should().Be(ApiClientApprovalState.NoApiClientRow);
         }
     }
 
@@ -987,7 +1085,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-expired-valid",
                 past,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
             await _repository.StoreTokenAsync(
                 _expiredRevokedTokenId,
@@ -995,7 +1094,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-expired-revoked",
                 past,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
             await _repository.RevokeTokenAsync(_expiredRevokedTokenId, applicationId);
             await _repository.StoreTokenAsync(
@@ -1004,7 +1104,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-unexpired",
                 future,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -1050,7 +1151,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-boundary",
                 _boundary,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -1105,7 +1207,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "revoke-owner-subject",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
             _redemptionDateBefore = await RedemptionDateAsync(_tokenId);
 
@@ -1158,7 +1261,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "revoke-victim-subject",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
             _result = await _repository.RevokeTokenAsync(_tokenId, otherApplicationId);
@@ -1215,7 +1319,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "revoke-repeat-subject",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
             _firstResult = await _repository.RevokeTokenAsync(_tokenId, applicationId);
             await SetRedemptionDateAsync(_tokenId, _originalRedemptionDate);
@@ -1263,7 +1368,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "revoke-unknown-subject",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
             _result = await _repository.RevokeTokenAsync(Guid.NewGuid(), applicationId);
@@ -1315,7 +1421,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "revoke-wrapper-owned",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
             await _dataRepository.StoreTokenAsync(
                 _foreignTokenId,
@@ -1323,7 +1430,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "revoke-wrapper-foreign",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
             _ownedResult = await tokenRepository.RevokeTokenAsync(_ownedTokenId, callerApplicationId);
@@ -1376,7 +1484,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             $"subject-{tokenId:N}",
             expiration,
             EnforcementDisabled,
-            RegisteredSecret
+            RegisteredSecret,
+            await CurrentApiClientApprovalAsync(repository, applicationId)
         );
 
         outcome.Should().Be(TokenStoreOutcome.Stored);
@@ -1784,7 +1893,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "status-owner-subject",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
             _status = await repository.GetTokenStatusForApplicationAsync(tokenId, applicationId);
@@ -1824,7 +1934,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "status-victim-subject",
                 FarFuture,
                 EnforcementDisabled,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
             _status = await repository.GetTokenStatusForApplicationAsync(tokenId, otherApplicationId);
@@ -1881,7 +1992,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-under-limit",
                 FarFuture,
                 3,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -1915,7 +2027,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-at-limit",
                 FarFuture,
                 3,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -1951,7 +2064,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-over-limit",
                 FarFuture,
                 3,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -1998,7 +2112,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-grant",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -2016,7 +2131,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                             $"expired-{i}",
                             FarPast,
                             EnforcementDisabled,
-                            RegisteredSecret
+                            RegisteredSecret,
+                            ApiClientApprovalState.NoApiClientRow
                         );
                     }
                 },
@@ -2041,7 +2157,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                             $"revoked-{i}",
                             FarFuture,
                             EnforcementDisabled,
-                            RegisteredSecret
+                            RegisteredSecret,
+                            ApiClientApprovalState.NoApiClientRow
                         );
                         await _repository.RevokeTokenAsync(tokenId, applicationId);
                     }
@@ -2079,7 +2196,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         "expiring-soon",
                         DateTimeOffset.UtcNow.AddMinutes(2),
                         EnforcementDisabled,
-                        RegisteredSecret
+                        RegisteredSecret,
+                        ApiClientApprovalState.NoApiClientRow
                     ),
                 "future-boundary"
             );
@@ -2098,7 +2216,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         "just-expired",
                         DateTimeOffset.UtcNow.AddMinutes(-2),
                         EnforcementDisabled,
-                        RegisteredSecret
+                        RegisteredSecret,
+                        ApiClientApprovalState.NoApiClientRow
                     ),
                 "past-boundary"
             );
@@ -2144,7 +2263,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-first",
                 FarFuture,
                 1,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
             _second = await _repository.StoreTokenAsync(
                 Guid.NewGuid(),
@@ -2152,7 +2272,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-second",
                 FarFuture,
                 1,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -2210,7 +2331,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "wrapper-subject",
                 FarFuture,
                 Limit,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
         [Test]
@@ -2262,7 +2384,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-disabled",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
             outcome.Should().Be(TokenStoreOutcome.Stored);
@@ -2297,7 +2420,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         "subject-disabled-lock",
                         FarFuture,
                         maxActiveTokens,
-                        RegisteredSecret
+                        RegisteredSecret,
+                        ApiClientApprovalState.NoApiClientRow
                     )
                 );
                 probe = WaitUntilASessionIsBlockedBy(holder.SessionId, GrantBlockedObservationTimeout);
@@ -2360,7 +2484,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-secret-changed",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -2405,7 +2530,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-limit-secret-changed",
                 FarFuture,
                 Limit,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -2449,7 +2575,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-un-approved",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.Approved
             );
         }
 
@@ -2488,7 +2615,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-deleted",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
         }
 
@@ -2533,7 +2661,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-current",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.Approved
             );
         }
 
@@ -2547,12 +2676,14 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
     /// <summary>
     /// Concurrency: a grant that arrives while a credential reset,
-    /// deletion or un-approval transaction is still open. The transaction makes its change and
-    /// revokes the client's tokens, then holds at a gate; the lock manager must show the grant
+    /// deletion or un-approval transaction, or one removing the client's API client row, is still
+    /// open. The transaction makes its change, revokes the client's tokens unless it only removes
+    /// the row, then holds at a gate; the lock manager must show the grant
     /// waiting on that transaction's session, and once it commits the grant must refuse without
     /// storing. The grant authenticated against <see cref="RegisteredSecret"/>, and the client
     /// starts with an approved API client row that the un-approval sets to false inside the held
-    /// transaction. A store path that skips both the lock and the re-validation, as the
+    /// transaction and the row removal deletes. A store path that skips both the lock and the
+    /// re-validation, as the
     /// limit-disabled path used to, finishes before the probe sees it waiting. Under locking read
     /// committed, the CMS database's default, a plain read of the changed rows also waits on this
     /// transaction and then sees its commit, so on SQL Server this fixture guards the refusal after
@@ -2566,6 +2697,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
     [TestFixture(LifecycleChange.Deletion, 15)]
     [TestFixture(LifecycleChange.UnApproval, EnforcementDisabled)]
     [TestFixture(LifecycleChange.UnApproval, 15)]
+    [TestFixture(LifecycleChange.ApiClientRowRemoval, EnforcementDisabled)]
+    [TestFixture(LifecycleChange.ApiClientRowRemoval, 15)]
     public class Given_A_Grant_Blocked_By_A_Lifecycle_Transaction(LifecycleChange change, int maxActiveTokens)
         : OpenIddictDataRepositoryTests
     {
@@ -2625,7 +2758,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         "subject-blocked-grant",
                         FarFuture,
                         maxActiveTokens,
-                        RegisteredSecret
+                        RegisteredSecret,
+                        ApiClientApprovalState.Approved
                     )
                 );
                 probe = WaitUntilASessionIsBlockedBy(lifecycleSessionId, GrantBlockedObservationTimeout);
@@ -2657,8 +2791,9 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
         /// <summary>
         /// The statements of the lifecycle operation for this change, in its order: a reset or a
-        /// deletion writes the application row first, an un-approval locks it first and writes
-        /// <c>ApiClient</c> last. Each one revokes the client's tokens before the gate.
+        /// deletion writes the application row first, an un-approval or a row removal locks it first
+        /// and writes <c>ApiClient</c> last. Each one but the row removal revokes the client's tokens
+        /// before the gate.
         /// </summary>
         private async Task ApplyChangeAsync(IDbConnection connection, IDbTransaction transaction)
         {
@@ -2698,6 +2833,20 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         .Should()
                         .Be(1);
                     break;
+                case LifecycleChange.ApiClientRowRemoval:
+                    (await _repository.LockApplicationAsync(_applicationId, connection, transaction))
+                        .Should()
+                        .BeTrue();
+                    (
+                        await connection.ExecuteAsync(
+                            "DELETE FROM dmscs.ApiClient WHERE ClientId = @ClientId",
+                            new { ClientId = _clientId },
+                            transaction
+                        )
+                    )
+                        .Should()
+                        .Be(1);
+                    break;
             }
 
             async Task RevokeAsync() =>
@@ -2725,8 +2874,241 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             (await TokenRowCountAsync(_applicationId)).Should().Be(1);
 
         [Test]
-        public async Task It_commits_the_revocation_of_the_earlier_token() =>
-            (await _repository.GetTokenStatusAsync(_earlierTokenId)).Should().Be("revoked");
+        public async Task It_leaves_the_earlier_token_as_the_change_left_it() =>
+            (await _repository.GetTokenStatusAsync(_earlierTokenId))
+                .Should()
+                .Be(change == LifecycleChange.ApiClientRowRemoval ? "valid" : "revoked");
+    }
+
+    /// <summary>
+    /// Under the application row lock a store admits only the API client approval state the grant
+    /// authenticated with, with the token limit on or off. A row that vanished after a row-backed
+    /// client authenticated, or a row that appeared after a client without one authenticated, is
+    /// refused; so is an approved row that appeared, and the next grant authenticates afresh. A
+    /// missing or changed row is logged at Warning; an un-approval keeps the Debug line.
+    /// </summary>
+    [TestFixture("row-removed", 15, TokenStoreOutcome.ClientChanged, "api-client-row", LogLevel.Warning)]
+    [TestFixture(
+        "row-removed",
+        EnforcementDisabled,
+        TokenStoreOutcome.ClientChanged,
+        "api-client-row",
+        LogLevel.Warning
+    )]
+    [TestFixture("no-row", 15, TokenStoreOutcome.Stored, "", LogLevel.None)]
+    [TestFixture("no-row", EnforcementDisabled, TokenStoreOutcome.Stored, "", LogLevel.None)]
+    [TestFixture("unapproved-row-appeared", 15, TokenStoreOutcome.ClientChanged, "approval", LogLevel.Debug)]
+    [TestFixture(
+        "unapproved-row-appeared",
+        EnforcementDisabled,
+        TokenStoreOutcome.ClientChanged,
+        "approval",
+        LogLevel.Debug
+    )]
+    [TestFixture(
+        "approved-row-appeared",
+        15,
+        TokenStoreOutcome.ClientChanged,
+        "api-client-row",
+        LogLevel.Warning
+    )]
+    [TestFixture(
+        "approved-row-appeared",
+        EnforcementDisabled,
+        TokenStoreOutcome.ClientChanged,
+        "api-client-row",
+        LogLevel.Warning
+    )]
+    public class Given_A_Store_Against_The_Api_Client_State_Under_The_Lock(
+        string scenario,
+        int maxActiveTokens,
+        TokenStoreOutcome expectedOutcome,
+        string expectedReason,
+        LogLevel expectedLevel
+    ) : OpenIddictDataRepositoryTests
+    {
+        private ILogger<OpenIddictDataRepository> _logger = null!;
+        private Guid _applicationId;
+        private TokenStoreOutcome _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _logger = A.Fake<ILogger<OpenIddictDataRepository>>();
+            OpenIddictDataRepository repository = new(MssqlTestConfiguration.DatabaseOptions, _logger);
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(repository, clientId);
+
+            ApiClientApprovalState authenticated = ApiClientApprovalState.NoApiClientRow;
+            switch (scenario)
+            {
+                case "row-removed":
+                    await AddApiClientRowAsync(repository, clientId);
+                    authenticated = ApiClientApprovalState.Approved;
+                    await DeleteApiClientRowsAsync(clientId);
+                    break;
+                case "unapproved-row-appeared":
+                    await AddApiClientRowAsync(repository, clientId, isApproved: false);
+                    break;
+                case "approved-row-appeared":
+                    await AddApiClientRowAsync(repository, clientId);
+                    break;
+            }
+
+            _outcome = await repository.StoreTokenAsync(
+                Guid.NewGuid(),
+                _applicationId,
+                "subject-api-client-state",
+                FarFuture,
+                maxActiveTokens,
+                RegisteredSecret,
+                authenticated
+            );
+        }
+
+        private IReadOnlyList<(LogLevel Level, string Message)> RefusalLines() =>
+            Fake.GetCalls(_logger)
+                .Where(call => call.Method.Name == nameof(ILogger.Log))
+                .Select(call =>
+                    (call.GetArgument<LogLevel>(0), call.Arguments[2]?.ToString() ?? string.Empty)
+                )
+                .Where(line => line.Item2.StartsWith("Refused to store a token", StringComparison.Ordinal))
+                .ToList();
+
+        [Test]
+        public void It_answers_the_expected_outcome() => _outcome.Should().Be(expectedOutcome);
+
+        [Test]
+        public async Task It_stores_a_token_only_when_the_state_is_unchanged() =>
+            (await TokenRowCountAsync(_applicationId))
+                .Should()
+                .Be(expectedOutcome == TokenStoreOutcome.Stored ? 1 : 0);
+
+        [Test]
+        public void It_logs_the_refusal_category_once_at_its_level()
+        {
+            if (expectedOutcome == TokenStoreOutcome.Stored)
+            {
+                RefusalLines().Should().BeEmpty();
+                return;
+            }
+
+            RefusalLines()
+                .Should()
+                .Equal(
+                    (
+                        expectedLevel,
+                        $"Refused to store a token for application {_applicationId}: re-validation under the application row lock failed ({expectedReason})"
+                    )
+                );
+        }
+    }
+
+    /// <summary>
+    /// The full-application load and the token store each run after authentication, on their own
+    /// connections. A row-backed client whose API client row is removed in either gap is refused
+    /// as an unknown client is, and stores nothing, with the token limit on or off. The removal runs
+    /// inside the intercepted call, before it is forwarded, so the order is fixed without timing.
+    /// </summary>
+    [TestFixture("application-load", 15)]
+    [TestFixture("application-load", EnforcementDisabled)]
+    [TestFixture("token-store", 15)]
+    [TestFixture("token-store", EnforcementDisabled)]
+    public class Given_A_Grant_Whose_Api_Client_Row_Is_Removed_After_Authentication(
+        string gap,
+        int maxActiveTokens
+    ) : OpenIddictDataRepositoryTests
+    {
+        private Guid _applicationId;
+        private IOpenIddictDataRepository _observedRepository = null!;
+        private TokenResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string clientId = Guid.NewGuid().ToString();
+            _applicationId = await RegisterApplicationAsync(repository, clientId);
+            await AddApiClientRowAsync(repository, clientId);
+
+            (OpenIddictTokenManager manager, _observedRepository) = CreateTokenManagerOver(
+                repository,
+                new IdentityOptions { BearerTokenPerClientLimit = maxActiveTokens }
+            );
+            if (gap == "application-load")
+            {
+                A.CallTo(() => _observedRepository.GetApplicationByClientIdAsync(clientId))
+                    .ReturnsLazily(async () =>
+                    {
+                        await DeleteApiClientRowsAsync(clientId);
+                        return await repository.GetApplicationByClientIdAsync(clientId);
+                    });
+            }
+            else
+            {
+                A.CallTo(() =>
+                        _observedRepository.StoreTokenAsync(
+                            A<Guid>._,
+                            A<Guid>._,
+                            A<string>._,
+                            A<DateTimeOffset>._,
+                            A<int>._,
+                            A<string>._,
+                            A<ApiClientApprovalState>._
+                        )
+                    )
+                    .ReturnsLazily(async call =>
+                    {
+                        await DeleteApiClientRowsAsync(clientId);
+                        return await repository.StoreTokenAsync(
+                            call.GetArgument<Guid>(0),
+                            call.GetArgument<Guid>(1),
+                            call.GetArgument<string>(2)!,
+                            call.GetArgument<DateTimeOffset>(3),
+                            call.GetArgument<int>(4),
+                            call.GetArgument<string>(5)!,
+                            call.GetArgument<ApiClientApprovalState>(6)
+                        );
+                    });
+            }
+
+            _result = await RequestGrantAsync(manager, clientId);
+        }
+
+        [Test]
+        public void It_refuses_the_grant_as_an_unknown_client_is_refused() =>
+            _result
+                .Should()
+                .BeEquivalentTo(
+                    new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    )
+                );
+
+        [Test]
+        public async Task It_stores_no_token() => (await TokenRowCountAsync(_applicationId)).Should().Be(0);
+
+        // Removed before the load, the change is caught there and the store is never reached.
+        // Removed before the store, the store is reached with the state the client authenticated
+        // with, and refuses under the lock.
+        [Test]
+        public void It_reaches_the_store_only_when_the_row_vanished_there() =>
+            A.CallTo(() =>
+                    _observedRepository.StoreTokenAsync(
+                        A<Guid>._,
+                        _applicationId,
+                        A<string>._,
+                        A<DateTimeOffset>._,
+                        maxActiveTokens,
+                        RegisteredSecret,
+                        ApiClientApprovalState.Approved
+                    )
+                )
+                .MustHaveHappened(gap == "token-store" ? 1 : 0, Times.Exactly);
     }
 
     // Credential reset through its production caller,
@@ -2919,7 +3301,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-old-secret",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.Approved
             );
             _newSecretOutcome = await _repository.StoreTokenAsync(
                 _newSecretTokenId,
@@ -2927,7 +3310,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-new-secret",
                 FarFuture,
                 maxActiveTokens,
-                ResetSecretHash
+                ResetSecretHash,
+                ApiClientApprovalState.Approved
             );
         }
 
@@ -3343,7 +3727,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-before-deletion",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.Approved
             );
             _deleteResult = await CreateClientRepository(_repository)
                 .DeleteClientAsync(applicationId.ToString());
@@ -3353,7 +3738,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-after-deletion",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.Approved
             );
         }
 
@@ -3891,7 +4277,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-before-un-approval",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.Approved
             );
             _updateResult = await CreateApiClientRepository(CreateUnapprovalParticipant(_repository))
                 .UpdateApiClient(UpdateCommandFor(apiClient, isApproved: false));
@@ -3901,7 +4288,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-after-un-approval",
                 FarFuture,
                 maxActiveTokens,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.Approved
             );
         }
 
@@ -4019,7 +4407,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         "subject-blocked-grant",
                         FarFuture,
                         maxActiveTokens,
-                        RegisteredSecret
+                        RegisteredSecret,
+                        ApiClientApprovalState.Approved
                     )
                 );
                 probe = WaitUntilASessionIsBlockedBy(updateSessionId, GrantBlockedObservationTimeout);
@@ -4256,7 +4645,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                                 $"race-subject-{i}",
                                 FarFuture,
                                 Limit,
-                                RegisteredSecret
+                                RegisteredSecret,
+                                ApiClientApprovalState.NoApiClientRow
                             )
                         )
                     )
@@ -4324,7 +4714,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         "subject-serialized",
                         FarFuture,
                         5,
-                        RegisteredSecret
+                        RegisteredSecret,
+                        ApiClientApprovalState.NoApiClientRow
                     )
                 );
 
@@ -4369,7 +4760,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         "subject-a",
                         FarFuture,
                         5,
-                        RegisteredSecret
+                        RegisteredSecret,
+                        ApiClientApprovalState.NoApiClientRow
                     )
                 );
 
@@ -4381,7 +4773,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     "subject-b",
                     FarFuture,
                     5,
-                    RegisteredSecret
+                    RegisteredSecret,
+                    ApiClientApprovalState.NoApiClientRow
                 );
 
                 otherOutcome.Should().Be(TokenStoreOutcome.Stored);
@@ -4422,7 +4815,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     "subject-lock-timeout",
                     FarFuture,
                     5,
-                    RegisteredSecret
+                    RegisteredSecret,
+                    ApiClientApprovalState.NoApiClientRow
                 );
 
                 outcome.Should().Be(TokenStoreOutcome.LockTimeout);
@@ -4471,7 +4865,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 "subject-deleted",
                 FarFuture,
                 5,
-                RegisteredSecret
+                RegisteredSecret,
+                ApiClientApprovalState.NoApiClientRow
             );
 
             outcome.Should().Be(TokenStoreOutcome.ClientNotFound);
@@ -4499,7 +4894,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                                 $"deleted-race-subject-{i}",
                                 FarFuture,
                                 3,
-                                RegisteredSecret
+                                RegisteredSecret,
+                                ApiClientApprovalState.NoApiClientRow
                             )
                         )
                     )
@@ -4548,7 +4944,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     "subject-existing",
                     FarPast,
                     EnforcementDisabled,
-                    RegisteredSecret
+                    RegisteredSecret,
+                    ApiClientApprovalState.NoApiClientRow
                 )
             )
                 .Should()
@@ -4577,7 +4974,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     "subject-victim",
                     FarFuture,
                     5,
-                    RegisteredSecret
+                    RegisteredSecret,
+                    ApiClientApprovalState.NoApiClientRow
                 )
             );
 
@@ -4630,7 +5028,8 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                     "subject-pool",
                     FarFuture,
                     EnforcementDisabled,
-                    RegisteredSecret
+                    RegisteredSecret,
+                    ApiClientApprovalState.NoApiClientRow
                 )
             )
                 .Should()
@@ -4757,6 +5156,47 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             new { Name = roleName }
         );
         return (roles, clientRoles);
+    }
+
+    /// <summary>
+    /// The collation the role name column compares under. Stated in the role-name fixtures'
+    /// assertion messages, so a container with a case- or width-sensitive collation fails with a
+    /// clear reason.
+    /// </summary>
+    protected static async Task<string> RoleNameCollationAsync()
+    {
+        await using SqlConnection connection = await OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<string>(
+                "SELECT collation_name FROM sys.columns WHERE object_id = OBJECT_ID('dmscs.OpenIddictRole') AND name = 'Name'"
+            ) ?? "(unknown)";
+    }
+
+    /// <summary>How many distinct role rows the given clients hold between them.</summary>
+    protected static async Task<int> DistinctRoleIdCountAsync(params Guid[] clientIds)
+    {
+        await using SqlConnection connection = await OpenConnectionAsync();
+        return await connection.ExecuteScalarAsync<int>(
+            "SELECT COUNT(DISTINCT RoleId) FROM dmscs.OpenIddictClientRole WHERE ClientId IN @ClientIds",
+            new { ClientIds = clientIds }
+        );
+    }
+
+    /// <summary>
+    /// Role rows whose stored name is exactly one of <paramref name="roleNames"/>, compared by
+    /// bytes so the count does not depend on the column collation or on trailing-space padding.
+    /// </summary>
+    protected static async Task<int> RoleRowCountByExactNameAsync(params string[] roleNames)
+    {
+        await using SqlConnection connection = await OpenConnectionAsync();
+        int count = 0;
+        foreach (string roleName in roleNames)
+        {
+            count += await connection.ExecuteScalarAsync<int>(
+                "SELECT COUNT(*) FROM dmscs.OpenIddictRole WHERE CAST(Name AS varbinary(max)) = CAST(@Name AS varbinary(max))",
+                new { Name = roleName }
+            );
+        }
+        return count;
     }
 
     protected static async Task<(int Scopes, int ApplicationScopes)> ScopeRowCountsAsync(string scopeName)
@@ -5056,20 +5496,23 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         );
 
     // The credential query must report what the full lookup reports for every registration the
-    // schema allows: no API client (approved by default, not absent), an approved or unapproved
-    // one, and either of those linked to several data stores, which the full lookup reads with
-    // its own query but which must not change the approval.
-    [TestFixture("no-api-client", true)]
-    [TestFixture("approved", true)]
-    [TestFixture("unapproved", false)]
-    [TestFixture("approved-over-two-data-stores", true)]
-    [TestFixture("unapproved-over-two-data-stores", false)]
-    public class Given_A_Client_Credential_Lookup(string registration, bool expectedApproval)
-        : OpenIddictDataRepositoryTests
+    // schema allows: no API client (its own state, neither approved nor absent), an approved or
+    // unapproved one, and either of those linked to several data stores, which the full lookups
+    // read with their own query but which must not change the approval.
+    [TestFixture("no-api-client", ApiClientApprovalState.NoApiClientRow)]
+    [TestFixture("approved", ApiClientApprovalState.Approved)]
+    [TestFixture("unapproved", ApiClientApprovalState.Unapproved)]
+    [TestFixture("approved-over-two-data-stores", ApiClientApprovalState.Approved)]
+    [TestFixture("unapproved-over-two-data-stores", ApiClientApprovalState.Unapproved)]
+    public class Given_A_Client_Credential_Lookup(
+        string registration,
+        ApiClientApprovalState expectedApproval
+    ) : OpenIddictDataRepositoryTests
     {
         private Guid _applicationId;
         private ClientCredential _credential = null!;
         private ApplicationInfo _application = null!;
+        private ApplicationInfo _applicationById = null!;
         private ClientCredential? _throughWrapper;
 
         [SetUp]
@@ -5101,6 +5544,12 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
             _application =
                 await repository.GetApplicationByClientIdAsync(clientId)
                 ?? throw new InvalidOperationException("Seeded application was not found.");
+            using (var connection = await repository.CreateConnectionAsync())
+            {
+                _applicationById =
+                    await repository.GetApplicationByIdAsync(_applicationId, connection)
+                    ?? throw new InvalidOperationException("Seeded application was not found by id.");
+            }
 
             OpenIddictTokenRepository tokenRepository = new(repository);
             _throughWrapper = await tokenRepository.GetClientCredentialAsync(clientId);
@@ -5112,7 +5561,14 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
         [Test]
         public void It_reports_the_approval_of_the_registration() =>
-            _credential.IsApproved.Should().Be(expectedApproval);
+            _credential.ApiClientApproval.Should().Be(expectedApproval);
+
+        [Test]
+        public void It_reports_the_same_approval_from_both_full_lookups()
+        {
+            _application.ApiClientApproval.Should().Be(expectedApproval);
+            _applicationById.ApiClientApproval.Should().Be(expectedApproval);
+        }
 
         [Test]
         public void It_reads_the_stored_secret() =>
@@ -5127,7 +5583,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                         _application.Id,
                         _application.ClientId,
                         _application.ClientSecret,
-                        _application.IsApproved
+                        _application.ApiClientApproval
                     )
                 );
 
@@ -5263,18 +5719,306 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         }
     }
 
+    // The scope read by application id: the names registered to that application only, each once
+    // and spelled as stored, including a scope row another application shares. An application
+    // without scopes and an unknown id read as empty.
+    [TestFixture]
+    public class Given_Application_Scopes_Read_By_Application_Id : OpenIddictDataRepositoryTests
+    {
+        private string _sharedScope = null!;
+        private string _ownScope = null!;
+        private string _bystanderScope = null!;
+        private string[] _scopes = null!;
+        private string[] _throughWrapper = null!;
+        private string[] _withoutScopes = null!;
+        private string[] _unknownApplication = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string suffix = Guid.NewGuid().ToString("N");
+            _sharedScope = $"Shared_Scope_{suffix}";
+            _ownScope = $"Own_Scope_{suffix}";
+            _bystanderScope = $"Bystander_Scope_{suffix}";
+            Guid applicationId = await RegisterApplicationAsync(
+                repository,
+                Guid.NewGuid().ToString(),
+                _sharedScope,
+                _ownScope
+            );
+            await RegisterApplicationAsync(
+                repository,
+                Guid.NewGuid().ToString(),
+                _sharedScope,
+                _bystanderScope
+            );
+            Guid withoutScopesId = await RegisterApplicationAsync(repository, Guid.NewGuid().ToString());
+
+            _scopes = (await repository.GetApplicationScopesAsync(applicationId)).ToArray();
+            _throughWrapper = (
+                await new OpenIddictTokenRepository(repository).GetApplicationScopesAsync(applicationId)
+            ).ToArray();
+            _withoutScopes = (await repository.GetApplicationScopesAsync(withoutScopesId)).ToArray();
+            _unknownApplication = (await repository.GetApplicationScopesAsync(Guid.NewGuid())).ToArray();
+        }
+
+        [Test]
+        public void It_returns_exactly_the_registered_scope_names() =>
+            _scopes.Should().BeEquivalentTo(_sharedScope, _ownScope);
+
+        [Test]
+        public void It_returns_each_name_once() => _scopes.Should().OnlyHaveUniqueItems();
+
+        [Test]
+        public void It_does_not_return_another_applications_scope() =>
+            _scopes.Should().NotContain(_bystanderScope);
+
+        [Test]
+        public void It_returns_the_same_names_through_the_token_repository() =>
+            _throughWrapper.Should().BeEquivalentTo(_sharedScope, _ownScope);
+
+        [Test]
+        public void It_returns_no_names_for_an_application_without_scopes() =>
+            _withoutScopes.Should().BeEmpty();
+
+        [Test]
+        public void It_returns_no_names_for_an_unknown_application() =>
+            _unknownApplication.Should().BeEmpty();
+    }
+
+    // DMS-1494 §4.5 clause 2: whether two role names share a role row, read with the predicate role
+    // resolution uses. Under the container's default collation SQL Server equates case, width and
+    // trailing-space (and trailing U+3000) variants, including past the column length, but neither
+    // a leading space nor a significant overlength suffix. The PostgreSQL fixture of the same name
+    // pins the engine where none of them match. Role rows are not reset between tests, so the
+    // names carry a fresh suffix; each keeps the distinguishing feature the spec names.
+    [TestFixture]
+    public class Given_Role_Names_Compared_Against_Stored_Role_Rows : OpenIddictDataRepositoryTests
+    {
+        private const bool PaddingCaseAndWidthEquate = true;
+        private OpenIddictDataRepository _repository = null!;
+        private string _collation = null!;
+        private string _cmsClient = null!;
+        private string _dmsClient = null!;
+        private string _admin = null!;
+        private string _absent = null!;
+        private string _hundred = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string suffix = Guid.NewGuid().ToString("N");
+            _cmsClient = $"cms-client-{suffix}";
+            _dmsClient = $"dms-client-{suffix}";
+            _admin = $"Admin-{suffix}";
+            _absent = $"absent-role-{suffix}";
+            _hundred = suffix + new string('x', 100 - suffix.Length);
+            await _repository.ExecuteInTransactionAsync(
+                async (connection, transaction) =>
+                {
+                    foreach (string name in new[] { _cmsClient, _admin, _hundred })
+                    {
+                        await _repository.InsertRoleAsync(Guid.NewGuid(), name, connection, transaction);
+                    }
+                }
+            );
+            _collation = await RoleNameCollationAsync();
+        }
+
+        private async Task ExpectAsync(string first, string second, bool expected)
+        {
+            (await _repository.RoleNamesShareARoleRowAsync(first, second))
+                .Should()
+                .Be(expected, $"the role name column compares under collation {_collation}");
+            (await _repository.RoleNamesShareARoleRowAsync(second, first))
+                .Should()
+                .Be(expected, $"the argument order does not matter (collation {_collation})");
+        }
+
+        [Test]
+        public void It_seeds_a_one_hundred_character_name() => _hundred.Length.Should().Be(100);
+
+        [Test]
+        public Task It_matches_a_name_with_itself() => ExpectAsync(_cmsClient, _cmsClient, true);
+
+        [Test]
+        public Task It_does_not_match_distinct_names() => ExpectAsync(_cmsClient, _dmsClient, false);
+
+        [Test]
+        public Task It_reports_a_trailing_space_variant() =>
+            ExpectAsync(_cmsClient, _cmsClient + " ", PaddingCaseAndWidthEquate);
+
+        [Test]
+        public Task It_reports_a_trailing_ideographic_space_variant() =>
+            ExpectAsync(_cmsClient, _cmsClient + "　", PaddingCaseAndWidthEquate);
+
+        [Test]
+        public Task It_reports_a_case_variant() =>
+            ExpectAsync(_admin, "a" + _admin[1..], PaddingCaseAndWidthEquate);
+
+        [Test]
+        public Task It_reports_a_full_width_variant() =>
+            ExpectAsync(_admin, "Ａ" + _admin[1..], PaddingCaseAndWidthEquate);
+
+        [Test]
+        public Task It_does_not_match_a_leading_space_variant() =>
+            ExpectAsync(_cmsClient, " " + _cmsClient, false);
+
+        [Test]
+        public Task It_does_not_match_a_class_with_no_row() => ExpectAsync(_absent, _absent + " ", false);
+
+        [Test]
+        public Task It_does_not_truncate_an_overlength_name_with_a_repeated_significant_character() =>
+            ExpectAsync(_hundred, _hundred + "x", false);
+
+        [Test]
+        public Task It_does_not_truncate_an_overlength_name_with_another_significant_character() =>
+            ExpectAsync(_hundred, _hundred + "y", false);
+
+        [Test]
+        public Task It_reports_an_overlength_name_with_a_trailing_space() =>
+            ExpectAsync(_hundred, _hundred + " ", PaddingCaseAndWidthEquate);
+
+        [Test]
+        public Task It_reports_an_overlength_name_with_a_trailing_ideographic_space() =>
+            ExpectAsync(_hundred, _hundred + "　", PaddingCaseAndWidthEquate);
+
+        [Test]
+        public async Task It_gives_the_same_answers_through_the_token_repository()
+        {
+            OpenIddictTokenRepository tokenRepository = new(_repository);
+            (await tokenRepository.RoleNamesShareARoleRowAsync(_cmsClient, _cmsClient)).Should().BeTrue();
+            (await tokenRepository.RoleNamesShareARoleRowAsync(_cmsClient, _cmsClient + " "))
+                .Should()
+                .Be(PaddingCaseAndWidthEquate, $"collation {_collation}");
+            (await tokenRepository.RoleNamesShareARoleRowAsync(_cmsClient, _dmsClient)).Should().BeFalse();
+        }
+    }
+
+    // DMS-1494 F15, the precondition for the bypass: through the production creation path, a
+    // registration-shaped client takes the administrative role name and a vendor-shaped client a
+    // variant of it. On SQL Server role resolution finds the administrative row for the variant,
+    // so the vendor holds the administrative role and membership cannot tell the kinds apart. The
+    // PostgreSQL fixture of the same name pins the engine where the variant gets its own row.
+    [TestFixture("trailing-space")]
+    [TestFixture("full-width")]
+    public class Given_Clients_Created_With_A_Role_Name_Variant(string variant)
+        : OpenIddictDataRepositoryTests
+    {
+        private const bool VendorReusesTheAdministrativeRow = true;
+        private string _collation = null!;
+        private string _administrativeRole = null!;
+        private string _vendorRole = null!;
+        private ClientCreateResult _administrativeResult = null!;
+        private ClientCreateResult _vendorResult = null!;
+        private string[] _administrativeRoles = null!;
+        private string[] _vendorRoles = null!;
+        private int _distinctRoleIds;
+        private int _roleRows;
+        private bool _shareARoleRow;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string suffix = Guid.NewGuid().ToString("N");
+            (_administrativeRole, _vendorRole) = variant switch
+            {
+                "trailing-space" => ($"cms-client-{suffix}", $"cms-client-{suffix} "),
+                "full-width" => ($"Admin-{suffix}", $"Ａdmin-{suffix}"),
+                _ => throw new ArgumentOutOfRangeException(nameof(variant), variant, null),
+            };
+            OpenIddictClientRepository clientRepository = CreateClientRepository(repository);
+
+            _administrativeResult = await clientRepository.CreateClientAsync(
+                $"registered-{suffix}",
+                "registered-secret",
+                _administrativeRole,
+                "Registered Client",
+                "edfi_admin_api/full_access",
+                "",
+                ""
+            );
+            _vendorResult = await clientRepository.CreateClientAsync(
+                $"vendor-{suffix}",
+                "vendor-secret",
+                _vendorRole,
+                "Vendor Client",
+                "EdFiSandbox",
+                "uri://ed-fi.org",
+                "255901"
+            );
+
+            Guid administrativeId = ((ClientCreateResult.Success)_administrativeResult).ClientUuid;
+            Guid vendorId = ((ClientCreateResult.Success)_vendorResult).ClientUuid;
+            _administrativeRoles = (await repository.GetClientRolesAsync(administrativeId)).ToArray();
+            _vendorRoles = (await repository.GetClientRolesAsync(vendorId)).ToArray();
+            _distinctRoleIds = await DistinctRoleIdCountAsync(administrativeId, vendorId);
+            _roleRows = await RoleRowCountByExactNameAsync(_administrativeRole, _vendorRole);
+            _shareARoleRow = await repository.RoleNamesShareARoleRowAsync(_administrativeRole, _vendorRole);
+            _collation = await RoleNameCollationAsync();
+        }
+
+        [Test]
+        public void It_creates_both_clients()
+        {
+            _administrativeResult.Should().BeOfType<ClientCreateResult.Success>();
+            _vendorResult.Should().BeOfType<ClientCreateResult.Success>();
+        }
+
+        [Test]
+        public void It_gives_the_administrative_client_the_administrative_role() =>
+            _administrativeRoles.Should().Equal(_administrativeRole);
+
+        [Test]
+        public void It_gives_the_vendor_the_administrative_role_row() =>
+            _vendorRoles
+                .Should()
+                .Equal([_administrativeRole], $"the role name column compares under collation {_collation}");
+
+        [Test]
+        public void It_holds_one_role_row_between_the_clients() =>
+            _distinctRoleIds.Should().Be(1, $"collation {_collation}");
+
+        [Test]
+        public void It_stores_only_the_administrative_name() =>
+            _roleRows.Should().Be(1, $"collation {_collation}");
+
+        [Test]
+        public void It_reads_the_names_as_sharing_a_role_row() =>
+            _shareARoleRow.Should().Be(VendorReusesTheAdministrativeRow, $"collation {_collation}");
+    }
+
     // Through the token manager, the credential query decides authentication: a successful grant
     // reads the credential and then the full application once each; a failed one never reads the
-    // full application.
+    // full application. A client without an API client row is admitted only as an administrative
+    // client (the configured administrative role and a Management API scope); an orphaned vendor
+    // client (the DMS client role and a vendor scope) is refused as an unapproved one is.
     [TestFixture("approved")]
     [TestFixture("unapproved")]
     [TestFixture("wrong-secret")]
     [TestFixture("absent")]
+    [TestFixture("administrative-no-row")]
+    [TestFixture("orphaned-vendor-no-row")]
     public class Given_Grants_Through_The_Credential_Path(string outcome) : OpenIddictDataRepositoryTests
     {
         private string _clientId = null!;
+        private Guid _applicationId;
         private IOpenIddictDataRepository _observedRepository = null!;
         private TokenResult _result = null!;
+
+        private bool Admitted => outcome is "approved" or "administrative-no-row";
 
         [SetUp]
         public async Task Setup()
@@ -5284,9 +6028,24 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
                 NullLogger<OpenIddictDataRepository>.Instance
             );
             _clientId = Guid.NewGuid().ToString();
-            if (outcome != "absent")
+            ConfiguredRoleNames roles = ConfiguredRoleNames.Fresh();
+            if (outcome == "administrative-no-row")
             {
-                await RegisterApplicationAsync(repository, _clientId);
+                _applicationId = await RegisterApplicationAsync(
+                    repository,
+                    _clientId,
+                    "edfi_admin_api/full_access"
+                );
+                await AddClientRoleAsync(repository, _applicationId, roles.Administrative);
+            }
+            else if (outcome == "orphaned-vendor-no-row")
+            {
+                _applicationId = await RegisterApplicationAsync(repository, _clientId, "EdFiSandbox");
+                await AddClientRoleAsync(repository, _applicationId, roles.Client);
+            }
+            else if (outcome != "absent")
+            {
+                _applicationId = await RegisterApplicationAsync(repository, _clientId);
                 await AddApiClientWithDataStoresAsync(
                     repository,
                     _clientId,
@@ -5297,7 +6056,7 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
 
             (OpenIddictTokenManager manager, _observedRepository) = CreateTokenManagerOver(
                 repository,
-                new IdentityOptions()
+                RoleNamedOptions(roles)
             );
             _result = await manager.GetAccessTokenAsync([
                 new("client_id", _clientId),
@@ -5308,20 +6067,13 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [Test]
         public void It_answers_the_grant()
         {
-            if (outcome == "approved")
+            if (Admitted)
             {
                 _result.Should().BeOfType<TokenResult.Success>();
             }
             else
             {
-                _result
-                    .Should()
-                    .BeEquivalentTo(
-                        new TokenResult.FailureAuthentication(
-                            "invalid_client",
-                            "Invalid client or Invalid client credentials"
-                        )
-                    );
+                _result.Should().BeEquivalentTo(InvalidClient);
             }
         }
 
@@ -5333,6 +6085,153 @@ public class OpenIddictDataRepositoryTests : DatabaseTest
         [Test]
         public void It_reads_the_full_application_only_after_a_successful_authentication() =>
             A.CallTo(() => _observedRepository.GetApplicationByClientIdAsync(_clientId))
-                .MustHaveHappened(outcome == "approved" ? 1 : 0, Times.Exactly);
+                .MustHaveHappened(Admitted ? 1 : 0, Times.Exactly);
+
+        [Test]
+        public async Task It_stores_a_token_only_for_an_admitted_client() =>
+            (await TokenRowCountAsync(_applicationId)).Should().Be(Admitted ? 1 : 0);
+
+        [Test]
+        public void It_reads_the_scopes_only_to_classify_a_verified_client_without_a_row() =>
+            A.CallTo(() => _observedRepository.GetApplicationScopesAsync(A<Guid>._))
+                .MustHaveHappened(
+                    outcome is "administrative-no-row" or "orphaned-vendor-no-row" ? 1 : 0,
+                    Times.Exactly
+                );
+    }
+
+    // DMS-1494 §4.5 end to end. The configured client role name is a variant of the administrative
+    // one, and a vendor-shaped client is created through the production path with that variant and
+    // an admin-named scope, without an API client row. On SQL Server the collation resolves the variant
+    // to the administrative role row, so the vendor holds the administrative role and only the role
+    // configuration can refuse it: the database's answer (clause 2) and the engine-independent
+    // comparison (clause 3) both do. Under the same options a row-backed client is decided by its row.
+    [TestFixture("trailing-space")]
+    [TestFixture("full-width")]
+    public class Given_Grants_Under_Role_Names_That_Collide_Through_The_Manager(string variant)
+        : OpenIddictDataRepositoryTests
+    {
+        private const bool TheDatabaseResolvesBothNamesToOneRow = true;
+        private string _collation = null!;
+        private Guid _vendorId;
+        private Guid _administrativeId;
+        private Guid _approvedId;
+        private Guid _unapprovedId;
+        private string _vendorClientId = null!;
+        private string _administrativeClientId = null!;
+        private bool _shareARoleRow;
+        private IOpenIddictDataRepository _observedRepository = null!;
+        private TokenResult _vendorGrant = null!;
+        private TokenResult _administrativeGrant = null!;
+        private TokenResult _approvedGrant = null!;
+        private TokenResult _unapprovedGrant = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OpenIddictDataRepository repository = new(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
+            string suffix = Guid.NewGuid().ToString("N");
+            ConfiguredRoleNames roles = variant switch
+            {
+                "trailing-space" => new($"cms-client-{suffix}", $"cms-client-{suffix} "),
+                "full-width" => new($"Admin-{suffix}", $"Ａdmin-{suffix}"),
+                _ => throw new ArgumentOutOfRangeException(nameof(variant), variant, null),
+            };
+            OpenIddictClientRepository clientRepository = CreateClientRepository(
+                repository,
+                RegisteredSecret
+            );
+
+            _administrativeClientId = $"registered-{suffix}";
+            _administrativeId = CreatedId(
+                await clientRepository.CreateClientAsync(
+                    _administrativeClientId,
+                    "registered-secret",
+                    roles.Administrative,
+                    "Registered Client",
+                    "edfi_admin_api/full_access",
+                    "",
+                    ""
+                )
+            );
+            _vendorClientId = $"vendor-{suffix}";
+            _vendorId = CreatedId(
+                await clientRepository.CreateClientAsync(
+                    _vendorClientId,
+                    "vendor-secret",
+                    roles.Client,
+                    "Vendor Client",
+                    "edfi_admin_api/full_access",
+                    "uri://ed-fi.org",
+                    "255901"
+                )
+            );
+            // API client rows hold a client id of at most 36 characters.
+            string approvedClientId = Guid.NewGuid().ToString();
+            _approvedId = await RegisterApplicationAsync(repository, approvedClientId);
+            await AddApiClientRowAsync(repository, approvedClientId);
+            string unapprovedClientId = Guid.NewGuid().ToString();
+            _unapprovedId = await RegisterApplicationAsync(repository, unapprovedClientId);
+            await AddApiClientRowAsync(repository, unapprovedClientId, isApproved: false);
+            _shareARoleRow = await repository.RoleNamesShareARoleRowAsync(roles.Administrative, roles.Client);
+            _collation = await RoleNameCollationAsync();
+
+            (OpenIddictTokenManager manager, _observedRepository) = CreateTokenManagerOver(
+                repository,
+                RoleNamedOptions(roles)
+            );
+            _vendorGrant = await RequestGrantAsync(manager, _vendorClientId);
+            _administrativeGrant = await RequestGrantAsync(manager, _administrativeClientId);
+            _approvedGrant = await RequestGrantAsync(manager, approvedClientId);
+            _unapprovedGrant = await RequestGrantAsync(manager, unapprovedClientId);
+        }
+
+        private static Guid CreatedId(ClientCreateResult result) =>
+            result.Should().BeOfType<ClientCreateResult.Success>().Subject.ClientUuid;
+
+        [Test]
+        public void It_answers_whether_the_database_resolves_both_names_to_one_row() =>
+            _shareARoleRow.Should().Be(TheDatabaseResolvesBothNamesToOneRow, $"collation {_collation}");
+
+        [Test]
+        public void It_refuses_the_vendor_client_without_a_row() =>
+            _vendorGrant.Should().BeEquivalentTo(InvalidClient);
+
+        [Test]
+        public void It_refuses_the_administrative_client_without_a_row_under_the_colliding_names() =>
+            _administrativeGrant.Should().BeEquivalentTo(InvalidClient);
+
+        [Test]
+        public void It_never_loads_the_full_application_of_a_refused_client()
+        {
+            A.CallTo(() => _observedRepository.GetApplicationByClientIdAsync(_vendorClientId))
+                .MustNotHaveHappened();
+            A.CallTo(() => _observedRepository.GetApplicationByClientIdAsync(_administrativeClientId))
+                .MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_stores_no_token_for_a_client_without_a_row()
+        {
+            (await TokenRowCountAsync(_vendorId)).Should().Be(0);
+            (await TokenRowCountAsync(_administrativeId)).Should().Be(0);
+        }
+
+        [Test]
+        public async Task It_admits_the_approved_row_backed_client()
+        {
+            _approvedGrant.Should().BeOfType<TokenResult.Success>();
+            (await TokenRowCountAsync(_approvedId)).Should().Be(1);
+        }
+
+        [Test]
+        public async Task It_refuses_the_unapproved_row_backed_client()
+        {
+            _unapprovedGrant.Should().BeEquivalentTo(InvalidClient);
+            (await TokenRowCountAsync(_unapprovedId)).Should().Be(0);
+        }
     }
 }

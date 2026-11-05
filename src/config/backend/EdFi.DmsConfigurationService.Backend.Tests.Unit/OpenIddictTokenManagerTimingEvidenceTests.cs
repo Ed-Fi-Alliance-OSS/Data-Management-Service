@@ -61,7 +61,7 @@ public class Given_in_process_token_requests_measured_for_timing_evidence
         private readonly Task<ClientCredential?> _absent = Task.FromResult<ClientCredential?>(null);
 
         private readonly Task<ClientCredential?> _known = Task.FromResult<ClientCredential?>(
-            new ClientCredential(Guid.NewGuid(), knownClientId, storedHash, IsApproved: true)
+            new ClientCredential(Guid.NewGuid(), knownClientId, storedHash, ApiClientApprovalState.Approved)
         );
 
         private readonly long _waitTicks = (long)(absentLookupWait.TotalSeconds * Stopwatch.Frequency);
@@ -93,7 +93,8 @@ public class Given_in_process_token_requests_measured_for_timing_evidence
             string subject,
             DateTimeOffset expiration,
             int maxActiveTokens,
-            string expectedClientSecret
+            string expectedClientSecret,
+            ApiClientApprovalState expectedApiClientApproval
         ) => throw new NotSupportedException();
 
         public Task<string?> GetTokenStatusAsync(Guid tokenId) => throw new NotSupportedException();
@@ -118,6 +119,12 @@ public class Given_in_process_token_requests_measured_for_timing_evidence
         ) => throw new NotSupportedException();
 
         public Task<IEnumerable<string>> GetClientRolesAsync(Guid clientId) =>
+            throw new NotSupportedException();
+
+        public Task<IEnumerable<string>> GetApplicationScopesAsync(Guid applicationId) =>
+            throw new NotSupportedException();
+
+        public Task<bool> RoleNamesShareARoleRowAsync(string firstRoleName, string secondRoleName) =>
             throw new NotSupportedException();
     }
 

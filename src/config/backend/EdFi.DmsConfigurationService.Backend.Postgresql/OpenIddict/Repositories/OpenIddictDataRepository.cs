@@ -63,16 +63,16 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositorie
         /// It has to be its own statement: under read committed each statement
         /// takes a new snapshot, whereas a subquery inside the <c>FOR UPDATE</c> statement would
         /// read the snapshot taken before that statement blocked, and miss a reset or un-approval
-        /// that committed while it waited. The approval has the semantics of
-        /// <see cref="GetClientCredentialAsync"/>: every API client registered under the client id
-        /// approved, and approved when there is none.
+        /// that committed while it waited. The approval state has the semantics of
+        /// <see cref="GetClientCredentialAsync"/>, with the values of
+        /// <see cref="ApiClientApprovalState"/>: no API client row is its own state, not an approval.
         /// </summary>
         private const string ReadStoredClientStateSql = """
             SELECT COALESCE(a."ClientSecret", '') AS "StoredClientSecret",
-                   COALESCE(
-                       (SELECT BOOL_AND(ac."IsApproved") FROM "dmscs"."ApiClient" ac WHERE ac."ClientId" = a."ClientId"),
-                       true
-                   ) AS "IsApproved"
+                   (SELECT CASE WHEN COUNT(*) = 0 THEN 2
+                                WHEN BOOL_AND(ac."IsApproved") THEN 1
+                                ELSE 0 END
+                    FROM "dmscs"."ApiClient" ac WHERE ac."ClientId" = a."ClientId") AS "ApiClientApproval"
             FROM "dmscs"."OpenIddictApplication" a
             WHERE a."Id" = @ApplicationId
             """;
@@ -367,6 +367,19 @@ UPDATE ""dmscs"".""OpenIddictApplication""
         }
 
         // Methods used by OpenIddictTokenRepository
+
+        /// <summary>
+        /// The approval column both full lookups report, over the joined API client rows. The join
+        /// through <c>ApiClientDataStore</c> repeats an API client row once per data store, which
+        /// changes neither the empty count nor the all-approved aggregate. The values are those of
+        /// <see cref="ApiClientApprovalState"/>.
+        /// </summary>
+        private const string GroupedApiClientApprovalSql = """
+            CASE WHEN COUNT(ac."Id") = 0 THEN 2
+                 WHEN BOOL_AND(ac."IsApproved") THEN 1
+                 ELSE 0 END AS "ApiClientApproval"
+            """;
+
         public async Task<ApplicationInfo?> GetApplicationByClientIdAsync(string clientId)
         {
             await using var connection = new NpgsqlConnection(_connectionString);
@@ -377,8 +390,9 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                          a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""::jsonb::text AS ""ProtocolMappers"",
                          COALESCE(array_agg(DISTINCT s.""Name"") FILTER (WHERE s.""Name"" IS NOT NULL), ARRAY[]::text[]) AS ""Scopes"",
                          COALESCE(array_agg(DISTINCT acd.""DataStoreId"") FILTER (WHERE acd.""DataStoreId"" IS NOT NULL), ARRAY[]::int[]) AS ""DataStoreIds"",
-                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved"",
-                         COUNT(ac.""Id"") = 0 AS ""HasNoApiClientRow""
+                         "
+                + GroupedApiClientApprovalSql
+                + @"
                   FROM ""dmscs"".""OpenIddictApplication"" a
                   LEFT JOIN ""dmscs"".""OpenIddictApplicationScope"" aps ON a.""Id"" = aps.""ApplicationId""
                   LEFT JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""
@@ -396,9 +410,10 @@ UPDATE ""dmscs"".""OpenIddictApplication""
 
         /// <summary>
         /// One statement: the application's id, stored client id and stored secret, and the
-        /// approval <see cref="GetApplicationByClientIdAsync"/> reports (every API client
-        /// registered under the client id approved; approved when there is none). The client id
-        /// is matched exactly, as that lookup matches it. A stored null becomes an empty string.
+        /// approval state <see cref="GetApplicationByClientIdAsync"/> reports (over every API
+        /// client registered under the client id; no API client row when there is none). The
+        /// client id is matched exactly, as that lookup matches it. A stored null becomes an empty
+        /// string.
         /// The statement is driven by the requested client id and always returns one row, with no
         /// application id when none is registered, so an unknown client id makes the same
         /// application and API client index probes as a registered one. A registered id also
@@ -413,10 +428,10 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                 @"SELECT a.""Id"" AS ""ApplicationId"",
                          COALESCE(a.""ClientId"", '') AS ""StoredClientId"",
                          COALESCE(a.""ClientSecret"", '') AS ""StoredClientSecret"",
-                         COALESCE(
-                             (SELECT BOOL_AND(ac.""IsApproved"") FROM ""dmscs"".""ApiClient"" ac WHERE ac.""ClientId"" = r.""ClientId""),
-                             true
-                         ) AS ""IsApproved""
+                         (SELECT CASE WHEN COUNT(*) = 0 THEN 2
+                                      WHEN BOOL_AND(ac.""IsApproved"") THEN 1
+                                      ELSE 0 END
+                          FROM ""dmscs"".""ApiClient"" ac WHERE ac.""ClientId"" = r.""ClientId"") AS ""ApiClientApproval""
                   FROM (SELECT @ClientId AS ""ClientId"") r
                   LEFT JOIN ""dmscs"".""OpenIddictApplication"" a ON a.""ClientId"" = r.""ClientId""";
 
@@ -429,7 +444,7 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                     applicationId,
                     row.StoredClientId ?? string.Empty,
                     row.StoredClientSecret ?? string.Empty,
-                    row.IsApproved
+                    (ApiClientApprovalState)row.ApiClientApproval
                 )
                 : null;
         }
@@ -438,7 +453,7 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             Guid? ApplicationId,
             string? StoredClientId,
             string? StoredClientSecret,
-            bool IsApproved
+            int ApiClientApproval
         );
 
         public async Task<ApplicationInfo?> GetApplicationByIdAsync(
@@ -452,8 +467,9 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                          a.""Permissions"", a.""Requirements"", a.""Type"", a.""CreatedAt"", a.""ProtocolMappers""::jsonb::text AS ""ProtocolMappers"",
                          COALESCE(array_agg(DISTINCT s.""Name"") FILTER (WHERE s.""Name"" IS NOT NULL), ARRAY[]::text[]) AS ""Scopes"",
                          COALESCE(array_agg(DISTINCT acd.""DataStoreId"") FILTER (WHERE acd.""DataStoreId"" IS NOT NULL), ARRAY[]::int[]) AS ""DataStoreIds"",
-                         COALESCE(BOOL_AND(ac.""IsApproved""), true) AS ""IsApproved"",
-                         COUNT(ac.""Id"") = 0 AS ""HasNoApiClientRow""
+                         "
+                + GroupedApiClientApprovalSql
+                + @"
                   FROM ""dmscs"".""OpenIddictApplication"" a
                   LEFT JOIN ""dmscs"".""OpenIddictApplicationScope"" aps ON a.""Id"" = aps.""ApplicationId""
                   LEFT JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""
@@ -484,6 +500,33 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             );
         }
 
+        public async Task<IEnumerable<string>> GetApplicationScopesAsync(Guid applicationId)
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            return await connection.QueryAsync<string>(
+                @"SELECT DISTINCT s.""Name""
+                  FROM ""dmscs"".""OpenIddictApplicationScope"" aps
+                  JOIN ""dmscs"".""OpenIddictScope"" s ON aps.""ScopeId"" = s.""Id""
+                  WHERE aps.""ApplicationId"" = @ApplicationId",
+                new { ApplicationId = applicationId }
+            );
+        }
+
+        public async Task<bool> RoleNamesShareARoleRowAsync(string firstRoleName, string secondRoleName)
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            return await connection.ExecuteScalarAsync<bool>(
+                @"SELECT EXISTS (
+                      SELECT 1 FROM ""dmscs"".""OpenIddictRole""
+                      WHERE ""Name"" = @FirstRoleName AND ""Name"" = @SecondRoleName)",
+                new { FirstRoleName = firstRoleName, SecondRoleName = secondRoleName }
+            );
+        }
+
         public async Task<TokenInfo?> GetTokenByIdAsync(Guid tokenId)
         {
             await using var connection = new NpgsqlConnection(_connectionString);
@@ -502,9 +545,14 @@ UPDATE ""dmscs"".""OpenIddictApplication""
             string subject,
             DateTimeOffset expiration,
             int maxActiveTokens,
-            string expectedClientSecret
+            string expectedClientSecret,
+            ApiClientApprovalState expectedApiClientApproval
         )
         {
+            // Before any connection is opened: a store for any other state is a caller's error,
+            // never a database outcome.
+            ThrowIfNotAdmissible(expectedApiClientApproval);
+
             await using var connection = new NpgsqlConnection(_connectionString);
             await connection.OpenAsync();
 
@@ -576,10 +624,16 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                         transaction
                     );
 
-                if (RefusalReason(storedState, expectedClientSecret) is { } refusalReason)
+                if (
+                    RefusalReason(storedState, expectedClientSecret, expectedApiClientApproval) is
+                    { } refusalReason
+                )
                 {
                     await transaction.RollbackAsync();
-                    logger.LogDebug(
+                    // A missing or changed API client row is a data-integrity signal, so it is
+                    // logged where operators look; the lifecycle reasons stay at Debug.
+                    logger.Log(
+                        refusalReason == ApiClientRowRefusalReason ? LogLevel.Warning : LogLevel.Debug,
                         "Refused to store a token for application {ApplicationId}: re-validation under the application row lock failed ({RefusalReason})",
                         applicationId,
                         refusalReason
@@ -617,9 +671,15 @@ UPDATE ""dmscs"".""OpenIddictApplication""
         /// <summary>
         /// Why the state read under the lock refuses the store, or <c>null</c> when it allows it.
         /// The secret is compared here, ordinally, rather than in SQL, so no collation can widen
-        /// what counts as equal. The category is logged; the secrets never are.
+        /// what counts as equal. The approval state allows the store only when it is the admissible
+        /// state the grant authenticated with; there is no allow-by-default. The category is
+        /// logged; the secrets never are.
         /// </summary>
-        private static string? RefusalReason(StoredClientState? storedState, string expectedClientSecret) =>
+        internal static string? RefusalReason(
+            StoredClientState? storedState,
+            string expectedClientSecret,
+            ApiClientApprovalState expectedApiClientApproval
+        ) =>
             storedState switch
             {
                 null => "missing",
@@ -628,11 +688,48 @@ UPDATE ""dmscs"".""OpenIddictApplication""
                         expectedClientSecret,
                         StringComparison.Ordinal
                     ) => "secret",
-                { IsApproved: false } => "approval",
-                _ => null,
+                _ => ApprovalRefusalReason(
+                    (ApiClientApprovalState)storedState.ApiClientApproval,
+                    expectedApiClientApproval
+                ),
             };
 
-        private sealed record StoredClientState(string StoredClientSecret, bool IsApproved);
+        /// <summary>The refusal category for an API client row that is missing or changed.</summary>
+        internal const string ApiClientRowRefusalReason = "api-client-row";
+
+        private static string? ApprovalRefusalReason(
+            ApiClientApprovalState stored,
+            ApiClientApprovalState expected
+        ) =>
+            (stored, expected) switch
+            {
+                (ApiClientApprovalState.Approved, ApiClientApprovalState.Approved) => null,
+                (ApiClientApprovalState.NoApiClientRow, ApiClientApprovalState.NoApiClientRow) => null,
+                (ApiClientApprovalState.Unapproved, _) => "approval",
+                _ => ApiClientRowRefusalReason,
+            };
+
+        private static void ThrowIfNotAdmissible(ApiClientApprovalState expectedApiClientApproval)
+        {
+            if (
+                expectedApiClientApproval
+                is not (ApiClientApprovalState.Approved or ApiClientApprovalState.NoApiClientRow)
+            )
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(expectedApiClientApproval),
+                    expectedApiClientApproval,
+                    "A token is stored only for a client that authenticated as approved or without an API client row."
+                );
+            }
+        }
+
+        /// <summary>
+        /// What the grant authenticated against, as read under the lock.
+        /// <paramref name="ApiClientApproval"/> carries the numeric values of
+        /// <see cref="ApiClientApprovalState"/>.
+        /// </summary>
+        internal sealed record StoredClientState(string StoredClientSecret, int ApiClientApproval);
 
         public async Task<string?> GetTokenStatusAsync(Guid tokenId)
         {

@@ -27,6 +27,32 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         public const int MaxTokenExpirationMinutes = int.MaxValue / 60;
 
         /// <summary>
+        /// The role that marks a Configuration Service administrative client: the role the
+        /// <c>ServicePolicy</c> requires and the one <c>/connect/register</c> assigns.
+        /// Bound from <c>IdentitySettings:ConfigServiceRole</c>, the same key the frontend reads; it
+        /// is not validated here (the frontend validator already requires it). Self-contained token
+        /// issuance reads it to recognize an administrative client that has no API client row. That
+        /// exception is refused, on both database engines, while this value is empty, while the
+        /// database resolves it and <see cref="ClientRole"/> to one role row (which depends on the
+        /// deployed collation: SQL Server's default collation, for example, ignores case, width and
+        /// trailing spaces), or while the two names collide after trailing white space is removed,
+        /// ignoring case, width, kana type and non-spacing marks. Role membership could not then
+        /// tell an administrative client from a vendor client. Clients that do have an API client
+        /// row are unaffected. Changing or reusing either role name requires auditing existing
+        /// role memberships first.
+        /// </summary>
+        public string ConfigServiceRole { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The role assigned to the DMS vendor clients the Configuration Service creates.
+        /// Bound from <c>IdentitySettings:ClientRole</c>, the same key the frontend reads; it is not
+        /// validated here. Self-contained token issuance reads it alongside
+        /// <see cref="ConfigServiceRole"/>; see that property for the restriction on names that
+        /// collide.
+        /// </summary>
+        public string ClientRole { get; set; } = string.Empty;
+
+        /// <summary>
         /// Token expiration time in minutes.
         /// </summary>
         public int TokenExpirationMinutes { get; set; } = 30;

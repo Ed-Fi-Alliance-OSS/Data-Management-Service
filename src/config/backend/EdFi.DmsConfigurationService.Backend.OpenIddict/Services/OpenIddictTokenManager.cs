@@ -299,7 +299,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 (TokenStoreOutcome outcome, string token) = await GenerateJwtTokenAsync(
                     applicationInfo,
                     canonicalClientId,
-                    listOfScopes
+                    listOfScopes,
+                    authenticatedClient.ApiClientApproval
                 );
 
                 if (outcome == TokenStoreOutcome.LimitExceeded)
@@ -327,9 +328,9 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
 
                 if (outcome is TokenStoreOutcome.ClientNotFound or TokenStoreOutcome.ClientChanged)
                 {
-                    // The application row was deleted, its secret reset, or the client un-approved
-                    // between the lookup above and the store, so answer exactly as the unknown-client
-                    // and wrong-secret cases above answer.
+                    // The application row was deleted, its secret reset, the client un-approved, or
+                    // its API client row removed or added between the lookup above and the store, so
+                    // answer exactly as the unknown-client and wrong-secret cases above answer.
                     return new TokenResult.FailureAuthentication(
                         InvalidClientError,
                         "Invalid client or Invalid client credentials"
@@ -924,19 +925,34 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// The stored client id, or the requested one when the stored value is empty.
         /// </param>
         /// <param name="VerifiedStoredSecret">The stored secret the presented secret was verified against.</param>
+        /// <param name="ApiClientApproval">
+        /// The API client approval state the client authenticated with; only an admissible state
+        /// (<see cref="IsAdmissibleApproval"/>) ever reaches this record.
+        /// </param>
         private sealed record AuthenticatedClient(
             Guid ApplicationId,
             string EffectiveClientId,
-            string VerifiedStoredSecret
+            string VerifiedStoredSecret,
+            ApiClientApprovalState ApiClientApproval
         );
+
+        /// <summary>
+        /// The API client approval states a client may proceed with. Every other value, named or
+        /// not, is refused: there is no allow-by-default.
+        /// </summary>
+        private static bool IsAdmissibleApproval(ApiClientApprovalState state) =>
+            state is ApiClientApprovalState.Approved or ApiClientApprovalState.NoApiClientRow;
 
         /// <summary>
         /// Reads the client's credential and verifies the secret against the stored (potentially
         /// hashed) value. Returns <c>null</c> for an unknown client, a wrong secret and an
-        /// unapproved client alike, so the caller answers all three identically. An unknown
-        /// client's secret is still verified, against a placeholder hash, so its rejection does not
-        /// return before a secret verification has been performed. Only the credential is read
-        /// here; the token endpoint loads the full application after this succeeds.
+        /// unapproved or otherwise unadmitted client alike, so the caller answers all of them
+        /// identically. An unknown client's secret is still verified, against a placeholder hash, so
+        /// its rejection does not return before a secret verification has been performed. Only the
+        /// credential is read before the secret verifies. A client without an API client row is then
+        /// classified from its roles, its registered scopes and the database's answer for the
+        /// configured role names (<see cref="IsAdmittedWithoutApiClientRowAsync"/>); no other client
+        /// reads them. The token endpoint loads the full application after this succeeds.
         /// </summary>
         /// <param name="preserveVerificationFailures">
         /// <c>false</c> for the token endpoint, which keeps the hasher's established behaviour of
@@ -946,6 +962,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// of being reported as wrong credentials. Catching around a dependency is not enough when
         /// the dependency suppresses its own failures.
         /// </param>
+        /// <remarks>
+        /// A failure of any read, the classification reads included, propagates to the caller's own
+        /// handling, as a credential-read failure does; it is never answered as a refusal.
+        /// </remarks>
         private async Task<AuthenticatedClient?> ValidateClientSecretAsync(
             string clientId,
             string clientSecret,
@@ -969,17 +989,101 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 return null;
             }
 
-            if (!credential.IsApproved)
+            string effectiveClientId = CanonicalClientId(credential.StoredClientId, clientId);
+            switch (credential.ApiClientApproval)
             {
-                return null;
+                case ApiClientApprovalState.Approved:
+                    return new AuthenticatedClient(
+                        credential.ApplicationId,
+                        effectiveClientId,
+                        credential.StoredClientSecret,
+                        credential.ApiClientApproval
+                    );
+
+                case ApiClientApprovalState.NoApiClientRow:
+                    return await IsAdmittedWithoutApiClientRowAsync(credential, effectiveClientId)
+                        ? new AuthenticatedClient(
+                            credential.ApplicationId,
+                            effectiveClientId,
+                            credential.StoredClientSecret,
+                            credential.ApiClientApproval
+                        )
+                        : null;
+
+                case ApiClientApprovalState.Unapproved:
+                    return null;
+
+                default:
+                    // Answered as an unapproved client is, so the response discloses nothing; the
+                    // line fires only after the presented secret verified.
+                    LogNotAdmitted(
+                        effectiveClientId,
+                        credential.ApplicationId,
+                        ClientAdmission.UnknownApprovalState
+                    );
+                    return null;
+            }
+        }
+
+        /// <summary>
+        /// Classifies a client that verified its secret but has no API client row
+        /// (<see cref="ClientAdmissionPolicy"/>). Reads its stored roles, its registered scopes and
+        /// whether the database resolves the two configured role names to one role row, once each and
+        /// in that order, then decides. Admits only an administrative client, logged at Debug; every
+        /// refusal is logged at Warning with its fixed category. Neither line carries a role or scope
+        /// value. A failed read propagates: it is not a refusal.
+        /// </summary>
+        private async Task<bool> IsAdmittedWithoutApiClientRowAsync(
+            ClientCredential credential,
+            string effectiveClientId
+        )
+        {
+            IdentityOptions options = _identityOptions.Value;
+            string[] roles = [.. await _tokenRepository.GetClientRolesAsync(credential.ApplicationId)];
+            string[] scopes = [.. await _tokenRepository.GetApplicationScopesAsync(credential.ApplicationId)];
+            bool configuredRoleNamesShareARoleRow = await _tokenRepository.RoleNamesShareARoleRowAsync(
+                options.ConfigServiceRole,
+                options.ClientRole
+            );
+
+            ClientAdmission admission = ClientAdmissionPolicy.Decide(
+                credential.ApiClientApproval,
+                roles,
+                scopes,
+                options.ConfigServiceRole,
+                options.ClientRole,
+                configuredRoleNamesShareARoleRow
+            );
+
+            if (admission == ClientAdmission.AdministrativeWithoutApiClientRow)
+            {
+                _logger.LogDebug(
+                    "Client {ClientId} (application {ApplicationId}) admitted as an administrative client without an API client row",
+                    LoggingUtility.SanitizeForLog(effectiveClientId),
+                    credential.ApplicationId
+                );
+                return true;
             }
 
-            return new AuthenticatedClient(
-                credential.ApplicationId,
-                CanonicalClientId(credential.StoredClientId, clientId),
-                credential.StoredClientSecret
-            );
+            LogNotAdmitted(effectiveClientId, credential.ApplicationId, admission);
+            return false;
         }
+
+        /// <summary>
+        /// The Warning for a client refused after its secret verified, for a reason other than an
+        /// unapproved API client row, which stays silent. The category is a fixed enum name.
+        /// </summary>
+        private void LogNotAdmitted(
+            string effectiveClientId,
+            Guid applicationId,
+            ClientAdmission admission
+        ) =>
+            _logger.LogWarning(
+                "Client {ClientId} (application {ApplicationId}) authenticated but is not admitted ({Admission}); refused",
+                LoggingUtility.SanitizeForLog(effectiveClientId),
+                applicationId,
+                admission
+            );
 
         /// <summary>
         /// Verifies <paramref name="presentedSecret"/> against a stored secret, or against the
@@ -1000,9 +1104,10 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         /// Loads the full application for a client that authenticated from its credential alone,
         /// under the client id the request named. Returns <c>null</c>
         /// when the application is no longer the one that authenticated: gone, replaced under the
-        /// same client id, no longer approved, or holding a different stored secret. The stored
-        /// secrets are compared as stored strings; no secret is derived again and neither value
-        /// leaves this method. A change after this check is not detected here.
+        /// same client id, in an API client approval state other than the admissible one it
+        /// authenticated with, or holding a different stored secret. The stored secrets are compared
+        /// as stored strings; no secret is derived again and neither value leaves this method. A
+        /// change after this check is not detected here; the store re-validates under the lock.
         /// </summary>
         private async Task<ApplicationInfo?> LoadAuthenticatedApplicationAsync(
             AuthenticatedClient authenticatedClient,
@@ -1017,15 +1122,47 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 return null;
             }
 
+            bool isTheSameApplication = applicationInfo.Id == authenticatedClient.ApplicationId;
+            bool approvalUnchanged =
+                IsAdmissibleApproval(applicationInfo.ApiClientApproval)
+                && applicationInfo.ApiClientApproval == authenticatedClient.ApiClientApproval;
+            if (isTheSameApplication && !approvalUnchanged)
+            {
+                LogApprovalChangedBeforeLoad(authenticatedClient, applicationInfo.ApiClientApproval);
+            }
+
             bool isTheAuthenticatedApplication =
-                applicationInfo.Id == authenticatedClient.ApplicationId
-                && applicationInfo.IsApproved
+                isTheSameApplication
+                && approvalUnchanged
                 && string.Equals(
                     applicationInfo.ClientSecret ?? string.Empty,
                     authenticatedClient.VerifiedStoredSecret,
                     StringComparison.Ordinal
                 );
             return isTheAuthenticatedApplication ? applicationInfo : null;
+        }
+
+        /// <summary>
+        /// The application's API client approval state changed between authentication and the full
+        /// load. An un-approval of a row-backed client is an ordinary lifecycle event and goes to
+        /// Debug; a row that appeared or disappeared, or a state with no name, is a data-integrity
+        /// signal and goes to Warning.
+        /// </summary>
+        private void LogApprovalChangedBeforeLoad(
+            AuthenticatedClient authenticatedClient,
+            ApiClientApprovalState loaded
+        )
+        {
+            bool isUnApproval =
+                authenticatedClient.ApiClientApproval == ApiClientApprovalState.Approved
+                && loaded == ApiClientApprovalState.Unapproved;
+            _logger.Log(
+                isUnApproval ? LogLevel.Debug : LogLevel.Warning,
+                "Client {ClientId} API client approval changed between authentication ({Authenticated}) and application load ({Loaded}); refused",
+                LoggingUtility.SanitizeForLog(authenticatedClient.EffectiveClientId),
+                authenticatedClient.ApiClientApproval,
+                loaded
+            );
         }
 
         /// <summary>
@@ -1081,7 +1218,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
         private async Task<(TokenStoreOutcome Outcome, string Token)> GenerateJwtTokenAsync(
             ApplicationInfo applicationInfo,
             string clientId,
-            string scope
+            string scope,
+            ApiClientApprovalState authenticatedApproval
         )
         {
             var tokenId = Guid.NewGuid();
@@ -1117,7 +1255,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 ? -1
                 : _identityOptions.Value.BearerTokenPerClientLimit;
             // The stored hash LoadAuthenticatedApplicationAsync matched against the verified secret.
-            // The store refuses the grant when it no longer matches under the application row lock.
+            // The store refuses the grant when it, or the API client approval state the client
+            // authenticated with, no longer matches under the application row lock.
             string authenticatedStoredSecret = applicationInfo.ClientSecret ?? string.Empty;
             TokenStoreOutcome outcome = await _tokenRepository.StoreTokenAsync(
                 tokenId,
@@ -1125,7 +1264,8 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Services
                 clientId,
                 expiration,
                 maxActiveTokens,
-                authenticatedStoredSecret
+                authenticatedStoredSecret,
+                authenticatedApproval
             );
 
             return (outcome, tokenString);

@@ -15,6 +15,29 @@ application, the following defaults are automatically assigned:
 
 **Default Scope:** edfi_admin_api/full_access
 
+A registered client has no API client row. In `self-contained` mode these defaults
+are what admit it at `/connect/token`, `/connect/revoke` and `/connect/introspect`:
+a client without an API client row is admitted only when it holds
+`IdentitySettings:ConfigServiceRole` and its registered scopes are all Management
+API scopes. Any other client without a row, including a vendor client whose API
+client row is gone, is refused with `invalid_client`. See
+[CS-AUTH](../reference/design/configuration-service/CS-AUTH.md#approval-states-and-clients-without-an-api-client-row).
+
+For that admission the two configured role names, `IdentitySettings:ConfigServiceRole`
+and `IdentitySettings:ClientRole`, must not collide. They collide when the database
+resolves them to one role row, which depends on its collation, or when they are
+equal after trailing white space is removed and case, width, kana type and
+non-spacing marks are ignored. Colliding names refuse every client without an API
+client row; clients with a row are unaffected.
+
+> [!IMPORTANT]
+> Role memberships are written when a client is created and read under the current
+> role names. Changing or reusing either role name can turn an old vendor client's
+> membership into the administrative role, whether or not the client has an API
+> client row. Audit the role memberships of every client first, and re-create or
+> re-role every client whose membership no longer matches its kind;
+> see [Auditing role memberships before a role-name change](./OPERATIONS.md#auditing-role-memberships-before-a-role-name-change).
+
 ### Supported Scopes
 
 | Scope Name                                      | Description                                                                 |
@@ -87,7 +110,9 @@ Keycloak or for DMS.
 
 **cms-client:** This role identifies a standard Configuration Service client. Currently, it serves
 as an identity tag and may be expanded in the future to support additional
-authorization logic.
+authorization logic. In `self-contained` mode it is also what admits an
+administrative client that has no API client row at the token endpoints (see
+[Client Registration](#client-registration)).
 
 ### Configuration Service Scopes Are Not Tenant-Scoped
 
@@ -189,8 +214,12 @@ a direct copy of the token's `scope`. See
 
 ### DMS Role Usage
 
-**dms-client:** This role is assigned to all vendor applications by default.
-Currently, the role is used only as an identity tag and does not enforce any
+**dms-client:** This role is assigned to all vendor applications by default. In
+`self-contained` mode, the Configuration Service refuses a token to a client that
+holds this role without the Configuration Service role and has no API client row:
+the shape of a vendor client whose API client row is gone (see
+[Client Registration](#client-registration)). Otherwise,
+the role is used only as an identity tag and does not enforce any
 specific access control logic.
 
 ## Deployment Preflight for Claim-Set Names and Scope Shapes

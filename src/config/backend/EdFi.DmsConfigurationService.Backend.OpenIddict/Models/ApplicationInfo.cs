@@ -3,8 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
-
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 
 /// <summary>
@@ -83,30 +81,19 @@ public class ApplicationInfo
     public int[] DataStoreIds { get; set; } = [];
 
     /// <summary>
-    /// Indicates whether all API clients associated with this application are approved.
-    /// Derived as BOOL_AND(IsApproved) across all ApiClient rows for the application.
-    /// Defaults to true when no API clients exist.
+    /// The approval of every API client registered under the application's client id, or
+    /// <see cref="ApiClientApprovalState.NoApiClientRow"/> when there is none. Defaults to
+    /// <see cref="ApiClientApprovalState.Unapproved"/>, so an application whose state was never
+    /// read is refused rather than admitted.
     /// </summary>
-    public bool IsApproved { get; set; } = true;
-
-    /// <summary>
-    /// Indicates whether the store proves that no API clients reference the application.
-    /// Defaults to false so an unpopulated application remains limited.
-    /// </summary>
-    public bool HasNoApiClientRow { get; set; }
+    public ApiClientApprovalState ApiClientApproval { get; set; }
 
     /// <summary>
     /// Exempts only applications with no API client row and a nonempty set of registered
-    /// scopes consisting entirely of the Configuration Service's recognized admin scopes.
+    /// scopes consisting entirely of the Configuration Service's recognized admin scopes. This
+    /// decides the token limit only; whether the client may authenticate is decided separately.
     /// </summary>
     public bool IsTokenLimitExempt =>
-        HasNoApiClientRow
-        && Scopes.Length > 0
-        && Array.TrueForAll(
-            Scopes,
-            scope =>
-                AuthorizationScopes.AllScopes.Any(adminScope =>
-                    string.Equals(scope, adminScope.Name, StringComparison.Ordinal)
-                )
-        );
+        ApiClientApproval == ApiClientApprovalState.NoApiClientRow
+        && AdministrativeScopes.AllRecognized(Scopes);
 }

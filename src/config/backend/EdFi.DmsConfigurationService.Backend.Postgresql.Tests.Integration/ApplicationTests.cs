@@ -5,6 +5,7 @@
 
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -1187,11 +1188,11 @@ public class ApplicationTests : DatabaseTest
         }
 
         [Test]
-        public async Task It_should_return_IsApproved_false_from_GetApplicationByClientIdAsync()
+        public async Task It_should_report_the_client_unapproved_from_GetApplicationByClientIdAsync()
         {
             var result = await _openIddictDataRepository.GetApplicationByClientIdAsync(_clientId);
             result.Should().NotBeNull();
-            result!.IsApproved.Should().BeFalse();
+            result!.ApiClientApproval.Should().Be(ApiClientApprovalState.Unapproved);
         }
     }
 

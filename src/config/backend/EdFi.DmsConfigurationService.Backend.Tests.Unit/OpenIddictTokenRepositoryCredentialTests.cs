@@ -20,7 +20,8 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
 /// <summary>
 /// Each engine's shipped token repository forwards the credential read to the data repository it
-/// wraps, and a grant through it reads the credential before the full application.
+/// wraps, and a grant through it reads the credential before the full application. It forwards the
+/// application scopes read and the shared role row read the same way.
 /// </summary>
 public class OpenIddictTokenRepositoryCredentialTests
 {
@@ -55,7 +56,12 @@ public class OpenIddictTokenRepositoryCredentialTests
         public async Task Setup()
         {
             _dataRepository = A.Fake<IOpenIddictDataRepository>();
-            _stored = new ClientCredential(Guid.NewGuid(), ClientId, StoredSecret, IsApproved: true);
+            _stored = new ClientCredential(
+                Guid.NewGuid(),
+                ClientId,
+                StoredSecret,
+                ApiClientApprovalState.Approved
+            );
             A.CallTo(() => _dataRepository.GetClientCredentialAsync(ClientId)).Returns(_stored);
             A.CallTo(() => _dataRepository.GetClientCredentialAsync("absent-client"))
                 .Returns((ClientCredential?)null);
@@ -74,6 +80,75 @@ public class OpenIddictTokenRepositoryCredentialTests
         [Test]
         public void It_reads_each_credential_once() =>
             A.CallTo(() => _dataRepository.GetClientCredentialAsync(ClientId)).MustHaveHappenedOnceExactly();
+    }
+
+    [TestFixture("postgresql")]
+    [TestFixture("mssql")]
+    public class Given_an_application_scopes_read_through_a_token_repository(string engine)
+        : OpenIddictTokenRepositoryCredentialTests
+    {
+        private IOpenIddictDataRepository _dataRepository = null!;
+        private readonly Guid _applicationId = Guid.NewGuid();
+        private readonly string[] _stored = ["edfi_admin_api/full_access", "edfi_admin_api/readonly_access"];
+        private IEnumerable<string> _forwarded = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _dataRepository = A.Fake<IOpenIddictDataRepository>();
+            A.CallTo(() => _dataRepository.GetApplicationScopesAsync(_applicationId)).Returns(_stored);
+            IOpenIddictTokenRepository tokenRepository = TokenRepositoryOver(engine, _dataRepository);
+
+            _forwarded = await tokenRepository.GetApplicationScopesAsync(_applicationId);
+        }
+
+        [Test]
+        public void It_returns_the_wrapped_repositorys_scopes() => _forwarded.Should().BeSameAs(_stored);
+
+        [Test]
+        public void It_reads_the_scopes_once_for_the_application() =>
+            A.CallTo(() => _dataRepository.GetApplicationScopesAsync(_applicationId))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_makes_no_other_read() => Fake.GetCalls(_dataRepository).Should().ContainSingle();
+    }
+
+    [TestFixture("postgresql", true)]
+    [TestFixture("postgresql", false)]
+    [TestFixture("mssql", true)]
+    [TestFixture("mssql", false)]
+    public class Given_a_shared_role_row_read_through_a_token_repository(string engine, bool stored)
+        : OpenIddictTokenRepositoryCredentialTests
+    {
+        private const string FirstRoleName = "first-role";
+        private const string SecondRoleName = "second-role";
+        private IOpenIddictDataRepository _dataRepository = null!;
+        private bool _forwarded;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _dataRepository = A.Fake<IOpenIddictDataRepository>();
+            A.CallTo(() => _dataRepository.RoleNamesShareARoleRowAsync(FirstRoleName, SecondRoleName))
+                .Returns(stored);
+            A.CallTo(() => _dataRepository.RoleNamesShareARoleRowAsync(SecondRoleName, FirstRoleName))
+                .Returns(!stored);
+            IOpenIddictTokenRepository tokenRepository = TokenRepositoryOver(engine, _dataRepository);
+
+            _forwarded = await tokenRepository.RoleNamesShareARoleRowAsync(FirstRoleName, SecondRoleName);
+        }
+
+        [Test]
+        public void It_returns_the_wrapped_repositorys_answer() => _forwarded.Should().Be(stored);
+
+        [Test]
+        public void It_reads_once_with_both_names_in_order() =>
+            A.CallTo(() => _dataRepository.RoleNamesShareARoleRowAsync(FirstRoleName, SecondRoleName))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_makes_no_other_read() => Fake.GetCalls(_dataRepository).Should().ContainSingle();
     }
 
     [TestFixture("postgresql")]
@@ -98,7 +173,7 @@ public class OpenIddictTokenRepositoryCredentialTests
                         Id = applicationId,
                         ClientId = ClientId,
                         ClientSecret = StoredSecret,
-                        IsApproved = true,
+                        ApiClientApproval = ApiClientApprovalState.Approved,
                         ProtocolMappers = "[]",
                     }
                 );
@@ -113,7 +188,8 @@ public class OpenIddictTokenRepositoryCredentialTests
                         A<string>._,
                         A<DateTimeOffset>._,
                         A<int>._,
-                        A<string>._
+                        A<string>._,
+                        A<ApiClientApprovalState>._
                     )
                 )
                 .Returns(TokenStoreOutcome.Stored);
@@ -157,7 +233,14 @@ public class OpenIddictTokenRepositoryCredentialTests
             _dataRepository = A.Fake<IOpenIddictDataRepository>();
             Guid applicationId = ArrangeGrantableClient(_dataRepository);
             A.CallTo(() => _dataRepository.GetClientCredentialAsync(ClientId))
-                .Returns(new ClientCredential(applicationId, ClientId, StoredSecret, IsApproved: true));
+                .Returns(
+                    new ClientCredential(
+                        applicationId,
+                        ClientId,
+                        StoredSecret,
+                        ApiClientApprovalState.Approved
+                    )
+                );
 
             _result = await GrantThroughAsync(TokenRepositoryOver(engine, _dataRepository));
         }
