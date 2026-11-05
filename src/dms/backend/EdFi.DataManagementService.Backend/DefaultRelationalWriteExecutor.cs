@@ -267,18 +267,38 @@ internal sealed class DefaultRelationalWriteExecutor(
             if (
                 HasDescriptorReferenceFailures(resolvedReferences)
                 || HasNonMissingDocumentReferenceFailures(resolvedReferences)
-                || (executionRequest.ProfileWriteContext is not null && hasMissingDocumentReferenceFailures)
+                || (
+                    executionRequest.ProfileWriteContext is not null
+                    && hasMissingDocumentReferenceFailures
+                    && !executionRequest.HasPendingProposedAuthorization
+                )
             )
             {
                 await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                // Descriptor/type validation still precedes proposed authorization. Do not aggregate
+                // missing document details here: they would disclose reference existence before
+                // the caller's proposed values have been authorized.
                 return RelationalWriteExecutorResults.BuildReferenceFailureResult(
                     executionRequest.OperationKind,
-                    resolvedReferences
+                    executionRequest.HasPendingProposedAuthorization
+                        ? resolvedReferences with
+                        {
+                            InvalidDocumentReferences =
+                            [
+                                .. resolvedReferences.InvalidDocumentReferences.Where(static failure =>
+                                    failure.Reason is not DocumentReferenceFailureReason.Missing
+                                ),
+                            ],
+                        }
+                        : resolvedReferences
                 );
             }
 
-            var deferMissingDocumentReferenceFailures =
-                executionRequest.ProfileWriteContext is null && hasMissingDocumentReferenceFailures;
+            // Missing document references are reported only after proposed authorization runs without DML,
+            // so an unauthorized caller cannot learn whether a referenced document exists. Profiles without
+            // pending proposed authorization retain their immediate reference failures above. Profile merge
+            // finalizes only the root on this path; unresolved collections need not be matched for authorization.
+            var deferMissingDocumentReferenceFailures = hasMissingDocumentReferenceFailures;
 
             var targetContext = executionRequest.TargetContext;
             var mergeBoundary = _mergeOrchestrator.Resolve(
@@ -334,6 +354,7 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             var requiresDataModifyingStatements =
                 deferredPreconditionResult is null
+                && mergeBoundary.DeferredProfileFailureResult is null
                 && !deferMissingDocumentReferenceFailures
                 && guardedNoOpTarget is null;
 
@@ -380,6 +401,12 @@ internal sealed class DefaultRelationalWriteExecutor(
             {
                 await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 return secondCommand.ImmediateResult;
+            }
+
+            if (mergeBoundary.DeferredProfileFailureResult is { } profileFailureResult)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return profileFailureResult;
             }
 
             if (deferredPreconditionResult is not null)

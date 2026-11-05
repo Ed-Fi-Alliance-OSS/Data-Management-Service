@@ -332,8 +332,8 @@ internal sealed class CdcPublicationHistoryFixture(bool mssql) : IAsyncDisposabl
             DELETE FROM dms."DocumentProjectionWork";
             INSERT INTO dms."DocumentProjectionWork" ("DocumentId","RequiredContentVersion","FirstEnqueuedAt","LastEnqueuedAt")
             SELECT "DocumentId","ContentVersion",{now},{now} FROM dms."Document";
-            INSERT INTO dms."DocumentCache" ("DocumentId","DocumentUuid","ProjectName","ResourceName","ResourceVersion","ContentVersion","StreamEtag","LastModifiedAt","DocumentJson","ComputedAt")
-            SELECT d."DocumentId",d."DocumentUuid",r."ProjectName",r."ResourceName",r."ResourceVersion",d."ContentVersion"+1,'history-etag',descriptor."ContentLastModifiedAt",'{json}',{now}
+            INSERT INTO dms."DocumentCache" ("DocumentId","DocumentUuid","ProjectName","ResourceName","ResourceVersion","ContentVersion","StreamEtag","LastModifiedAt","ContentCreatedAt","DocumentJson","ComputedAt")
+            SELECT d."DocumentId",d."DocumentUuid",r."ProjectName",r."ResourceName",r."ResourceVersion",d."ContentVersion"+1,'history-etag',descriptor."ContentLastModifiedAt",descriptor."ContentCreatedAt",'{json}',{now}
             FROM dms."Document" d JOIN dms."ResourceKey" r ON r."ResourceKeyId"=d."ResourceKeyId"
             JOIN dms."Descriptor" descriptor ON descriptor."DocumentId"=d."DocumentId";
             """

@@ -819,6 +819,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
                 "ContentVersion",
                 "StreamEtag",
                 "LastModifiedAt",
+                "ContentCreatedAt",
                 "DocumentJson",
                 "ComputedAt"
             )
@@ -831,6 +832,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
                 document."ContentVersion",
                 @streamEtag,
                 @lastModifiedAt,
+                @contentCreatedAt,
                 @documentJson,
                 statement_timestamp()
             FROM "dms"."Document" document
@@ -854,6 +856,7 @@ internal sealed class PostgresqlDocumentCacheWriter(
                 "ContentVersion" = EXCLUDED."ContentVersion",
                 "StreamEtag" = EXCLUDED."StreamEtag",
                 "LastModifiedAt" = EXCLUDED."LastModifiedAt",
+                "ContentCreatedAt" = EXCLUDED."ContentCreatedAt",
                 "DocumentJson" = EXCLUDED."DocumentJson",
                 "ComputedAt" = statement_timestamp()
             WHERE cache."ContentVersion" < EXCLUDED."ContentVersion";
@@ -1032,6 +1035,12 @@ internal sealed class PostgresqlDocumentCacheWriter(
             new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz)
             {
                 Value = candidate.LastModifiedAt,
+            }
+        );
+        command.Parameters.Add(
+            new NpgsqlParameter("contentCreatedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = candidate.ContentCreatedAt,
             }
         );
         command.Parameters.Add(

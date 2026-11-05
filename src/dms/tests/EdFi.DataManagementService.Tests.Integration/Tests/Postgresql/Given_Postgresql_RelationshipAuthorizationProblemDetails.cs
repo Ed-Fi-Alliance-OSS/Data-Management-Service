@@ -205,3 +205,27 @@ public sealed class Given_Postgresql_PeopleRelationshipAuthorizationProblemDetai
             Harness
         );
 }
+
+/// <summary>
+/// DMS-1659: one paired regression per provider that fails when the unresolved-reference classification is
+/// reverted, while pinning genuine absence and schema validation in the same test.
+/// </summary>
+public sealed class Given_Postgresql_RelationshipAuthorizationProblemDetails_For_Missing_References
+    : PostgresqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.AuthorizationQuery;
+
+    protected override bool BypassAuthorization => false;
+
+    protected override IReadOnlyList<long> ClientEducationOrganizationIds =>
+        [RelationshipAuthorizationProblemDetailsScenario.ClaimEducationOrganizationId];
+
+    protected override IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
+        RelationshipAuthorizationProblemDetailsScenario.CreateMissingReferenceClaimSetProvider(fixture);
+
+    [Test]
+    public Task It_distinguishes_unresolved_references_from_absence_without_disclosing_existence() =>
+        RelationshipAuthorizationProblemDetailsScenario.It_distinguishes_unresolved_references_from_absence_without_disclosing_existence(
+            Harness
+        );
+}

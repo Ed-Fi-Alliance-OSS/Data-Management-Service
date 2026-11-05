@@ -71,6 +71,12 @@ public abstract class Given_RepresentationRestampCdcStateTests
             .GetInt64()
             .Should()
             .BeGreaterThan(original.Value.GetProperty("contentVersion").GetInt64());
+        // Each envelope also matched dms.Descriptor.ContentCreatedAt in the fixture; a restamp keeps it.
+        restamped
+            .Value.GetProperty("documentCreatedAt")
+            .GetString()
+            .Should()
+            .Be(original.Value.GetProperty("documentCreatedAt").GetString());
         restamped
             .Value.GetProperty("document")
             .GetProperty("codeValue")
@@ -126,6 +132,7 @@ public abstract class Given_RepresentationRestampCdcStateTests
                 "resourceVersion",
                 "contentVersion",
                 "lastModifiedAt",
+                "documentCreatedAt",
                 "document"
             );
         value.GetProperty("contractVersion").ValueKind.Should().Be(JsonValueKind.Number);
@@ -136,6 +143,7 @@ public abstract class Given_RepresentationRestampCdcStateTests
         value.GetProperty("resourceVersion").ValueKind.Should().Be(JsonValueKind.String);
         value.GetProperty("contentVersion").ValueKind.Should().Be(JsonValueKind.Number);
         value.GetProperty("lastModifiedAt").ValueKind.Should().Be(JsonValueKind.String);
+        value.GetProperty("documentCreatedAt").ValueKind.Should().Be(JsonValueKind.String);
         value.GetProperty("document").ValueKind.Should().Be(JsonValueKind.Object);
         value
             .GetProperty("document")
@@ -1080,8 +1088,9 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         );
         await connection.OpenAsync(token);
         await using DbCommand command = connection.CreateCommand();
+        // The owner's ContentCreatedAt is the authoritative creation time the envelope must carry.
         command.CommandText =
-            $"SELECT {Quote("DocumentUuid")}, {Quote("ContentVersion")}, {Quote("LastModifiedAt")}, {Quote("DocumentJson")}, {Quote("StreamEtag")} FROM {Quote("dms")}.{Quote("DocumentCache")} WHERE {Quote("DocumentId")} = @documentId;";
+            $"SELECT cache.{Quote("DocumentUuid")}, cache.{Quote("ContentVersion")}, cache.{Quote("LastModifiedAt")}, cache.{Quote("DocumentJson")}, cache.{Quote("StreamEtag")}, descriptor.{Quote("ContentCreatedAt")} FROM {Quote("dms")}.{Quote("DocumentCache")} cache JOIN {Quote("dms")}.{Quote("Descriptor")} descriptor ON descriptor.{Quote("DocumentId")} = cache.{Quote("DocumentId")} WHERE cache.{Quote("DocumentId")} = @documentId;";
         command.Parameters.Add(_providerOperations.Parameter("documentId", source.DocumentId));
         await using DbDataReader reader = await command.ExecuteReaderAsync(token);
         (await reader.ReadAsync(token)).Should().BeTrue();
@@ -1094,6 +1103,11 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
         reader.GetString(4).Should().Be(expectedBody["_etag"]!.GetValue<string>());
         expectedBody.Remove("_etag");
         JsonNode.DeepEquals(expectedBody, JsonNode.Parse(reader.GetString(3))).Should().BeTrue();
+        record
+            .Value.GetProperty("documentCreatedAt")
+            .GetString()
+            .Should()
+            .Be(LastModifiedDateFormatter.Format(reader.GetDateTime(5)));
         (await reader.ReadAsync(token)).Should().BeFalse();
     }
 

@@ -893,8 +893,11 @@ public class Given_RelationalWriteFlattener
             );
     }
 
-    [Test]
-    public void It_allows_deferred_missing_document_reference_collection_identity_collisions_to_reach_deferred_reference_failure()
+    [TestCase(true)]
+    [TestCase(false)]
+    public void It_allows_deferred_missing_document_reference_collection_identity_collisions_to_reach_deferred_reference_failure(
+        bool validateStorageCollapsedCollectionIdentityUniqueness
+    )
     {
         var writePlan = CreateReferenceBackedPeriodIdentityWritePlan();
         var flatteningInput = new FlatteningInput(
@@ -933,7 +936,7 @@ public class Given_RelationalWriteFlattener
                     CreateMissingDocumentReferenceFailure("$.addresses[0].periods[1].schoolReference"),
                 ]
             ),
-            validateStorageCollapsedCollectionIdentityUniqueness: true,
+            validateStorageCollapsedCollectionIdentityUniqueness: validateStorageCollapsedCollectionIdentityUniqueness,
             allowMissingDocumentReferencesForPrecedence: true
         );
 
@@ -951,8 +954,11 @@ public class Given_RelationalWriteFlattener
             .Equal(new FlattenedWriteValue.Literal(null), new FlattenedWriteValue.Literal(null));
     }
 
-    [Test]
-    public void It_still_rejects_normal_collection_duplicates_when_deferred_missing_reference_exists_elsewhere()
+    [TestCase(true)]
+    [TestCase(false)]
+    public void It_still_rejects_normal_collection_duplicates_when_deferred_missing_reference_exists_elsewhere(
+        bool validateStorageCollapsedCollectionIdentityUniqueness
+    )
     {
         var flatteningInput = _fixture.CreateFlatteningInput(
             selectedBody: JsonNode.Parse(
@@ -976,7 +982,7 @@ public class Given_RelationalWriteFlattener
             resolvedReferences: CreateResolvedReferenceSet(
                 invalidDocumentReferences: [CreateMissingDocumentReferenceFailure("$.schoolReference")]
             ),
-            validateStorageCollapsedCollectionIdentityUniqueness: true,
+            validateStorageCollapsedCollectionIdentityUniqueness: validateStorageCollapsedCollectionIdentityUniqueness,
             allowMissingDocumentReferencesForPrecedence: true
         );
 

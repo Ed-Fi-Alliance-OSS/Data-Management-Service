@@ -1012,6 +1012,157 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
         commandText.Should().NotContain("cv1|2|").And.NotContain("SchoolWithASelfTag");
     }
 
+    [TestCase(0, "SchoolWithAnEarlyTag", true, CustomViewAuthorizationFailureKind.NoMatchingRow)]
+    [TestCase(1, "SchoolWithALateTag", true, CustomViewAuthorizationFailureKind.NoMatchingRow)]
+    [TestCase(0, "SchoolWithAnEarlyTag", false, CustomViewAuthorizationFailureKind.ProposedValueMissing)]
+    [TestCase(1, "SchoolWithALateTag", false, CustomViewAuthorizationFailureKind.ProposedValueMissing)]
+    public async Task It_corrects_a_deferred_basis_before_and_after_namespace(
+        int deniedCheckIndex,
+        string deniedStrategyName,
+        bool schoolReferenceWasDeferred,
+        CustomViewAuthorizationFailureKind expectedFailureKind
+    )
+    {
+        // The two runs straddle the namespace check in one command; the denying run's own runtime values are
+        // what decide whether its null basis was a submitted reference that could not be resolved.
+        var request = CreateRequest(
+            CreateProposedOnlyPlan(("SchoolWithAnEarlyTag", 0), ("SchoolWithALateTag", 2)),
+            withNamespace: true,
+            schoolReferenceBasis: true
+        );
+        var session = new ScriptedWriteSession(CreateAuth1Failure());
+
+        var resolution = await CreateSut(
+                CustomViewFailureExtractor(
+                    deniedCheckIndex,
+                    CustomViewAuthorizationAuth1FailureKind.ProposedBasisValueMissing
+                )
+            )
+            .ResolveAsync(
+                request,
+                CreateNullBasisMergeResult(request, schoolReferenceWasDeferred),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
+
+        var failure = FailureOf(resolution);
+        failure.FailureKind.Should().Be(expectedFailureKind);
+        failure.EmittedAuth1Index.Should().Be(deniedCheckIndex);
+        failure.StrategyName.Should().Be(deniedStrategyName);
+        failure.ReadableSecurableElements.Should().Equal($"{deniedStrategyName}Element");
+        failure.Hint.Should().Be($"You may need a {deniedStrategyName} hint.");
+        session.Commands.Should().ContainSingle().Which.CommandText.Should().Contain("namespacePrefixes");
+    }
+
+    [Test]
+    public async Task It_keeps_runtime_provenance_in_a_budget_split_command()
+    {
+        // A budget of three places the check in its own command ahead of the DML, so the denial is mapped
+        // from that command's recorded run rather than from a co-batched one.
+        var request = CreateRequest(
+            CreateProposedOnlyPlan(("SchoolWithATag", 0)),
+            schoolReferenceBasis: true
+        );
+        var session = new ScriptedWriteSession(CreateAuth1Failure());
+
+        var resolution = await CreateSut(
+                CustomViewFailureExtractor(
+                    0,
+                    CustomViewAuthorizationAuth1FailureKind.ProposedBasisValueMissing
+                ),
+                commandBudget: new RelationalCommandBudget(3, 1000)
+            )
+            .ResolveAsync(
+                request,
+                CreateNullBasisMergeResult(request, schoolReferenceWasDeferred: true, changed: true),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        FailureOf(resolution).FailureKind.Should().Be(CustomViewAuthorizationFailureKind.NoMatchingRow);
+        resolution.PersistResult.Should().BeNull();
+        session.Commands.Should().ContainSingle();
+        session.Commands[0].CommandText.Should().NotContainEquivalentOf("update edfi.\"School\"");
+    }
+
+    [Test]
+    public async Task It_keeps_runtime_provenance_in_a_custom_view_only_run()
+    {
+        // The namespace plan cannot be reconciled, so the view configured before it runs as a command of its
+        // own and its denial still sees that run's provenance.
+        var request = CreateRequest(
+            CreateProposedOnlyPlan(("SchoolWithAnEarlyTag", 0)),
+            withNamespace: true,
+            namespaceColumn: new DbColumnName("NotANamespaceColumn"),
+            schoolReferenceBasis: true
+        );
+        var session = new ScriptedWriteSession(CreateAuth1Failure());
+
+        var resolution = await CreateSut(
+                CustomViewFailureExtractor(
+                    0,
+                    CustomViewAuthorizationAuth1FailureKind.ProposedBasisValueMissing
+                )
+            )
+            .ResolveAsync(
+                request,
+                CreateNullBasisMergeResult(request, schoolReferenceWasDeferred: true),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
+
+        FailureOf(resolution).FailureKind.Should().Be(CustomViewAuthorizationFailureKind.NoMatchingRow);
+        session.Commands.Should().ContainSingle().Which.CommandText.Should().NotContain("namespacePrefixes");
+    }
+
+    [Test]
+    public async Task It_keeps_invalid_view_and_malformed_payload_outcomes_ahead_of_correction()
+    {
+        var request = CreateRequest(
+            CreateProposedOnlyPlan(("SchoolWithATag", 0)),
+            schoolReferenceBasis: true
+        );
+        var invalidViewExecutor = new StubValidationCommandExecutor(
+            new FakeDbException("invalid custom authorization view DocumentId contract", "P0001")
+        );
+
+        var invalidView = async () =>
+            await CreateSut(
+                    CustomViewFailureExtractor(
+                        0,
+                        CustomViewAuthorizationAuth1FailureKind.ProposedBasisValueMissing
+                    ),
+                    invalidViewExecutor
+                )
+                .ResolveAsync(
+                    request,
+                    CreateNullBasisMergeResult(request, schoolReferenceWasDeferred: true),
+                    RelationalWriteSecondCommandMode.AuthorizationOnly,
+                    new ScriptedWriteSession(CreateAuth1Failure())
+                );
+
+        await invalidView.Should().ThrowAsync<CustomViewAuthorizationValidationException>();
+
+        var unmappable = await CreateSut(
+                CustomViewFailureExtractor(
+                    7,
+                    CustomViewAuthorizationAuth1FailureKind.ProposedBasisValueMissing
+                )
+            )
+            .ResolveAsync(
+                request,
+                CreateNullBasisMergeResult(request, schoolReferenceWasDeferred: true),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                new ScriptedWriteSession(CreateAuth1Failure())
+            );
+
+        unmappable
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>();
+    }
+
     private static CustomViewAuthorizationFailure FailureOf(
         RelationalWriteSecondCommandResolution resolution
     ) =>
@@ -1239,13 +1390,20 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
         bool resolveToCreate = false,
         DbColumnName? basisColumn = null,
         DbColumnName? namespaceColumn = null,
-        bool withRelationship = false
+        bool withRelationship = false,
+        bool schoolReferenceBasis = false
     )
     {
         var rootPlan = Given_Default_Relational_Write_Executor.CreateRootPlan();
         var resourceModel = Given_Default_Relational_Write_Executor.CreateRelationalResourceModel(
             rootPlan.TableModel
         );
+
+        if (schoolReferenceBasis)
+        {
+            (rootPlan, resourceModel) = WithSchoolReferenceBasis(rootPlan, resourceModel);
+        }
+
         var writePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
         var mappingSet = Given_Default_Relational_Write_Executor.CreateMappingSet(
             resourceModel,
@@ -1347,6 +1505,90 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
             ],
             supportsGuardedNoOp: true
         );
+    }
+
+    private const string SchoolReferencePath = "$.schoolReference";
+
+    /// <summary>
+    /// Rebinds the basis column as the root <c>schoolReference</c> document FK, so a null finalized basis is
+    /// either an omitted reference or a submitted one whose missing-document failure was deferred.
+    /// </summary>
+    private static (TableWritePlan RootPlan, RelationalResourceModel ResourceModel) WithSchoolReferenceBasis(
+        TableWritePlan rootPlan,
+        RelationalResourceModel resourceModel
+    ) =>
+        (
+            rootPlan with
+            {
+                ColumnBindings =
+                [
+                    rootPlan.ColumnBindings[0],
+                    rootPlan.ColumnBindings[1] with
+                    {
+                        Source = new WriteValueSource.DocumentReference(0),
+                    },
+                    rootPlan.ColumnBindings[2],
+                ],
+            },
+            resourceModel with
+            {
+                DocumentReferenceBindings =
+                [
+                    new DocumentReferenceBinding(
+                        IsIdentityComponent: false,
+                        new JsonPathExpression(
+                            SchoolReferencePath,
+                            [new JsonPathSegment.Property("schoolReference")]
+                        ),
+                        RootTable,
+                        BasisColumn,
+                        new QualifiedResourceName("Ed-Fi", "School"),
+                        []
+                    ),
+                ],
+            }
+        );
+
+    /// <summary>
+    /// A root row whose basis is null, with the school reference recorded as deferred when it was submitted
+    /// but could not be resolved. <paramref name="changed"/> also changes the stored name, so DML mode has a
+    /// row to write.
+    /// </summary>
+    private static RelationalWriteMergeResult CreateNullBasisMergeResult(
+        RelationalWriteExecutorRequest request,
+        bool schoolReferenceWasDeferred,
+        bool changed = false
+    )
+    {
+        FlattenedWriteValue[] currentValues =
+        [
+            new FlattenedWriteValue.Literal(345L),
+            new FlattenedWriteValue.Literal(255901),
+            new FlattenedWriteValue.Literal("uri://ed-fi.org/Survey"),
+        ];
+        FlattenedWriteValue[] mergedValues =
+        [
+            new FlattenedWriteValue.Literal(345L),
+            new FlattenedWriteValue.Literal(null),
+            new FlattenedWriteValue.Literal(changed ? "uri://ed-fi.org/Renamed" : "uri://ed-fi.org/Survey"),
+        ];
+
+        return new(
+            [
+                new RelationalWriteMergedTableState(
+                    request.WritePlan.TablePlansInDependencyOrder[0],
+                    [new RelationalWriteMergedTableRow(currentValues, currentValues)],
+                    [new RelationalWriteMergedTableRow(mergedValues, mergedValues)]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        )
+        {
+            DeferredMissingDocumentReferencePaths = new HashSet<string>(
+                schoolReferenceWasDeferred ? [SchoolReferencePath] : [],
+                StringComparer.Ordinal
+            ),
+        };
     }
 
     private static FakeDbException CreateAuth1Failure() => new("custom view denial", "P0001");

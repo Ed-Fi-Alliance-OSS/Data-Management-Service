@@ -111,4 +111,23 @@ internal static class IdentityTestClients
     /// <summary>The route under the client's own tenant and that tenant's first district.</summary>
     public static string RouteFor(IdentityTestClient client, string path) =>
         Route(client.Tenant, DistrictsOf(client.Tenant)[0], path);
+
+    /// <summary>
+    /// The route <c>/{tenant}/{districtId}/{schoolYear}/metadata/{path}</c>, or the metadata root
+    /// under that context for an empty path. With multi-tenancy on, the metadata routes answer only
+    /// under the full route context; the unqualified forms answer a guidance 404 that names the
+    /// required path shape.
+    /// </summary>
+    public static string MetadataRoute(
+        string tenant,
+        string districtId,
+        string path,
+        string schoolYear = SchoolYear
+    )
+    {
+        string root = $"/{tenant}/{districtId}/{schoolYear}/metadata";
+        string trimmed = path.TrimStart('/');
+
+        return trimmed.Length == 0 ? root : $"{root}/{trimmed}";
+    }
 }

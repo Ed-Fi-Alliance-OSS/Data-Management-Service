@@ -347,6 +347,7 @@ public partial class Given_CdcProjectionGate
                 "5.2.0",
                 11,
                 ObservedAt,
+                new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
                 "etag-11",
                 new JsonObject { ["id"] = request.DocumentId }
             );

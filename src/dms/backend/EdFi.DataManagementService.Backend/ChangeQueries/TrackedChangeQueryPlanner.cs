@@ -107,9 +107,11 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
             authorizationSql
         );
 
-        string commandText = request.PaginationParameters.TotalCount
-            ? $"{BuildDeletesCountSql(filteredDeletesSql)};\n{BuildDeletesPageSql(fields, filteredDeletesSql, columns)}"
-            : BuildDeletesPageSql(fields, filteredDeletesSql, columns);
+        string commandText = BuildCommandText(
+            request.PaginationParameters,
+            BuildDeletesCountSql(filteredDeletesSql),
+            () => BuildDeletesPageSql(fields, filteredDeletesSql, columns)
+        );
 
         return new TrackedChangeQueryPlan(
             new RelationalCommand(
@@ -119,7 +121,8 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
             fields,
             IncludesTotalCount: request.PaginationParameters.TotalCount,
             IsEmpty: false,
-            TotalCount: null
+            TotalCount: null,
+            SelectsNoRows: SelectsNoRows(request.PaginationParameters)
         );
     }
 
@@ -131,9 +134,11 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
     {
         PlanColumns columns = ResolvePlanColumns(request.TrackedChangeTable);
         string commonCteSql = BuildKeyChangesCommonCteSql(request, columns, authorizationSql);
-        string commandText = request.PaginationParameters.TotalCount
-            ? $"{BuildKeyChangesCountSql(commonCteSql)};\n{BuildKeyChangesPageSql(fields, commonCteSql, columns)}"
-            : BuildKeyChangesPageSql(fields, commonCteSql, columns);
+        string commandText = BuildCommandText(
+            request.PaginationParameters,
+            BuildKeyChangesCountSql(commonCteSql),
+            () => BuildKeyChangesPageSql(fields, commonCteSql, columns)
+        );
 
         return new TrackedChangeQueryPlan(
             new RelationalCommand(
@@ -143,8 +148,30 @@ internal sealed class TrackedChangeQueryPlanner(SqlDialect dialect)
             fields,
             IncludesTotalCount: request.PaginationParameters.TotalCount,
             IsEmpty: false,
-            TotalCount: null
+            TotalCount: null,
+            SelectsNoRows: SelectsNoRows(request.PaginationParameters)
         );
+    }
+
+    // SQL Server rejects FETCH NEXT 0 ROWS, so a limit=0 request never emits a page statement. The plan stays
+    // non-empty (and keeps its bound parameters) so the repository's parameter-budget check treats limit=0
+    // exactly like limit=1; the repository skips execution afterwards when there is no count to read.
+    private static bool SelectsNoRows(PaginationParameters pagination) => pagination.Limit == 0;
+
+    private static string BuildCommandText(
+        PaginationParameters pagination,
+        string countSql,
+        Func<string> buildPageSql
+    )
+    {
+        if (SelectsNoRows(pagination))
+        {
+            // Without totalCount the command is never executed; it exists only so the budget check can
+            // count its parameters, and RelationalCommand requires non-empty text.
+            return countSql;
+        }
+
+        return pagination.TotalCount ? $"{countSql};\n{buildPageSql()}" : buildPageSql();
     }
 
     private string BuildKeyChangesCommonCteSql(

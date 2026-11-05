@@ -276,6 +276,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Fixtures
                 CREATE TABLE [edfi].[School] (
                     [DocumentId] bigint NOT NULL CONSTRAINT [PK_School] PRIMARY KEY,
                     [ContentLastModifiedAt] datetimeoffset NOT NULL,
+                    [ContentCreatedAt] datetimeoffset NOT NULL,
                     [SchoolId] int NULL,
                     [NameOfInstitution] varchar(1024) NULL
                 );
@@ -408,6 +409,7 @@ public class Given_Mssql_DocumentCacheMaterializer_Fixtures
                 candidate.ResourceVersion,
                 candidate.ContentVersion,
                 candidate.LastModifiedAt,
+                candidate.ContentCreatedAt,
                 candidate.StreamEtag,
                 candidate.DocumentJson
             ),

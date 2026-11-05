@@ -105,6 +105,7 @@ public class Given_Postgresql_DocumentCacheMaterializer_LinkBearingResource
                 success.Candidate.ResourceVersion,
                 success.Candidate.ContentVersion,
                 success.Candidate.LastModifiedAt,
+                success.Candidate.ContentCreatedAt,
                 success.Candidate.StreamEtag,
                 success.Candidate.DocumentJson
             ),

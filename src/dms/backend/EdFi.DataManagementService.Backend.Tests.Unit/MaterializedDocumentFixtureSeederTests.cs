@@ -136,6 +136,79 @@ public class Given_MaterializedDocumentFixtureSeeder
     }
 
     [Test]
+    public void It_seeds_the_Postgresql_root_creation_timestamp_on_create_insert_and_owner_stamp()
+    {
+        var createdAt = _ordinaryFixture.SourceSetup.Documents[0].ContentCreatedAt;
+        createdAt.Should().NotBe(_ordinaryFixture.SourceSetup.Documents[0].ContentLastModifiedAt);
+        var commands = new MaterializedDocumentFixtureSeeder(
+            MaterializedDocumentFixtureSqlDialect.Postgresql
+        ).BuildSetupCommands(_ordinaryFixture);
+
+        commands
+            .Single(command =>
+                command.CommandText.Contains(
+                    "CREATE TABLE IF NOT EXISTS \"edfi\".\"StudentSchoolAssociation\"",
+                    StringComparison.Ordinal
+                )
+            )
+            .CommandText.Should()
+            .Contain("\"ContentCreatedAt\" timestamp with time zone NOT NULL");
+
+        var rootInsert = commands.Single(command =>
+            command.CommandText.StartsWith(
+                "INSERT INTO \"edfi\".\"StudentSchoolAssociation\"",
+                StringComparison.Ordinal
+            )
+        );
+        rootInsert.CommandText.Should().Contain("\"ContentCreatedAt\"");
+        rootInsert.Parameters.Should().Contain(parameter => Equals(parameter.Value, createdAt));
+
+        var ownerStamp = commands.Single(command =>
+            command.CommandText.StartsWith(
+                "UPDATE \"edfi\".\"StudentSchoolAssociation\"",
+                StringComparison.Ordinal
+            )
+        );
+        ownerStamp
+            .CommandText.Should()
+            .Contain("\"ContentCreatedAt\" = @p2")
+            .And.Contain("\"DocumentId\" = @p3");
+        ownerStamp
+            .Parameters.Should()
+            .Contain(parameter => parameter.Name == "@p2" && Equals(parameter.Value, createdAt));
+    }
+
+    [Test]
+    public void It_seeds_the_Mssql_descriptor_creation_timestamp_on_create_insert_and_owner_stamp()
+    {
+        var createdAt = _descriptorFixture.SourceSetup.Documents[0].ContentCreatedAt;
+        var commands = new MaterializedDocumentFixtureSeeder(
+            MaterializedDocumentFixtureSqlDialect.Mssql
+        ).BuildSetupCommands(_descriptorFixture);
+
+        commands
+            .Single(command =>
+                command.CommandText.Contains("CREATE TABLE [dms].[Descriptor]", StringComparison.Ordinal)
+            )
+            .CommandText.Should()
+            .Contain("[ContentCreatedAt] datetime2(7) NOT NULL");
+
+        var descriptorInsert = commands.Single(command => command.DescriptorKey is not null);
+        descriptorInsert.CommandText.Should().Contain("[ContentCreatedAt]");
+        descriptorInsert
+            .Parameters.Should()
+            .Contain(parameter => Equals(parameter.Value, createdAt.UtcDateTime));
+
+        var ownerStamp = commands.Single(command =>
+            command.CommandText.StartsWith("UPDATE [dms].[Descriptor]", StringComparison.Ordinal)
+        );
+        ownerStamp.CommandText.Should().Contain("[ContentCreatedAt] = @p2").And.Contain("[DocumentId] = @p3");
+        ownerStamp
+            .Parameters.Should()
+            .Contain(parameter => parameter.Name == "@p2" && Equals(parameter.Value, createdAt.UtcDateTime));
+    }
+
+    [Test]
     public void It_builds_Mssql_setup_with_provider_specific_identifiers_and_scalar_types()
     {
         var commands = new MaterializedDocumentFixtureSeeder(
@@ -234,7 +307,8 @@ public class Given_MaterializedDocumentFixtureSeeder
                         DocumentUuid: "11111111-2222-3333-4444-555555555555",
                         ResourceKeyId: 1,
                         ContentVersion: 1,
-                        ContentLastModifiedAt: new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero)
+                        ContentLastModifiedAt: new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero),
+                        ContentCreatedAt: new DateTimeOffset(2025, 1, 2, 3, 4, 5, TimeSpan.Zero)
                     ),
                 ],
                 Descriptors: [],
@@ -397,6 +471,7 @@ public class Given_MaterializedDocumentFixtureSeeder
             expected.ResourceVersion,
             expected.ContentVersion,
             expected.LastModifiedAt,
+            expected.ContentCreatedAt,
             expected.StreamEtag,
             expected.DocumentJson
         );
@@ -421,6 +496,7 @@ public class Given_MaterializedDocumentFixtureSeeder
             expected.ResourceVersion,
             expected.ContentVersion,
             expected.LastModifiedAt,
+            expected.ContentCreatedAt,
             expected.StreamEtag,
             documentJson
         );
@@ -429,6 +505,30 @@ public class Given_MaterializedDocumentFixtureSeeder
             MaterializedDocumentFixtureAssertions.AssertCandidateMatchesFixture(candidate, _ordinaryFixture);
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*DocumentJson mismatch*");
+    }
+
+    [Test]
+    public void It_rejects_success_candidates_when_content_created_at_differs()
+    {
+        var expected = _ordinaryFixture.ExpectedCacheRow!;
+        // A candidate that copied the last-modified timestamp into the creation field.
+        var candidate = new MaterializedDocumentFixtureActualCacheRow(
+            expected.DocumentId,
+            expected.DocumentUuid,
+            expected.ProjectName,
+            expected.ResourceName,
+            expected.ResourceVersion,
+            expected.ContentVersion,
+            expected.LastModifiedAt,
+            expected.LastModifiedAt,
+            expected.StreamEtag,
+            expected.DocumentJson
+        );
+
+        var act = () =>
+            MaterializedDocumentFixtureAssertions.AssertCandidateMatchesFixture(candidate, _ordinaryFixture);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*'ContentCreatedAt' mismatch*");
     }
 
     [Test]

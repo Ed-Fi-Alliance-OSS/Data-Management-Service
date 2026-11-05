@@ -91,6 +91,14 @@ public static class MessageContractFixtureCatalog
             );
             (cacheRow, publicBody) = ApplyUpsertVariant(cacheRow, publicBody, variant);
             envelope = BuildExpectedEnvelope(cacheRow, etag, publicBody);
+            if (variant.TryGetProperty("expectedDocumentCreatedAt", out _))
+            {
+                // Creation time has no public-body counterpart, so compare the explicit second directly.
+                Require(
+                    Text(envelope, "documentCreatedAt") == Text(variant, "expectedDocumentCreatedAt"),
+                    "variant-created-time"
+                );
+            }
         }
         string providerPath = ResolveRelative(
             Path.Combine(root, "cdc/message-contract"),
@@ -120,6 +128,8 @@ public static class MessageContractFixtureCatalog
                             or "contentVersion"
                             or "lastModifiedAt"
                             or "expectedLastModifiedAt"
+                            or "contentCreatedAt"
+                            or "expectedDocumentCreatedAt"
                             or "documentProperties"
                 ),
             "variant-field"
@@ -142,6 +152,16 @@ public static class MessageContractFixtureCatalog
         else
         {
             Require(!variant.TryGetProperty("expectedLastModifiedAt", out _), "variant-timestamp-pair");
+        }
+        if (variant.TryGetProperty("contentCreatedAt", out _))
+        {
+            row["contentCreatedAt"] = Text(variant, "contentCreatedAt");
+            // An unpaired raw value would let the expected second come from this catalog's truncation.
+            Require(variant.TryGetProperty("expectedDocumentCreatedAt", out _), "variant-timestamp-pair");
+        }
+        else
+        {
+            Require(!variant.TryGetProperty("expectedDocumentCreatedAt", out _), "variant-timestamp-pair");
         }
         if (variant.TryGetProperty("documentProperties", out JsonElement properties))
         {
@@ -179,21 +199,11 @@ public static class MessageContractFixtureCatalog
             string uuid = Text(cacheRow, "documentUuid");
             Require(Guid.TryParseExact(uuid, "D", out Guid parsedUuid), "cache-uuid");
             uuid = parsedUuid.ToString("D");
-            string rawTimestamp = Text(cacheRow, "lastModifiedAt");
-            Require(
-                DateTimeOffset.TryParse(
-                    rawTimestamp,
-                    CultureInfo.InvariantCulture,
-                    DateTimeStyles.None,
-                    out DateTimeOffset timestamp
-                )
-                    && timestamp.Offset == TimeSpan.Zero
-                    && rawTimestamp.EndsWith('Z'),
-                "cache-timestamp"
-            );
-            string lastModifiedAt = timestamp.UtcDateTime.ToString(
-                "yyyy-MM-dd'T'HH:mm:ss'Z'",
-                CultureInfo.InvariantCulture
+            string lastModifiedAt = WholeSecondUtc(cacheRow, "lastModifiedAt", "cache-timestamp");
+            string documentCreatedAt = WholeSecondUtc(
+                cacheRow,
+                "contentCreatedAt",
+                "cache-created-timestamp"
             );
             string streamEtag = Text(etag, "streamEtag");
             Require(Text(cacheRow, "streamEtag") == streamEtag, "cache-etag-mismatch");
@@ -227,10 +237,29 @@ public static class MessageContractFixtureCatalog
                     resourceVersion = Text(cacheRow, "resourceVersion"),
                     contentVersion,
                     lastModifiedAt,
+                    documentCreatedAt,
                     document = body,
                 }
             );
         });
+
+    /// <summary>Requires a UTC 'Z' timestamp and truncates (never rounds) it to whole seconds.</summary>
+    private static string WholeSecondUtc(JsonElement cacheRow, string property, string reason)
+    {
+        string raw = Text(cacheRow, property);
+        Require(
+            DateTimeOffset.TryParse(
+                raw,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out DateTimeOffset timestamp
+            )
+                && timestamp.Offset == TimeSpan.Zero
+                && raw.EndsWith('Z'),
+            reason
+        );
+        return timestamp.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
+    }
 
     public static void ValidateSourceRecord(JsonElement record) =>
         Guard(() =>

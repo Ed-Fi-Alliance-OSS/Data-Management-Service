@@ -74,7 +74,8 @@ internal sealed record DocumentCacheCurrentSourceMetadata(
     DocumentUuid DocumentUuid,
     short ResourceKeyId,
     long ContentVersion,
-    DateTimeOffset? ContentLastModifiedAt
+    DateTimeOffset? ContentLastModifiedAt,
+    DateTimeOffset? ContentCreatedAt
 )
 {
     public long DocumentId { get; } =
@@ -99,7 +100,8 @@ internal abstract record DocumentCacheResolvedSourceMetadata
         ResourceKeyEntry resourceKey,
         ConcreteResourceModel concreteResourceModel,
         long contentVersion,
-        DateTimeOffset contentLastModifiedAt
+        DateTimeOffset contentLastModifiedAt,
+        DateTimeOffset contentCreatedAt
     )
     {
         DocumentId = DocumentCacheMaterializerGuards.RequirePositive(documentId, nameof(documentId));
@@ -116,6 +118,7 @@ internal abstract record DocumentCacheResolvedSourceMetadata
             nameof(contentVersion)
         );
         ContentLastModifiedAt = contentLastModifiedAt;
+        ContentCreatedAt = contentCreatedAt;
     }
 
     public long DocumentId { get; }
@@ -138,8 +141,12 @@ internal abstract record DocumentCacheResolvedSourceMetadata
 
     public DateTimeOffset ContentLastModifiedAt { get; }
 
+    public DateTimeOffset ContentCreatedAt { get; }
+
     public bool HasSameCanonicalMetadata(DocumentCacheCurrentSourceMetadata current) =>
-        HasSameDocumentMetadata(current) && current.ContentLastModifiedAt == ContentLastModifiedAt;
+        HasSameDocumentMetadata(current)
+        && current.ContentLastModifiedAt == ContentLastModifiedAt
+        && current.ContentCreatedAt == ContentCreatedAt;
 
     public bool HasSameDocumentMetadata(DocumentCacheCurrentSourceMetadata current) =>
         current.DocumentId == DocumentId
@@ -157,6 +164,7 @@ internal abstract record DocumentCacheResolvedSourceMetadata
             ConcreteResourceModel concreteResourceModel,
             long contentVersion,
             DateTimeOffset contentLastModifiedAt,
+            DateTimeOffset contentCreatedAt,
             ResourceReadPlan readPlan
         )
             : base(
@@ -166,7 +174,8 @@ internal abstract record DocumentCacheResolvedSourceMetadata
                 resourceKey,
                 concreteResourceModel,
                 contentVersion,
-                contentLastModifiedAt
+                contentLastModifiedAt,
+                contentCreatedAt
             )
         {
             ReadPlan = readPlan ?? throw new ArgumentNullException(nameof(readPlan));
@@ -182,7 +191,8 @@ internal abstract record DocumentCacheResolvedSourceMetadata
         ResourceKeyEntry ResourceKey,
         ConcreteResourceModel ConcreteResourceModel,
         long ContentVersion,
-        DateTimeOffset ContentLastModifiedAt
+        DateTimeOffset ContentLastModifiedAt,
+        DateTimeOffset ContentCreatedAt
     )
         : DocumentCacheResolvedSourceMetadata(
             DocumentId,
@@ -191,7 +201,8 @@ internal abstract record DocumentCacheResolvedSourceMetadata
             ResourceKey,
             ConcreteResourceModel,
             ContentVersion,
-            ContentLastModifiedAt
+            ContentLastModifiedAt,
+            ContentCreatedAt
         );
 }
 
@@ -234,9 +245,9 @@ internal sealed class DocumentCacheSourceMetadataReader(
             return DocumentCacheCurrentSourceMetadataReadResult.MissingSource.Instance;
         }
 
-        var timestamp = await ReadOwnerTimestampAsync(request, source, cancellationToken)
+        var ownerTimestamps = await ReadOwnerTimestampsAsync(request, source, cancellationToken)
             .ConfigureAwait(false);
-        if (timestamp is null)
+        if (ownerTimestamps is not { } timestamps)
         {
             // A canonical delete may have committed after the document read but before the owner read.
             // Refresh document metadata so coherence checks distinguish deletion or drift from an orphan.
@@ -249,7 +260,8 @@ internal sealed class DocumentCacheSourceMetadataReader(
         return new DocumentCacheCurrentSourceMetadataReadResult.Found(
             source with
             {
-                ContentLastModifiedAt = timestamp,
+                ContentLastModifiedAt = timestamps.ContentLastModifiedAt,
+                ContentCreatedAt = timestamps.ContentCreatedAt,
             }
         );
     }
@@ -265,7 +277,7 @@ internal sealed class DocumentCacheSourceMetadataReader(
             cancellationToken
         );
 
-    private async Task<DateTimeOffset?> ReadOwnerTimestampAsync(
+    private async Task<OwnerTimestamps?> ReadOwnerTimestampsAsync(
         DocumentCacheMaterializationRequest request,
         DocumentCacheCurrentSourceMetadata source,
         CancellationToken cancellationToken
@@ -298,11 +310,11 @@ internal sealed class DocumentCacheSourceMetadataReader(
             return null;
         }
 
-        return await ReadOwnerTimestampAsync(request, source.DocumentId, ownerTable.Value, cancellationToken)
+        return await ReadOwnerTimestampsAsync(request, source.DocumentId, ownerTable.Value, cancellationToken)
             .ConfigureAwait(false);
     }
 
-    private Task<DateTimeOffset?> ReadOwnerTimestampAsync(
+    private Task<OwnerTimestamps?> ReadOwnerTimestampsAsync(
         DocumentCacheMaterializationRequest request,
         long documentId,
         DbTableName ownerTable,
@@ -311,7 +323,7 @@ internal sealed class DocumentCacheSourceMetadataReader(
         _materializationDataStore.ExecuteReaderAsync(
             request,
             BuildOwnerReadCommand(request.TargetContext.MappingSet.Key.Dialect, ownerTable, documentId),
-            ReadOwnerTimestampRowAsync,
+            ReadOwnerTimestampsRowAsync,
             cancellationToken
         );
 
@@ -330,6 +342,7 @@ internal sealed class DocumentCacheSourceMetadataReader(
             new DocumentUuid(reader.GetRequiredFieldValue<Guid>("DocumentUuid")),
             reader.GetRequiredFieldValue<short>("ResourceKeyId"),
             reader.GetRequiredFieldValue<long>("ContentVersion"),
+            null,
             null
         );
 
@@ -341,7 +354,7 @@ internal sealed class DocumentCacheSourceMetadataReader(
         return row;
     }
 
-    private static async Task<DateTimeOffset?> ReadOwnerTimestampRowAsync(
+    private static async Task<OwnerTimestamps?> ReadOwnerTimestampsRowAsync(
         IRelationalCommandReader reader,
         CancellationToken cancellationToken
     )
@@ -351,13 +364,16 @@ internal sealed class DocumentCacheSourceMetadataReader(
             return null;
         }
 
-        var timestamp = ReadDateTimeOffsetField(reader, "ContentLastModifiedAt");
+        var timestamps = new OwnerTimestamps(
+            ReadDateTimeOffsetField(reader, "ContentLastModifiedAt"),
+            ReadDateTimeOffsetField(reader, "ContentCreatedAt")
+        );
         if (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
             throw new InvalidOperationException("DocumentCache owner timestamp read returned multiple rows.");
         }
 
-        return timestamp;
+        return timestamps;
     }
 
     private static DateTimeOffset ReadDateTimeOffsetField(IRelationalCommandReader reader, string columnName)
@@ -444,14 +460,14 @@ internal sealed class DocumentCacheSourceMetadataReader(
                     )
                     .ConfigureAwait(false);
             case ResourceStorageKind.SharedDescriptorTable:
-                var timestamp = await ReadOwnerTimestampAsync(
+                var ownerTimestamps = await ReadOwnerTimestampsAsync(
                         request,
                         source.DocumentId,
                         new DbTableName(new DbSchemaName("dms"), "Descriptor"),
                         cancellationToken
                     )
                     .ConfigureAwait(false);
-                return timestamp is { } descriptorTimestamp
+                return ownerTimestamps is { } descriptorTimestamps
                     ? new DocumentCacheSourceMetadataReadResult.Found(
                         new DocumentCacheResolvedSourceMetadata.DescriptorResource(
                             source.DocumentId,
@@ -460,7 +476,8 @@ internal sealed class DocumentCacheSourceMetadataReader(
                             resourceKey,
                             concreteResourceModel,
                             source.ContentVersion,
-                            descriptorTimestamp
+                            descriptorTimestamps.ContentLastModifiedAt,
+                            descriptorTimestamps.ContentCreatedAt
                         )
                     )
                     : new DocumentCacheSourceMetadataReadResult.OwnerMissing(source);
@@ -504,14 +521,14 @@ internal sealed class DocumentCacheSourceMetadataReader(
             );
         }
 
-        var ownerTimestamp = await ReadOwnerTimestampAsync(
+        var ownerTimestamps = await ReadOwnerTimestampsAsync(
                 request,
                 source.DocumentId,
                 concreteResourceModel.RelationalModel.Root.Table,
                 cancellationToken
             )
             .ConfigureAwait(false);
-        if (ownerTimestamp is not { } timestamp)
+        if (ownerTimestamps is not { } timestamps)
         {
             return new DocumentCacheSourceMetadataReadResult.OwnerMissing(source);
         }
@@ -524,7 +541,8 @@ internal sealed class DocumentCacheSourceMetadataReader(
                 resourceKey,
                 concreteResourceModel,
                 source.ContentVersion,
-                timestamp,
+                timestamps.ContentLastModifiedAt,
+                timestamps.ContentCreatedAt,
                 readPlan
             )
         );
@@ -721,15 +739,25 @@ internal sealed class DocumentCacheSourceMetadataReader(
     )
     {
         var table = SqlIdentifierQuoter.QuoteTableName(dialect, ownerTable);
-        var timestamp = SqlIdentifierQuoter.QuoteIdentifier(
+        var lastModifiedAt = SqlIdentifierQuoter.QuoteIdentifier(
             dialect,
             new DbColumnName("ContentLastModifiedAt")
         );
+        var createdAt = SqlIdentifierQuoter.QuoteIdentifier(dialect, new DbColumnName("ContentCreatedAt"));
         var documentIdColumn = SqlIdentifierQuoter.QuoteIdentifier(dialect, new DbColumnName("DocumentId"));
 
         return new RelationalCommand(
-            $"SELECT owner.{timestamp} AS {timestamp} FROM {table} owner WHERE owner.{documentIdColumn} = @documentId;",
+            $"SELECT owner.{lastModifiedAt} AS {lastModifiedAt}, owner.{createdAt} AS {createdAt} "
+                + $"FROM {table} owner WHERE owner.{documentIdColumn} = @documentId;",
             [new RelationalParameter(DocumentIdParameterName, documentId)]
         );
     }
+
+    /// <summary>
+    /// Both authoritative owner timestamps, read together in one owner-row query keyed by DocumentId.
+    /// </summary>
+    private readonly record struct OwnerTimestamps(
+        DateTimeOffset ContentLastModifiedAt,
+        DateTimeOffset ContentCreatedAt
+    );
 }

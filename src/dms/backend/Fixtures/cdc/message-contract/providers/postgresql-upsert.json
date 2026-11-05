@@ -43,6 +43,12 @@
           "name": "io.debezium.time.ZonedTimestamp",
           "version": 1
         },
+        "ContentCreatedAt": {
+          "type": "STRING",
+          "optional": false,
+          "name": "io.debezium.time.ZonedTimestamp",
+          "version": 1
+        },
         "DocumentJson": {
           "type": "STRING",
           "optional": false,
@@ -155,6 +161,9 @@
       },
       "LastModifiedAt": {
         "$cacheRow": "lastModifiedAt"
+      },
+      "ContentCreatedAt": {
+        "$cacheRow": "contentCreatedAt"
       },
       "DocumentJson": {
         "$cacheRow": "documentJson",

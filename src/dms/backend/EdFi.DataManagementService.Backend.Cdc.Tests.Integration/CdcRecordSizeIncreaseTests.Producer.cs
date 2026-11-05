@@ -239,7 +239,14 @@ public sealed partial class Given_Cdc_Controller_Record_Size_Increase
         );
         await command.ExecuteNonQueryAsync(Token);
         command.CommandText =
-            "INSERT INTO dms.\"DocumentCache\" (\"DocumentId\", \"DocumentUuid\", \"ProjectName\", \"ResourceName\", \"ResourceVersion\", \"ContentVersion\", \"StreamEtag\", \"LastModifiedAt\", \"DocumentJson\") SELECT \"DocumentId\", \"DocumentUuid\", @project, @resource, @version, \"ContentVersion\", @etag, @modified, @json FROM dms.\"Document\" WHERE \"DocumentId\" = 970301";
+            "INSERT INTO dms.\"DocumentCache\" (\"DocumentId\", \"DocumentUuid\", \"ProjectName\", \"ResourceName\", \"ResourceVersion\", \"ContentVersion\", \"StreamEtag\", \"LastModifiedAt\", \"ContentCreatedAt\", \"DocumentJson\") SELECT \"DocumentId\", \"DocumentUuid\", @project, @resource, @version, \"ContentVersion\", @etag, @modified, @created, @json FROM dms.\"Document\" WHERE \"DocumentId\" = 970301";
+        Add(
+            "created",
+            DateTimeOffset
+                .Parse(row["contentCreatedAt"]!.GetValue<string>(), CultureInfo.InvariantCulture)
+                .UtcDateTime,
+            provider == CdcProvider.Postgresql ? DbType.DateTime : DbType.DateTime2
+        );
         Add("project", row["projectName"]!.GetValue<string>(), DbType.String);
         Add("resource", row["resourceName"]!.GetValue<string>(), DbType.String);
         Add("version", row["resourceVersion"]!.GetValue<string>(), DbType.String);

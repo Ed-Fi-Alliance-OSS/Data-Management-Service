@@ -73,8 +73,8 @@ internal sealed record RelationalWriteMergeResult
     /// <summary>
     /// Concrete JSON paths (for example <c>$.assessmentReference</c>) of document references whose
     /// <c>Missing</c> failure was deferred so authorization can be evaluated before the missing-reference
-    /// conflict is reported. Compared ordinally. Empty unless the no-profile merge ran with
-    /// missing-reference deferral enabled.
+    /// conflict is reported. Compared ordinally. Empty unless the merge, with or without a profile, ran
+    /// with missing-reference deferral enabled.
     /// </summary>
     public IReadOnlySet<string> DeferredMissingDocumentReferencePaths { get; init; } =
         FrozenSet<string>.Empty;

@@ -1030,6 +1030,7 @@ DMS never retries a call on this interface and imposes no timeout of its own on 
 ## Validating your payloads
 
 The Data Management Service serves the OpenAPI document for the identity API at `/metadata/identity/v2/swagger.json`, when `DataManagement:IdentityManagement:Enabled` is on.
+On a multi-tenant host, `/{tenant}` and any configured route-qualifier segments precede that path, as [Operations](#operations) says for the identity routes themselves, and the unqualified path answers a `404` whose `detail` gives the required shape.
 It is the artifact to validate your own request and response payloads against.
 It defines `IdentityCreateRequest`, `IdentitySearchRequest`, `IdentityResponse` and `IdentitySearchResponse`, with their complete and incomplete forms, and each problem type, and it states its contract version in `x-edfi-identity-contract-version`.
 It also pins example `400` bodies, for a create failure keyed by `$.FirstName`, a search item failure keyed by `$[2].FirstName`, a pathless error, and two messages under one key, and your `InvalidProperties` errors should project to bodies of those shapes.
@@ -1358,7 +1359,7 @@ The contract is two things, and the version covers both.
   That is the public surface of the assembly, the XML documentation that ships beside it, and its declared dependencies.
   The rules in this guide live in that documentation, so a rule rewritten there is a changed contract.
 - **The HTTP contract the host serves.**
-  That is the OpenAPI document served at `/metadata/identity/v2/swagger.json`: its paths, schemas, status codes, media types, headers and security.
+  That is the OpenAPI document served at `/metadata/identity/v2/swagger.json`, under the tenant and route-qualifier segments on a multi-tenant host: its paths, schemas, status codes, media types, headers and security.
   A provider implements the interface, but its clients depend on this document.
 
 Publishing is automated and follows one rule for the package: **publish when absent, skip when unchanged, fail when changed.**

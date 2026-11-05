@@ -37,6 +37,11 @@ internal static class DocumentCacheOwnerCoherenceScenario
 
         if (descriptor)
         {
+            // timestamptz takes an offset literal; datetime2(7) takes a bare UTC literal.
+            string createdAtLiteral =
+                dialect == SqlDialect.Pgsql
+                    ? "'2001-02-03T04:05:06.123456+00:00'"
+                    : "'2001-02-03T04:05:06.1234567'";
             await Execute(
                 $"""
                 CREATE TABLE {owner} (
@@ -46,6 +51,7 @@ internal static class DocumentCacheOwnerCoherenceScenario
                     {Q("ContentLastModifiedAt")} {(
                     dialect == SqlDialect.Pgsql ? "timestamptz" : "datetimeoffset"
                 )} NOT NULL,
+                    {Q("ContentCreatedAt")} {(dialect == SqlDialect.Pgsql ? "timestamptz" : "datetime2(7)")} NOT NULL,
                     {Q("Namespace")} varchar(255) NOT NULL,
                     {Q("CodeValue")} varchar(50) NOT NULL,
                     {Q("ShortDescription")} varchar(75) NOT NULL,
@@ -54,8 +60,8 @@ internal static class DocumentCacheOwnerCoherenceScenario
                     {Q("EffectiveEndDate")} date NULL
                 );
                 INSERT INTO {owner} VALUES
-                    (17, 980101, 13, '2026-07-30T14:15:16+00:00', 'uri://ed-fi.org/SchoolTypeDescriptor', 'Target', 'Target', NULL, NULL, NULL),
-                    (18, 980102, 13, '2020-01-01T00:00:00+00:00', 'uri://ed-fi.org/SchoolTypeDescriptor', 'Neighbor', 'Neighbor', NULL, NULL, NULL);
+                    (17, 980101, 13, '2026-07-30T14:15:16+00:00', {createdAtLiteral}, 'uri://ed-fi.org/SchoolTypeDescriptor', 'Target', 'Target', NULL, NULL, NULL),
+                    (18, 980102, 13, '2020-01-01T00:00:00+00:00', {createdAtLiteral}, 'uri://ed-fi.org/SchoolTypeDescriptor', 'Neighbor', 'Neighbor', NULL, NULL, NULL);
                 UPDATE {document} SET {Q("ResourceKeyId")} = 13 WHERE {Q("DocumentId")} = 980101;
                 """
             );

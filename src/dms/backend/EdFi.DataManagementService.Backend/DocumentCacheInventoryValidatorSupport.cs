@@ -270,6 +270,10 @@ internal static class DocumentCacheInventoryValidatorSupport
                         DocumentCacheInventoryDefinition.DocumentCacheColumns.LastModifiedAt.Value,
                         dialect
                     ),
+                    DateTime(
+                        DocumentCacheInventoryDefinition.DocumentCacheColumns.ContentCreatedAt.Value,
+                        dialect
+                    ),
                     Json(DocumentCacheInventoryDefinition.DocumentCacheColumns.DocumentJson.Value, dialect),
                     DateTime(DocumentCacheInventoryDefinition.DocumentCacheColumns.ComputedAt.Value, dialect),
                 ],

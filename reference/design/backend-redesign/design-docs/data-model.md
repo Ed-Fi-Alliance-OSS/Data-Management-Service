@@ -592,6 +592,11 @@ Denormalized resource naming:
   (`projectSchema.projectVersion`), stored canonically on `dms.ResourceKey` and
   denormalized here.
 
+Denormalized owner timestamps:
+
+- `ContentCreatedAt` is a copy of the resource owner's `ContentCreatedAt`. Only the
+  materialized candidate writes it, so it has no clock default, unlike `ComputedAt`.
+
 Denormalized document identity:
 
 - `DocumentId` remains the compact cache primary key and the `ON DELETE CASCADE`
@@ -625,6 +630,7 @@ CREATE TABLE dms.DocumentCache (
     ContentVersion bigint NOT NULL,
     StreamEtag varchar(64) NOT NULL,
     LastModifiedAt timestamp with time zone NOT NULL,
+    ContentCreatedAt timestamp with time zone NOT NULL,
     DocumentJson jsonb NOT NULL,
     ComputedAt timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT CK_DocumentCache_JsonObject CHECK (jsonb_typeof(DocumentJson) = 'object')
@@ -643,6 +649,7 @@ CREATE TABLE dms.DocumentCache (
     ContentVersion bigint NOT NULL,
     StreamEtag varchar(64) NOT NULL,
     LastModifiedAt datetime2(7) NOT NULL,
+    ContentCreatedAt datetime2(7) NOT NULL,
     DocumentJson nvarchar(max) NOT NULL,
     ComputedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentCache_ComputedAt DEFAULT (sysutcdatetime()),
     CONSTRAINT PK_DocumentCache PRIMARY KEY CLUSTERED (DocumentId),

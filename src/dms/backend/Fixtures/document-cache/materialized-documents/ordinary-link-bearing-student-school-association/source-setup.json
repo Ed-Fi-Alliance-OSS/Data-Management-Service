@@ -5,14 +5,16 @@
       "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000000101",
       "resourceKeyId": 11,
       "contentVersion": 222,
-      "contentLastModifiedAt": "2026-07-30T14:15:16.123456Z"
+      "contentLastModifiedAt": "2026-07-30T14:15:16.123456Z",
+      "contentCreatedAt": "2025-03-04T05:06:10.654330Z"
     },
     {
       "documentId": 970201,
       "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000000201",
       "resourceKeyId": 30,
       "contentVersion": 101,
-      "contentLastModifiedAt": "2026-07-29T14:15:16Z"
+      "contentLastModifiedAt": "2026-07-29T14:15:16Z",
+      "contentCreatedAt": "2025-03-04T05:06:11.654331Z"
     }
   ],
   "descriptors": [],

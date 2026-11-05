@@ -433,6 +433,7 @@ public class Given_DocumentCacheStatusEndpointProductionService
                    d."DocumentUuid",
                    d."ContentVersion",
                    s."ContentLastModifiedAt",
+                   s."ContentCreatedAt",
                    rk."ProjectName",
                    rk."ResourceName",
                    rk."ResourceVersion"
@@ -452,6 +453,7 @@ public class Given_DocumentCacheStatusEndpointProductionService
             (Guid)row["DocumentUuid"]!,
             Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
             ToUtcDateTimeOffset(row["ContentLastModifiedAt"]!),
+            ToUtcDateTimeOffset(row["ContentCreatedAt"]!),
             (string)row["ProjectName"]!,
             (string)row["ResourceName"]!,
             (string)row["ResourceVersion"]!
@@ -502,6 +504,7 @@ public class Given_DocumentCacheStatusEndpointProductionService
                 "ContentVersion",
                 "StreamEtag",
                 "LastModifiedAt",
+                "ContentCreatedAt",
                 "DocumentJson",
                 "ComputedAt"
             )
@@ -514,6 +517,7 @@ public class Given_DocumentCacheStatusEndpointProductionService
                 @contentVersion,
                 @streamEtag,
                 @lastModifiedAt,
+                @contentCreatedAt,
                 CAST(@documentJson AS jsonb),
                 @computedAt
             )
@@ -525,6 +529,7 @@ public class Given_DocumentCacheStatusEndpointProductionService
                 "ContentVersion" = EXCLUDED."ContentVersion",
                 "StreamEtag" = EXCLUDED."StreamEtag",
                 "LastModifiedAt" = EXCLUDED."LastModifiedAt",
+                "ContentCreatedAt" = EXCLUDED."ContentCreatedAt",
                 "DocumentJson" = EXCLUDED."DocumentJson",
                 "ComputedAt" = EXCLUDED."ComputedAt";
             """,
@@ -538,6 +543,10 @@ public class Given_DocumentCacheStatusEndpointProductionService
             new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz)
             {
                 Value = metadata.ContentLastModifiedAt,
+            },
+            new NpgsqlParameter("contentCreatedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = metadata.ContentCreatedAt,
             },
             new NpgsqlParameter("documentJson", documentJson.ToJsonString()),
             new NpgsqlParameter("computedAt", NpgsqlDbType.TimestampTz) { Value = DateTimeOffset.UtcNow }
@@ -654,6 +663,7 @@ public class Given_DocumentCacheStatusEndpointProductionService
         Guid DocumentUuid,
         long ContentVersion,
         DateTimeOffset ContentLastModifiedAt,
+        DateTimeOffset ContentCreatedAt,
         string ProjectName,
         string ResourceName,
         string ResourceVersion

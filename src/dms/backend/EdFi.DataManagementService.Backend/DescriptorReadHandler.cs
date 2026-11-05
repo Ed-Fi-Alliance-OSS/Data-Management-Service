@@ -2042,10 +2042,19 @@ internal sealed class DescriptorReadHandler(
         string prelude = $"""
             DROP TABLE IF EXISTS {quotedTable};
             {create} {quotedTable} ({columns}){lifetime};
-            INSERT INTO {quotedTable}
-            {PlanSqlStatementText.AsTerminatedStatement(plannedQuery.Plan.PageDocumentIdSql)}
 
             """;
+        // SQL Server rejects FETCH NEXT 0 rows, so a zero limit skips page selection, as the resource
+        // path does for a zero-size page. Only the limit is checked: cursor pages use TOP (@pageSize),
+        // which accepts 0.
+        if (!HasZeroLimit(plannedQuery))
+        {
+            prelude += $"""
+                INSERT INTO {quotedTable}
+                {PlanSqlStatementText.AsTerminatedStatement(plannedQuery.Plan.PageDocumentIdSql)}
+
+                """;
+        }
         string pageSql = $"SELECT * FROM {quotedTable}";
         string versionSql = BuildPageRowsSql(dialect, pageSql, DescriptorRowProjection.DocumentVersions);
         string pageRowsSql = BuildPageRowsSql(dialect, pageSql, projection);
@@ -2060,6 +2069,22 @@ internal sealed class DescriptorReadHandler(
             prelude + countSql + boundarySql + BuildAcquisitionSql(versionSql, pageRowsSql),
             BuildQueryParameters(plannedQuery)
         );
+    }
+
+    private static bool HasZeroLimit(PageKeysetSpec.Query plannedQuery)
+    {
+        foreach (var parameter in plannedQuery.Plan.PageParametersInOrder)
+        {
+            if (parameter.Role is not QuerySqlParameterRole.Limit)
+            {
+                continue;
+            }
+
+            return plannedQuery.ParameterValues.TryGetValue(parameter.ParameterName, out var limit)
+                && HydrationBatchBuilder.IsZeroPageSelectionSizeValue(limit);
+        }
+
+        return false;
     }
 
     private static string BuildAcquisitionSql(string versionSql, string rowSql) =>

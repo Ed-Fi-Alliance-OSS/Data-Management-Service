@@ -21,6 +21,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         public string Authority { get; set; } = string.Empty;
 
         /// <summary>
+        /// The longest token lifetime, in minutes, whose <c>expires_in</c> in seconds still fits the
+        /// token response's 32-bit integer.
+        /// </summary>
+        public const int MaxTokenExpirationMinutes = int.MaxValue / 60;
+
+        /// <summary>
         /// The role that marks a Configuration Service administrative client: the role the
         /// <c>ServicePolicy</c> requires and the one <c>/connect/register</c> assigns.
         /// Bound from <c>IdentitySettings:ConfigServiceRole</c>, the same key the frontend reads; it
@@ -85,12 +91,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         /// Encryption key for database private keys.
         /// </summary>
         public string EncryptionKey { get; set; } = string.Empty;
-
-        /// <summary>
-        /// Formerly the maximum size of the key format cache. No longer read: the cache was removed (DMS-1556, Q7) and
-        /// key formats are detected on every load. The setting still binds, so existing configuration keeps working.
-        /// </summary>
-        public int KeyFormatCacheSize { get; set; } = 100;
 
         /// <summary>
         /// Number of PBKDF2 iterations for client secret hashing.

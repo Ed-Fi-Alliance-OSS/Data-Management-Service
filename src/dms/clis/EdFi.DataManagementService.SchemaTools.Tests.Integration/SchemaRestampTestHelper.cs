@@ -102,12 +102,12 @@ internal static class SchemaRestampTestHelper
 
                     INSERT INTO dms."DocumentCache" (
                         "DocumentId", "DocumentUuid", "ProjectName", "ResourceName", "ResourceVersion",
-                        "ContentVersion", "StreamEtag", "LastModifiedAt", "DocumentJson"
+                        "ContentVersion", "StreamEtag", "LastModifiedAt", "ContentCreatedAt", "DocumentJson"
                     )
                     SELECT document."DocumentId", document."DocumentUuid", resource_key."ProjectName",
                         resource_key."ResourceName", resource_key."ResourceVersion", document."ContentVersion",
                         'preserved-etag-' || document."ContentVersion"::text,
-                        widget."ContentLastModifiedAt", '{"id":"preserved"}'::jsonb
+                        widget."ContentLastModifiedAt", widget."ContentCreatedAt", '{"id":"preserved"}'::jsonb
                     FROM dms."Document" document
                     INNER JOIN testproject."Widget" widget ON widget."DocumentId" = document."DocumentId"
                     INNER JOIN dms."ResourceKey" resource_key ON resource_key."ResourceKeyId" = document."ResourceKeyId"
@@ -131,12 +131,12 @@ internal static class SchemaRestampTestHelper
 
                     INSERT INTO [dms].[DocumentCache] (
                         [DocumentId], [DocumentUuid], [ProjectName], [ResourceName], [ResourceVersion],
-                        [ContentVersion], [StreamEtag], [LastModifiedAt], [DocumentJson]
+                        [ContentVersion], [StreamEtag], [LastModifiedAt], [ContentCreatedAt], [DocumentJson]
                     )
                     SELECT document.[DocumentId], document.[DocumentUuid], resource_key.[ProjectName],
                         resource_key.[ResourceName], resource_key.[ResourceVersion], document.[ContentVersion],
                         CONCAT(N'preserved-etag-', CONVERT(varchar(20), document.[ContentVersion])),
-                        widget.[ContentLastModifiedAt], N'{"id":"preserved"}'
+                        widget.[ContentLastModifiedAt], widget.[ContentCreatedAt], N'{"id":"preserved"}'
                     FROM [dms].[Document] document
                     INNER JOIN [testproject].[Widget] widget ON widget.[DocumentId] = document.[DocumentId]
                     INNER JOIN [dms].[ResourceKey] resource_key ON resource_key.[ResourceKeyId] = document.[ResourceKeyId]

@@ -38,15 +38,24 @@ Feature: Route Qualifier Discovery API
          When a GET request is made to metadata path "Tenant_255901/999999/2024/metadata/dependencies"
          Then it should respond with 404
 
-    Scenario Outline: Tenant-only metadata endpoints require route qualifiers
+    Scenario Outline: Metadata endpoints missing the tenant or a route qualifier answer the guidance 404
          When a GET request is made to metadata path "<metadataPath>"
          Then it should respond with 404
+          And the response body should contain "Metadata requests must include the tenant"
 
         Examples:
-          | metadataPath                             |
-          | Tenant_255901/metadata                    |
-          | Tenant_255901/metadata/dependencies       |
-          | Tenant_255901/metadata/specifications     |
+          | metadataPath                                                     |
+          | metadata                                                         |
+          | metadata/dependencies                                            |
+          | metadata/specifications                                          |
+          | Tenant_255901/metadata                                           |
+          | Tenant_255901/metadata/dependencies                              |
+          | Tenant_255901/metadata/specifications                            |
+          | Tenant_255901/metadata/specifications/resources-spec.json        |
+          | Tenant_255901/255901/metadata                                    |
+          | Tenant_255901/255901/metadata/dependencies                       |
+          | Tenant_255901/255901/metadata/specifications                     |
+          | Tenant_255901/255901/metadata/specifications/resources-spec.json |
 
     Scenario: Discovery endpoint with tenant and partial route qualifier returns URLs with mixed context
          When a GET request is made to discovery endpoint with route "Tenant_255901/255901"

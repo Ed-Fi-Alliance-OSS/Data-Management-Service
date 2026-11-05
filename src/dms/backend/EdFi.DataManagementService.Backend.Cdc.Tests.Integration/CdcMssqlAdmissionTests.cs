@@ -303,7 +303,7 @@ public sealed class Given_SqlServer_Controller_Admission
             "canonical" =>
                 "INSERT INTO dms.\"Document\" (\"DocumentUuid\", \"ResourceKeyId\") SELECT TOP (1) NEWID(), \"ResourceKeyId\" FROM dms.\"ResourceKey\"",
             "cache" =>
-                "INSERT INTO dms.\"DocumentCache\" (\"DocumentId\", \"DocumentUuid\", \"ProjectName\", \"ResourceName\", \"ResourceVersion\", \"ContentVersion\", \"StreamEtag\", \"LastModifiedAt\", \"DocumentJson\") SELECT 42, \"DocumentUuid\", 'Test', 'School', '1', 1, 'test', SYSUTCDATETIME(), '{}' FROM dms.\"Document\" WHERE \"DocumentId\" = 42",
+                "INSERT INTO dms.\"DocumentCache\" (\"DocumentId\", \"DocumentUuid\", \"ProjectName\", \"ResourceName\", \"ResourceVersion\", \"ContentVersion\", \"StreamEtag\", \"LastModifiedAt\", \"ContentCreatedAt\", \"DocumentJson\") SELECT 42, \"DocumentUuid\", 'Test', 'School', '1', 1, 'test', SYSUTCDATETIME(), '2001-02-03T04:05:06.1234567', '{}' FROM dms.\"Document\" WHERE \"DocumentId\" = 42",
             "work" =>
                 "INSERT INTO dms.\"DocumentProjectionWork\" VALUES (42, 1, SYSUTCDATETIME(), SYSUTCDATETIME())",
             _ => throw new ArgumentOutOfRangeException(nameof(mutation)),

@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Backend.Profile;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
+using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Tests.Unit.Profile.ProfileTestDoubles;
@@ -65,10 +66,14 @@ public class Given_ProfileSynthesizer_for_CreateNew_with_single_scalar_binding
     }
 }
 
-[TestFixture]
-public class Given_ProfileSynthesizer_for_ExistingDocument_with_hidden_scalar_binding
+[TestFixture(false)]
+[TestFixture(true)]
+public class Given_ProfileSynthesizer_for_ExistingDocument_with_hidden_scalar_binding(
+    bool deferMissingReference
+)
 {
-    private RelationalWriteMergeResult _result = null!;
+    private ProfileMergeOutcome _outcome;
+    private RelationalWriteMergedTableState _rootState = null!;
 
     [SetUp]
     public void Setup()
@@ -82,36 +87,50 @@ public class Given_ProfileSynthesizer_for_ExistingDocument_with_hidden_scalar_bi
         );
 
         var synthesizer = BuildProfileSynthesizer();
-        _result = UnwrapMergeResult(
-            synthesizer.Synthesize(
-                new RelationalWriteProfileMergeRequest(
-                    writePlan: plan,
-                    flattenedWriteSet: BuildFlattenedWriteSetFrom(plan, "request-value"),
-                    writableRequestBody: body,
-                    currentState: BuildCurrentStateWithSingleRootRow(plan, "stored-value"),
-                    profileRequest: request,
-                    profileAppliedContext: appliedContext,
-                    resolvedReferences: EmptyResolvedReferenceSet()
-                )
+        _outcome = synthesizer.Synthesize(
+            new RelationalWriteProfileMergeRequest(
+                writePlan: plan,
+                flattenedWriteSet: BuildFlattenedWriteSetFrom(plan, "request-value"),
+                writableRequestBody: body,
+                currentState: BuildCurrentStateWithSingleRootRow(plan, "stored-value"),
+                profileRequest: request,
+                profileAppliedContext: appliedContext,
+                resolvedReferences: EmptyResolvedReferenceSet(),
+                allowMissingDocumentReferencesForPrecedence: deferMissingReference
             )
         );
+        _rootState = deferMissingReference
+            ? _outcome.AuthorizationRootTableState!
+            : UnwrapMergeResult(_outcome).TablesInDependencyOrder[0];
     }
 
     [Test]
     public void It_preserves_stored_value_on_hidden_binding()
     {
-        ((FlattenedWriteValue.Literal)_result.TablesInDependencyOrder[0].MergedRows[0].Values[0])
-            .Value.Should()
-            .Be("stored-value");
+        ((FlattenedWriteValue.Literal)_rootState.MergedRows[0].Values[0]).Value.Should().Be("stored-value");
     }
 
     [Test]
     public void It_includes_projected_current_row()
     {
-        _result.TablesInDependencyOrder[0].CurrentRows.Should().ContainSingle();
-        ((FlattenedWriteValue.Literal)_result.TablesInDependencyOrder[0].CurrentRows[0].Values[0])
-            .Value.Should()
-            .Be("stored-value");
+        _rootState.CurrentRows.Should().ContainSingle();
+        ((FlattenedWriteValue.Literal)_rootState.CurrentRows[0].Values[0]).Value.Should().Be("stored-value");
+    }
+
+    [Test]
+    public void It_returns_only_the_authorization_root_when_missing_references_are_deferred()
+    {
+        _outcome.IsRejection.Should().BeFalse();
+        if (deferMissingReference)
+        {
+            _outcome.MergeResult.Should().BeNull();
+            _outcome.AuthorizationRootTableState.Should().BeSameAs(_rootState);
+        }
+        else
+        {
+            _outcome.AuthorizationRootTableState.Should().BeNull();
+            _outcome.MergeResult!.SupportsGuardedNoOp.Should().BeTrue();
+        }
     }
 }
 
@@ -677,6 +696,19 @@ public class Given_Synthesizer_SeparateTable_VisiblePresent_NoStored_Creatable_F
 
     [Test]
     public void It_has_no_merge_result() => _outcome.MergeResult.Should().BeNull();
+
+    [Test]
+    public void It_retains_the_finalized_root_for_authorization_before_the_policy_denial()
+    {
+        _outcome.AuthorizationRootTableState.Should().NotBeNull();
+        _outcome
+            .AuthorizationRootTableState!.MergedRows.Should()
+            .ContainSingle()
+            .Which.Values.OfType<FlattenedWriteValue.Literal>()
+            .Select(value => value.Value)
+            .Should()
+            .Contain("Ada");
+    }
 
     [Test]
     public void It_identifies_the_extension_scope_as_the_rejected_scope()
@@ -3211,6 +3243,16 @@ public class Given_Synthesize_top_level_collection_CreatabilityRejection_propaga
 
     [Test]
     public void It_has_no_merge_result() => _outcome.MergeResult.Should().BeNull();
+
+    [Test]
+    public void It_retains_the_finalized_root_for_authorization_before_the_policy_denial()
+    {
+        _outcome.AuthorizationRootTableState.Should().NotBeNull();
+        _outcome.AuthorizationRootTableState!.MergedRows.Should().ContainSingle();
+        _outcome
+            .AuthorizationRootTableState.TableWritePlan.TableModel.IdentityMetadata.TableKind.Should()
+            .Be(DbTableKind.Root);
+    }
 
     [Test]
     public void It_identifies_the_collection_scope()
@@ -8500,6 +8542,16 @@ public class Given_extension_child_non_creatable_insert_with_existing_visible_pa
     public void It_has_no_merge_result() => _outcome.MergeResult.Should().BeNull();
 
     [Test]
+    public void It_retains_the_root_when_the_extension_child_policy_rejects()
+    {
+        _outcome.AuthorizationRootTableState.Should().NotBeNull();
+        _outcome.AuthorizationRootTableState!.MergedRows.Should().ContainSingle();
+        _outcome
+            .AuthorizationRootTableState.TableWritePlan.TableModel.IdentityMetadata.TableKind.Should()
+            .Be(DbTableKind.Root);
+    }
+
+    [Test]
     public void It_identifies_the_extension_child_collection_scope_as_the_rejected_scope() =>
         _outcome
             .CreatabilityRejection!.ScopeJsonScope.Should()
@@ -9617,4 +9669,80 @@ public class Given_Synthesizer_TopLevelCollection_All_Matched_With_Hidden_Interl
     [Test]
     public void It_projects_comparable_values_from_merged_row_values_via_the_shared_helper() =>
         ProfileMergeGuardedNoOpAssertionHelpers.AssertMergedRowsUseSharedComparableProjection(_result);
+}
+
+[TestFixture]
+public class Given_ProfileSynthesizer_with_a_child_validation_failure
+{
+    [TestCase(false)]
+    [TestCase(true)]
+    public void It_retains_the_root_only_for_request_validation(bool invariantFailure)
+    {
+        var plan = BuildRootPlusRootExtensionPlan(
+            extensionBindings: new RootExtensionBindingSpec(
+                "FavoriteColor",
+                RootExtensionBindingKind.Scalar,
+                RelativePath: "$._ext.sample.favoriteColor"
+            )
+        );
+        var body = new JsonObject
+        {
+            ["firstName"] = "Ada",
+            ["_ext"] = new JsonObject { ["sample"] = new JsonObject { ["favoriteColor"] = "Blue" } },
+        };
+        var request = CreateRequest(
+            writableBody: body,
+            rootResourceCreatable: true,
+            RequestVisiblePresentScope("$"),
+            RequestVisiblePresentScope("$._ext.sample")
+        );
+        var flattened = BuildFlattenedWriteSetWithExtensionRow(
+            plan,
+            plan.TablePlansInDependencyOrder[1],
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [null, "Blue"]
+        );
+        var validation = RelationalWriteRequestValidationException.ForPath(
+            "$._ext.sample.favoriteColor",
+            "Key-unification conflict"
+        );
+        Exception failure = invariantFailure
+            ? new InvalidOperationException("Invalid planner metadata")
+            : validation;
+        var decider = A.Fake<IProfileSeparateTableMergeDecider>();
+        A.CallTo(() => decider.Decide(A<string>._, A<RequestScopeState>._, A<StoredScopeState>._, A<bool>._))
+            .Throws(failure);
+        var sut = new RelationalWriteProfileMergeSynthesizer(
+            new ProfileRootTableBindingClassifier(),
+            new ProfileRootKeyUnificationResolver(),
+            new ProfileSeparateTableBindingClassifier(),
+            new ProfileSeparateTableKeyUnificationResolver(),
+            decider
+        );
+        var input = new RelationalWriteProfileMergeRequest(
+            plan,
+            flattened,
+            body,
+            null,
+            request,
+            null,
+            EmptyResolvedReferenceSet()
+        );
+        if (invariantFailure)
+        {
+            Action act = () => sut.Synthesize(input);
+            act.Should().Throw<InvalidOperationException>().Which.Should().BeSameAs(failure);
+            return;
+        }
+        var result = sut.Synthesize(input);
+        result.ValidationFailure!.ValidationFailures.Should().Equal(validation.ValidationFailures);
+        result.MergeResult.Should().BeNull();
+        result
+            .AuthorizationRootTableState!.MergedRows.Should()
+            .ContainSingle()
+            .Which.Values.OfType<FlattenedWriteValue.Literal>()
+            .Select(value => value.Value)
+            .Should()
+            .Contain("Ada");
+    }
 }

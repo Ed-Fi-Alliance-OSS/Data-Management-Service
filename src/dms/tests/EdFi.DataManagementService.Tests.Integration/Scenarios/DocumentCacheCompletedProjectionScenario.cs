@@ -21,6 +21,7 @@ internal static class DocumentCacheCompletedProjectionScenario
     private const string StudentsEndpoint = "/data/ed-fi/students";
     private const string SchoolTypeDescriptorsEndpoint = "/data/ed-fi/schoolTypeDescriptors";
     private const string ProfileRootOnlyMergeItemsEndpoint = "/data/ed-fi/profileRootOnlyMergeItems";
+    private const string CandidatesEndpoint = "/data/tpdm/candidates";
     private const string StandardJsonContentType = "application/json";
     private const string ForcedEnqueueFailureMessage = "DMS-1317 forced DocumentCache enqueue failure";
 
@@ -39,10 +40,16 @@ internal static class DocumentCacheCompletedProjectionScenario
 
         string studentUniqueId = $"dcp-{Guid.NewGuid():N}"[..32];
         CreatedDocument createdStudent = await PostStudentAsync(harness, studentUniqueId, "Projected Create");
+        DateTimeOffset creationSentinel = await DocumentCacheAuthoritativeStampSql.PlantCreationSentinelAsync(
+            harness,
+            "\"edfi\".\"Student\"",
+            createdStudent.DocumentUuid
+        );
         DocumentMetadata createdMetadata = await ReadDocumentMetadataAsync(
             harness,
             createdStudent.DocumentUuid
         );
+        createdMetadata.ContentCreatedAt.Should().Be(creationSentinel);
 
         (await CountProjectionWorkRowsAsync(harness, createdMetadata.DocumentId))
             .Should()
@@ -66,6 +73,7 @@ internal static class DocumentCacheCompletedProjectionScenario
         cachedGet["studentUniqueId"]!.GetValue<string>().Should().Be(studentUniqueId);
         cachedGet["firstName"]!.GetValue<string>().Should().Be("Projected Create");
         cachedGet["_etag"]!.GetValue<string>().Should().Be(createdCacheRow.StreamEtag);
+        AssertTopLevelKeys(cachedGet, "studentUniqueId", "firstName", "id", "_etag", "_lastModifiedDate");
         AssertReadTelemetryContains(
             recorder,
             "RecordHit",
@@ -101,6 +109,7 @@ internal static class DocumentCacheCompletedProjectionScenario
             createdStudent.DocumentUuid
         );
         updatedMetadata.ContentVersion.Should().BeGreaterThan(createdMetadata.ContentVersion);
+        updatedMetadata.ContentCreatedAt.Should().Be(creationSentinel, "an update keeps the creation time");
         (await CountProjectionWorkRowsAsync(harness, createdMetadata.DocumentId))
             .Should()
             .Be(1, "HTTP update must enqueue durable projection work");
@@ -125,6 +134,14 @@ internal static class DocumentCacheCompletedProjectionScenario
         JsonObject updatedCachedGet = await GetJsonObjectAsync(harness, createdStudent.LocationPath);
         updatedCachedGet["firstName"]!.GetValue<string>().Should().Be("Projected Update");
         updatedCachedGet["_etag"]!.GetValue<string>().Should().Be(updatedCacheRow.StreamEtag);
+        AssertTopLevelKeys(
+            updatedCachedGet,
+            "studentUniqueId",
+            "firstName",
+            "id",
+            "_etag",
+            "_lastModifiedDate"
+        );
         AssertReadTelemetryCountIncreased(
             recorder,
             "RecordHit",
@@ -197,10 +214,16 @@ internal static class DocumentCacheCompletedProjectionScenario
             codeValue,
             "Projected descriptor create"
         );
+        DateTimeOffset creationSentinel = await DocumentCacheAuthoritativeStampSql.PlantCreationSentinelAsync(
+            harness,
+            "\"dms\".\"Descriptor\"",
+            createdDescriptor.DocumentUuid
+        );
         DocumentMetadata createdMetadata = await ReadDocumentMetadataAsync(
             harness,
             createdDescriptor.DocumentUuid
         );
+        createdMetadata.ContentCreatedAt.Should().Be(creationSentinel);
 
         (await CountProjectionWorkRowsAsync(harness, createdMetadata.DocumentId))
             .Should()
@@ -231,6 +254,15 @@ internal static class DocumentCacheCompletedProjectionScenario
         cachedGet["codeValue"]!.GetValue<string>().Should().Be(codeValue);
         cachedGet["shortDescription"]!.GetValue<string>().Should().Be("Projected descriptor create");
         cachedGet["_etag"]!.GetValue<string>().Should().Be(createdCacheRow.StreamEtag);
+        AssertTopLevelKeys(
+            cachedGet,
+            "namespace",
+            "codeValue",
+            "shortDescription",
+            "id",
+            "_etag",
+            "_lastModifiedDate"
+        );
         AssertReadTelemetryContains(
             recorder,
             "RecordHit",
@@ -267,6 +299,7 @@ internal static class DocumentCacheCompletedProjectionScenario
             createdDescriptor.DocumentUuid
         );
         updatedMetadata.ContentVersion.Should().BeGreaterThan(createdMetadata.ContentVersion);
+        updatedMetadata.ContentCreatedAt.Should().Be(creationSentinel, "an update keeps the creation time");
         (await CountProjectionWorkRowsAsync(harness, createdMetadata.DocumentId))
             .Should()
             .Be(1, "HTTP descriptor update must enqueue durable projection work");
@@ -303,6 +336,15 @@ internal static class DocumentCacheCompletedProjectionScenario
         JsonObject updatedCachedGet = await GetJsonObjectAsync(harness, createdDescriptor.LocationPath);
         updatedCachedGet["shortDescription"]!.GetValue<string>().Should().Be("Projected descriptor update");
         updatedCachedGet["_etag"]!.GetValue<string>().Should().Be(updatedCacheRow.StreamEtag);
+        AssertTopLevelKeys(
+            updatedCachedGet,
+            "namespace",
+            "codeValue",
+            "shortDescription",
+            "id",
+            "_etag",
+            "_lastModifiedDate"
+        );
         AssertReadTelemetryCountIncreased(
             recorder,
             "RecordHit",
@@ -356,6 +398,57 @@ internal static class DocumentCacheCompletedProjectionScenario
         (await CountProjectionWorkRowsAsync(harness, createdMetadata.DocumentId))
             .Should()
             .Be(0, "descriptor DELETE must not leave orphaned projection work");
+    }
+
+    public static async Task It_projects_creation_time_for_an_extension_project_resource(
+        ApiIntegrationHarness harness
+    )
+    {
+        await SetTrackingLifecycleAsync(harness);
+        await RefreshProjectionTargetsAsync(harness);
+
+        string candidateIdentifier = $"dcc-{Guid.NewGuid():N}"[..32];
+        JsonObject payload = CreateCandidatePayload(candidateIdentifier, "Projected Create");
+        using HttpResponseMessage postResponse = await PostJsonAsync(harness, CandidatesEndpoint, payload);
+        string postBody = await postResponse.Content.ReadAsStringAsync();
+        postResponse.StatusCode.Should().Be(HttpStatusCode.Created, postBody);
+        postResponse.TryReadRawEtag(out string createEtag).Should().BeTrue("POST create must emit an ETag");
+        string locationPath = ToPath(postResponse.Headers.Location!);
+        var documentUuid = Guid.Parse(locationPath.Split('/')[^1]);
+
+        DateTimeOffset creationSentinel = await DocumentCacheAuthoritativeStampSql.PlantCreationSentinelAsync(
+            harness,
+            "\"tpdm\".\"Candidate\"",
+            documentUuid
+        );
+        DocumentMetadata createdMetadata = await ReadDocumentMetadataAsync(harness, documentUuid);
+        createdMetadata.ContentCreatedAt.Should().Be(creationSentinel);
+
+        await DrainProjectionUntilIdleAsync(harness);
+
+        DocumentCacheRow createdCacheRow = await ReadCacheRowAsync(harness, createdMetadata.DocumentId);
+        createdCacheRow.StreamEtag.Should().Be(createEtag);
+        AssertCandidateCacheRow(createdCacheRow, createdMetadata, "Projected Create");
+
+        payload = CreateCandidatePayload(candidateIdentifier, "Projected Update");
+        payload["id"] = documentUuid.ToString();
+        using var putRequest = new HttpRequestMessage(HttpMethod.Put, locationPath)
+        {
+            Content = new StringContent(payload.ToJsonString(), Encoding.UTF8, StandardJsonContentType),
+        };
+        putRequest.Headers.TryAddWithoutValidation("If-Match", createdCacheRow.StreamEtag);
+        using HttpResponseMessage putResponse = await harness.HttpClient.SendAsync(putRequest);
+        string putBody = await putResponse.Content.ReadAsStringAsync();
+        putResponse.StatusCode.Should().Be(HttpStatusCode.NoContent, putBody);
+
+        DocumentMetadata updatedMetadata = await ReadDocumentMetadataAsync(harness, documentUuid);
+        updatedMetadata.ContentVersion.Should().BeGreaterThan(createdMetadata.ContentVersion);
+        updatedMetadata.ContentCreatedAt.Should().Be(creationSentinel, "an update keeps the creation time");
+
+        await DrainProjectionUntilIdleAsync(harness);
+
+        DocumentCacheRow updatedCacheRow = await ReadCacheRowAsync(harness, createdMetadata.DocumentId);
+        AssertCandidateCacheRow(updatedCacheRow, updatedMetadata, "Projected Update");
     }
 
     public static async Task It_rolls_back_http_create_and_update_when_document_cache_enqueue_fails(
@@ -635,6 +728,15 @@ internal static class DocumentCacheCompletedProjectionScenario
         return await harness.HttpClient.PostAsync(endpoint, content);
     }
 
+    private static JsonObject CreateCandidatePayload(string candidateIdentifier, string firstName) =>
+        new()
+        {
+            ["candidateIdentifier"] = candidateIdentifier,
+            ["firstName"] = firstName,
+            ["lastSurname"] = "Projected",
+            ["birthDate"] = "2000-01-02",
+        };
+
     private static JsonObject CreateProfileRootOnlyMergeItemPayload(
         int itemId,
         string displayName,
@@ -738,7 +840,8 @@ internal static class DocumentCacheCompletedProjectionScenario
                    es."EffectiveSchemaHash",
                    rk."ProjectName",
                    rk."ResourceName",
-                   rk."ResourceVersion"
+                   rk."ResourceVersion",
+                   owner."ContentCreatedAt"
             FROM "dms"."Document" d
             INNER JOIN ({DocumentCacheAuthoritativeStampSql.Owners(
                 harness
@@ -759,6 +862,7 @@ internal static class DocumentCacheCompletedProjectionScenario
             Convert.ToInt16(reader.GetValue(2), CultureInfo.InvariantCulture),
             Convert.ToInt64(reader.GetValue(3), CultureInfo.InvariantCulture),
             ToUtcDateTimeOffset(reader.GetValue(4)),
+            ToUtcDateTimeOffset(reader.GetValue(9)),
             reader.GetString(5),
             reader.GetString(6),
             reader.GetString(7),
@@ -781,7 +885,8 @@ internal static class DocumentCacheCompletedProjectionScenario
                    "ContentVersion",
                    "StreamEtag",
                    "LastModifiedAt",
-                   "DocumentJson"
+                   "DocumentJson",
+                   "ContentCreatedAt"
             FROM "dms"."DocumentCache"
             WHERE "DocumentId" = @documentId;
             """;
@@ -799,6 +904,7 @@ internal static class DocumentCacheCompletedProjectionScenario
             Convert.ToInt64(reader.GetValue(2), CultureInfo.InvariantCulture),
             reader.GetString(3),
             ToUtcDateTimeOffset(reader.GetValue(4)),
+            ToUtcDateTimeOffset(reader.GetValue(6)),
             JsonNode.Parse(documentJson)!.AsObject()
         );
 
@@ -1048,7 +1154,44 @@ internal static class DocumentCacheCompletedProjectionScenario
         row.DocumentJson.ContainsKey("_etag")
             .Should()
             .BeFalse("cache JSON should store caller-agnostic stream content");
+        AssertTopLevelKeys(row.DocumentJson, "studentUniqueId", "firstName", "id", "_lastModifiedDate");
+        AssertOwnerCreationTime(row, metadata);
     }
+
+    private static void AssertCandidateCacheRow(
+        DocumentCacheRow row,
+        DocumentMetadata metadata,
+        string firstName
+    )
+    {
+        row.DocumentId.Should().Be(metadata.DocumentId);
+        row.DocumentUuid.Should().Be(metadata.DocumentUuid);
+        row.ContentVersion.Should().Be(metadata.ContentVersion);
+        row.LastModifiedAt.Should().BeCloseTo(metadata.ContentLastModifiedAt, TimeSpan.FromTicks(10));
+        row.DocumentJson["firstName"]!.GetValue<string>().Should().Be(firstName);
+        AssertTopLevelKeys(
+            row.DocumentJson,
+            "candidateIdentifier",
+            "firstName",
+            "lastSurname",
+            "birthDate",
+            "id",
+            "_lastModifiedDate"
+        );
+        AssertOwnerCreationTime(row, metadata);
+    }
+
+    private static void AssertOwnerCreationTime(DocumentCacheRow row, DocumentMetadata metadata)
+    {
+        row.ContentCreatedAt.Should()
+            .Be(metadata.ContentCreatedAt, "the cache copies the owner creation time");
+        row.ContentCreatedAt.Should()
+            .NotBe(row.LastModifiedAt, "creation time is not the last-modified copy");
+    }
+
+    // Creation time must stay out of both the cached and the served JSON.
+    private static void AssertTopLevelKeys(JsonObject document, params string[] expectedKeys) =>
+        document.Select(property => property.Key).Should().BeEquivalentTo(expectedKeys);
 
     private static void AssertSchoolTypeDescriptorCacheRow(
         DocumentCacheRow row,
@@ -1070,6 +1213,15 @@ internal static class DocumentCacheCompletedProjectionScenario
         row.DocumentJson.ContainsKey("_etag")
             .Should()
             .BeFalse("descriptor cache JSON should store caller-agnostic stream content");
+        AssertTopLevelKeys(
+            row.DocumentJson,
+            "namespace",
+            "codeValue",
+            "shortDescription",
+            "id",
+            "_lastModifiedDate"
+        );
+        AssertOwnerCreationTime(row, metadata);
     }
 
     private static void AssertNoCacheAccelerationDisclosure(HttpResponseMessage response, string body)
@@ -1160,6 +1312,7 @@ internal static class DocumentCacheCompletedProjectionScenario
         short ResourceKeyId,
         long ContentVersion,
         DateTimeOffset ContentLastModifiedAt,
+        DateTimeOffset ContentCreatedAt,
         string EffectiveSchemaHash,
         string ProjectName,
         string ResourceName,
@@ -1172,6 +1325,7 @@ internal static class DocumentCacheCompletedProjectionScenario
         long ContentVersion,
         string StreamEtag,
         DateTimeOffset LastModifiedAt,
+        DateTimeOffset ContentCreatedAt,
         JsonObject DocumentJson
     );
 

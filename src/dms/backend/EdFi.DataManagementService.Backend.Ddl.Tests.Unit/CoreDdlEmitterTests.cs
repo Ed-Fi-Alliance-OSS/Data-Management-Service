@@ -394,6 +394,22 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
     }
 
     [Test]
+    public void It_should_emit_the_document_cache_creation_timestamp_after_last_modified_without_a_default()
+    {
+        var lines = CoreDdlStatements
+            .Extract(_ddl, "CREATE TABLE IF NOT EXISTS \"dms\".\"DocumentCache\"")
+            .Split('\n')
+            .Select(line => line.Trim())
+            .ToList();
+
+        var lastModifiedAt = lines.IndexOf("\"LastModifiedAt\" timestamp with time zone NOT NULL,");
+        lastModifiedAt.Should().BeGreaterThan(0);
+        lines[lastModifiedAt + 1].Should().Be("\"ContentCreatedAt\" timestamp with time zone NOT NULL,");
+        lines.Should().Contain("\"ComputedAt\" timestamp with time zone NOT NULL DEFAULT now(),");
+        _ddl.Should().NotContain("DF_DocumentCache_ContentCreatedAt");
+    }
+
+    [Test]
     public void It_should_create_document_cache_state_table()
     {
         _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"dms\".\"DocumentCacheState\"");
@@ -1559,6 +1575,21 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     {
         _ddl.Should().Contain("[StreamEtag] varchar(64) NOT NULL");
         _ddl.Should().NotContain("[Etag] nvarchar(64) NOT NULL");
+    }
+
+    [Test]
+    public void It_should_emit_the_document_cache_creation_timestamp_after_last_modified_without_a_default()
+    {
+        var lines = CoreDdlStatements
+            .Extract(_ddl, "CREATE TABLE [dms].[DocumentCache]")
+            .Split('\n')
+            .Select(line => line.Trim())
+            .ToList();
+
+        var lastModifiedAt = lines.IndexOf("[LastModifiedAt] datetime2(7) NOT NULL,");
+        lastModifiedAt.Should().BeGreaterThan(0);
+        lines[lastModifiedAt + 1].Should().Be("[ContentCreatedAt] datetime2(7) NOT NULL,");
+        _ddl.Should().NotContain("DF_DocumentCache_ContentCreatedAt");
     }
 
     [Test]

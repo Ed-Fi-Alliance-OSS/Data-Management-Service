@@ -264,6 +264,7 @@ public class Given_CdcRebuildConsumer(CdcProvider provider)
                 32,
                 901 + index,
                 new DateTimeOffset(2026, 9, 28, 12, 30, 45, TimeSpan.Zero),
+                new DateTimeOffset(2025, 3, 4, 5, 6, 1, TimeSpan.Zero),
                 "schema",
                 "EdFi",
                 "Student",

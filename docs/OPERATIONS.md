@@ -240,9 +240,9 @@ services:
   fetch-plugins:
     # Pinned by digest, as every third-party image in this directory already is. An operator may
     # re-pin to an image they have approved; a mutable tag would leave the step that verifies the
-    # package digest running on bytes nobody pinned. This one is alpine:3.22, carrying BusyBox
+    # package digest running on bytes nobody pinned. This one is alpine:3.24.3, carrying BusyBox
     # 1.37.0, whose wget, sha256sum and unzip are the four commands below.
-    image: alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+    image: alpine@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
     environment:
       PLUGIN_PACKAGE_URL: ${PLUGIN_PACKAGE_URL:?set the .nupkg download address}
       PLUGIN_PACKAGE_SHA256: ${PLUGIN_PACKAGE_SHA256:?set the SHA-256 of the pinned .nupkg}
@@ -357,7 +357,7 @@ spec:
   initContainers:
     - name: fetch-plugins
       # Pinned by digest for the same reason the Compose recipe pins it.
-      image: alpine@sha256:14358309a308569c32bdc37e2e0e9694be33a9d99e68afb0f5ff33cc1f695dce
+      image: alpine@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a
       env:
         # Supply these from a ConfigMap, or from a Secret when the feed address
         # carries credentials. They are the deployment's own values, exactly as the
@@ -670,10 +670,13 @@ For running the recipes against a local development stack through
 
 A secret a plugin serves from a vault must not also be supplied by the environment, because an environment variable outranks every plugin source; see [Secrets](./SECRETS.md#the-process-global-secrets-phase-a-serves).
 The shipped Compose files map six of those secrets from `.env` variables, and deleting a variable does not remove the mapping.
-For five of them, Compose sets the key to an empty string, which outranks the vault.
+For five of them, `local-dms.compose.yml` and `local-config.compose.yml` set the key to an empty string, which outranks the vault.
 An empty `DatabaseSettings__EncryptionKey` stops the Configuration Service at startup.
 The others do not: the host starts and then fails requests, and an empty `IdentitySettings__EncryptionKey` fails only once the self-contained identity provider issues its first token.
-The sixth, `DatabaseSettings__DatabaseConnection`, has a default in the Compose files, so deleting its variable sends the Configuration Service to the bundled `dms-postgresql` database instead of the one the vault names.
+`published-dms.compose.yml` and `published-config.compose.yml` require both encryption-key variables instead, which feed three mappings: `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` feeds `ConfigurationServiceSettings__EncryptionKey` on `dms` and `DatabaseSettings__EncryptionKey` on `config`, and `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY` feeds `IdentitySettings__EncryptionKey` on `config`.
+Deleting either variable stops `docker compose config`, `up` and `down` with an error that names it; only teardown through `start-published-dms.ps1 -d` supplies an inert placeholder for a missing value.
+In those files only the two client secrets still become empty strings.
+The sixth, `DatabaseSettings__DatabaseConnection`, is mapped only on `config` and has a default in `local-config.compose.yml` and `published-config.compose.yml`, so deleting its variable sends the Configuration Service to the bundled `dms-postgresql` database instead of the one the vault names.
 
 Remove each key the vault serves in the same deployment-owned override that sets
 `Plugins__Allowed`, with `!reset null`. A service block goes only in the override for
@@ -698,7 +701,10 @@ services:
 List only the keys the vault actually serves. Keep the matching `.env` variables
 set: the reset already keeps their values out of the containers, and the local
 launch scripts read them directly to register identity clients and provision
-databases. `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` feeds both
+databases. For the two encryption-key variables the published files enforce this: Compose
+interpolates every file before it applies `!reset null`, so a deleted variable stops
+Compose even when the override resets its key.
+`CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` feeds both
 `DatabaseSettings__EncryptionKey` on `config` and
 `ConfigurationServiceSettings__EncryptionKey` on `dms`, so clearing it for one host
 would blank the key the other still reads from the environment. With the connection
@@ -706,8 +712,57 @@ string removed, the stock Configuration Service entry point skips its database w
 and .NET reports a connection error itself if the database is not ready yet, so keep
 a restart policy on `config`, as [Secrets](./SECRETS.md) describes.
 
-`DATABASE_CONNECTION_STRING_ADMIN` on `dms` is not a vault key, because only the DMS entry point reads it, but it carries superuser credentials and the shipped files give it a default.
-To keep it out of the container, reset it in the same override with `DATABASE_CONNECTION_STRING_ADMIN: !reset null` under `dms`.
+Where the override sits decides whether its `config` block applies.
+`DMS_PLUGINS_COMPOSE_FILES` is the DMS launchers' hook for DMS overlays: both launchers
+insert its files right after the DMS service file and before `local-config.compose.yml` or
+`published-config.compose.yml`. The `dms` block works there. A `config` reset in a file named
+there does not: the Configuration Service file comes later and sets those keys again,
+whichever Compose version you use. The launchers have no hook that adds a file after the
+Configuration Service file, so a `config` reset needs a file composed after it, and in the
+combined stack the separate limitation below applies even then.
+
+> **Limitation in the combined DMS and Configuration Service stack, observed in affected
+> Docker Compose versions.** This is independent of where the launchers insert overlays. The DMS
+> launchers add `dms-cms-proxy.yml` after both service files, and
+> that file sets `environment` on `config`. In an affected Compose version, a later `!reset null`
+> on a `config` environment key is then not applied: the Configuration Service keys in this
+> override can stay in the container, and their `.env` values outrank the vault values. The
+> `dms` resets are not affected. This was verified locally with Compose v5.1.3 and has also
+> been reported with v5.5.1; do not assume another version behaves differently. Before relying
+> on the override, render the complete Compose
+> file sequence you deploy with, override included, and confirm that every key you reset is
+> absent. Check key names only, and do not publish or log the rendered configuration,
+> because it contains the secret values. For example, this PowerShell check keeps the
+> rendered configuration in a variable and prints only key names. It stops with an error
+> unless Compose renders successfully and the result has a `config` service with an
+> environment, so an empty result never passes for a render that did not include `config`:
+>
+> ```powershell
+> $composeFiles = '<first file>', '<next file>', '<your override>'  # every -f file, in the order your deployment passes them
+> $envFile = '<your env file>'
+> $resetKeys = 'DatabaseSettings__DatabaseConnection', 'DatabaseSettings__EncryptionKey',
+>     'IdentitySettings__ClientSecret', 'IdentitySettings__EncryptionKey'  # the config keys your override resets
+>
+> $fileArguments = foreach ($file in $composeFiles) { '-f'; $file }
+> $rendered = docker compose @fileArguments --env-file $envFile config --format json 2>$null
+> if ($LASTEXITCODE -ne 0) {
+>     throw "docker compose config failed (exit code $LASTEXITCODE). Run the same command with 'config --quiet' to see the error without printing the configuration."
+> }
+> $config = (($rendered -join "`n") | ConvertFrom-Json).services.config
+> if ($null -eq $config) { throw 'The rendered configuration has no config service; check the file list.' }
+> if ($null -eq $config.environment) { throw 'The rendered config service has no environment; check the file list.' }
+> $present = @($config.environment.PSObject.Properties.Name | Where-Object { $_ -in $resetKeys })
+> if ($present.Count -gt 0) { throw "Still set on config: $($present -join ', ')" }
+> 'Every reset key is absent from config.'
+> ```
+>
+> Reordering the files or leaving out `dms-cms-proxy.yml` is not a validated workaround:
+> that file carries the Configuration Service's forwarded-header trust and `/connect/*`
+> rate-limit settings for the combined stack.
+
+`DATABASE_CONNECTION_STRING_ADMIN` on `dms` is not a vault key, because only the DMS entry point reads it, but it carries database credentials.
+`local-dms.compose.yml` gives it a default, a superuser connection string for the bundled `dms-postgresql` service; `published-dms.compose.yml` has no default and requires a value.
+To keep it out of the container, keep the variable set and reset it in the same override with `DATABASE_CONNECTION_STRING_ADMIN: !reset null` under `dms`.
 DMS then starts without waiting for PostgreSQL.
 
 ## Logging

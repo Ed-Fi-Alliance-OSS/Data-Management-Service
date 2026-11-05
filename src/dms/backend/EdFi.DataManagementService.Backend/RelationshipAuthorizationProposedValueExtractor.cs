@@ -3,7 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Frozen;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 
 namespace EdFi.DataManagementService.Backend;
@@ -26,7 +29,8 @@ internal sealed record ProposedRelationshipAuthorizationRuntimeSubject(
     int SubjectOrdinal,
     RelationshipAuthorizationSubject Subject,
     RelationshipAuthorizationProposedValueBinding Binding,
-    ProposedRelationshipAuthorizationRuntimeValue RuntimeValue
+    ProposedRelationshipAuthorizationRuntimeValue RuntimeValue,
+    bool IsNullBecauseDeferredMissingReference = false
 );
 
 internal abstract record ProposedRelationshipAuthorizationRuntimeValue
@@ -53,22 +57,25 @@ internal abstract record ProposedRelationshipAuthorizationExtractionResult
 
 internal static class RelationshipAuthorizationProposedValueExtractor
 {
+    /// <summary>
+    /// Extracts finalized runtime values. For a deferred reference, authorize a submitted EdOrg identity
+    /// directly; person DocumentId anchors remain null and carry provenance for failure classification.
+    /// </summary>
     public static ProposedRelationshipAuthorizationExtractionResult Extract(
         RelationshipAuthorizationResult.Authorized authorized,
-        RootWriteRowBuffer rootRow,
-        int emittedAuth1Index
-    ) => Extract(authorized, rootRow, emittedAuth1Index, targetContext: null);
-
-    public static ProposedRelationshipAuthorizationExtractionResult Extract(
-        RelationshipAuthorizationResult.Authorized authorized,
+        ResourceWritePlan writePlan,
         RootWriteRowBuffer rootRow,
         int emittedAuth1Index,
-        RelationalWriteTargetContext? targetContext
+        RelationalWriteTargetContext? targetContext = null,
+        IReadOnlySet<string>? deferredPaths = null,
+        JsonNode? requestBody = null
     )
     {
+        ArgumentNullException.ThrowIfNull(writePlan);
         ArgumentNullException.ThrowIfNull(authorized);
         ArgumentNullException.ThrowIfNull(rootRow);
         ArgumentOutOfRangeException.ThrowIfNegative(emittedAuth1Index);
+        deferredPaths ??= FrozenSet<string>.Empty;
 
         if (authorized.CheckSpecs.Count == 0)
         {
@@ -176,13 +183,74 @@ internal static class RelationshipAuthorizationProposedValueExtractor
                 }
 
                 var runtimeValue = ((ProposedRuntimeValue.Ready)valueResult).RuntimeValue;
+                var isNullBecauseDeferredMissingReference = false;
+
+                if (
+                    deferredPaths.Count > 0
+                    && UsesFinalizedRootValue(subject)
+                    && GetRuntimeSqlValue(runtimeValue) is null
+                    && !ProposedAuthorizationReferenceProvenance.TryClassify(
+                        writePlan,
+                        rootRow,
+                        binding.BindingIndex,
+                        deferredPaths,
+                        out isNullBecauseDeferredMissingReference,
+                        out var provenanceFailureMessage
+                    )
+                )
+                {
+                    return Invalid(provenanceFailureMessage);
+                }
+
+                if (
+                    isNullBecauseDeferredMissingReference
+                    && !subject.IsPersonSubject
+                    && requestBody is not null
+                    && ProposedAuthorizationReferenceProvenance.TryGetDeferredBodyPath(
+                        rootRow.TableWritePlan,
+                        binding.BindingIndex,
+                        deferredPaths,
+                        out var bodyPath
+                    )
+                )
+                {
+                    var column = rootRow.TableWritePlan.ColumnBindings[binding.BindingIndex].Column;
+                    if (column.ScalarType is not { } scalarType)
+                    {
+                        return Invalid(
+                            $"Proposed EdOrg column '{column.ColumnName.Value}' has no scalar type."
+                        );
+                    }
+
+                    RelationalWriteFlattener.TryGetRelativeLeafNode(requestBody, bodyPath, out var bodyNode);
+                    if (bodyNode is not null && bodyNode is not JsonValue)
+                    {
+                        return Invalid($"Proposed EdOrg value at '{bodyPath.Canonical}' must be scalar.");
+                    }
+                    runtimeValue = new ProposedRelationshipAuthorizationRuntimeValue.SubjectValue(
+                        bodyNode is null
+                            ? null
+                            : RelationalWriteFlattener.ConvertRequestDerivedJsonValue(
+                                (JsonValue)bodyNode,
+                                scalarType,
+                                new RelationalWriteFlattener.RequestDerivedScalarConversionContext(
+                                    bodyPath.Canonical,
+                                    $"Proposed EdOrg column '{column.ColumnName.Value}'"
+                                )
+                            )
+                    );
+                    // SQL can now evaluate direct claim equality and hierarchy membership normally.
+                    // An actually omitted/null body value must retain element-required classification.
+                    isNullBecauseDeferredMissingReference = false;
+                }
 
                 runtimeSubjects.Add(
                     new ProposedRelationshipAuthorizationRuntimeSubject(
                         subjectOrdinal,
                         subject,
                         binding,
-                        runtimeValue
+                        runtimeValue,
+                        isNullBecauseDeferredMissingReference
                     )
                 );
             }
@@ -261,6 +329,25 @@ internal static class RelationshipAuthorizationProposedValueExtractor
             new ProposedRelationshipAuthorizationRuntimeValue.SubjectValue(value)
         );
     }
+
+    /// <summary>
+    /// An existing-resource self People subject authorizes the target's own DocumentId, not a value from the
+    /// finalized row, so it never carries deferred-reference provenance.
+    /// </summary>
+    private static bool UsesFinalizedRootValue(RelationshipAuthorizationSubject subject) =>
+        subject.PersonMetadata?.ProposedAnchor?.Kind
+            is not RelationshipAuthorizationPersonProposedAnchorKind.ExistingTargetDocumentId;
+
+    private static object? GetRuntimeSqlValue(ProposedRelationshipAuthorizationRuntimeValue runtimeValue) =>
+        runtimeValue switch
+        {
+            ProposedRelationshipAuthorizationRuntimeValue.SubjectValue subjectValue => subjectValue.Value,
+            ProposedRelationshipAuthorizationRuntimeValue.TransitivePeopleFirstHopAnchorValue anchorValue =>
+                anchorValue.Value,
+            _ => throw new InvalidOperationException(
+                $"Unsupported proposed relationship authorization runtime value '{runtimeValue.GetType().Name}'."
+            ),
+        };
 
     private static object? GetBoundSqlValue(FlattenedWriteValue value)
     {

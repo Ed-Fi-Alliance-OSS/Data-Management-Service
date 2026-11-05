@@ -36,6 +36,17 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly QualifiedResourceName DescriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
     private static readonly DateTimeOffset LastModifiedAt = new(2026, 7, 31, 12, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset CacheContentCreatedAt = new(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        123,
+        456,
+        TimeSpan.Zero
+    );
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create(
         "tenant-cache-read",
         7
@@ -642,6 +653,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 "ContentVersion",
                 "StreamEtag",
                 "LastModifiedAt",
+                "ContentCreatedAt",
                 "DocumentJson",
                 "ComputedAt"
             )
@@ -654,6 +666,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 cache_row."ContentVersion",
                 cache_row."StreamEtag",
                 @lastModifiedAt,
+                @contentCreatedAt,
                 cache_row."DocumentJson"::jsonb,
                 @computedAt
             FROM jsonb_to_recordset(CAST(@cacheRowsJson AS jsonb)) AS cache_row(
@@ -681,6 +694,10 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 Value = resourceKey.ResourceVersion,
             },
             new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LastModifiedAt },
+            new NpgsqlParameter("contentCreatedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = CacheContentCreatedAt,
+            },
             new NpgsqlParameter("computedAt", NpgsqlDbType.TimestampTz)
             {
                 Value = LastModifiedAt.AddMinutes(1),
@@ -710,6 +727,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 "ContentVersion",
                 "StreamEtag",
                 "LastModifiedAt",
+                "ContentCreatedAt",
                 "DocumentJson",
                 "ComputedAt"
             )
@@ -722,6 +740,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 @contentVersion,
                 @streamEtag,
                 @lastModifiedAt,
+                @contentCreatedAt,
                 @documentJson,
                 @computedAt
             );
@@ -750,6 +769,10 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 ),
             },
             new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LastModifiedAt },
+            new NpgsqlParameter("contentCreatedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = CacheContentCreatedAt,
+            },
             new NpgsqlParameter("documentJson", NpgsqlDbType.Jsonb)
             {
                 Value = new JsonObject { ["value"] = $"cache-{contentVersion}" }.ToJsonString(),

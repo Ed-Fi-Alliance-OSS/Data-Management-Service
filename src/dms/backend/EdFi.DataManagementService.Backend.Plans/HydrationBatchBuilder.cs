@@ -803,7 +803,7 @@ public static class HydrationBatchBuilder
         return false;
     }
 
-    private static bool IsZeroPageSelectionSizeValue(object? value)
+    internal static bool IsZeroPageSelectionSizeValue(object? value)
     {
         return value switch
         {

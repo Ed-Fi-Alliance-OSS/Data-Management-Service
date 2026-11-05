@@ -34,6 +34,17 @@ public class Given_A_Postgresql_DocumentCacheStatusCurrentSourceObserver
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DateTimeOffset FirstEnqueuedAt = DateTimeOffset.UtcNow.AddMinutes(-10);
     private static readonly DateTimeOffset LaterEnqueuedAt = FirstEnqueuedAt.AddMinutes(1);
+    private static readonly DateTimeOffset CacheContentCreatedAt = new(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        123,
+        456,
+        TimeSpan.Zero
+    );
     private static readonly DocumentCachePhysicalSourceFingerprint Fingerprint = new(
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     );
@@ -437,6 +448,7 @@ public class Given_A_Postgresql_DocumentCacheStatusCurrentSourceObserver
                 "ContentVersion",
                 "StreamEtag",
                 "LastModifiedAt",
+                "ContentCreatedAt",
                 "DocumentJson",
                 "ComputedAt"
             )
@@ -449,6 +461,7 @@ public class Given_A_Postgresql_DocumentCacheStatusCurrentSourceObserver
                 source."ContentVersion",
                 'status-etag-' || source."ContentVersion",
                 @lastModifiedAt,
+                @contentCreatedAt,
                 jsonb_build_object('value', 'cache-' || source."ContentVersion"),
                 @computedAt
             FROM "dms"."Document" AS source
@@ -493,6 +506,10 @@ public class Given_A_Postgresql_DocumentCacheStatusCurrentSourceObserver
                 Value = resourceKey.ResourceVersion,
             },
             new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LaterEnqueuedAt },
+            new NpgsqlParameter("contentCreatedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = CacheContentCreatedAt,
+            },
             new NpgsqlParameter("computedAt", NpgsqlDbType.TimestampTz)
             {
                 Value = LaterEnqueuedAt.AddMinutes(1),

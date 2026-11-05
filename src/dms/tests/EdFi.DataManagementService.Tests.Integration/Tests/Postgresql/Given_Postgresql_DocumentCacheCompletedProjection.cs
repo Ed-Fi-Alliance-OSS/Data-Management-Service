@@ -51,3 +51,18 @@ public sealed class Given_Postgresql_DocumentCacheCompletedProjection_With_Descr
             Harness
         );
 }
+
+[Category("DocumentCacheCompletedProjection")]
+public sealed class Given_Postgresql_DocumentCacheCompletedProjection_With_ExtensionProject
+    : PostgresqlApiIntegrationTestBase
+{
+    protected override FixtureKey Fixture => FixtureKey.AuthoritativeDs52Tpdm;
+
+    protected override bool EnableDocumentCacheReadAcceleration => true;
+
+    [Test]
+    public Task It_projects_creation_time_for_an_extension_project_resource() =>
+        DocumentCacheCompletedProjectionScenario.It_projects_creation_time_for_an_extension_project_resource(
+            Harness
+        );
+}

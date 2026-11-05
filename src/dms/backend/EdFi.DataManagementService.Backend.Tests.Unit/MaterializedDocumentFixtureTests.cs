@@ -82,6 +82,10 @@ public class Given_MaterializedDocumentFixtureCatalog
                     ContentLastModifiedAt: DateTimeOffset.Parse(
                         "2026-01-15T17:18:19.123456Z",
                         CultureInfo.InvariantCulture
+                    ),
+                    ContentCreatedAt: DateTimeOffset.Parse(
+                        "2025-03-04T05:06:09.654329Z",
+                        CultureInfo.InvariantCulture
                     )
                 )
             );
@@ -302,4 +306,89 @@ public class Given_MaterializedDocumentFixtureCatalog
 
     private static string FormatLastModifiedDate(DateTimeOffset lastModifiedAt) =>
         lastModifiedAt.UtcDateTime.ToString("yyyy-MM-ddTHH:mm:ss'Z'", CultureInfo.InvariantCulture);
+}
+
+[TestFixture]
+public class Given_MaterializedDocumentFixtureCatalog_Creation_Timestamp_Validation
+{
+    private string _caseDirectory = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var source = MaterializedDocumentFixtureCatalog
+            .LoadCase(TestContext.CurrentContext.TestDirectory, "layout-contract-school")
+            .CaseDirectory;
+        // The catalog requires the directory name to match the manifest caseName.
+        _caseDirectory = Path.Combine(
+            Path.GetTempPath(),
+            $"dms-fixture-{Guid.NewGuid():N}",
+            "layout-contract-school"
+        );
+        Directory.CreateDirectory(_caseDirectory);
+        foreach (var file in Directory.GetFiles(source))
+        {
+            File.Copy(file, Path.Combine(_caseDirectory, Path.GetFileName(file)));
+        }
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        Directory.Delete(Path.GetDirectoryName(_caseDirectory)!, recursive: true);
+    }
+
+    [Test]
+    public void It_loads_an_unmodified_copy()
+    {
+        var fixture = MaterializedDocumentFixtureCatalog.LoadFromCaseDirectory(_caseDirectory);
+
+        fixture
+            .ExpectedCacheRow!.ContentCreatedAt.Should()
+            .Be(fixture.SourceSetup.Documents.Single().ContentCreatedAt);
+    }
+
+    [Test]
+    public void It_rejects_a_source_document_without_a_creation_timestamp()
+    {
+        EditJson("source-setup.json", root => root["documents"]![0]!.AsObject().Remove("contentCreatedAt"));
+
+        var act = () => MaterializedDocumentFixtureCatalog.LoadFromCaseDirectory(_caseDirectory);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*must declare contentCreatedAt*");
+    }
+
+    [Test]
+    public void It_rejects_an_expected_cache_row_without_a_creation_timestamp()
+    {
+        EditJson("expected-cache-row.json", root => root.AsObject().Remove("contentCreatedAt"));
+
+        var act = () => MaterializedDocumentFixtureCatalog.LoadFromCaseDirectory(_caseDirectory);
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*must declare contentCreatedAt*");
+    }
+
+    [Test]
+    public void It_rejects_an_expected_cache_row_whose_creation_timestamp_differs_from_its_source_document()
+    {
+        // A cache row that kept the last-modified value instead of the owner's creation value.
+        EditJson(
+            "expected-cache-row.json",
+            root => root["contentCreatedAt"] = root["lastModifiedAt"]!.DeepClone()
+        );
+
+        var act = () => MaterializedDocumentFixtureCatalog.LoadFromCaseDirectory(_caseDirectory);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*contentCreatedAt must equal its source document's contentCreatedAt*");
+    }
+
+    private void EditJson(string fileName, Action<JsonNode> edit)
+    {
+        var path = Path.Combine(_caseDirectory, fileName);
+        var root = JsonNode.Parse(File.ReadAllText(path))!;
+        edit(root);
+        File.WriteAllText(path, root.ToJsonString());
+    }
 }

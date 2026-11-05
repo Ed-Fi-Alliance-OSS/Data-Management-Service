@@ -2351,6 +2351,7 @@ internal static class MssqlDocumentProjectionTestSupport
                 [ContentVersion],
                 [StreamEtag],
                 [LastModifiedAt],
+                [ContentCreatedAt],
                 [DocumentJson]
             )
             SELECT
@@ -2362,6 +2363,7 @@ internal static class MssqlDocumentProjectionTestSupport
                 document.[ContentVersion],
                 CONCAT(N'etag-', CONVERT(varchar(20), document.[ContentVersion])),
                 widget.[ContentLastModifiedAt],
+                widget.[ContentCreatedAt],
                 N'{{escapedJson}}'
             FROM [dms].[Document] document
             INNER JOIN [testproject].[Widget] widget

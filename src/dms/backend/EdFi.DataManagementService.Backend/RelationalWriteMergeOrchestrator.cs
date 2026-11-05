@@ -50,7 +50,13 @@ internal sealed class RelationalWriteMergeOrchestrator(
             );
         }
 
-        return ResolveProfileMerge(request, targetContext, currentState, resolvedReferences);
+        return ResolveProfileMerge(
+            request,
+            targetContext,
+            currentState,
+            resolvedReferences,
+            allowMissingDocumentReferencesForPrecedence
+        );
     }
 
     private RelationalWriteMergeResult ResolveNoProfileMerge(
@@ -85,6 +91,19 @@ internal sealed class RelationalWriteMergeOrchestrator(
             new RelationalWriteNoProfileMergeRequest(request.WritePlan, flattenedWriteSet, currentState)
         );
 
+        return WithDeferredMissingDocumentReferencePaths(
+            mergeResult,
+            resolvedReferences,
+            allowMissingDocumentReferencesForPrecedence
+        );
+    }
+
+    private static RelationalWriteMergeResult WithDeferredMissingDocumentReferencePaths(
+        RelationalWriteMergeResult mergeResult,
+        ResolvedReferenceSet resolvedReferences,
+        bool allowMissingDocumentReferencesForPrecedence
+    )
+    {
         if (!allowMissingDocumentReferencesForPrecedence)
         {
             return mergeResult;
@@ -102,7 +121,8 @@ internal sealed class RelationalWriteMergeOrchestrator(
         RelationalWriteExecutorRequest request,
         RelationalWriteTargetContext targetContext,
         RelationalWriteCurrentState? currentState,
-        ResolvedReferenceSet resolvedReferences
+        ResolvedReferenceSet resolvedReferences,
+        bool allowMissingDocumentReferencesForPrecedence
     )
     {
         var profileWriteContext = request.ProfileWriteContext!;
@@ -158,7 +178,8 @@ internal sealed class RelationalWriteMergeOrchestrator(
                 // (RequestScopeState/StoredScopeState), not inferred from buffer
                 // presence. The synthesizer must still see an empty visible-present
                 // extension buffer so Insert/Update overlay can run.
-                emitEmptyExtensionBuffers: true
+                emitEmptyExtensionBuffers: true,
+                allowMissingDocumentReferencesForPrecedence: allowMissingDocumentReferencesForPrecedence
             )
         );
 
@@ -170,19 +191,57 @@ internal sealed class RelationalWriteMergeOrchestrator(
                 currentState,
                 effectiveProfileRequest,
                 profileAppliedWriteContext,
-                resolvedReferences
+                resolvedReferences,
+                allowMissingDocumentReferencesForPrecedence
             )
         );
 
-        return profileMergeOutcome.IsRejection
-            ? new RelationalWriteMergeBoundary(
-                null,
-                RelationalWriteExecutorResults.BuildProfileCreatabilityRejectionResult(
+        var profileFailureResult = profileMergeOutcome switch
+        {
+            { ValidationFailure: { } validationFailure } =>
+                RelationalWriteExecutorResults.BuildValidationFailureResult(
                     request.OperationKind,
-                    profileWriteContext.ProfileName
-                )
-            )
-            : new RelationalWriteMergeBoundary(profileMergeOutcome.MergeResult!, null);
+                    validationFailure.ValidationFailures
+                ),
+            { IsRejection: true } => RelationalWriteExecutorResults.BuildProfileCreatabilityRejectionResult(
+                request.OperationKind,
+                profileWriteContext.ProfileName
+            ),
+            _ => null,
+        };
+
+        if (
+            request.HasPendingProposedAuthorization
+            && profileMergeOutcome.AuthorizationRootTableState is { } authorizationRoot
+        )
+        {
+            // Proposed authorization must see the same finalized profile root whether the submitted
+            // references resolved or not. A later collection/separate-table policy rejection cannot
+            // expose reference existence, and none of its partially merged rows may reach DML.
+            return new RelationalWriteMergeBoundary(
+                WithDeferredMissingDocumentReferencePaths(
+                    new RelationalWriteMergeResult([authorizationRoot], supportsGuardedNoOp: false),
+                    resolvedReferences,
+                    allowMissingDocumentReferencesForPrecedence
+                ),
+                ImmediateResult: null,
+                DeferredProfileFailureResult: profileFailureResult
+            );
+        }
+
+        if (profileFailureResult is not null)
+        {
+            return new RelationalWriteMergeBoundary(null, profileFailureResult);
+        }
+
+        return new RelationalWriteMergeBoundary(
+            WithDeferredMissingDocumentReferencePaths(
+                profileMergeOutcome.MergeResult!,
+                resolvedReferences,
+                allowMissingDocumentReferencesForPrecedence
+            ),
+            null
+        );
     }
 
     private ProfileAppliedWriteContext? BuildProfileAppliedWriteContext(
@@ -244,5 +303,6 @@ internal sealed class RelationalWriteMergeOrchestrator(
 
 internal sealed record RelationalWriteMergeBoundary(
     RelationalWriteMergeResult? MergeResult,
-    RelationalWriteExecutorResult? ImmediateResult
+    RelationalWriteExecutorResult? ImmediateResult,
+    RelationalWriteExecutorResult? DeferredProfileFailureResult = null
 );

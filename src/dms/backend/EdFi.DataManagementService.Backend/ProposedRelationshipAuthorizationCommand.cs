@@ -131,6 +131,11 @@ internal static class ProposedRelationshipAuthorizationCommand
         return null;
     }
 
+    /// <summary>
+    /// Maps a provider failure to the validated relationship denial, then corrects the classification of
+    /// any proposed subject that is null only because its submitted reference could not be resolved. Every
+    /// emitting call site maps through here, so they all report the same denial.
+    /// </summary>
     public static bool TryMapFailure(
         SqlDialect dialect,
         IRelationshipAuthorizationProviderFailureExtractor providerFailureExtractor,
@@ -138,17 +143,30 @@ internal static class ProposedRelationshipAuthorizationCommand
         DbException exception,
         out RelationshipAuthorizationFailure? relationshipFailure,
         out RelationshipAuthorizationProviderFailureDiagnostic? invalidFailureDiagnostic
-    ) =>
-        RelationshipAuthorizationProviderFailureMapper.TryMapRelationshipAuthorizationFailure(
-            dialect,
-            exception,
-            providerFailureExtractor,
-            runtimeCheck.EmittedAuth1Index,
-            runtimeCheck.CheckSpecs,
-            runtimeCheck.ClaimEducationOrganizationIdParameterization.ClaimEducationOrganizationIds,
-            out relationshipFailure,
-            out invalidFailureDiagnostic
+    )
+    {
+        if (
+            !RelationshipAuthorizationProviderFailureMapper.TryMapRelationshipAuthorizationFailure(
+                dialect,
+                exception,
+                providerFailureExtractor,
+                runtimeCheck.EmittedAuth1Index,
+                runtimeCheck.CheckSpecs,
+                runtimeCheck.ClaimEducationOrganizationIdParameterization.ClaimEducationOrganizationIds,
+                out relationshipFailure,
+                out invalidFailureDiagnostic
+            )
+        )
+        {
+            return false;
+        }
+
+        relationshipFailure = ProposedAuthorizationFailureClassification.CorrectRelationshipFailure(
+            relationshipFailure!,
+            runtimeCheck
         );
+        return true;
+    }
 
     /// <summary>
     /// Rethrows a provider failure as the authorization exception the write executor maps to a result, or

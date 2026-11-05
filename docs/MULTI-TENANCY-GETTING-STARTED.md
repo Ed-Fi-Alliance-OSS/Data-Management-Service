@@ -73,6 +73,18 @@ When route qualifiers are configured:
 Leave `ROUTE_QUALIFIER_SEGMENTS` empty or commented out for implicit routing
 (each API credential accesses only one instance).
 
+### Swagger UI Settings
+
+With multi-tenancy enabled, the DMS metadata routes answer only under the tenant
+and every configured route qualifier value, so Swagger UI needs one such route
+context to load the API definitions:
+
+```bash
+# The tenant, then one value per ROUTE_QUALIFIER_SEGMENTS entry, slash separated.
+# DistrictA and 2024 are the tenant and school year Steps 4 and 5 create.
+DMS_SWAGGER_UI_ROUTE_CONTEXT=DistrictA/2024
+```
+
 ### Database Settings
 
 ```bash
@@ -460,6 +472,14 @@ per boundary.
 With multi-tenancy enabled, Swagger UI provides dropdown selectors for both
 tenant and school year selection.
 
+Swagger UI loads the API definitions under the route context in
+`DMS_SWAGGER_UI_ROUTE_CONTEXT` (`DistrictA/2024` in `.env.multitenancy`),
+because the DMS metadata routes answer only under a tenant and every configured
+route qualifier value. The tenant and school year it names must exist, which is
+why this step comes after Steps 4 and 5. Once a definition loads, its tenant and
+school year selectors list every tenant and school year DMS has loaded, so one
+route context is enough to work with all of them.
+
 ### Navigate to Swagger UI
 
 Open your browser to [http://localhost:8082](http://localhost:8082).
@@ -480,6 +500,14 @@ tenant and school year in the URL path. For example, selecting "DistrictA" and
 ```
 http://localhost:8080/DistrictA/2024/data/ed-fi/{resource}
 ```
+
+### Troubleshooting
+
+If the page shows "Failed to load API definition", `DMS_SWAGGER_UI_ROUTE_CONTEXT`
+is empty or names a tenant or school year that does not exist. The notice at the
+top of the page and the browser console carry the DMS response. Correct the
+value in `.env.multitenancy` and run the `start-local-dms.ps1` command from
+Step 2 again; Compose recreates the `swagger-ui` container with the new value.
 
 ### Authentication in Swagger UI
 

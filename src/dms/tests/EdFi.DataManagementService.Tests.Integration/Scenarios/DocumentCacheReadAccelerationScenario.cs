@@ -139,10 +139,16 @@ internal static class DocumentCacheReadAccelerationScenario
             "Relational Missing"
         );
         var missingStudentDocumentUuid = Guid.Parse(missingStudentLocationPath.Split('/')[^1]);
+        DateTimeOffset creationSentinel = await DocumentCacheAuthoritativeStampSql.PlantCreationSentinelAsync(
+            harness,
+            "\"edfi\".\"Student\"",
+            missingStudentDocumentUuid
+        );
         DocumentMetadata missingStudentMetadata = await ReadDocumentMetadataAsync(
             harness,
             missingStudentDocumentUuid
         );
+        missingStudentMetadata.ContentCreatedAt.Should().Be(creationSentinel);
         await DeleteCacheRowsAsync(harness, missingStudentMetadata.DocumentId);
         await ReplaceProjectionWorkAsync(harness, missingStudentMetadata);
         (await CountCacheRowsAsync(harness, missingStudentMetadata.DocumentId))
@@ -755,7 +761,8 @@ internal static class DocumentCacheReadAccelerationScenario
                    es."EffectiveSchemaHash",
                    rk."ProjectName",
                    rk."ResourceName",
-                   rk."ResourceVersion"
+                   rk."ResourceVersion",
+                   owner."ContentCreatedAt"
             FROM "dms"."Document" d
             INNER JOIN ({DocumentCacheAuthoritativeStampSql.Owners(
                 harness
@@ -776,6 +783,7 @@ internal static class DocumentCacheReadAccelerationScenario
             Convert.ToInt16(reader.GetValue(2), CultureInfo.InvariantCulture),
             Convert.ToInt64(reader.GetValue(3), CultureInfo.InvariantCulture),
             ToUtcDateTimeOffset(reader.GetValue(4)),
+            ToUtcDateTimeOffset(reader.GetValue(9)),
             reader.GetString(5),
             reader.GetString(6),
             reader.GetString(7),
@@ -805,6 +813,7 @@ internal static class DocumentCacheReadAccelerationScenario
                     "ContentVersion",
                     "StreamEtag",
                     "LastModifiedAt",
+                    "ContentCreatedAt",
                     "DocumentJson",
                     "ComputedAt"
                 )
@@ -817,6 +826,7 @@ internal static class DocumentCacheReadAccelerationScenario
                     @contentVersion,
                     @streamEtag,
                     @lastModifiedAt,
+                    @contentCreatedAt,
                     CAST(@documentJson AS jsonb),
                     @computedAt
                 )
@@ -828,6 +838,7 @@ internal static class DocumentCacheReadAccelerationScenario
                     "ContentVersion" = EXCLUDED."ContentVersion",
                     "StreamEtag" = EXCLUDED."StreamEtag",
                     "LastModifiedAt" = EXCLUDED."LastModifiedAt",
+                    "ContentCreatedAt" = EXCLUDED."ContentCreatedAt",
                     "DocumentJson" = EXCLUDED."DocumentJson",
                     "ComputedAt" = EXCLUDED."ComputedAt";
                 """
@@ -843,6 +854,7 @@ internal static class DocumentCacheReadAccelerationScenario
                         @contentVersion AS [ContentVersion],
                         @streamEtag AS [StreamEtag],
                         @lastModifiedAt AS [LastModifiedAt],
+                        @contentCreatedAt AS [ContentCreatedAt],
                         @documentJson AS [DocumentJson],
                         @computedAt AS [ComputedAt]
                 ) AS source
@@ -856,6 +868,7 @@ internal static class DocumentCacheReadAccelerationScenario
                         [ContentVersion] = source.[ContentVersion],
                         [StreamEtag] = source.[StreamEtag],
                         [LastModifiedAt] = source.[LastModifiedAt],
+                        [ContentCreatedAt] = source.[ContentCreatedAt],
                         [DocumentJson] = source.[DocumentJson],
                         [ComputedAt] = source.[ComputedAt]
                 WHEN NOT MATCHED THEN
@@ -868,6 +881,7 @@ internal static class DocumentCacheReadAccelerationScenario
                         [ContentVersion],
                         [StreamEtag],
                         [LastModifiedAt],
+                        [ContentCreatedAt],
                         [DocumentJson],
                         [ComputedAt]
                     )
@@ -880,6 +894,7 @@ internal static class DocumentCacheReadAccelerationScenario
                         source.[ContentVersion],
                         source.[StreamEtag],
                         source.[LastModifiedAt],
+                        source.[ContentCreatedAt],
                         source.[DocumentJson],
                         source.[ComputedAt]
                     );
@@ -896,6 +911,7 @@ internal static class DocumentCacheReadAccelerationScenario
             CreateParameter(command, "@streamEtag", ComposeStreamEtag(metadata, contentVersion))
         );
         command.Parameters.Add(CreateParameter(command, "@lastModifiedAt", metadata.ContentLastModifiedAt));
+        command.Parameters.Add(CreateParameter(command, "@contentCreatedAt", metadata.ContentCreatedAt));
         command.Parameters.Add(CreateParameter(command, "@documentJson", documentJson.ToJsonString()));
         command.Parameters.Add(CreateParameter(command, "@computedAt", DateTimeOffset.UtcNow));
 
@@ -1020,7 +1036,8 @@ internal static class DocumentCacheReadAccelerationScenario
                    "ContentVersion",
                    "StreamEtag",
                    "LastModifiedAt",
-                   "DocumentJson"
+                   "DocumentJson",
+                   "ContentCreatedAt"
             FROM "dms"."DocumentCache"
             WHERE "DocumentId" = @documentId;
             """;
@@ -1037,6 +1054,7 @@ internal static class DocumentCacheReadAccelerationScenario
             Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture),
             reader.GetString(2),
             ToUtcDateTimeOffset(reader.GetValue(3)),
+            ToUtcDateTimeOffset(reader.GetValue(5)),
             JsonNode.Parse(documentJson)!.AsObject()
         );
 
@@ -1055,6 +1073,9 @@ internal static class DocumentCacheReadAccelerationScenario
         row.ContentVersion.Should().Be(metadata.ContentVersion);
         row.StreamEtag.Should().Be(ComposeStreamEtag(metadata, metadata.ContentVersion));
         row.LastModifiedAt.Should().BeCloseTo(metadata.ContentLastModifiedAt, TimeSpan.FromTicks(10));
+        row.ContentCreatedAt.Should()
+            .Be(metadata.ContentCreatedAt, "direct fill copies the owner creation time");
+        row.ContentCreatedAt.Should().NotBe(row.LastModifiedAt);
         row.DocumentJson["id"]!.GetValue<string>().Should().Be(metadata.DocumentUuid.ToString());
         row.DocumentJson["studentUniqueId"]!.GetValue<string>().Should().Be(studentUniqueId);
         row.DocumentJson["firstName"]!.GetValue<string>().Should().Be(firstName);
@@ -1169,6 +1190,7 @@ internal static class DocumentCacheReadAccelerationScenario
         short ResourceKeyId,
         long ContentVersion,
         DateTimeOffset ContentLastModifiedAt,
+        DateTimeOffset ContentCreatedAt,
         string EffectiveSchemaHash,
         string ProjectName,
         string ResourceName,
@@ -1180,6 +1202,7 @@ internal static class DocumentCacheReadAccelerationScenario
         long ContentVersion,
         string StreamEtag,
         DateTimeOffset LastModifiedAt,
+        DateTimeOffset ContentCreatedAt,
         JsonObject DocumentJson
     );
 }
