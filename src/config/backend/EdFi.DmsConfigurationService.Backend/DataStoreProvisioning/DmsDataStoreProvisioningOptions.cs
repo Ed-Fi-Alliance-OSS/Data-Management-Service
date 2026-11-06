@@ -50,6 +50,16 @@ public sealed class DmsDataStoreProvisioningOptions
     public string? ArtifactDirectory { get; set; }
 
     /// <summary>
+    /// The directory under which each operation claims its private <c>dms-provision-&lt;op&gt;</c> directory
+    /// (D-5). Optional: when omitted the process temp path is used, which is where the operator residue
+    /// procedure (7.6) looks. When set it must be fully qualified on the CMS host and must already exist; the
+    /// provisioner never creates it, so its access control stays the operator's. The claim inside it is atomic
+    /// and mode <c>0700</c> either way; a Populated package needs room for the package copy and the extracted
+    /// artifact together.
+    /// </summary>
+    public string? OperationDirectory { get; set; }
+
+    /// <summary>
     /// The allowlist: exactly the two entries <c>Minimal</c> and <c>Sample</c>, keyed by wire value
     /// (case-sensitive), each naming one package id and version (AC 3).
     /// </summary>

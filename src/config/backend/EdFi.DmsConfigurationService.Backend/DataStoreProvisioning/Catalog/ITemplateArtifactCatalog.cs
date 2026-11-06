@@ -6,17 +6,37 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 
 /// <summary>
-/// The artifact-resolution port the orchestrator calls before any server contact (6.2 steps 1 to 7):
-/// template to allowlist entry, package and attestation located by allowlist-derived names, trust
-/// verification, manifest validation, configuration match, and the pin. Created minimally here so the
-/// orchestrator shell has a port to refuse ahead of and to resolve through; Step 2.4 delivers the
-/// implementation and extends the port for the create path's artifact extraction (6.2 step 8).
+/// The artifact port the orchestrator calls before any server contact (6.2): template to allowlist entry,
+/// package and attestation located by allowlist-derived names, private staging, trust verification, manifest
+/// validation, configuration match, and the pin. <see cref="ResolveAsync"/> serves
+/// <c>ResolveArtifactAsync</c> and the create path's pin comparison: it releases the private directory before
+/// returning. <see cref="StageAsync"/> serves the create path once the pin matches: the artifact stays staged
+/// for extraction (6.2 step 8) and the restore, and is released by its owner. <see cref="ValidateAsync"/> is
+/// the readiness probe of 7.3 steps 2 and 3. No member contacts a database server.
 /// </summary>
 public interface ITemplateArtifactCatalog
 {
-    /// <summary>Resolves and pins the allowlisted artifact for <paramref name="template"/>; no server is contacted.</summary>
+    /// <summary>Resolves and pins the allowlisted artifact for <paramref name="template"/>; nothing is extracted and nothing is left on disk.</summary>
     Task<DmsArtifactResolution> ResolveAsync(
         DmsDatabaseTemplate template,
         CancellationToken cancellationToken
     );
+
+    /// <summary>
+    /// Stages the allowlisted artifact for <paramref name="template"/> in the private directory of
+    /// <paramref name="operationId"/> and returns it with its pin, or the classified refusal together with
+    /// the cleanup report of the directory the refusal released.
+    /// </summary>
+    Task<TemplateArtifactStaging> StageAsync(
+        DmsDatabaseTemplate template,
+        DmsOperationId operationId,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// The startup probes (7.3 steps 2 and 3): the trust policy loads and names at least one
+    /// detached-attestation producer, and both allowlisted packages resolve against the configuration.
+    /// Returns one reason per failed probe; empty means every probe passed.
+    /// </summary>
+    Task<IReadOnlyList<DmsReadinessReason>> ValidateAsync(CancellationToken cancellationToken);
 }

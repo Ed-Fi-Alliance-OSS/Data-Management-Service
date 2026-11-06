@@ -17,9 +17,10 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 /// document is built from parts so a test can alter exactly one of them, and base64 is written with literal
 /// <c>+</c> and <c>/</c> as the tooling writes it (the default encoder would escape <c>+</c>, making text
 /// replacement of a base64 value miss at random). Dispose after arranging; nothing it returns depends on the key
-/// staying alive.
+/// staying alive. Public, like <c>TestTemplatePackageBuilder</c>, so the engine integration projects can share
+/// one producer across the packages of a catalog.
 /// </summary>
-internal sealed class EphemeralAttestationSigner : IDisposable
+public sealed class EphemeralAttestationSigner : IDisposable
 {
     public const string Algorithm = "ECDSA_P256_SHA256";
 

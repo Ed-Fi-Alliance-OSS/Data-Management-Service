@@ -44,7 +44,7 @@ public sealed class DisabledDmsDataStoreProvisioner(IDmsDataStoreProvisionerRead
         CancellationToken cancellationToken
     ) =>
         Task.FromResult<DmsArtifactResolution>(
-            new DmsArtifactResolution.Failure(RefusalFor(readiness.Current))
+            new DmsArtifactResolution.Failure(RefusalFor(readiness.Current), DmsCleanupReport.Clean)
         );
 
     public Task<DmsDataStoreCreateResult> CreateAsync(

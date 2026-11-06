@@ -72,6 +72,7 @@ public sealed partial class DmsDataStoreProvisioningOptionsValidator(ISecretReso
         ValidateProtectedNames(failures, options.AdditionalProtectedDatabaseNames);
         RequireLocalPath(failures, nameof(options.TrustPolicyPath), options.TrustPolicyPath);
         RequireLocalPath(failures, nameof(options.ArtifactDirectory), options.ArtifactDirectory);
+        RequireOmittedOrLocalPath(failures, nameof(options.OperationDirectory), options.OperationDirectory);
         string? dataStandardVersion = ValidateCompatibility(failures, options.Compatibility);
         ValidateTemplates(failures, options.Templates, dataStandardVersion);
         ValidateRanges(failures, options);
@@ -461,6 +462,17 @@ public sealed partial class DmsDataStoreProvisioningOptionsValidator(ISecretReso
         {
             failures.Add(
                 $"{Section}:{key} must be a fully qualified path on the Configuration Service host."
+            );
+        }
+    }
+
+    /// <summary>An optional local path: absent means the default applies; present means fully qualified on the CMS host.</summary>
+    private static void RequireOmittedOrLocalPath(List<string> failures, string key, string? path)
+    {
+        if (path is not null && (string.IsNullOrWhiteSpace(path) || !Path.IsPathFullyQualified(path)))
+        {
+            failures.Add(
+                $"{Section}:{key} must be omitted or a fully qualified path on the Configuration Service host."
             );
         }
     }

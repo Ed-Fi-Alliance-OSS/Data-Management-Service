@@ -5,11 +5,17 @@
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
-/// <summary>The outcome of <see cref="IDmsDataStoreProvisioner.ResolveArtifactAsync"/>; no server was contacted either way.</summary>
+/// <summary>
+/// The outcome of <see cref="IDmsDataStoreProvisioner.ResolveArtifactAsync"/>; no server was contacted either
+/// way. Resolution stages the package privately and releases that directory before returning (6.2 step 7), so
+/// both outcomes carry the cleanup report of that release (D-19): residue never changes the outcome.
+/// </summary>
 public abstract record DmsArtifactResolution
 {
     /// <summary>The allowlisted package authenticated and matched configuration; persist the pin before creating.</summary>
-    public sealed record Resolved(DmsTrustedArtifactPin Pin) : DmsArtifactResolution;
+    public sealed record Resolved(DmsTrustedArtifactPin Pin, DmsCleanupReport Cleanup)
+        : DmsArtifactResolution;
 
-    public sealed record Failure(DmsProvisioningFailure Detail) : DmsArtifactResolution;
+    public sealed record Failure(DmsProvisioningFailure Detail, DmsCleanupReport Cleanup)
+        : DmsArtifactResolution;
 }

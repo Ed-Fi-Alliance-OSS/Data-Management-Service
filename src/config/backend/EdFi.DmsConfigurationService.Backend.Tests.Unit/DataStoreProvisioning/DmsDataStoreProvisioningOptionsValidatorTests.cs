@@ -873,6 +873,9 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
                 ["relative psql"] = o => o.Postgresql!.PsqlPath = "psql",
                 ["other convention artifact directory"] = o => o.ArtifactDirectory = otherConventionLocal,
                 ["host qualified artifact directory"] = o => o.ArtifactDirectory = LocalPath("elsewhere"),
+                ["relative operation directory"] = o => o.OperationDirectory = "operations",
+                ["blank operation directory"] = o => o.OperationDirectory = "",
+                ["host qualified operation directory"] = o => o.OperationDirectory = LocalPath("operations"),
                 ["psql major below one"] = o => o.Postgresql!.MinimumPsqlMajorVersion = 0,
                 ["blank protected name"] = o => o.AdditionalProtectedDatabaseNames = ["EdFi_Admin", ""],
             };
@@ -954,6 +957,17 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
         [Test]
         public void It_accepts_a_host_qualified_local_path() =>
             _failures["host qualified artifact directory"].Should().BeEmpty();
+
+        [Test]
+        public void It_requires_an_operation_directory_to_be_omitted_or_fully_qualified()
+        {
+            const string Expected =
+                $"{Section}:OperationDirectory must be omitted or a fully qualified path on the Configuration Service host.";
+            using AssertionScope scope = new();
+            _failures["relative operation directory"].Should().ContainSingle().Which.Should().Be(Expected);
+            _failures["blank operation directory"].Should().ContainSingle().Which.Should().Be(Expected);
+            _failures["host qualified operation directory"].Should().BeEmpty();
+        }
 
         [Test]
         public void It_accepts_server_paths_in_either_convention()
@@ -1098,6 +1112,7 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
             options.Provider = PostgresqlProvider;
             options.TrustPolicyPath = PathValue;
             options.ArtifactDirectory = PathValue;
+            options.OperationDirectory = PathValue;
             options.Postgresql!.PsqlPath = PathValue;
             options.Templates!["Minimal"]!.PackageId = PackageId;
             options.Templates!["Sample"]!.PackageVersion = Version;

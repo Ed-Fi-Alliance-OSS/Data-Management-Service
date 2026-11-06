@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
@@ -320,6 +321,7 @@ public static class WebApplicationBuilderExtensions
             "DMS data store provisioning is enabled for target provider {Provider}; no engine adapter exists in this build, so the provisioner will refuse every call",
             LoggingUtility.SanitizeForLog(targetProvider)
         );
+        webAppBuilder.Services.AddSingleton<ITemplateArtifactCatalog, TemplateArtifactCatalog>();
         webAppBuilder.Services.AddSingleton<IDmsTargetEngine>(new UnavailableDmsTargetEngine(targetProvider));
     }
 

@@ -40,6 +40,8 @@ public sealed class TestTemplatePackageBuilder
     private byte[]? _rawPackageBytes;
     private string? _attestedSha256;
     private bool _policyListsAnotherKey;
+    private string _producerName = DefaultProducerName;
+    private EphemeralAttestationSigner? _sharedSigner;
 
     public TestTemplatePackageBuilder(bool mssql = false)
     {
@@ -54,13 +56,13 @@ public sealed class TestTemplatePackageBuilder
     }
 
     /// <summary>The identity the package is published under: its file name, attestation and nuspec. A manifest mutation does not change it.</summary>
-    public string PackageId { get; }
+    public string PackageId { get; private set; }
 
     public string PackageVersion { get; private set; }
 
     public string ArtifactFileName => (string)_manifest["artifactFileName"]!;
 
-    public string ProducerName { get; private set; } = DefaultProducerName;
+    public string ProducerName => _sharedSigner?.ProducerName ?? _producerName;
 
     public TestTemplatePackageBuilder WithArtifact(byte[] artifactBytes)
     {
@@ -73,6 +75,24 @@ public sealed class TestTemplatePackageBuilder
     {
         PackageVersion = version;
         _manifest["packageVersion"] = version;
+        return this;
+    }
+
+    /// <summary>Publishes the package under this id everywhere: file name, attestation, nuspec and manifest.</summary>
+    public TestTemplatePackageBuilder WithPackageId(string id)
+    {
+        PackageId = id;
+        _manifest["packageId"] = id;
+        return this;
+    }
+
+    /// <summary>
+    /// Signs with this producer instead of a fresh ephemeral one, so several packages built into one catalog
+    /// directory share one key and one policy. The builder does not dispose a shared signer.
+    /// </summary>
+    public TestTemplatePackageBuilder WithSigner(EphemeralAttestationSigner signer)
+    {
+        _sharedSigner = signer;
         return this;
     }
 
@@ -127,7 +147,7 @@ public sealed class TestTemplatePackageBuilder
 
     public TestTemplatePackageBuilder WithProducer(string producerName)
     {
-        ProducerName = producerName;
+        _producerName = producerName;
         return this;
     }
 
@@ -177,7 +197,25 @@ public sealed class TestTemplatePackageBuilder
         string packagePath = Path.Combine(catalogDirectory, $"{PackageId}.{PackageVersion}.nupkg");
         File.WriteAllBytes(packagePath, packageBytes);
 
-        using EphemeralAttestationSigner signer = new(ProducerName);
+        EphemeralAttestationSigner? ownedSigner = _sharedSigner is null ? new(_producerName) : null;
+        EphemeralAttestationSigner signer = _sharedSigner ?? ownedSigner!;
+        try
+        {
+            return Publish(packageSha256, packagePath, signer);
+        }
+        finally
+        {
+            ownedSigner?.Dispose();
+        }
+    }
+
+    private TestTemplatePackage Publish(
+        string packageSha256,
+        string packagePath,
+        EphemeralAttestationSigner signer
+    )
+    {
+        string catalogDirectory = Path.GetDirectoryName(packagePath)!;
         string attestationJson = signer.Attest(PackageId, PackageVersion, _attestedSha256 ?? packageSha256);
         string attestationPath = packagePath + ".attestation.json";
         File.WriteAllText(attestationPath, attestationJson, new UTF8Encoding(false));

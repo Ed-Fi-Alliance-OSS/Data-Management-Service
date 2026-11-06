@@ -54,12 +54,12 @@ public sealed class DmsDataStoreProvisioningService(
     {
         if (Refusal() is { } refusal)
         {
-            return new DmsArtifactResolution.Failure(refusal);
+            return new DmsArtifactResolution.Failure(refusal, DmsCleanupReport.Clean);
         }
 
         if (ValidateTemplate(template) is { } invalid)
         {
-            return new DmsArtifactResolution.Failure(invalid);
+            return new DmsArtifactResolution.Failure(invalid, DmsCleanupReport.Clean);
         }
 
         return await catalog.ResolveAsync(template, cancellationToken);
@@ -91,14 +91,14 @@ public sealed class DmsDataStoreProvisioningService(
         switch (resolution)
         {
             case DmsArtifactResolution.Failure failed:
-                return new DmsDataStoreCreateResult.Failure(failed.Detail, DmsCleanupReport.Clean);
+                return new DmsDataStoreCreateResult.Failure(failed.Detail, failed.Cleanup);
             case DmsArtifactResolution.Resolved resolved when resolved.Pin != request.PinnedArtifact:
                 return new DmsDataStoreCreateResult.Failure(
                     DmsProvisioningFailure.Create(
                         DmsProvisioningFailureCode.ArtifactChangedSinceCreate,
                         DmsProvisioningDiagnostic.ForOperation(ResolveArtifactStep)
                     ),
-                    DmsCleanupReport.Clean
+                    resolved.Cleanup
                 );
             case DmsArtifactResolution.Resolved:
                 break;

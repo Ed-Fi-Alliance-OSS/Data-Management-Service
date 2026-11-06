@@ -4,7 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Generic;
+using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Jobs;
 using FakeItEasy;
@@ -23,8 +25,10 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Configurat
 /// <summary>
 /// Spec Step 1.3: the shipped settings leave DMS data store provisioning disabled; enabling it with invalid
 /// static configuration stops the host naming the setting; enabling it for either target provider under
-/// either catalog datastore registers the unavailable adapter and records <c>NotReady(AdapterUnavailable)</c>;
-/// and readiness can never be <c>Ready</c> in this build, even when an engine reports its environment ready.
+/// either catalog datastore registers the unavailable adapter and the directory catalog and records
+/// <c>NotReady</c> with the adapter and trust policy reasons; Step 2.4: the catalog probes run at startup (a
+/// valid policy over an empty artifact directory records <c>ArtifactMissing</c> per template); and readiness
+/// can never be <c>Ready</c> in this build, even when the engine and the catalog both report ready.
 /// </summary>
 public class DmsDataStoreProvisioningStartupTests
 {
@@ -146,6 +150,7 @@ public class DmsDataStoreProvisioningStartupTests
         private DmsProvisionerReadiness _readiness = null!;
         private IDmsDataStoreProvisioner _provisioner = null!;
         private IDmsTargetEngine? _engine;
+        private ITemplateArtifactCatalog? _catalog;
         private IValidateOptions<DmsDataStoreProvisioningOptions>? _validator;
         private string? _shippedEnabled;
         private DmsDataStoreCreateResult _createResult = null!;
@@ -158,6 +163,7 @@ public class DmsDataStoreProvisioningStartupTests
             _readiness = _factory.Services.GetRequiredService<IDmsDataStoreProvisionerReadiness>().Current;
             _provisioner = _factory.Services.GetRequiredService<IDmsDataStoreProvisioner>();
             _engine = _factory.Services.GetService<IDmsTargetEngine>();
+            _catalog = _factory.Services.GetService<ITemplateArtifactCatalog>();
             _validator = _factory.Services.GetService<IValidateOptions<DmsDataStoreProvisioningOptions>>();
             _shippedEnabled = _factory.Services.GetRequiredService<IConfiguration>().GetSection(Section)[
                 "Enabled"
@@ -183,9 +189,10 @@ public class DmsDataStoreProvisioningStartupTests
             _provisioner.Should().BeOfType<DisabledDmsDataStoreProvisioner>();
 
         [Test]
-        public void It_registers_no_engine_and_no_validation()
+        public void It_registers_no_engine_no_catalog_and_no_validation()
         {
             _engine.Should().BeNull();
+            _catalog.Should().BeNull();
             _validator.Should().BeNull();
         }
 
@@ -262,6 +269,7 @@ public class DmsDataStoreProvisioningStartupTests
         private WebApplicationFactory<Program> _factory = null!;
         private Exception? _exception;
         private IDmsTargetEngine _engine = null!;
+        private ITemplateArtifactCatalog _catalog = null!;
         private DmsProvisionerReadiness _readiness = null!;
         private DmsArtifactResolution _resolution = null!;
         private CapturedLog[] _criticalEntries = [];
@@ -273,6 +281,7 @@ public class DmsDataStoreProvisioningStartupTests
             _factory = CreateFactory(EnabledSettings(provider, datastore), _logs);
             _exception = StartupExceptionFor(_factory);
             _engine = _factory.Services.GetRequiredService<IDmsTargetEngine>();
+            _catalog = _factory.Services.GetRequiredService<ITemplateArtifactCatalog>();
             _readiness = _factory.Services.GetRequiredService<IDmsDataStoreProvisionerReadiness>().Current;
             _resolution = await _factory
                 .Services.GetRequiredService<IDmsDataStoreProvisioner>()
@@ -300,19 +309,31 @@ public class DmsDataStoreProvisioningStartupTests
             _engine.Should().BeOfType<UnavailableDmsTargetEngine>().Which.Provider.Should().Be(provider);
 
         [Test]
+        public void It_registers_the_directory_catalog() =>
+            _catalog.Should().BeOfType<TemplateArtifactCatalog>();
+
+        [Test]
         public void It_records_not_ready_because_the_adapter_is_unavailable() =>
             _readiness
                 .Should()
                 .BeOfType<DmsProvisionerReadiness.NotReady>()
                 .Which.Reasons.Should()
-                .ContainSingle()
-                .Which.Should()
-                .Be(
+                .Contain(
                     new DmsReadinessReason(
                         DmsProvisioningFailureCode.AdapterUnavailable,
                         UnavailableDmsTargetEngine.Probe
                     )
                 );
+
+        [Test]
+        public void It_records_the_trust_policy_probe_failure_beside_it() =>
+            _readiness
+                .Should()
+                .BeOfType<DmsProvisionerReadiness.NotReady>()
+                .Which.Reasons.Should()
+                .ContainSingle(reason => reason.Probe == TemplateArtifactCatalog.TrustPolicyProbe)
+                .Which.Code.Should()
+                .Be(DmsProvisioningFailureCode.StartupValidationFailed);
 
         [Test]
         public void It_refuses_calls_as_adapter_unavailable() =>
@@ -326,17 +347,105 @@ public class DmsDataStoreProvisioningStartupTests
                 );
 
         [Test]
-        public void It_logs_the_reason_at_critical_naming_the_target_provider()
+        public void It_logs_each_reason_at_critical_naming_the_target_provider()
         {
-            CapturedLog entry = _criticalEntries.Should().ContainSingle().Subject;
-            entry.State["Code"].Should().Be(DmsProvisioningFailureCode.AdapterUnavailable);
+            _criticalEntries.Should().HaveCount(2);
+            CapturedLog entry = _criticalEntries
+                .Should()
+                .ContainSingle(log =>
+                    Equals(log.State["Code"], DmsProvisioningFailureCode.AdapterUnavailable)
+                )
+                .Subject;
             entry.State["Provider"].Should().Be(provider);
             entry.State["Probe"].Should().Be(UnavailableDmsTargetEngine.Probe);
+            _criticalEntries
+                .Should()
+                .ContainSingle(log => Equals(log.State["Probe"], TemplateArtifactCatalog.TrustPolicyProbe));
         }
     }
 
     [TestFixture]
-    public class Given_an_engine_that_reports_its_environment_ready
+    public class Given_a_valid_trust_policy_over_an_empty_artifact_directory_with_a_ready_engine
+    {
+        private string _root = null!;
+        private WebApplicationFactory<Program> _factory = null!;
+        private Exception? _exception;
+        private DmsProvisionerReadiness _readiness = null!;
+
+        /// <summary>A policy in the delivered schema listing one ephemeral P-256 producer.</summary>
+        private static string PolicyJson()
+        {
+            using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            byte[] subjectPublicKeyInfo = key.ExportSubjectPublicKeyInfo();
+            string keyId = Convert.ToHexStringLower(SHA256.HashData(subjectPublicKeyInfo));
+            string spki = Convert.ToBase64String(subjectPublicKeyInfo);
+            return $$"""
+                { "version": 1, "producers": [ { "name": "startup-test", "provider": "detached-attestation",
+                  "publicKeys": [ { "keyId": "{{keyId}}", "algorithm": "ECDSA_P256_SHA256", "publicKeySpkiB64": "{{spki}}" } ] } ] }
+                """;
+        }
+
+        [SetUp]
+        public void Act()
+        {
+            _root = LocalPath(Guid.NewGuid().ToString("N"));
+            string artifactDirectory = Path.Combine(_root, "templates");
+            string policyPath = Path.Combine(_root, "template-trust-policy.json");
+            Directory.CreateDirectory(artifactDirectory);
+            File.WriteAllText(policyPath, PolicyJson());
+
+            IDmsTargetEngine engine = A.Fake<IDmsTargetEngine>();
+            A.CallTo(() => engine.Provider).Returns("postgresql");
+            A.CallTo(() => engine.ValidateEnvironmentAsync(A<CancellationToken>._))
+                .Returns(new DmsEngineEnvironment.Ready());
+
+            Dictionary<string, string> settings = EnabledSettings("postgresql", "postgresql");
+            settings[$"{Section}:TrustPolicyPath"] = policyPath;
+            settings[$"{Section}:ArtifactDirectory"] = artifactDirectory;
+            _factory = CreateFactory(
+                settings,
+                configureServices: services =>
+                {
+                    services.RemoveAll<IDmsTargetEngine>();
+                    services.AddSingleton(engine);
+                }
+            );
+            _exception = StartupExceptionFor(_factory);
+            _readiness = _factory.Services.GetRequiredService<IDmsDataStoreProvisionerReadiness>().Current;
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _factory.Dispose();
+            Directory.Delete(_root, recursive: true);
+        }
+
+        [Test]
+        public void It_starts() => _exception.Should().BeNull();
+
+        [Test]
+        public void It_records_the_catalog_probes_of_both_templates_and_nothing_else() =>
+            _readiness
+                .Should()
+                .BeOfType<DmsProvisionerReadiness.NotReady>()
+                .Which.Reasons.Should()
+                .BeEquivalentTo([
+                    new DmsReadinessReason(
+                        DmsProvisioningFailureCode.ArtifactMissing,
+                        TemplateArtifactCatalog.CatalogProbeFor(DmsDatabaseTemplate.Minimal),
+                        DmsProvisioningDiagnostic.ForOperation(TemplateArtifactCatalog.LocateArtifactStep)
+                    ),
+                    new DmsReadinessReason(
+                        DmsProvisioningFailureCode.ArtifactMissing,
+                        TemplateArtifactCatalog.CatalogProbeFor(DmsDatabaseTemplate.Sample),
+                        DmsProvisioningDiagnostic.ForOperation(TemplateArtifactCatalog.LocateArtifactStep)
+                    ),
+                ]);
+    }
+
+    [TestFixture]
+    public class Given_an_engine_and_a_catalog_that_both_report_ready
     {
         private WebApplicationFactory<Program> _factory = null!;
         private Exception? _exception;
@@ -349,6 +458,9 @@ public class DmsDataStoreProvisioningStartupTests
             A.CallTo(() => engine.Provider).Returns("postgresql");
             A.CallTo(() => engine.ValidateEnvironmentAsync(A<CancellationToken>._))
                 .Returns(new DmsEngineEnvironment.Ready());
+            ITemplateArtifactCatalog catalog = A.Fake<ITemplateArtifactCatalog>();
+            A.CallTo(() => catalog.ValidateAsync(A<CancellationToken>._))
+                .Returns(Task.FromResult<IReadOnlyList<DmsReadinessReason>>([]));
 
             _factory = CreateFactory(
                 EnabledSettings("postgresql", "postgresql"),
@@ -356,6 +468,8 @@ public class DmsDataStoreProvisioningStartupTests
                 {
                     services.RemoveAll<IDmsTargetEngine>();
                     services.AddSingleton(engine);
+                    services.RemoveAll<ITemplateArtifactCatalog>();
+                    services.AddSingleton(catalog);
                 }
             );
             _exception = StartupExceptionFor(_factory);

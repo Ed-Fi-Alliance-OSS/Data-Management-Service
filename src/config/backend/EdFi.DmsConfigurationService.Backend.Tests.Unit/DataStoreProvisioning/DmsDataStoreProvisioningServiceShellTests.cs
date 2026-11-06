@@ -77,7 +77,7 @@ public class DmsDataStoreProvisioningServiceShellTests
         public int Calls => Volatile.Read(ref _calls);
 
         public Func<DmsDatabaseTemplate, DmsArtifactResolution> OnResolve { get; set; } =
-            _ => new DmsArtifactResolution.Resolved(Pin());
+            _ => new DmsArtifactResolution.Resolved(Pin(), DmsCleanupReport.Clean);
 
         public Task<DmsArtifactResolution> ResolveAsync(
             DmsDatabaseTemplate template,
@@ -87,6 +87,16 @@ public class DmsDataStoreProvisioningServiceShellTests
             Interlocked.Increment(ref _calls);
             return Task.FromResult(OnResolve(template));
         }
+
+        /// <summary>The shell stages nothing: the create path's staging arrives with the engine steps.</summary>
+        public Task<TemplateArtifactStaging> StageAsync(
+            DmsDatabaseTemplate template,
+            DmsOperationId operationId,
+            CancellationToken cancellationToken
+        ) => throw new NotSupportedException("The orchestrator shell does not stage artifacts.");
+
+        public Task<IReadOnlyList<DmsReadinessReason>> ValidateAsync(CancellationToken cancellationToken) =>
+            throw new NotSupportedException("The orchestrator never runs the readiness probes.");
     }
 
     /// <summary>The shell under test with its doubles; the engine hands out a fresh fake holder per acquisition.</summary>
@@ -350,7 +360,10 @@ public class DmsDataStoreProvisioningServiceShellTests
                 DmsProvisioningDiagnostic.ForOperation("VerifyAttestation")
             );
             _refusing = new Harness();
-            _refusing.Catalog.OnResolve = _ => new DmsArtifactResolution.Failure(_catalogFailure);
+            _refusing.Catalog.OnResolve = _ => new DmsArtifactResolution.Failure(
+                _catalogFailure,
+                DmsCleanupReport.Clean
+            );
             _resolution = await _refusing.Service.ResolveArtifactAsync(
                 DmsDatabaseTemplate.Sample,
                 CancellationToken.None
@@ -358,7 +371,10 @@ public class DmsDataStoreProvisioningServiceShellTests
             _refused = await _refusing.Service.CreateAsync(CreateRequest(), CancellationToken.None);
 
             _changed = new Harness();
-            _changed.Catalog.OnResolve = _ => new DmsArtifactResolution.Resolved(Pin("e"));
+            _changed.Catalog.OnResolve = _ => new DmsArtifactResolution.Resolved(
+                Pin("e"),
+                DmsCleanupReport.Clean
+            );
             _pinChanged = await _changed.Service.CreateAsync(CreateRequest(), CancellationToken.None);
         }
 

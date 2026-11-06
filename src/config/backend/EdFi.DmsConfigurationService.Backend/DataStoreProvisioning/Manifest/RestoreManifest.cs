@@ -35,6 +35,12 @@ public sealed class RestoreManifest
     /// <summary>The lowest SQL Server compatibility level a manifest may declare.</summary>
     public const int MinimumMssqlCompatibilityLevel = 90;
 
+    /// <summary>The physical type every <c>DocumentJson</c> column has on PostgreSQL (<c>Get-RestoreDocumentJsonBaselineType</c>).</summary>
+    public const string PostgresqlDocumentJsonColumnType = "jsonb";
+
+    /// <summary>The physical type every <c>DocumentJson</c> column has on SQL Server, with its declared length.</summary>
+    public const string MssqlDocumentJsonColumnType = "nvarchar(max)";
+
     public required int Version { get; init; }
 
     public required string PackageId { get; init; }
@@ -87,4 +93,10 @@ public sealed class RestoreManifest
     /// <summary>The artifact file extension a manifest for <paramref name="databaseEngine"/> must name: <c>.bak</c> for SQL Server, <c>.sql</c> for PostgreSQL.</summary>
     public static string ArtifactExtensionFor(string databaseEngine) =>
         string.Equals(databaseEngine, MssqlEngine, StringComparison.Ordinal) ? ".bak" : ".sql";
+
+    /// <summary>The <c>documentJsonColumnType</c> a manifest for <paramref name="databaseEngine"/> must declare (F-P10 baseline).</summary>
+    public static string DocumentJsonColumnTypeFor(string databaseEngine) =>
+        string.Equals(databaseEngine, MssqlEngine, StringComparison.Ordinal)
+            ? MssqlDocumentJsonColumnType
+            : PostgresqlDocumentJsonColumnType;
 }
