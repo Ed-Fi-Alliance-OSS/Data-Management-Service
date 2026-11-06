@@ -12,10 +12,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 /// <summary>
 /// The credential handoff of D-10: a <c>libpq</c> password file written inside the operation's private
 /// directory with mode <c>0600</c> (<see cref="PrivateOperationDirectory.CreateFile"/>), named through
-/// <c>PGPASSFILE</c>, so the password is never an argument or an environment value. One line per host of
-/// the administrative connection, each <c>host:port:database:user:password</c> with <c>:</c> and <c>\</c>
-/// escaped by a backslash as <c>libpq</c> requires. The file is deleted as soon as the replay exits and the
-/// directory's disposal removes it in any case.
+/// <c>PGPASSFILE</c>, so the password is never an argument or an environment value. One line per endpoint
+/// of the administrative connection, each <c>host:port:database:user:password</c> with <c>:</c> and
+/// <c>\</c> escaped by a backslash as <c>libpq</c> requires. A write that fails after the file was created
+/// deletes it before the failure propagates; an existing entry of that name is refused untouched. The
+/// runner deletes the file as soon as the replay ends and the directory's disposal removes it in any case.
 /// </summary>
 internal static class PgPassFile
 {
@@ -27,10 +28,22 @@ internal static class PgPassFile
     /// Writes the file for <paramref name="database"/> and returns its path. The handle is closed before the
     /// method returns, because the file is created with no sharing and <c>psql</c> must be able to open it.
     /// </summary>
-    public static async Task<string> WriteAsync(
+    public static Task<string> WriteAsync(
         PrivateOperationDirectory directory,
         LibpqConnectionSettings connection,
         string database,
+        CancellationToken cancellationToken
+    ) => WriteAsync(directory, connection, database, beforeWrite: null, cancellationToken);
+
+    /// <summary>
+    /// The write with a test seam: <paramref name="beforeWrite"/> runs once the file exists and before any
+    /// byte is written, the point where a write failure leaves a created file behind.
+    /// </summary>
+    internal static async Task<string> WriteAsync(
+        PrivateOperationDirectory directory,
+        LibpqConnectionSettings connection,
+        string database,
+        Action<FileStream>? beforeWrite,
         CancellationToken cancellationToken
     )
     {
@@ -39,20 +52,40 @@ internal static class PgPassFile
         ArgumentException.ThrowIfNullOrWhiteSpace(database);
 
         StringBuilder content = new();
-        foreach (string host in connection.Hosts)
+        foreach (LibpqEndpoint endpoint in connection.Endpoints)
         {
             content
-                .Append(FormatLine(host, connection.Port, database, connection.Username, connection.Password))
+                .Append(
+                    FormatLine(
+                        endpoint.Host,
+                        endpoint.Port,
+                        database,
+                        connection.Username,
+                        connection.Password
+                    )
+                )
                 .Append('\n');
         }
 
-        await using (FileStream stream = directory.CreateFile(FileName))
+        // CreateFile refuses an existing entry before anything is created, so a failure there deletes nothing.
+        FileStream stream = directory.CreateFile(FileName);
+        string path = directory.PathOf(FileName);
+        try
         {
-            await stream.WriteAsync(_utf8.GetBytes(content.ToString()), cancellationToken);
-            await stream.FlushAsync(cancellationToken);
+            await using (stream)
+            {
+                beforeWrite?.Invoke(stream);
+                await stream.WriteAsync(_utf8.GetBytes(content.ToString()), cancellationToken);
+                await stream.FlushAsync(cancellationToken);
+            }
+        }
+        catch
+        {
+            TryDelete(path);
+            throw;
         }
 
-        return directory.PathOf(FileName);
+        return path;
     }
 
     /// <summary>One <c>libpq</c> password file line; every text field is escaped, the port is decimal.</summary>

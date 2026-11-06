@@ -13,7 +13,8 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 /// <summary>
 /// The environment allowlist of D-10 and the <c>libpq</c> view of the administrative connection: the
 /// inherited environment is discarded, exactly the allowlisted names are set, the password never becomes a
-/// value, and every admitted connection-string key reaches <c>psql</c> through an argument or a variable.
+/// value, every admitted connection-string key reaches <c>psql</c> through an argument or a variable, and
+/// Npgsql's <c>Host</c> syntax is normalized into the host and port lists <c>libpq</c> takes.
 /// </summary>
 public class LibpqEnvironmentTests
 {
@@ -182,44 +183,115 @@ public class LibpqEnvironmentTests
     }
 
     [TestFixture]
-    public class Given_the_libpq_view_of_a_multi_host_connection
+    public class Given_host_values_in_npgsql_syntax
     {
-        private LibpqConnectionSettings _connection = null!;
+        private const int DefaultPort = 5432;
+
+        private Dictionary<string, IReadOnlyList<LibpqEndpoint>> _endpoints = null!;
+        private LibpqConnectionSettings _twoEndpoints = null!;
 
         [SetUp]
-        public void Setup() =>
-            _connection = LibpqConnectionSettings.From(
+        public void Setup()
+        {
+            string[] values =
+            [
+                "db.example.test",
+                "db.example.test:5433",
+                " primary.example.test:5433 , standby.example.test ",
+                "::1",
+                "[::1]:5433",
+                "[fe80::1]",
+                "2001:db8::1,db.example.test:5433",
+                "/var/run/postgresql",
+                "/var/run:5433",
+            ];
+            _endpoints = values.ToDictionary(
+                value => value,
+                value => LibpqConnectionSettings.ParseEndpoints(value, DefaultPort)
+            );
+            _twoEndpoints = LibpqConnectionSettings.From(
                 new NpgsqlConnectionStringBuilder(
-                    "Host=primary.example.test, standby.example.test;Username=dms_admin;Password=" + Password
+                    "Host=primary.example.test:5433,[::1];Port=5434;Username=dms_admin;Password=" + Password
                 )
             );
+        }
 
         [Test]
-        public void It_lists_each_host_trimmed_and_in_order() =>
-            _connection.Hosts.Should().Equal("primary.example.test", "standby.example.test");
+        public void It_keeps_a_plain_host_on_the_default_port() =>
+            _endpoints["db.example.test"].Should().Equal(new LibpqEndpoint("db.example.test", DefaultPort));
 
         [Test]
-        public void It_keeps_the_host_value_for_the_command_line() =>
-            _connection.Host.Should().Be("primary.example.test, standby.example.test");
+        public void It_splits_a_single_host_with_its_own_port_as_npgsql_does() =>
+            _endpoints["db.example.test:5433"].Should().Equal(new LibpqEndpoint("db.example.test", 5433));
+
+        [Test]
+        public void It_trims_entries_and_gives_each_its_own_or_the_default_port() =>
+            _endpoints[" primary.example.test:5433 , standby.example.test "]
+                .Should()
+                .Equal(
+                    new LibpqEndpoint("primary.example.test", 5433),
+                    new LibpqEndpoint("standby.example.test", DefaultPort)
+                );
+
+        [Test]
+        public void It_never_splits_a_bare_ipv6_address()
+        {
+            _endpoints["::1"].Should().Equal(new LibpqEndpoint("::1", DefaultPort));
+            _endpoints["2001:db8::1,db.example.test:5433"]
+                .Should()
+                .Equal(
+                    new LibpqEndpoint("2001:db8::1", DefaultPort),
+                    new LibpqEndpoint("db.example.test", 5433)
+                );
+        }
+
+        [Test]
+        public void It_strips_ipv6_brackets_and_takes_the_port_after_them()
+        {
+            _endpoints["[::1]:5433"].Should().Equal(new LibpqEndpoint("::1", 5433));
+            _endpoints["[fe80::1]"].Should().Equal(new LibpqEndpoint("fe80::1", DefaultPort));
+        }
+
+        [Test]
+        public void It_never_splits_a_lone_unix_socket_directory()
+        {
+            _endpoints["/var/run/postgresql"]
+                .Should()
+                .Equal(new LibpqEndpoint("/var/run/postgresql", DefaultPort));
+            _endpoints["/var/run:5433"].Should().Equal(new LibpqEndpoint("/var/run:5433", DefaultPort));
+        }
+
+        [Test]
+        public void It_joins_the_hosts_and_the_ports_into_parallel_lists()
+        {
+            _twoEndpoints.HostArgument.Should().Be("primary.example.test,::1");
+            _twoEndpoints.PortArgument.Should().Be("5433,5434");
+        }
 
         [Test]
         public void It_prints_only_its_type_name() =>
-            _connection.ToString().Should().Be(nameof(LibpqConnectionSettings));
+            _twoEndpoints.ToString().Should().Be(nameof(LibpqConnectionSettings));
 
         [Test]
         public void It_defaults_a_missing_root_certificate_to_null() =>
-            _connection.RootCertificate.Should().BeNull();
+            _twoEndpoints.RootCertificate.Should().BeNull();
     }
 
     [TestFixture]
-    public class Given_connection_strings_libpq_could_not_be_handed
+    public class Given_host_values_libpq_could_not_be_handed
     {
+        private Dictionary<string, Exception?> _refusals = null!;
         private Exception? _withoutHost;
         private Exception? _withoutUser;
 
         [SetUp]
         public void Setup()
         {
+            string[] values = ["db:abc", "db:", "db:70000", "db:0", "a,,b", "a,", "[::1]:", "db: 5433"];
+            _refusals = values.ToDictionary(
+                value => value,
+                value => Packaging.Record.Exception(() => LibpqConnectionSettings.ParseEndpoints(value, 5432))
+            );
             _withoutHost = Packaging.Record.Exception(() =>
                 LibpqConnectionSettings.From(
                     new NpgsqlConnectionStringBuilder("Username=dms_admin;Password=x")
@@ -233,6 +305,12 @@ public class LibpqEnvironmentTests
         }
 
         [Test]
+        public void It_refuses_every_malformed_port_and_empty_entry() =>
+            _refusals
+                .Values.Should()
+                .AllSatisfy(exception => exception.Should().BeOfType<InvalidOperationException>());
+
+        [Test]
         public void It_refuses_a_missing_host() =>
             _withoutHost.Should().BeOfType<InvalidOperationException>();
 
@@ -241,10 +319,11 @@ public class LibpqEnvironmentTests
             _withoutUser.Should().BeOfType<InvalidOperationException>();
 
         [Test]
-        public void It_never_quotes_the_password_in_the_refusal()
+        public void It_never_quotes_a_value_in_the_refusal()
         {
             _withoutHost!.Message.Should().NotContain("x");
             _withoutUser!.Message.Should().NotContain("x");
+            _refusals.Values.Should().AllSatisfy(exception => exception!.Message.Should().NotContain("db"));
         }
     }
 }

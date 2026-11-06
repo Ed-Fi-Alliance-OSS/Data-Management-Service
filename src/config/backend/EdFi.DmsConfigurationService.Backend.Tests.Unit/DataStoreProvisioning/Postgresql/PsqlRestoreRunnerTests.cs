@@ -17,15 +17,17 @@ using Microsoft.Extensions.Time.Testing;
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Postgresql;
 
 /// <summary>
-/// One replay's artifact, operation directory, administrative connection (with a sentinel password), and
-/// capturing logger, so each fixture asserts on the same secrets.
+/// One replay's artifact, operation directory, administrative connection (two endpoints, a sentinel
+/// password), and capturing logger, so each fixture asserts on the same secrets.
 /// </summary>
 internal sealed class ReplayWorkspace : IDisposable
 {
     public const string Password = "SENTINEL-PASSWORD-7f3a";
 
     public const string ConnectionString =
-        "Host=db.example.test;Port=5433;Username=dms_admin;Password=" + Password + ";Timeout=20";
+        "Host=primary.example.test:5433,standby.example.test;Port=5432;Username=dms_admin;Password="
+        + Password
+        + ";Timeout=20";
 
     public ReplayWorkspace()
     {
@@ -63,9 +65,16 @@ internal sealed class ReplayWorkspace : IDisposable
     public PsqlRestoreRunner Runner(
         string psqlPath,
         TimeSpan? restoreTimeout = null,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        TimeSpan? terminationBound = null
     ) =>
-        new(psqlPath, restoreTimeout ?? TimeSpan.FromMinutes(5), timeProvider ?? TimeProvider.System, Logger);
+        new(
+            psqlPath,
+            restoreTimeout ?? TimeSpan.FromMinutes(5),
+            terminationBound ?? PsqlProcess.DefaultTerminationBound,
+            timeProvider ?? TimeProvider.System,
+            Logger
+        );
 
     public Task<PsqlRunResult> RunAsync(
         PsqlRestoreRunner runner,
@@ -117,11 +126,13 @@ internal sealed class ReplayWorkspace : IDisposable
 
 /// <summary>
 /// The <c>psql</c> runner of D-10/D-10b: the start info carries the fixed arguments and the connection
-/// arguments but never the password or the connection string; the environment is exactly the allowlist,
-/// at build time and as the started process sees it; stderr with a sentinel password and connection string
-/// reaches no log entry at any level, no result, and no exception while its SQLSTATE is still extracted;
-/// cancellation and the restore timeout each kill the process and return once it is gone; and the password
-/// file is deleted however the run ends.
+/// arguments (parallel host and port lists) but never the password or the connection string; the
+/// environment is exactly the allowlist, at build time and as the started process sees it; stderr with a
+/// sentinel password and connection string reaches no log entry at any level, no result, and no exception
+/// while its SQLSTATE is still extracted through the artifact's real path; cancellation and the restore
+/// timeout each kill the process and return once it is confirmed gone; a process that exits while a child
+/// keeps its pipes is reported unconfirmed within the termination bound; and the password file is deleted
+/// however the run ends.
 /// </summary>
 public class PsqlRestoreRunnerTests
 {
@@ -171,7 +182,7 @@ public class PsqlRestoreRunnerTests
         }
 
         [Test]
-        public void It_passes_the_d10_arguments_then_the_file_then_the_connection() =>
+        public void It_passes_the_d10_arguments_then_the_file_then_the_endpoint_lists() =>
             _startInfo
                 .ArgumentList.Should()
                 .Equal(
@@ -186,9 +197,9 @@ public class PsqlRestoreRunnerTests
                     "--file",
                     _workspace.Artifact.FilePath,
                     "--host",
-                    "db.example.test",
+                    "primary.example.test,standby.example.test",
                     "--port",
-                    "5433",
+                    "5433,5432",
                     "--username",
                     "dms_admin",
                     "--dbname",
@@ -240,7 +251,9 @@ public class PsqlRestoreRunnerTests
             _workspace = new ReplayWorkspace();
             _fake = FakePsql.WritingStandardError(
                 [
-                    "psql:/tmp/dms-provision-0123456789ab/artifact.sql:3: ERROR:  42P01: relation \"edfi.student\" does not exist",
+                    "psql:"
+                        + _workspace.Artifact.FilePath
+                        + ":3: ERROR:  42P01: relation \"edfi.student\" does not exist",
                     "DETAIL:  the leaked password is " + ReplayWorkspace.Password,
                     "HINT:  the leaked connection string is " + ReplayWorkspace.ConnectionString,
                     "LOCATION:  parserOpenTable, parse_relation.c:1449",
@@ -254,9 +267,9 @@ public class PsqlRestoreRunnerTests
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            _fake.Dispose();
+            await _fake.DisposeAsync();
             _workspace.Dispose();
         }
 
@@ -264,7 +277,7 @@ public class PsqlRestoreRunnerTests
         public void It_does_not_throw() => _exception.Should().BeNull();
 
         [Test]
-        public void It_reports_the_exit_code_and_the_first_sqlstate()
+        public void It_reports_the_exit_code_and_the_first_sqlstate_through_the_artifact_path()
         {
             PsqlRunResult.Exited exited = _result.Should().BeOfType<PsqlRunResult.Exited>().Subject;
             exited.ExitCode.Should().Be(3);
@@ -326,9 +339,9 @@ public class PsqlRestoreRunnerTests
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            _fake.Dispose();
+            await _fake.DisposeAsync();
             _workspace.Dispose();
         }
 
@@ -378,14 +391,14 @@ public class PsqlRestoreRunnerTests
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            _fake.Dispose();
+            await _fake.DisposeAsync();
             _workspace.Dispose();
         }
 
         [Test]
-        public void It_returns_a_kill_result_instead_of_throwing()
+        public void It_returns_a_confirmed_kill_instead_of_throwing()
         {
             _exception.Should().BeNull();
             _result
@@ -471,9 +484,9 @@ public class PsqlRestoreRunnerTests
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            _fake.Dispose();
+            await _fake.DisposeAsync();
             _workspace.Dispose();
         }
 
@@ -492,6 +505,56 @@ public class PsqlRestoreRunnerTests
         [Test]
         public void It_logs_the_elapsed_time_from_the_clock_it_was_given() =>
             _workspace.Logger.Entries.Last().Field("Elapsed").Should().Be(_restoreTimeout);
+
+        [Test]
+        public void It_deletes_the_password_file() =>
+            File.Exists(_workspace.PasswordFilePath).Should().BeFalse();
+    }
+
+    [TestFixture]
+    public class Given_a_replay_whose_process_exits_while_a_child_keeps_its_pipes
+    {
+        private static readonly TimeSpan _terminationBound = TimeSpan.FromSeconds(2);
+
+        private ReplayWorkspace _workspace = null!;
+        private FakePsql _fake = null!;
+        private PsqlRunResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _workspace = new ReplayWorkspace();
+            string signal = Path.Combine(_workspace.Root, "started");
+            _fake = FakePsql.HoldingPipeAfterExit(signal);
+            Task<PsqlRunResult> run = _workspace.RunAsync(
+                _workspace.Runner(_fake.ExecutablePath, terminationBound: _terminationBound)
+            );
+            await FakePsql.WaitForFileAsync(signal, _bound);
+            _result = await run.WaitAsync(_bound);
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            await _fake.DisposeAsync();
+            _workspace.Dispose();
+        }
+
+        [Test]
+        public void It_returns_within_the_termination_bound_with_the_termination_unconfirmed() =>
+            _result.Should().BeOfType<PsqlRunResult.Unconfirmed>().Which.Reason.Should().BeNull();
+
+        [Test]
+        public void It_observed_the_process_itself_exit() =>
+            ReplayWorkspace.IsRunning(((PsqlRunResult.Unconfirmed)_result).ProcessId).Should().BeFalse();
+
+        [Test]
+        public void It_logs_the_unconfirmed_termination_without_a_stop_reason()
+        {
+            LogEntry unconfirmed = _workspace.Logger.Entries.Last();
+            unconfirmed.EventId.Should().Be(PsqlRestoreRunner.ReplayUnconfirmed);
+            unconfirmed.Field("Reason").Should().Be("none");
+        }
 
         [Test]
         public void It_deletes_the_password_file() =>

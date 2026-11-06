@@ -76,6 +76,8 @@ internal sealed partial class PsqlStderrSqlState
         _count = 0;
     }
 
-    [GeneratedRegex(@"^(?:psql:[^:]*:\d+: )?ERROR:\s{2}([0-9A-Z]{5}):")]
+    // The optional prefix is psql:<file>:<line>: and the file may itself contain colons (a Windows drive, a
+    // Unix directory named with one), so the file part is any text and the line number anchors the prefix.
+    [GeneratedRegex(@"^(?:psql:.*:\d+: )?ERROR:\s{2}([0-9A-Z]{5}):")]
     private static partial Regex ErrorLine();
 }

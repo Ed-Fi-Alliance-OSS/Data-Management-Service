@@ -12,18 +12,24 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 /// <c>/bin/sh</c> script elsewhere, generated into its own temporary directory with every path baked in,
 /// because the runner passes the fake nothing but the D-10 allowlist. A blocking fake dumps the environment
 /// it received to a signal file (written under a temporary name and renamed, so a watcher that sees the
-/// name sees complete content) and then sleeps until killed; the output fakes copy a data file to a stream
-/// and exit with a chosen code, which keeps every line verbatim without shell quoting.
+/// name sees complete content) and then waits, polling once a second for at most ten minutes, until the
+/// fake's stop file exists; a fake that exits while a child keeps its pipes starts that child on the same
+/// wait before it signals and exits. Disposal writes the stop file first, so every process a fake started
+/// ends on its own within about a second, whatever the code under test did with it. The output fakes copy
+/// a data file to a stream and exit with a chosen code, which keeps every line verbatim without shell quoting.
 /// </summary>
-internal sealed class FakePsql : IDisposable
+internal sealed class FakePsql : IDisposable, IAsyncDisposable
 {
     /// <summary>Variables the platform shell adds to its own environment whatever it was started with.</summary>
     public static readonly string[] ShellInjectedVariables = OperatingSystem.IsWindows()
         ? ["COMSPEC", "PATHEXT", "PROMPT"]
         : ["PWD", "OLDPWD", "SHLVL", "_"];
 
+    private const string StopFileName = "stop";
+    private const string ChildScriptName = "child";
     private const string StandardErrorDataFile = "stderr.txt";
     private const string StandardOutputDataFile = "stdout.txt";
+    private const int DeleteAttempts = 10;
 
     private FakePsql(string directory, string executablePath)
     {
@@ -35,22 +41,36 @@ internal sealed class FakePsql : IDisposable
 
     public string ExecutablePath { get; }
 
-    /// <summary>A fake that writes its environment to <paramref name="signalPath"/> and then blocks until killed.</summary>
+    /// <summary>The file whose appearance ends every wait loop a fake runs.</summary>
+    public string StopFilePath => Path.Combine(Directory, StopFileName);
+
+    /// <summary>A fake that writes its environment to <paramref name="signalPath"/> and then waits for the stop file.</summary>
     public static FakePsql Blocking(string signalPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(signalPath);
-        string temporary = signalPath + ".tmp";
-        return Create(_ =>
-            OperatingSystem.IsWindows()
-                ?
-                [
-                    "@echo off",
-                    $"set > \"{temporary}\"",
-                    $"move /y \"{temporary}\" \"{signalPath}\" >nul",
-                    "ping -n 601 127.0.0.1 >nul",
-                ]
-                : ["#!/bin/sh", $"env > '{temporary}'", $"mv '{temporary}' '{signalPath}'", "sleep 600"]
+        return Create(directory =>
+            [.. EnvironmentDumpLines(signalPath), .. WaitForStopLines(directory, exitCode: 0)]
         );
+    }
+
+    /// <summary>
+    /// A fake that starts a child inheriting its output pipes (the child waits for the stop file), writes
+    /// <paramref name="signalPath"/>, and exits 0 while the child lives on.
+    /// </summary>
+    public static FakePsql HoldingPipeAfterExit(string signalPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(signalPath);
+        return Create(directory =>
+        {
+            string child = WriteScript(
+                Path.Combine(directory, ScriptFileName(ChildScriptName)),
+                WaitForStopLines(directory, exitCode: 0)
+            );
+            string[] start = OperatingSystem.IsWindows()
+                ? [$"start \"\" /b cmd /c \"{child}\""]
+                : [$"sh '{child}' &"];
+            return [.. start, .. SignalLines(signalPath, "started"), ExitLine(0)];
+        });
     }
 
     /// <summary>A fake that writes <paramref name="lines"/> to standard error and exits with <paramref name="exitCode"/>.</summary>
@@ -58,9 +78,11 @@ internal sealed class FakePsql : IDisposable
         Create(directory =>
         {
             string data = WriteData(directory, StandardErrorDataFile, lines);
-            return OperatingSystem.IsWindows()
-                ? ["@echo off", $"type \"{data}\" 1>&2", $"exit /b {exitCode}"]
-                : ["#!/bin/sh", $"cat '{data}' >&2", $"exit {exitCode}"];
+            return
+            [
+                OperatingSystem.IsWindows() ? $"type \"{data}\" 1>&2" : $"cat '{data}' >&2",
+                ExitLine(exitCode),
+            ];
         });
 
     /// <summary>A fake that writes <paramref name="lines"/> to standard output and exits with <paramref name="exitCode"/>.</summary>
@@ -68,9 +90,7 @@ internal sealed class FakePsql : IDisposable
         Create(directory =>
         {
             string data = WriteData(directory, StandardOutputDataFile, lines);
-            return OperatingSystem.IsWindows()
-                ? ["@echo off", $"type \"{data}\"", $"exit /b {exitCode}"]
-                : ["#!/bin/sh", $"cat '{data}'", $"exit {exitCode}"];
+            return [OperatingSystem.IsWindows() ? $"type \"{data}\"" : $"cat '{data}'", ExitLine(exitCode)];
         });
 
     /// <summary>
@@ -120,45 +140,136 @@ internal sealed class FakePsql : IDisposable
         return variables;
     }
 
+    /// <summary>Stops every process the fake started and makes one attempt to remove its directory.</summary>
     public void Dispose()
     {
-        try
+        WriteStopFile();
+        TryDeleteDirectory();
+    }
+
+    /// <summary>Stops every process the fake started and removes its directory once they have let go of it.</summary>
+    public async ValueTask DisposeAsync()
+    {
+        WriteStopFile();
+        for (int attempt = 0; attempt < DeleteAttempts && !TryDeleteDirectory(); attempt++)
         {
-            System.IO.Directory.Delete(Directory, recursive: true);
-        }
-        catch (IOException)
-        {
-            // A fake killed a moment ago may still hold its directory on Windows; the temp path is reclaimed later.
+            await Task.Delay(TimeSpan.FromMilliseconds(500));
         }
     }
 
-    private static FakePsql Create(Func<string, string[]> scriptLinesFor)
+    private void WriteStopFile()
+    {
+        try
+        {
+            File.WriteAllText(StopFilePath, string.Empty);
+        }
+        catch (IOException)
+        {
+            // The directory is already gone; nothing is waiting on the stop file.
+        }
+    }
+
+    private bool TryDeleteDirectory()
+    {
+        try
+        {
+            if (System.IO.Directory.Exists(Directory))
+            {
+                System.IO.Directory.Delete(Directory, recursive: true);
+            }
+
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static FakePsql Create(Func<string, string[]> bodyLinesFor)
     {
         string directory = Path.Combine(
             Path.GetTempPath(),
             "dms-1438-fake-psql-" + Guid.NewGuid().ToString("N")
         );
         System.IO.Directory.CreateDirectory(directory);
-        string executable = Path.Combine(
-            directory,
-            OperatingSystem.IsWindows() ? "fake-psql.cmd" : "fake-psql"
+        string executable = WriteScript(
+            Path.Combine(directory, ScriptFileName("fake-psql")),
+            bodyLinesFor(directory)
         );
+        return new FakePsql(directory, executable);
+    }
+
+    private static string ScriptFileName(string stem) => OperatingSystem.IsWindows() ? stem + ".cmd" : stem;
+
+    private static string WriteScript(string path, string[] bodyLines)
+    {
+        string[] lines = [OperatingSystem.IsWindows() ? "@echo off" : "#!/bin/sh", .. bodyLines];
         string newline = OperatingSystem.IsWindows() ? "\r\n" : "\n";
         File.WriteAllText(
-            executable,
-            string.Join(newline, scriptLinesFor(directory)) + newline,
+            path,
+            string.Join(newline, lines) + newline,
             new UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
         );
         if (!OperatingSystem.IsWindows())
         {
             File.SetUnixFileMode(
-                executable,
+                path,
                 UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
             );
         }
 
-        return new FakePsql(directory, executable);
+        return path;
     }
+
+    private static string[] EnvironmentDumpLines(string signalPath)
+    {
+        string temporary = signalPath + ".tmp";
+        return OperatingSystem.IsWindows()
+            ? [$"set > \"{temporary}\"", $"move /y \"{temporary}\" \"{signalPath}\" >nul"]
+            : [$"env > '{temporary}'", $"mv '{temporary}' '{signalPath}'"];
+    }
+
+    private static string[] SignalLines(string signalPath, string content)
+    {
+        string temporary = signalPath + ".tmp";
+        return OperatingSystem.IsWindows()
+            ? [$"echo {content} > \"{temporary}\"", $"move /y \"{temporary}\" \"{signalPath}\" >nul"]
+            : [$"echo '{content}' > '{temporary}'", $"mv '{temporary}' '{signalPath}'"];
+    }
+
+    /// <summary>Polls for the stop file once a second, at most six hundred times, then exits.</summary>
+    private static string[] WaitForStopLines(string directory, int exitCode)
+    {
+        string stop = Path.Combine(directory, StopFileName);
+        return OperatingSystem.IsWindows()
+            ?
+            [
+                "set /a waited=0",
+                ":wait",
+                $"if exist \"{stop}\" exit /b {exitCode}",
+                "set /a waited+=1",
+                $"if %waited% geq 600 exit /b {exitCode}",
+                "ping -n 2 127.0.0.1 >nul",
+                "goto wait",
+            ]
+            :
+            [
+                "waited=0",
+                $"while [ ! -e '{stop}' ] && [ \"$waited\" -lt 600 ]; do",
+                "  sleep 1",
+                "  waited=$((waited+1))",
+                "done",
+                ExitLine(exitCode),
+            ];
+    }
+
+    private static string ExitLine(int exitCode) =>
+        OperatingSystem.IsWindows() ? $"exit /b {exitCode}" : $"exit {exitCode}";
 
     private static string WriteData(string directory, string fileName, IReadOnlyList<string> lines)
     {

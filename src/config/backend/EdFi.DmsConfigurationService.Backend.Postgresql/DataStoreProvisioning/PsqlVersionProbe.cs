@@ -22,6 +22,9 @@ internal enum PsqlProbeFailure
 
     /// <summary>The executable exited with a non-zero code.</summary>
     ExitedWithError,
+
+    /// <summary>The executable, or something it started, could not be confirmed gone within the termination bound.</summary>
+    TerminationUnconfirmed,
 }
 
 /// <summary>The result of <see cref="PsqlVersionProbe.ProbeAsync"/>; the floor comparison (D-9) belongs to readiness.</summary>
@@ -55,9 +58,18 @@ internal static partial class PsqlVersionProbe
     /// Runs the probe. A cancelled caller token propagates; the probe's own bound is reported as
     /// <see cref="PsqlProbeFailure.TimedOut"/>. Standard error is consumed and discarded.
     /// </summary>
-    public static async Task<PsqlVersionProbeResult> ProbeAsync(
+    public static Task<PsqlVersionProbeResult> ProbeAsync(
         string psqlPath,
         TimeSpan timeout,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken
+    ) => ProbeAsync(psqlPath, timeout, PsqlProcess.DefaultTerminationBound, timeProvider, cancellationToken);
+
+    /// <summary>The probe with the termination bound exposed, so a test can prove the unconfirmed path quickly.</summary>
+    internal static async Task<PsqlVersionProbeResult> ProbeAsync(
+        string psqlPath,
+        TimeSpan timeout,
+        TimeSpan terminationBound,
         TimeProvider timeProvider,
         CancellationToken cancellationToken
     )
@@ -83,6 +95,8 @@ internal static partial class PsqlVersionProbe
                 startInfo,
                 text => AppendBounded(output, text),
                 consumeStandardError: null,
+                terminationBound,
+                timeProvider,
                 stop.Token
             );
         }
@@ -94,10 +108,15 @@ internal static partial class PsqlVersionProbe
             );
         }
 
-        if (completion.Killed)
+        if (completion.Termination != PsqlProcess.Termination.Exited)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return new PsqlVersionProbeResult.Failed(PsqlProbeFailure.TimedOut, string.Empty);
+            return new PsqlVersionProbeResult.Failed(
+                completion.Termination == PsqlProcess.Termination.Killed
+                    ? PsqlProbeFailure.TimedOut
+                    : PsqlProbeFailure.TerminationUnconfirmed,
+                string.Empty
+            );
         }
 
         if (completion.ExitCode != 0)

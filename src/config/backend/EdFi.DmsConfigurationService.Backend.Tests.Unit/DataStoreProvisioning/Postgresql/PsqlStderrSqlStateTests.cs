@@ -10,8 +10,9 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 
 /// <summary>
 /// The stderr ring buffer of D-10b: the SQLSTATE of the first retained <c>ERROR:  XXXXX:</c> line, with or
-/// without the <c>psql:&lt;file&gt;:&lt;line&gt;:</c> prefix, invalid tokens discarded, retention bounded at 8 KiB
-/// with the oldest text overwritten, and the buffer cleared by extraction.
+/// without the <c>psql:&lt;file&gt;:&lt;line&gt;:</c> prefix (whose file may itself contain colons), invalid
+/// tokens discarded, retention bounded at 8 KiB with the oldest text overwritten, and the buffer cleared by
+/// extraction.
 /// </summary>
 public class PsqlStderrSqlStateTests
 {
@@ -19,6 +20,13 @@ public class PsqlStderrSqlStateTests
         "psql:/tmp/dms-provision-0123456789ab/artifact.sql:12: ERROR:  42P01: relation \"edfi.student\" does not exist";
 
     private const string BareErrorLine = "ERROR:  22P02: invalid input syntax for type integer";
+
+    private static string? Extract(string text)
+    {
+        PsqlStderrSqlState buffer = new();
+        buffer.Append(text);
+        return buffer.ExtractAndClear();
+    }
 
     [TestFixture]
     public class Given_the_verbose_output_of_a_stopped_replay
@@ -50,15 +58,49 @@ public class PsqlStderrSqlStateTests
         private string? _sqlState;
 
         [SetUp]
-        public void Setup()
-        {
-            PsqlStderrSqlState buffer = new();
-            buffer.Append("some earlier notice\r\n" + BareErrorLine + "\r\n");
-            _sqlState = buffer.ExtractAndClear();
-        }
+        public void Setup() => _sqlState = Extract("some earlier notice\r\n" + BareErrorLine + "\r\n");
 
         [Test]
         public void It_extracts_the_sqlstate() => _sqlState.Should().Be("22P02");
+    }
+
+    [TestFixture]
+    public class Given_prefixes_whose_file_paths_contain_colons
+    {
+        private Dictionary<string, string?> _extracted = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            string[] lines =
+            [
+                "psql:C:/Users/sam/dms-provision-0123456789ab/artifact.sql:3: ERROR:  42P01: relation does not exist",
+                "psql:C:\\Users\\sam\\dms-provision-0123456789ab\\artifact.sql:3: ERROR:  22P02: invalid input",
+                "psql:/tmp/dms:provision/artifact.sql:7: ERROR:  23505: duplicate key",
+                "psql:C:/Users/sam/artifact.sql:3: ERROR:  42p01: lower case is still rejected",
+                "psql:C:/Users/sam/artifact.sql: ERROR:  42P01: no line number is still rejected",
+            ];
+            _extracted = lines.ToDictionary(line => line, line => Extract(line + "\n"));
+        }
+
+        [Test]
+        public void It_extracts_through_a_windows_drive_path_with_forward_slashes() =>
+            _extracted.Values.ElementAt(0).Should().Be("42P01");
+
+        [Test]
+        public void It_extracts_through_a_windows_drive_path_with_backslashes() =>
+            _extracted.Values.ElementAt(1).Should().Be("22P02");
+
+        [Test]
+        public void It_extracts_through_a_unix_path_containing_a_colon() =>
+            _extracted.Values.ElementAt(2).Should().Be("23505");
+
+        [Test]
+        public void It_still_rejects_an_invalid_token_and_a_prefix_without_a_line_number()
+        {
+            _extracted.Values.ElementAt(3).Should().BeNull();
+            _extracted.Values.ElementAt(4).Should().BeNull();
+        }
     }
 
     [TestFixture]
@@ -81,15 +123,7 @@ public class PsqlStderrSqlStateTests
                 "psql:artifact.sql: ERROR:  42P01: no line number",
                 "FATAL:  28P01: password authentication failed",
             ];
-            _extracted = lines.ToDictionary(
-                line => line,
-                line =>
-                {
-                    PsqlStderrSqlState buffer = new();
-                    buffer.Append(line + "\n");
-                    return buffer.ExtractAndClear();
-                }
-            );
+            _extracted = lines.ToDictionary(line => line, line => Extract(line + "\n"));
         }
 
         [Test]
@@ -122,11 +156,6 @@ public class PsqlStderrSqlStateTests
             _singleOversizedAppend = singleOversizedAppend.ExtractAndClear();
         }
 
-        private static string Filler(int lines) =>
-            string.Concat(
-                Enumerable.Repeat("NOTICE:  00000: nothing to see on this line of output\n", lines)
-            );
-
         [Test]
         public void It_keeps_the_error_that_came_last() => _errorLast.Should().Be("42P01");
 
@@ -136,6 +165,11 @@ public class PsqlStderrSqlStateTests
         [Test]
         public void It_keeps_the_tail_of_one_append_larger_than_the_buffer() =>
             _singleOversizedAppend.Should().Be("22P02");
+
+        private static string Filler(int lines) =>
+            string.Concat(
+                Enumerable.Repeat("NOTICE:  00000: nothing to see on this line of output\n", lines)
+            );
     }
 
     [TestFixture]

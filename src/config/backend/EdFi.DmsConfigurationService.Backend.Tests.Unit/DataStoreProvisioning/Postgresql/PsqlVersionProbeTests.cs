@@ -13,11 +13,15 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 /// <summary>
 /// The version probe of 7.3 item 5: the <c>--version</c> print parses to a major and minor, a distribution
 /// suffix and a prerelease tag are tolerated, anything else is unparsable, and a missing executable, an
-/// error exit, the probe's own bound, and the caller's cancellation are each reported as the spec names them.
+/// error exit, the probe's own bound, an exit that leaves a child on the pipes, and the caller's
+/// cancellation are each reported as the spec names them.
 /// </summary>
 public class PsqlVersionProbeTests
 {
     private static readonly TimeSpan _bound = TimeSpan.FromSeconds(60);
+
+    private static string SignalPath() =>
+        Path.Combine(Path.GetTempPath(), "dms-1438-probe-signal-" + Guid.NewGuid().ToString("N"));
 
     [TestFixture]
     public class Given_version_prints
@@ -111,11 +115,11 @@ public class PsqlVersionProbeTests
         }
 
         [TearDown]
-        public void TearDown()
+        public async Task TearDown()
         {
-            _announcing.Dispose();
-            _garbage.Dispose();
-            _failing.Dispose();
+            await _announcing.DisposeAsync();
+            await _garbage.DisposeAsync();
+            await _failing.DisposeAsync();
         }
 
         [Test]
@@ -163,10 +167,7 @@ public class PsqlVersionProbeTests
         [SetUp]
         public async Task Setup()
         {
-            string signal = Path.Combine(
-                Path.GetTempPath(),
-                "dms-1438-probe-signal-" + Guid.NewGuid().ToString("N")
-            );
+            string signal = SignalPath();
             _fake = FakePsql.Blocking(signal);
             FakeTimeProvider time = new();
             Task<PsqlVersionProbeResult> probe = PsqlVersionProbe.ProbeAsync(
@@ -183,11 +184,46 @@ public class PsqlVersionProbeTests
         }
 
         [TearDown]
-        public void TearDown() => _fake.Dispose();
+        public async Task TearDown() => await _fake.DisposeAsync();
 
         [Test]
         public void It_reports_the_bound_as_a_timeout() =>
             _result.Should().Be(new PsqlVersionProbeResult.Failed(PsqlProbeFailure.TimedOut, string.Empty));
+    }
+
+    [TestFixture]
+    public class Given_a_fake_that_exits_while_a_child_keeps_its_pipes
+    {
+        private static readonly TimeSpan _terminationBound = TimeSpan.FromSeconds(2);
+
+        private FakePsql _fake = null!;
+        private PsqlVersionProbeResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string signal = SignalPath();
+            _fake = FakePsql.HoldingPipeAfterExit(signal);
+            Task<PsqlVersionProbeResult> probe = PsqlVersionProbe.ProbeAsync(
+                _fake.ExecutablePath,
+                PsqlVersionProbe.DefaultTimeout,
+                _terminationBound,
+                TimeProvider.System,
+                CancellationToken.None
+            );
+            await FakePsql.WaitForFileAsync(signal, _bound);
+            _result = await probe.WaitAsync(_bound);
+            File.Delete(signal);
+        }
+
+        [TearDown]
+        public async Task TearDown() => await _fake.DisposeAsync();
+
+        [Test]
+        public void It_returns_within_the_termination_bound_and_reports_the_termination_unconfirmed() =>
+            _result
+                .Should()
+                .Be(new PsqlVersionProbeResult.Failed(PsqlProbeFailure.TerminationUnconfirmed, string.Empty));
     }
 
     [TestFixture]
@@ -199,10 +235,7 @@ public class PsqlVersionProbeTests
         [SetUp]
         public async Task Setup()
         {
-            string signal = Path.Combine(
-                Path.GetTempPath(),
-                "dms-1438-probe-signal-" + Guid.NewGuid().ToString("N")
-            );
+            string signal = SignalPath();
             _fake = FakePsql.Blocking(signal);
             using CancellationTokenSource cancellation = new();
             Task<PsqlVersionProbeResult> probe = PsqlVersionProbe.ProbeAsync(
@@ -218,7 +251,7 @@ public class PsqlVersionProbeTests
         }
 
         [TearDown]
-        public void TearDown() => _fake.Dispose();
+        public async Task TearDown() => await _fake.DisposeAsync();
 
         [Test]
         public void It_propagates_the_cancellation() =>
