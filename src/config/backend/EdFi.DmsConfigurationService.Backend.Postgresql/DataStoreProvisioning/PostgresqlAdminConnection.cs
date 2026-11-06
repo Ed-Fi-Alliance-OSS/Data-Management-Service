@@ -78,6 +78,14 @@ public sealed class PostgresqlAdminConnection
     public Task<NpgsqlConnection> OpenMaintenanceAsync(CancellationToken cancellationToken) =>
         OpenAsync(MaintenanceDatabaseName, SessionApplicationName, cancellationToken);
 
+    /// <summary>
+    /// The driver's per-command timeout for a statement the server itself bounds (a lock wait, a termination
+    /// wait): the server bound plus the command timeout, in whole seconds, so the driver stays a backstop for
+    /// an unresponsive server rather than the first bound to fire.
+    /// </summary>
+    internal static int DriverTimeoutSeconds(TimeSpan timeout) =>
+        (int)Math.Min(int.MaxValue, Math.Max(1, Math.Ceiling(timeout.TotalSeconds)));
+
     /// <summary>The connection as <c>libpq</c> receives it (D-10), for the replay runner only; never logged.</summary>
     internal LibpqConnectionSettings ToLibpqSettings() => LibpqConnectionSettings.From(_template);
 

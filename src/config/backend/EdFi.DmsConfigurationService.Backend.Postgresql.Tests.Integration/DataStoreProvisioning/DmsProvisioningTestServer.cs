@@ -26,6 +26,9 @@ internal static class DmsProvisioningTestServer
 
     public const string FixtureDirectory = "Fixtures/DataStoreProvisioning";
 
+    /// <summary>The password of every login role the tests create; the lane's own authentication may be trust.</summary>
+    public const string LoginRolePassword = "dms1438-login-Pa55word";
+
     private const string EnsureEnqueueOwnerRole = """
         DO $$
         BEGIN
@@ -53,6 +56,17 @@ internal static class DmsProvisioningTestServer
     public static PostgresqlAdminConnection AdminConnection() =>
         new(AdminConnectionString!, TimeSpan.FromSeconds(30));
 
+    /// <summary>The lane's admin connection authenticating as <paramref name="roleName"/> with <see cref="LoginRolePassword"/>; host, port and database are kept.</summary>
+    public static PostgresqlAdminConnection AdminConnectionAs(string roleName) =>
+        new(
+            new NpgsqlConnectionStringBuilder(AdminConnectionString!)
+            {
+                Username = roleName,
+                Password = LoginRolePassword,
+            }.ConnectionString,
+            TimeSpan.FromSeconds(30)
+        );
+
     /// <summary>An engine over the lane's admin connection; the lock settings default to the 4.3 defaults on the system clock.</summary>
     public static PostgresqlDmsTargetEngine Engine(
         TimeSpan? lockAcquireTimeout = null,
@@ -66,6 +80,47 @@ internal static class DmsProvisioningTestServer
             timeProvider ?? TimeProvider.System,
             NullLogger.Instance
         );
+
+    /// <summary>An engine whose admin connection authenticates as <paramref name="roleName"/>.</summary>
+    public static PostgresqlDmsTargetEngine EngineAs(string roleName) =>
+        new(
+            AdminConnectionAs(roleName),
+            TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(5),
+            TimeProvider.System,
+            NullLogger.Instance
+        );
+
+    public static Task<bool> IsSuperuserAsync() =>
+        ScalarOnServerAsync<bool>(
+            "SELECT r.rolsuper FROM pg_catalog.pg_roles r WHERE r.rolname = current_user;"
+        );
+
+    /// <summary>Whether the lane admin may run <c>COPY ... TO PROGRAM</c>: a superuser or a member of <c>pg_execute_server_program</c>.</summary>
+    public static Task<bool> CanRunServerProgramsAsync() =>
+        ScalarOnServerAsync<bool>(
+            "SELECT r.rolsuper OR pg_catalog.pg_has_role(current_user, 'pg_execute_server_program', 'MEMBER') FROM pg_catalog.pg_roles r WHERE r.rolname = current_user;"
+        );
+
+    /// <summary>Creating login roles and granting <c>pg_signal_backend</c> need a superuser admin; the fixture is skipped otherwise.</summary>
+    public static async Task RequireSuperuserOrSkipAsync()
+    {
+        if (!await IsSuperuserAsync())
+        {
+            Assert.Ignore("The lane admin is not a superuser; the privilege fixtures are skipped.");
+        }
+    }
+
+    /// <summary>Stopping a backend process needs <c>COPY ... TO PROGRAM</c> on a POSIX server; the fixture is skipped when the admin may not run programs.</summary>
+    public static async Task RequireServerProgramsOrSkipAsync()
+    {
+        if (!await CanRunServerProgramsAsync())
+        {
+            Assert.Ignore(
+                "The lane admin may not run server programs; the stopped-backend fixtures are skipped."
+            );
+        }
+    }
 
     public static string FixturePath(string fileName) =>
         Path.Combine(AppContext.BaseDirectory, FixtureDirectory, fileName);
@@ -121,6 +176,54 @@ internal static class DmsProvisioningTestServer
 
     public static Task<bool> TerminateBackendAsync(long pid) =>
         ScalarOnServerAsync<bool>("SELECT pg_catalog.pg_terminate_backend(@pid);", ("pid", (int)pid));
+
+    /// <summary>Whether a session with exactly this pid and start time is listed; the test's own reading of the D-22 identity.</summary>
+    public static Task<bool> SessionPresentAsync(DmsServerSessionId session) =>
+        ScalarOnServerAsync<bool>(
+            "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE a.pid = @pid AND a.backend_start = @start);",
+            ("pid", (int)session.Id),
+            ("start", session.StartedAt.UtcDateTime)
+        );
+
+    /// <summary>The pid of an engine session waiting inside <c>pg_terminate_backend</c> (<c>IPC:BackendTermination</c>), or 0 when there is none.</summary>
+    public static Task<int> TerminatorWaitingAsync() =>
+        ScalarOnServerAsync<int>(
+            "SELECT COALESCE((SELECT a.pid FROM pg_catalog.pg_stat_activity a WHERE a.application_name = @app AND a.wait_event_type = 'IPC' AND a.wait_event = 'BackendTermination' LIMIT 1), 0);",
+            ("app", PostgresqlAdminConnection.SessionApplicationName)
+        );
+
+    /// <summary>
+    /// Stops the backend process with <c>SIGSTOP</c> through the server's own shell: the model of a session
+    /// that cannot act on a termination signal. <see cref="ContinueBackendAsync"/> lets a pending
+    /// <c>SIGTERM</c> end it. <c>cat</c> drains the COPY row so the program never closes the pipe early.
+    /// </summary>
+    public static Task StopBackendAsync(long pid) => SignalBackendAsync(pid, "STOP");
+
+    public static Task ContinueBackendAsync(long pid) => SignalBackendAsync(pid, "CONT");
+
+    private static Task SignalBackendAsync(long pid, string signal) =>
+        ExecuteOnServerAsync($"COPY (SELECT 1) TO PROGRAM 'cat > /dev/null && kill -{signal} {(int)pid}';");
+
+    /// <summary>The connection's own server session id, read the way the engine captures it at open.</summary>
+    public static async Task<DmsServerSessionId> OwnSessionAsync(NpgsqlConnection connection)
+    {
+        await using NpgsqlCommand command = new(
+            "SELECT a.pid, a.backend_start FROM pg_catalog.pg_stat_activity a WHERE a.pid = pg_catalog.pg_backend_pid();",
+            connection
+        );
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+        if (!await reader.ReadAsync())
+        {
+            throw new InvalidOperationException("The session query returned no row.");
+        }
+
+        long pid = reader.GetInt32(0);
+        DateTime backendStart = await reader.GetFieldValueAsync<DateTime>(1);
+        return new DmsServerSessionId(
+            pid,
+            new DateTimeOffset(DateTime.SpecifyKind(backendStart, DateTimeKind.Utc), TimeSpan.Zero)
+        );
+    }
 
     /// <summary>Reads one value on the maintenance database.</summary>
     public static async Task<T> ScalarOnServerAsync<T>(
@@ -195,6 +298,28 @@ internal static class DmsProvisioningTestServer
 
     public static Task DropRoleAsync(string name) =>
         ExecuteOnServerAsync($"DROP ROLE IF EXISTS {PostgresqlIdentifiers.Quote(name)};");
+
+    /// <summary>
+    /// A login role with <see cref="LoginRolePassword"/>, inheriting the privileges of <paramref name="memberOf"/>
+    /// so a granted <c>pg_signal_backend</c> applies without <c>SET ROLE</c>. Dropped with <see cref="DropRoleAsync"/>.
+    /// </summary>
+    public static async Task<string> CreateLoginRoleAsync(string purpose, params string[] memberOf)
+    {
+        string name = $"dms1438_{purpose}_{Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6))}";
+        string membership =
+            memberOf.Length == 0
+                ? string.Empty
+                : " IN ROLE " + string.Join(", ", memberOf.Select(PostgresqlIdentifiers.Quote));
+        await ExecuteOnServerAsync(
+            $"CREATE ROLE {PostgresqlIdentifiers.Quote(name)} WITH LOGIN PASSWORD {PostgresqlIdentifiers.Literal(LoginRolePassword)} NOSUPERUSER NOCREATEDB NOCREATEROLE INHERIT{membership};"
+        );
+        return name;
+    }
+
+    public static Task GrantRoleAsync(string role, string toRole) =>
+        ExecuteOnServerAsync(
+            $"GRANT {PostgresqlIdentifiers.Quote(role)} TO {PostgresqlIdentifiers.Quote(toRole)};"
+        );
 
     /// <summary>A database the tests own: executes statements on it, reads its catalog, and drops it on dispose.</summary>
     public sealed class TestDatabase(string name) : IAsyncDisposable

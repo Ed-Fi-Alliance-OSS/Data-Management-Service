@@ -278,7 +278,9 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
         {
             await using NpgsqlCommand lockCommand = new(LockStatement, connection)
             {
-                CommandTimeout = DriverTimeoutSeconds(acquireTimeout + commandTimeout),
+                CommandTimeout = PostgresqlAdminConnection.DriverTimeoutSeconds(
+                    acquireTimeout + commandTimeout
+                ),
             };
             lockCommand.Parameters.AddWithValue("key", key);
             await lockCommand.ExecuteScalarAsync(cancellationToken);
@@ -295,7 +297,4 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
 
     private static string MillisecondsText(TimeSpan timeout) =>
         Math.Max(1, (long)Math.Ceiling(timeout.TotalMilliseconds)).ToString(CultureInfo.InvariantCulture);
-
-    private static int DriverTimeoutSeconds(TimeSpan timeout) =>
-        (int)Math.Min(int.MaxValue, Math.Max(1, Math.Ceiling(timeout.TotalSeconds)));
 }

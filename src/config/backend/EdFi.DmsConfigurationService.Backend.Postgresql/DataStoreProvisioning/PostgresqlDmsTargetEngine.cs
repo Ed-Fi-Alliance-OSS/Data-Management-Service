@@ -17,11 +17,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 /// D-13), instance-bound sessions that verify the instance at open and capture the backend's <c>pid</c> and
 /// <c>backend_start</c> (D-7b), the delivered identity read, and the catalog facts the validator judges
 /// (6.9c); and the target lock (D-12): <see cref="AcquireTargetLockAsync"/> opens the holder session
-/// (<see cref="PostgresqlTargetLockSession"/>) that every later selected-target mutation runs on. Every read
-/// is on a dedicated connection; the members that mutate, restore, or terminate arrive with Steps 3.3 to 3.9
-/// and throw until then. Connection and driver failures of a read propagate for the orchestrator to classify;
-/// a catalog row the inventory contract cannot describe is reported as a content-profile violation, because
-/// the authoritative DDL never produces one.
+/// (<see cref="PostgresqlTargetLockSession"/>) that every later selected-target mutation runs on; and session
+/// termination (D-22): <see cref="TerminateSessionAsync"/> proves a session gone, or reports why it could not,
+/// through <see cref="PostgresqlSessionQueries"/>. Every read is on a dedicated connection; the members that
+/// mutate or restore arrive with Steps 3.5 to 3.9 and throw until then. Connection and driver failures
+/// propagate for the orchestrator to classify; a catalog row the inventory contract cannot describe is
+/// reported as a content-profile violation, because the authoritative DDL never produces one.
 /// </summary>
 public sealed class PostgresqlDmsTargetEngine : IDmsTargetEngine
 {
@@ -354,11 +355,49 @@ public sealed class PostgresqlDmsTargetEngine : IDmsTargetEngine
         CancellationToken cancellationToken
     ) => throw NotYetImplemented(nameof(DropStagingAsync), "Step 3.5");
 
-    public Task<DmsSessionTermination> TerminateSessionAsync(
+    public async Task<DmsSessionTermination> TerminateSessionAsync(
         DmsServerSessionId session,
         TimeSpan deadline,
         CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(TerminateSessionAsync), "Step 3.4");
+    )
+    {
+        PostgresqlSessionQueries.ValidateRequest(session, deadline);
+        await using NpgsqlConnection connection = await _adminConnection.OpenMaintenanceAsync(
+            cancellationToken
+        );
+        return await PostgresqlSessionQueries.TerminateAsync(
+            connection,
+            session,
+            deadline,
+            _adminConnection.CommandTimeout,
+            _timeProvider,
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// The sessions on <paramref name="database"/> whose <c>application_name</c> is
+    /// <paramref name="applicationName"/>, oldest first: how the <c>psql</c> replay session
+    /// (<c>PGAPPNAME = dms-provision:&lt;op&gt;</c>) is addressed for the outcome protocol (D-7b), which then
+    /// hands each id to <see cref="TerminateSessionAsync"/>.
+    /// </summary>
+    internal async Task<IReadOnlyList<DmsServerSessionId>> FindSessionsAsync(
+        DmsDatabaseName database,
+        string applicationName,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
+        await using NpgsqlConnection connection = await _adminConnection.OpenMaintenanceAsync(
+            cancellationToken
+        );
+        return await PostgresqlSessionQueries.FindByApplicationNameAsync(
+            connection,
+            database,
+            applicationName,
+            cancellationToken
+        );
+    }
 
     /// <summary>The instance behind the session's own database and the backend serving it.</summary>
     private static async Task<(
@@ -542,6 +581,6 @@ public sealed class PostgresqlDmsTargetEngine : IDmsTargetEngine
 
     private static NotImplementedException NotYetImplemented(string member, string step) =>
         new(
-            $"{member} of the PostgreSQL DMS target engine arrives with {step}; this build contains the read members and the target lock only."
+            $"{member} of the PostgreSQL DMS target engine arrives with {step}; this build contains the read members, the target lock, and session termination only."
         );
 }
