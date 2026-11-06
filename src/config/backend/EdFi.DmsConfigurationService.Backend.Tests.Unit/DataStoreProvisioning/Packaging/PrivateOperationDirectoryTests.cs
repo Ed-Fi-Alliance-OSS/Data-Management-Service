@@ -107,6 +107,128 @@ public class PrivateOperationDirectoryTests
     }
 
     [TestFixture]
+    public class Given_the_generated_name_is_taken_by_an_empty_directory_or_a_file
+    {
+        private StagerWorkspace _workspace = null!;
+        private string _emptyDirectoryPath = null!;
+        private string _filePath = null!;
+        private Exception? _emptyDirectoryFailure;
+        private Exception? _fileFailure;
+
+        [SetUp]
+        public void Setup()
+        {
+            _workspace = new StagerWorkspace();
+            DmsOperationId emptyDirectoryOperation = DmsOperationId.New();
+            DmsOperationId fileOperation = DmsOperationId.New();
+            _emptyDirectoryPath = Path.Combine(
+                _workspace.OperationsRoot,
+                PrivateOperationDirectory.NamePrefix + emptyDirectoryOperation.Value
+            );
+            _filePath = Path.Combine(
+                _workspace.OperationsRoot,
+                PrivateOperationDirectory.NamePrefix + fileOperation.Value
+            );
+            Directory.CreateDirectory(_emptyDirectoryPath);
+            File.WriteAllText(_filePath, "a file, not a directory");
+
+            _emptyDirectoryFailure = Record.Exception(() =>
+                PrivateOperationDirectory.Create(_workspace.OperationsRoot, emptyDirectoryOperation).Dispose()
+            );
+            _fileFailure = Record.Exception(() =>
+                PrivateOperationDirectory.Create(_workspace.OperationsRoot, fileOperation).Dispose()
+            );
+        }
+
+        [TearDown]
+        public void TearDown() => _workspace.Dispose();
+
+        [Test]
+        public void It_refuses_an_empty_directory_rather_than_reusing_it() =>
+            _emptyDirectoryFailure.Should().BeOfType<IOException>();
+
+        [Test]
+        public void It_leaves_the_empty_directory_in_place() =>
+            Directory.Exists(_emptyDirectoryPath).Should().BeTrue();
+
+        [Test]
+        public void It_refuses_a_file() => _fileFailure.Should().BeOfType<IOException>();
+
+        [Test]
+        public void It_leaves_the_file_in_place() =>
+            File.ReadAllText(_filePath).Should().Be("a file, not a directory");
+    }
+
+    /// <summary>
+    /// The competitor runs at the seam between the root checks and the claim, which is where a separate
+    /// existence check would have been raced; the claim itself must refuse without touching what it finds.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_competitor_inserts_the_directory_immediately_before_the_claim
+    {
+        private StagerWorkspace _workspace = null!;
+        private string _sentinelPath = null!;
+        private bool _competitorRan;
+        private UnixFileMode _competitorMode;
+        private UnixFileMode _competitorModeAfterwards;
+        private Exception? _failure;
+
+        [SetUp]
+        public void Setup()
+        {
+            _workspace = new StagerWorkspace();
+            _sentinelPath = Path.Combine(_workspace.OperationDirectoryPath, "sentinel.txt");
+            _competitorMode =
+                UnixFileMode.UserRead
+                | UnixFileMode.UserWrite
+                | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead
+                | UnixFileMode.GroupExecute;
+
+            _failure = Record.Exception(() =>
+                PrivateOperationDirectory
+                    .Create(_workspace.OperationsRoot, _workspace.OperationId, beforeClaim: Compete)
+                    .Dispose()
+            );
+
+            if (!OperatingSystem.IsWindows())
+            {
+                _competitorModeAfterwards = File.GetUnixFileMode(_workspace.OperationDirectoryPath);
+            }
+        }
+
+        [TearDown]
+        public void TearDown() => _workspace.Dispose();
+
+        [Test]
+        public void It_ran_the_competitor_at_the_seam() => _competitorRan.Should().BeTrue();
+
+        [Test]
+        public void It_refuses() => _failure.Should().BeOfType<IOException>();
+
+        [Test]
+        public void It_leaves_the_competitors_contents_untouched() =>
+            File.ReadAllText(_sentinelPath).Should().Be("theirs");
+
+        [Test]
+        [Platform(Exclude = "Win")]
+        public void It_leaves_the_competitors_mode_untouched() =>
+            _competitorModeAfterwards.Should().Be(_competitorMode);
+
+        private void Compete()
+        {
+            Directory.CreateDirectory(_workspace.OperationDirectoryPath);
+            File.WriteAllText(_sentinelPath, "theirs");
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(_workspace.OperationDirectoryPath, _competitorMode);
+            }
+
+            _competitorRan = true;
+        }
+    }
+
+    [TestFixture]
     public class Given_an_unusable_root
     {
         private Exception? _relativeRootFailure;
