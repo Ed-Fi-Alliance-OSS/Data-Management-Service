@@ -36,6 +36,7 @@
         <None Update="appsettings.test.json">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </None>
+        <None Update="Fixtures/DataStoreProvisioning/**/*" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
     <ItemGroup>
         <None Remove="ClaimsHierarchyMetadata.json" />
