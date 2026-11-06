@@ -6,6 +6,7 @@
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning;
@@ -52,7 +53,19 @@ internal static class DmsProvisioningTestServer
     public static PostgresqlAdminConnection AdminConnection() =>
         new(AdminConnectionString!, TimeSpan.FromSeconds(30));
 
-    public static PostgresqlDmsTargetEngine Engine() => new(AdminConnection());
+    /// <summary>An engine over the lane's admin connection; the lock settings default to the 4.3 defaults on the system clock.</summary>
+    public static PostgresqlDmsTargetEngine Engine(
+        TimeSpan? lockAcquireTimeout = null,
+        TimeSpan? lockHeartbeatInterval = null,
+        TimeProvider? timeProvider = null
+    ) =>
+        new(
+            AdminConnection(),
+            lockAcquireTimeout ?? TimeSpan.FromSeconds(5),
+            lockHeartbeatInterval ?? TimeSpan.FromSeconds(5),
+            timeProvider ?? TimeProvider.System,
+            NullLogger.Instance
+        );
 
     public static string FixturePath(string fileName) =>
         Path.Combine(AppContext.BaseDirectory, FixtureDirectory, fileName);
@@ -69,6 +82,45 @@ internal static class DmsProvisioningTestServer
     }
 
     public static Task EnsureEnqueueOwnerRoleAsync() => ExecuteOnServerAsync(EnsureEnqueueOwnerRole);
+
+    /// <summary>Whether <paramref name="pid"/> holds the granted session-level advisory lock for <paramref name="key"/>, looked up as the 7.6 operator procedure does.</summary>
+    public static Task<bool> AdvisoryLockGrantedAsync(long pid, long key) =>
+        ScalarOnServerAsync<bool>(
+            "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_locks l WHERE l.locktype = 'advisory' AND l.pid = @pid AND l.objsubid = 1 AND l.granted AND l.database = (SELECT d.oid FROM pg_catalog.pg_database d WHERE d.datname = 'postgres') AND l.classid::bigint = @hi AND l.objid::bigint = @lo);",
+            ("pid", (int)pid),
+            ("hi", (long)(uint)((ulong)key >> 32)),
+            ("lo", (long)(uint)(ulong)key)
+        );
+
+    public static Task<bool> SessionExistsAsync(long pid) =>
+        ScalarOnServerAsync<bool>(
+            "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity a WHERE a.pid = @pid);",
+            ("pid", (int)pid)
+        );
+
+    /// <summary>Sessions carrying <paramref name="applicationName"/>.</summary>
+    public static Task<int> SessionCountNamedAsync(string applicationName) =>
+        ScalarOnServerAsync<int>(
+            "SELECT COUNT(*)::int FROM pg_catalog.pg_stat_activity a WHERE a.application_name = @app;",
+            ("app", applicationName)
+        );
+
+    /// <summary>The pid of the session carrying <paramref name="applicationName"/>, or 0 when there is none.</summary>
+    public static Task<int> PidNamedAsync(string applicationName) =>
+        ScalarOnServerAsync<int>(
+            "SELECT COALESCE((SELECT a.pid FROM pg_catalog.pg_stat_activity a WHERE a.application_name = @app LIMIT 1), 0);",
+            ("app", applicationName)
+        );
+
+    /// <summary>The session's wait event as <c>type:event</c> (<c>Lock:advisory</c> while waiting on an advisory lock); empty when it is not waiting or does not exist.</summary>
+    public static Task<string> WaitEventOfAsync(long pid) =>
+        ScalarOnServerAsync<string>(
+            "SELECT COALESCE((SELECT a.wait_event_type || ':' || a.wait_event FROM pg_catalog.pg_stat_activity a WHERE a.pid = @pid), '');",
+            ("pid", (int)pid)
+        );
+
+    public static Task<bool> TerminateBackendAsync(long pid) =>
+        ScalarOnServerAsync<bool>("SELECT pg_catalog.pg_terminate_backend(@pid);", ("pid", (int)pid));
 
     /// <summary>Reads one value on the maintenance database.</summary>
     public static async Task<T> ScalarOnServerAsync<T>(

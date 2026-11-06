@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net.Sockets;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using FluentAssertions;
@@ -212,5 +213,72 @@ public class PostgresqlErrorClassifierTests
         [Test]
         public void It_does_not_treat_a_missing_database_as_a_missing_relation() =>
             _invalidCatalog.Should().BeFalse();
+    }
+
+    [TestFixture]
+    public class Given_exceptions_that_may_prove_the_connection_failed
+    {
+        private bool _connectionClassState;
+        private bool _adminShutdownInsideDriverException;
+        private bool _transportFailure;
+        private bool _socketFailure;
+        private bool _cancelledStatement;
+        private bool _acknowledgedDriverTimeout;
+        private bool _lockNotAvailable;
+        private bool _rejectedStatement;
+        private bool _unrelatedFailure;
+
+        [SetUp]
+        public void Setup()
+        {
+            _connectionClassState = PostgresqlErrorClassifier.IsConnectionFailure(Error("08006"));
+            _adminShutdownInsideDriverException = PostgresqlErrorClassifier.IsConnectionFailure(
+                new NpgsqlException("terminating", Error("57P01"))
+            );
+            _transportFailure = PostgresqlErrorClassifier.IsConnectionFailure(
+                new NpgsqlException("Exception while reading from stream", new EndOfStreamException())
+            );
+            _socketFailure = PostgresqlErrorClassifier.IsConnectionFailure(
+                new NpgsqlException("Exception while writing to stream", new SocketException(10054))
+            );
+            _cancelledStatement = PostgresqlErrorClassifier.IsConnectionFailure(
+                new OperationCanceledException("cancelled", Error("57014"))
+            );
+            _acknowledgedDriverTimeout = PostgresqlErrorClassifier.IsConnectionFailure(
+                new NpgsqlException("Exception while reading from stream", new TimeoutException())
+            );
+            _lockNotAvailable = PostgresqlErrorClassifier.IsConnectionFailure(Error("55P03"));
+            _rejectedStatement = PostgresqlErrorClassifier.IsConnectionFailure(Error("42601"));
+            _unrelatedFailure = PostgresqlErrorClassifier.IsConnectionFailure(
+                new InvalidOperationException("not a connection error")
+            );
+        }
+
+        [Test]
+        public void It_treats_a_connection_class_state_as_a_connection_failure() =>
+            _connectionClassState.Should().BeTrue();
+
+        [Test]
+        public void It_reads_the_state_through_the_driver_exception() =>
+            _adminShutdownInsideDriverException.Should().BeTrue();
+
+        [Test]
+        public void It_treats_a_transport_failure_as_a_connection_failure() =>
+            (_transportFailure, _socketFailure).Should().Be((true, true));
+
+        [Test]
+        public void It_does_not_treat_a_cancelled_statement_as_a_connection_failure() =>
+            _cancelledStatement.Should().BeFalse();
+
+        [Test]
+        public void It_does_not_treat_an_acknowledged_driver_timeout_as_a_connection_failure() =>
+            _acknowledgedDriverTimeout.Should().BeFalse();
+
+        [Test]
+        public void It_does_not_treat_a_server_rejection_as_a_connection_failure() =>
+            (_lockNotAvailable, _rejectedStatement, _unrelatedFailure).Should().Be((false, false, false));
+
+        private static PostgresException Error(string sqlState) =>
+            new("ERROR with password=hunter2", "ERROR", "ERROR", sqlState);
     }
 }

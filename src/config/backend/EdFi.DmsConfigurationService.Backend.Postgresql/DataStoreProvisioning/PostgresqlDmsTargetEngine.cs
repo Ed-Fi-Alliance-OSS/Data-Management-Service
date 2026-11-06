@@ -6,21 +6,24 @@
 using System.Diagnostics.CodeAnalysis;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 
 /// <summary>
-/// The PostgreSQL adapter of the engine port (4.1). This step delivers its read members: server facts
+/// The PostgreSQL adapter of the engine port (4.1). This build delivers the read members: server facts
 /// (6.1 step 5), inspection by name with the instance identity <c>oid</c> plus claim comment (6.1 step 6,
 /// D-13), instance-bound sessions that verify the instance at open and capture the backend's <c>pid</c> and
 /// <c>backend_start</c> (D-7b), the delivered identity read, and the catalog facts the validator judges
-/// (6.9c). Every statement here is a read on a dedicated connection; the members that mutate, lock, restore,
-/// or terminate arrive with Steps 3.2 to 3.9 and throw until then. Connection and driver failures propagate
-/// for the orchestrator to classify; a catalog row the inventory contract cannot describe is reported as a
-/// content-profile violation, because the authoritative DDL never produces one.
+/// (6.9c); and the target lock (D-12): <see cref="AcquireTargetLockAsync"/> opens the holder session
+/// (<see cref="PostgresqlTargetLockSession"/>) that every later selected-target mutation runs on. Every read
+/// is on a dedicated connection; the members that mutate, restore, or terminate arrive with Steps 3.3 to 3.9
+/// and throw until then. Connection and driver failures of a read propagate for the orchestrator to classify;
+/// a catalog row the inventory contract cannot describe is reported as a content-profile violation, because
+/// the authoritative DDL never produces one.
 /// </summary>
-public sealed class PostgresqlDmsTargetEngine(PostgresqlAdminConnection adminConnection) : IDmsTargetEngine
+public sealed class PostgresqlDmsTargetEngine : IDmsTargetEngine
 {
     /// <summary>The <c>Diagnostic.Operation</c> of a facts read whose inventory or security rows do not split as the delivered contract requires.</summary>
     public const string CatalogRowShapeStep = "CatalogRowShape";
@@ -34,6 +37,39 @@ public sealed class PostgresqlDmsTargetEngine(PostgresqlAdminConnection adminCon
     private const string SessionIdentityQuery =
         "SELECT d.oid, pg_catalog.shobj_description(d.oid, 'pg_database'), a.pid, a.backend_start FROM pg_catalog.pg_database d CROSS JOIN pg_catalog.pg_stat_activity a WHERE d.datname = pg_catalog.current_database() AND a.pid = pg_catalog.pg_backend_pid();";
 
+    private readonly PostgresqlAdminConnection _adminConnection;
+    private readonly TimeSpan _lockAcquireTimeout;
+    private readonly TimeSpan _lockHeartbeatInterval;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger _logger;
+
+    /// <param name="adminConnection">The resolved administrative connection (4.3 <c>AdminConnectionString</c> and <c>CommandTimeout</c>).</param>
+    /// <param name="lockAcquireTimeout"><c>LockAcquireTimeout</c>: the server-side wait for the target lock (D-12).</param>
+    /// <param name="lockHeartbeatInterval"><c>LockHeartbeatInterval</c>: the holder session's probe cadence (D-12).</param>
+    /// <param name="timeProvider">Drives the holder heartbeat and every holder deadline.</param>
+    /// <param name="logger">Receives the holder's ignored release and probe errors as type chains; never a value.</param>
+    public PostgresqlDmsTargetEngine(
+        PostgresqlAdminConnection adminConnection,
+        TimeSpan lockAcquireTimeout,
+        TimeSpan lockHeartbeatInterval,
+        TimeProvider timeProvider,
+        ILogger logger
+    )
+    {
+        ArgumentNullException.ThrowIfNull(adminConnection);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(lockAcquireTimeout, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(lockAcquireTimeout, TimeSpan.FromHours(1));
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(lockHeartbeatInterval, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(lockHeartbeatInterval, TimeSpan.FromHours(1));
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(logger);
+        _adminConnection = adminConnection;
+        _lockAcquireTimeout = lockAcquireTimeout;
+        _lockHeartbeatInterval = lockHeartbeatInterval;
+        _timeProvider = timeProvider;
+        _logger = logger;
+    }
+
     public string Provider => DmsDataStoreProvisioningOptions.PostgresqlProvider;
 
     public Task<DmsEngineEnvironment> ValidateEnvironmentAsync(CancellationToken cancellationToken) =>
@@ -41,7 +77,7 @@ public sealed class PostgresqlDmsTargetEngine(PostgresqlAdminConnection adminCon
 
     public async Task<DmsServerFacts> ReadServerFactsAsync(CancellationToken cancellationToken)
     {
-        await using NpgsqlConnection connection = await adminConnection.OpenMaintenanceAsync(
+        await using NpgsqlConnection connection = await _adminConnection.OpenMaintenanceAsync(
             cancellationToken
         );
         await using NpgsqlCommand command = new(ServerFactsQuery, connection);
@@ -71,14 +107,24 @@ public sealed class PostgresqlDmsTargetEngine(PostgresqlAdminConnection adminCon
         DmsTargetDatabaseName name,
         DmsOperationId operation,
         CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(AcquireTargetLockAsync), "Step 3.2");
+    ) =>
+        PostgresqlTargetLockSession.AcquireAsync(
+            _adminConnection,
+            name,
+            operation,
+            _lockAcquireTimeout,
+            _lockHeartbeatInterval,
+            _timeProvider,
+            _logger,
+            cancellationToken
+        );
 
     public async Task<DmsLiveTargetState> InspectAsync(
         DmsDatabaseName name,
         CancellationToken cancellationToken
     )
     {
-        await using NpgsqlConnection connection = await adminConnection.OpenMaintenanceAsync(
+        await using NpgsqlConnection connection = await _adminConnection.OpenMaintenanceAsync(
             cancellationToken
         );
         await using NpgsqlCommand command = new(InspectQuery, connection);
@@ -121,7 +167,7 @@ public sealed class PostgresqlDmsTargetEngine(PostgresqlAdminConnection adminCon
         NpgsqlConnection connection;
         try
         {
-            connection = await adminConnection.OpenAsync(
+            connection = await _adminConnection.OpenAsync(
                 name.Value,
                 PostgresqlAdminConnection.SessionApplicationName,
                 cancellationToken
@@ -496,6 +542,6 @@ public sealed class PostgresqlDmsTargetEngine(PostgresqlAdminConnection adminCon
 
     private static NotImplementedException NotYetImplemented(string member, string step) =>
         new(
-            $"{member} of the PostgreSQL DMS target engine arrives with {step}; this build contains the read members only."
+            $"{member} of the PostgreSQL DMS target engine arrives with {step}; this build contains the read members and the target lock only."
         );
 }

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net.Sockets;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using Npgsql;
 
@@ -48,6 +49,33 @@ internal static class PostgresqlErrorClassifier
     {
         ArgumentNullException.ThrowIfNull(sqlState);
         return sqlState is PostgresErrorCodes.UndefinedTable or PostgresErrorCodes.InvalidSchemaName;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="exception"/> proves the session's connection failed (D-12 loss evidence): the
+    /// first PostgreSQL error in the chain is connection class, or, when there is none, a transport failure
+    /// (<see cref="IOException"/>, <see cref="SocketException"/>) sits anywhere in the chain. A cancelled
+    /// statement (<c>57014</c>), a driver timeout the server acknowledged, and every other server-reported
+    /// error leave the connection usable and are not loss.
+    /// </summary>
+    public static bool IsConnectionFailure(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        string? sqlState = SqlStateOf(exception);
+        if (sqlState is not null)
+        {
+            return IsConnectionClass(sqlState);
+        }
+
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is IOException or SocketException)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
