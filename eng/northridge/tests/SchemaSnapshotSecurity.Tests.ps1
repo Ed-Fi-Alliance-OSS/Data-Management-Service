@@ -785,8 +785,8 @@ Describe "Restore recipe content gate checks every sequence the copied data draw
         $script:contentGateSql | Should -Match ([regex]::Escape("SELECT 'dms.""DocumentCacheState"".""CacheAheadRecoveryRequired""', '$recovery',")) -Because "the gate must want the copy tool's recovery flag"
         $script:contentGateSql | Should -Match ([regex]::Escape('(SELECT "CacheAheadRecoveryRequired"::text FROM dms."DocumentCacheState" WHERE "StateId" = 1)'))
         # The prose wraps across comment lines, so the two words are matched separately.
-        $script:recipe | Should -Match "nine dms tables" -Because "the prose counts the tables the block reads"
-        $script:recipe | Should -Not -Match "eight dms tables"
+        $script:recipe | Should -Match "eight dms tables" -Because "the prose counts the tables the block reads; dms.ReferentialIdentity is retired, so the block reads eight and asks the catalog about the ninth"
+        $script:recipe | Should -Not -Match "nine dms tables"
     }
 }
 

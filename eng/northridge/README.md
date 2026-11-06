@@ -20,6 +20,15 @@ Service, and `dms.EffectiveSchema` is a deployment invariant that returns 503 on
 published dataset onto a newer schema therefore means deploying a fresh database at the current schema
 and copying the data across -- never patching the published artifact.
 
+The v81 artifacts (see *Artifact identities*) are the one recorded exception to that route, and the
+published v80 artifacts were not modified to make them: each v81 artifact was produced by restoring
+the published v80 artifact and applying a separately designed, data-preserving physical migration to
+DMS revision `efc9079a0`, validated against a fresh deployment of the same revision before
+publication -- the bounded administrative exception described in
+[RELATIONAL-BACKEND.md](../../docs/RELATIONAL-BACKEND.md#re-stamping-after-a-validated-physical-migration).
+The migration scripts and their checks are not in this repository; the Record for each v81 artifact
+names them and what they verified.
+
 ## Contents
 
 | Script | Purpose |
@@ -163,13 +172,14 @@ change-version sequences retain their existing checks.
 `-WhatIf` opens neither databases nor the baseline file. Failed copies clean their temporary files
 and staging schema but may leave a partially loaded target; discard and reprovision it before
 retrying. A pre-existing staging schema is refused. The conversion is within this copy tool; it
-introduces no in-place migration. The historical restore recipe and provenance below still describe
-the published artifact at its recorded revision. Shared template rebuilds and restore verification
-for the combined DMS-1404/DMS-1401 schema belong to DMS-1401; a full Northridge reload or dataset
-republication is not a prerequisite for either physical change. See the
+introduces no in-place migration. The restore recipe and the Records below describe the published
+artifacts at their recorded revisions; the v81 artifacts' own route is stated in their Records.
+Shared template rebuilds and restore verification for the combined DMS-1404/DMS-1401 schema belong
+to DMS-1401; a full Northridge reload or dataset republication is not a prerequisite for either
+physical change. See the
 [combined template/deployment requirements](../../docs/RELATIONAL-BACKEND.md#descriptor-catalog-checks-and-template-handoff).
 
-The live regression runs the actual custom-dump conversion on PostgreSQL 16.8, with descriptor
+The live regression runs the actual custom-dump conversion on PostgreSQL 18.6, with descriptor
 document keys above `Int32.MaxValue`, unequal native target keys, exact root/nested/extension/
 composite remaps, deleted-row history, retained stamps, skipped legacy `dms.ReferentialIdentity`
 rows, abstract identity `ResourceKeyId` from the owning document and a successful next ordinary insert.
@@ -184,15 +194,19 @@ Invoke-Pester -Path ./eng/northridge/tests/CompactDescriptorCarryForward.Tests.p
 
 | Item | Value |
 | --- | --- |
-| PostgreSQL artifact | `EdFi_DMS_Northridge_v80_20260819_PG.7z`, 869,019,055 bytes, sha256 `49129363581eab342146e8dd9a4da95dd6f7b035f0c39ee39c9691176cd856a0` |
-| — published at | <https://odsassets.blob.core.windows.net/public/Northridge/EdFi_DMS_Northridge_v80_20260819_PG.7z> |
-| — as served | `Content-Length: 869019055`, `Content-Type: application/x-7z-compressed`, access tier `Cool` |
-| — inner dump | `EdFi_DMS_Northridge_v80_20260819_PG.dump`, 888,167,269 bytes, sha256 `08c03fe279e7ab10516f3e29c8009dca76b154fe67b5b0aaaad31409035d4167` |
-| — contents | 10,576,801 documents across 210 resources; `dms` 10 tables, `edfi` 467, `tracked_changes_edfi` 139, `dmscs` 24, `auth` 1, `public` 1 |
-| SQL Server artifact | `EdFi_DMS_Northridge_v80_20260808_MSSQL.7z`, sha256 `2b7f1318bdbd5bcead90e6b74bfc3918ff12d31391a88f35f46f3199b6171d71` |
+| PostgreSQL artifact | `EdFi_DMS_Northridge_v81_20261104_PG.7z`, 501,783,114 bytes, sha256 `0e3616380b3c667e1404854b916d0fbe3b424029e837e0c26c9514549b2a4f6b` |
+| — published at | <https://odsassets.blob.core.windows.net/public/Northridge/EdFi_DMS_Northridge_v81_20261104_PG.7z> |
+| — as served | `Content-Length: 501783114`, `Content-Type: application/x-compressed`, access tier `not reported in the response headers` |
+| — inner dump | `EdFi_DMS_Northridge_v81_20261104_PG.dump`, 515,027,937 bytes, sha256 `c51033e9357ad71a6ec20b89a2b3be5ba37e6b35c364648f487cfe595a7d97bf`; `pg_dump` 18.0 custom format, archive format 1.16; restore with `pg_restore` 18 or later, the major that wrote it (the compose image qualifies) |
+| — contents | 10,576,801 documents across 210 resources; `dms` 10 tables, `edfi` 467, `tracked_changes_edfi` 139, `dmscs` 29, `auth` 1, `public` 1 |
+| SQL Server artifact | `EdFi_DMS_Northridge_v81_20261104_MSSQL.7z`, 1,219,819,198 bytes, sha256 `21a24f61858d8a564349230e947c9cf42daf9856c742c83ccaf4519d0b2f2786` |
+| — published at | <https://odsassets.blob.core.windows.net/public/Northridge/EdFi_DMS_Northridge_v81_20261104_MSSQL.7z> |
+| — as served | `Content-Length: 1219819198`, `Content-Type: application/x-compressed`, access tier `not reported in the response headers` |
+| — inner backup | `EdFi_DMS_Northridge_v81_20261104_MSSQL.bak`, 1,481,224,192 bytes, sha256 `38b071b1205d83ac671c2e8a7ed1c508e67fe8361de5ee1f5014764df8958049`; SQL Server 2025 compressed full backup with checksums (database version 998, so SQL Server 2025 or later) |
+| Superseded | `EdFi_DMS_Northridge_v80_20260819_PG.7z` (sha256 `49129363581eab342146e8dd9a4da95dd6f7b035f0c39ee39c9691176cd856a0`) and `EdFi_DMS_Northridge_v80_20260808_MSSQL.7z` (sha256 `2b7f1318bdbd5bcead90e6b74bfc3918ff12d31391a88f35f46f3199b6171d71`), both left in place (an anonymous `HEAD` after the upload answered 200 at their original sizes, recorded in the evidence set); the v80 Record below still describes them |
 | Source ODS | `EdFi_Ods_Northridge_v73_20241230_PG13.7z`, sha256 `b5e1acf0ea82f226ea44a7ce6bc2c97bc2cd78342ebdd6923a98b54bc34f137e` |
-| ApiSchema | `EdFi.DataStandard52.ApiSchema` v1.0.333, **core only, no TPDM** |
-| Effective schema hash | `816fe17af8c06994204f5c73903a616a16ca43a4be98a3716c07ae7b7b58587b` — identical on both engines |
+| ApiSchema | `EdFi.DataStandard52.ApiSchema` v1.0.335, **core only, no TPDM** |
+| Effective schema hash | `a0d39468ef30d3e99273065256bfffa42b799404ca5fbc09a8648f349d9217e1` — identical on both engines |
 
 > The repository default for Data Standard 5.2 stages core **and** TPDM, which computes a different
 > `EffectiveSchemaHash` and makes DMS answer 503 for every request. Pinning to core only is required,
@@ -201,19 +215,20 @@ Invoke-Pester -Path ./eng/northridge/tests/CompactDescriptorCarryForward.Tests.p
 
 ## Restore recipe -- PostgreSQL
 
-Two different things are on record about this recipe, and they must not be read as one. The recipe
-text **as it stood at publication** -- eleven steps, branch head `b303450ab5fd689526696cb088a76a90b7ef6c14`,
-recorded unchanged in `a0eecb58a5e4051730f82ec4c12288a443307250`: no step 5b, no step 5c, and DMS started
-as its step 10 -- was executed from a clean slate on 2026-08-19, on a stack deliberately configured with
-a non-default PostgreSQL password, a non-default `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` and a non-default
-`CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY`, so that nothing could pass by sharing a default with the machine
-that produced the artifact. The fourteen-step text below is that recipe plus the review hardening added
-after publication -- steps 5b and 5c, the fail-closed status checks, the bounded waits, the in-memory
-secret handling and the recovery helper -- and the current text has **not** been executed end to end
-against the published artifact as one run. Its added gates are covered piecewise by the two suites
-named above; until a run of the current text is performed and recorded with its date and commit (see
-*Recipe execution record* at the end of this document), the clean-slate claim is a claim about the
-publication-time text only.
+Two different things are on record about this recipe, and they must not be read as one. The text
+below is the v81 text: the v80 recipe with the pins, the step 3 revision guard and the step 6
+inventory of the `EdFi_DMS_Northridge_v81_20261104_PG` artifact. Whether it has been executed end to
+end, from which commit of this file and from what starting state, is stated only in the *Recipe
+execution record* at the end of this document; nothing in the steps claims a run. For history: the
+v80 recipe text **as it stood at that publication** -- eleven steps, branch head
+`b303450ab5fd689526696cb088a76a90b7ef6c14`, recorded unchanged in
+`a0eecb58a5e4051730f82ec4c12288a443307250`: no step 5b, no step 5c, and DMS started as its step 10 --
+was executed from a clean slate on 2026-08-19, on a stack deliberately configured with a non-default
+PostgreSQL password, a non-default `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` and a non-default
+`CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY`, so that nothing could pass by sharing a default with
+the machine that produced the artifact. The review hardening added after that publication -- steps 5b
+and 5c, the fail-closed status checks, the bounded waits, the in-memory secret handling and the
+recovery helper -- is covered piecewise by the two suites named above.
 
 The three producer-identity and data-model steps called out on DMS-1406 are mandatory rather than
 conditional on your configuration differing from the producer's:
@@ -229,7 +244,7 @@ stack also drop the ownership and privilege metadata the DMS DDL sets on purpose
 proof that it was put back.
 
 > **Run this recipe from the DMS revision the artifact records** -- *DMS revision built*,
-> `087eaa013df22a88d0046ac6f0e211bf47ec79e4` in the Record at the end of this document -- or from a
+> `efc9079a0d760d3c999d97fd5269a932dbaece16` in the Record at the end of this document -- or from a
 > checkout whose `src/` matches it. The hash step 3 expects and the DDL step 5c compares against both
 > come from `src/` at that revision; step 3 checks this and stops otherwise. To bring the dataset onto a
 > newer checkout, use `Copy-NorthridgeDataForward.ps1` instead of this recipe.
@@ -237,7 +252,7 @@ proof that it was put back.
 ```shell
 DC=~/src/Data-Management-Service/eng/docker-compose   # your checkout
 ART=~/northridge-artifact                             # scratch dir, needs ~12 GB
-ARTIFACT=EdFi_DMS_Northridge_v80_20260819_PG
+ARTIFACT=EdFi_DMS_Northridge_v81_20261104_PG
 
 # 1. Download and verify. A checksum mismatch means stop -- do not restore a partial download.
 mkdir -p "$ART" && cd "$ART"
@@ -245,22 +260,22 @@ curl -O "https://odsassets.blob.core.windows.net/public/Northridge/${ARTIFACT}.7
 #    The status is checked rather than printed. This recipe carries no `set -e`, so on its own
 #    sha256sum reports FAILED and a pasted run carries straight on into the extraction and the
 #    restore with a partial, wrong, or left-over-from-last-time archive.
-echo "49129363581eab342146e8dd9a4da95dd6f7b035f0c39ee39c9691176cd856a0  ${ARTIFACT}.7z" | sha256sum -c - || \
+echo "0e3616380b3c667e1404854b916d0fbe3b424029e837e0c26c9514549b2a4f6b  ${ARTIFACT}.7z" | sha256sum -c - || \
   { echo "archive checksum failed -- delete ${ARTIFACT}.7z and download it again; do NOT continue"; exit 1; }
 
-# 2. Extract, in a container so no host 7-Zip is needed. The inner dump is 888,167,269 bytes.
+# 2. Extract, in a container so no host 7-Zip is needed. The inner dump is 515,027,937 bytes.
 docker run --rm -v "$PWD:/w" alpine sh -c \
   "apk add --no-cache p7zip >/dev/null 2>&1 && cd /w && 7z x -y ${ARTIFACT}.7z >/dev/null"
 #    Checked for the same reason as the archive, and because this is the file the restore
 #    actually reads: a failed extraction leaves whatever dump was already in $ART, and a stale
 #    one satisfies every later step while restoring the wrong dataset.
-echo "08c03fe279e7ab10516f3e29c8009dca76b154fe67b5b0aaaad31409035d4167  ${ARTIFACT}.dump" | sha256sum -c - || \
+echo "c51033e9357ad71a6ec20b89a2b3be5ba37e6b35c364648f487cfe595a7d97bf  ${ARTIFACT}.dump" | sha256sum -c - || \
   { echo "extracted dump checksum failed -- delete ${ARTIFACT}.dump and extract it again; do NOT continue"; exit 1; }
 DUMP="$ART/${ARTIFACT}.dump"
 
 # 3. REQUIRED: stage the schema set as CORE ONLY, before bootstrap.
-#    The artifact is provisioned for EdFi.DataStandard52.ApiSchema 1.0.333, core only, effective
-#    schema hash 816fe17af8c06994204f5c73903a616a16ca43a4be98a3716c07ae7b7b58587b. The repository
+#    The artifact is provisioned for EdFi.DataStandard52.ApiSchema 1.0.335, core only, effective
+#    schema hash a0d39468ef30d3e99273065256bfffa42b799404ca5fbc09a8648f349d9217e1. The repository
 #    default for Data Standard 5.2 stages core PLUS TPDM, which computes a different hash and makes
 #    DMS answer 503 for every request.
 #
@@ -269,12 +284,12 @@ cd "$DC"
 #    compares against both come from src/ at that revision. Compared by content, commit to commit, so
 #    an equivalent commit passes; uncommitted src/ edits are not seen, and the commit has to be in the
 #    clone. A path that git cannot find compares as unchanged, hence the directory test in front.
-ARTIFACT_DMS_REV=087eaa013df22a88d0046ac6f0e211bf47ec79e4   # DMS revision built, from the Record
+ARTIFACT_DMS_REV=efc9079a0d760d3c999d97fd5269a932dbaece16   # DMS revision built, from the Record
 git cat-file -e "${ARTIFACT_DMS_REV}^{commit}" 2>/dev/null || \
   { echo "commit ${ARTIFACT_DMS_REV} is not in this clone -- fetch the full history (git fetch --unshallow) and retry; do NOT continue"; exit 1; }
 test -d ../../src && git diff --quiet "$ARTIFACT_DMS_REV" HEAD -- ../../src || \
   { echo "this checkout's src/ differs from the DMS revision the artifact records -- for this recipe check out $ARTIFACT_DMS_REV, or a checkout whose src/ matches it; to bring the dataset onto a newer checkout run Copy-NorthridgeDataForward.ps1 instead of this recipe; do NOT continue"; exit 1; }
-APISCHEMA_VER=1.0.333       # the version THIS artifact was provisioned from
+APISCHEMA_VER=1.0.335       # the version THIS artifact was provisioned from
 
 #    Materialize the core package. The repo pins it centrally and references it with
 #    GeneratePathProperty, so restoring the project that consumes it puts the package in the NuGet
@@ -298,7 +313,7 @@ dotnet publish ../../src/dms/clis/EdFi.DataManagementService.SchemaTools \
 #    No DMS_SCHEMA_TOOL_PATH is needed: `.bootstrap/tools/api-schema-tools` is the documented publish
 #    location and is probed first, with the platform executable suffix handled for you.
 pwsh -NoProfile -File ./prepare-dms-schema.ps1 -ApiSchemaPath "$ART/apischema-core-only"
-#    Expect: "Effective schema hash: 816fe17af8c06994204f5c73903a616a16ca43a4be98a3716c07ae7b7b58587b"
+#    Expect: "Effective schema hash: a0d39468ef30d3e99273065256bfffa42b799404ca5fbc09a8648f349d9217e1"
 #    If that hash differs, STOP: the restored database will answer 503 and no later step will fix it.
 #
 #    -ApiSchemaPath (expert mode) is required here, and the tempting shortcuts do not work:
@@ -535,7 +550,7 @@ echo "schema compare PASS: the restored artifact is the deployed schema, ownersh
 
 # 6. Verify the restore by content as well as by status. A clean exit says the archive was applied;
 #    it does not say the database holds the published dataset. This block compares 22 values across
-#    nine dms tables, the three sequences the copied data draws from -- with the CollectionItemId
+#    eight dms tables and the catalog, the three sequences the copied data draws from -- with the CollectionItemId
 #    high-water mark taken over every collection table that holds the column -- the table inventory
 #    of all four DMS-owned schemas and the referential closure, and raises on the first
 #    disagreement, so it either passes or stops the recipe. A value that is missing rather than wrong
@@ -590,7 +605,7 @@ BEGIN
         UNION ALL SELECT 'dms."EffectiveSchema"."ResourceKeyCount"', '351',
                (SELECT "ResourceKeyCount"::text FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1)
         UNION ALL SELECT 'dms."EffectiveSchema"."EffectiveSchemaHash"',
-               '816fe17af8c06994204f5c73903a616a16ca43a4be98a3716c07ae7b7b58587b',
+               'a0d39468ef30d3e99273065256bfffa42b799404ca5fbc09a8648f349d9217e1',
                (SELECT "EffectiveSchemaHash" FROM dms."EffectiveSchema" WHERE "EffectiveSchemaSingletonId" = 1)
         UNION ALL SELECT 'dms."DataStoreIdentity"."SourceIdentity" as shipped',
                '8b962de6-b979-49aa-bce0-ca59e0a1ad51',
@@ -634,9 +649,12 @@ BEGIN
                (SELECT COUNT(*)::text FROM dms."Descriptor" x
                   JOIN dms."Document" d ON d."DocumentId" = x."DocumentId"
                  WHERE x."ResourceKeyId" <> d."ResourceKeyId")
-        UNION ALL SELECT 'referential identities with no document', '0',
-               (SELECT COUNT(*)::text FROM dms."ReferentialIdentity" r
-                 WHERE NOT EXISTS (SELECT 1 FROM dms."Document" d WHERE d."DocumentId" = r."DocumentId"))
+        -- DMS-1456 retired dms."ReferentialIdentity"; the v81 artifact carries no referential-identity
+        -- table or rows, and a restore that has one is an older artifact on the wrong recipe. The
+        -- catalog is asked, not the table: the table is expected not to exist.
+        UNION ALL SELECT 'dms."ReferentialIdentity" present', '0',
+               (SELECT COUNT(*)::text FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+                 WHERE n.nspname = 'dms' AND c.relname = 'ReferentialIdentity')
         -- The value the next write would receive, not the recorded position: nextval() returns
         -- last_value + increment once is_called is true and last_value itself while it is false, so a
         -- sequence sitting exactly on the maximum with is_called false reports a position that looks
@@ -897,7 +915,10 @@ AUTH_HTTP() { # AUTH_HTTP <method> <url> <headers-file>; token from TOKEN, JSON 
     $headerLine = foreach ($header in $response.Headers.GetEnumerator()) { "$($header.Key): $($header.Value -join ", ")" }
     Set-Content -Path $env:HEADERS_FILE -Encoding utf8NoBOM -Value ($headerLine -join "`n")
     [Console]::Out.WriteLine([int]$response.StatusCode)
-    [Console]::Out.Write([string]$response.Content)
+    # A problem-details body (application/problem+json) arrives as a byte array on current PowerShell, and
+    # [string] renders that as decimal byte values; decode it so the callers below can read the message.
+    $content = if ($response.Content -is [byte[]]) { [Text.Encoding]::UTF8.GetString($response.Content) } else { [string]$response.Content }
+    [Console]::Out.Write($content)
   '
 }
 CMS_SECRET="$ADMIN_SECRET"
@@ -1085,6 +1106,11 @@ fi
 test -n "$VID" || \
   { echo "HTTP $VS, but neither the Location header nor the lookup names the vendor id"; cat "$ART/vendor-post.headers"; exit 1; }
 
+#     POST /v3/applications is create-only as well: a re-run of this step, with the application from an
+#     earlier run still registered under this vendor, answers 400 with "Application 'Local Consumer Read'
+#     already exists for vendor." and stops below. That earlier application's secret was shown once, at its
+#     creation, so there is nothing to look up: delete it first (DELETE $CMS/v3/applications/<id> with the
+#     restore-admin token; GET $CMS/v3/applications lists the ids) or give this one another applicationName.
 BODY="{\"applicationName\":\"Local Consumer Read\",\"vendorId\":${VID},\"claimSetName\":\"EdFiAPIPublisherWriter\",\"educationOrganizationIds\":[255901],\"dataStoreIds\":[1]}"
 APP_RESPONSE=$(AUTH_HTTP POST "$CMS/v3/applications" "$ART/application-post.headers") || \
   { echo "the application request could not be made"; exit 1; }
@@ -1103,7 +1129,11 @@ SEC=$(printf '%s\n' "$APP" | sed -n 's/.*"secret"[[:space:]]*:[[:space:]]*"\([^"
 test -n "$KEY" -a -n "$SEC" || { echo "HTTP 201, but no key and secret in the body: $APP"; exit 1; }
 
 CMS_SECRET="$SEC"
-DT=$(CMS_TOKEN "$KEY" edfi_admin_api/full_access) || { echo "no DMS token minted"; exit 1; }
+#     The scope is the application's claim set, not the admin scope used for restore-admin above: the
+#     Configuration Service grants an application client only the scopes it holds -- its claim set name,
+#     EdFiAPIPublisherWriter here -- narrows a requested scope to that set, and answers invalid_scope
+#     (HTTP 400) when nothing is left, so a request for edfi_admin_api/full_access mints no token at all.
+DT=$(CMS_TOKEN "$KEY" EdFiAPIPublisherWriter) || { echo "no DMS token minted"; exit 1; }
 
 #     The read that proves the dataset is being served. Send a real token: an absent or malformed
 #     one answers 401, which tells you nothing about the data.
@@ -1215,6 +1245,79 @@ Every published artifact records the following, on its ticket and in this direct
    sentence: a summary cannot be re-read to find which resource moved.
 5. **Known limitations** -- that the shipped Configuration Service state is producer-local, and anything deferred.
 
+### Record for `EdFi_DMS_Northridge_v81_20261104_PG`
+
+| | |
+| --- | --- |
+| Published | 2026-11-05, to `odsassets` / container `public` / prefix `Northridge/` (blob `Last-Modified: Thu, 05 Nov 2026 18:05:53 GMT`) |
+| Supersedes | `EdFi_DMS_Northridge_v80_20260819_PG` -- the same 10,576,801 documents on the DMS `087eaa013` schema (effective schema hash `816fe17a…`). **Left in place, not deleted or renamed** |
+| What changed | the dataset brought to the DMS `efc9079a0` schema. DMS-1456 removed `dms.ReferentialIdentity`, its triggers and functions, `dms.uuidv5` and `UX_Descriptor_ResourceKeyId_Uri`; DMS-1404 introduced compact descriptor keys (`dms.Descriptor.DescriptorId`, every stored descriptor reference rewritten to it); DMS-1401, DMS-1403 and DMS-1408 narrowed `dms.Document` to `DocumentId, DocumentUuid, ResourceKeyId, CreatedByOwnershipTokenId, ContentVersion`, with the authoritative stamps on the resource root tables and `dms.Descriptor`; DMS-1318 added `dms.RepresentationRestampOperation`; DMS-1656 and DMS-1657 added `ContentCreatedAt` to the 138 root tables, `dms.Descriptor` and `dms.DocumentCache`; the root and descriptor foreign keys to `dms.Document` are `ON DELETE RESTRICT`. Configuration Service: `dmscs` moved from DbUp journal 0027 to 0038 (the pending scripts applied verbatim and journaled), the claims hierarchy replaced by the DS 5.2 hierarchy shipped at `efc9079a0`, the six `E2E-*` claim sets removed. ApiSchema 1.0.333 → 1.0.335 core only; `EffectiveSchemaHash` `816fe17a…` → `a0d39468…`; `ResourceKeyCount` 351 and `ResourceKeySeedHash` unchanged. No document was added, removed or re-stamped: `DocumentId`, `DocumentUuid`, `ContentVersion`, `ContentLastModifiedAt` and `ChangeVersionSequence` are as in v80; `ContentCreatedAt` was backfilled per row from `ContentLastModifiedAt`, the value a never-updated row carries; `dms.ReferentialIdentity` rows were dropped, not carried; abstract identity rows carry their owning document's `ResourceKeyId` |
+| Route | **not** the copy-forward. The published v80 archive was restored on native PostgreSQL 18.0 (Windows) and migrated in place by generated single-transaction scripts -- the bounded administrative exception for a separately validated physical migration in [RELATIONAL-BACKEND.md](../../docs/RELATIONAL-BACKEND.md#re-stamping-after-a-validated-physical-migration): `migrate-checkpoint-to-ce514ec21.pgsql.sql` (the DMS-1402 epic), `migrate-ce514ec21-to-main-efc9079a0.pgsql.sql` (DMS-1656/1657) and `migrate-cms-0027-to-main-efc9079a0.pgsql.sql` (`dmscs`). Each is generated from the `ddl emit` output of its target commit and ends in a verification block whose expected values come from a fresh provision of that commit (the final hop: 73 DMS checks and 21 Configuration Service checks, including a catalog fingerprint of `dms`, `edfi`, `auth` and `tracked_changes_edfi`), with per-table row-count and row-hash parity against the pre-migration state (470 tables, 0 mismatches at the final hop). The scripts, their generators and the check sets are not in this repository; they are on DMS-1634 in the evidence set's `migration/materials/pg/` (also packed, with the SQL Server materials, as `DMS-1634-migration-materials.7z`, sha256 `432d8ae6b0463a48ffa316468b5082172b93b4e74b52f9605d88c813c6bee1af`). The preservation outputs are in `migration/results/pg/`: the per-table count and row-hash capture of the producing database taken before and after the final hop (`parity-real.txt`, `parity-real-after.txt`: 470 tables, 21,554,729 rows, `diff` empty), the same capture on the rehearsal clone (identical), the rehearsal log with its 73-check report (`migrate-run3.log`), the 73 DMS and 21 Configuration Service checks of the migrated database equal to the expected sets, its catalog fingerprint equal to a fresh `efc9079a0` provision, the every-column parity of the migrated database against a restore of this dump (647 tables, 21,555,678 rows, identical), and the hop-1 rehearsal log. Row-hash parity covers the final hop only: the first hop rewrote descriptor references by design and is covered by its per-table counts, remapped-column checks and 64-check verification block |
+| Sourced from | the published v80 artifact named above, itself produced from the Northridge ODS artifact (see the v80 Record). The dataset of record for this republication is `EdFi_DMS_Northridge_v80_20260819_PG` |
+| DMS revision built | `efc9079a0d760d3c999d97fd5269a932dbaece16` -- `main` on 2026-11-04: the revision whose `ddl emit` output the final migration hop recreates, whose `src/` step 3 guards against, and whose compose stack restores the archive. The dump was taken from the migrated database on 2026-11-04 |
+| Branch head at publication | the `DMS-1634` branch carrying this text, based on `main` after `efc9079a0`; its changes are confined to `eng/northridge/` (this file and two test files), so no DMS `src/` code changed on it. Its `main` base does carry `src/` changes after `efc9079a0` (DMS-1664 and later), which is why step 3 stops on this checkout and sends a consumer to `efc9079a0`, the revision the artifact records |
+| Recipe text executed | the v81 text, on 2026-11-05, from a clean slate with non-default credentials. The recipe's shell block is identified by content: steps 1 to 11 ran from the first v81 block (sha256 `9aa86dfe6197572d1a1a7c666fc59860b5a52a4d324e87037b4d3a2b17b937ad`), step 12 from the block of this commit (sha256 `fe66803074e8d9cc0ac338b8d07c211d99feea1907907ce2b144724f6406ddd9`) after two text fixes that run surfaced; both blocks are on DMS-1634 as `recipe-v81.readme-block.*.sh` -- see *Recipe execution record* |
+| `SourceIdentity` as shipped | `8b962de6-b979-49aa-bce0-ca59e0a1ad51` -- the same value as v80, because the in-place route keeps it (the copy-forward would have minted a new one); rotate it (step 8), and a consumer whose value still reads this has skipped the step |
+| Engine image | none: the dump was taken with `pg_dump` 18.0 from PostgreSQL 18.0 on Windows, not inside the compose image. The archive header reads `Dumped from database version: 18.0` and `Dumped by pg_dump version: 18.0` (`pg_restore -l`), archive format 1.16. The compose stack at this revision pins `postgres:18.6-alpine`, which restores it |
+| `ResourceKeySeedHash` | `fae376b7b81722efe1878226a49200d74ae68febac7d21f5121a0824236e981b` -- unchanged from v80 |
+| `ResourceKey` rows | 351 |
+| `dms."Descriptor"` rows | 2,968, `DescriptorId` 1 to 2968 (compact keys allocated by the DMS-1404 migration hop) |
+| `ChangeVersionSequence` | 21,553,810, unchanged from v80 |
+| Reconciliation evidence | on DMS-1634, not in this repository (see **Never commit**), as the files the scripts wrote plus the captured transcripts. Under `pg/`: `resource-count.pg.v81.csv` (`Get-DmsResourceCount.ps1` count mode), `schema/schema-snapshot.edfi_datamanagementservice.txt` and `schema/schema-snapshot.edfi_datamanagementservice_reference.txt` (step 5c, PASS), `schema-pristine-vs-ref2/` (a bare restore plus step 5b against a second `ddl provision` reference, PASS), `checkpoint.V81-PRE.nr_pristine.txt` and `checkpoint.V81-POST.edfi_datamanagementservice.txt` (`Copy-NorthridgeDataForward.ps1 -Mode Checkpoint`, both PASS), `transcript.recipe-v81.txt` and `transcript.recipe-v81.step12-resume.txt` with the executed scripts and their diffs against the README block, `restore.log` (empty: `pg_restore --exit-on-error` writes nothing on success), `one-line-checks.txt`, `dms-startup-lines.txt`, `smoke-headers.txt` and `smoke-body.json`. Under `mssql/`: `resource-count.mssql.v81.csv`, `compare/`, `08-evidence-queries.txt`, `09-smoke-transcript.txt`, `10-dms-startup.log`, `11-smoke-headers.txt` and `11-smoke-body.json`. At the top level: `reconcile.pg-vs-mssql.txt` (reconcile mode over the two count CSVs), the negative controls under `controls/`, `hashes/sha256.txt`, `hashes/publication-verification.txt`, and the `migration/` set (materials and preservation results, listed in `hashes/migration.sha256.txt`) |
+
+Validation, all on the restored artifact rather than on the database that produced it: the recipe's step 5c
+compare of the restored archive against the bootstrap deployment passed (16 sections, ownership, privileges and
+routine security included) and step 6 reported `restore verified: all 22 published values and invariants match`;
+a second compare of a bare restore plus step 5b against a reference provisioned by `ddl provision --create-database`
+also passed; the startup-computed `EffectiveSchemaHash` logged by DMS equals the stored value and the SQL Server
+artifact's; `Copy-NorthridgeDataForward.ps1 -Mode Checkpoint` passed on a pristine restore (shipped
+`SourceIdentity`, reference database) and on the recipe's database after steps 7 to 12 (rotated identity,
+explicit fingerprint); DMS served authenticated reads with HTTP 200 and `Total-Count 21628` on both engines;
+`Get-DmsResourceCount.ps1` counted 210 resources and 10,576,801 documents on each engine and its reconcile mode
+reported `PASS: zero differences in both directions` (left-only 0, right-only 0, shared with differing
+counts 0, both totals asserted); the sorted set of the 2,968 descriptor `Namespace#CodeValue` values is
+identical across the two engines (sha256 `64f974ef…` on each). Each positive result was paired with a
+negative control: a byte-flipped archive fails
+step 1's checksum gate and `7z t`; a truncated dump fails step 2's checksum gate and `pg_restore --exit-on-error`
+stops with `could not read from input file: end of file`; a restore without step 5b fails step 5c in exactly
+sections 10, 14, 15 and 16; a disabled trigger and a dropped index fail it in 05-index, 07-trigger and
+13-constraint-trigger; on SQL Server a byte-flipped backup fails the sha256 check, `RESTORE VERIFYONLY` with
+and without CHECKSUM (Msg 3203) and `RESTORE DATABASE ... WITH CHECKSUM` (Msg 11801, the RESTORING database
+dropped); a byte-flipped archive fails the sha256 check and `7z t`; a second restore with a disabled
+trigger, a dropped index and NOCHECK constraints fails the catalog compare naming exactly those objects.
+
+Known limitations: as for v80, the `dmscs` rows are producer-local throughout -- connection string, OpenIddict
+signing key, the row for DMS's Configuration Service client, and vendor/application/client rows -- which is
+what steps 7, 9, 10 and 12 exist to replace. `CreatedByOwnershipTokenId` is null on every document.
+`tracked_changes_edfi` is present and empty by design. The `pgcrypto` extension (1.4, schema `public`) is
+still in the dump: DMS no longer creates it, the Configuration Service's DbUp script 0020 does, and the v80
+dump carried it too. `ContentCreatedAt` equals `ContentLastModifiedAt` on every row by the backfill rule
+above, which is not what the copy-forward would have produced (the copy time).
+
+Publication was verified from the consumer's side, not the uploader's. After the upload, an anonymous `HEAD`
+reported `Content-Length: 501783114`, `Content-Type: application/x-compressed` and access tier `not reported in the response headers`;
+the blob was then re-downloaded from the public URL into an empty directory and hashed to
+`0e3616380b3c667e1404854b916d0fbe3b424029e837e0c26c9514549b2a4f6b`, and `cmp` confirmed it byte-for-byte
+identical to the file that was uploaded rather than merely equal in digest. Finally, **step 1 of the recipe
+above was executed verbatim against the published URL** -- `curl -O` followed by `sha256sum -c` -- and reported
+`EdFi_DMS_Northridge_v81_20261104_PG.7z: OK`. The SQL Server archive was checked the same way (`HEAD`,
+re-download, sha256 `21a24f61858d8a564349230e947c9cf42daf9856c742c83ccaf4519d0b2f2786`, `cmp` identical).
+
+### Record for `EdFi_DMS_Northridge_v81_20261104_MSSQL`
+
+| | |
+| --- | --- |
+| Published | 2026-11-05, same container and prefix as the PostgreSQL artifact (blob `Last-Modified: Thu, 05 Nov 2026 18:11:07 GMT`; as served `Content-Length: 1219819198`, `Content-Type: application/x-compressed`, access tier `not reported in the response headers`; re-downloaded and `cmp`-identical to the uploaded file) |
+| Supersedes | `EdFi_DMS_Northridge_v80_20260808_MSSQL.7z` (sha256 `2b7f1318…`), the DMS-1302 artifact. **Left in place** |
+| What changed | the same schema and Configuration Service changes as the PostgreSQL Record, plus DMS-1624 (the four `*_RefKey` foreign keys on `StudentAssessmentRegistration` and `StudentSectionAssociation` swap `ON UPDATE CASCADE` and `NO ACTION`); the root and descriptor foreign keys to `dms.Document` are `ON DELETE NO ACTION` on SQL Server |
+| Route | the published v80 backup restored on SQL Server 2025 Developer (17.0.1135.8, Windows) and migrated in place by `migrate-checkpoint-to-main-c51602d56.sql`, `migrate-main-c51602d56-to-ce514ec21.sql`, `migrate-ce514ec21-to-main-efc9079a0.sql` and `migrate-cms-0027-to-main-efc9079a0.sql`, each verified against a fresh provision of its target commit (catalog dump identical; per-table count and `CHECKSUM_AGG` parity: 617 tables, 21,555,134 rows, 0 mismatches at the final hop); `BACKUP DATABASE … WITH COMPRESSION, CHECKSUM` on 2026-11-04, `RESTORE VERIFYONLY WITH CHECKSUM` valid, test restore and `DBCC CHECKDB` clean. Scripts, generators and check sets are on DMS-1634 in `migration/materials/mssql/` (in `DMS-1634-migration-materials.7z`, sha256 `432d8ae6b0463a48ffa316468b5082172b93b4e74b52f9605d88c813c6bee1af`); the preservation outputs are in `migration/results/mssql/`: the final-hop rehearsal reports on a restored copy of the dataset and on a fresh `ce514ec21` provision (36/36), the per-table `COUNT` + `CHECKSUM_AGG` parity of the rehearsal (617 tables, 21,555,134 rows on both sides, 0 mismatches; the run printed it to the console only, so it is kept as a labelled transcript excerpt), the normalised catalog dumps of the rehearsal, a fresh `efc9079a0` provision, the migrated database and a restore of this backup (all four byte-identical, 11,538 lines), and the post-run totals and stamp checks of the migrated database. Row-hash parity covers the final hop only; hops 1 and 2 are covered by their in-script per-table counts, remapped-column checks and verification blocks, whose console output was not kept, and the chain as run on the backed-up database was verified afterwards by catalog and totals, not by captured console output |
+| DMS revision built | `efc9079a0d760d3c999d97fd5269a932dbaece16` |
+| `SourceIdentity` as shipped | `A7CB1F03-EEBB-47A5-A0C1-65FCBF6BE5E0` -- the DMS-1302 producer instance's value; rotate it before writes: `UPDATE dms.DataStoreIdentity SET SourceIdentity = NEWID()` |
+| Logical files | `edfi_datamanagementservice` (19,528 MB allocated, about 9.3 GB in use) and `edfi_datamanagementservice_log` (1,160 MB); restore `WITH CHECKSUM` and `MOVE` both files. Recovery model FULL as backed up (set SIMPLE for a scratch restore), compatibility level 170, read-committed snapshot off |
+| Restore target | SQL Server 2025 or later; `mcr.microsoft.com/mssql/server:2025-latest` from `eng/docker-compose/mssql.compose.yml` works, and the `.bak` is coupled to that image line |
+| Restore verified | on 2026-11-05 in the compose stack at this revision (`mcr.microsoft.com/mssql/server:2025-latest`, SQL Server 17.0.5005.3 Developer), bootstrapped from a clean slate with a non-default SA password and Configuration Service keys: `RESTORE VERIFYONLY ... WITH CHECKSUM` valid, `RESTORE DATABASE ... WITH CHECKSUM, MOVE` beside the bootstrap database (1,185,594 pages); `Compare-MssqlCatalog.ps1` (structure from `catalog-dump.sql`; owners, principals, permissions, role members, module security, constraint and index state and database options from `security-dump.sql`) reported the catalog identical to the bootstrap deployment (11,538 lines) and, once the two attributes a RESTORE leaves different from a `CREATE DATABASE` deployment had been re-applied (`ALTER AUTHORIZATION ... TO sa`, `SET ENABLE_BROKER`), the security snapshot identical too (829 lines): PASS, with informational differences only in file paths and sizes and in identity and sequence positions; `Get-DmsResourceCount.ps1` count mode: 210 resources, 10,576,801 documents; registered as a second DMS data store on that stack, DMS restarted and logged `Effective schema hash: a0d39468…` and `Relational mapping set ready` with no mismatch line, and `GET /data/ed-fi/students?limit=1&totalCount=true` answered HTTP 200 with `Total-Count 21628` |
+| Reconciliation evidence | on DMS-1634, together with the PostgreSQL set. Under `mssql/`: `resource-count.mssql.v81.csv`, `02-reference-facts.txt`, `06-restore.txt`, `compare/`, `compare-after-authorization/` and `compare-after-broker/` (snapshots and diffs), `08-evidence-queries.txt`, `09-smoke-transcript.txt`, `10-dms-startup.log`, `11-smoke-headers.txt` and `11-smoke-body.json`; at the top level the `mssql-neg-*` files under `controls/`, the compare scripts themselves (`tools/mssql-verify/`, listed in `hashes/tools.sha256.txt`), and the `migration/` set |
+
 ### Record for `EdFi_DMS_Northridge_v80_20260819_PG`
 
 | | |
@@ -1272,16 +1375,37 @@ byte-for-byte identical to the file that was uploaded rather than merely equal i
 
 ### Recipe execution record
 
-The clean-slate, non-default-credential run of 2026-08-19 executed the eleven-step recipe text of the
-publication head, `b303450ab5fd689526696cb088a76a90b7ef6c14`, recorded unchanged in
-`a0eecb58a5e4051730f82ec4c12288a443307250`: steps 1 to 11, with no step 5b, no step 5c, and DMS
-started as step 10. Every change to the recipe text since then is post-publication review hardening
-(`git log a0eecb58a..HEAD -- eng/northridge/README.md`), and the fourteen-step text above has **not**
-been executed end to end against the published artifact. Its added gates are covered piecewise
-instead -- the repair block statement by statement against the emitter's fixture, dump → bare restore
-→ 5b → compare as a live scenario, and the fail-closed guards database-free -- by the two suites named
-at the top of this document. A future end-to-end run of the current text belongs here, with its date
-and the commit whose text was run; nothing above may claim it before then.
+**v81 text: executed end to end on 2026-11-05**, from a clean slate (no `.bootstrap/`, no compose volume,
+no locally built image, `.env` seeded from `.env.example`) with a non-default PostgreSQL password, a
+non-default `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` and a non-default
+`CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY`, on a Windows 11 workstation (Docker Desktop 4.79, pwsh 7.6,
+.NET SDK 10.0.401) from Git Bash with `MSYS_NO_PATHCONV=1` exported, against this checkout at `efc9079a0`
+(`src/` identical). The texts are identified by the sha256 of the recipe's shell block, because the working
+commits of that day were squashed before publication; each block is on DMS-1634 as
+`recipe-v81.readme-block.*.sh`. Steps 1 to 11 ran from the first v81 block (`9aa86dfe6197572d1a1a7c666fc59860b5a52a4d324e87037b4d3a2b17b937ad`) as
+one script, with three operator substitutions only: `DC`, `ART`, and -- the archive not being uploaded yet --
+a local copy in place of step 1's `curl -O`, the checksum gate running verbatim. Every gate passed. Step 12 of
+that text stopped at `no DMS token minted`: the Configuration Service at this revision answers
+`invalid_scope` to the admin scope for an application client (the step 12 scope is now the claim set). A
+re-run of step 12 then met the vendor-exists 400 with its body rendered as bytes (`AUTH_HTTP` now decodes a
+byte-array body) and the application-exists 400 (now documented at the application request; that
+application, left by the first attempt, was removed by SQL because `DELETE /v3/applications/{id}` answered
+500 at this revision, `FK_ApiClientEducationOrganization_ApiClient`). Step 12 was then executed from the
+block of this commit (`fe66803074e8d9cc0ac338b8d07c211d99feea1907907ce2b144724f6406ddd9`) as a resumed block -- the variables, the step 7 and step 9
+helpers and the admin token re-established; the one-time registration, the data store re-save and step 10
+not repeated -- and ended with `DMS served the restored dataset: HTTP 200, Total-Count 21628`. The
+transcripts, the executed scripts and their diffs against the README block are on DMS-1634. The shell block
+above is the executed text; the prose around it (the Records and this record) was written after the run.
+
+**v80 text (history).** The clean-slate, non-default-credential run of 2026-08-19 executed the
+eleven-step recipe text of the v80 publication head, `b303450ab5fd689526696cb088a76a90b7ef6c14`,
+recorded unchanged in `a0eecb58a5e4051730f82ec4c12288a443307250`: steps 1 to 11, with no step 5b, no
+step 5c, and DMS started as step 10. Every change to the recipe text between then and the v81 edit was
+post-publication review hardening (`git log a0eecb58a..efc9079a0 -- eng/northridge/README.md`), and
+that fourteen-step text was never executed end to end against the v80 artifact; its added gates were
+covered piecewise instead -- the repair block statement by statement against the emitter's fixture,
+dump → bare restore → 5b → compare as a live scenario, and the fail-closed guards database-free -- by
+the two suites named at the top of this document.
 
 ## Never commit
 
