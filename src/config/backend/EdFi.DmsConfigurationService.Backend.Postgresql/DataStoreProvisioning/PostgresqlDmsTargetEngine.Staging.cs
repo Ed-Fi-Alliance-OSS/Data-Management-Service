@@ -215,19 +215,48 @@ public sealed partial class PostgresqlDmsTargetEngine
         };
     }
 
-    private enum ReplayState
+    /// <summary>What the singleton tables say about the replay's single transaction.</summary>
+    internal enum ReplayState
     {
+        /// <summary>Both tables exist, whatever rows they hold: the transaction committed, and validation judges the contents.</summary>
         Committed,
+
+        /// <summary>Neither table exists: the transaction rolled back.</summary>
         RolledBack,
+
+        /// <summary>One table exists, a read failed, or the database could not be reached.</summary>
         Inconclusive,
     }
 
+    /// <summary>Whether one singleton table exists; its rows are not this question's concern.</summary>
+    internal enum ReplayTableState
+    {
+        Missing,
+        Exists,
+        Unreadable,
+    }
+
     /// <summary>
-    /// Whether the replay's single transaction committed: the identity and effective-schema singleton tables
-    /// are both readable (committed), both missing (rolled back), or anything else (inconclusive, including
-    /// a staging database that is gone or unreachable).
+    /// The replay's fate from the two tables (6.3 step 5): both existing is a commit even when a table is
+    /// empty, because only a committed transaction leaves a table behind; an empty or invalid singleton is
+    /// a content problem for validation, not evidence of a rollback.
     /// </summary>
-    private async Task<ReplayState> ReadReplayStateAsync(
+    internal static ReplayState ClassifyReplayState(
+        ReplayTableState identity,
+        ReplayTableState effectiveSchema
+    ) =>
+        (identity, effectiveSchema) switch
+        {
+            (ReplayTableState.Exists, ReplayTableState.Exists) => ReplayState.Committed,
+            (ReplayTableState.Missing, ReplayTableState.Missing) => ReplayState.RolledBack,
+            _ => ReplayState.Inconclusive,
+        };
+
+    /// <summary>
+    /// Whether the replay's single transaction committed, by <see cref="ClassifyReplayState"/> over the
+    /// identity and effective-schema tables; a staging database that is gone or unreachable is inconclusive.
+    /// </summary>
+    internal async Task<ReplayState> ReadReplayStateAsync(
         DmsDatabaseName staging,
         CancellationToken cancellationToken
     )
@@ -248,27 +277,22 @@ public sealed partial class PostgresqlDmsTargetEngine
 
         await using (connection)
         {
-            bool? identityPresent = await TableReadableAsync(
+            ReplayTableState identity = await TableStateAsync(
                 connection,
                 PostgresqlInventoryQueries.SourceIdentityRows,
                 cancellationToken
             );
-            bool? effectiveSchemaPresent = await TableReadableAsync(
+            ReplayTableState effectiveSchema = await TableStateAsync(
                 connection,
                 PostgresqlInventoryQueries.EffectiveSchemaRows,
                 cancellationToken
             );
-            return (identityPresent, effectiveSchemaPresent) switch
-            {
-                (true, true) => ReplayState.Committed,
-                (false, false) => ReplayState.RolledBack,
-                _ => ReplayState.Inconclusive,
-            };
+            return ClassifyReplayState(identity, effectiveSchema);
         }
     }
 
-    /// <summary>True when the query returns at least one row, false when its relation is missing, null when it fails otherwise.</summary>
-    private static async Task<bool?> TableReadableAsync(
+    /// <summary>Exists when the table's query runs, whatever it returns; Missing on an undefined relation or schema; Unreadable on any other failure.</summary>
+    private static async Task<ReplayTableState> TableStateAsync(
         NpgsqlConnection connection,
         string sql,
         CancellationToken cancellationToken
@@ -278,16 +302,16 @@ public sealed partial class PostgresqlDmsTargetEngine
         {
             await using NpgsqlCommand command = new(sql, connection);
             await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
-            return await reader.ReadAsync(cancellationToken);
+            return ReplayTableState.Exists;
         }
         catch (PostgresException exception)
             when (PostgresqlErrorClassifier.IsMissingRelation(exception.SqlState))
         {
-            return false;
+            return ReplayTableState.Missing;
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {
-            return null;
+            return ReplayTableState.Unreadable;
         }
     }
 
