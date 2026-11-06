@@ -406,10 +406,10 @@ Describe "Copy-NorthridgeDataForward.ps1 classifies every dms base table exactly
         # that stand in for discovery have to add up to the same number, or one side is wrong.
         $expected = [regex]::Match($script:recipe, "SELECT 'dms base tables', '(?<n>\d+)'").Groups["n"].Value
         $expected | Should -Not -BeNullOrEmpty -Because "step 6 must assert the dms base table count"
-        # The published artifact records the older ten-table inventory, retired ReferentialIdentity
-        # included. Current provisioning adds the operational restamp table; it is classified but
-        # never restored as dataset state.
-        @($script:knownDmsTable | Where-Object { $_ -cne 'dms.RepresentationRestampOperation' }).Count | Should -Be ([int]$expected)
+        # The v81 artifact carries the current ten-table inventory: dms.ReferentialIdentity is retired
+        # (still classified, so the copy tool recognises a legacy source, but never present in the
+        # artifact) and dms.RepresentationRestampOperation, the operational restamp table, is part of it.
+        $script:targetDmsTable.Count | Should -Be ([int]$expected)
         $script:knownDmsTable | Should -Contain 'dms.RepresentationRestampOperation'
         $script:knownDmsTable | Should -Contain 'dms.ReferentialIdentity'
         @($script:knownDmsTable | Sort-Object -Unique).Count | Should -Be $script:knownDmsTable.Count -Because "no table may be on two lists"
