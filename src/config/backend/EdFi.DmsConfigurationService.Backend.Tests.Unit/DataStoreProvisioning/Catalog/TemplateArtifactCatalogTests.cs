@@ -1072,9 +1072,11 @@ public class TemplateArtifactCatalogTests
     public class Given_a_text_source_whose_reported_length_understates_its_content
     {
         private const int Limit = 64;
-        private string? _overLimit;
-        private string? _atLimit;
-        private string? _withByteOrderMark;
+        private (string? Text, TemplateArtifactCatalog.BoundedTextDefect Defect) _overLimit;
+        private (string? Text, TemplateArtifactCatalog.BoundedTextDefect Defect) _atLimit;
+        private (string? Text, TemplateArtifactCatalog.BoundedTextDefect Defect) _withByteOrderMark;
+        private (string? Text, TemplateArtifactCatalog.BoundedTextDefect Defect) _nonAscii;
+        private (string? Text, TemplateArtifactCatalog.BoundedTextDefect Defect) _invalidUtf8;
 
         /// <summary>A source that reports one byte however many it yields, the way a file replaced after it was measured would.</summary>
         private sealed class UnderstatingStream(byte[] bytes) : MemoryStream(bytes)
@@ -1082,40 +1084,151 @@ public class TemplateArtifactCatalogTests
             public override long Length => 1;
         }
 
+        private static async Task<(string? Text, TemplateArtifactCatalog.BoundedTextDefect Defect)> ReadAsync(
+            byte[] bytes
+        )
+        {
+            await using UnderstatingStream source = new(bytes);
+            return await TemplateArtifactCatalog.ReadBoundedTextAsync(source, Limit, CancellationToken.None);
+        }
+
         [SetUp]
         public async Task Setup()
         {
-            await using UnderstatingStream overLimit = new(new byte[Limit + 1]);
-            _overLimit = await TemplateArtifactCatalog.ReadBoundedTextAsync(
-                overLimit,
-                Limit,
-                CancellationToken.None
-            );
-
-            await using UnderstatingStream atLimit = new(Encoding.ASCII.GetBytes(new string('x', Limit)));
-            _atLimit = await TemplateArtifactCatalog.ReadBoundedTextAsync(
-                atLimit,
-                Limit,
-                CancellationToken.None
-            );
-
-            await using UnderstatingStream withByteOrderMark = new([0xEF, 0xBB, 0xBF, (byte)'{', (byte)'}']);
-            _withByteOrderMark = await TemplateArtifactCatalog.ReadBoundedTextAsync(
-                withByteOrderMark,
-                Limit,
-                CancellationToken.None
-            );
+            _overLimit = await ReadAsync(new byte[Limit + 1]);
+            _atLimit = await ReadAsync(Encoding.ASCII.GetBytes(new string('x', Limit)));
+            _withByteOrderMark = await ReadAsync([0xEF, 0xBB, 0xBF, (byte)'{', (byte)'}']);
+            _nonAscii = await ReadAsync([0xC3, 0xA9, (byte)'{', (byte)'}']);
+            _invalidUtf8 = await ReadAsync([(byte)'{', 0xFF, (byte)'}']);
         }
 
         [Test]
         public void It_refuses_content_beyond_the_limit_whatever_the_length_says() =>
-            _overLimit.Should().BeNull();
+            _overLimit.Should().Be((null, TemplateArtifactCatalog.BoundedTextDefect.TooLarge));
 
         [Test]
-        public void It_accepts_content_at_the_limit() => _atLimit.Should().Be(new string('x', Limit));
+        public void It_accepts_content_at_the_limit() =>
+            _atLimit.Should().Be((new string('x', Limit), TemplateArtifactCatalog.BoundedTextDefect.None));
 
         [Test]
-        public void It_skips_a_utf8_byte_order_mark() => _withByteOrderMark.Should().Be("{}");
+        public void It_skips_a_utf8_byte_order_mark() =>
+            _withByteOrderMark.Should().Be(("{}", TemplateArtifactCatalog.BoundedTextDefect.None));
+
+        [Test]
+        public void It_decodes_valid_non_ascii_text() =>
+            _nonAscii.Should().Be(("\u00e9{}", TemplateArtifactCatalog.BoundedTextDefect.None));
+
+        [Test]
+        public void It_refuses_an_invalid_byte_sequence_instead_of_repairing_it() =>
+            _invalidUtf8.Should().Be((null, TemplateArtifactCatalog.BoundedTextDefect.MalformedUtf8));
+    }
+
+    [TestFixture]
+    public class Given_raw_bytes_outside_utf8_inside_an_ignored_member
+    {
+        private static readonly byte[] _invalidUtf8 = [0xFF];
+        private static readonly byte[] _acuteE = [0xC3, 0xA9];
+
+        private Outcome _attestationInvalid = null!;
+        private Outcome _attestationNonAscii = null!;
+        private Outcome _policyInvalid = null!;
+        private Outcome _policyNonAscii = null!;
+
+        /// <summary>The package's attestation document with one extra string member the verifier ignores, holding the raw bytes.</summary>
+        private static byte[] AttestationWith(TestTemplatePackage package, byte[] rawValueBytes)
+        {
+            string json = package.AttestationJson.TrimEnd();
+            json = json[..^1];
+            return
+            [
+                .. Encoding.UTF8.GetBytes(json + ",\"comment\":\""),
+                .. rawValueBytes,
+                .. Encoding.UTF8.GetBytes("\"}"),
+            ];
+        }
+
+        /// <summary>The workspace's policy with the tracked policy's comment member holding the raw bytes.</summary>
+        private static byte[] PolicyWith(CatalogWorkspace workspace, byte[] rawValueBytes)
+        {
+            string json = workspace.Signer.PolicyJson();
+            int afterOpening = json.IndexOf('{') + 1;
+            return
+            [
+                .. Encoding.UTF8.GetBytes(json[..afterOpening] + " \"_comment\": \""),
+                .. rawValueBytes,
+                .. Encoding.UTF8.GetBytes("\"," + json[afterOpening..]),
+            ];
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _attestationInvalid = await ResolveInOwnWorkspace(
+                workspace =>
+                {
+                    TestTemplatePackage package = workspace.Build(workspace.MinimalBuilder());
+                    File.WriteAllBytes(package.AttestationPath, AttestationWith(package, _invalidUtf8));
+                },
+                WithoutOperationsRoot
+            );
+            _attestationNonAscii = await ResolveInOwnWorkspace(workspace =>
+            {
+                TestTemplatePackage package = workspace.Build(workspace.MinimalBuilder());
+                File.WriteAllBytes(package.AttestationPath, AttestationWith(package, _acuteE));
+            });
+            _policyInvalid = await ResolveInOwnWorkspace(
+                workspace =>
+                {
+                    workspace.Build(workspace.MinimalBuilder());
+                    File.WriteAllBytes(workspace.TrustPolicyPath, PolicyWith(workspace, _invalidUtf8));
+                },
+                WithoutOperationsRoot
+            );
+            _policyNonAscii = await ResolveInOwnWorkspace(workspace =>
+            {
+                workspace.Build(workspace.MinimalBuilder());
+                File.WriteAllBytes(workspace.TrustPolicyPath, PolicyWith(workspace, _acuteE));
+            });
+        }
+
+        [Test]
+        public void It_refuses_an_attestation_with_an_invalid_byte_as_malformed_before_staging()
+        {
+            DmsProvisioningFailure failure = FailureOf(_attestationInvalid.Resolution);
+            (failure.Code, failure.Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.ArtifactUntrusted,
+                        $"{TemplateArtifactCatalog.VerifyAttestationStep}.{TrustRefusalReason.Malformed}"
+                    )
+                );
+        }
+
+        [Test]
+        public void It_accepts_the_same_attestation_with_valid_non_ascii_text() =>
+            _attestationNonAscii.Resolution.Should().BeOfType<DmsArtifactResolution.Resolved>();
+
+        [Test]
+        public void It_reports_a_policy_with_an_invalid_byte_as_not_ready_before_staging()
+        {
+            DmsProvisioningFailure failure = FailureOf(_policyInvalid.Resolution);
+            using AssertionScope scope = new();
+            (failure.Code, failure.Category, failure.Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.StartupValidationFailed,
+                        DmsProvisioningFailureCategory.NotReady,
+                        TemplateArtifactCatalog.TrustPolicyStep
+                    )
+                );
+            failure.Diagnostic.ExceptionTypeChain.Should().Be(typeof(TemplateTrustPolicyException).FullName);
+        }
+
+        [Test]
+        public void It_accepts_the_same_policy_with_valid_non_ascii_text() =>
+            _policyNonAscii.Resolution.Should().BeOfType<DmsArtifactResolution.Resolved>();
     }
 
     [TestFixture]

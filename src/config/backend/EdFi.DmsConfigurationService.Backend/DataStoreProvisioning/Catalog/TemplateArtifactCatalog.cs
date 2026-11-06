@@ -66,6 +66,27 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     internal static readonly EventId ArtifactRefused = new(1438_20, nameof(ArtifactRefused));
     internal static readonly EventId ResidueLeft = new(1438_21, nameof(ResidueLeft));
 
+    /// <summary>
+    /// Strict UTF-8: an invalid byte sequence is a decoding failure, never a replacement character, so text that
+    /// is not well-formed is refused before any of it is parsed (the row 5f rule, extended from escapes to bytes).
+    /// </summary>
+    private static readonly UTF8Encoding _strictUtf8 = new(
+        encoderShouldEmitUTF8Identifier: false,
+        throwOnInvalidBytes: true
+    );
+
+    /// <summary>Why a bounded read produced no text.</summary>
+    internal enum BoundedTextDefect
+    {
+        None,
+
+        /// <summary>More bytes arrived than the limit allows.</summary>
+        TooLarge,
+
+        /// <summary>The bytes are not well-formed UTF-8.</summary>
+        MalformedUtf8,
+    }
+
     private static readonly string[] _extractedArtifactFileNames =
     [
         StagedTemplatePackage.ArtifactBaseName
@@ -231,8 +252,8 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
 
     /// <summary>
     /// The attestation document's text, or the refusal: a file that vanished is <c>ArtifactMissing</c>, one that
-    /// cannot be read is <c>StagingFailed</c>, and one larger than any version-1 document is refused as malformed
-    /// before any byte is parsed.
+    /// cannot be read is <c>StagingFailed</c>, and one larger than any version-1 document, or whose bytes are not
+    /// well-formed UTF-8, is refused as malformed before any byte is parsed.
     /// </summary>
     private static async Task<(string? Json, DmsProvisioningFailure? Failure)> ReadAttestationAsync(
         string attestationPath,
@@ -240,9 +261,14 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     )
     {
         string? json;
+        BoundedTextDefect defect;
         try
         {
-            json = await ReadBoundedTextAsync(attestationPath, MaxAttestationBytes, cancellationToken);
+            (json, defect) = await ReadBoundedTextAsync(
+                attestationPath,
+                MaxAttestationBytes,
+                cancellationToken
+            );
         }
         catch (FileNotFoundException exception)
         {
@@ -257,15 +283,15 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
             return (null, Failure(DmsProvisioningFailureCode.StagingFailed, LocateArtifactStep, exception));
         }
 
-        return json is null
-            ? (
+        return defect == BoundedTextDefect.None
+            ? (json, null)
+            : (
                 null,
                 Failure(
                     DmsProvisioningFailureCode.ArtifactUntrusted,
                     VerifyAttestationStep + "." + TrustRefusalReason.Malformed
                 )
-            )
-            : (json, null);
+            );
     }
 
     /// <summary>
@@ -500,9 +526,10 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
                 "DmsDataStoreProvisioning:TrustPolicyPath is not configured; static validation admits no such state."
             );
         string? json;
+        BoundedTextDefect defect;
         try
         {
-            json = await ReadBoundedTextAsync(path, MaxTrustPolicyBytes, cancellationToken);
+            (json, defect) = await ReadBoundedTextAsync(path, MaxTrustPolicyBytes, cancellationToken);
         }
         catch (IOException exception)
         {
@@ -521,12 +548,18 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
 
         try
         {
-            if (json is null)
+            string text = defect switch
             {
-                throw new TemplateTrustPolicyException("The trust policy is larger than the catalog reads.");
-            }
-
-            return (TemplateTrustPolicyReader.Read(json), null);
+                BoundedTextDefect.None => json!,
+                BoundedTextDefect.TooLarge => throw new TemplateTrustPolicyException(
+                    "The trust policy is larger than the catalog reads."
+                ),
+                BoundedTextDefect.MalformedUtf8 => throw new TemplateTrustPolicyException(
+                    "The trust policy is not well-formed UTF-8."
+                ),
+                _ => throw new InvalidOperationException("Unknown bounded text defect."),
+            };
+            return (TemplateTrustPolicyReader.Read(text), null);
         }
         catch (TemplateTrustPolicyException exception)
         {
@@ -538,10 +571,9 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     }
 
     /// <summary>
-    /// The file's text read through one handle, or null once more than <paramref name="maxBytes"/> have been
-    /// consumed; file system failures propagate.
+    /// The file's text read through one handle, or the defect that left no text; file system failures propagate.
     /// </summary>
-    private static async Task<string?> ReadBoundedTextAsync(
+    private static async Task<(string? Text, BoundedTextDefect Defect)> ReadBoundedTextAsync(
         string path,
         long maxBytes,
         CancellationToken cancellationToken
@@ -561,10 +593,11 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     /// <summary>
     /// Reads <paramref name="source"/> to its end with the byte limit enforced while consuming it: a length the
     /// source reports is never consulted, so a file that grows or is replaced after it was opened cannot exceed
-    /// the limit. Returns null once more than <paramref name="maxBytes"/> have arrived. The text is UTF-8, as the
-    /// delivered tooling writes it; a leading byte order mark is skipped.
+    /// the limit. Stops with <see cref="BoundedTextDefect.TooLarge"/> once more than <paramref name="maxBytes"/>
+    /// have arrived. The text must be well-formed UTF-8, as the delivered tooling writes it; an invalid byte
+    /// sequence is <see cref="BoundedTextDefect.MalformedUtf8"/>, never repaired; a leading byte order mark is skipped.
     /// </summary>
-    internal static async Task<string?> ReadBoundedTextAsync(
+    internal static async Task<(string? Text, BoundedTextDefect Defect)> ReadBoundedTextAsync(
         Stream source,
         long maxBytes,
         CancellationToken cancellationToken
@@ -580,7 +613,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
             total += read;
             if (total > maxBytes)
             {
-                return null;
+                return (null, BoundedTextDefect.TooLarge);
             }
 
             await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
@@ -589,7 +622,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         return DecodeUtf8(buffer.GetBuffer().AsMemory(0, (int)buffer.Length));
     }
 
-    private static string DecodeUtf8(ReadOnlyMemory<byte> bytes)
+    private static (string? Text, BoundedTextDefect Defect) DecodeUtf8(ReadOnlyMemory<byte> bytes)
     {
         ReadOnlySpan<byte> span = bytes.Span;
         if (span.StartsWith(Encoding.UTF8.Preamble))
@@ -597,7 +630,14 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
             span = span[Encoding.UTF8.Preamble.Length..];
         }
 
-        return Encoding.UTF8.GetString(span);
+        try
+        {
+            return (_strictUtf8.GetString(span), BoundedTextDefect.None);
+        }
+        catch (DecoderFallbackException)
+        {
+            return (null, BoundedTextDefect.MalformedUtf8);
+        }
     }
 
     /// <summary>The first 6.2 step 6 comparison the manifest fails, by name, or null when it passes every one.</summary>
