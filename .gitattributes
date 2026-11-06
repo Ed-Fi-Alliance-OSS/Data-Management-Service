@@ -80,6 +80,7 @@ ApiSchema*.json text eol=lf
 *.rar binary
 *.tar binary
 *.zip binary
+*.nupkg binary
 
 ## FONTS
 *.ttf   binary

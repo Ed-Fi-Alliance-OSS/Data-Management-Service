@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "producers": [
+    {
+      "name": "dms-1438-parity",
+      "provider": "detached-attestation",
+      "publicKeys": [
+        {
+          "keyId": "403ecf82e45e2ed4eea4f54742d846faf9b35afd2dbd4bf361bf9cc86e507f8f",
+          "algorithm": "ECDSA_P256_SHA256",
+          "publicKeySpkiB64": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEsBWEqNZGI2YSvqJic7xnFkvQyKnEUzXmtZz7CVlv1Ohzwlg6efrBeyjB0Mo6xWu34SRvBuLb+FoiH1fcBx+JVw=="
+        }
+      ]
+    }
+  ]
+}

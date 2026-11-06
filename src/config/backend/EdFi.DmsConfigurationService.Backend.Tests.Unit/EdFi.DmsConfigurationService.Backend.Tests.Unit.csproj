@@ -29,6 +29,7 @@
             Update="Fixtures/connection-string-encryption-vectors.json"
             CopyToOutputDirectory="PreserveNewest"
         />
+        <None Update="Fixtures/DataStoreProvisioning/**/*" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend\EdFi.DmsConfigurationService.Backend.csproj" />
