@@ -18,8 +18,8 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
 /// artifact resolution and pin equality run before the lock; lock timeout and infrastructure failure
 /// are reported without any further engine call; the holder is released on every path including
 /// exceptions; loss of the holder ends the operation as transient <c>LockLost</c> with no further engine
-/// call; a deadline is <c>TimedOut</c>; cancellation propagates; and the stages beyond the preamble are
-/// not implemented.
+/// call, whether the read in flight honours the token, completes normally, or throws; a deadline is
+/// <c>TimedOut</c>; cancellation propagates; and the stages beyond the preamble are not implemented.
 /// </summary>
 public class DmsDataStoreProvisioningServiceShellTests
 {
@@ -711,6 +711,139 @@ public class DmsDataStoreProvisioningServiceShellTests
 
         [Test]
         public void It_still_releases_the_holder() => _harness.OnlyHolder.ReleaseCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// Loss is declared by the fake holder while a read is in flight, and the read ignores its token: the
+    /// facts read completes, the inspection reports the target absent, or the inspection throws. A fourth
+    /// holder is lost before the first read is dispatched. Cancellation never reaches the orchestrator on
+    /// these paths; loss must be enforced at the read boundaries themselves.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_holder_is_lost_at_a_read_boundary_without_a_cancellation
+    {
+        private Harness _beforeFirstRead = null!;
+        private Harness _factsCompleted = null!;
+        private Harness _inspectReturnedAbsent = null!;
+        private Harness _inspectThrew = null!;
+        private DmsDataStoreCreateResult _lostBeforeFirstRead = null!;
+        private DmsDataStoreCreateResult _lostDuringFacts = null!;
+        private DmsDataStoreDeleteResult _lostDuringInspect = null!;
+        private DmsDataStoreCreateResult _lostWithException = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _beforeFirstRead = new Harness();
+            Func<CancellationToken, Task<DmsTargetLockResult>> acquire = _beforeFirstRead
+                .Engine
+                .OnAcquireTargetLock;
+            _beforeFirstRead.Engine.OnAcquireTargetLock = async token =>
+            {
+                DmsTargetLockResult acquired = await acquire(token);
+                _beforeFirstRead.OnlyHolder.Lose();
+                return acquired;
+            };
+            _lostBeforeFirstRead = await _beforeFirstRead.Service.CreateAsync(
+                CreateRequest(),
+                CancellationToken.None
+            );
+
+            _factsCompleted = new Harness();
+            _factsCompleted.Engine.OnReadServerFacts = _ =>
+            {
+                _factsCompleted.OnlyHolder.Lose();
+                return Task.FromResult(SpyDmsTargetEngine.Facts());
+            };
+            _lostDuringFacts = await _factsCompleted.Service.CreateAsync(
+                CreateRequest(),
+                CancellationToken.None
+            );
+
+            _inspectReturnedAbsent = new Harness();
+            _inspectReturnedAbsent.Engine.OnInspect = _ =>
+            {
+                _inspectReturnedAbsent.OnlyHolder.Lose();
+                return Task.FromResult<DmsLiveTargetState>(new DmsLiveTargetState.Absent());
+            };
+            _lostDuringInspect = await _inspectReturnedAbsent.Service.DeleteAsync(
+                DeleteRequest(),
+                CancellationToken.None
+            );
+
+            _inspectThrew = new Harness();
+            _inspectThrew.Engine.OnInspect = _ =>
+            {
+                _inspectThrew.OnlyHolder.Lose();
+                throw new InvalidOperationException("server said: password=hunter2", new TimeoutException());
+            };
+            _lostWithException = await _inspectThrew.Service.CreateAsync(
+                CreateRequest(),
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_ends_every_path_as_transient_lock_lost_at_the_step_in_flight()
+        {
+            foreach (
+                (DmsProvisioningFailure failure, string step) in new[]
+                {
+                    (FailureOf(_lostBeforeFirstRead), DmsDataStoreProvisioningService.ReadServerFactsStep),
+                    (FailureOf(_lostDuringFacts), DmsDataStoreProvisioningService.ReadServerFactsStep),
+                    (FailureOf(_lostDuringInspect), DmsDataStoreProvisioningService.InspectTargetStep),
+                    (FailureOf(_lostWithException), DmsDataStoreProvisioningService.InspectTargetStep),
+                }
+            )
+            {
+                (failure.Code, failure.Category, failure.Diagnostic.Operation)
+                    .Should()
+                    .Be(
+                        (DmsProvisioningFailureCode.LockLost, DmsProvisioningFailureCategory.Transient, step)
+                    );
+            }
+        }
+
+        [Test]
+        public void It_does_not_trust_the_inspection_that_completed_after_the_loss() =>
+            _lostDuringInspect.Should().NotBeOfType<DmsDataStoreDeleteResult.AlreadyAbsent>();
+
+        [Test]
+        public void It_dispatches_no_read_after_the_loss()
+        {
+            _beforeFirstRead.Engine.Members.Should().Equal(SpyDmsTargetEngine.AcquireTargetLock);
+            _factsCompleted
+                .Engine.Members.Should()
+                .Equal(SpyDmsTargetEngine.AcquireTargetLock, SpyDmsTargetEngine.ReadServerFacts);
+            foreach (Harness harness in new[] { _inspectReturnedAbsent, _inspectThrew })
+            {
+                harness
+                    .Engine.Members.Should()
+                    .Equal(
+                        SpyDmsTargetEngine.AcquireTargetLock,
+                        SpyDmsTargetEngine.ReadServerFacts,
+                        SpyDmsTargetEngine.Inspect
+                    );
+            }
+        }
+
+        [Test]
+        public void It_keeps_nothing_of_the_exception_that_accompanied_the_loss()
+        {
+            DmsProvisioningDiagnostic diagnostic = FailureOf(_lostWithException).Diagnostic;
+            (diagnostic.ExceptionTypeChain, diagnostic.ProviderErrorCode).Should().Be((string.Empty, null));
+        }
+
+        [Test]
+        public void It_releases_every_holder() =>
+            (
+                _beforeFirstRead.OnlyHolder.ReleaseCount,
+                _factsCompleted.OnlyHolder.ReleaseCount,
+                _inspectReturnedAbsent.OnlyHolder.ReleaseCount,
+                _inspectThrew.OnlyHolder.ReleaseCount
+            )
+                .Should()
+                .Be((1, 1, 1, 1));
     }
 
     [TestFixture]

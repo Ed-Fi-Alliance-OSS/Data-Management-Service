@@ -16,8 +16,10 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// before any server contact and before the lock (6.2, 6.3 step 1); then the target lock is acquired
 /// (6.1 step 4) and every later engine call runs under a token linked to the caller, the holder's
 /// <c>LostToken</c>, and <c>CommandTimeout</c> (6.10). Loss of the holder ends the operation as
-/// <c>LockLost</c>; caller cancellation propagates after the lock is released; the lock is released on
-/// every path. This step delivers the shell: the preamble through the target inspection and the result
+/// <c>LockLost</c>, and it is enforced at every read boundary, not only through the token: a read is not
+/// dispatched once loss is declared, and a read that completes normally, or throws anything, while loss
+/// is declared still ends the operation there (6.10). Caller cancellation propagates after the lock is
+/// released; the lock is released on every path. This step delivers the shell: the preamble through the target inspection and the result
 /// assembly. The stages that mutate (staging and publication, reconcile validation, owned deletion) arrive
 /// with Phases 2 to 4 and are not implemented here: the shell throws <see cref="NotImplementedException"/>
 /// where they begin, after the lock is released, and is not registered as the provisioner until they exist.
@@ -251,10 +253,11 @@ public sealed class DmsDataStoreProvisioningService(
 
         logger.LogError(
             LockLost,
-            "DMS data store provisioning {Operation} {OperationId} lost its target lock holder session during {Step}",
+            "DMS data store provisioning {Operation} {OperationId} lost its target lock holder session during {Step}; the read in flight raised {ExceptionTypeChain}",
             operationName,
             operation.Value,
-            scope.CurrentStep
+            scope.CurrentStep,
+            scope.LossAccompanyingTypeChain ?? "nothing"
         );
         return failure(scope.LockLostFailure(), DmsCleanupReport.Clean);
     }
@@ -323,7 +326,10 @@ public sealed class DmsDataStoreProvisioningService(
     /// <c>LostToken</c>, and the per-command deadline (6.10), and classifies what a read throws. Caller
     /// cancellation and holder loss propagate as <see cref="OperationCanceledException"/> for the boundary
     /// to tell apart; a deadline is <c>TimedOut</c>; anything else a read throws is <c>Unknown</c> with its
-    /// type chain, because the provider-neutral orchestrator cannot classify driver exceptions.
+    /// type chain, because the provider-neutral orchestrator cannot classify driver exceptions. Loss is
+    /// checked explicitly before a read is dispatched and after it completes, because the linked token only
+    /// reaches a read that honours it: a result produced after loss is discarded, and an exception raised
+    /// alongside loss is loss, with only its type chain kept for the log.
     /// </summary>
     private sealed class LockScope(
         IDmsTargetLockHolder holder,
@@ -334,21 +340,41 @@ public sealed class DmsDataStoreProvisioningService(
     {
         public string CurrentStep { get; private set; } = AcquireTargetLockStep;
 
+        /// <summary>The type chain of a non-cancellation exception a read raised alongside loss, if any.</summary>
+        public string? LossAccompanyingTypeChain { get; private set; }
+
         public async Task<T> ReadAsync<T>(string step, Func<CancellationToken, Task<T>> read)
         {
             CurrentStep = step;
+
+            // Caller cancellation, or loss declared since the previous read, stops this one before anything
+            // is dispatched.
+            callerToken.ThrowIfCancellationRequested();
+            ThrowIfLost();
+
             using CancellationTokenSource deadline = new(commandTimeout, timeProvider);
             using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
                 callerToken,
                 holder.LostToken,
                 deadline.Token
             );
+            T result;
             try
             {
-                return await read(linked.Token);
+                result = await read(linked.Token);
             }
-            catch (OperationCanceledException)
-                when (!callerToken.IsCancellationRequested && !holder.LostToken.IsCancellationRequested)
+            catch (Exception exception) when (holder.LostToken.IsCancellationRequested)
+            {
+                // Loss wins over whatever the read threw. A driver exception raised alongside loss is not
+                // classified, and only its type chain is kept, because its message may quote the connection.
+                if (exception is not OperationCanceledException)
+                {
+                    LossAccompanyingTypeChain = DmsProvisioningDiagnostic.TypeChain(exception);
+                }
+
+                throw Lost();
+            }
+            catch (OperationCanceledException) when (!callerToken.IsCancellationRequested)
             {
                 throw new DmsProvisioningFailedException(
                     DmsProvisioningFailure.Create(
@@ -368,7 +394,23 @@ public sealed class DmsDataStoreProvisioningService(
                     exception
                 );
             }
+
+            // Loss declared while the read completed normally: the result came from a session whose lock
+            // may be gone, so it is discarded and nothing further is dispatched.
+            ThrowIfLost();
+            return result;
         }
+
+        private void ThrowIfLost()
+        {
+            if (holder.LostToken.IsCancellationRequested)
+            {
+                throw Lost();
+            }
+        }
+
+        private OperationCanceledException Lost() =>
+            new("The target lock holder session was lost.", holder.LostToken);
 
         /// <summary>
         /// <c>LockLost</c> is transient while no selected-target mutation has been issued on the holder
