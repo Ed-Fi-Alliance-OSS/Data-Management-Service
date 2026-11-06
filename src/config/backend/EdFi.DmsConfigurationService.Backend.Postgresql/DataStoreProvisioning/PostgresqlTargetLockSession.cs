@@ -95,7 +95,7 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
     /// terminated. Any other failure closes the connection and is <see cref="DmsTargetLockResult.Failure"/>;
     /// cancellation closes it and propagates. On success the heartbeat is started before the holder is returned.
     /// </summary>
-    public static async Task<DmsTargetLockResult> AcquireAsync(
+    public static Task<DmsTargetLockResult> AcquireAsync(
         PostgresqlAdminConnection adminConnection,
         DmsTargetDatabaseName name,
         DmsOperationId operation,
@@ -103,6 +103,34 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
         TimeSpan heartbeatInterval,
         TimeProvider timeProvider,
         ILogger logger,
+        CancellationToken cancellationToken
+    ) =>
+        AcquireAsync(
+            adminConnection,
+            name,
+            operation,
+            acquireTimeout,
+            heartbeatInterval,
+            timeProvider,
+            logger,
+            connectionOpened: null,
+            cancellationToken
+        );
+
+    /// <summary>
+    /// The acquisition with a test seam: <paramref name="connectionOpened"/> receives the holder connection as
+    /// soon as it is open, before the lock is attempted, so a test can keep a reference and prove the
+    /// connection closed on every path that returns without the lock.
+    /// </summary>
+    internal static async Task<DmsTargetLockResult> AcquireAsync(
+        PostgresqlAdminConnection adminConnection,
+        DmsTargetDatabaseName name,
+        DmsOperationId operation,
+        TimeSpan acquireTimeout,
+        TimeSpan heartbeatInterval,
+        TimeProvider timeProvider,
+        ILogger logger,
+        Action<NpgsqlConnection>? connectionOpened,
         CancellationToken cancellationToken
     )
     {
@@ -127,6 +155,7 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
             return Failure(exception);
         }
 
+        connectionOpened?.Invoke(connection);
         bool held = false;
         try
         {

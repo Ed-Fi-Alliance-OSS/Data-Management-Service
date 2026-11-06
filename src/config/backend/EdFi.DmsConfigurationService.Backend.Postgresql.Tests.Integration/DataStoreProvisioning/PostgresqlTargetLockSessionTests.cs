@@ -3,11 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Diagnostics;
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Npgsql;
 using static EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning.DmsProvisioningTestServer;
@@ -311,6 +313,8 @@ public class PostgresqlTargetLockSessionTests
     {
         private PostgresqlTargetLockSession? _holder;
         private DmsTargetLockResult _result = null!;
+        private NpgsqlConnection? _contenderConnection;
+        private ConnectionState? _contenderConnectionStateOnReturn;
         private bool _holderGranted;
         private bool _holderLost;
         private int _holderResult;
@@ -324,8 +328,20 @@ public class PostgresqlTargetLockSessionTests
             DmsOperationId contender = DmsOperationId.New();
             _holder = await AcquireAsync(Engine(), name, DmsOperationId.New());
 
-            _result = await Engine(lockAcquireTimeout: TimeSpan.FromSeconds(1))
-                .AcquireTargetLockAsync(name, contender, default);
+            // The seam hands over the contender's own connection; the fixture keeps the reference so that
+            // finalization cannot stand in for the disposal under test.
+            _result = await PostgresqlTargetLockSession.AcquireAsync(
+                AdminConnection(),
+                name,
+                contender,
+                acquireTimeout: TimeSpan.FromSeconds(1),
+                heartbeatInterval: TimeSpan.FromSeconds(5),
+                TimeProvider.System,
+                NullLogger.Instance,
+                connectionOpened: connection => _contenderConnection = connection,
+                default
+            );
+            _contenderConnectionStateOnReturn = _contenderConnection?.FullState;
             _holderGranted = await AdvisoryLockGrantedAsync(_holder.Session.Id, _holder.Key);
             _holderLost = _holder.IsLost;
             _holderResult = await SelectOneAsync(_holder);
@@ -338,6 +354,11 @@ public class PostgresqlTargetLockSessionTests
         [OneTimeTearDown]
         public async Task Teardown()
         {
+            if (_contenderConnection is not null)
+            {
+                await _contenderConnection.DisposeAsync();
+            }
+
             if (_holder is not null)
             {
                 await _holder.DisposeAsync();
@@ -346,6 +367,10 @@ public class PostgresqlTargetLockSessionTests
 
         [Test]
         public void It_returns_timeout() => _result.Should().BeOfType<DmsTargetLockResult.Timeout>();
+
+        [Test]
+        public void It_closes_the_contender_connection_before_returning() =>
+            _contenderConnectionStateOnReturn.Should().Be(ConnectionState.Closed);
 
         [Test]
         public void It_never_terminates_the_holder() =>
