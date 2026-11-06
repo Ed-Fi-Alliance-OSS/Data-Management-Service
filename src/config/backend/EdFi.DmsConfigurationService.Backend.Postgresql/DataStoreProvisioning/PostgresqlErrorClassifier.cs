@@ -114,8 +114,8 @@ internal static class PostgresqlErrorClassifier
     public static DmsProvisioningDiagnostic Diagnostic(Exception exception, string operation) =>
         DmsProvisioningDiagnostic.From(exception, operation, SqlStateOf(exception));
 
-    // A SQLSTATE is five ASCII digits or upper-case letters; any other text is not kept.
-    private static bool IsSqlState(string? sqlState) =>
+    /// <summary>A SQLSTATE is five ASCII digits or upper-case letters; any other text is not kept, whether it came from the driver or from <c>psql</c> output.</summary>
+    public static bool IsSqlState(string? sqlState) =>
         sqlState is { Length: 5 }
         && sqlState.All(character => char.IsAsciiDigit(character) || char.IsAsciiLetterUpper(character));
 }

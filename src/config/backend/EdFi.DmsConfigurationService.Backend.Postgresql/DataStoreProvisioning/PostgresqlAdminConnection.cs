@@ -78,6 +78,9 @@ public sealed class PostgresqlAdminConnection
     public Task<NpgsqlConnection> OpenMaintenanceAsync(CancellationToken cancellationToken) =>
         OpenAsync(MaintenanceDatabaseName, SessionApplicationName, cancellationToken);
 
+    /// <summary>The connection as <c>libpq</c> receives it (D-10), for the replay runner only; never logged.</summary>
+    internal LibpqConnectionSettings ToLibpqSettings() => LibpqConnectionSettings.From(_template);
+
     internal string ConnectionStringFor(string database, string applicationName) =>
         new NpgsqlConnectionStringBuilder(_template.ConnectionString)
         {
