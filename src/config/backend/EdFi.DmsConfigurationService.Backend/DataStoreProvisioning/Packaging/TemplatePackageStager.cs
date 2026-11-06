@@ -23,8 +23,12 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 /// names the same identity, exactly one entry named by the manifest's <c>artifactFileName</c>, and no other
 /// <c>.sql</c> or <c>.bak</c> entry. No artifact content is read here: <see cref="StagedTemplatePackage"/>
 /// extracts and hashes it on the create path only (6.2 step 8). Every failure deletes the operation directory
-/// before the exception leaves. Refusals are <see cref="TemplatePackageException"/>; a missing catalog file
-/// surfaces as the file system's <see cref="FileNotFoundException"/> for the catalog to classify.
+/// before the exception leaves. Refusals are <see cref="TemplatePackageException"/>, including every malformed
+/// container the zip reader reports (<see cref="InvalidDataException"/>) at any of its boundaries: opening the
+/// archive, enumerating the central directory, which the reader defers until the entries are first asked for,
+/// and opening or decompressing an entry. Cancellation and ordinary file system failures pass through unchanged;
+/// a missing catalog file surfaces as the file system's <see cref="FileNotFoundException"/> for the catalog to
+/// classify.
 /// </summary>
 public sealed class TemplatePackageStager
 {
@@ -187,11 +191,20 @@ public sealed class TemplatePackageStager
         }
         catch (InvalidDataException exception)
         {
-            throw new TemplatePackageException(
-                TemplatePackageDefect.PackageInvalid,
-                "The package is not a readable zip archive.",
-                exception
-            );
+            throw PackageInvalid("The package is not a readable zip archive.", exception);
+        }
+    }
+
+    /// <summary>The file entries; the reader parses the central directory here, not when the archive is opened.</summary>
+    private static ZipArchiveEntry[] ReadEntries(ZipArchive archive)
+    {
+        try
+        {
+            return [.. archive.Entries.Where(entry => !string.IsNullOrEmpty(entry.Name))];
+        }
+        catch (InvalidDataException exception)
+        {
+            throw PackageInvalid("The package's central directory is not readable.", exception);
         }
     }
 
@@ -203,7 +216,7 @@ public sealed class TemplatePackageStager
         CancellationToken cancellationToken
     )
     {
-        ZipArchiveEntry[] files = [.. archive.Entries.Where(entry => !string.IsNullOrEmpty(entry.Name))];
+        ZipArchiveEntry[] files = ReadEntries(archive);
         RequireUniqueNames(files);
 
         ZipArchiveEntry manifestEntry = RequireSingle(
@@ -378,7 +391,11 @@ public sealed class TemplatePackageStager
     private static string? ElementText(XElement parent, string localName) =>
         parent.Elements().FirstOrDefault(element => element.Name.LocalName == localName)?.Value;
 
-    /// <summary>Reads one entry fully, refusing one whose declared or actual size exceeds <paramref name="maxBytes"/>.</summary>
+    /// <summary>
+    /// Reads one entry fully, refusing one whose declared or actual size exceeds <paramref name="maxBytes"/> and
+    /// one the reader cannot open or decompress (a corrupt local header, an unsupported compression method,
+    /// a corrupt compressed stream).
+    /// </summary>
     private static async Task<ReadOnlyMemory<byte>> ReadEntryAsync(
         ZipArchiveEntry entry,
         long maxBytes,
@@ -390,27 +407,36 @@ public sealed class TemplatePackageStager
             throw PackageInvalid("A package entry is larger than the contract allows.");
         }
 
-        await using Stream source = await entry.OpenAsync(cancellationToken);
-        using MemoryStream buffer = new();
-        byte[] chunk = new byte[81920];
-        long total = 0;
-        int read;
-        while ((read = await source.ReadAsync(chunk, cancellationToken)) > 0)
+        try
         {
-            total += read;
-            if (total > maxBytes)
+            await using Stream source = await entry.OpenAsync(cancellationToken);
+            using MemoryStream buffer = new();
+            byte[] chunk = new byte[81920];
+            long total = 0;
+            int read;
+            while ((read = await source.ReadAsync(chunk, cancellationToken)) > 0)
             {
-                throw PackageInvalid("A package entry is larger than the contract allows.");
+                total += read;
+                if (total > maxBytes)
+                {
+                    throw PackageInvalid("A package entry is larger than the contract allows.");
+                }
+
+                await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
             }
 
-            await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
+            return buffer.GetBuffer().AsMemory(0, (int)buffer.Length);
         }
-
-        return buffer.GetBuffer().AsMemory(0, (int)buffer.Length);
+        catch (InvalidDataException exception)
+        {
+            throw PackageInvalid("A package entry could not be read from the archive.", exception);
+        }
     }
 
-    private static TemplatePackageException PackageInvalid(string message) =>
-        new(TemplatePackageDefect.PackageInvalid, message);
+    private static TemplatePackageException PackageInvalid(
+        string message,
+        Exception? innerException = null
+    ) => new(TemplatePackageDefect.PackageInvalid, message, innerException);
 
     private static bool NameIs(ZipArchiveEntry entry, string fileName) =>
         SameIgnoringCase(entry.Name, fileName);

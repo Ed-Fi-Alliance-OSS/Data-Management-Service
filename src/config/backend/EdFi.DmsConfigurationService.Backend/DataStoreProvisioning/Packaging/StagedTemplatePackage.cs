@@ -77,8 +77,10 @@ public sealed class StagedTemplatePackage : IDisposable
 
     /// <summary>
     /// Extracts the declared artifact once. On any failure, including a hash mismatch
-    /// (<see cref="TemplatePackageDefect.ArtifactTampered"/>), the partial file is deleted before the exception
-    /// leaves; the operation directory and the package copy stay for the owner to dispose.
+    /// (<see cref="TemplatePackageDefect.ArtifactTampered"/>) and an entry the zip reader cannot open or
+    /// decompress (<see cref="TemplatePackageDefect.PackageInvalid"/>), the partial file is deleted before the
+    /// exception leaves; the operation directory and the package copy stay for the owner to dispose.
+    /// Cancellation and ordinary file system failures pass through unchanged.
     /// </summary>
     public async Task<StagedArtifact> ExtractArtifactAsync(CancellationToken cancellationToken)
     {
@@ -94,6 +96,15 @@ public sealed class StagedTemplatePackage : IDisposable
         try
         {
             sha256 = await WriteArtifactAsync(cancellationToken);
+        }
+        catch (InvalidDataException exception)
+        {
+            TryDeletePartialArtifact(artifactPath);
+            throw new TemplatePackageException(
+                TemplatePackageDefect.PackageInvalid,
+                "The artifact entry could not be read from the archive.",
+                exception
+            );
         }
         catch
         {

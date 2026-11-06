@@ -29,6 +29,7 @@ public sealed class TestTemplatePackageBuilder
     private readonly JsonObject _manifest;
     private readonly List<(string Name, byte[] Bytes)> _entries = [];
     private readonly List<Action<JsonObject>> _manifestMutations = [];
+    private readonly List<Action<byte[]>> _zipMutations = [];
     private byte[] _artifactBytes;
     private string? _manifestText;
     private string? _nuspecId;
@@ -137,6 +138,16 @@ public sealed class TestTemplatePackageBuilder
         return this;
     }
 
+    /// <summary>
+    /// Alters the finished zip bytes in place before the attestation is signed over them, so the package
+    /// authenticates while its container is malformed (see <see cref="ZipLayout"/>).
+    /// </summary>
+    public TestTemplatePackageBuilder WithZipMutation(Action<byte[]> mutate)
+    {
+        _zipMutations.Add(mutate);
+        return this;
+    }
+
     /// <summary>Signs an attestation over this hash instead of the package's.</summary>
     public TestTemplatePackageBuilder WithAttestedSha256(string sha256)
     {
@@ -156,6 +167,11 @@ public sealed class TestTemplatePackageBuilder
     {
         Directory.CreateDirectory(catalogDirectory);
         byte[] packageBytes = _rawPackageBytes ?? BuildZip();
+        foreach (Action<byte[]> mutate in _zipMutations)
+        {
+            mutate(packageBytes);
+        }
+
         string packageSha256 = Sha256Hex(packageBytes);
 
         string packagePath = Path.Combine(catalogDirectory, $"{PackageId}.{PackageVersion}.nupkg");

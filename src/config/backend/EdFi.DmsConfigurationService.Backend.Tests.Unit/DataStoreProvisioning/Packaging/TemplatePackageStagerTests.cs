@@ -651,6 +651,121 @@ public class TemplatePackageStagerTests
             _workspace.OperationDirectoryExists.Should().BeFalse();
     }
 
+    /// <summary>
+    /// Each package here authenticates (the attestation is signed over the corrupted bytes) and opens as a zip,
+    /// so the reader reports the defect only later: when the entries are enumerated, when an entry is opened,
+    /// or when the artifact is decompressed.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_authenticated_package_whose_container_is_malformed_past_the_archive_open
+    {
+        private StagerWorkspace _workspace = null!;
+        private Exception? _centralDirectoryFailure;
+        private Exception? _manifestEntryFailure;
+        private Exception? _nuspecEntryFailure;
+        private bool _directoryRemainedAfterStagingFailures;
+        private StagedTemplatePackage _staged = null!;
+        private Exception? _extractionFailure;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _workspace = new StagerWorkspace();
+            _centralDirectoryFailure = await _workspace.StagingFailureOf(
+                _workspace.Build(
+                    new TestTemplatePackageBuilder().WithZipMutation(ZipLayout.CorruptCentralDirectory)
+                )
+            );
+            _manifestEntryFailure = await _workspace.StagingFailureOf(
+                _workspace.Build(
+                    new TestTemplatePackageBuilder().WithZipMutation(zip =>
+                        ZipLayout.CorruptLocalHeader(zip, RestoreManifest.FileName)
+                    )
+                )
+            );
+            TestTemplatePackageBuilder nuspecBuilder = new();
+            _nuspecEntryFailure = await _workspace.StagingFailureOf(
+                _workspace.Build(
+                    nuspecBuilder.WithZipMutation(zip =>
+                        ZipLayout.SetUnsupportedCompressionMethod(zip, $"{nuspecBuilder.PackageId}.nuspec")
+                    )
+                )
+            );
+            _directoryRemainedAfterStagingFailures = _workspace.OperationDirectoryExists;
+
+            TestTemplatePackageBuilder artifactBuilder = new();
+            _staged = await _workspace.StageAsync(
+                _workspace.Build(
+                    artifactBuilder.WithZipMutation(zip =>
+                        ZipLayout.CorruptDeflateStream(zip, artifactBuilder.ArtifactFileName)
+                    )
+                )
+            );
+            _extractionFailure = await Record.ExceptionAsync(() =>
+                _staged.ExtractArtifactAsync(CancellationToken.None)
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _staged.Dispose();
+            _workspace.Dispose();
+        }
+
+        [Test]
+        public void It_refuses_a_corrupt_central_directory_as_an_invalid_package()
+        {
+            TemplatePackageException refusal = Refusal(_centralDirectoryFailure);
+            refusal.Defect.Should().Be(TemplatePackageDefect.PackageInvalid);
+            refusal.Message.Should().Be("The package's central directory is not readable.");
+            refusal.InnerException.Should().BeOfType<InvalidDataException>();
+        }
+
+        [Test]
+        public void It_refuses_an_unreadable_manifest_entry_as_an_invalid_package()
+        {
+            TemplatePackageException refusal = Refusal(_manifestEntryFailure);
+            refusal.Defect.Should().Be(TemplatePackageDefect.PackageInvalid);
+            refusal.Message.Should().Be("A package entry could not be read from the archive.");
+            refusal.InnerException.Should().BeOfType<InvalidDataException>();
+        }
+
+        [Test]
+        public void It_refuses_an_unreadable_nuspec_entry_as_an_invalid_package()
+        {
+            TemplatePackageException refusal = Refusal(_nuspecEntryFailure);
+            refusal.Defect.Should().Be(TemplatePackageDefect.PackageInvalid);
+            refusal.Message.Should().Be("A package entry could not be read from the archive.");
+            refusal.InnerException.Should().BeOfType<InvalidDataException>();
+        }
+
+        [Test]
+        public void It_cleans_up_the_operation_directory_after_each_staging_refusal() =>
+            _directoryRemainedAfterStagingFailures.Should().BeFalse();
+
+        [Test]
+        public void It_stages_a_package_whose_artifact_stream_is_corrupt_without_reading_it() =>
+            _staged.Should().NotBeNull();
+
+        [Test]
+        public void It_refuses_the_extraction_of_a_corrupt_artifact_stream_as_an_invalid_package()
+        {
+            TemplatePackageException refusal = Refusal(_extractionFailure);
+            refusal.Defect.Should().Be(TemplatePackageDefect.PackageInvalid);
+            refusal.Message.Should().Be("The artifact entry could not be read from the archive.");
+            refusal.InnerException.Should().BeOfType<InvalidDataException>();
+        }
+
+        [Test]
+        public void It_deletes_the_partial_artifact() =>
+            File.Exists(Path.Combine(_workspace.OperationDirectoryPath, "artifact.sql")).Should().BeFalse();
+
+        [Test]
+        public void It_keeps_the_operation_directory_for_the_owner_to_dispose() =>
+            File.Exists(_staged.PackageCopyPath).Should().BeTrue();
+    }
+
     [TestFixture]
     public class Given_the_catalog_file_is_missing_or_the_operation_is_cancelled
     {
