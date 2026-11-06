@@ -63,14 +63,23 @@ internal static partial class PsqlVersionProbe
         TimeSpan timeout,
         TimeProvider timeProvider,
         CancellationToken cancellationToken
-    ) => ProbeAsync(psqlPath, timeout, PsqlProcess.DefaultTerminationBound, timeProvider, cancellationToken);
+    ) =>
+        ProbeAsync(
+            psqlPath,
+            timeout,
+            PsqlProcess.DefaultTerminationBound,
+            timeProvider,
+            kill: null,
+            cancellationToken
+        );
 
-    /// <summary>The probe with the termination bound exposed, so a test can prove the unconfirmed path quickly.</summary>
+    /// <summary>The probe with the termination bound and the kill exposed, so a test can prove the unconfirmed paths quickly.</summary>
     internal static async Task<PsqlVersionProbeResult> ProbeAsync(
         string psqlPath,
         TimeSpan timeout,
         TimeSpan terminationBound,
         TimeProvider timeProvider,
+        PsqlProcess.KillProcess? kill,
         CancellationToken cancellationToken
     )
     {
@@ -97,6 +106,7 @@ internal static partial class PsqlVersionProbe
                 consumeStandardError: null,
                 terminationBound,
                 timeProvider,
+                kill,
                 stop.Token
             );
         }

@@ -66,14 +66,16 @@ internal sealed class ReplayWorkspace : IDisposable
         string psqlPath,
         TimeSpan? restoreTimeout = null,
         TimeProvider? timeProvider = null,
-        TimeSpan? terminationBound = null
+        TimeSpan? terminationBound = null,
+        PsqlProcess.KillProcess? kill = null
     ) =>
         new(
             psqlPath,
             restoreTimeout ?? TimeSpan.FromMinutes(5),
             terminationBound ?? PsqlProcess.DefaultTerminationBound,
             timeProvider ?? TimeProvider.System,
-            Logger
+            Logger,
+            kill
         );
 
     public Task<PsqlRunResult> RunAsync(
@@ -554,6 +556,75 @@ public class PsqlRestoreRunnerTests
             LogEntry unconfirmed = _workspace.Logger.Entries.Last();
             unconfirmed.EventId.Should().Be(PsqlRestoreRunner.ReplayUnconfirmed);
             unconfirmed.Field("Reason").Should().Be("none");
+        }
+
+        [Test]
+        public void It_deletes_the_password_file() =>
+            File.Exists(_workspace.PasswordFilePath).Should().BeFalse();
+    }
+
+    [TestFixture]
+    public class Given_a_kill_that_fails_after_cancellation
+    {
+        private static readonly TimeSpan _terminationBound = TimeSpan.FromSeconds(2);
+
+        private ReplayWorkspace _workspace = null!;
+        private FakePsql _fake = null!;
+        private PsqlRunResult _result = null!;
+        private Exception? _exception;
+        private bool _stillRunningAtReturn;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _workspace = new ReplayWorkspace();
+            string signal = Path.Combine(_workspace.Root, "started");
+            _fake = FakePsql.Blocking(signal);
+            using CancellationTokenSource cancellation = new();
+            Task<PsqlRunResult> run = _workspace.RunAsync(
+                _workspace.Runner(
+                    _fake.ExecutablePath,
+                    terminationBound: _terminationBound,
+                    kill: _ => throw new Win32Exception(5, "Access is denied.")
+                ),
+                cancellation.Token
+            );
+            await FakePsql.WaitForFileAsync(signal, _bound);
+            await cancellation.CancelAsync();
+            _exception = await Record.ExceptionAsync(async () => _result = await run.WaitAsync(_bound));
+            _stillRunningAtReturn =
+                _result is PsqlRunResult.Unconfirmed unconfirmed
+                && ReplayWorkspace.IsRunning(unconfirmed.ProcessId);
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            await _fake.DisposeAsync();
+            _workspace.Dispose();
+        }
+
+        [Test]
+        public void It_returns_an_unconfirmed_termination_with_the_stop_reason_instead_of_throwing()
+        {
+            _exception.Should().BeNull();
+            _result
+                .Should()
+                .BeOfType<PsqlRunResult.Unconfirmed>()
+                .Which.Reason.Should()
+                .Be(PsqlKillReason.Cancelled);
+        }
+
+        [Test]
+        public void It_reported_honestly_while_the_process_was_still_running() =>
+            _stillRunningAtReturn.Should().BeTrue();
+
+        [Test]
+        public void It_logs_the_unconfirmed_termination_with_the_stop_reason()
+        {
+            LogEntry unconfirmed = _workspace.Logger.Entries.Last();
+            unconfirmed.EventId.Should().Be(PsqlRestoreRunner.ReplayUnconfirmed);
+            unconfirmed.Field("Reason").Should().Be("Cancelled");
         }
 
         [Test]

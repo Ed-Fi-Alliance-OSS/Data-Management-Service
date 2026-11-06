@@ -209,6 +209,7 @@ public class PsqlVersionProbeTests
                 PsqlVersionProbe.DefaultTimeout,
                 _terminationBound,
                 TimeProvider.System,
+                kill: null,
                 CancellationToken.None
             );
             await FakePsql.WaitForFileAsync(signal, _bound);
@@ -224,6 +225,47 @@ public class PsqlVersionProbeTests
             _result
                 .Should()
                 .Be(new PsqlVersionProbeResult.Failed(PsqlProbeFailure.TerminationUnconfirmed, string.Empty));
+    }
+
+    [TestFixture]
+    public class Given_a_kill_that_fails_when_the_probe_bound_elapses
+    {
+        private static readonly TimeSpan _probeTimeout = TimeSpan.FromSeconds(1);
+        private static readonly TimeSpan _terminationBound = TimeSpan.FromSeconds(2);
+
+        private FakePsql _fake = null!;
+        private PsqlVersionProbeResult _result = null!;
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            string signal = SignalPath();
+            _fake = FakePsql.Blocking(signal);
+            Task<PsqlVersionProbeResult> probe = PsqlVersionProbe.ProbeAsync(
+                _fake.ExecutablePath,
+                _probeTimeout,
+                _terminationBound,
+                TimeProvider.System,
+                kill: _ => throw new System.ComponentModel.Win32Exception(5, "Access is denied."),
+                CancellationToken.None
+            );
+            await FakePsql.WaitForFileAsync(signal, _bound);
+            _exception = await Record.ExceptionAsync(async () => _result = await probe.WaitAsync(_bound));
+            File.Delete(signal);
+        }
+
+        [TearDown]
+        public async Task TearDown() => await _fake.DisposeAsync();
+
+        [Test]
+        public void It_reports_the_termination_unconfirmed_instead_of_a_start_failure()
+        {
+            _exception.Should().BeNull();
+            _result
+                .Should()
+                .Be(new PsqlVersionProbeResult.Failed(PsqlProbeFailure.TerminationUnconfirmed, string.Empty));
+        }
     }
 
     [TestFixture]

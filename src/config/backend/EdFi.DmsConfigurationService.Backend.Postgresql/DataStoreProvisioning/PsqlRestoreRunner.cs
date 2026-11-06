@@ -76,6 +76,7 @@ internal sealed class PsqlRestoreRunner
     private readonly string _psqlPath;
     private readonly TimeSpan _restoreTimeout;
     private readonly TimeSpan _terminationBound;
+    private readonly PsqlProcess.KillProcess? _kill;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
 
@@ -91,13 +92,14 @@ internal sealed class PsqlRestoreRunner
     )
         : this(psqlPath, restoreTimeout, PsqlProcess.DefaultTerminationBound, timeProvider, logger) { }
 
-    /// <summary>The runner with the termination bound exposed, so a test can prove the unconfirmed paths quickly.</summary>
+    /// <summary>The runner with the termination bound and the kill exposed, so a test can prove the unconfirmed paths quickly.</summary>
     internal PsqlRestoreRunner(
         string psqlPath,
         TimeSpan restoreTimeout,
         TimeSpan terminationBound,
         TimeProvider timeProvider,
-        ILogger logger
+        ILogger logger,
+        PsqlProcess.KillProcess? kill = null
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(psqlPath);
@@ -114,6 +116,7 @@ internal sealed class PsqlRestoreRunner
         _psqlPath = psqlPath;
         _restoreTimeout = restoreTimeout;
         _terminationBound = terminationBound;
+        _kill = kill;
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -238,6 +241,7 @@ internal sealed class PsqlRestoreRunner
             standardError.Append,
             _terminationBound,
             _timeProvider,
+            _kill,
             stop.Token
         );
         TimeSpan elapsed = _timeProvider.GetElapsedTime(startedAt);
