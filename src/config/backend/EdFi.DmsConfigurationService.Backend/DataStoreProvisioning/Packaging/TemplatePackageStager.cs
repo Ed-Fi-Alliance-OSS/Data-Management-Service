@@ -61,6 +61,10 @@ public sealed class TemplatePackageStager
         _operationRootDirectory = operationRootDirectory;
     }
 
+    /// <summary>
+    /// Claims the operation directory under the configured root and stages into it; every failure, cancellation
+    /// included, deletes that directory before the exception leaves.
+    /// </summary>
     /// <param name="packagePath">The catalog nupkg, located by the catalog from allowlist-derived names.</param>
     /// <param name="attestationJson">The sibling attestation document's text; null or blank is an untrusted verdict.</param>
     /// <param name="expectedPackageId">The allowlisted package id.</param>
@@ -78,6 +82,47 @@ public sealed class TemplatePackageStager
         CancellationToken cancellationToken
     )
     {
+        PrivateOperationDirectory directory = PrivateOperationDirectory.Create(
+            _operationRootDirectory,
+            operationId
+        );
+        try
+        {
+            return await StageAsync(
+                directory,
+                packagePath,
+                attestationJson,
+                expectedPackageId,
+                expectedPackageVersion,
+                policy,
+                cancellationToken
+            );
+        }
+        catch
+        {
+            directory.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Stages into a directory the caller claimed and owns. On failure, cancellation included, every handle the
+    /// stager opened is closed before the exception leaves, and the directory, with whatever the stager wrote
+    /// into it, is left to its owner to delete and to account for as residue: the owner, not the stager, knows
+    /// the claim was its own. On success the returned package takes the directory over. Static: nothing about
+    /// the configured root applies once the caller holds the directory.
+    /// </summary>
+    public static async Task<StagedTemplatePackage> StageAsync(
+        PrivateOperationDirectory directory,
+        string packagePath,
+        string? attestationJson,
+        string expectedPackageId,
+        string expectedPackageVersion,
+        TemplateTrustPolicy policy,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(directory);
         ArgumentException.ThrowIfNullOrWhiteSpace(packagePath);
         if (!Path.IsPathFullyQualified(packagePath))
         {
@@ -88,10 +133,6 @@ public sealed class TemplatePackageStager
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedPackageVersion);
         ArgumentNullException.ThrowIfNull(policy);
 
-        PrivateOperationDirectory directory = PrivateOperationDirectory.Create(
-            _operationRootDirectory,
-            operationId
-        );
         FileStream? copy = null;
         ZipArchive? archive = null;
         try
@@ -145,7 +186,6 @@ public sealed class TemplatePackageStager
                 await copy.DisposeAsync();
             }
 
-            directory.Dispose();
             throw;
         }
     }

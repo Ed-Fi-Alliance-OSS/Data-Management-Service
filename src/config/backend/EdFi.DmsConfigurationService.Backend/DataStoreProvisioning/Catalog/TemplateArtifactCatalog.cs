@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
@@ -74,7 +75,6 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     ];
 
     private readonly DmsDataStoreProvisioningOptions _options;
-    private readonly TemplatePackageStager _stager;
     private readonly ILogger<TemplateArtifactCatalog> _logger;
 
     public TemplateArtifactCatalog(
@@ -87,11 +87,13 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         _options = options.Value;
         _logger = logger;
         OperationRootDirectory = OperationRootDirectoryFor(_options);
-        _stager = new TemplatePackageStager(OperationRootDirectory);
     }
 
     /// <summary>The directory every operation's private directory is claimed under.</summary>
     public string OperationRootDirectory { get; }
+
+    /// <summary>Test seam: runs immediately before the operation directory is claimed, where a competing creator can take the name.</summary>
+    internal Action? BeforeClaim { get; set; }
 
     /// <summary>Test seam: runs immediately before an operation directory is released, where a test can make its deletion fail.</summary>
     internal Action<PrivateOperationDirectory>? BeforeRelease { get; set; }
@@ -164,15 +166,27 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
             return Refused(template, policyFailure);
         }
 
-        // 6.2 step 3 (D-5). The stager's claim refuses an entry already holding the generated name and leaves it
-        // alone; checking first keeps such an entry out of this operation's residue report as well.
-        string directoryPath = Path.Combine(
-            OperationRootDirectory,
-            PrivateOperationDirectory.NamePrefix + operationId.Value
-        );
-        if (Path.Exists(directoryPath))
+        // 6.2 step 3 (D-5): the claim is this operation's ownership of the directory. A refused claim, whether an
+        // entry already holds the generated name or the root is unusable, created nothing, so nothing is released
+        // or reported, and the entry that won the name is never touched.
+        PrivateOperationDirectory directory;
+        try
         {
-            return Refused(template, Failure(DmsProvisioningFailureCode.StagingFailed, StagePackageStep));
+            directory = PrivateOperationDirectory.Create(OperationRootDirectory, operationId, BeforeClaim);
+        }
+        catch (IOException exception)
+        {
+            return Refused(
+                template,
+                Failure(DmsProvisioningFailureCode.StagingFailed, StagePackageStep, exception)
+            );
+        }
+        catch (UnauthorizedAccessException exception)
+        {
+            return Refused(
+                template,
+                Failure(DmsProvisioningFailureCode.StagingFailed, StagePackageStep, exception)
+            );
         }
 
         (
@@ -180,13 +194,12 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
             DmsProvisioningFailure? stagingFailure,
             IReadOnlyList<DmsCleanupResidue> stagingResidue
         ) = await StagePrivatelyAsync(
+            directory,
             packagePath,
             attestationJson!,
             packageId,
             packageVersion,
             policy!,
-            operationId,
-            directoryPath,
             cancellationToken
         );
         if (staged is null)
@@ -256,22 +269,21 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     }
 
     /// <summary>
-    /// 6.2 steps 3 to 5 through the stager: the staged package, or the classified refusal together with whatever
-    /// the stager could not delete of the directory it claimed, which is this operation's residue (reported in
-    /// the result and, on cancellation, in the log alone).
+    /// 6.2 steps 3 to 5 through the stager, into a directory this catalog claimed: the staged package, or the
+    /// classified refusal together with whatever the release of that directory could not delete, which is this
+    /// operation's residue (reported in the result and, on cancellation, in the log alone).
     /// </summary>
     private async Task<(
         StagedTemplatePackage? Staged,
         DmsProvisioningFailure? Failure,
         IReadOnlyList<DmsCleanupResidue> Residue
     )> StagePrivatelyAsync(
+        PrivateOperationDirectory directory,
         string packagePath,
         string attestationJson,
         string packageId,
         string packageVersion,
         TemplateTrustPolicy policy,
-        DmsOperationId operationId,
-        string directoryPath,
         CancellationToken cancellationToken
     )
     {
@@ -280,13 +292,13 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         IReadOnlyList<DmsCleanupResidue> residue = [];
         try
         {
-            staged = await _stager.StageAsync(
+            staged = await TemplatePackageStager.StageAsync(
+                directory,
                 packagePath,
                 attestationJson,
                 packageId,
                 packageVersion,
                 policy,
-                operationId,
                 cancellationToken
             );
         }
@@ -310,12 +322,21 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         {
             if (staged is null)
             {
-                residue = ResidueUnder(directoryPath);
-                LogResidue(_logger, residue, operationId);
+                residue = ReleaseClaimed(directory);
             }
         }
 
         return (staged, failure, residue);
+    }
+
+    /// <summary>Releases a directory this catalog claimed: deletes it on a best-effort basis and reports what remains (6.11).</summary>
+    private IReadOnlyList<DmsCleanupResidue> ReleaseClaimed(PrivateOperationDirectory directory)
+    {
+        BeforeRelease?.Invoke(directory);
+        directory.TryDelete();
+        IReadOnlyList<DmsCleanupResidue> residue = ResidueUnder(directory.Path);
+        LogResidue(_logger, residue, directory.OperationId);
+        return residue;
     }
 
     public async Task<IReadOnlyList<DmsReadinessReason>> ValidateAsync(CancellationToken cancellationToken)
@@ -516,19 +537,67 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         }
     }
 
-    /// <summary>The file's text, or null when it is larger than <paramref name="maxBytes"/>; file system failures propagate.</summary>
+    /// <summary>
+    /// The file's text read through one handle, or null once more than <paramref name="maxBytes"/> have been
+    /// consumed; file system failures propagate.
+    /// </summary>
     private static async Task<string?> ReadBoundedTextAsync(
         string path,
         long maxBytes,
         CancellationToken cancellationToken
     )
     {
-        if (new FileInfo(path).Length > maxBytes)
+        FileStreamOptions options = new()
         {
-            return null;
+            Mode = FileMode.Open,
+            Access = FileAccess.Read,
+            Share = FileShare.Read,
+            Options = FileOptions.SequentialScan,
+        };
+        await using FileStream file = new(path, options);
+        return await ReadBoundedTextAsync(file, maxBytes, cancellationToken);
+    }
+
+    /// <summary>
+    /// Reads <paramref name="source"/> to its end with the byte limit enforced while consuming it: a length the
+    /// source reports is never consulted, so a file that grows or is replaced after it was opened cannot exceed
+    /// the limit. Returns null once more than <paramref name="maxBytes"/> have arrived. The text is UTF-8, as the
+    /// delivered tooling writes it; a leading byte order mark is skipped.
+    /// </summary>
+    internal static async Task<string?> ReadBoundedTextAsync(
+        Stream source,
+        long maxBytes,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        using MemoryStream buffer = new();
+        byte[] chunk = new byte[81920];
+        long total = 0;
+        int read;
+        while ((read = await source.ReadAsync(chunk, cancellationToken)) > 0)
+        {
+            total += read;
+            if (total > maxBytes)
+            {
+                return null;
+            }
+
+            await buffer.WriteAsync(chunk.AsMemory(0, read), cancellationToken);
         }
 
-        return await File.ReadAllTextAsync(path, cancellationToken);
+        return DecodeUtf8(buffer.GetBuffer().AsMemory(0, (int)buffer.Length));
+    }
+
+    private static string DecodeUtf8(ReadOnlyMemory<byte> bytes)
+    {
+        ReadOnlySpan<byte> span = bytes.Span;
+        if (span.StartsWith(Encoding.UTF8.Preamble))
+        {
+            span = span[Encoding.UTF8.Preamble.Length..];
+        }
+
+        return Encoding.UTF8.GetString(span);
     }
 
     /// <summary>The first 6.2 step 6 comparison the manifest fails, by name, or null when it passes every one.</summary>

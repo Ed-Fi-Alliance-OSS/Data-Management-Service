@@ -6,6 +6,7 @@
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using FluentAssertions;
 using FluentAssertions.Execution;
@@ -158,7 +159,8 @@ public class TrustedTemplateArtifactTests
         }
 
         [Test]
-        public void It_stages_without_reading_the_artifact() => _artifact.Pin.ArtifactSha256.Should().Be(_otherHash);
+        public void It_stages_without_reading_the_artifact() =>
+            _artifact.Pin.ArtifactSha256.Should().Be(_otherHash);
 
         [Test]
         public void It_refuses_extraction_as_artifact_tampered_for_the_operation_boundary()
@@ -219,9 +221,15 @@ public class TrustedTemplateArtifactTests
             _repeatedWhileTrapped = _artifact.Release();
             _residueEntriesExisted = _trappedRelease.ToDictionary(
                 residue => residue.ResourceId,
-                residue => Path.Exists(Path.Combine(Path.GetDirectoryName(directoryPath)!, residue.ResourceId))
+                residue =>
+                    Path.Exists(Path.Combine(Path.GetDirectoryName(directoryPath)!, residue.ResourceId))
             );
-            _residueLogs = [.. _workspace.Logger.Entries.Where(entry => entry.EventId == TemplateArtifactCatalog.ResidueLeft)];
+            _residueLogs =
+            [
+                .. _workspace.Logger.Entries.Where(entry =>
+                    entry.EventId == TemplateArtifactCatalog.ResidueLeft
+                ),
+            ];
 
             _trap.Dispose();
             _releaseAfterTrapLifted = _artifact.Release();
@@ -281,6 +289,86 @@ public class TrustedTemplateArtifactTests
     }
 
     [TestFixture]
+    public class Given_an_owned_staging_failure_whose_deletion_fails
+    {
+        private CatalogWorkspace _workspace = null!;
+        private DeletionTrap? _trap;
+        private DmsArtifactResolution _resolution = null!;
+        private Dictionary<string, bool> _residueEntriesExisted = [];
+        private LogEntry[] _residueLogs = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _workspace = new CatalogWorkspace();
+            _workspace.Build(_workspace.MinimalBuilder().WithPolicyListingAnotherKey());
+            TemplateArtifactCatalog catalog = _workspace.Catalog();
+            catalog.BeforeRelease = directory => _trap = new DeletionTrap(directory.Path);
+            _resolution = await catalog.ResolveAsync(DmsDatabaseTemplate.Minimal, CancellationToken.None);
+
+            IReadOnlyList<DmsCleanupResidue> residue = _resolution is DmsArtifactResolution.Failure failure
+                ? failure.Cleanup.Residue
+                : [];
+            _residueEntriesExisted = residue.ToDictionary(
+                item => item.ResourceId,
+                item => Path.Exists(Path.Combine(_workspace.OperationsRoot, item.ResourceId))
+            );
+            _residueLogs =
+            [
+                .. _workspace.Logger.Entries.Where(entry =>
+                    entry.EventId == TemplateArtifactCatalog.ResidueLeft
+                ),
+            ];
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _trap?.Dispose();
+            _workspace.Dispose();
+        }
+
+        [Test]
+        public void It_still_refuses_the_package_as_untrusted()
+        {
+            DmsProvisioningFailure failure = _resolution
+                .Should()
+                .BeOfType<DmsArtifactResolution.Failure>()
+                .Subject.Detail;
+            (failure.Code, failure.Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.ArtifactUntrusted,
+                        $"{TemplateArtifactCatalog.VerifyAttestationStep}.{TrustRefusalReason.UnknownKey}"
+                    )
+                );
+        }
+
+        [Test]
+        public void It_reports_the_directory_it_claimed_as_residue() =>
+            _resolution
+                .Should()
+                .BeOfType<DmsArtifactResolution.Failure>()
+                .Which.Cleanup.Residue.Should()
+                .Contain(residue =>
+                    residue.Kind == DmsResidueKind.OperationDirectory
+                    && residue.ResourceId.StartsWith(PrivateOperationDirectory.NamePrefix)
+                );
+
+        [Test]
+        public void It_reports_only_entries_that_remained() =>
+            _residueEntriesExisted.Should().NotBeEmpty().And.OnlyContain(pair => pair.Value);
+
+        [Test]
+        public void It_logs_each_residue_at_error()
+        {
+            _residueLogs.Should().HaveCount(_residueEntriesExisted.Count);
+            _residueLogs.Should().OnlyContain(entry => entry.Level == LogLevel.Error);
+        }
+    }
+
+    [TestFixture]
     public class Given_a_resolution_whose_release_fails
     {
         private CatalogWorkspace _workspace = null!;
@@ -321,7 +409,9 @@ public class TrustedTemplateArtifactTests
                 .Subject;
             using AssertionScope scope = new();
             resolved.Pin.PackageId.Should().Be(CatalogWorkspace.MinimalPackageId);
-            resolved.Cleanup.Residue.Should().Contain(residue => residue.Kind == DmsResidueKind.OperationDirectory);
+            resolved
+                .Cleanup.Residue.Should()
+                .Contain(residue => residue.Kind == DmsResidueKind.OperationDirectory);
             resolved
                 .Cleanup.Residue.Should()
                 .OnlyContain(residue => residue.ResourceId.StartsWith(PrivateOperationDirectory.NamePrefix));
@@ -336,7 +426,9 @@ public class TrustedTemplateArtifactTests
                 .Subject;
             using AssertionScope scope = new();
             failure.Detail.Code.Should().Be(DmsProvisioningFailureCode.ManifestMismatch);
-            failure.Cleanup.Residue.Should().Contain(residue => residue.Kind == DmsResidueKind.OperationDirectory);
+            failure
+                .Cleanup.Residue.Should()
+                .Contain(residue => residue.Kind == DmsResidueKind.OperationDirectory);
         }
 
         [Test]

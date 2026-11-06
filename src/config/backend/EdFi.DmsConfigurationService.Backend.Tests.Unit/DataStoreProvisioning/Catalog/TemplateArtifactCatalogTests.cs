@@ -41,7 +41,11 @@ public class TemplateArtifactCatalogTests
         resolution.Should().BeOfType<DmsArtifactResolution.Resolved>().Subject.Pin;
 
     /// <summary>One resolution in its own workspace, with what the operations root held afterwards.</summary>
-    private sealed record Outcome(DmsArtifactResolution Resolution, string[] OperationEntries, LogEntry[] Logs);
+    private sealed record Outcome(
+        DmsArtifactResolution Resolution,
+        string[] OperationEntries,
+        LogEntry[] Logs
+    );
 
     private static async Task<Outcome> ResolveInOwnWorkspace(
         Action<CatalogWorkspace> arrange,
@@ -84,8 +88,14 @@ public class TemplateArtifactCatalogTests
             _workspace = new CatalogWorkspace();
             (_minimal, _sample) = _workspace.BuildBoth();
             TemplateArtifactCatalog catalog = _workspace.Catalog();
-            _minimalResolution = await catalog.ResolveAsync(DmsDatabaseTemplate.Minimal, CancellationToken.None);
-            _sampleResolution = await catalog.ResolveAsync(DmsDatabaseTemplate.Sample, CancellationToken.None);
+            _minimalResolution = await catalog.ResolveAsync(
+                DmsDatabaseTemplate.Minimal,
+                CancellationToken.None
+            );
+            _sampleResolution = await catalog.ResolveAsync(
+                DmsDatabaseTemplate.Sample,
+                CancellationToken.None
+            );
             _reasons = await catalog.ValidateAsync(CancellationToken.None);
             _operationEntries = _workspace.OperationEntries;
         }
@@ -192,7 +202,8 @@ public class TemplateArtifactCatalogTests
             _outcome
                 .Logs.Should()
                 .ContainSingle(entry =>
-                    entry.EventId == TemplateArtifactCatalog.ArtifactRefused && entry.Level == LogLevel.Warning
+                    entry.EventId == TemplateArtifactCatalog.ArtifactRefused
+                    && entry.Level == LogLevel.Warning
                 )
                 .Which.Fields.Should()
                 .Contain(
@@ -214,7 +225,9 @@ public class TemplateArtifactCatalogTests
             _attestationAbsent = await ResolveInOwnWorkspace(
                 workspace =>
                     File.Delete(
-                        workspace.Build(workspace.MinimalBuilder().WithPolicyListingAnotherKey()).AttestationPath
+                        workspace
+                            .Build(workspace.MinimalBuilder().WithPolicyListingAnotherKey())
+                            .AttestationPath
                     ),
                 WithoutOperationsRoot
             );
@@ -295,7 +308,9 @@ public class TemplateArtifactCatalogTests
         public void It_refuses_a_package_altered_after_signing_as_a_hash_mismatch() =>
             FailureOf(_alteredAfterSigning.Resolution)
                 .Diagnostic.Operation.Should()
-                .Be($"{TemplateArtifactCatalog.VerifyAttestationStep}.{TrustRefusalReason.PackageHashMismatch}");
+                .Be(
+                    $"{TemplateArtifactCatalog.VerifyAttestationStep}.{TrustRefusalReason.PackageHashMismatch}"
+                );
 
         [Test]
         public void It_refuses_an_oversized_attestation_as_malformed_without_staging()
@@ -359,7 +374,10 @@ public class TemplateArtifactCatalogTests
             _missing.BuildBoth();
             File.Delete(_missing.TrustPolicyPath);
             TemplateArtifactCatalog missing = _missing.Catalog(WithoutOperationsRoot(_missing));
-            _missingResolution = await missing.ResolveAsync(DmsDatabaseTemplate.Minimal, CancellationToken.None);
+            _missingResolution = await missing.ResolveAsync(
+                DmsDatabaseTemplate.Minimal,
+                CancellationToken.None
+            );
             _missingReasons = await missing.ValidateAsync(CancellationToken.None);
         }
 
@@ -466,7 +484,9 @@ public class TemplateArtifactCatalogTests
         public async Task Setup()
         {
             _notAZip = await ResolveInOwnWorkspace(workspace =>
-                workspace.Build(workspace.MinimalBuilder().WithRawPackageBytes(Encoding.UTF8.GetBytes("not a zip")))
+                workspace.Build(
+                    workspace.MinimalBuilder().WithRawPackageBytes(Encoding.UTF8.GetBytes("not a zip"))
+                )
             );
             _manifestNotVersionOne = await ResolveInOwnWorkspace(workspace =>
                 workspace.Build(workspace.MinimalBuilder().WithManifestText("{}"))
@@ -504,7 +524,12 @@ public class TemplateArtifactCatalogTests
             DmsProvisioningFailure failure = FailureOf(_manifestNamesAnotherVersion.Resolution);
             (failure.Code, failure.Diagnostic.Operation)
                 .Should()
-                .Be((DmsProvisioningFailureCode.ManifestMismatch, TemplateArtifactCatalog.MatchPackageIdentityStep));
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.ManifestMismatch,
+                        TemplateArtifactCatalog.MatchPackageIdentityStep
+                    )
+                );
         }
 
         [Test]
@@ -521,7 +546,11 @@ public class TemplateArtifactCatalogTests
     {
         private static readonly Dictionary<
             string,
-            (Action<CatalogWorkspace> Arrange, Func<CatalogWorkspace, DmsDataStoreProvisioningOptions>? Options, DmsDatabaseTemplate Template)
+            (
+                Action<CatalogWorkspace> Arrange,
+                Func<CatalogWorkspace, DmsDataStoreProvisioningOptions>? Options,
+                DmsDatabaseTemplate Template
+            )
         > _refused = new()
         {
             ["engine"] = (
@@ -535,17 +564,24 @@ public class TemplateArtifactCatalogTests
                 DmsDatabaseTemplate.Sample
             ),
             ["data standard declared by the manifest"] = (
-                workspace => workspace.Build(Mutated(workspace, manifest => manifest["dataStandardVersion"] = "5.3.0")),
+                workspace =>
+                    workspace.Build(
+                        Mutated(workspace, manifest => manifest["dataStandardVersion"] = "5.3.0")
+                    ),
                 null,
                 DmsDatabaseTemplate.Minimal
             ),
             ["data standard expected by the deployment"] = (
                 workspace => workspace.Build(workspace.MinimalBuilder()),
-                workspace => Expecting(workspace, compatibility => compatibility.DataStandardVersion = "6.1.0"),
+                workspace =>
+                    Expecting(workspace, compatibility => compatibility.DataStandardVersion = "6.1.0"),
                 DmsDatabaseTemplate.Minimal
             ),
             ["effective schema hash"] = (
-                workspace => workspace.Build(Mutated(workspace, manifest => manifest["effectiveSchemaHash"] = _otherHash)),
+                workspace =>
+                    workspace.Build(
+                        Mutated(workspace, manifest => manifest["effectiveSchemaHash"] = _otherHash)
+                    ),
                 null,
                 DmsDatabaseTemplate.Minimal
             ),
@@ -557,23 +593,31 @@ public class TemplateArtifactCatalogTests
             ["projects: the manifest declares more"] = (
                 workspace =>
                     workspace.Build(
-                        Mutated(workspace, manifest => manifest["projects"] = new JsonArray("edfi", "tpdm", "sample"))
+                        Mutated(
+                            workspace,
+                            manifest => manifest["projects"] = new JsonArray("edfi", "tpdm", "sample")
+                        )
                     ),
                 null,
                 DmsDatabaseTemplate.Minimal
             ),
             ["api schema format version expected"] = (
                 workspace => workspace.Build(workspace.MinimalBuilder()),
-                workspace => Expecting(workspace, compatibility => compatibility.ApiSchemaFormatVersion = "2.0.0"),
+                workspace =>
+                    Expecting(workspace, compatibility => compatibility.ApiSchemaFormatVersion = "2.0.0"),
                 DmsDatabaseTemplate.Minimal
             ),
             ["relational mapping version expected"] = (
                 workspace => workspace.Build(workspace.MinimalBuilder()),
-                workspace => Expecting(workspace, compatibility => compatibility.RelationalMappingVersion = "v3"),
+                workspace =>
+                    Expecting(workspace, compatibility => compatibility.RelationalMappingVersion = "v3"),
                 DmsDatabaseTemplate.Minimal
             ),
             ["document json column type"] = (
-                workspace => workspace.Build(Mutated(workspace, manifest => manifest["documentJsonColumnType"] = "json")),
+                workspace =>
+                    workspace.Build(
+                        Mutated(workspace, manifest => manifest["documentJsonColumnType"] = "json")
+                    ),
                 null,
                 DmsDatabaseTemplate.Minimal
             ),
@@ -613,8 +657,10 @@ public class TemplateArtifactCatalogTests
         private Outcome _projectsInAnotherCaseAndOrder = null!;
         private Outcome _optionalExpectationsMet = null!;
 
-        private static TestTemplatePackageBuilder Mutated(CatalogWorkspace workspace, Action<JsonObject> mutate) =>
-            workspace.MinimalBuilder().WithManifest(mutate);
+        private static TestTemplatePackageBuilder Mutated(
+            CatalogWorkspace workspace,
+            Action<JsonObject> mutate
+        ) => workspace.MinimalBuilder().WithManifest(mutate);
 
         private static DmsDataStoreProvisioningOptions Expecting(
             CatalogWorkspace workspace,
@@ -678,7 +724,8 @@ public class TemplateArtifactCatalogTests
         }
 
         [Test]
-        public void It_covers_every_comparison() => _outcomes.Keys.Should().BeEquivalentTo(_expectedCheck.Keys);
+        public void It_covers_every_comparison() =>
+            _outcomes.Keys.Should().BeEquivalentTo(_expectedCheck.Keys);
 
         [Test]
         public void It_releases_the_operation_directory_on_every_mismatch() =>
@@ -731,20 +778,19 @@ public class TemplateArtifactCatalogTests
         public void It_is_not_ready_on_the_effective_schema_hash_for_both_templates() =>
             _hashReasons
                 .Should()
-                .BeEquivalentTo(
-                    [
-                        Reason(DmsDatabaseTemplate.Minimal, "EffectiveSchemaHash"),
-                        Reason(DmsDatabaseTemplate.Sample, "EffectiveSchemaHash"),
-                    ]
-                );
+                .BeEquivalentTo([
+                    Reason(DmsDatabaseTemplate.Minimal, "EffectiveSchemaHash"),
+                    Reason(DmsDatabaseTemplate.Sample, "EffectiveSchemaHash"),
+                ]);
 
         [Test]
         public void It_is_not_ready_on_the_project_set_for_both_templates() =>
             _projectReasons
                 .Should()
-                .BeEquivalentTo(
-                    [Reason(DmsDatabaseTemplate.Minimal, "Projects"), Reason(DmsDatabaseTemplate.Sample, "Projects")]
-                );
+                .BeEquivalentTo([
+                    Reason(DmsDatabaseTemplate.Minimal, "Projects"),
+                    Reason(DmsDatabaseTemplate.Sample, "Projects"),
+                ]);
 
         [Test]
         public void It_releases_every_operation_directory() => _workspace.OperationEntries.Should().BeEmpty();
@@ -753,7 +799,9 @@ public class TemplateArtifactCatalogTests
             new(
                 DmsProvisioningFailureCode.ManifestMismatch,
                 TemplateArtifactCatalog.CatalogProbeFor(template),
-                DmsProvisioningDiagnostic.ForOperation($"{TemplateArtifactCatalog.MatchConfigurationStep}.{check}")
+                DmsProvisioningDiagnostic.ForOperation(
+                    $"{TemplateArtifactCatalog.MatchConfigurationStep}.{check}"
+                )
             );
     }
 
@@ -796,11 +844,17 @@ public class TemplateArtifactCatalogTests
             _workspace = new CatalogWorkspace();
             _workspace.BuildBoth();
             TemplateArtifactCatalog catalog = _workspace.Catalog();
-            _firstPin = PinOf(await catalog.ResolveAsync(DmsDatabaseTemplate.Minimal, CancellationToken.None));
+            _firstPin = PinOf(
+                await catalog.ResolveAsync(DmsDatabaseTemplate.Minimal, CancellationToken.None)
+            );
 
             // The same package rebuilt from different artifact bytes: same schema, inventory, and identity.
-            _workspace.Build(_workspace.MinimalBuilder().WithArtifact(Encoding.UTF8.GetBytes("-- another dump\n")));
-            _secondPin = PinOf(await catalog.ResolveAsync(DmsDatabaseTemplate.Minimal, CancellationToken.None));
+            _workspace.Build(
+                _workspace.MinimalBuilder().WithArtifact(Encoding.UTF8.GetBytes("-- another dump\n"))
+            );
+            _secondPin = PinOf(
+                await catalog.ResolveAsync(DmsDatabaseTemplate.Minimal, CancellationToken.None)
+            );
 
             _engine = new SpyDmsTargetEngine();
             DmsDataStoreProvisioningService orchestrator = Orchestrator(catalog, _engine);
@@ -830,7 +884,13 @@ public class TemplateArtifactCatalogTests
 
         [Test]
         public void It_differs_only_in_the_package_and_artifact_hashes() =>
-            (_secondPin with { PackageSha256 = _firstPin.PackageSha256, ArtifactSha256 = _firstPin.ArtifactSha256 })
+            (
+                _secondPin with
+                {
+                    PackageSha256 = _firstPin.PackageSha256,
+                    ArtifactSha256 = _firstPin.ArtifactSha256,
+                }
+            )
                 .Should()
                 .Be(_firstPin);
 
@@ -857,13 +917,17 @@ public class TemplateArtifactCatalogTests
     }
 
     [TestFixture]
-    public class Given_the_operation_root_cannot_be_used
+    public class Given_the_claim_is_refused
     {
         private CatalogWorkspace _workspace = null!;
-        private DmsOperationId _operationId;
-        private string _foreignFilePath = null!;
+        private DmsOperationId _takenId;
+        private DmsOperationId _racedId;
+        private string _takenFilePath = null!;
+        private string _racedFilePath = null!;
         private DmsArtifactResolution _rootMissing = null!;
         private TemplateArtifactStaging _nameTaken = null!;
+        private TemplateArtifactStaging _nameRaced = null!;
+        private LogEntry[] _residueLogs = [];
 
         [SetUp]
         public async Task Setup()
@@ -874,19 +938,62 @@ public class TemplateArtifactCatalogTests
                 .Catalog(WithoutOperationsRoot(_workspace))
                 .ResolveAsync(DmsDatabaseTemplate.Minimal, CancellationToken.None);
 
-            // An entry of the generated name that this operation did not create.
-            _operationId = DmsOperationId.New();
-            string taken = _workspace.OperationDirectoryPathOf(_operationId);
-            Directory.CreateDirectory(taken);
-            _foreignFilePath = Path.Combine(taken, "foreign.txt");
-            await File.WriteAllTextAsync(_foreignFilePath, "not ours");
+            // An entry of the generated name held before the operation starts.
+            _takenId = DmsOperationId.New();
+            _takenFilePath = PlantForeignEntry(_takenId);
             _nameTaken = await _workspace
                 .Catalog()
-                .StageAsync(DmsDatabaseTemplate.Minimal, _operationId, CancellationToken.None);
+                .StageAsync(DmsDatabaseTemplate.Minimal, _takenId, CancellationToken.None);
+
+            // A competitor that wins the name after every check and immediately before the claim.
+            _racedId = DmsOperationId.New();
+            TemplateArtifactCatalog raced = _workspace.Catalog();
+            raced.BeforeClaim = () => _racedFilePath = PlantForeignEntry(_racedId);
+            _nameRaced = await raced.StageAsync(
+                DmsDatabaseTemplate.Minimal,
+                _racedId,
+                CancellationToken.None
+            );
+
+            _residueLogs =
+            [
+                .. _workspace.Logger.Entries.Where(entry =>
+                    entry.EventId == TemplateArtifactCatalog.ResidueLeft
+                ),
+            ];
         }
 
         [TearDown]
         public void TearDown() => _workspace.Dispose();
+
+        private string PlantForeignEntry(DmsOperationId operationId)
+        {
+            string taken = _workspace.OperationDirectoryPathOf(operationId);
+            Directory.CreateDirectory(taken);
+            string foreignFilePath = Path.Combine(taken, "foreign.txt");
+            File.WriteAllText(foreignFilePath, "not ours");
+            return foreignFilePath;
+        }
+
+        private static void ShouldBeTransientWithoutResidue(TemplateArtifactStaging staging)
+        {
+            TemplateArtifactStaging.Failure failure = staging
+                .Should()
+                .BeOfType<TemplateArtifactStaging.Failure>()
+                .Subject;
+            using AssertionScope scope = new();
+            (failure.Detail.Code, failure.Detail.Category, failure.Detail.Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.StagingFailed,
+                        DmsProvisioningFailureCategory.Transient,
+                        TemplateArtifactCatalog.StagePackageStep
+                    )
+                );
+            failure.Detail.Diagnostic.ExceptionTypeChain.Should().Be(typeof(IOException).FullName);
+            failure.Cleanup.HasResidue.Should().BeFalse();
+        }
 
         [Test]
         public void It_reports_a_missing_root_as_transient_staging_failure()
@@ -906,28 +1013,109 @@ public class TemplateArtifactCatalogTests
         }
 
         [Test]
-        public void It_refuses_a_taken_name_as_transient_without_claiming_it()
+        public void It_refuses_a_name_already_held_without_residue() =>
+            ShouldBeTransientWithoutResidue(_nameTaken);
+
+        [Test]
+        public void It_refuses_a_name_a_competitor_won_at_the_claim_without_residue() =>
+            ShouldBeTransientWithoutResidue(_nameRaced);
+
+        [Test]
+        public void It_leaves_the_foreign_entries_untouched()
         {
-            TemplateArtifactStaging.Failure failure = _nameTaken
-                .Should()
-                .BeOfType<TemplateArtifactStaging.Failure>()
-                .Subject;
-            using AssertionScope scope = new();
-            (failure.Detail.Code, failure.Detail.Category, failure.Detail.Diagnostic.Operation)
-                .Should()
-                .Be(
-                    (
-                        DmsProvisioningFailureCode.StagingFailed,
-                        DmsProvisioningFailureCategory.Transient,
-                        TemplateArtifactCatalog.StagePackageStep
-                    )
-                );
-            failure.Cleanup.HasResidue.Should().BeFalse();
+            File.ReadAllText(_takenFilePath).Should().Be("not ours");
+            File.ReadAllText(_racedFilePath).Should().Be("not ours");
         }
 
         [Test]
-        public void It_leaves_the_foreign_entry_untouched() =>
-            File.ReadAllText(_foreignFilePath).Should().Be("not ours");
+        public void It_logs_no_residue_for_a_directory_it_did_not_claim() => _residueLogs.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_a_trust_policy_larger_than_the_catalog_reads
+    {
+        private Outcome _outcome = null!;
+
+        [SetUp]
+        public async Task Setup() =>
+            _outcome = await ResolveInOwnWorkspace(
+                workspace =>
+                {
+                    workspace.BuildBoth();
+                    File.WriteAllBytes(
+                        workspace.TrustPolicyPath,
+                        new byte[TemplateArtifactCatalog.MaxTrustPolicyBytes + 1]
+                    );
+                },
+                WithoutOperationsRoot
+            );
+
+        [Test]
+        public void It_reports_the_policy_as_not_ready_before_staging()
+        {
+            DmsProvisioningFailure failure = FailureOf(_outcome.Resolution);
+            using AssertionScope scope = new();
+            (failure.Code, failure.Category, failure.Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.StartupValidationFailed,
+                        DmsProvisioningFailureCategory.NotReady,
+                        TemplateArtifactCatalog.TrustPolicyStep
+                    )
+                );
+            failure.Diagnostic.ExceptionTypeChain.Should().Be(typeof(TemplateTrustPolicyException).FullName);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_text_source_whose_reported_length_understates_its_content
+    {
+        private const int Limit = 64;
+        private string? _overLimit;
+        private string? _atLimit;
+        private string? _withByteOrderMark;
+
+        /// <summary>A source that reports one byte however many it yields, the way a file replaced after it was measured would.</summary>
+        private sealed class UnderstatingStream(byte[] bytes) : MemoryStream(bytes)
+        {
+            public override long Length => 1;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await using UnderstatingStream overLimit = new(new byte[Limit + 1]);
+            _overLimit = await TemplateArtifactCatalog.ReadBoundedTextAsync(
+                overLimit,
+                Limit,
+                CancellationToken.None
+            );
+
+            await using UnderstatingStream atLimit = new(Encoding.ASCII.GetBytes(new string('x', Limit)));
+            _atLimit = await TemplateArtifactCatalog.ReadBoundedTextAsync(
+                atLimit,
+                Limit,
+                CancellationToken.None
+            );
+
+            await using UnderstatingStream withByteOrderMark = new([0xEF, 0xBB, 0xBF, (byte)'{', (byte)'}']);
+            _withByteOrderMark = await TemplateArtifactCatalog.ReadBoundedTextAsync(
+                withByteOrderMark,
+                Limit,
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_refuses_content_beyond_the_limit_whatever_the_length_says() =>
+            _overLimit.Should().BeNull();
+
+        [Test]
+        public void It_accepts_content_at_the_limit() => _atLimit.Should().Be(new string('x', Limit));
+
+        [Test]
+        public void It_skips_a_utf8_byte_order_mark() => _withByteOrderMark.Should().Be("{}");
     }
 
     [TestFixture]
@@ -939,7 +1127,9 @@ public class TemplateArtifactCatalogTests
         [SetUp]
         public void Setup()
         {
-            _defaultRoot = TemplateArtifactCatalog.OperationRootDirectoryFor(new DmsDataStoreProvisioningOptions());
+            _defaultRoot = TemplateArtifactCatalog.OperationRootDirectoryFor(
+                new DmsDataStoreProvisioningOptions()
+            );
             _configuredRoot = TemplateArtifactCatalog.OperationRootDirectoryFor(
                 new DmsDataStoreProvisioningOptions
                 {

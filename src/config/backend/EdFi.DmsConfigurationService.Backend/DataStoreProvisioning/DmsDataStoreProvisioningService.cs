@@ -88,6 +88,7 @@ public sealed class DmsDataStoreProvisioningService(
 
         // 6.2 runs before the lock so no lock is held during file work (6.3 step 1); nothing to clean up.
         DmsArtifactResolution resolution = await catalog.ResolveAsync(request.Template, cancellationToken);
+        DmsCleanupReport resolutionCleanup;
         switch (resolution)
         {
             case DmsArtifactResolution.Failure failed:
@@ -100,7 +101,9 @@ public sealed class DmsDataStoreProvisioningService(
                     ),
                     resolved.Cleanup
                 );
-            case DmsArtifactResolution.Resolved:
+            case DmsArtifactResolution.Resolved resolved:
+                // What resolution could not delete stays in every later result of this create (6.11).
+                resolutionCleanup = resolved.Cleanup;
                 break;
             default:
                 throw new InvalidOperationException("Unknown artifact resolution.");
@@ -109,6 +112,7 @@ public sealed class DmsDataStoreProvisioningService(
         return await RunUnderTargetLockAsync<DmsDataStoreCreateResult>(
             request.TargetName,
             CreateOperationName,
+            resolutionCleanup,
             async scope =>
             {
                 DmsLiveTargetState state = await PreambleAsync(scope, request.TargetName);
@@ -142,6 +146,7 @@ public sealed class DmsDataStoreProvisioningService(
         return await RunUnderTargetLockAsync<DmsDataStoreDeleteResult>(
             request.TargetName,
             DeleteOperationName,
+            DmsCleanupReport.Clean,
             async scope =>
             {
                 DmsLiveTargetState state = await PreambleAsync(scope, request.TargetName);
@@ -184,11 +189,13 @@ public sealed class DmsDataStoreProvisioningService(
     /// Acquires the target lock (6.1 step 4), runs <paramref name="body"/> under it, and assembles the
     /// result: a step failure becomes <paramref name="failure"/>; loss of the holder becomes
     /// <c>LockLost</c>; caller cancellation and unexpected exceptions propagate. The holder is disposed,
-    /// releasing the lock, on every path.
+    /// releasing the lock, on every path. <paramref name="priorCleanup"/> is what the steps before the lock
+    /// could not clean up; every failure result carries it.
     /// </summary>
     private async Task<TResult> RunUnderTargetLockAsync<TResult>(
         DmsTargetDatabaseName target,
         string operationName,
+        DmsCleanupReport priorCleanup,
         Func<LockScope, Task<TResult>> body,
         Func<DmsProvisioningFailure, DmsCleanupReport, TResult> failure,
         CancellationToken cancellationToken
@@ -196,6 +203,8 @@ public sealed class DmsDataStoreProvisioningService(
     {
         DmsDataStoreProvisioningOptions settings = options.Value;
         DmsOperationId operation = DmsOperationId.New();
+        TResult Failed(DmsProvisioningFailure detail) =>
+            Fail(failure, operation, operationName, detail, priorCleanup);
 
         // Cancellation during acquisition propagates: nothing was acquired and nothing was created.
         DmsTargetLockResult lockResult = await engine.AcquireTargetLockAsync(
@@ -210,20 +219,14 @@ public sealed class DmsDataStoreProvisioningService(
                 holder = acquired.Holder;
                 break;
             case DmsTargetLockResult.Timeout:
-                return Fail(
-                    failure,
-                    operation,
-                    operationName,
+                return Failed(
                     DmsProvisioningFailure.Create(
                         DmsProvisioningFailureCode.LockTimeout,
                         DmsProvisioningDiagnostic.ForOperation(AcquireTargetLockStep)
                     )
                 );
             case DmsTargetLockResult.Failure lockFailure:
-                return Fail(
-                    failure,
-                    operation,
-                    operationName,
+                return Failed(
                     DmsProvisioningFailure.Create(
                         DmsProvisioningFailureCode.LockUnavailable,
                         lockFailure.Diagnostic
@@ -242,7 +245,7 @@ public sealed class DmsDataStoreProvisioningService(
             }
             catch (DmsProvisioningFailedException stepFailure)
             {
-                return Fail(failure, operation, operationName, stepFailure.Failure);
+                return Failed(stepFailure.Failure);
             }
             catch (OperationCanceledException)
                 when (!cancellationToken.IsCancellationRequested && holder.LostToken.IsCancellationRequested)
@@ -259,14 +262,15 @@ public sealed class DmsDataStoreProvisioningService(
             scope.CurrentStep,
             scope.LossAccompanyingTypeChain ?? "nothing"
         );
-        return failure(scope.LockLostFailure(), DmsCleanupReport.Clean);
+        return failure(scope.LockLostFailure(), priorCleanup);
     }
 
     private TResult Fail<TResult>(
         Func<DmsProvisioningFailure, DmsCleanupReport, TResult> failure,
         DmsOperationId operation,
         string operationName,
-        DmsProvisioningFailure detail
+        DmsProvisioningFailure detail,
+        DmsCleanupReport cleanup
     )
     {
         logger.LogWarning(
@@ -279,8 +283,8 @@ public sealed class DmsDataStoreProvisioningService(
             detail.Category
         );
 
-        // The shell creates no resource, so there is nothing cleanup could leave behind (6.11).
-        return failure(detail, DmsCleanupReport.Clean);
+        // The shell itself creates no resource; the report is what the steps before the lock left behind (6.11).
+        return failure(detail, cleanup);
     }
 
     private DmsProvisioningFailure? Refusal() =>

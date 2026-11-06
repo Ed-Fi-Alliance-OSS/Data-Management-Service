@@ -410,6 +410,74 @@ public class DmsDataStoreProvisioningServiceShellTests
     }
 
     [TestFixture]
+    public class Given_resolution_left_residue_and_the_create_fails_under_the_lock
+    {
+        private static readonly DmsCleanupReport _resolutionCleanup = new([
+            new DmsCleanupResidue(DmsResidueKind.OperationDirectory, "dms-provision-0123456789ab"),
+        ]);
+
+        private DmsDataStoreCreateResult _lockTimedOut = null!;
+        private DmsDataStoreCreateResult _protectedTarget = null!;
+        private DmsDataStoreCreateResult _lockLost = null!;
+
+        private static Harness WithResolutionResidue()
+        {
+            Harness harness = new();
+            harness.Catalog.OnResolve = _ => new DmsArtifactResolution.Resolved(Pin(), _resolutionCleanup);
+            return harness;
+        }
+
+        private static DmsCleanupReport CleanupOf(DmsDataStoreCreateResult result) =>
+            result.Should().BeOfType<DmsDataStoreCreateResult.Failure>().Subject.Cleanup;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            Harness timeout = WithResolutionResidue();
+            timeout.Engine.OnAcquireTargetLock = _ =>
+                Task.FromResult<DmsTargetLockResult>(new DmsTargetLockResult.Timeout());
+            _lockTimedOut = await timeout.Service.CreateAsync(CreateRequest(), CancellationToken.None);
+
+            Harness protectedTarget = WithResolutionResidue();
+            protectedTarget.Engine.OnInspect = _ =>
+                Task.FromResult<DmsLiveTargetState>(new DmsLiveTargetState.Protected());
+            _protectedTarget = await protectedTarget.Service.CreateAsync(
+                CreateRequest(),
+                CancellationToken.None
+            );
+
+            Harness lost = WithResolutionResidue();
+            lost.Engine.OnInspect = _ =>
+            {
+                lost.OnlyHolder.Lose();
+                return Task.FromResult<DmsLiveTargetState>(new DmsLiveTargetState.Absent());
+            };
+            _lockLost = await lost.Service.CreateAsync(CreateRequest(), CancellationToken.None);
+        }
+
+        [Test]
+        public void It_keeps_the_residue_through_a_lock_timeout()
+        {
+            FailureOf(_lockTimedOut).Code.Should().Be(DmsProvisioningFailureCode.LockTimeout);
+            CleanupOf(_lockTimedOut).Residue.Should().Equal(_resolutionCleanup.Residue);
+        }
+
+        [Test]
+        public void It_keeps_the_residue_through_a_step_failure()
+        {
+            FailureOf(_protectedTarget).Code.Should().Be(DmsProvisioningFailureCode.ProtectedTarget);
+            CleanupOf(_protectedTarget).Residue.Should().Equal(_resolutionCleanup.Residue);
+        }
+
+        [Test]
+        public void It_keeps_the_residue_through_lock_loss()
+        {
+            FailureOf(_lockLost).Code.Should().Be(DmsProvisioningFailureCode.LockLost);
+            CleanupOf(_lockLost).Residue.Should().Equal(_resolutionCleanup.Residue);
+        }
+    }
+
+    [TestFixture]
     public class Given_the_target_lock_cannot_be_acquired
     {
         private Harness _timeout = null!;

@@ -843,4 +843,58 @@ public class TemplatePackageStagerTests
         public void It_keeps_the_artifact_at_0600() =>
             _artifactMode.Should().Be(PrivateOperationDirectory.PrivateFileMode);
     }
+
+    [TestFixture]
+    public class Given_a_directory_the_caller_claimed_and_a_refused_package
+    {
+        private StagerWorkspace _workspace = null!;
+        private PrivateOperationDirectory _directory = null!;
+        private Exception? _refusal;
+        private bool _directoryLeftToOwner;
+        private bool _ownerCouldDelete;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _workspace = new StagerWorkspace();
+            TestTemplatePackage package = _workspace.Build(
+                new TestTemplatePackageBuilder().WithPolicyListingAnotherKey()
+            );
+            _directory = PrivateOperationDirectory.Create(_workspace.OperationsRoot, _workspace.OperationId);
+            _refusal = await Record.ExceptionAsync(() =>
+                TemplatePackageStager.StageAsync(
+                    _directory,
+                    package.PackagePath,
+                    package.AttestationJson,
+                    package.PackageId,
+                    package.PackageVersion,
+                    package.Policy,
+                    CancellationToken.None
+                )
+            );
+            _directoryLeftToOwner = _workspace.OperationDirectoryExists;
+            _ownerCouldDelete = _directory.TryDelete();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _directory.Dispose();
+            _workspace.Dispose();
+        }
+
+        [Test]
+        public void It_refuses_the_package() =>
+            Refusal(_refusal).Defect.Should().Be(TemplatePackageDefect.Untrusted);
+
+        [Test]
+        public void It_leaves_the_directory_to_its_owner() => _directoryLeftToOwner.Should().BeTrue();
+
+        [Test]
+        public void It_closes_its_handles_so_the_owner_can_delete()
+        {
+            _ownerCouldDelete.Should().BeTrue();
+            _workspace.OperationDirectoryExists.Should().BeFalse();
+        }
+    }
 }
