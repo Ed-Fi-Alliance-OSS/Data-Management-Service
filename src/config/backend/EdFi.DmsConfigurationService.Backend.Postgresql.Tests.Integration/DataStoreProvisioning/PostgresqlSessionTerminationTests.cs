@@ -138,10 +138,17 @@ public class PostgresqlSessionTerminationTests
 
         public DmsServerSessionId Session { get; }
 
-        public static async Task<StoppedSession> StartAsync()
+        /// <summary>Opens as <paramref name="roleName"/> (the lane admin when null); the stop itself is always issued by the lane admin.</summary>
+        public static async Task<StoppedSession> StartAsync(string? roleName = null)
         {
-            NpgsqlConnection connection = await AdminConnection()
-                .OpenAsync(PostgresqlAdminConnection.MaintenanceDatabaseName, ApplicationName, default);
+            PostgresqlAdminConnection admin = roleName is null
+                ? AdminConnection()
+                : AdminConnectionAs(roleName);
+            NpgsqlConnection connection = await admin.OpenAsync(
+                PostgresqlAdminConnection.MaintenanceDatabaseName,
+                ApplicationName,
+                default
+            );
             try
             {
                 DmsServerSessionId session = await OwnSessionAsync(connection);
@@ -579,6 +586,80 @@ public class PostgresqlSessionTerminationTests
 
         [Test]
         public void It_releases_the_terminating_session() => _terminatorReleased.Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_identity_visibility_is_revoked_while_the_server_waits
+    {
+        // The server waits this long for the stopped backend; the revoke lands as soon as the wait is
+        // observed, so the deadline only has to outlast one statement on the lane server by a wide margin.
+        private static readonly TimeSpan _waitDeadline = TimeSpan.FromSeconds(15);
+
+        private string? _admin;
+        private string? _victim;
+        private StoppedSession? _stopped;
+        private bool _waitObserved;
+        private bool _completedWithinBound;
+        private DmsSessionTermination? _verdict;
+        private bool _presentAfterVerdict;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            await RequireSuperuserOrSkipAsync();
+            await RequireServerProgramsOrSkipAsync();
+            _admin = await CreateLoginRoleAsync("revoked", SignalRole, ReadStatsRole);
+            _victim = await CreateLoginRoleAsync("victim");
+            _stopped = await StoppedSession.StartAsync(_victim);
+            Task<DmsSessionTermination> terminating = EngineAs(_admin)
+                .TerminateSessionAsync(_stopped.Session, _waitDeadline, default);
+            _waitObserved = await WaitUntilAsync(async () => await TerminatorWaitingAsync() != 0, _bound);
+            await RevokeRoleAsync(ReadStatsRole, _admin);
+            _completedWithinBound =
+                await Task.WhenAny(terminating, Task.Delay(_waitDeadline + _bound)) == terminating;
+            _verdict = _completedWithinBound ? await terminating : null;
+            _presentAfterVerdict = await SessionPresentAsync(_stopped.Session);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_stopped is not null)
+            {
+                await _stopped.DisposeAsync();
+            }
+
+            if (_victim is not null)
+            {
+                await DropRoleAsync(_victim);
+            }
+
+            if (_admin is not null)
+            {
+                await DropRoleAsync(_admin);
+            }
+        }
+
+        [Test]
+        public void It_signalled_before_the_revoke() => _waitObserved.Should().BeTrue();
+
+        [Test]
+        public void It_returns_once_the_server_wait_ends() => _completedWithinBound.Should().BeTrue();
+
+        [Test]
+        public void It_refuses_rather_than_reporting_the_session_gone() =>
+            _verdict
+                .Should()
+                .Be(
+                    new DmsSessionTermination.NotTerminated(
+                        DmsSessionTerminationFailure.PrivilegeMissing,
+                        DmsProvisioningDiagnostic.ForOperation(PostgresqlSessionQueries.IdentifySessionStep)
+                    )
+                );
+
+        [Test]
+        public void It_leaves_the_backend_listed() => _presentAfterVerdict.Should().BeTrue();
     }
 
     [TestFixture]

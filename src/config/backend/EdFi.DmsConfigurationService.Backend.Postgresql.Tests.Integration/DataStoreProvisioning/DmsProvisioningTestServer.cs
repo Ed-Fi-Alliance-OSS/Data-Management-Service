@@ -321,6 +321,11 @@ internal static class DmsProvisioningTestServer
             $"GRANT {PostgresqlIdentifiers.Quote(role)} TO {PostgresqlIdentifiers.Quote(toRole)};"
         );
 
+    public static Task RevokeRoleAsync(string role, string fromRole) =>
+        ExecuteOnServerAsync(
+            $"REVOKE {PostgresqlIdentifiers.Quote(role)} FROM {PostgresqlIdentifiers.Quote(fromRole)};"
+        );
+
     /// <summary>A database the tests own: executes statements on it, reads its catalog, and drops it on dispose.</summary>
     public sealed class TestDatabase(string name) : IAsyncDisposable
     {
