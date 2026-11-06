@@ -14,7 +14,10 @@ public class TemplateTrustPolicyReaderTests
     private const string Fingerprint = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     private static string Policy(params string[] producersJson) =>
-        $$"""{ "_comment": "operator notes", "version": 1, "producers": [ {{string.Join(",", producersJson)}} ] }""";
+        $$"""{ "_comment": "operator notes {{WellFormedPair}}", "version": 1, "producers": [ {{string.Join(",", producersJson)}} ] }""";
+
+    /// <summary>A well-formed surrogate pair (U+1F600) in an ignored member: valid non-ASCII text must still load.</summary>
+    private const string WellFormedPair = "😀";
 
     private static string NugetProducer(
         string name = "edfi-alliance",
@@ -206,7 +209,42 @@ public class TemplateTrustPolicyReaderTests
                 Policy(valid, NugetProducer(SentinelName.ToUpperInvariant())),
                 wrap: false
             );
+
+            // Text that is not well-formed Unicode: JsonDocument accepts it and throws only when the text is
+            // read, so each case must become a document defect, never an escaped exception or a read value.
+            Record(
+                "surrogate escape in name",
+                valid.Replace(
+                    $"\"name\":\"{SentinelName}\"",
+                    "\"name\":\"" + Escape + "\"",
+                    StringComparison.Ordinal
+                )
+            );
+            Record(
+                "surrogate escape in keyId",
+                valid.Replace(signer.KeyId, Escape, StringComparison.Ordinal)
+            );
+            Record(
+                "surrogate escape as a member name",
+                $$$"""{ "version": 1, "{{{Escape}}}": 1, "producers": [ {{{valid}}} ] }""",
+                wrap: false
+            );
+            Record(
+                "lone surrogate character in text",
+                $$$"""{ "version": 1, "_comment": "{{{LoneSurrogate}}}", "producers": [ {{{valid}}} ] }""",
+                wrap: false
+            );
+            Record(
+                "surrogate escape in fingerprint",
+                NugetProducer(SentinelName, fingerprints: "\"" + Escape + "\"")
+            );
         }
+
+        /// <summary>The six-character JSON escape of an unpaired high surrogate.</summary>
+        private const string Escape = "\\uD800";
+
+        /// <summary>An unpaired high surrogate character itself.</summary>
+        private const string LoneSurrogate = "\uD800";
 
         private void Record(string label, string json, bool wrap = true)
         {
@@ -298,6 +336,24 @@ public class TemplateTrustPolicyReaderTests
         [Test]
         public void It_rejects_duplicate_producer_names_ignoring_case() =>
             ShouldReject("duplicate names ignoring case");
+
+        [Test]
+        public void It_rejects_text_that_is_not_well_formed_unicode_as_a_document_defect()
+        {
+            foreach (
+                string label in new[]
+                {
+                    "surrogate escape in name",
+                    "surrogate escape in keyId",
+                    "surrogate escape as a member name",
+                    "lone surrogate character in text",
+                    "surrogate escape in fingerprint",
+                }
+            )
+            {
+                _messages[label].Should().Contain("well-formed Unicode", label);
+            }
+        }
 
         [Test]
         public void It_names_the_rule_and_position_but_never_a_value()

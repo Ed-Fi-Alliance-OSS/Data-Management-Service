@@ -615,6 +615,127 @@ public class TemplateAttestationVerifierTests
     }
 
     /// <summary>
+    /// <see cref="System.Text.Json.JsonDocument"/> accepts an unpaired surrogate escape and invalid UTF-8 bytes
+    /// inside strings and throws only when the text is read, so without the parse-time decode these inputs would
+    /// escape as exceptions instead of verdicts. Every case here is also a verification-order pin: the signed
+    /// payload cases carry valid signatures, so <c>Malformed</c> (not <c>BadSignature</c>) proves the payload was
+    /// judged after the signature.
+    /// </summary>
+    [TestFixture]
+    public class Given_documents_and_payloads_with_malformed_unicode
+    {
+        private const string Escape = "\\uD800";
+
+        private readonly Dictionary<string, TrustVerdict> _verdicts = [];
+
+        [SetUp]
+        public void Setup()
+        {
+            _verdicts.Clear();
+            using EphemeralAttestationSigner signer = new(ProducerName);
+            TemplateTrustPolicy policy = signer.Policy;
+            byte[] payload = EphemeralAttestationSigner.Payload(
+                PackageId,
+                PackageVersion,
+                _packageSha256,
+                ProducerName
+            );
+            string valid = signer.Document(payload, signer.Sign(payload));
+
+            _verdicts["escape in a document value"] = Verify(
+                valid.Replace(Convert.ToBase64String(payload), Escape, StringComparison.Ordinal),
+                policy
+            );
+            _verdicts["escape as a document member name"] = Verify(
+                valid.Replace("{\"version\"", "{\"" + Escape + "\":1,\"version\"", StringComparison.Ordinal),
+                policy
+            );
+            _verdicts["escape as duplicate member names"] = Verify(
+                valid.Replace(
+                    "{\"version\"",
+                    "{\"" + Escape + "\":1,\"" + Escape + "\":2,\"version\"",
+                    StringComparison.Ordinal
+                ),
+                policy
+            );
+            _verdicts["lone surrogate character in the document"] = Verify(
+                valid.Replace("{\"version\"", "{\"note\":\"\uD800\",\"version\"", StringComparison.Ordinal),
+                policy
+            );
+
+            _verdicts["escape inside a signed packageId"] = Verify(
+                Signed(signer, PackageId, PackageId[..4] + Escape + PackageId[4..]),
+                policy
+            );
+            _verdicts["escape as a signed member name"] = Verify(
+                Signed(signer, "{\"attestationVersion\"", "{\"" + Escape + "\":1,\"attestationVersion\""),
+                policy
+            );
+            byte[] invalidUtf8 = [.. payload];
+            invalidUtf8[payload.AsSpan().IndexOf("Minimal"u8)] = 0xFF;
+            _verdicts["invalid UTF-8 inside a signed packageId"] = Verify(
+                signer.Document(invalidUtf8, signer.Sign(invalidUtf8)),
+                policy
+            );
+            _verdicts["well-formed surrogate pair in a signed member"] = Verify(
+                Signed(signer, "{\"attestationVersion\"", "{\"note\":\"😀\",\"attestationVersion\""),
+                policy
+            );
+        }
+
+        /// <summary>A correctly signed payload whose text has <paramref name="find"/> replaced by <paramref name="replace"/>.</summary>
+        private static string Signed(EphemeralAttestationSigner signer, string find, string replace)
+        {
+            string payloadText = Encoding.UTF8.GetString(
+                EphemeralAttestationSigner.Payload(PackageId, PackageVersion, _packageSha256, ProducerName)
+            );
+            byte[] payload = Encoding.UTF8.GetBytes(
+                payloadText.Replace(find, replace, StringComparison.Ordinal)
+            );
+            return signer.Document(payload, signer.Sign(payload));
+        }
+
+        [Test]
+        public void It_refuses_a_document_whose_text_is_not_well_formed_unicode()
+        {
+            foreach (
+                string label in new[]
+                {
+                    "escape in a document value",
+                    "escape as a document member name",
+                    "escape as duplicate member names",
+                    "lone surrogate character in the document",
+                }
+            )
+            {
+                _verdicts[label].Should().Be(Refusal(TrustRefusalReason.Malformed), label);
+            }
+        }
+
+        [Test]
+        public void It_refuses_a_correctly_signed_payload_whose_text_is_not_well_formed_unicode()
+        {
+            foreach (
+                string label in new[]
+                {
+                    "escape inside a signed packageId",
+                    "escape as a signed member name",
+                    "invalid UTF-8 inside a signed packageId",
+                }
+            )
+            {
+                _verdicts[label].Should().Be(Refusal(TrustRefusalReason.Malformed), label);
+            }
+        }
+
+        [Test]
+        public void It_accepts_well_formed_non_ascii_text() =>
+            _verdicts["well-formed surrogate pair in a signed member"]
+                .Should()
+                .Be(new TrustVerdict.Trusted(ProducerName));
+    }
+
+    /// <summary>
     /// The committed fixture under <c>Fixtures/DataStoreProvisioning/Trust</c> was produced once by the delivered
     /// PowerShell tooling (<c>new-template-dev-trust.ps1 -Purpose Dev</c> and <c>Write-TemplatePackageAttestation</c>
     /// over a tiny package); the C# reader and verifier must accept exactly what that tooling wrote.

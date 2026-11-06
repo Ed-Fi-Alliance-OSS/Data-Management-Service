@@ -17,8 +17,10 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
 /// to the SHA-256 of its decoded <c>publicKeySpkiB64</c>, whose <c>algorithm</c> is exactly
 /// <c>ECDSA_P256_SHA256</c>, and whose key imports and is proven on P-256; each <c>nuget-author-signature</c>
 /// producer at least one 64-hex certificate fingerprint. Unknown members are ignored so the tracked policy's
-/// comment member and a future producer entry load verbatim. A violated rule throws
-/// <see cref="TemplateTrustPolicyException"/> naming the rule and the entry position, never a value.
+/// comment member and a future producer entry load verbatim. Every member name and string value must be
+/// well-formed Unicode; an unpaired surrogate escape or character is reported as a defect of the document,
+/// never read as a value. A violated rule throws <see cref="TemplateTrustPolicyException"/> naming the rule and
+/// the entry position, never a value.
 /// </summary>
 public static class TemplateTrustPolicyReader
 {
@@ -29,14 +31,13 @@ public static class TemplateTrustPolicyReader
             throw new TemplateTrustPolicyException("The trust policy is empty.");
         }
 
-        JsonDocument document;
-        try
+        if (!TrustContract.TryParse(json, out JsonDocument? document, out TrustContract.ParseFailure failure))
         {
-            document = JsonDocument.Parse(json, TrustContract.DocumentOptions);
-        }
-        catch (JsonException)
-        {
-            throw new TemplateTrustPolicyException("The trust policy is not valid JSON.");
+            throw new TemplateTrustPolicyException(
+                failure == TrustContract.ParseFailure.MalformedText
+                    ? "The trust policy contains text that is not well-formed Unicode."
+                    : "The trust policy is not valid JSON."
+            );
         }
 
         using (document)

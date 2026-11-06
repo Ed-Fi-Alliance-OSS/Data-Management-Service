@@ -38,29 +38,30 @@ public sealed record TemplateAttestation(string PayloadB64, TemplateAttestation.
     /// <summary>
     /// Parses a document. False unless it is a JSON object with an integer <c>version</c> equal to
     /// <see cref="SupportedVersion"/>, a non-blank string <c>payloadB64</c>, and a <c>signature</c> object whose
-    /// <c>algorithm</c>, <c>keyId</c>, and <c>valueB64</c> are strings. Unknown members are ignored.
+    /// <c>algorithm</c>, <c>keyId</c>, and <c>valueB64</c> are strings. Text that is not well-formed Unicode
+    /// (an unpaired surrogate escape or character) is not a document. Unknown members are ignored.
     /// </summary>
     public static bool TryParse(string json, [NotNullWhen(true)] out TemplateAttestation? attestation)
     {
         ArgumentNullException.ThrowIfNull(json);
         attestation = null;
-        try
-        {
-            using JsonDocument document = JsonDocument.Parse(json, TrustContract.DocumentOptions);
-            attestation = ReadDocument(document.RootElement);
-        }
-        catch (JsonException)
+        if (!TrustContract.TryParse(json, out JsonDocument? document, out _))
         {
             return false;
         }
 
-        return attestation is not null;
+        using (document)
+        {
+            attestation = ReadDocument(document.RootElement);
+            return attestation is not null;
+        }
     }
 
     /// <summary>
     /// Parses the decoded payload bytes. False unless they are UTF-8 JSON for an object with an integer
     /// <c>attestationVersion</c> equal to <see cref="SupportedVersion"/> and string <c>packageId</c>,
-    /// <c>packageVersion</c>, <c>packageSha256</c>, and <c>producer</c> members. Unknown members are ignored.
+    /// <c>packageVersion</c>, <c>packageSha256</c>, and <c>producer</c> members. Text that is not well-formed
+    /// Unicode (an unpaired surrogate escape or invalid UTF-8 bytes) is not a payload. Unknown members are ignored.
     /// </summary>
     public static bool TryParsePayload(
         ReadOnlyMemory<byte> payloadBytes,
@@ -68,17 +69,16 @@ public sealed record TemplateAttestation(string PayloadB64, TemplateAttestation.
     )
     {
         payload = null;
-        try
-        {
-            using JsonDocument document = JsonDocument.Parse(payloadBytes, TrustContract.DocumentOptions);
-            payload = ReadPayload(document.RootElement);
-        }
-        catch (JsonException)
+        if (!TrustContract.TryParse(payloadBytes, out JsonDocument? document, out _))
         {
             return false;
         }
 
-        return payload is not null;
+        using (document)
+        {
+            payload = ReadPayload(document.RootElement);
+            return payload is not null;
+        }
     }
 
     private static TemplateAttestation? ReadDocument(JsonElement root)
