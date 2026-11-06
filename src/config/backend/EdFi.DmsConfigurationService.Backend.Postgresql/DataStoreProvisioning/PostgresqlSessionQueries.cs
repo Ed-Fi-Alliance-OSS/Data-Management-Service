@@ -54,6 +54,9 @@ internal static class PostgresqlSessionQueries
     public const string SessionsByApplicationName =
         "SELECT a.pid, a.backend_start FROM pg_catalog.pg_stat_activity a WHERE a.datname = @database AND a.application_name = @application ORDER BY a.backend_start, a.pid;";
 
+    public const string OwnSession =
+        "SELECT a.pid, a.backend_start FROM pg_catalog.pg_stat_activity a WHERE a.pid = pg_catalog.pg_backend_pid();";
+
     /// <summary>The longest deadline a termination accepts; the setting's range (4.3) is narrower.</summary>
     public static readonly TimeSpan MaximumDeadline = TimeSpan.FromHours(1);
 
@@ -224,6 +227,23 @@ internal static class PostgresqlSessionQueries
         );
     }
 
+    /// <summary>The connection's own server session id (D-7b), for a command that may end in doubt on it.</summary>
+    public static async Task<DmsServerSessionId> ReadOwnSessionAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        await using NpgsqlCommand command = new(OwnSession, connection);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("The own-session query returned no row.");
+        }
+
+        return SessionOf(reader.GetInt32(0), await reader.GetFieldValueAsync<DateTime>(1, cancellationToken));
+    }
+
     /// <summary>
     /// The sessions on <paramref name="database"/> carrying <paramref name="applicationName"/>, oldest first:
     /// how a <c>psql</c> replay session (<c>PGAPPNAME = dms-provision:&lt;op&gt;</c>) is addressed (D-7b).
@@ -244,18 +264,16 @@ internal static class PostgresqlSessionQueries
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
         while (await reader.ReadAsync(cancellationToken))
         {
-            long pid = reader.GetInt32(0);
-            DateTime backendStart = await reader.GetFieldValueAsync<DateTime>(1, cancellationToken);
             sessions.Add(
-                new DmsServerSessionId(
-                    pid,
-                    new DateTimeOffset(DateTime.SpecifyKind(backendStart, DateTimeKind.Utc), TimeSpan.Zero)
-                )
+                SessionOf(reader.GetInt32(0), await reader.GetFieldValueAsync<DateTime>(1, cancellationToken))
             );
         }
 
         return sessions;
     }
+
+    private static DmsServerSessionId SessionOf(int pid, DateTime backendStart) =>
+        new(pid, new DateTimeOffset(DateTime.SpecifyKind(backendStart, DateTimeKind.Utc), TimeSpan.Zero));
 
     private static async Task<PostgresqlSessionObservation> ObserveAsync(
         NpgsqlConnection connection,

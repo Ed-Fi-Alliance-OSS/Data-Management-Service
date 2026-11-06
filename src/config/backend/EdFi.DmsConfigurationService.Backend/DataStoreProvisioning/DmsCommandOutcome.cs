@@ -35,7 +35,10 @@ public sealed record DmsCommandFailure(DmsCommandFailureClass Class, DmsProvisio
 /// The outcome of a mutating engine command (6.9a). <c>Succeeded</c> and <c>Failed</c> are definite;
 /// <c>Unknown</c> means the client cannot tell whether the effect committed (timeout, cancellation after
 /// send, connection loss, process killed), and names the session that must be proven terminated before
-/// state is read (D-7b, D-22).
+/// state is read (D-7b, D-22). The session is null only when the engine itself already proved every
+/// session of the command gone (a replay process whose server session was looked up by its application
+/// name and terminated with verification, 6.3 step 5) and the state it then read was inconclusive: nothing
+/// remains to terminate, and the outcome stays unresolved.
 /// </summary>
 public abstract record DmsCommandOutcome
 {
@@ -46,7 +49,7 @@ public abstract record DmsCommandOutcome
 
     public sealed record Failed(DmsCommandFailure Failure) : DmsCommandOutcome;
 
-    public sealed record Unknown(DmsServerSessionId Session) : DmsCommandOutcome
+    public sealed record Unknown(DmsServerSessionId? Session) : DmsCommandOutcome
     {
         public override bool IsDefinite => false;
     }
@@ -71,7 +74,7 @@ public abstract record DmsCommandOutcome<T>
         public override DmsCommandOutcome WithoutValue() => new DmsCommandOutcome.Failed(Failure);
     }
 
-    public sealed record Unknown(DmsServerSessionId Session) : DmsCommandOutcome<T>
+    public sealed record Unknown(DmsServerSessionId? Session) : DmsCommandOutcome<T>
     {
         public override bool IsDefinite => false;
 

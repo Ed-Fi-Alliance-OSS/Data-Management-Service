@@ -102,6 +102,40 @@ public sealed class PrivateOperationDirectory : IDisposable
         return new PrivateOperationDirectory(path, operationId);
     }
 
+    /// <summary>
+    /// Attaches to the directory this operation already claimed, for a component that writes into it without
+    /// owning it (the replay runner's password file): <paramref name="path"/> must be fully qualified, exist,
+    /// and be named <c>dms-provision-&lt;op&gt;</c> for <paramref name="operationId"/>. Nothing is created or
+    /// changed. The owner alone decides when the directory is deleted; an attached instance is not disposed.
+    /// </summary>
+    public static PrivateOperationDirectory Attach(string path, DmsOperationId operationId)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        if (!System.IO.Path.IsPathFullyQualified(path))
+        {
+            throw new ArgumentException(
+                "The operation directory path must be fully qualified.",
+                nameof(path)
+            );
+        }
+
+        string expectedName = NamePrefix + operationId.Value;
+        if (!string.Equals(System.IO.Path.GetFileName(path), expectedName, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "The directory is not the operation's private directory.",
+                nameof(path)
+            );
+        }
+
+        if (!Directory.Exists(path))
+        {
+            throw new DirectoryNotFoundException("The operation directory does not exist.");
+        }
+
+        return new PrivateOperationDirectory(path, operationId);
+    }
+
     /// <summary>The absolute path a file named <paramref name="fileName"/> has inside this directory.</summary>
     public string PathOf(string fileName)
     {

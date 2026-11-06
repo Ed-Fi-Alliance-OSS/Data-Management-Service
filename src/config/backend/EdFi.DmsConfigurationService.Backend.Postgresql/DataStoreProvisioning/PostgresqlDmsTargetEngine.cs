@@ -5,7 +5,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
-using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -19,12 +18,15 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 /// (6.9c); and the target lock (D-12): <see cref="AcquireTargetLockAsync"/> opens the holder session
 /// (<see cref="PostgresqlTargetLockSession"/>) that every later selected-target mutation runs on; and session
 /// termination (D-22): <see cref="TerminateSessionAsync"/> proves a session gone, or reports why it could not,
-/// through <see cref="PostgresqlSessionQueries"/>. Every read is on a dedicated connection; the members that
-/// mutate or restore arrive with Steps 3.5 to 3.9 and throw until then. Connection and driver failures
-/// propagate for the orchestrator to classify; a catalog row the inventory contract cannot describe is
-/// reported as a content-profile violation, because the authoritative DDL never produces one.
+/// through <see cref="PostgresqlSessionQueries"/>; and the staging stage (6.3 steps 4 and 5, 6.7): the
+/// staging database created and claimed on the holder session, the <c>psql</c> replay with its outcome
+/// protocol, and the staging drop, in the second part of this class. Every read is on a dedicated
+/// connection; the members that mutate the selected target arrive with Steps 3.6 to 3.9 and throw until
+/// then. Connection and driver failures of a read propagate for the orchestrator to classify; a catalog
+/// row the inventory contract cannot describe is reported as a content-profile violation, because the
+/// authoritative DDL never produces one.
 /// </summary>
-public sealed class PostgresqlDmsTargetEngine : IDmsTargetEngine
+public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
 {
     /// <summary>The <c>Diagnostic.Operation</c> of a facts read whose inventory or security rows do not split as the delivered contract requires.</summary>
     public const string CatalogRowShapeStep = "CatalogRowShape";
@@ -39,34 +41,29 @@ public sealed class PostgresqlDmsTargetEngine : IDmsTargetEngine
         "SELECT d.oid, pg_catalog.shobj_description(d.oid, 'pg_database'), a.pid, a.backend_start FROM pg_catalog.pg_database d CROSS JOIN pg_catalog.pg_stat_activity a WHERE d.datname = pg_catalog.current_database() AND a.pid = pg_catalog.pg_backend_pid();";
 
     private readonly PostgresqlAdminConnection _adminConnection;
-    private readonly TimeSpan _lockAcquireTimeout;
-    private readonly TimeSpan _lockHeartbeatInterval;
+    private readonly PostgresqlDmsEngineSettings _settings;
+    private readonly PsqlRestoreRunner _runner;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
 
     /// <param name="adminConnection">The resolved administrative connection (4.3 <c>AdminConnectionString</c> and <c>CommandTimeout</c>).</param>
-    /// <param name="lockAcquireTimeout"><c>LockAcquireTimeout</c>: the server-side wait for the target lock (D-12).</param>
-    /// <param name="lockHeartbeatInterval"><c>LockHeartbeatInterval</c>: the holder session's probe cadence (D-12).</param>
-    /// <param name="timeProvider">Drives the holder heartbeat and every holder deadline.</param>
-    /// <param name="logger">Receives the holder's ignored release and probe errors as type chains; never a value.</param>
+    /// <param name="settings">The range-checked 4.3 settings the engine reads.</param>
+    /// <param name="timeProvider">Drives the holder heartbeat, every deadline, and the replay bounds.</param>
+    /// <param name="logger">Receives the holder's ignored errors and the replay's progress as type chains and fixed values; never a value from a request, a file, or output.</param>
     public PostgresqlDmsTargetEngine(
         PostgresqlAdminConnection adminConnection,
-        TimeSpan lockAcquireTimeout,
-        TimeSpan lockHeartbeatInterval,
+        PostgresqlDmsEngineSettings settings,
         TimeProvider timeProvider,
         ILogger logger
     )
     {
         ArgumentNullException.ThrowIfNull(adminConnection);
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(lockAcquireTimeout, TimeSpan.Zero);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(lockAcquireTimeout, TimeSpan.FromHours(1));
-        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(lockHeartbeatInterval, TimeSpan.Zero);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(lockHeartbeatInterval, TimeSpan.FromHours(1));
+        ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(logger);
         _adminConnection = adminConnection;
-        _lockAcquireTimeout = lockAcquireTimeout;
-        _lockHeartbeatInterval = lockHeartbeatInterval;
+        _settings = settings;
+        _runner = new PsqlRestoreRunner(settings.PsqlPath, settings.RestoreTimeout, timeProvider, logger);
         _timeProvider = timeProvider;
         _logger = logger;
     }
@@ -113,8 +110,8 @@ public sealed class PostgresqlDmsTargetEngine : IDmsTargetEngine
             _adminConnection,
             name,
             operation,
-            _lockAcquireTimeout,
-            _lockHeartbeatInterval,
+            _settings.LockAcquireTimeout,
+            _settings.LockHeartbeatInterval,
             _timeProvider,
             _logger,
             cancellationToken
@@ -298,20 +295,6 @@ public sealed class PostgresqlDmsTargetEngine : IDmsTargetEngine
         };
     }
 
-    public Task<DmsCommandOutcome<DmsInstanceIdentity>> CreateStagingAsync(
-        IDmsTargetLockHolder holder,
-        DmsDatabaseName staging,
-        DmsProvisionClaim claim,
-        CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(CreateStagingAsync), "Step 3.5");
-
-    public Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreIntoStagingAsync(
-        DmsDatabaseName staging,
-        StagedArtifact artifact,
-        DmsOperationId operation,
-        CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(RestoreIntoStagingAsync), "Step 3.5");
-
     public Task<DmsCommandOutcome<DmsInstanceIdentity>> RenameIntoTargetAsync(
         IDmsTargetLockHolder holder,
         DmsDatabaseName staging,
@@ -348,12 +331,6 @@ public sealed class PostgresqlDmsTargetEngine : IDmsTargetEngine
         DmsDropReason reason,
         CancellationToken cancellationToken
     ) => throw NotYetImplemented(nameof(DropInstanceAsync), "Step 3.6");
-
-    public Task<DmsCommandOutcome> DropStagingAsync(
-        DmsDatabaseName staging,
-        DmsInstanceIdentity stagingInstance,
-        CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(DropStagingAsync), "Step 3.5");
 
     public async Task<DmsSessionTermination> TerminateSessionAsync(
         DmsServerSessionId session,
@@ -581,6 +558,6 @@ public sealed class PostgresqlDmsTargetEngine : IDmsTargetEngine
 
     private static NotImplementedException NotYetImplemented(string member, string step) =>
         new(
-            $"{member} of the PostgreSQL DMS target engine arrives with {step}; this build contains the read members, the target lock, and session termination only."
+            $"{member} of the PostgreSQL DMS target engine arrives with {step}; this build contains the read members, the target lock, session termination, and the staging stage only."
         );
 }

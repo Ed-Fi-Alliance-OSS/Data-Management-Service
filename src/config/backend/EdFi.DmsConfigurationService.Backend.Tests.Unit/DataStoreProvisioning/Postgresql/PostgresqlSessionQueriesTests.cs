@@ -27,8 +27,13 @@ public class PostgresqlSessionQueriesTests
     private static PostgresqlDmsTargetEngine UnreachableEngine() =>
         new(
             new PostgresqlAdminConnection(UnreachableConnectionString, TimeSpan.FromSeconds(30)),
-            TimeSpan.FromSeconds(5),
-            TimeSpan.FromSeconds(5),
+            new PostgresqlDmsEngineSettings(
+                TimeSpan.FromSeconds(5),
+                TimeSpan.FromSeconds(5),
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromMinutes(5),
+                Path.Combine(AppContext.BaseDirectory, "psql-not-available")
+            ),
             TimeProvider.System,
             NullLogger.Instance
         );

@@ -836,6 +836,23 @@
           "dbup-postgresql": "[5.0.40, )"
         }
       },
+      "edfi.dmsconfigurationservice.backend.tests.unit": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DmsConfigurationService.Backend": "[1.0.0, )",
+          "EdFi.DmsConfigurationService.Backend.Keycloak": "[1.0.0, )",
+          "EdFi.DmsConfigurationService.Backend.Mssql": "[1.0.0, )",
+          "EdFi.DmsConfigurationService.Backend.OpenIddict": "[1.0.0, )",
+          "EdFi.DmsConfigurationService.Backend.Postgresql": "[1.0.0, )",
+          "FakeItEasy": "[8.3.0, )",
+          "FluentAssertions": "[6.12.1, )",
+          "Microsoft.Extensions.TimeProvider.Testing": "[10.3.0, )",
+          "Microsoft.NET.Test.Sdk": "[17.11.1, )",
+          "NUnit": "[4.2.2, )",
+          "NUnit3TestAdapter": "[4.6.0, )",
+          "coverlet.collector": "[6.0.2, )"
+        }
+      },
       "edfi.dmsconfigurationservice.claims": {
         "type": "Project",
         "dependencies": {
@@ -897,6 +914,12 @@
         "requested": "[2.9.1, )",
         "resolved": "2.9.1",
         "contentHash": "OE0sl1/sQ37bjVsPKKtwQlWDgqaxWgtme3xZz7JssWUzg5JpMIyHgCTY9MVMxOg48fJ1AgGT3tgdH5m/kQ5xhA=="
+      },
+      "coverlet.collector": {
+        "type": "CentralTransitive",
+        "requested": "[6.0.2, )",
+        "resolved": "6.0.2",
+        "contentHash": "bJShQ6uWRTQ100ZeyiMqcFlhP7WJ+bCuabUs885dJiBEzMsJMSFr7BOyeCw4rgvQokteGi5rKQTlkhfQPUXg2A=="
       },
       "Dapper": {
         "type": "CentralTransitive",

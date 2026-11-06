@@ -24,6 +24,9 @@ internal static class DmsProvisioningTestServer
 
     public const string AdminEnvironmentVariableName = "ConnectionStrings__PostgresqlDmsAdmin";
 
+    /// <summary>The fully qualified <c>psql</c> the replay fixtures run; they skip when it is not set.</summary>
+    public const string PsqlEnvironmentVariableName = "DMS1438_PSQL_PATH";
+
     public const string FixtureDirectory = "Fixtures/DataStoreProvisioning";
 
     /// <summary>The password of every login role the tests create; the lane's own authentication may be trust.</summary>
@@ -42,6 +45,10 @@ internal static class DmsProvisioningTestServer
         Environment.GetEnvironmentVariable(AdminEnvironmentVariableName);
 
     public static bool IsConfigured => !string.IsNullOrWhiteSpace(AdminConnectionString);
+
+    public static string? PsqlPath => Environment.GetEnvironmentVariable(PsqlEnvironmentVariableName);
+
+    public static bool HasPsql => !string.IsNullOrWhiteSpace(PsqlPath) && File.Exists(PsqlPath);
 
     public static void RequireConfiguredOrSkip()
     {
@@ -67,29 +74,53 @@ internal static class DmsProvisioningTestServer
             TimeSpan.FromSeconds(30)
         );
 
+    /// <summary>The replay fixtures need a real <c>psql</c>; they skip without one.</summary>
+    public static void RequirePsqlOrSkip()
+    {
+        if (!HasPsql)
+        {
+            Assert.Ignore(
+                $"{PsqlEnvironmentVariableName} does not name an existing psql; the replay fixtures are skipped."
+            );
+        }
+    }
+
+    /// <summary>
+    /// The engine settings of the lane: the 4.3 defaults unless overridden, and the lane's <c>psql</c> or,
+    /// without one, a fully qualified placeholder no fixture that replays ever reaches.
+    /// </summary>
+    public static PostgresqlDmsEngineSettings Settings(
+        TimeSpan? lockAcquireTimeout = null,
+        TimeSpan? lockHeartbeatInterval = null,
+        TimeSpan? sessionTerminationTimeout = null,
+        TimeSpan? restoreTimeout = null
+    ) =>
+        new(
+            lockAcquireTimeout ?? TimeSpan.FromSeconds(5),
+            lockHeartbeatInterval ?? TimeSpan.FromSeconds(5),
+            sessionTerminationTimeout ?? TimeSpan.FromSeconds(30),
+            restoreTimeout ?? TimeSpan.FromMinutes(5),
+            HasPsql ? PsqlPath! : Path.Combine(AppContext.BaseDirectory, "psql-not-available")
+        );
+
     /// <summary>An engine over the lane's admin connection; the lock settings default to the 4.3 defaults on the system clock.</summary>
     public static PostgresqlDmsTargetEngine Engine(
         TimeSpan? lockAcquireTimeout = null,
         TimeSpan? lockHeartbeatInterval = null,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        TimeSpan? restoreTimeout = null,
+        TimeSpan? sessionTerminationTimeout = null
     ) =>
         new(
             AdminConnection(),
-            lockAcquireTimeout ?? TimeSpan.FromSeconds(5),
-            lockHeartbeatInterval ?? TimeSpan.FromSeconds(5),
+            Settings(lockAcquireTimeout, lockHeartbeatInterval, sessionTerminationTimeout, restoreTimeout),
             timeProvider ?? TimeProvider.System,
             NullLogger.Instance
         );
 
     /// <summary>An engine whose admin connection authenticates as <paramref name="roleName"/>.</summary>
     public static PostgresqlDmsTargetEngine EngineAs(string roleName) =>
-        new(
-            AdminConnectionAs(roleName),
-            TimeSpan.FromSeconds(5),
-            TimeSpan.FromSeconds(5),
-            TimeProvider.System,
-            NullLogger.Instance
-        );
+        new(AdminConnectionAs(roleName), Settings(), TimeProvider.System, NullLogger.Instance);
 
     public static Task<bool> IsSuperuserAsync() =>
         ScalarOnServerAsync<bool>(

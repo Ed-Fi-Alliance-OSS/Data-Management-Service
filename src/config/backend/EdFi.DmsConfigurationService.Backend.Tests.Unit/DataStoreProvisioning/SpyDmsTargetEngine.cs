@@ -9,15 +9,23 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
 
 /// <summary>
-/// An engine that records every call with the database name it addresses, scripts the three members the
-/// orchestrator shell reaches (lock acquisition, server facts, inspection), and refuses every other
-/// member after recording it, so a test can prove which calls were and were not issued.
+/// An engine that records every call with the database name it addresses, scripts the members the
+/// orchestrator reaches through the staging stage (lock acquisition, server facts, inspection, staging
+/// create and drop, restore, session open and reads, termination), and refuses every other member after
+/// recording it, so a test can prove which calls were and were not issued and in what order.
 /// </summary>
 internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
 {
     public const string AcquireTargetLock = "AcquireTargetLock";
     public const string ReadServerFacts = "ReadServerFacts";
     public const string Inspect = "Inspect";
+    public const string CreateStaging = "CreateStaging";
+    public const string RestoreIntoStaging = "RestoreIntoStaging";
+    public const string DropStaging = "DropStaging";
+    public const string OpenSession = "OpenSession";
+    public const string ReadIdentity = "ReadIdentity";
+    public const string ReadTargetFacts = "ReadTargetFacts";
+    public const string TerminateSession = "TerminateSession";
 
     public sealed record Call(string Member, string? DatabaseName);
 
@@ -47,6 +55,57 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
 
     public Func<CancellationToken, Task<DmsLiveTargetState>> OnInspect { get; set; } =
         _ => throw NotExpected(Inspect);
+
+    /// <summary>Scripted per name: the staging name and the target name are inspected at different points.</summary>
+    public Func<DmsDatabaseName, CancellationToken, Task<DmsLiveTargetState>>? OnInspectByName { get; set; }
+
+    public delegate Task<DmsCommandOutcome<DmsInstanceIdentity>> CreateStagingScript(
+        DmsDatabaseName staging,
+        DmsProvisionClaim claim,
+        CancellationToken cancellationToken
+    );
+
+    public delegate Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreScript(
+        DmsDatabaseName staging,
+        StagedArtifact artifact,
+        CancellationToken cancellationToken
+    );
+
+    public delegate Task<DmsCommandOutcome> DropStagingScript(
+        DmsDatabaseName staging,
+        DmsInstanceIdentity stagingInstance,
+        CancellationToken cancellationToken
+    );
+
+    public delegate Task<DmsSessionOpenResult> OpenSessionScript(
+        DmsDatabaseName name,
+        DmsInstanceIdentity expectedInstance,
+        CancellationToken cancellationToken
+    );
+
+    public delegate Task<DmsSessionTermination> TerminateScript(
+        DmsServerSessionId session,
+        TimeSpan deadline,
+        CancellationToken cancellationToken
+    );
+
+    public CreateStagingScript OnCreateStaging { get; set; } = (_, _, _) => throw NotExpected(CreateStaging);
+
+    public RestoreScript OnRestoreIntoStaging { get; set; } =
+        (_, _, _) => throw NotExpected(RestoreIntoStaging);
+
+    public DropStagingScript OnDropStaging { get; set; } = (_, _, _) => throw NotExpected(DropStaging);
+
+    public OpenSessionScript OnOpenSession { get; set; } = (_, _, _) => throw NotExpected(OpenSession);
+
+    public Func<DmsSession, CancellationToken, Task<DmsIdentityRead>> OnReadIdentity { get; set; } =
+        (_, _) => throw NotExpected(ReadIdentity);
+
+    public Func<DmsSession, CancellationToken, Task<DmsTargetFacts>> OnReadTargetFacts { get; set; } =
+        (_, _) => throw NotExpected(ReadTargetFacts);
+
+    public TerminateScript OnTerminateSession { get; set; } =
+        (_, _, _) => throw NotExpected(TerminateSession);
 
     public static DmsServerFacts Facts() =>
         new(
@@ -80,36 +139,52 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
     public Task<DmsLiveTargetState> InspectAsync(DmsDatabaseName name, CancellationToken cancellationToken)
     {
         Record(Inspect, name.Value);
-        return OnInspect(cancellationToken);
+        return OnInspectByName is { } byName ? byName(name, cancellationToken) : OnInspect(cancellationToken);
     }
 
     public Task<DmsSessionOpenResult> OpenSessionAsync(
         DmsDatabaseName name,
         DmsInstanceIdentity expectedInstance,
         CancellationToken cancellationToken
-    ) => Refuse<DmsSessionOpenResult>(nameof(OpenSessionAsync), name.Value);
+    )
+    {
+        Record(OpenSession, name.Value);
+        return OnOpenSession(name, expectedInstance, cancellationToken);
+    }
 
-    public Task<DmsIdentityRead> ReadIdentityAsync(DmsSession session, CancellationToken cancellationToken) =>
-        Refuse<DmsIdentityRead>(nameof(ReadIdentityAsync), null);
+    public Task<DmsIdentityRead> ReadIdentityAsync(DmsSession session, CancellationToken cancellationToken)
+    {
+        Record(ReadIdentity, null);
+        return OnReadIdentity(session, cancellationToken);
+    }
 
-    public Task<DmsTargetFacts> ReadTargetFactsAsync(
-        DmsSession session,
-        CancellationToken cancellationToken
-    ) => Refuse<DmsTargetFacts>(nameof(ReadTargetFactsAsync), null);
+    public Task<DmsTargetFacts> ReadTargetFactsAsync(DmsSession session, CancellationToken cancellationToken)
+    {
+        Record(ReadTargetFacts, null);
+        return OnReadTargetFacts(session, cancellationToken);
+    }
 
     public Task<DmsCommandOutcome<DmsInstanceIdentity>> CreateStagingAsync(
         IDmsTargetLockHolder holder,
         DmsDatabaseName staging,
         DmsProvisionClaim claim,
         CancellationToken cancellationToken
-    ) => Refuse<DmsCommandOutcome<DmsInstanceIdentity>>(nameof(CreateStagingAsync), staging.Value);
+    )
+    {
+        Record(CreateStaging, staging.Value);
+        return OnCreateStaging(staging, claim, cancellationToken);
+    }
 
     public Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreIntoStagingAsync(
         DmsDatabaseName staging,
         StagedArtifact artifact,
         DmsOperationId operation,
         CancellationToken cancellationToken
-    ) => Refuse<DmsCommandOutcome<DmsInstanceIdentity>>(nameof(RestoreIntoStagingAsync), staging.Value);
+    )
+    {
+        Record(RestoreIntoStaging, staging.Value);
+        return OnRestoreIntoStaging(staging, artifact, cancellationToken);
+    }
 
     public Task<DmsCommandOutcome<DmsInstanceIdentity>> RenameIntoTargetAsync(
         IDmsTargetLockHolder holder,
@@ -152,13 +227,21 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
         DmsDatabaseName staging,
         DmsInstanceIdentity stagingInstance,
         CancellationToken cancellationToken
-    ) => Refuse<DmsCommandOutcome>(nameof(DropStagingAsync), staging.Value);
+    )
+    {
+        Record(DropStaging, staging.Value);
+        return OnDropStaging(staging, stagingInstance, cancellationToken);
+    }
 
     public Task<DmsSessionTermination> TerminateSessionAsync(
         DmsServerSessionId session,
         TimeSpan deadline,
         CancellationToken cancellationToken
-    ) => Refuse<DmsSessionTermination>(nameof(TerminateSessionAsync), null);
+    )
+    {
+        Record(TerminateSession, null);
+        return OnTerminateSession(session, deadline, cancellationToken);
+    }
 
     private Task<T> Refuse<T>(string member, string? databaseName)
     {

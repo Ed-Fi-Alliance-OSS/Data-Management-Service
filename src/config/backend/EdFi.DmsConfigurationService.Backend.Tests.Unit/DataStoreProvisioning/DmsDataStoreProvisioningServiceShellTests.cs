@@ -5,10 +5,11 @@
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Catalog;
 using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
+using static EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.ProvisioningTestValues;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
 
@@ -23,149 +24,6 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
 /// </summary>
 public class DmsDataStoreProvisioningServiceShellTests
 {
-    private static readonly TimeSpan _commandTimeout = TimeSpan.FromSeconds(30);
-    private static readonly ProtectedDatabaseNames _protectedNames = ProtectedDatabaseNames.Create(
-        "edfi_configurationservice",
-        []
-    );
-    private static readonly DmsServerSessionId _session = new(
-        7,
-        new DateTimeOffset(2026, 11, 5, 0, 0, 0, TimeSpan.Zero)
-    );
-
-    private static DmsTargetDatabaseName Name(string value, ProtectedDatabaseNames? protectedNames = null)
-    {
-        DmsTargetDatabaseName
-            .TryCreate(value, protectedNames ?? _protectedNames, out DmsTargetDatabaseName name)
-            .Should()
-            .Be(DmsTargetNameValidation.Valid);
-        return name;
-    }
-
-    private static DmsTrustedArtifactPin Pin(string packageSha256 = "a") =>
-        new()
-        {
-            ContractVersion = 1,
-            Provider = "postgresql",
-            PackageId = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0",
-            PackageVersion = "1.0.335",
-            PackageSha256 = new string(packageSha256[0], 64),
-            ArtifactSha256 = new string('b', 64),
-            TemplateKind = "Minimal",
-            DataStandardVersion = "5.2.0",
-            EffectiveSchemaHash = new string('c', 64),
-            InventorySha256 = new string('d', 64),
-            ApiSchemaFormatVersion = "1.0.0",
-            RelationalMappingVersion = "v3",
-        };
-
-    private static DmsDataStoreCreateRequest CreateRequest(DmsTargetDatabaseName? name = null) =>
-        new(DmsDatabaseTemplate.Minimal, name ?? Name("EdFi_Ods_Test"), Guid.NewGuid(), Pin());
-
-    private static DmsDataStoreDeleteRequest DeleteRequest(DmsTargetDatabaseName? name = null) =>
-        new(name ?? Name("EdFi_Ods_Test"), Guid.NewGuid());
-
-    private sealed class FakeReadiness(DmsProvisionerReadiness current) : IDmsDataStoreProvisionerReadiness
-    {
-        public DmsProvisionerReadiness Current { get; } = current;
-    }
-
-    private sealed class FakeCatalog : ITemplateArtifactCatalog
-    {
-        private int _calls;
-
-        public int Calls => Volatile.Read(ref _calls);
-
-        public Func<DmsDatabaseTemplate, DmsArtifactResolution> OnResolve { get; set; } =
-            _ => new DmsArtifactResolution.Resolved(Pin(), DmsCleanupReport.Clean);
-
-        public Task<DmsArtifactResolution> ResolveAsync(
-            DmsDatabaseTemplate template,
-            CancellationToken cancellationToken
-        )
-        {
-            Interlocked.Increment(ref _calls);
-            return Task.FromResult(OnResolve(template));
-        }
-
-        /// <summary>The shell stages nothing: the create path's staging arrives with the engine steps.</summary>
-        public Task<TemplateArtifactStaging> StageAsync(
-            DmsDatabaseTemplate template,
-            DmsOperationId operationId,
-            CancellationToken cancellationToken
-        ) => throw new NotSupportedException("The orchestrator shell does not stage artifacts.");
-
-        public Task<IReadOnlyList<DmsReadinessReason>> ValidateAsync(CancellationToken cancellationToken) =>
-            throw new NotSupportedException("The orchestrator never runs the readiness probes.");
-    }
-
-    /// <summary>The shell under test with its doubles; the engine hands out a fresh fake holder per acquisition.</summary>
-    private sealed class Harness
-    {
-        public Harness(
-            DmsProvisionerReadiness? readiness = null,
-            ProtectedDatabaseNames? protectedNames = null
-        )
-        {
-            Engine.OnAcquireTargetLock = _ =>
-            {
-                FakeDmsTargetLockHolder holder = new(
-                    _session,
-                    TimeSpan.FromSeconds(5),
-                    _commandTimeout,
-                    Time
-                );
-                Holders.Add(holder);
-                return Task.FromResult<DmsTargetLockResult>(new DmsTargetLockResult.Acquired(holder));
-            };
-            Service = new DmsDataStoreProvisioningService(
-                new FakeReadiness(readiness ?? Ready()),
-                Engine,
-                Catalog,
-                Options.Create(new DmsDataStoreProvisioningOptions { CommandTimeout = _commandTimeout }),
-                protectedNames ?? _protectedNames,
-                Time,
-                NullLogger<DmsDataStoreProvisioningService>.Instance
-            );
-        }
-
-        public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 11, 5, 12, 0, 0, TimeSpan.Zero));
-
-        public SpyDmsTargetEngine Engine { get; } = new();
-
-        public FakeCatalog Catalog { get; } = new();
-
-        public List<FakeDmsTargetLockHolder> Holders { get; } = [];
-
-        public DmsDataStoreProvisioningService Service { get; }
-
-        public FakeDmsTargetLockHolder OnlyHolder => Holders.Should().ContainSingle().Subject;
-
-        private static DmsProvisionerReadiness Ready() =>
-            new DmsProvisionerReadiness.Ready(
-                "postgresql",
-                new DateTimeOffset(2026, 11, 5, 11, 0, 0, TimeSpan.Zero)
-            );
-    }
-
-    private static DmsProvisioningFailure FailureOf(DmsDataStoreCreateResult result) =>
-        result.Should().BeOfType<DmsDataStoreCreateResult.Failure>().Subject.Detail;
-
-    private static DmsProvisioningFailure FailureOf(DmsDataStoreDeleteResult result) =>
-        result.Should().BeOfType<DmsDataStoreDeleteResult.Failure>().Subject.Detail;
-
-    /// <summary>
-    /// Waits for the engine read to start without hanging: if the operation completes first (because an
-    /// earlier step refused it), the test fails here with a reason instead of waiting forever.
-    /// </summary>
-    private static async Task ReadStartedAsync(TaskCompletionSource readStarted, Task operation)
-    {
-        await Task.WhenAny(readStarted.Task, operation);
-        readStarted
-            .Task.IsCompleted.Should()
-            .BeTrue("the operation must reach the preamble read instead of ending earlier");
-    }
-
     [TestFixture]
     public class Given_readiness_is_not_ready
     {
@@ -351,6 +209,7 @@ public class DmsDataStoreProvisioningServiceShellTests
         private DmsDataStoreCreateResult _refused = null!;
         private DmsDataStoreCreateResult _pinChanged = null!;
         private DmsProvisioningFailure _catalogFailure = null!;
+        private bool _directoryReleased;
 
         [SetUp]
         public async Task Setup()
@@ -364,18 +223,23 @@ public class DmsDataStoreProvisioningServiceShellTests
                 _catalogFailure,
                 DmsCleanupReport.Clean
             );
+            _refusing.Catalog.OnStage = (_, _, _) =>
+                Task.FromResult<TemplateArtifactStaging>(
+                    new TemplateArtifactStaging.Failure(_catalogFailure, DmsCleanupReport.Clean)
+                );
             _resolution = await _refusing.Service.ResolveArtifactAsync(
                 DmsDatabaseTemplate.Sample,
                 CancellationToken.None
             );
             _refused = await _refusing.Service.CreateAsync(CreateRequest(), CancellationToken.None);
 
+            // The catalog stages the real package; the request carries a pin that names another one.
             _changed = new Harness();
-            _changed.Catalog.OnResolve = _ => new DmsArtifactResolution.Resolved(
-                Pin("e"),
-                DmsCleanupReport.Clean
+            _pinChanged = await _changed.Service.CreateAsync(
+                CreateRequest(pin: Pin("e")),
+                CancellationToken.None
             );
-            _pinChanged = await _changed.Service.CreateAsync(CreateRequest(), CancellationToken.None);
+            _directoryReleased = SharedTemplateCatalog.Workspace.OperationEntries.Length == 0;
         }
 
         [Test]
@@ -407,73 +271,87 @@ public class DmsDataStoreProvisioningServiceShellTests
         [Test]
         public void It_never_reaches_the_engine() =>
             (_refusing.Engine.Calls.Count, _changed.Engine.Calls.Count).Should().Be((0, 0));
+
+        [Test]
+        public void It_releases_the_staged_artifact_when_the_pin_differs() =>
+            _directoryReleased.Should().BeTrue();
     }
 
     [TestFixture]
-    public class Given_resolution_left_residue_and_the_create_fails_under_the_lock
+    public class Given_the_artifact_release_leaves_residue_and_the_create_fails_under_the_lock
     {
-        private static readonly DmsCleanupReport _resolutionCleanup = new([
-            new DmsCleanupResidue(DmsResidueKind.OperationDirectory, "dms-provision-0123456789ab"),
-        ]);
-
         private DmsDataStoreCreateResult _lockTimedOut = null!;
         private DmsDataStoreCreateResult _protectedTarget = null!;
         private DmsDataStoreCreateResult _lockLost = null!;
 
-        private static Harness WithResolutionResidue()
+        /// <summary>Runs one create whose operation directory is held open while the artifact is released, then frees it.</summary>
+        private static async Task<DmsDataStoreCreateResult> WithTrappedReleaseAsync(Harness harness)
         {
-            Harness harness = new();
-            harness.Catalog.OnResolve = _ => new DmsArtifactResolution.Resolved(Pin(), _resolutionCleanup);
-            return harness;
+            DeletionTrap? trap = null;
+            PrivateOperationDirectory? trapped = null;
+            SharedTemplateCatalog.Catalog.BeforeRelease = directory =>
+            {
+                trapped = directory;
+                trap = new DeletionTrap(directory.Path);
+            };
+            try
+            {
+                return await harness.Service.CreateAsync(CreateRequest(), CancellationToken.None);
+            }
+            finally
+            {
+                SharedTemplateCatalog.Catalog.BeforeRelease = null;
+                trap?.Dispose();
+                trapped?.TryDelete();
+            }
         }
-
-        private static DmsCleanupReport CleanupOf(DmsDataStoreCreateResult result) =>
-            result.Should().BeOfType<DmsDataStoreCreateResult.Failure>().Subject.Cleanup;
 
         [SetUp]
         public async Task Setup()
         {
-            Harness timeout = WithResolutionResidue();
+            Harness timeout = new();
             timeout.Engine.OnAcquireTargetLock = _ =>
                 Task.FromResult<DmsTargetLockResult>(new DmsTargetLockResult.Timeout());
-            _lockTimedOut = await timeout.Service.CreateAsync(CreateRequest(), CancellationToken.None);
+            _lockTimedOut = await WithTrappedReleaseAsync(timeout);
 
-            Harness protectedTarget = WithResolutionResidue();
+            Harness protectedTarget = new();
             protectedTarget.Engine.OnInspect = _ =>
                 Task.FromResult<DmsLiveTargetState>(new DmsLiveTargetState.Protected());
-            _protectedTarget = await protectedTarget.Service.CreateAsync(
-                CreateRequest(),
-                CancellationToken.None
-            );
+            _protectedTarget = await WithTrappedReleaseAsync(protectedTarget);
 
-            Harness lost = WithResolutionResidue();
+            Harness lost = new();
             lost.Engine.OnInspect = _ =>
             {
                 lost.OnlyHolder.Lose();
                 return Task.FromResult<DmsLiveTargetState>(new DmsLiveTargetState.Absent());
             };
-            _lockLost = await lost.Service.CreateAsync(CreateRequest(), CancellationToken.None);
+            _lockLost = await WithTrappedReleaseAsync(lost);
         }
+
+        private static void ShouldCarryDirectoryResidue(DmsDataStoreCreateResult result) =>
+            CleanupOf(result)
+                .Residue.Should()
+                .Contain(residue => residue.Kind == DmsResidueKind.OperationDirectory);
 
         [Test]
         public void It_keeps_the_residue_through_a_lock_timeout()
         {
             FailureOf(_lockTimedOut).Code.Should().Be(DmsProvisioningFailureCode.LockTimeout);
-            CleanupOf(_lockTimedOut).Residue.Should().Equal(_resolutionCleanup.Residue);
+            ShouldCarryDirectoryResidue(_lockTimedOut);
         }
 
         [Test]
         public void It_keeps_the_residue_through_a_step_failure()
         {
             FailureOf(_protectedTarget).Code.Should().Be(DmsProvisioningFailureCode.ProtectedTarget);
-            CleanupOf(_protectedTarget).Residue.Should().Equal(_resolutionCleanup.Residue);
+            ShouldCarryDirectoryResidue(_protectedTarget);
         }
 
         [Test]
         public void It_keeps_the_residue_through_lock_loss()
         {
             FailureOf(_lockLost).Code.Should().Be(DmsProvisioningFailureCode.LockLost);
-            CleanupOf(_lockLost).Residue.Should().Equal(_resolutionCleanup.Residue);
+            ShouldCarryDirectoryResidue(_lockLost);
         }
     }
 
@@ -664,11 +542,9 @@ public class DmsDataStoreProvisioningServiceShellTests
     [TestFixture]
     public class Given_the_preamble_reaches_a_stage_beyond_the_shell
     {
-        private Harness _absentCreate = null!;
         private Harness _presentCreate = null!;
         private Harness _presentDelete = null!;
         private Harness _absentDelete = null!;
-        private Func<Task> _createOnAbsent = () => Task.CompletedTask;
         private Func<Task> _createOnPresent = () => Task.CompletedTask;
         private Func<Task> _deleteOnPresent = () => Task.CompletedTask;
         private DmsDataStoreDeleteResult _deleteOnAbsent = null!;
@@ -680,13 +556,6 @@ public class DmsDataStoreProvisioningServiceShellTests
                 new DmsInstanceIdentity.Postgresql(16385, "claim"),
                 DmsDatabaseState.Online
             );
-
-            _absentCreate = new Harness();
-            _absentCreate.Engine.OnInspect = _ =>
-                Task.FromResult<DmsLiveTargetState>(new DmsLiveTargetState.Absent());
-            _createOnAbsent = () =>
-                _absentCreate.Service.CreateAsync(CreateRequest(), CancellationToken.None);
-            await _createOnAbsent.Should().ThrowAsync<NotImplementedException>();
 
             _presentCreate = new Harness();
             _presentCreate.Engine.OnInspect = _ => Task.FromResult(present);
@@ -715,13 +584,9 @@ public class DmsDataStoreProvisioningServiceShellTests
 
         [Test]
         public void It_releases_the_lock_when_the_unimplemented_stage_throws() =>
-            (
-                _absentCreate.OnlyHolder.ReleaseCount,
-                _presentCreate.OnlyHolder.ReleaseCount,
-                _presentDelete.OnlyHolder.ReleaseCount
-            )
+            (_presentCreate.OnlyHolder.ReleaseCount, _presentDelete.OnlyHolder.ReleaseCount)
                 .Should()
-                .Be((1, 1, 1));
+                .Be((1, 1));
 
         [Test]
         public void It_releases_the_lock_after_already_absent() =>
@@ -730,9 +595,7 @@ public class DmsDataStoreProvisioningServiceShellTests
         [Test]
         public void It_issues_no_mutation_on_any_path()
         {
-            foreach (
-                Harness harness in new[] { _absentCreate, _presentCreate, _presentDelete, _absentDelete }
-            )
+            foreach (Harness harness in new[] { _presentCreate, _presentDelete, _absentDelete })
             {
                 harness
                     .Engine.Members.Should()
@@ -953,7 +816,7 @@ public class DmsDataStoreProvisioningServiceShellTests
                 CancellationToken.None
             );
             await ReadStartedAsync(readStarted, delete);
-            _harness.Time.Advance(_commandTimeout);
+            _harness.Time.Advance(CommandTimeout);
             _result = await delete;
         }
 
