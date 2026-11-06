@@ -293,9 +293,9 @@ public static class DmsTargetValidator
 
     private static bool IsCleanSchema(CanonicalInventory.Schema schema, SchemaPartition partition)
     {
-        if (Same(schema.SchemaName, DmsSchemaName))
+        if (Same(schema.SchemaName, DmsSchemaName) && schema.Objects.Count == 0)
         {
-            return schema.Objects.Count > 0;
+            return false;
         }
 
         if (
@@ -309,6 +309,7 @@ public static class DmsTargetValidator
             return false;
         }
 
+        // Judged for every schema, dms included: identity state inside the DMS schema is contamination too.
         bool carriesIdentityState = schema.Objects.Any(entry =>
             entry.Name.StartsWith(IdentityStateObjectPrefix, StringComparison.OrdinalIgnoreCase)
         );

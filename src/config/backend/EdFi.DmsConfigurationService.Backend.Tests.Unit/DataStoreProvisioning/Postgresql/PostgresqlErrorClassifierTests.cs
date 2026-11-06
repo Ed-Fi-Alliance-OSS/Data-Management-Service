@@ -85,7 +85,18 @@ public class PostgresqlErrorClassifierTests
         [SetUp]
         public void Setup()
         {
-            string[] states = ["08006", "08003", "08001", "57P01", "57P02", "57P03", "57014", "57P04"];
+            string[] states =
+            [
+                "08006",
+                "08003",
+                "08001",
+                "57P01",
+                "57P02",
+                "57P03",
+                "57014",
+                "57P04",
+                "40003",
+            ];
             _classes = states.ToDictionary(state => state, PostgresqlErrorClassifier.FailureClassOf);
             _connectionClass = states.ToDictionary(
                 state => state,
@@ -116,6 +127,13 @@ public class PostgresqlErrorClassifierTests
         [Test]
         public void It_does_not_call_a_dropped_database_connection_class() =>
             _connectionClass["57P04"].Should().BeFalse();
+
+        [Test]
+        public void It_leaves_statement_completion_unknown_in_doubt() => _classes["40003"].Should().BeNull();
+
+        [Test]
+        public void It_does_not_call_statement_completion_unknown_connection_class() =>
+            _connectionClass["40003"].Should().BeFalse();
     }
 
     [TestFixture]

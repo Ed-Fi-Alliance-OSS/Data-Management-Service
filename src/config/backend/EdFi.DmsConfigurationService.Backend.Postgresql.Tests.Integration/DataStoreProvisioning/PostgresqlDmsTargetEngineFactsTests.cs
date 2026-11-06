@@ -262,6 +262,86 @@ public class PostgresqlDmsTargetEngineFactsTests
     }
 
     [TestFixture]
+    public class Given_an_identity_state_object_inside_the_dms_schema
+    {
+        private TestDatabase? _database;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _database = await CreateDmsShapedDatabaseAsync("identitystate");
+            await _database.ExecuteAsync(
+                "CREATE TABLE \"dms\".\"OpenIddictTokens\" (\"Id\" bigint NOT NULL, CONSTRAINT \"PK_OpenIddictTokens\" PRIMARY KEY (\"Id\"));"
+            );
+            (DmsTargetFacts facts, DmsIdentityRead identity) = await ReadAsync(_database);
+            RestoreManifest describingTheContamination = DmsShapedManifest.For(
+                facts,
+                RestoreManifest.MinimalTemplateKind,
+                _projects
+            );
+            _hashMatches = string.Equals(
+                CanonicalInventoryHash.Compute(describingTheContamination.Inventory),
+                describingTheContamination.InventorySha256,
+                StringComparison.Ordinal
+            );
+            _staging = DmsTargetValidator.Validate(
+                facts,
+                identity,
+                describingTheContamination,
+                _projects,
+                new DmsTargetValidationRule.Staging(Guid.NewGuid())
+            );
+            _reconcile = DmsTargetValidator.Validate(
+                facts,
+                identity,
+                describingTheContamination,
+                _projects,
+                new DmsTargetValidationRule.Reconcile(DmsShapedManifest.SourceIdentity)
+            );
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_database is not null)
+            {
+                await _database.DisposeAsync();
+            }
+        }
+
+        private bool _hashMatches;
+        private DmsTargetValidation _staging = null!;
+        private DmsTargetValidation _reconcile = null!;
+
+        [Test]
+        public void It_is_a_manifest_that_matches_the_contaminated_inventory() =>
+            _hashMatches.Should().BeTrue();
+
+        [Test]
+        public void It_reports_the_content_profile_on_staging() =>
+            _staging
+                .Should()
+                .Be(
+                    new DmsTargetValidation.Invalid(
+                        DmsProvisioningFailureCode.ContentProfileViolation,
+                        DmsTargetValidator.ContentProfileCheck
+                    )
+                );
+
+        [Test]
+        public void It_reports_the_content_profile_on_reconciliation() =>
+            _reconcile
+                .Should()
+                .Be(
+                    new DmsTargetValidation.Invalid(
+                        DmsProvisioningFailureCode.ContentProfileViolation,
+                        DmsTargetValidator.ContentProfileCheck
+                    )
+                );
+    }
+
+    [TestFixture]
     public class Given_permission_drift_on_the_dms_shaped_database
     {
         private TestDatabase? _database;

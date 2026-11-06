@@ -705,4 +705,71 @@ public class DmsTargetValidatorTests
         public void It_reports_the_content_profile_before_the_privileges() =>
             _profileAndPrivileges.Should().Be(Invalid(ContentProfileViolation, ContentProfileCheck));
     }
+
+    /// <summary>
+    /// Identity state inside the non-empty <c>dms</c> schema is contamination the manifest also declares, so
+    /// only the content-profile gate can catch it; the match is case-insensitive on the object name.
+    /// </summary>
+    [TestFixture]
+    public class Given_identity_state_objects_inside_the_dms_schema
+    {
+        private readonly Dictionary<string, DmsTargetValidation> _staging = [];
+        private readonly Dictionary<string, DmsTargetValidation> _reconcile = [];
+        private DmsTargetValidation _lookalikePasses = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _staging.Clear();
+            _reconcile.Clear();
+            string[] names = ["OpenIddictTokens", "openiddictauthorizations", "OPENIDDICTSCOPES"];
+            foreach (string name in names)
+            {
+                DmsTargetFacts facts = PostgresqlFacts()
+                    .WithObjects(new DmsInventoryObject("dms", name, "table"));
+                RestoreManifest manifest = ManifestFor(facts);
+                _staging[name] = Validate(
+                    facts,
+                    Identity(),
+                    manifest,
+                    Projects,
+                    new DmsTargetValidationRule.Staging(_expected)
+                );
+                _reconcile[name] = Validate(
+                    facts,
+                    Identity(),
+                    manifest,
+                    Projects,
+                    new DmsTargetValidationRule.Reconcile(PackageIdentity)
+                );
+            }
+
+            DmsTargetFacts lookalike = PostgresqlFacts()
+                .WithObjects(new DmsInventoryObject("dms", "OpenIdConnectState", "table"));
+            _lookalikePasses = Staging(lookalike, ManifestFor(lookalike));
+        }
+
+        [Test]
+        public void It_rejects_every_identity_state_object_on_staging() =>
+            _staging
+                .Should()
+                .AllSatisfy(pair =>
+                    pair.Value.Should().Be(Invalid(ContentProfileViolation, ContentProfileCheck), pair.Key)
+                );
+
+        [Test]
+        public void It_rejects_every_identity_state_object_on_reconciliation() =>
+            _reconcile
+                .Should()
+                .AllSatisfy(pair =>
+                    pair.Value.Should().Be(Invalid(ContentProfileViolation, ContentProfileCheck), pair.Key)
+                );
+
+        [Test]
+        public void It_covers_three_casings() => (_staging.Count, _reconcile.Count).Should().Be((3, 3));
+
+        [Test]
+        public void It_accepts_a_name_that_only_shares_the_prefix_letters() =>
+            _lookalikePasses.Should().Be(_valid);
+    }
 }

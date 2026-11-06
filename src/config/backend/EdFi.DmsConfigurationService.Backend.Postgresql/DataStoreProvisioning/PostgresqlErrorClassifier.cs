@@ -52,13 +52,21 @@ internal static class PostgresqlErrorClassifier
 
     /// <summary>
     /// The failure class a SQLSTATE proves (6.9a), or null when the outcome is in doubt: a connection-class
-    /// state, a cancelled query (<c>57014</c>, cancellation after send), or a dropped database (<c>57P04</c>).
-    /// Every other server-reported error came in the command's own response and proves no commit.
+    /// state, a cancelled query (<c>57014</c>, cancellation after send), a dropped database (<c>57P04</c>), or
+    /// the server's own statement of doubt (<c>40003</c>, <c>statement_completion_unknown</c>). Any other
+    /// server-reported error came in the command's own response as a rejection of that command, which is
+    /// treated as proof of no commit; a state that does not say so is added here, never to the definite set.
     /// </summary>
     public static DmsCommandFailureClass? FailureClassOf(string sqlState)
     {
         ArgumentNullException.ThrowIfNull(sqlState);
-        if (IsConnectionClass(sqlState) || sqlState is PostgresErrorCodes.QueryCanceled or "57P04")
+        if (
+            IsConnectionClass(sqlState)
+            || sqlState
+                is PostgresErrorCodes.QueryCanceled
+                    or PostgresErrorCodes.DatabaseDropped
+                    or PostgresErrorCodes.StatementCompletionUnknown
+        )
         {
             return null;
         }
