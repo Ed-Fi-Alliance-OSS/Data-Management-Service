@@ -127,7 +127,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
     private readonly IDockerCli _docker;
     private readonly ServiceProvider _serviceProvider;
     private readonly string _resourcePrefix;
-    private bool _controllerNativeKafka;
     private bool _usesGeneratedSchema;
     private int _controllerBrokerPort;
     private int _controllerConnectPort;
@@ -219,7 +218,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         CancellationToken cancellationToken,
         Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> beforeWorker = null!,
         bool exposeBroker = false,
-        bool nativeKafka = false,
         bool composeKafka = false,
         bool offlineKafka = false,
         bool isolateSourceProducer = false
@@ -246,7 +244,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             cancellationToken,
             beforeWorker: beforeWorker,
             exposeBroker: exposeBroker,
-            nativeKafka: nativeKafka,
             composeKafka: composeKafka,
             offlineKafka: offlineKafka,
             isolateSourceProducer: isolateSourceProducer
@@ -262,7 +259,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         bool applyPrerequisitePolicy = true,
         Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> beforeWorker = null!,
         bool exposeBroker = false,
-        bool nativeKafka = false,
         bool composeKafka = false,
         bool offlineKafka = false,
         Func<Exception, string, Task> writeStartupFailureEvidence = null!,
@@ -284,7 +280,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         try
         {
             fixture._isolateSourceProducer = isolateSourceProducer;
-            fixture._controllerNativeKafka = nativeKafka;
             fixture._controllerComposeKafka = composeKafka;
             if (exposeBroker)
             {
@@ -1301,11 +1296,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             await RunControllerComposeAsync(["up", "--detach", "--wait", "kafka"], cancellationToken);
             return;
         }
-        if (_controllerNativeKafka)
-        {
-            await StartControllerKafkaAsync(cancellationToken);
-            return;
-        }
         const int maximumAttempts = 3;
         for (int attempt = 1; attempt <= maximumAttempts; attempt++)
         {
@@ -1317,35 +1307,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 _controllerBrokerPort = ((IPEndPoint)listener.LocalEndpoint).Port;
             }
             DockerCommandResult result = await _docker.RunAllowingFailureAsync(
-                [
-                    "run",
-                    "--detach",
-                    "--name",
-                    BrokerContainerName,
-                    "--network",
-                    NetworkName,
-                    "-p",
-                    $"127.0.0.1:{_controllerBrokerPort}:29092",
-                    _settings.BrokerImage,
-                    "redpanda",
-                    "start",
-                    "--overprovisioned",
-                    "--smp",
-                    "1",
-                    "--memory",
-                    "512M",
-                    "--reserve-memory",
-                    "0M",
-                    "--node-id",
-                    "0",
-                    "--check=false",
-                    "--kafka-addr",
-                    "internal://0.0.0.0:9092,external://0.0.0.0:29092"
-                        + (_isolateSourceProducer ? ",producer://0.0.0.0:9094" : ""),
-                    "--advertise-kafka-addr",
-                    $"internal://{BrokerContainerName}:9092,external://127.0.0.1:{_controllerBrokerPort}"
-                        + (_isolateSourceProducer ? $",producer://{ConnectContainerName}:19094" : ""),
-                ],
+                BuildKafkaRunArguments(),
                 cancellationToken
             );
             if (result.ExitCode == 0)
@@ -1469,7 +1431,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             "-e",
             "OFFSET_FLUSH_INTERVAL_MS=1000",
             // Plugin discovery can exhaust 512 MiB before REST starts on qualification hosts.
-            .. (_controllerNativeKafka ? new[] { "-e", "KAFKA_HEAP_OPTS=-Xms512m -Xmx1g" } : []),
+            "-e",
+            "KAFKA_HEAP_OPTS=-Xms512m -Xmx1g",
             "-e",
             ConnectConfigProvidersEnvironmentVariable,
             "-e",
@@ -2001,49 +1964,46 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         );
     }
 
-    private async Task CreateMinimalTopicsAsync(
+    internal async Task CreateMinimalTopicsAsync(
         CdcConnectorTemplateRequest request,
         CancellationToken cancellationToken
     )
     {
         foreach (string topic in new[] { request.PublicTopicName, request.ProgressTopicName })
         {
-            await _docker.RunAsync(
-                [
-                    "exec",
-                    BrokerContainerName,
-                    "rpk",
-                    "topic",
-                    "create",
-                    "--if-not-exists",
-                    topic,
-                    "--partitions",
-                    (topic == request.PublicTopicName ? request.Binding.PartitionCount : 1).ToString(
-                        CultureInfo.InvariantCulture
-                    ),
-                    "-c",
-                    "cleanup.policy=compact",
-                    "-c",
-                    "delete.retention.ms=604800000",
-                    "--brokers",
-                    $"{BrokerContainerName}:9092",
-                ],
-                cancellationToken
+            await CreateTopicAsync(
+                topic,
+                topic == request.PublicTopicName ? request.Binding.PartitionCount : 1,
+                ["cleanup.policy=compact", "delete.retention.ms=604800000"]
             );
         }
         if (request.SchemaHistoryTopicName is not null)
+        {
+            await CreateTopicAsync(
+                request.SchemaHistoryTopicName,
+                1,
+                ["cleanup.policy=delete", "retention.ms=-1", "retention.bytes=-1"]
+            );
+        }
+
+        async Task CreateTopicAsync(string topic, int partitions, IReadOnlyList<string> configs)
         {
             await _docker.RunAsync(
                 [
                     "exec",
                     BrokerContainerName,
-                    "rpk",
-                    "topic",
-                    "create",
+                    "/opt/kafka/bin/kafka-topics.sh",
+                    "--bootstrap-server",
+                    KafkaBootstrapServers,
+                    "--create",
                     "--if-not-exists",
-                    request.SchemaHistoryTopicName,
-                    "--brokers",
-                    $"{BrokerContainerName}:9092",
+                    "--topic",
+                    topic,
+                    "--partitions",
+                    partitions.ToString(CultureInfo.InvariantCulture),
+                    "--replication-factor",
+                    "1",
+                    .. configs.SelectMany(config => new[] { "--config", config }),
                 ],
                 cancellationToken
             );
@@ -3288,7 +3248,7 @@ internal sealed record CdcConnectorTemplateSmokeSettings(
 )
 {
     private const string ConnectImageVariable = "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE";
-    private const string BrokerImageVariable = "CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE";
+    private const string BrokerImageVariable = "CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE";
     private const string PostgresqlImageVariable = "CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE";
     private const string SqlServerImageVariable = "CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE";
     private const string FailFastVariable = "CDC_CONNECTOR_TEMPLATE_FAIL_FAST";
@@ -3302,7 +3262,8 @@ internal sealed record CdcConnectorTemplateSmokeSettings(
         string providerImageVariable = ProviderImageVariable(provider);
         return new CdcConnectorTemplateSmokeSettings(
             Environment.GetEnvironmentVariable(ConnectImageVariable) ?? string.Empty,
-            Environment.GetEnvironmentVariable(BrokerImageVariable) ?? string.Empty,
+            Environment.GetEnvironmentVariable(BrokerImageVariable)
+                ?? CdcComposeBrokerSizeDeployment.BrokerImage,
             Environment.GetEnvironmentVariable(providerImageVariable) ?? string.Empty,
             IsEnabled(FailFastVariable),
             IsEnabled(KeepContainersVariable)

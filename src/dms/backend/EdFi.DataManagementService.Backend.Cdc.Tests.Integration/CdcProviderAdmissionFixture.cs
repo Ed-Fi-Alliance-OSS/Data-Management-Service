@@ -211,7 +211,6 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                         );
                     }
                 },
-                nativeKafka: true,
                 composeKafka: composeKafka,
                 offlineKafka: offlineKafka
             );
