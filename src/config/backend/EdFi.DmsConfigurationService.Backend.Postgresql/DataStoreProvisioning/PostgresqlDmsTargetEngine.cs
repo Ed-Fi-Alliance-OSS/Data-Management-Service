@@ -38,6 +38,8 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
 
     public const string ReadIdentityOperation = "ReadIdentity";
 
+    public const string ReadTargetFactsOperation = "ReadTargetFacts";
+
     private const string ServerFactsQuery =
         "SELECT current_setting('server_version'), current_setting('server_version_num')::int, (SELECT pg_catalog.pg_encoding_to_char(encoding) FROM pg_catalog.pg_database WHERE datname = 'template1'), pg_catalog.now();";
 
@@ -270,7 +272,31 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         };
     }
 
+    /// <summary>
+    /// The facts every 6.9c check needs, read on the instance-bound session. A query the server definitely
+    /// refuses for lack of a privilege raises <see cref="DmsAccessDeniedException"/> with the SQLSTATE only;
+    /// a missing singleton table is a typed read, and every other error, including cancellation and a lost
+    /// connection, propagates unchanged.
+    /// </summary>
     public async Task<DmsTargetFacts> ReadTargetFactsAsync(
+        DmsSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return await ReadTargetFactsCoreAsync(session, cancellationToken);
+        }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsAccessRefusal(exception.SqlState))
+        {
+            throw new DmsAccessDeniedException(
+                PostgresqlErrorClassifier.Diagnostic(exception, ReadTargetFactsOperation)
+            );
+        }
+    }
+
+    private async Task<DmsTargetFacts> ReadTargetFactsCoreAsync(
         DmsSession session,
         CancellationToken cancellationToken
     )

@@ -126,9 +126,17 @@ public class PostgresqlDmsTargetEngineIdentityTests
             PostgresqlDmsTargetEngine.OpenSessionOperation
         );
 
+        private static readonly DmsProvisioningDiagnostic _factsRefused = new(
+            typeof(Npgsql.PostgresException).FullName!,
+            "42501",
+            PostgresqlDmsTargetEngine.ReadTargetFactsOperation
+        );
+
         private TestDatabase? _database;
         private string? _role;
         private DmsIdentityRead _identity = null!;
+        private DmsIdentityRead _grantedIdentity = null!;
+        private Exception? _factsOutcome;
         private DmsSessionOpenResult _connect = null!;
         private Guid _identityAfter;
         private bool _roleSessionsGone;
@@ -151,6 +159,23 @@ public class PostgresqlDmsTargetEngineIdentityTests
             await using (DmsSession session = ((DmsSessionOpenResult.Opened)opened).Session)
             {
                 _identity = await engine.ReadIdentityAsync(session, default);
+            }
+
+            // The identity is readable, dms.EffectiveSchema is not: the facts read is refused.
+            await _database.ExecuteAsync(
+                $"GRANT USAGE ON SCHEMA \"dms\" TO {PostgresqlIdentifiers.Quote(_role)}; GRANT SELECT ON \"dms\".\"DataStoreIdentity\" TO {PostgresqlIdentifiers.Quote(_role)};"
+            );
+            DmsSessionOpenResult reopened = await engine.OpenSessionAsync(
+                _database.DatabaseName,
+                instance,
+                default
+            );
+            await using (DmsSession session = ((DmsSessionOpenResult.Opened)reopened).Session)
+            {
+                _grantedIdentity = await engine.ReadIdentityAsync(session, default);
+                _factsOutcome = await Record.ExceptionAsync(() =>
+                    engine.ReadTargetFactsAsync(session, default)
+                );
             }
 
             // CONNECT revoked from PUBLIC: the open itself is refused.
@@ -205,6 +230,21 @@ public class PostgresqlDmsTargetEngineIdentityTests
         [Test]
         public void It_reports_a_refused_connection_as_access_denied_with_the_sqlstate_only() =>
             _connect.Should().Be(new DmsSessionOpenResult.AccessDenied(_connectRefused));
+
+        [Test]
+        public void It_reports_a_refused_facts_read_as_access_denied_with_the_sqlstate_only()
+        {
+            _grantedIdentity
+                .Should()
+                .BeOfType<DmsIdentityRead.Found>()
+                .Which.SourceIdentity.Should()
+                .Be(DmsShapedManifest.SourceIdentity);
+            DmsAccessDeniedException refused = _factsOutcome
+                .Should()
+                .BeOfType<DmsAccessDeniedException>()
+                .Subject;
+            (refused.Diagnostic, refused.InnerException).Should().Be((_factsRefused, (Exception?)null));
+        }
 
         [Test]
         public void It_leaves_no_session_of_the_role_and_the_identity_unchanged() =>

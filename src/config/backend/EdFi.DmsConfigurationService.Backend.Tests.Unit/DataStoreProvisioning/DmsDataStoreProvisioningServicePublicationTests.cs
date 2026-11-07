@@ -1002,8 +1002,10 @@ public class DmsDataStoreProvisioningServicePublicationTests
 
         private Harness _connectDenied = null!;
         private Harness _identityDenied = null!;
+        private Harness _factsDenied = null!;
         private DmsDataStoreCreateResult _connectResult = null!;
         private DmsDataStoreCreateResult _identityResult = null!;
+        private DmsDataStoreCreateResult _factsResult = null!;
 
         [SetUp]
         public async Task Setup()
@@ -1028,7 +1030,29 @@ public class DmsDataStoreProvisioningServicePublicationTests
                         : TargetFactsSample.Identity()
                 );
             _identityResult = await CreateAsync(_identityDenied);
+
+            _factsDenied = Scripted();
+            _factsDenied.Engine.OnReadTargetFacts = (session, _) =>
+                session.ServerSession == _markerSession
+                    ? throw new DmsAccessDeniedException(_refusal)
+                    : Task.FromResult(TargetFactsSample.PostgresqlFacts());
+            _factsResult = await CreateAsync(_factsDenied);
         }
+
+        [Test]
+        public void It_reports_a_refused_facts_read_of_the_re_check_for_inspection() =>
+            FailureOf(_factsResult)
+                .Should()
+                .Be(
+                    DmsProvisioningFailure.Create(
+                        DmsProvisioningFailureCode.IdentityAssignmentFailed,
+                        new DmsProvisioningDiagnostic(
+                            "Npgsql.PostgresException",
+                            "42501",
+                            DmsDataStoreProvisioningService.VerifyRenamedTargetStep
+                        )
+                    )
+                );
 
         [Test]
         public void It_reports_the_unmarked_target_for_inspection_with_the_sanitized_diagnostic() =>
@@ -1063,6 +1087,7 @@ public class DmsDataStoreProvisioningServicePublicationTests
                 {
                     (_connectDenied, _connectResult),
                     (_identityDenied, _identityResult),
+                    (_factsDenied, _factsResult),
                 }
             )
             {

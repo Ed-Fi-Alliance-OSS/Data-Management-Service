@@ -342,8 +342,12 @@ public class DmsDataStoreProvisioningServiceReconcileTests
 
         private PresentTarget _identityDenied = null!;
         private PresentTarget _connectDenied = null!;
+        private PresentTarget _factsDenied = null!;
+        private PresentTarget _factsDeniedAlongsideLoss = null!;
         private DmsDataStoreCreateResult _identityResult = null!;
         private DmsDataStoreCreateResult _connectResult = null!;
+        private DmsDataStoreCreateResult _factsResult = null!;
+        private DmsDataStoreCreateResult _factsAlongsideLossResult = null!;
 
         [SetUp]
         public async Task Setup()
@@ -359,6 +363,21 @@ public class DmsDataStoreProvisioningServiceReconcileTests
             _connectDenied.Harness.Engine.OnOpenSession = (_, _, _) =>
                 Task.FromResult<DmsSessionOpenResult>(new DmsSessionOpenResult.AccessDenied(_refusal));
             _connectResult = await _connectDenied.CreateAsync();
+
+            // The identity matches; the facts read is refused (for example on dms.EffectiveSchema).
+            _factsDenied = new PresentTarget();
+            _factsDenied.Harness.Engine.OnReadTargetFacts = (_, _) =>
+                throw new DmsAccessDeniedException(_refusal);
+            _factsResult = await _factsDenied.CreateAsync();
+
+            // The same refusal raised while the holder is lost is loss, not a refusal.
+            _factsDeniedAlongsideLoss = new PresentTarget();
+            _factsDeniedAlongsideLoss.Harness.Engine.OnReadTargetFacts = (_, _) =>
+            {
+                _factsDeniedAlongsideLoss.Harness.OnlyHolder.Lose();
+                throw new DmsAccessDeniedException(_refusal);
+            };
+            _factsAlongsideLossResult = await _factsDeniedAlongsideLoss.CreateAsync();
         }
 
         [Test]
@@ -396,15 +415,45 @@ public class DmsDataStoreProvisioningServiceReconcileTests
         {
             _identityDenied.Harness.Engine.Members.Should().Equal(_reads[..^1]);
             _connectDenied.Harness.Engine.Members.Should().Equal(_reads[..^2]);
+            _factsDenied.Harness.Engine.Members.Should().Equal(_reads);
             (
                 _identityDenied.Sessions.Single().Disposals,
                 _connectDenied.Sessions.Count,
+                _factsDenied.Sessions.Single().Disposals,
                 _identityDenied.Harness.OnlyHolder.ReleaseCount,
-                _connectDenied.Harness.OnlyHolder.ReleaseCount
+                _connectDenied.Harness.OnlyHolder.ReleaseCount,
+                _factsDenied.Harness.OnlyHolder.ReleaseCount
             )
                 .Should()
-                .Be((1, 0, 1, 1));
+                .Be((1, 0, 1, 1, 1, 1));
         }
+
+        [Test]
+        public void It_reports_a_refused_facts_read_as_unverifiable_with_the_sanitized_diagnostic() =>
+            FailureOf(_factsResult)
+                .Should()
+                .Be(
+                    DmsProvisioningFailure.Create(
+                        DmsProvisioningFailureCode.TargetUnverifiable,
+                        new DmsProvisioningDiagnostic(
+                            "Npgsql.PostgresException",
+                            "42501",
+                            DmsDataStoreProvisioningService.ReconcileReadTargetFactsStep
+                        )
+                    )
+                );
+
+        [Test]
+        public void It_keeps_a_refusal_raised_alongside_loss_as_transient_lock_lost() =>
+            Verdict(_factsAlongsideLossResult)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCategory.Transient,
+                        DmsDataStoreProvisioningService.ReconcileReadTargetFactsStep
+                    )
+                );
     }
 
     [TestFixture]

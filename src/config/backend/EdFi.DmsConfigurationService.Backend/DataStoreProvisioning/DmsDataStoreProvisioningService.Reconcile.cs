@@ -30,8 +30,9 @@ public sealed partial class DmsDataStoreProvisioningService
     /// found it. Step 1: a protected or fenced database keeps the preamble's verdicts, and anything that is not
     /// an online database is <c>TargetUnverifiable</c>. Step 2: on a session bound to the inspected instance, an
     /// unreadable identity is <c>TargetUnverifiable</c> and another identity <c>TargetUnowned</c>, with no
-    /// further read; a connection or an identity read the server definitely refuses for lack of a privilege is
-    /// unreadable too, reported with the refusal's sanitized diagnostic (type chain and provider code), so it
+    /// further read; a connection, an identity read, or a facts read the server definitely refuses for lack of a
+    /// privilege leaves the target unverifiable too, reported with the refusal's sanitized diagnostic (type chain
+    /// and provider code) under the step that was refused, so it
     /// requires inspection instead of looking transient. Step 3: the expected identity is followed by every 6.9c check under the reconcile rule,
     /// whose first failure is the result. Step 4: <c>Reconciled</c> with the pin.
     /// </summary>
@@ -91,9 +92,11 @@ public sealed partial class DmsDataStoreProvisioningService
                 throw StepFailed(DmsProvisioningFailureCode.TargetUnowned, ReconcileIdentityStep);
             }
 
-            DmsTargetFacts facts = await scope.ReadAsync(
+            DmsTargetFacts facts = await ReadFactsAsync(
+                scope,
                 ReconcileReadTargetFactsStep,
-                token => engine.ReadTargetFactsAsync(session, token)
+                session,
+                DmsProvisioningFailureCode.TargetUnverifiable
             );
             DmsTargetValidation verdict = DmsTargetValidator.Validate(
                 facts,

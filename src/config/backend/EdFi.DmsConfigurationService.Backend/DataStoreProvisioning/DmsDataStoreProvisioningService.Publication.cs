@@ -304,9 +304,11 @@ public sealed partial class DmsDataStoreProvisioningService
             DmsProvisioningFailureCode.AdminPrivilegeMissing,
             VerifyRenamedTargetStep
         );
-        DmsTargetFacts facts = await scope.ReadAsync(
+        DmsTargetFacts facts = await ReadFactsAsync(
+            scope,
             VerifyRenamedTargetStep,
-            token => engine.ReadTargetFactsAsync(session, token)
+            session,
+            DmsProvisioningFailureCode.AdminPrivilegeMissing
         );
         DmsTargetValidation verdict = DmsTargetValidator.Validate(
             facts,

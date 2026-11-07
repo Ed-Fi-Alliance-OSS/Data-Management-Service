@@ -424,6 +424,7 @@ public class PostgresqlCreateReconcileTests
         private Evidence _before = null!;
         private Evidence _after = null!;
         private (DmsDataStoreCreateResult Result, string[] Members) _identityDenied;
+        private (DmsDataStoreCreateResult Result, string[] Members) _factsDenied;
         private (DmsDataStoreCreateResult Result, string[] Members) _connectDenied;
         private bool _roleSessionsGone;
 
@@ -441,6 +442,16 @@ public class PostgresqlCreateReconcileTests
             Lane.Deployment restricted = _lane.WithEngine(EngineAs(_role));
             DmsDataStoreCreateRequest request = _lane.Request;
             _identityDenied = await RetryAsync(
+                restricted.Engine,
+                () => restricted.Service.CreateAsync(request, default)
+            );
+
+            // The matching identity becomes readable, dms.EffectiveSchema stays refused: the facts read is.
+            string grantee = PostgresqlIdentifiers.Quote(_role);
+            await new TestDatabase(_lane.Target.Value).ExecuteAsync(
+                $"GRANT USAGE ON SCHEMA \"dms\" TO {grantee}; GRANT SELECT ON \"dms\".\"DataStoreIdentity\" TO {grantee};"
+            );
+            _factsDenied = await RetryAsync(
                 restricted.Engine,
                 () => restricted.Service.CreateAsync(request, default)
             );
@@ -532,12 +543,26 @@ public class PostgresqlCreateReconcileTests
         public void It_reads_nothing_after_the_refusal()
         {
             _identityDenied.Members.Should().Equal(_readMembers[..^1]);
+            _factsDenied.Members.Should().Equal(_readMembers);
             _connectDenied.Members.Should().Equal(_readMembers[..^2]);
         }
 
         [Test]
+        public void It_reports_a_refused_facts_read_of_an_owned_target_as_unverifiable_for_inspection() =>
+            Refusal(_factsDenied.Result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TargetUnverifiable,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.ReconcileReadTargetFactsStep,
+                        "42501"
+                    )
+                );
+
+        [Test]
         public void It_keeps_only_the_type_chain_in_the_diagnostic() =>
-            new[] { _identityDenied.Result, _connectDenied.Result }
+            new[] { _identityDenied.Result, _factsDenied.Result, _connectDenied.Result }
                 .Select(result =>
                     ((DmsDataStoreCreateResult.Failure)result).Detail.Diagnostic.ExceptionTypeChain
                 )

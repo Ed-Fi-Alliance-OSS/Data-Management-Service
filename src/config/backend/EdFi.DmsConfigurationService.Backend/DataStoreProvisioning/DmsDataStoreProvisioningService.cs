@@ -477,9 +477,11 @@ public sealed partial class DmsDataStoreProvisioningService(
                 token => engine.ReadIdentityAsync(session, token)
             );
             ThrowIfAccessDenied(identity, DmsProvisioningFailureCode.AdminPrivilegeMissing, ReadIdentityStep);
-            DmsTargetFacts facts = await scope.ReadAsync(
+            DmsTargetFacts facts = await ReadFactsAsync(
+                scope,
                 ReadTargetFactsStep,
-                token => engine.ReadTargetFactsAsync(session, token)
+                session,
+                DmsProvisioningFailureCode.AdminPrivilegeMissing
             );
             if (restoreInDoubt)
             {
@@ -601,6 +603,31 @@ public sealed partial class DmsDataStoreProvisioningService(
     /// <summary>The engine's type chain and provider code, labelled with the orchestrator's step.</summary>
     private static DmsProvisioningDiagnostic AtStep(DmsProvisioningDiagnostic diagnostic, string step) =>
         new(diagnostic.ExceptionTypeChain, diagnostic.ProviderErrorCode, step);
+
+    /// <summary>
+    /// The facts read under <paramref name="step"/>. A read the server definitely refused for lack of a
+    /// privilege (<see cref="DmsAccessDeniedException"/>, which the scope reports as an unknown outcome) ends
+    /// the step with <paramref name="accessDenied"/> and the refusal's sanitized diagnostic. The scope's loss
+    /// check runs first, so a refusal raised alongside loss is still loss; the caller's cancellation, a
+    /// deadline and every other exception keep the scope's classification.
+    /// </summary>
+    private async Task<DmsTargetFacts> ReadFactsAsync(
+        LockScope scope,
+        string step,
+        DmsSession session,
+        DmsProvisioningFailureCode accessDenied
+    )
+    {
+        try
+        {
+            return await scope.ReadAsync(step, token => engine.ReadTargetFactsAsync(session, token));
+        }
+        catch (DmsProvisioningFailedException failure)
+            when (failure.InnerException is DmsAccessDeniedException denied)
+        {
+            throw StepFailed(accessDenied, AtStep(denied.Diagnostic, step));
+        }
+    }
 
     /// <summary>
     /// Recovery for an unknown outcome (6.10): terminates <paramref name="session"/> with verification on a

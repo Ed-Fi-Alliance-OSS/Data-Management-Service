@@ -1329,8 +1329,10 @@ public class DmsDataStoreProvisioningServiceStagingTests
 
         private Harness _connectDenied = null!;
         private Harness _identityDenied = null!;
+        private Harness _factsDenied = null!;
         private DmsDataStoreCreateResult _connectResult = null!;
         private DmsDataStoreCreateResult _identityResult = null!;
+        private DmsDataStoreCreateResult _factsResult = null!;
 
         [SetUp]
         public async Task Setup()
@@ -1346,7 +1348,26 @@ public class DmsDataStoreProvisioningServiceStagingTests
                     new DmsIdentityRead.Invalid(DmsIdentityReadProblem.AccessDenied) { Diagnostic = _refusal }
                 );
             _identityResult = await CreateAsync(_identityDenied);
+
+            _factsDenied = Scripted();
+            _factsDenied.Engine.OnReadTargetFacts = (_, _) => throw new DmsAccessDeniedException(_refusal);
+            _factsResult = await CreateAsync(_factsDenied);
         }
+
+        [Test]
+        public void It_reports_a_refused_facts_read_as_the_missing_admin_privilege() =>
+            FailureOf(_factsResult)
+                .Should()
+                .Be(
+                    DmsProvisioningFailure.Create(
+                        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                        new DmsProvisioningDiagnostic(
+                            "Npgsql.PostgresException",
+                            "42501",
+                            DmsDataStoreProvisioningService.ReadTargetFactsStep
+                        )
+                    )
+                );
 
         [Test]
         public void It_reports_the_missing_admin_privilege_with_the_sanitized_diagnostic() =>
@@ -1381,6 +1402,8 @@ public class DmsDataStoreProvisioningServiceStagingTests
                 Members(harness).Should().NotContain(SpyDmsTargetEngine.ReadTargetFacts);
                 CountOf(harness, SpyDmsTargetEngine.DropStaging).Should().Be(1);
             }
+
+            CountOf(_factsDenied, SpyDmsTargetEngine.DropStaging).Should().Be(1);
         }
     }
 
