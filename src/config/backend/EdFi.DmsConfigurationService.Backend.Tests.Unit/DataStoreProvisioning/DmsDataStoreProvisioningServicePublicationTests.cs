@@ -55,11 +55,15 @@ public class DmsDataStoreProvisioningServicePublicationTests
     private sealed class FakeSession(DmsInstanceIdentity instance, DmsServerSessionId session)
         : DmsSession(instance, session)
     {
-        public bool Disposed { get; private set; }
+        private int _disposals;
+
+        public bool Disposed => _disposals > 0;
+
+        public int Disposals => _disposals;
 
         public override ValueTask DisposeAsync()
         {
-            Disposed = true;
+            _disposals++;
             return ValueTask.CompletedTask;
         }
     }
@@ -1094,6 +1098,132 @@ public class DmsDataStoreProvisioningServicePublicationTests
             )
                 .Should()
                 .Be((0, 0));
+        }
+    }
+
+    [TestFixture]
+    public class Given_the_holder_is_lost_as_a_session_open_returns
+    {
+        private static readonly DmsServerSessionId _collisionSession = new(
+            321,
+            new DateTimeOffset(2026, 11, 6, 0, 0, 2, TimeSpan.Zero)
+        );
+
+        private readonly Dictionary<string, FakeSession> _discarded = [];
+        private Harness _staging = null!;
+        private Harness _publication = null!;
+        private Harness _collision = null!;
+        private DmsDataStoreCreateResult _stagingResult = null!;
+        private DmsDataStoreCreateResult _publicationResult = null!;
+        private DmsDataStoreCreateResult _collisionResult = null!;
+
+        /// <summary>Declares loss as the open selected by <paramref name="losesOn"/> returns its session, and keeps that session.</summary>
+        private void LoseOnOpen(
+            Harness harness,
+            string key,
+            Func<DmsDatabaseName, bool> losesOn,
+            DmsServerSessionId id
+        )
+        {
+            harness.Engine.OnOpenSession = (name, instance, _) =>
+            {
+                if (!losesOn(name))
+                {
+                    return Task.FromResult<DmsSessionOpenResult>(
+                        new DmsSessionOpenResult.Opened(
+                            new FakeSession(instance, IsStaging(name) ? _stagingSession : _markerSession)
+                        )
+                    );
+                }
+
+                FakeSession session = new(instance, id);
+                _discarded[key] = session;
+                harness.OnlyHolder.Lose();
+                return Task.FromResult<DmsSessionOpenResult>(new DmsSessionOpenResult.Opened(session));
+            };
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _discarded.Clear();
+
+            _staging = Scripted();
+            LoseOnOpen(_staging, "staging", IsStaging, _stagingSession);
+            _stagingResult = await CreateAsync(_staging);
+
+            _publication = Scripted();
+            LoseOnOpen(_publication, "publication", name => !IsStaging(name), _markerSession);
+            _publicationResult = await CreateAsync(_publication);
+
+            _collision = Scripted(targetInspection: inspection =>
+                inspection <= 2 ? new DmsLiveTargetState.Absent() : PresentUnder(_foreignInstance)
+            );
+            _collision.Engine.OnRenameIntoTarget = (_, _, _, _) =>
+                Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
+                    new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+                        new DmsCommandFailure(
+                            DmsCommandFailureClass.DuplicateName,
+                            DmsProvisioningDiagnostic.ForOperation("RenameIntoTarget")
+                        )
+                    )
+                );
+            LoseOnOpen(_collision, "collision", name => !IsStaging(name), _collisionSession);
+            _collisionResult = await CreateAsync(_collision);
+        }
+
+        [Test]
+        public void It_disposes_each_discarded_session_exactly_once() =>
+            _discarded
+                .ToDictionary(entry => entry.Key, entry => entry.Value.Disposals)
+                .Should()
+                .BeEquivalentTo(
+                    new Dictionary<string, int>
+                    {
+                        ["staging"] = 1,
+                        ["publication"] = 1,
+                        ["collision"] = 1,
+                    }
+                );
+
+        [Test]
+        public void It_ends_each_as_lock_lost_at_the_open() =>
+            new[] { _stagingResult, _publicationResult, _collisionResult }
+                .Select(result => (FailureOf(result).Code, FailureOf(result).Diagnostic.Operation))
+                .Should()
+                .Equal(
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsDataStoreProvisioningService.OpenStagingSessionStep
+                    ),
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsDataStoreProvisioningService.OpenTargetSessionStep
+                    ),
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsDataStoreProvisioningService.ReconcileOpenSessionStep
+                    )
+                );
+
+        [Test]
+        public void It_reads_nothing_on_a_discarded_session_and_issues_no_further_mutation()
+        {
+            foreach (Harness harness in new[] { _staging, _publication, _collision })
+            {
+                IReadOnlyList<string> members = harness.Engine.Members;
+                int open = members.ToList().LastIndexOf(SpyDmsTargetEngine.OpenSession);
+                members
+                    .Skip(open + 1)
+                    .Should()
+                    .NotContain([
+                        SpyDmsTargetEngine.ReadIdentity,
+                        SpyDmsTargetEngine.ReadTargetFacts,
+                        SpyDmsTargetEngine.RenameIntoTarget,
+                        SpyDmsTargetEngine.AssignMarker,
+                        SpyDmsTargetEngine.DropInstance,
+                    ]);
+            }
         }
     }
 }

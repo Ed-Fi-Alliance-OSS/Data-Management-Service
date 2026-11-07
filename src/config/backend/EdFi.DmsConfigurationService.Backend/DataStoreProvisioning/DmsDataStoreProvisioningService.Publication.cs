@@ -173,11 +173,8 @@ public sealed partial class DmsDataStoreProvisioningService
         await TestHooks.AtAsync(DmsProvisioningHookPoint.BeforeMarker, operation, scope.CallerToken);
 
         // 6.3 step 9.
-        DmsSessionOpenResult opened = await scope.ReadAsync(
-            OpenTargetSessionStep,
-            token => engine.OpenSessionAsync(target, ourTarget, token)
-        );
-        if (opened is not DmsSessionOpenResult.Opened { Session: { } session })
+        DmsSession? session = await OpenOwnedSessionAsync(scope, OpenTargetSessionStep, target, ourTarget);
+        if (session is null)
         {
             publication.Displaced();
             throw StepFailed(DmsProvisioningFailureCode.InstanceChanged, OpenTargetSessionStep);
@@ -365,11 +362,13 @@ public sealed partial class DmsDataStoreProvisioningService
             _ => throw StepFailed(DmsProvisioningFailureCode.TargetUnverifiable, ReconcileInspectStep),
         };
 
-        DmsSessionOpenResult opened = await scope.ReadAsync(
+        DmsSession? session = await OpenOwnedSessionAsync(
+            scope,
             ReconcileOpenSessionStep,
-            token => engine.OpenSessionAsync(request.TargetName, present.Instance, token)
+            request.TargetName,
+            present.Instance
         );
-        if (opened is not DmsSessionOpenResult.Opened { Session: { } session })
+        if (session is null)
         {
             throw StepFailed(DmsProvisioningFailureCode.TargetUnverifiable, ReconcileOpenSessionStep);
         }

@@ -471,11 +471,13 @@ public sealed partial class DmsDataStoreProvisioningService(
         StagingCleanup cleanup
     )
     {
-        DmsSessionOpenResult opened = await scope.ReadAsync(
+        DmsSession? session = await OpenOwnedSessionAsync(
+            scope,
             OpenStagingSessionStep,
-            token => engine.OpenSessionAsync(stage, stagingInstance, token)
+            stage,
+            stagingInstance
         );
-        if (opened is not DmsSessionOpenResult.Opened { Session: { } session })
+        if (session is null)
         {
             throw StepFailed(DmsProvisioningFailureCode.InstanceChanged, OpenStagingSessionStep);
         }
@@ -539,6 +541,37 @@ public sealed partial class DmsDataStoreProvisioningService(
             }
 
             return (session.ServerSession, package.SourceIdentity);
+        }
+    }
+
+    /// <summary>
+    /// Opens an instance-bound session through <paramref name="scope"/> and owns it from the moment the engine
+    /// returns it: when the scope then discards the result because loss was declared while the session opened,
+    /// the session is disposed here, once, before the loss propagates. Null when the engine refused because the
+    /// name no longer resolves to <paramref name="instance"/>; otherwise the caller owns the returned session.
+    /// </summary>
+    private async Task<DmsSession?> OpenOwnedSessionAsync(
+        LockScope scope,
+        string step,
+        DmsDatabaseName name,
+        DmsInstanceIdentity instance
+    )
+    {
+        DmsSession? returned = null;
+        try
+        {
+            DmsSessionOpenResult opened = await scope.CallAsync(
+                step,
+                options.Value.CommandTimeout,
+                token => engine.OpenSessionAsync(name, instance, token),
+                result => returned = (result as DmsSessionOpenResult.Opened)?.Session
+            );
+            return (opened as DmsSessionOpenResult.Opened)?.Session;
+        }
+        catch (Exception) when (returned is not null)
+        {
+            await returned.DisposeAsync();
+            throw;
         }
     }
 
