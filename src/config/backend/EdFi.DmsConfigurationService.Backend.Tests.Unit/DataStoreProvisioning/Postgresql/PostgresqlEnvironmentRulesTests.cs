@@ -11,7 +11,8 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 
 /// <summary>
 /// Step 3.9 reason codes: the server rules of 7.3 item 4 over read facts (floors as
-/// <c>EngineIncompatible</c>; <c>CREATEDB</c>, <c>pg_signal_backend</c> and <c>pg_read_all_stats</c> as
+/// <c>EngineIncompatible</c>; a non-superuser administrator as <c>AdminPrivilegeMissing</c> under
+/// <c>Superuser</c>, because the artifact's ownership statements need one; <c>CREATEDB</c>, <c>pg_signal_backend</c> and <c>pg_read_all_stats</c> as
 /// <c>AdminPrivilegeMissing</c>, each excused by superuser; the enqueue owner missing without
 /// <c>CREATEROLE</c> as <c>AdminPrivilegeMissing</c> and present but unsafe as <c>RoleStateUnsafe</c>, which
 /// superuser does not excuse), every failing rule reported; and the <c>psql</c> rule of item 5.
@@ -39,6 +40,14 @@ public class PostgresqlEnvironmentRulesTests
         string? operation = null
     ) => new(code, probe, DmsProvisioningDiagnostic.ForOperation(operation ?? probe));
 
+    /// <summary>The reasons other than the superuser requirement, which a dedicated fixture pins.</summary>
+    private static IReadOnlyList<DmsReadinessReason> Operational(PostgresqlEnvironmentFacts facts) =>
+        [
+            .. PostgresqlEnvironment
+                .Evaluate(facts)
+                .Where(reason => reason.Probe != PostgresqlEnvironment.SuperuserProbe),
+        ];
+
     [TestFixture]
     public class Given_server_facts
     {
@@ -55,8 +64,8 @@ public class PostgresqlEnvironmentRulesTests
         [SetUp]
         public void Setup()
         {
-            _granted = PostgresqlEnvironment.Evaluate(Facts(Privileges()));
-            _superuserWithNothingElse = PostgresqlEnvironment.Evaluate(
+            _granted = Operational(Facts(Privileges()));
+            _superuserWithNothingElse = Operational(
                 Facts(
                     Privileges(
                         superuser: true,
@@ -67,19 +76,19 @@ public class PostgresqlEnvironmentRulesTests
                     )
                 )
             );
-            _noCreateDatabase = PostgresqlEnvironment.Evaluate(Facts(Privileges(createDatabase: false)));
-            _noSignalBackend = PostgresqlEnvironment.Evaluate(Facts(Privileges(signalBackend: false)));
-            _noReadAllStats = PostgresqlEnvironment.Evaluate(Facts(Privileges(readAllStats: false)));
-            _nothingGranted = PostgresqlEnvironment.Evaluate(
+            _noCreateDatabase = Operational(Facts(Privileges(createDatabase: false)));
+            _noSignalBackend = Operational(Facts(Privileges(signalBackend: false)));
+            _noReadAllStats = Operational(Facts(Privileges(readAllStats: false)));
+            _nothingGranted = Operational(
                 Facts(Privileges(createDatabase: false, signalBackend: false, readAllStats: false))
             );
-            _belowFloor = PostgresqlEnvironment.Evaluate(Facts(null, serverVersionNum: 179999));
-            _latin1 = PostgresqlEnvironment.Evaluate(Facts(Privileges(), template1Encoding: "LATIN1"));
-            _noTemplate1 = PostgresqlEnvironment.Evaluate(Facts(Privileges(), template1Encoding: null));
+            _belowFloor = Operational(Facts(null, serverVersionNum: 179999));
+            _latin1 = Operational(Facts(Privileges(), template1Encoding: "LATIN1"));
+            _noTemplate1 = Operational(Facts(Privileges(), template1Encoding: null));
         }
 
         [Test]
-        public void It_accepts_a_granted_admin_on_a_supported_server() => _granted.Should().BeEmpty();
+        public void It_raises_nothing_operational_for_a_granted_admin() => _granted.Should().BeEmpty();
 
         [Test]
         public void It_lets_superuser_stand_in_for_every_privilege_and_for_create_role() =>
@@ -159,6 +168,44 @@ public class PostgresqlEnvironmentRulesTests
     }
 
     [TestFixture]
+    public class Given_the_artifact_ownership_requirement
+    {
+        private IReadOnlyList<DmsReadinessReason> _nonSuperuserWithEverything = null!;
+        private IReadOnlyList<DmsReadinessReason> _superuser = null!;
+        private IReadOnlyList<DmsReadinessReason> _belowFloor = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _nonSuperuserWithEverything = PostgresqlEnvironment.Evaluate(Facts(Privileges(createRole: true)));
+            _superuser = PostgresqlEnvironment.Evaluate(Facts(Privileges(superuser: true)));
+            _belowFloor = PostgresqlEnvironment.Evaluate(Facts(null, serverVersionNum: 170000));
+        }
+
+        [Test]
+        public void It_refuses_a_non_superuser_holding_every_other_privilege() =>
+            _nonSuperuserWithEverything
+                .Should()
+                .Equal(
+                    Reason(
+                        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                        PostgresqlEnvironment.SuperuserProbe,
+                        PostgresqlEnvironment.ArtifactOwnershipOperation
+                    )
+                );
+
+        [Test]
+        public void It_accepts_a_superuser_on_a_supported_server() => _superuser.Should().BeEmpty();
+
+        [Test]
+        public void It_judges_no_role_it_did_not_read() =>
+            _belowFloor
+                .Select(reason => reason.Probe)
+                .Should()
+                .Equal(PostgresqlEnvironment.ServerVersionProbe);
+    }
+
+    [TestFixture]
     public class Given_the_enqueue_owner_role
     {
         private IReadOnlyList<DmsReadinessReason> _absentCreatable = null!;
@@ -170,19 +217,19 @@ public class PostgresqlEnvironmentRulesTests
         [SetUp]
         public void Setup()
         {
-            _absentCreatable = PostgresqlEnvironment.Evaluate(
+            _absentCreatable = Operational(
                 Facts(Privileges(createRole: true, owner: PostgresqlEnqueueOwnerState.Absent))
             );
-            _absentNotCreatable = PostgresqlEnvironment.Evaluate(
+            _absentNotCreatable = Operational(
                 Facts(Privileges(createRole: false, owner: PostgresqlEnqueueOwnerState.Absent))
             );
-            _unsafeAttributes = PostgresqlEnvironment.Evaluate(
+            _unsafeAttributes = Operational(
                 Facts(Privileges(createRole: true, owner: PostgresqlEnqueueOwnerState.UnsafeAttributes))
             );
-            _unsafeMemberships = PostgresqlEnvironment.Evaluate(
+            _unsafeMemberships = Operational(
                 Facts(Privileges(owner: PostgresqlEnqueueOwnerState.UnsafeMemberships))
             );
-            _unsafeUnderSuperuser = PostgresqlEnvironment.Evaluate(
+            _unsafeUnderSuperuser = Operational(
                 Facts(Privileges(superuser: true, owner: PostgresqlEnqueueOwnerState.UnsafeAttributes))
             );
         }

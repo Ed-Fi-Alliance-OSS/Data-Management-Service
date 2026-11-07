@@ -225,11 +225,19 @@ internal sealed class FakeCatalog : ITemplateArtifactCatalog
 /// </summary>
 internal sealed class FakeAdminConnectionSource : IDmsAdminConnectionSource
 {
-    public DmsAdminConnectionResolution Result { get; set; } = new DmsAdminConnectionResolution.Resolved();
+    private sealed class NoBinding : IDisposable
+    {
+        public void Dispose() { }
+    }
+
+    public DmsAdminConnectionResolution Result { get; set; } =
+        new DmsAdminConnectionResolution.Resolved(new DmsAdminConnectionString("Host=fake"));
 
     public int Resolutions { get; private set; }
 
     public string Current => "Host=fake";
+
+    public IDisposable Bind(DmsAdminConnectionString connection) => new NoBinding();
 
     public Task<DmsAdminConnectionResolution> ResolveAsync(CancellationToken cancellationToken)
     {
@@ -251,7 +259,8 @@ internal sealed class Harness
         ProtectedDatabaseNames? protectedNames = null,
         Action<DmsDataStoreProvisioningOptions>? configure = null,
         IDmsProvisioningTestHooks? hooks = null,
-        bool systemClock = false
+        bool systemClock = false,
+        IDmsAdminConnectionSource? adminConnection = null
     )
     {
         TimeProvider clock = systemClock ? TimeProvider.System : Time;
@@ -281,7 +290,7 @@ internal sealed class Harness
             Catalog,
             Options.Create(options),
             protectedNames ?? ProvisioningTestValues.ProtectedNames,
-            AdminConnection,
+            adminConnection ?? AdminConnection,
             clock,
             Logger
         )

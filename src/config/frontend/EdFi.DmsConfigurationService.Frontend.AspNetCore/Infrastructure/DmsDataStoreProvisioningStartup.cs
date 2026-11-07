@@ -109,17 +109,21 @@ public static class DmsDataStoreProvisioningStartup
             CatalogProbesProbe,
             cancellationToken
         );
-        IReadOnlyList<DmsReadinessReason> engineReasons =
-            resolution is DmsAdminConnectionResolution.Resolved
-                ? await RunGroupAsync(
-                    async token =>
-                        await engine.ValidateEnvironmentAsync(token) is DmsEngineEnvironment.NotReady notReady
-                            ? notReady.Reasons
-                            : [],
-                    EngineProbesProbe,
-                    cancellationToken
-                )
-                : [];
+        IReadOnlyList<DmsReadinessReason> engineReasons = [];
+        if (resolution is DmsAdminConnectionResolution.Resolved resolved)
+        {
+            // The engine connects with the connection string bound to its flow; startup binds its own.
+            using IDisposable adminBinding = adminConnection.Bind(resolved.Connection);
+            engineReasons = await RunGroupAsync(
+                async token =>
+                    await engine.ValidateEnvironmentAsync(token) is DmsEngineEnvironment.NotReady notReady
+                        ? notReady.Reasons
+                        : [],
+                EngineProbesProbe,
+                cancellationToken
+            );
+        }
+
         IReadOnlyList<DmsReadinessReason> reasons = [.. secretReasons, .. catalogReasons, .. engineReasons];
 
         string provider = LoggingUtility.SanitizeForLog(engine.Provider);

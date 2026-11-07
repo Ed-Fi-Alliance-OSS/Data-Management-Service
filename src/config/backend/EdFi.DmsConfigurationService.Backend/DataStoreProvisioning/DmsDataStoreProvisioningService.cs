@@ -32,8 +32,8 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// reconciled (6.5) by reads only, against the full validation set of the trusted template. A delete fences
 /// an owned target, proves exclusivity, re-verifies ownership and instance, and drops it on the holder
 /// session, reversing the fence on every failure it can. Before any of that, after the boundary, the
-/// administrative connection string is resolved again (6.1 step 3) so the engine connects with the current
-/// secret values.
+/// administrative connection string is resolved again (6.1 step 3) and bound to the operation, so the engine
+/// connects with the current secret values and with the same values throughout the operation.
 /// </summary>
 public sealed partial class DmsDataStoreProvisioningService(
     IDmsDataStoreProvisionerReadiness readiness,
@@ -121,10 +121,20 @@ public sealed partial class DmsDataStoreProvisioningService(
             return new DmsDataStoreCreateResult.Failure(invalid, DmsCleanupReport.Clean);
         }
 
-        if (await ResolveAdminConnectionAsync(cancellationToken) is { } unresolved)
+        DmsAdminConnectionResolution resolution = await adminConnection.ResolveAsync(cancellationToken);
+        if (resolution is DmsAdminConnectionResolution.Failed unresolved)
         {
-            return new DmsDataStoreCreateResult.Failure(unresolved, DmsCleanupReport.Clean);
+            return new DmsDataStoreCreateResult.Failure(
+                SecretResolutionFailure(unresolved),
+                DmsCleanupReport.Clean
+            );
         }
+
+        // Bound here, in the operation's own frame, so every engine call of this create, its cleanup and
+        // recovery included, connects with this resolution and no other.
+        using IDisposable adminBinding = adminConnection.Bind(
+            ((DmsAdminConnectionResolution.Resolved)resolution).Connection
+        );
 
         // 6.2 runs before the lock so no lock is held during file work (6.3 step 1). The operation id names
         // the private directory, the staging database, and the holder session alike.
@@ -855,17 +865,12 @@ public sealed partial class DmsDataStoreProvisioningService(
     /// <summary>
     /// 6.1 step 3: the administrative connection string is resolved again for every operation, after the
     /// boundary and before any file work, server contact, or the lock, so a rotated secret reaches the next
-    /// operation through the secret cache. A failure is transient <c>SecretResolutionFailed</c>.
+    /// operation through the secret cache; the operation then binds that one resolution for its whole
+    /// duration. A failure is transient <c>SecretResolutionFailed</c>.
     /// </summary>
-    private async Task<DmsProvisioningFailure?> ResolveAdminConnectionAsync(
-        CancellationToken cancellationToken
-    ) =>
-        await adminConnection.ResolveAsync(cancellationToken) is DmsAdminConnectionResolution.Failed failed
-            ? DmsProvisioningFailure.Create(
-                DmsProvisioningFailureCode.SecretResolutionFailed,
-                failed.Diagnostic
-            )
-            : null;
+    private static DmsProvisioningFailure SecretResolutionFailure(
+        DmsAdminConnectionResolution.Failed failed
+    ) => DmsProvisioningFailure.Create(DmsProvisioningFailureCode.SecretResolutionFailed, failed.Diagnostic);
 
     private DmsProvisioningFailure? Refusal() =>
         readiness.Current is DmsProvisionerReadiness.Ready

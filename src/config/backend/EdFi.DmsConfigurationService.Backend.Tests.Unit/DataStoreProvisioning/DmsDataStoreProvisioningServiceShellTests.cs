@@ -3,11 +3,15 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Catalog;
+using EdFi.DmsConfigurationService.Secrets;
 using FluentAssertions;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using static EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.ProvisioningTestValues;
 
@@ -279,6 +283,130 @@ public class DmsDataStoreProvisioningServiceShellTests
         [Test]
         public void It_resolves_nothing_for_a_call_refused_by_readiness_or_the_boundary() =>
             (_notReady.AdminConnection.Resolutions, _invalid.AdminConnection.Resolutions).Should().Be((0, 0));
+    }
+
+    /// <summary>
+    /// Step 3.9 review: two operations overlap while the administrative secret rotates. The first resolves
+    /// host <c>a</c> and holds inside the lock acquisition; the second resolves host <c>b</c> and holds inside
+    /// its own acquisition; the first then runs to its end while the second is still in flight. Every engine
+    /// call of the first operation still connects with <c>a</c>.
+    /// </summary>
+    [TestFixture]
+    public class Given_two_operations_overlap_across_a_secret_rotation
+    {
+        private sealed class RotatingResolver : ISecretResolver
+        {
+            private int _calls;
+
+            public ValueTask<string> ResolveAsync(
+                SecretReference reference,
+                CancellationToken cancellationToken
+            ) => ValueTask.FromResult(Interlocked.Increment(ref _calls) == 1 ? "a" : "b");
+        }
+
+        private readonly List<(string Member, string Host)> _observed = [];
+        private DmsDataStoreDeleteResult _first = null!;
+        private DmsDataStoreDeleteResult _second = null!;
+        private DmsDataStoreCreateResult _create = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _observed.Clear();
+
+            // No caching, so each resolution asks the resolver and the second one sees the rotated value.
+            SecretsOptions secrets = new() { CacheExpirationSeconds = 0 };
+            DmsAdminConnectionSource source = new(
+                Options.Create(
+                    new DmsDataStoreProvisioningOptions
+                    {
+                        AdminConnectionString = "Host=${secret:pg-host};Username=dms_admin",
+                    }
+                ),
+                new SecretValueCache(Options.Create(secrets)),
+                Options.Create(secrets),
+                TimeProvider.System,
+                new RotatingResolver()
+            );
+            Harness harness = new(adminConnection: source);
+            harness.Engine.OnCall = member =>
+            {
+                string host = (string)
+                    new DbConnectionStringBuilder { ConnectionString = source.Current }["Host"];
+                lock (_observed)
+                {
+                    _observed.Add((member, host));
+                }
+            };
+            Func<CancellationToken, Task<DmsTargetLockResult>> acquire = harness.Engine.OnAcquireTargetLock;
+            TaskCompletionSource firstWaits = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource releaseFirst = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource secondWaits = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource releaseSecond = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            int acquisitions = 0;
+            harness.Engine.OnAcquireTargetLock = async token =>
+            {
+                int acquisition = Interlocked.Increment(ref acquisitions);
+                if (acquisition == 1)
+                {
+                    firstWaits.TrySetResult();
+                    await releaseFirst.Task.WaitAsync(token);
+                    return await acquire(token);
+                }
+
+                if (acquisition == 2)
+                {
+                    secondWaits.TrySetResult();
+                    await releaseSecond.Task.WaitAsync(token);
+                }
+
+                return new DmsTargetLockResult.Timeout();
+            };
+            harness.Engine.OnInspect = _ =>
+                Task.FromResult<DmsLiveTargetState>(new DmsLiveTargetState.Absent());
+
+            Task<DmsDataStoreDeleteResult> first = harness.Service.DeleteAsync(
+                DeleteRequest(),
+                CancellationToken.None
+            );
+            await firstWaits.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            Task<DmsDataStoreDeleteResult> second = harness.Service.DeleteAsync(
+                DeleteRequest(),
+                CancellationToken.None
+            );
+            await secondWaits.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            releaseFirst.SetResult();
+            _first = await first.WaitAsync(TimeSpan.FromSeconds(30));
+            releaseSecond.SetResult();
+            _second = await second.WaitAsync(TimeSpan.FromSeconds(30));
+
+            // A create afterwards binds its own resolution too (refused at the lock, which is enough to see it).
+            _create = await harness.Service.CreateAsync(CreateRequest(), CancellationToken.None);
+        }
+
+        [Test]
+        public void It_runs_both_operations_to_their_own_end() =>
+            (_first.GetType(), FailureOf(_second).Code)
+                .Should()
+                .Be((typeof(DmsDataStoreDeleteResult.AlreadyAbsent), DmsProvisioningFailureCode.LockTimeout));
+
+        [Test]
+        public void It_connects_a_later_create_with_its_own_resolution() =>
+            (FailureOf(_create).Code, _observed[^1])
+                .Should()
+                .Be((DmsProvisioningFailureCode.LockTimeout, ("AcquireTargetLock", "b")));
+
+        [Test]
+        public void It_connects_the_second_operation_with_the_rotated_value() =>
+            _observed[1].Should().Be(("AcquireTargetLock", "b"));
+
+        [Test]
+        public void It_keeps_the_first_operation_on_its_own_resolution_after_the_rotation() =>
+            _observed
+                .Where((_, index) => index != 1 && index != _observed.Count - 1)
+                .Should()
+                .HaveCountGreaterThan(2)
+                .And.OnlyContain(call => call.Host == "a");
     }
 
     [TestFixture]

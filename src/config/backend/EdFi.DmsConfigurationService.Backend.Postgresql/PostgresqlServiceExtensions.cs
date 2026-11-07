@@ -43,8 +43,9 @@ public static class PostgresqlServiceExtensions
     /// Registers the PostgreSQL adapter of the DMS provisioning engine port (spec 4.4) for
     /// <c>DmsDataStoreProvisioning:Provider = postgresql</c>, independently of the catalog datastore. The
     /// engine reads its settings from the statically validated options and opens every connection with the
-    /// value <see cref="IDmsAdminConnectionSource"/> resolved most recently, so it is built without contacting
-    /// the server. Requires the options, the connection source, and a <see cref="TimeProvider"/>.
+    /// resolution the calling operation bound (<see cref="IDmsAdminConnectionSource.Current"/>), so overlapping
+    /// operations never share one, and it is built without contacting the server. Requires the options, the
+    /// connection source, and a <see cref="TimeProvider"/>.
     /// </summary>
     public static IServiceCollection AddPostgresqlDmsTargetEngine(this IServiceCollection services)
     {

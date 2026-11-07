@@ -54,6 +54,9 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
 
     public IReadOnlyList<string> Members => [.. Calls.Select(call => call.Member)];
 
+    /// <summary>Invoked synchronously in the caller's flow for every recorded call, after it is recorded.</summary>
+    public Action<string>? OnCall { get; set; }
+
     public Func<CancellationToken, Task<DmsTargetLockResult>> OnAcquireTargetLock { get; set; } =
         _ => throw NotExpected(AcquireTargetLock);
 
@@ -343,6 +346,8 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
         {
             _calls.Add(new Call(member, databaseName));
         }
+
+        OnCall?.Invoke(member);
     }
 
     private static InvalidOperationException NotExpected(string member) =>

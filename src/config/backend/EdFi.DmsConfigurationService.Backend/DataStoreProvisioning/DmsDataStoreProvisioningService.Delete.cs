@@ -48,10 +48,19 @@ public sealed partial class DmsDataStoreProvisioningService
             return new DmsDataStoreDeleteResult.Failure(invalid, DmsCleanupReport.Clean);
         }
 
-        if (await ResolveAdminConnectionAsync(cancellationToken) is { } unresolved)
+        DmsAdminConnectionResolution resolution = await adminConnection.ResolveAsync(cancellationToken);
+        if (resolution is DmsAdminConnectionResolution.Failed unresolved)
         {
-            return new DmsDataStoreDeleteResult.Failure(unresolved, DmsCleanupReport.Clean);
+            return new DmsDataStoreDeleteResult.Failure(
+                SecretResolutionFailure(unresolved),
+                DmsCleanupReport.Clean
+            );
         }
+
+        // Bound in the operation's own frame: settlement after the lock is released connects with it too.
+        using IDisposable adminBinding = adminConnection.Bind(
+            ((DmsAdminConnectionResolution.Resolved)resolution).Connection
+        );
 
         DmsOperationId operation = DmsOperationId.New();
         Deletion deletion = new(request.TargetName);

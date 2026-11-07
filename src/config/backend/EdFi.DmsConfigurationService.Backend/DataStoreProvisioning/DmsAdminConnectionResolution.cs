@@ -5,10 +5,11 @@
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
-/// <summary>The outcome of <see cref="IDmsAdminConnectionSource.ResolveAsync"/>; neither case carries the value.</summary>
+/// <summary>The outcome of <see cref="IDmsAdminConnectionSource.ResolveAsync"/>.</summary>
 public abstract record DmsAdminConnectionResolution
 {
-    public sealed record Resolved() : DmsAdminConnectionResolution;
+    /// <summary>The snapshot the operation binds for its whole duration (<see cref="IDmsAdminConnectionSource.Bind"/>).</summary>
+    public sealed record Resolved(DmsAdminConnectionString Connection) : DmsAdminConnectionResolution;
 
     /// <summary>
     /// A reference could not be resolved (<c>SecretResolutionFailed</c>). The diagnostic names the fixed

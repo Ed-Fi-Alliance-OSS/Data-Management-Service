@@ -16,10 +16,14 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// <see cref="SecretValueCache"/> (tenant-less: the administrative connection belongs to the deployment, not to
 /// a tenant), and substituted into the value of the key that held it, so a resolved value that needs quoting
 /// is quoted by the connection-string syntax rather than spliced into the text. One resolution may take at
-/// most <c>SecretsSettings:ResolveTimeoutSeconds</c> in all; the resolver is called on a task the host owns,
-/// so a resolver that blocks before returning is bounded too, and its token is cancelled at the deadline.
-/// Nothing the resolver returns or raises is logged or carried: a failure reports a fixed operation and,
-/// when an exception caused it, the exception type chain.
+/// most <c>SecretsSettings:ResolveTimeoutSeconds</c> in all. A fetch this resolution starts is bounded by
+/// what remains of that allowance on its own, inside the cache, as <c>ConnectionStringReader</c> bounds its
+/// fetches: the resolver runs on a task the host owns, its token is cancelled at the deadline, and the fetch
+/// then fails, so the cache neither keeps a pending call that later operations would join nor stores what the
+/// resolver returns afterwards. A fetch another resolution started is waited on only for this resolution's
+/// remaining allowance. Nothing the resolver returns or raises is logged or carried: a failure reports a fixed
+/// operation and, when an exception caused it, the exception type chain. Each success is an immutable
+/// snapshot bound per asynchronous flow (<see cref="Bind"/>); no resolution changes another flow's binding.
 /// </summary>
 public sealed class DmsAdminConnectionSource(
     IOptions<DmsDataStoreProvisioningOptions> options,
@@ -51,13 +55,50 @@ public sealed class DmsAdminConnectionSource(
         secretsOptions.Value.ResolveTimeoutSeconds
     );
 
-    private volatile string? _current;
+    private readonly AsyncLocal<DmsAdminConnectionString?> _bound = new();
+
+    private TaskCompletionSource? _abandonedCallObserved;
+
+    /// <summary>The fetch's own deadline passing, kept apart from any exception the resolver raises.</summary>
+    public sealed class FetchTimedOutException : Exception;
+
+    /// <summary>Restores the binding that was in place when it was made.</summary>
+    private sealed class Binding(
+        AsyncLocal<DmsAdminConnectionString?> bound,
+        DmsAdminConnectionString? previous
+    ) : IDisposable
+    {
+        private bool _disposed;
+
+        public void Dispose()
+        {
+            if (!_disposed)
+            {
+                _disposed = true;
+                bound.Value = previous;
+            }
+        }
+    }
 
     public string Current =>
-        _current
+        _bound.Value?.Value
         ?? throw new InvalidOperationException(
-            "The DMS provisioning administrative connection string has not been resolved."
+            "No DMS provisioning administrative connection string is bound to this operation."
         );
+
+    public IDisposable Bind(DmsAdminConnectionString connection)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        Binding binding = new(_bound, _bound.Value);
+        _bound.Value = connection;
+        return binding;
+    }
+
+    /// <summary>
+    /// Completes once the outcome of a call a fetch abandoned at its deadline has been observed and dropped, so a
+    /// test can wait for it instead of guessing when it ran. It completes once, for the first such call.
+    /// </summary>
+    internal Task AbandonedCallObserved => AbandonedCallSignal().Task;
 
     public async Task<DmsAdminConnectionResolution> ResolveAsync(CancellationToken cancellationToken)
     {
@@ -69,8 +110,7 @@ public sealed class DmsAdminConnectionSource(
 
         if (SecretReferenceTokens.Find(configured).Count == 0)
         {
-            _current = configured;
-            return new DmsAdminConnectionResolution.Resolved();
+            return new DmsAdminConnectionResolution.Resolved(new DmsAdminConnectionString(configured));
         }
 
         if (secretResolver is null)
@@ -89,21 +129,15 @@ public sealed class DmsAdminConnectionSource(
             return Failed(UnusableValueStep);
         }
 
-        using CancellationTokenSource deadline = new(_resolveTimeout, timeProvider);
-        using CancellationTokenSource stop = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            deadline.Token
-        );
-        if (
-            await SubstituteEveryKeyAsync(builder, secretResolver, stop.Token, cancellationToken) is
-            { } failure
-        )
+        long started = timeProvider.GetTimestamp();
+        if (await SubstituteEveryKeyAsync(builder, secretResolver, started, cancellationToken) is { } failure)
         {
             return failure;
         }
 
-        _current = builder.ConnectionString;
-        return new DmsAdminConnectionResolution.Resolved();
+        return new DmsAdminConnectionResolution.Resolved(
+            new DmsAdminConnectionString(builder.ConnectionString)
+        );
     }
 
     /// <summary>
@@ -114,7 +148,7 @@ public sealed class DmsAdminConnectionSource(
     private async Task<DmsAdminConnectionResolution?> SubstituteEveryKeyAsync(
         DbConnectionStringBuilder builder,
         ISecretResolver resolver,
-        CancellationToken stop,
+        long started,
         CancellationToken cancellationToken
     )
     {
@@ -132,7 +166,7 @@ public sealed class DmsAdminConnectionSource(
                 resolver,
                 value,
                 tokens,
-                stop,
+                started,
                 cancellationToken
             );
             if (failure is not null)
@@ -159,7 +193,7 @@ public sealed class DmsAdminConnectionSource(
         ISecretResolver resolver,
         string value,
         IReadOnlyList<SecretReferenceToken> tokens,
-        CancellationToken stop,
+        long started,
         CancellationToken cancellationToken
     )
     {
@@ -170,7 +204,7 @@ public sealed class DmsAdminConnectionSource(
             (string? resolved, DmsAdminConnectionResolution? failure) = await ResolveTokenAsync(
                 resolver,
                 token.Name,
-                stop,
+                started,
                 cancellationToken
             );
             if (failure is not null)
@@ -188,37 +222,52 @@ public sealed class DmsAdminConnectionSource(
     private async Task<(string? Value, DmsAdminConnectionResolution? Failure)> ResolveTokenAsync(
         ISecretResolver resolver,
         string name,
-        CancellationToken stop,
+        long started,
         CancellationToken cancellationToken
     )
     {
-        if (stop.IsCancellationRequested)
+        cancellationToken.ThrowIfCancellationRequested();
+        TimeSpan remaining = _resolveTimeout - timeProvider.GetElapsedTime(started);
+        if (remaining <= TimeSpan.Zero)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            return (null, Failed(TimedOutStep));
+            // Asking again would wait beyond this resolution's allowance, so only a value already cached is used.
+            return cache.TryGetFresh(null, name, out string? cached)
+                ? (cached, null)
+                : (null, Failed(TimedOutStep));
         }
 
+        // The cache invokes the factory only for the resolution that starts the call, and before it first
+        // yields, so this tells a call this resolution started from one it joined.
+        bool startedCall = false;
         Task<string> fetch = cache.GetOrFetchAsync(
             null,
             name,
-            () => Task.Run(() => resolver.ResolveAsync(new SecretReference(name, null), stop).AsTask(), stop)
+            () =>
+            {
+                startedCall = true;
+                return FetchAsync(resolver, new SecretReference(name, null), remaining);
+            }
         );
 
         string value;
         try
         {
-            value = await fetch.WaitAsync(stop);
+            // A call this resolution started is bounded by its own deadline; a joined one only by this
+            // resolution's remaining allowance.
+            value = startedCall
+                ? await fetch.WaitAsync(cancellationToken)
+                : await fetch.WaitAsync(remaining, timeProvider, cancellationToken);
         }
-        catch (Exception) when (stop.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            // Observed so a fault the resolver raises later is not reported as unobserved.
-            _ = fetch.ContinueWith(
-                completed => _ = completed.Exception,
-                CancellationToken.None,
-                TaskContinuationOptions.OnlyOnFaulted,
-                TaskScheduler.Default
-            );
-            cancellationToken.ThrowIfCancellationRequested();
+            throw;
+        }
+        catch (FetchTimedOutException)
+        {
+            return (null, Failed(TimedOutStep));
+        }
+        catch (TimeoutException) when (!startedCall && !fetch.IsCompleted)
+        {
             return (null, Failed(TimedOutStep));
         }
         catch (Exception exception)
@@ -233,6 +282,58 @@ public sealed class DmsAdminConnectionSource(
 
         return string.IsNullOrEmpty(value) ? (null, Failed(EmptyValueStep)) : (value, null);
     }
+
+    /// <summary>
+    /// Calls the resolver on a task the host owns and races it against <paramref name="allowance"/>, so a
+    /// resolver that blocks before returning its <see cref="ValueTask{TResult}"/> is bounded as well as one that
+    /// returns an incomplete one. At the deadline the resolver's token is cancelled and the fetch fails, which
+    /// releases the cache's flight for the next caller; the late outcome is observed and dropped, so nothing
+    /// the call returns afterwards can reach the cache. The deadline is armed before the resolver is invoked.
+    /// </summary>
+    private async Task<string> FetchAsync(
+        ISecretResolver resolver,
+        SecretReference reference,
+        TimeSpan allowance
+    )
+    {
+        using CancellationTokenSource deadlineCancellation = new();
+        Task deadline = Task.Delay(allowance, timeProvider, deadlineCancellation.Token);
+
+        CancellationTokenSource cancellation = new();
+        Task<string> call = Task.Run(
+            () => resolver.ResolveAsync(reference, cancellation.Token).AsTask(),
+            cancellation.Token
+        );
+
+        if (await Task.WhenAny(call, deadline) == call)
+        {
+            await deadlineCancellation.CancelAsync();
+            cancellation.Dispose();
+            return await call;
+        }
+
+        Task cancelled = cancellation.CancelAsync();
+        _ = Task.WhenAll(call, cancelled)
+            .ContinueWith(
+                completed =>
+                {
+                    _ = completed.Exception;
+                    cancellation.Dispose();
+                    AbandonedCallSignal().TrySetResult();
+                },
+                CancellationToken.None,
+                TaskContinuationOptions.None,
+                TaskScheduler.Default
+            );
+
+        throw new FetchTimedOutException();
+    }
+
+    private TaskCompletionSource AbandonedCallSignal() =>
+        LazyInitializer.EnsureInitialized(
+            ref _abandonedCallObserved,
+            () => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)
+        );
 
     private static DmsAdminConnectionResolution.Failed Failed(string operation) =>
         new(DmsProvisioningDiagnostic.ForOperation(operation));

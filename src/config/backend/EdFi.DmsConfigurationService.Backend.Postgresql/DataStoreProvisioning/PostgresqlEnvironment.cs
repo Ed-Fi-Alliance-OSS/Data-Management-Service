@@ -65,6 +65,14 @@ internal static class PostgresqlEnvironment
     /// <summary>D-9: <c>template1</c> is <c>UTF8</c>.</summary>
     public const string Template1EncodingProbe = "Template1Encoding";
 
+    /// <summary>
+    /// The artifact's replay requires a superuser: it ends with <c>ALTER FUNCTION … OWNER TO
+    /// edfi_dms_enqueue_owner</c>, which a non-superuser may run only when the new owner holds <c>CREATE</c> on
+    /// the function's schema, and the artifact grants that owner <c>USAGE</c> on <c>dms</c> only (the security
+    /// gate refuses any other grant to it), so no grant to the administrator can make the replay succeed.
+    /// </summary>
+    public const string SuperuserProbe = "Superuser";
+
     /// <summary>CREATE, RENAME and DROP DATABASE: <c>rolcreatedb</c> or superuser.</summary>
     public const string CreateDatabasePrivilegeProbe = "CreateDatabasePrivilege";
 
@@ -93,6 +101,7 @@ internal static class PostgresqlEnvironment
 
     public const string ConnectOperation = TargetServerProbe + ".Connect";
     public const string ReadFactsOperation = TargetServerProbe + ".ReadFacts";
+    public const string ArtifactOwnershipOperation = SuperuserProbe + ".ArtifactOwnership";
     public const string EnqueueOwnerMissingOperation = EnqueueOwnerProbe + ".MissingWithoutCreateRole";
     public const string EnqueueOwnerAttributesOperation = EnqueueOwnerProbe + ".Attributes";
     public const string EnqueueOwnerMembershipsOperation = EnqueueOwnerProbe + ".Memberships";
@@ -195,10 +204,13 @@ internal static class PostgresqlEnvironment
     }
 
     /// <summary>
-    /// The server rules, every failing one reported: the floors (D-9) as <c>EngineIncompatible</c>; the
-    /// three admin privileges as <c>AdminPrivilegeMissing</c>, each satisfied by superuser; the enqueue owner
-    /// missing without <c>CREATEROLE</c> as <c>AdminPrivilegeMissing</c>, present but not locked down as
-    /// <c>RoleStateUnsafe</c> (D-16, which superuser does not excuse, as the DO block does not).
+    /// The server rules, every failing one reported: the floors (D-9) as <c>EngineIncompatible</c>; an
+    /// administrator that is not a superuser as <c>AdminPrivilegeMissing</c> (<see cref="SuperuserProbe"/>: the
+    /// artifact's ownership statements cannot replay without one); the three operation privileges as
+    /// <c>AdminPrivilegeMissing</c>, each satisfied by superuser and still named, so each operation's own need
+    /// is visible; the enqueue owner missing without <c>CREATEROLE</c> as <c>AdminPrivilegeMissing</c>, present
+    /// but not locked down as <c>RoleStateUnsafe</c> (D-16, which superuser does not excuse, as the DO block
+    /// does not).
     /// </summary>
     public static IReadOnlyList<DmsReadinessReason> Evaluate(PostgresqlEnvironmentFacts facts)
     {
@@ -221,6 +233,13 @@ internal static class PostgresqlEnvironment
 
         if (!privileges.IsSuperuser)
         {
+            reasons.Add(
+                Reason(
+                    DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                    SuperuserProbe,
+                    ArtifactOwnershipOperation
+                )
+            );
             reasons.AddRange(
                 _privilegeRules
                     .Where(rule => !rule.Holds(privileges))

@@ -16,7 +16,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.Data
 /// The PostgreSQL environmental validation against a live server (7.3 items 4, 5 and 7, Step 3.9): the lane
 /// admin passes every server probe and, with a real <c>psql</c>, is <c>Ready</c>, leaving the probe lock
 /// released; a role without <c>CREATEDB</c>, and a role without <c>pg_read_all_stats</c>, are each
-/// <c>NotReady</c> naming exactly the missing privilege; a wrong <c>PsqlPath</c> and a <c>psql</c> below the
+/// <c>NotReady</c> naming the superuser requirement and exactly the missing privilege; a wrong <c>PsqlPath</c> and a <c>psql</c> below the
 /// floor are <c>NotReady</c>; a probe lock held by another session is <c>LockTimeout</c> after the server's
 /// own lock wait; and a server nothing listens on is <c>ServerUnavailable</c> with the lock probe skipped.
 /// </summary>
@@ -130,10 +130,17 @@ public class PostgresqlEnvironmentTests
         }
 
         [Test]
-        public void It_reports_only_the_missing_createdb() =>
+        public void It_reports_the_superuser_requirement_and_the_missing_createdb() =>
             _withoutCreateDatabase
                 .Should()
                 .Equal(
+                    new DmsReadinessReason(
+                        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                        PostgresqlEnvironment.SuperuserProbe,
+                        DmsProvisioningDiagnostic.ForOperation(
+                            PostgresqlEnvironment.ArtifactOwnershipOperation
+                        )
+                    ),
                     new DmsReadinessReason(
                         DmsProvisioningFailureCode.AdminPrivilegeMissing,
                         PostgresqlEnvironment.CreateDatabasePrivilegeProbe,
@@ -144,10 +151,17 @@ public class PostgresqlEnvironmentTests
                 );
 
         [Test]
-        public void It_reports_only_the_missing_pg_read_all_stats() =>
+        public void It_reports_the_superuser_requirement_and_the_missing_pg_read_all_stats() =>
             _withoutReadAllStats
                 .Should()
                 .Equal(
+                    new DmsReadinessReason(
+                        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                        PostgresqlEnvironment.SuperuserProbe,
+                        DmsProvisioningDiagnostic.ForOperation(
+                            PostgresqlEnvironment.ArtifactOwnershipOperation
+                        )
+                    ),
                     new DmsReadinessReason(
                         DmsProvisioningFailureCode.AdminPrivilegeMissing,
                         PostgresqlEnvironment.ReadAllStatsPrivilegeProbe,

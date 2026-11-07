@@ -13,9 +13,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 /// dedicated: pooling is off so a session is never shared, reused, or silently replaced (D-12); the
 /// database is chosen per open and the configured value is never used; TCP keepalive is on so a dead peer
 /// is noticed; the command timeout is <c>CommandTimeout</c>. The connection string is never exposed or
-/// logged. Built over a source, it reads the current resolved value at every open (6.1 step 3), so a secret
-/// rotated between operations reaches the next connection; the parsed form is reused while the value is
-/// unchanged.
+/// logged. Built over a source, it reads the source at every open, so each operation connects with the
+/// resolution it bound (6.1 step 3) and a secret rotated between operations reaches the next one; the parsed
+/// form is reused while the value is unchanged.
 /// </summary>
 public sealed class PostgresqlAdminConnection
 {
@@ -39,7 +39,7 @@ public sealed class PostgresqlAdminConnection
         _ = Template;
     }
 
-    /// <param name="resolvedConnectionString">Returns the current resolved value; read at every open and never logged.</param>
+    /// <param name="resolvedConnectionString">Returns the value for the calling operation; read at every open and never logged.</param>
     /// <param name="commandTimeout">The 4.3 <c>CommandTimeout</c>.</param>
     public PostgresqlAdminConnection(Func<string> resolvedConnectionString, TimeSpan commandTimeout)
     {
