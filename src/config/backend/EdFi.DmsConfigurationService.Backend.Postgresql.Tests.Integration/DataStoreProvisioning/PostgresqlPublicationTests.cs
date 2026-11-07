@@ -479,6 +479,84 @@ public class PostgresqlPublicationTests
     }
 
     [TestFixture]
+    public class Given_the_marker_statement_names_another_instance
+    {
+        private Staged? _staged;
+        private DmsCommandOutcome _wrongOutcome = null!;
+        private DmsCommandOutcome _rightOutcome = null!;
+        private Guid? _afterWrong;
+        private Guid? _afterRight;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _staged = await Staged.CreateAsync("markeroid", dmsShaped: true);
+            DmsInstanceIdentity.Postgresql renamed = (DmsInstanceIdentity.Postgresql)
+                ((DmsCommandOutcome<DmsInstanceIdentity>.Succeeded)await _staged.RenameAsync()).Value;
+
+            // The statement itself, on a connection to the renamed database, with the predicate's oid wrong and then right.
+            await using (
+                NpgsqlConnection connection = await AdminConnection()
+                    .OpenAsync(_staged.Target.Value, "dms1438-test", default)
+            )
+            {
+                DmsServerSessionId session = await OwnSessionAsync(connection);
+                _wrongOutcome = await PostgresqlPublicationQueries.AssignMarkerAsync(
+                    connection,
+                    renamed.Oid + 1,
+                    _staged.Expected,
+                    session,
+                    default
+                );
+                _afterWrong = await _staged.TargetIdentityAsync();
+                _rightOutcome = await PostgresqlPublicationQueries.AssignMarkerAsync(
+                    connection,
+                    renamed.Oid,
+                    _staged.Expected,
+                    session,
+                    default
+                );
+            }
+
+            _afterRight = await _staged.TargetIdentityAsync();
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_staged is not null)
+            {
+                await _staged.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_updates_no_row_and_keeps_the_package_identity_for_another_oid()
+        {
+            _wrongOutcome
+                .Should()
+                .Be(
+                    new DmsCommandOutcome.Failed(
+                        new DmsCommandFailure(
+                            DmsCommandFailureClass.Rejected,
+                            DmsProvisioningDiagnostic.ForOperation(
+                                PostgresqlPublicationQueries.AssignMarkerNoRowStep
+                            )
+                        )
+                    )
+                );
+            _afterWrong.Should().Be(DmsShapedManifest.SourceIdentity);
+        }
+
+        [Test]
+        public void It_commits_with_the_instance_oid() =>
+            (_rightOutcome, _afterRight)
+                .Should()
+                .Be(((DmsCommandOutcome)new DmsCommandOutcome.Succeeded(), (Guid?)_staged!.Expected));
+    }
+
+    [TestFixture]
     public class Given_a_renamed_target_is_compensated
     {
         private Staged? _matching;
