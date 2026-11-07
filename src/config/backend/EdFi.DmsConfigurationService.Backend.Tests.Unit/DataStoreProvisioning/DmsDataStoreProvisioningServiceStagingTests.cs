@@ -682,6 +682,127 @@ public class DmsDataStoreProvisioningServiceStagingTests
     }
 
     [TestFixture]
+    public class Given_a_staging_create_whose_ownership_must_survive_the_exit
+    {
+        private readonly List<DmsInstanceIdentity> _droppedAfterLoss = [];
+        private DmsInstanceIdentity.Postgresql? _created;
+        private Harness _lostAfterSuccess = null!;
+        private Harness _threwAfterCreating = null!;
+        private Harness _unclaimedLeftover = null!;
+        private Harness _failedWithResidue = null!;
+        private DmsDataStoreCreateResult _lostAfterSuccessResult = null!;
+        private DmsDataStoreCreateResult _threwAfterCreatingResult = null!;
+        private DmsDataStoreCreateResult _unclaimedLeftoverResult = null!;
+        private DmsDataStoreCreateResult _failedWithResidueResult = null!;
+
+        private static bool IsStaging(DmsDatabaseName name) =>
+            name.Value.StartsWith(DmsOperationId.StagingDatabaseNamePrefix, StringComparison.Ordinal);
+
+        /// <summary>A create that throws after the server made a database, which carries the comment <paramref name="leftoverClaim"/> chooses.</summary>
+        private static Harness ThrowingAfterCreate(Func<DmsProvisionClaim, string> leftoverClaim)
+        {
+            Harness harness = Scripted();
+            DmsProvisionClaim? sent = null;
+            harness.Engine.OnCreateStaging = (_, claim, _) =>
+            {
+                sent = claim;
+                throw new InvalidOperationException(
+                    "The driver failed after the server created the database."
+                );
+            };
+            harness.Engine.OnInspectByName = (name, _) =>
+                Task.FromResult<DmsLiveTargetState>(
+                    sent is not null && IsStaging(name)
+                        ? new DmsLiveTargetState.Present(
+                            new DmsInstanceIdentity.Postgresql(7, leftoverClaim(sent)),
+                            DmsDatabaseState.Online
+                        )
+                        : new DmsLiveTargetState.Absent()
+                );
+            return harness;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _droppedAfterLoss.Clear();
+            _lostAfterSuccess = Scripted();
+            _lostAfterSuccess.Engine.OnCreateStaging = (_, claim, _) =>
+            {
+                _created = new DmsInstanceIdentity.Postgresql(4242, claim.Text);
+                _lostAfterSuccess.OnlyHolder.Lose();
+                return Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
+                    new DmsCommandOutcome<DmsInstanceIdentity>.Succeeded(_created)
+                );
+            };
+            _lostAfterSuccess.Engine.OnDropStaging = (_, instance, _) =>
+            {
+                _droppedAfterLoss.Add(instance);
+                return Task.FromResult<DmsCommandOutcome>(new DmsCommandOutcome.Succeeded());
+            };
+            _lostAfterSuccessResult = await CreateAsync(_lostAfterSuccess);
+
+            _threwAfterCreating = ThrowingAfterCreate(claim => claim.Text);
+            _threwAfterCreatingResult = await CreateAsync(_threwAfterCreating);
+
+            _unclaimedLeftover = ThrowingAfterCreate(_ => string.Empty);
+            _unclaimedLeftoverResult = await CreateAsync(_unclaimedLeftover);
+
+            _failedWithResidue = Scripted();
+            _failedWithResidue.Engine.OnCreateStaging = (stage, _, _) =>
+                Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
+                    new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+                        new DmsCommandFailure(
+                            DmsCommandFailureClass.Rejected,
+                            DmsProvisioningDiagnostic.ForOperation("CreateStaging.Claim")
+                        )
+                    )
+                    {
+                        Residue = [new DmsCleanupResidue(DmsResidueKind.StagingDatabase, stage.Value)],
+                    }
+                );
+            _failedWithResidueResult = await CreateAsync(_failedWithResidue);
+        }
+
+        private static bool HasStagingResidue(DmsDataStoreCreateResult result) =>
+            CleanupOf(result).Residue.Any(residue => residue.Kind == DmsResidueKind.StagingDatabase);
+
+        [Test]
+        public void It_drops_a_created_database_whose_result_the_loss_discarded()
+        {
+            FailureOf(_lostAfterSuccessResult).Code.Should().Be(DmsProvisioningFailureCode.LockLost);
+            _droppedAfterLoss.Should().Equal(_created!);
+            HasStagingResidue(_lostAfterSuccessResult).Should().BeFalse();
+        }
+
+        [Test]
+        public void It_drops_a_claimed_database_a_failed_create_left_behind()
+        {
+            FailureOf(_threwAfterCreatingResult).Code.Should().Be(DmsProvisioningFailureCode.Unknown);
+            CountOf(_threwAfterCreating, SpyDmsTargetEngine.DropStaging).Should().Be(1);
+            HasStagingResidue(_threwAfterCreatingResult).Should().BeFalse();
+        }
+
+        [Test]
+        public void It_reports_an_unclaimed_database_instead_of_dropping_it()
+        {
+            CountOf(_unclaimedLeftover, SpyDmsTargetEngine.DropStaging).Should().Be(0);
+            HasStagingResidue(_unclaimedLeftoverResult).Should().BeTrue();
+        }
+
+        [Test]
+        public void It_reports_what_the_engine_could_not_drop_without_inspecting_again()
+        {
+            FailureOf(_failedWithResidueResult).Code.Should().Be(DmsProvisioningFailureCode.ServerRejected);
+            HasStagingResidue(_failedWithResidueResult).Should().BeTrue();
+            Members(_failedWithResidue)
+                .SkipWhile(member => member != SpyDmsTargetEngine.CreateStaging)
+                .Should()
+                .NotContain([SpyDmsTargetEngine.Inspect, SpyDmsTargetEngine.DropStaging]);
+        }
+    }
+
+    [TestFixture]
     public class Given_the_recovery_of_an_unknown_restore_is_not_proven
     {
         private readonly List<bool> _recoveryTokenCancelled = [];

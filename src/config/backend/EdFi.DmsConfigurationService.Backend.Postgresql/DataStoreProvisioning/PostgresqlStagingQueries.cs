@@ -80,16 +80,39 @@ internal static class PostgresqlStagingQueries
         $"DROP DATABASE {PostgresqlIdentifiers.Quote(name.Value)} WITH (FORCE);";
 
     /// <summary>
-    /// 6.3 step 4 on the holder's connection: <c>CREATE DATABASE</c>, the claim comment, then the instance read
-    /// back by name. A definite failure of the comment or the read drops the database again on a best-effort
-    /// basis, so a definite failure never leaves a claimed-looking database behind; a failure in doubt is
-    /// <c>Unknown</c> and the orchestrator inspects by name.
+    /// Test seams for the create (Step 3.5 review): <see cref="AfterCreate"/> runs once
+    /// <c>CREATE DATABASE</c> has returned, and the statement overrides replace the claim or the best-effort
+    /// drop, so a test can interrupt the create exactly where a database exists but is not yet claimed.
     /// </summary>
-    public static async Task<DmsCommandOutcome<DmsInstanceIdentity>> CreateAsync(
+    internal sealed record CreateSeams(
+        Func<Task>? AfterCreate = null,
+        string? ClaimStatementOverride = null,
+        string? DropStatementOverride = null
+    );
+
+    /// <summary>
+    /// 6.3 step 4 on the holder's connection: <c>CREATE DATABASE</c>, the claim comment, then the instance read
+    /// back by name. Once the database exists, the claim and the read run to their own end whatever happens
+    /// to <paramref name="cancellationToken"/>, bounded by the driver's command timeout, because stopping
+    /// between them would leave an unclaimed database nobody accounts for. A definite failure of the claim or
+    /// the read drops the database again on a best-effort basis; a drop that cannot be confirmed is returned
+    /// as <see cref="DmsResidueKind.StagingDatabase"/> residue on the failure. A failure in doubt is
+    /// <c>Unknown</c> and the orchestrator accounts for the name.
+    /// </summary>
+    public static Task<DmsCommandOutcome<DmsInstanceIdentity>> CreateAsync(
         NpgsqlConnection connection,
         DmsDatabaseName staging,
         DmsProvisionClaim claim,
         DmsServerSessionId session,
+        CancellationToken cancellationToken
+    ) => CreateAsync(connection, staging, claim, session, seams: null, cancellationToken);
+
+    internal static async Task<DmsCommandOutcome<DmsInstanceIdentity>> CreateAsync(
+        NpgsqlConnection connection,
+        DmsDatabaseName staging,
+        DmsProvisionClaim claim,
+        DmsServerSessionId session,
+        CreateSeams? seams,
         CancellationToken cancellationToken
     )
     {
@@ -105,13 +128,22 @@ internal static class PostgresqlStagingQueries
             return Classify<DmsInstanceIdentity>(exception, session, CreateStagingStep);
         }
 
+        if (seams?.AfterCreate is { } afterCreate)
+        {
+            await afterCreate();
+        }
+
         try
         {
-            await ExecuteAsync(connection, ClaimStatement(staging, claim), cancellationToken);
+            await ExecuteAsync(
+                connection,
+                seams?.ClaimStatementOverride ?? ClaimStatement(staging, claim),
+                CancellationToken.None
+            );
             DmsInstanceIdentity.Postgresql? instance = await ReadInstanceAsync(
                 connection,
                 staging,
-                cancellationToken
+                CancellationToken.None
             );
             if (instance is null)
             {
@@ -123,20 +155,25 @@ internal static class PostgresqlStagingQueries
 
             return new DmsCommandOutcome<DmsInstanceIdentity>.Succeeded(instance);
         }
-        catch (Exception exception)
-            when (exception is not OperationCanceledException || IsAfterSend(exception))
+        catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             DmsCommandOutcome<DmsInstanceIdentity> outcome = Classify<DmsInstanceIdentity>(
                 exception,
                 session,
                 ClaimStagingStep
             );
-            if (outcome is DmsCommandOutcome<DmsInstanceIdentity>.Failed)
+            if (
+                outcome is not DmsCommandOutcome<DmsInstanceIdentity>.Failed
+                || await TryDropAsync(connection, staging, seams?.DropStatementOverride)
+            )
             {
-                await TryDropAsync(connection, staging);
+                return outcome;
             }
 
-            return outcome;
+            return outcome with
+            {
+                Residue = [new DmsCleanupResidue(DmsResidueKind.StagingDatabase, staging.Value)],
+            };
         }
     }
 
@@ -293,15 +330,30 @@ internal static class PostgresqlStagingQueries
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task TryDropAsync(NpgsqlConnection connection, DmsDatabaseName staging)
+    /// <summary>One best-effort drop; true when the database is confirmed gone (dropped, or already absent).</summary>
+    private static async Task<bool> TryDropAsync(
+        NpgsqlConnection connection,
+        DmsDatabaseName staging,
+        string? statementOverride
+    )
     {
         try
         {
-            await ExecuteAsync(connection, DropDatabaseStatement(staging), CancellationToken.None);
+            await ExecuteAsync(
+                connection,
+                statementOverride ?? DropDatabaseStatement(staging),
+                CancellationToken.None
+            );
+            return true;
         }
-        catch (Exception exception) when (exception is not OperationCanceledException)
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.InvalidCatalogName)
         {
-            // Best effort only: the orchestrator inspects the name and reports residue (6.11).
+            return true;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // Not confirmed: the caller reports the name as residue (6.11).
+            return false;
         }
     }
 }

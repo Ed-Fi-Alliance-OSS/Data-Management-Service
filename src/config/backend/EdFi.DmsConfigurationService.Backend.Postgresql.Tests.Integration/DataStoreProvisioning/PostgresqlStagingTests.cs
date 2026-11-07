@@ -6,6 +6,7 @@
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using FluentAssertions;
+using Npgsql;
 using static EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning.DmsProvisioningTestServer;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning;
@@ -233,6 +234,138 @@ public class PostgresqlStagingTests
                 .BeOfType<DmsLiveTargetState.Present>()
                 .Which.Instance.Should()
                 .Be(_existingInstance);
+    }
+
+    [TestFixture]
+    public class Given_a_create_interrupted_once_the_database_exists
+    {
+        private const string Rejected = "SELECT 1 / 0;";
+
+        private readonly List<DmsDatabaseName> _names = [];
+        private DmsProvisionClaim _cancelledClaim = null!;
+        private DmsCommandOutcome<DmsInstanceIdentity> _cancelled = null!;
+        private DmsLiveTargetState _cancelledAfter = null!;
+        private DmsCommandOutcome<DmsInstanceIdentity> _claimRejected = null!;
+        private DmsLiveTargetState _claimRejectedAfter = null!;
+        private DmsDatabaseName _undroppable;
+        private DmsCommandOutcome<DmsInstanceIdentity> _dropRejected = null!;
+        private DmsLiveTargetState _dropRejectedAfter = null!;
+
+        private async Task<DmsCommandOutcome<DmsInstanceIdentity>> CreateAsync(
+            DmsProvisionClaim claim,
+            PostgresqlStagingQueries.CreateSeams seams,
+            CancellationToken cancellationToken
+        )
+        {
+            DmsDatabaseName stage = claim.Operation.StagingDatabaseName;
+            _names.Add(stage);
+            await using NpgsqlConnection connection = await AdminConnection().OpenMaintenanceAsync(default);
+            DmsServerSessionId session = await PostgresqlSessionQueries.ReadOwnSessionAsync(
+                connection,
+                default
+            );
+            return await PostgresqlStagingQueries.CreateAsync(
+                connection,
+                stage,
+                claim,
+                session,
+                seams,
+                cancellationToken
+            );
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            PostgresqlDmsTargetEngine side = Engine();
+
+            // The caller cancels the moment CREATE DATABASE returns: the claim must still be written.
+            _cancelledClaim = new DmsProvisionClaim(DmsOperationId.New(), Guid.NewGuid());
+            using CancellationTokenSource cancellation = new();
+            _cancelled = await CreateAsync(
+                _cancelledClaim,
+                new PostgresqlStagingQueries.CreateSeams(AfterCreate: () => cancellation.CancelAsync()),
+                cancellation.Token
+            );
+            _cancelledAfter = await side.InspectAsync(_cancelledClaim.Operation.StagingDatabaseName, default);
+
+            DmsProvisionClaim rejected = new(DmsOperationId.New(), Guid.NewGuid());
+            _claimRejected = await CreateAsync(
+                rejected,
+                new PostgresqlStagingQueries.CreateSeams(ClaimStatementOverride: Rejected),
+                default
+            );
+            _claimRejectedAfter = await side.InspectAsync(rejected.Operation.StagingDatabaseName, default);
+
+            DmsProvisionClaim undroppable = new(DmsOperationId.New(), Guid.NewGuid());
+            _undroppable = undroppable.Operation.StagingDatabaseName;
+            _dropRejected = await CreateAsync(
+                undroppable,
+                new PostgresqlStagingQueries.CreateSeams(
+                    ClaimStatementOverride: Rejected,
+                    DropStatementOverride: Rejected
+                ),
+                default
+            );
+            _dropRejectedAfter = await side.InspectAsync(_undroppable, default);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            foreach (DmsDatabaseName name in _names)
+            {
+                await DropByNameAsync(name);
+            }
+        }
+
+        [Test]
+        public void It_completes_the_claim_although_the_caller_cancelled()
+        {
+            DmsInstanceIdentity instance = _cancelled
+                .Should()
+                .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Succeeded>()
+                .Subject.Value;
+            ((DmsInstanceIdentity.Postgresql)instance).Claim.Should().Be(_cancelledClaim.Text);
+            _cancelledAfter
+                .Should()
+                .BeOfType<DmsLiveTargetState.Present>()
+                .Which.Instance.Should()
+                .Be(instance);
+        }
+
+        [Test]
+        public void It_drops_the_database_again_when_the_claim_is_rejected()
+        {
+            _claimRejected
+                .Should()
+                .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Failed>()
+                .Which.Failure.Should()
+                .BeEquivalentTo(
+                    new
+                    {
+                        Class = DmsCommandFailureClass.Rejected,
+                        Diagnostic = new
+                        {
+                            ProviderErrorCode = "22012",
+                            Operation = PostgresqlStagingQueries.ClaimStagingStep,
+                        },
+                    }
+                );
+            _claimRejected.Residue.Should().BeEmpty();
+            _claimRejectedAfter.Should().Be(new DmsLiveTargetState.Absent());
+        }
+
+        [Test]
+        public void It_reports_a_database_the_drop_could_not_remove()
+        {
+            _dropRejected.Should().BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Failed>();
+            _dropRejected
+                .Residue.Should()
+                .Equal(new DmsCleanupResidue(DmsResidueKind.StagingDatabase, _undroppable.Value));
+            _dropRejectedAfter.Should().BeOfType<DmsLiveTargetState.Present>();
+        }
     }
 
     [TestFixture]

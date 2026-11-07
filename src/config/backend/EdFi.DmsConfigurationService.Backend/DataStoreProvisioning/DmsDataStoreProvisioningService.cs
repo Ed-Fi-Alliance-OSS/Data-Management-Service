@@ -309,21 +309,23 @@ public sealed class DmsDataStoreProvisioningService(
         StagingCleanup cleanup
     )
     {
+        // The create is this operation's from the moment it is sent: whatever ends the step, cleanup accounts
+        // for the name (6.7, 6.11).
+        cleanup.Pending(claim);
         DmsCommandOutcome<DmsInstanceIdentity> created = await scope.CallAsync(
             CreateStagingStep,
             options.Value.CommandTimeout,
             token => engine.CreateStagingAsync(scope.Holder, stage, claim, token),
-            outcome => cleanup.Observe(outcome.WithoutValue())
+            cleanup.ObserveCreate
         );
         switch (created)
         {
             case DmsCommandOutcome<DmsInstanceIdentity>.Succeeded succeeded:
-                cleanup.Created(succeeded.Value);
                 return succeeded.Value;
             case DmsCommandOutcome<DmsInstanceIdentity>.Failed failed:
                 throw StepFailed(CreateStagingFailureCodeOf(failed.Failure), failed.Failure.Diagnostic);
             case DmsCommandOutcome<DmsInstanceIdentity>.Unknown unknown:
-                await HolderInDoubtAsync(scope, unknown.Session, claim, cleanup);
+                await HolderInDoubtAsync(scope, unknown.Session, cleanup);
                 throw new DmsProvisioningFailedException(scope.LockLostFailure());
             default:
                 throw new InvalidOperationException("Unknown create-staging outcome.");
@@ -528,47 +530,23 @@ public sealed class DmsDataStoreProvisioningService(
 
     /// <summary>
     /// An unknown outcome on the holder session (6.3 step 4): the holder may be gone, so it is terminated
-    /// with proof on a recovery token, and the staging name is inspected; a database carrying this
-    /// operation's claim is cleaned up only once the holder is proven gone, and stays as residue otherwise.
-    /// Either way the operation ends <c>LockLost</c>, transient: no selected-target mutation was issued.
+    /// with proof on a recovery token, and only that proof lifts the withheld drop. The create stays pending,
+    /// so cleanup inspects the staging name: a database carrying this operation's claim is dropped once the
+    /// holder is proven gone and reported as residue otherwise. Either way the operation ends
+    /// <c>LockLost</c>, transient: no selected-target mutation was issued.
     /// </summary>
     private async Task HolderInDoubtAsync(
         LockScope scope,
         DmsServerSessionId? holderSession,
-        DmsProvisionClaim claim,
         StagingCleanup cleanup
     )
     {
-        DmsDataStoreProvisioningOptions settings = options.Value;
-        using CancellationTokenSource bound = new(
-            settings.SessionTerminationTimeout + settings.CommandTimeout,
-            timeProvider
-        );
         if (
             holderSession is { } session
             && await ProveSessionGoneAsync(session, scope.Operation, CreateStagingStep)
         )
         {
             cleanup.Permit();
-        }
-
-        DmsLiveTargetState state;
-        try
-        {
-            state = await engine.InspectAsync(scope.Operation.StagingDatabaseName, bound.Token);
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            return;
-        }
-
-        if (
-            state is DmsLiveTargetState.Present { Instance: DmsInstanceIdentity.Postgresql present }
-            && DmsProvisionClaim.TryParse(present.Claim, out DmsProvisionClaim? found)
-            && found == claim
-        )
-        {
-            cleanup.Created(present);
         }
     }
 
@@ -840,11 +818,34 @@ public sealed class DmsDataStoreProvisioningService(
     {
         private readonly List<DmsCleanupResidue> _residue = [];
         private DmsInstanceIdentity? _instance;
+        private DmsProvisionClaim? _pendingClaim;
         private bool _withheld;
 
         public DmsCleanupReport Report => new([.. _residue]);
 
         public void Created(DmsInstanceIdentity instance) => _instance = instance;
+
+        /// <summary>A create carrying <paramref name="claim"/> is about to be sent; until it settles, cleanup accounts for the name.</summary>
+        public void Pending(DmsProvisionClaim claim) => _pendingClaim = claim;
+
+        /// <summary>
+        /// Settles the create from its returned outcome before any loss check can discard it: a success is
+        /// the instance to drop; a definite failure leaves only what the engine reported as residue; an
+        /// unknown outcome stays pending and withholds the drop.
+        /// </summary>
+        public void ObserveCreate(DmsCommandOutcome<DmsInstanceIdentity> outcome)
+        {
+            Observe(outcome.WithoutValue());
+            switch (outcome)
+            {
+                case DmsCommandOutcome<DmsInstanceIdentity>.Succeeded succeeded:
+                    Created(succeeded.Value);
+                    break;
+                case DmsCommandOutcome<DmsInstanceIdentity>.Failed:
+                    _pendingClaim = null;
+                    break;
+            }
+        }
 
         /// <summary>No destructive recovery: the staging database is reported, not dropped.</summary>
         public void Withhold() => _withheld = true;
@@ -875,6 +876,16 @@ public sealed class DmsDataStoreProvisioningService(
             DmsOperationId operation
         )
         {
+            if (_instance is null && _pendingClaim is not null)
+            {
+                string? unaccounted = await ClaimPendingAsync(engine, settings.CommandTimeout, timeProvider);
+                if (unaccounted is not null)
+                {
+                    ReportResidue(logger, operation, unaccounted);
+                    return;
+                }
+            }
+
             if (_instance is null)
             {
                 return;
@@ -899,13 +910,55 @@ public sealed class DmsDataStoreProvisioningService(
                 }
             }
 
+            ReportResidue(logger, operation, _withheld ? "outcome unresolved" : "drop failed");
+        }
+
+        /// <summary>
+        /// What an unsettled create left under the staging name: a database carrying this operation's claim
+        /// becomes the instance to drop (or to keep, while the drop is withheld). Returns the reason the name
+        /// must be reported instead: it could not be inspected, it holds a database this operation cannot
+        /// prove its own, or it is empty while an unproven create might still commit. An empty name with
+        /// nothing in doubt returns null: nothing was created.
+        /// </summary>
+        private async Task<string?> ClaimPendingAsync(
+            IDmsTargetEngine engine,
+            TimeSpan commandTimeout,
+            TimeProvider timeProvider
+        )
+        {
+            using CancellationTokenSource bound = new(commandTimeout, timeProvider);
+            DmsLiveTargetState state;
+            try
+            {
+                state = await engine.InspectAsync(stage, bound.Token);
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                return "create unsettled, name not inspected";
+            }
+
+            switch (state)
+            {
+                case DmsLiveTargetState.Absent:
+                    return _withheld ? "create unsettled" : null;
+                case DmsLiveTargetState.Present { Instance: DmsInstanceIdentity.Postgresql present }
+                    when string.Equals(present.Claim, _pendingClaim!.Text, StringComparison.Ordinal):
+                    _instance = present;
+                    return null;
+                default:
+                    return "create unsettled, name holds an unclaimed database";
+            }
+        }
+
+        private void ReportResidue(ILogger logger, DmsOperationId operation, string reason)
+        {
             _residue.Add(new DmsCleanupResidue(DmsResidueKind.StagingDatabase, stage.Value));
             logger.LogError(
                 StagingResidue,
                 "DMS data store provisioning {OperationId} left its staging database {StagingDatabase} in place ({Reason})",
                 operation.Value,
                 stage.Value,
-                _withheld ? "outcome unresolved" : "drop failed"
+                reason
             );
         }
 
