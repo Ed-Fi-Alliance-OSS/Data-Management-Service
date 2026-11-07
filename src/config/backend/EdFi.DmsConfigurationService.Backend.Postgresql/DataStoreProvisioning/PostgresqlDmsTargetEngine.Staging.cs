@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.ComponentModel;
+using System.Globalization;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using Npgsql;
@@ -17,7 +18,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 /// address the <c>psql</c> session by its application name (D-7b): every such session is terminated with
 /// verification within <c>SessionTerminationTimeout</c>, then the two singleton tables are read on the
 /// staging database; both present means the single transaction committed, neither means it rolled back,
-/// anything else stays unresolved. The staging drop runs on any session after re-verifying the instance.
+/// anything else stays unresolved. Resolution needs the process proven ended first: a process whose end
+/// the runner could not confirm may still open its session after any lookup, so it is never resolved; it
+/// is reported as residue with an unknown outcome. The staging drop runs on any session after
+/// re-verifying the instance.
 /// </summary>
 public sealed partial class PostgresqlDmsTargetEngine
 {
@@ -135,10 +139,27 @@ public sealed partial class PostgresqlDmsTargetEngine
                         )
                     )
                 );
+            case PsqlRunResult.Unconfirmed unconfirmed:
+                // No lookup proves anything while the process may still run: it can connect after the
+                // enumeration, so the outcome stays unknown and the process is the operator's (7.6).
+                return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null)
+                {
+                    Residue =
+                    [
+                        new DmsCleanupResidue(
+                            DmsResidueKind.ChildProcess,
+                            ReplayProcessResourceId(operation, unconfirmed.ProcessId)
+                        ),
+                    ],
+                };
             default:
                 return await ResolveReplayAsync(staging, operation, run);
         }
     }
+
+    /// <summary>The residue id of a replay process: the replay's application name and the process id, never a path or an argument.</summary>
+    internal static string ReplayProcessResourceId(DmsOperationId operation, int processId) =>
+        $"{operation.RestoreApplicationName}/{processId.ToString(CultureInfo.InvariantCulture)}";
 
     public async Task<DmsCommandOutcome> DropStagingAsync(
         DmsDatabaseName staging,
@@ -164,13 +185,15 @@ public sealed partial class PostgresqlDmsTargetEngine
     }
 
     /// <summary>
-    /// D-7b for a replay whose process did not end on its own with a verdict: on a token of its own, bounded
-    /// by <c>SessionTerminationTimeout</c> so the caller's cancellation cannot skip it (6.10), every session
-    /// carrying the replay's application name on the staging database is terminated with verification; one
-    /// that cannot be proven gone is the <c>Unknown</c> session. With every session gone, the staging
-    /// database's singleton tables decide: both readable means the transaction committed and the staging
-    /// instance is returned; neither means it rolled back, a definite failure named after what ended the
-    /// replay; anything else is <c>Unknown</c> with no session left to terminate.
+    /// D-7b for a replay whose process is proven ended (it exited, or it was killed and its exit observed)
+    /// without a verdict: on a token of its own, bounded by <c>SessionTerminationTimeout</c> so the caller's
+    /// cancellation cannot skip it (6.10), every session carrying the replay's application name on the
+    /// staging database is terminated with verification; one that cannot be proven gone is the
+    /// <c>Unknown</c> session. With the process and every session gone, the staging database's singleton
+    /// tables decide: both existing means the transaction committed and the staging instance is returned;
+    /// neither means it rolled back, a definite failure named after what ended the replay; anything else is
+    /// <c>Unknown</c> and <see cref="DmsCommandOutcome{T}.Unknown.Quiescent"/>, since nothing of the
+    /// command remains to change the state.
     /// </summary>
     private async Task<DmsCommandOutcome<DmsInstanceIdentity>> ResolveReplayAsync(
         DmsDatabaseName staging,
@@ -211,7 +234,7 @@ public sealed partial class PostgresqlDmsTargetEngine
                     new DmsProvisioningDiagnostic(string.Empty, SqlStateOf(run), RolledBackStepOf(run))
                 )
             ),
-            _ => new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null),
+            _ => new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null) { Quiescent = true },
         };
     }
 

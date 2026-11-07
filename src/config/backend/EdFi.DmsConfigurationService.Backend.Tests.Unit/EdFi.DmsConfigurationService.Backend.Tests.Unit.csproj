@@ -23,6 +23,12 @@
         <Using Include="NUnit.Framework" />
     </ItemGroup>
     <ItemGroup>
+        <!-- The PostgreSQL integration lane reuses the fake psql and the package builder. -->
+        <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+            <_Parameter1>EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration</_Parameter1>
+        </AssemblyAttribute>
+    </ItemGroup>
+    <ItemGroup>
         <None Update="Fixtures/ClaimsComposition/**/*.json" CopyToOutputDirectory="PreserveNewest" />
         <None Update="Fixtures/AuthorizationMetadata/**/*.json" CopyToOutputDirectory="PreserveNewest" />
         <None

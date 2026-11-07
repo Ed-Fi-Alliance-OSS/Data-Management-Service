@@ -511,7 +511,11 @@ public class DmsDataStoreProvisioningServiceStagingTests
             Harness harness = Scripted();
             harness.Engine.OnRestoreIntoStaging = (_, _, _) =>
                 Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
+                    // A null session here stands for the engine's own proof that the replay is quiescent.
                     new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(session)
+                    {
+                        Quiescent = session is null,
+                    }
                 );
             harness.Engine.OnReadIdentity = (_, _) => Task.FromResult(identity);
             harness.Engine.OnReadTargetFacts = (_, _) =>
@@ -615,6 +619,66 @@ public class DmsDataStoreProvisioningServiceStagingTests
             _clientLostOutcome.Should().BeOfType<NotImplementedException>();
             _faultHooks.Points.Should().Contain(DmsProvisioningHookPoint.BeforeRename);
         }
+    }
+
+    [TestFixture]
+    public class Given_the_engine_cannot_prove_the_replay_ended
+    {
+        private static readonly DmsCleanupResidue _process = new(
+            DmsResidueKind.ChildProcess,
+            "dms-provision:0123456789ab/4321"
+        );
+
+        private Harness _nothingNamed = null!;
+        private Harness _processLeft = null!;
+        private DmsDataStoreCreateResult _nothingNamedResult = null!;
+        private DmsDataStoreCreateResult _processLeftResult = null!;
+
+        private static Harness Returning(DmsCommandOutcome<DmsInstanceIdentity> outcome)
+        {
+            Harness harness = Scripted();
+            harness.Engine.OnRestoreIntoStaging = (_, _, _) => Task.FromResult(outcome);
+            return harness;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _nothingNamed = Returning(new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null));
+            _nothingNamedResult = await CreateAsync(_nothingNamed);
+            _processLeft = Returning(
+                new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null) { Residue = [_process] }
+            );
+            _processLeftResult = await CreateAsync(_processLeft);
+        }
+
+        [Test]
+        public void It_reports_both_as_outcome_unknown() =>
+            (FailureOf(_nothingNamedResult).Code, FailureOf(_processLeftResult).Code)
+                .Should()
+                .Be((DmsProvisioningFailureCode.OutcomeUnknown, DmsProvisioningFailureCode.OutcomeUnknown));
+
+        [Test]
+        public void It_neither_reads_the_state_nor_drops_the_staging_database() =>
+            new[] { _nothingNamed, _processLeft }
+                .Should()
+                .OnlyContain(harness =>
+                    !harness.Engine.Members.Contains(SpyDmsTargetEngine.OpenSession)
+                    && !harness.Engine.Members.Contains(SpyDmsTargetEngine.DropStaging)
+                    && !harness.Engine.Members.Contains(SpyDmsTargetEngine.TerminateSession)
+                );
+
+        [Test]
+        public void It_reports_the_staging_database_as_residue() =>
+            new[] { _nothingNamedResult, _processLeftResult }
+                .Should()
+                .OnlyContain(result =>
+                    CleanupOf(result).Residue.Any(residue => residue.Kind == DmsResidueKind.StagingDatabase)
+                );
+
+        [Test]
+        public void It_carries_the_process_the_engine_could_not_end() =>
+            CleanupOf(_processLeftResult).Residue.Should().Contain(_process);
     }
 
     [TestFixture]

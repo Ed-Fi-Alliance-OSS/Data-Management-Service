@@ -98,4 +98,53 @@ public class DmsCommandOutcomeTests
         public void It_keeps_the_session_when_dropping_the_value() =>
             _unknown.WithoutValue().Should().Be(new DmsCommandOutcome.Unknown(_session));
     }
+
+    [TestFixture]
+    public class Given_outcomes_that_carry_residue_or_proof_of_quiescence
+    {
+        private static readonly IReadOnlyList<DmsCleanupResidue> _residue =
+        [
+            new DmsCleanupResidue(DmsResidueKind.ChildProcess, "dms-provision:0123456789ab/42"),
+        ];
+
+        private DmsCommandOutcome _unknownWithoutValue = null!;
+        private DmsCommandOutcome _failedWithoutValue = null!;
+        private DmsCommandOutcome<int>.Unknown _default = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _unknownWithoutValue = new DmsCommandOutcome<int>.Unknown(null)
+            {
+                Quiescent = true,
+                Residue = _residue,
+            }.WithoutValue();
+            _failedWithoutValue = new DmsCommandOutcome<int>.Failed(
+                new DmsCommandFailure(
+                    DmsCommandFailureClass.Rejected,
+                    DmsProvisioningDiagnostic.ForOperation("CreateStaging")
+                )
+            )
+            {
+                Residue = _residue,
+            }.WithoutValue();
+            _default = new DmsCommandOutcome<int>.Unknown(null);
+        }
+
+        [Test]
+        public void It_keeps_quiescence_and_residue_when_dropping_the_value() =>
+            _unknownWithoutValue
+                .Should()
+                .BeOfType<DmsCommandOutcome.Unknown>()
+                .Which.Should()
+                .BeEquivalentTo(new { Quiescent = true, Residue = _residue });
+
+        [Test]
+        public void It_keeps_the_residue_of_a_failure_when_dropping_the_value() =>
+            _failedWithoutValue.Residue.Should().Equal(_residue);
+
+        [Test]
+        public void It_proves_nothing_by_default() =>
+            (_default.Quiescent, _default.Residue.Count).Should().Be((false, 0));
+    }
 }

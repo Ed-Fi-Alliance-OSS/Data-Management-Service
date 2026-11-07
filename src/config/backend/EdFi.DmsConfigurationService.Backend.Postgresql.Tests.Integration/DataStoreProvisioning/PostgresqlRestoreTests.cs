@@ -9,8 +9,10 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using static EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning.DmsProvisioningTestServer;
+using FakePsql = EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Postgresql.FakePsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning;
 
@@ -20,7 +22,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.Data
 /// SQLSTATE; a replay the restore bound ends, and one the caller cancels, are terminated with proof and
 /// found rolled back, with nothing left of the replay session; and the D-16 role check refuses a role
 /// that is not locked down before any process starts. The replay fixtures need a real <c>psql</c>
-/// (<see cref="PsqlEnvironmentVariableName"/>) and skip without one.
+/// (<see cref="PsqlEnvironmentVariableName"/>) and skip without one; the fixture whose process outlives a
+/// failed kill runs a fake executable that never connects, on every platform.
 /// </summary>
 [Category(Category)]
 public class PostgresqlRestoreTests
@@ -385,6 +388,109 @@ public class PostgresqlRestoreTests
         [Test]
         public void It_left_nothing_of_the_replay() =>
             (_dmsSchemaExists, _replaySessionGone).Should().Be((false, true));
+    }
+
+    [TestFixture]
+    public class Given_a_replay_process_whose_end_cannot_be_confirmed
+    {
+        private DmsOperationId _operation;
+        private string _root = string.Empty;
+        private FakePsql? _fake;
+        private DmsCommandOutcome<DmsInstanceIdentity> _outcome = null!;
+        private int _sessionsAfterTheRun = -1;
+        private DmsLiveTargetState _stagingAfterTheRun = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _operation = DmsOperationId.New();
+            DmsDatabaseName stage = _operation.StagingDatabaseName;
+            await ExecuteOnServerAsync($"CREATE DATABASE {PostgresqlIdentifiers.Quote(stage.Value)};");
+            _root = Path.Combine(Path.GetTempPath(), "dms1438-unconfirmed-" + _operation.Value);
+            Directory.CreateDirectory(_root);
+            PrivateOperationDirectory directory = PrivateOperationDirectory.Create(_root, _operation);
+            string artifactPath = directory.PathOf("artifact.sql");
+            await File.WriteAllTextAsync(artifactPath, "SELECT 1;\n");
+
+            // The fake never connects; the bound ends the run and the kill fails, so its end is unconfirmed.
+            _fake = FakePsql.Blocking(Path.Combine(_root, "started"));
+            PsqlRestoreRunner runner = new(
+                _fake.ExecutablePath,
+                TimeSpan.FromSeconds(2),
+                TimeSpan.FromSeconds(1),
+                TimeProvider.System,
+                NullLogger.Instance,
+                kill: _ => throw new System.ComponentModel.Win32Exception(5, "Access is denied.")
+            );
+            PostgresqlDmsTargetEngine engine = new(
+                AdminConnection(),
+                Settings(),
+                TimeProvider.System,
+                NullLogger.Instance,
+                runner
+            );
+            _outcome = await engine.RestoreIntoStagingAsync(
+                stage,
+                new StagedArtifact(artifactPath, new string('0', 64), DmsArtifactKind.PostgresqlSqlDump),
+                _operation,
+                default
+            );
+            _sessionsAfterTheRun = (
+                await engine.FindSessionsAsync(stage, _operation.RestoreApplicationName, default)
+            ).Count;
+            _stagingAfterTheRun = await engine.InspectAsync(stage, default);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_fake is not null)
+            {
+                await _fake.DisposeAsync();
+            }
+
+            await ExecuteOnServerAsync(
+                $"DROP DATABASE IF EXISTS {PostgresqlIdentifiers.Quote(_operation.StagingDatabaseName.Value)} WITH (FORCE);"
+            );
+            try
+            {
+                Directory.Delete(_root, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Left for the operating system; nothing under test depends on it.
+            }
+        }
+
+        [Test]
+        public void It_had_no_session_for_any_lookup_to_find() => _sessionsAfterTheRun.Should().Be(0);
+
+        [Test]
+        public void It_leaves_the_outcome_unknown_and_unresolvable() =>
+            _outcome
+                .Should()
+                .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Unknown>()
+                .Which.Should()
+                .BeEquivalentTo(new { Session = (DmsServerSessionId?)null, Quiescent = false });
+
+        [Test]
+        public void It_reports_the_process_as_residue() =>
+            _outcome
+                .Residue.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<DmsCleanupResidue>(residue =>
+                    residue.Kind == DmsResidueKind.ChildProcess
+                    && residue.ResourceId.StartsWith(
+                        _operation.RestoreApplicationName + "/",
+                        StringComparison.Ordinal
+                    )
+                );
+
+        [Test]
+        public void It_leaves_the_staging_database_in_place() =>
+            _stagingAfterTheRun.Should().BeOfType<DmsLiveTargetState.Present>();
     }
 
     [TestFixture]

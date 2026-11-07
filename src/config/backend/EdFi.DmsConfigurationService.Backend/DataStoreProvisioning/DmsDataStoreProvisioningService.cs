@@ -353,7 +353,7 @@ public sealed class DmsDataStoreProvisioningService(
         )
         {
             // D-23: the server committed, but the client lost the result; the session is gone already.
-            restored = new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null);
+            restored = new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null) { Quiescent = true };
         }
 
         await TestHooks.AtAsync(DmsProvisioningHookPoint.AfterRestoreStarted, operation, scope.CallerToken);
@@ -369,11 +369,18 @@ public sealed class DmsDataStoreProvisioningService(
             case DmsCommandOutcome<DmsInstanceIdentity>.Failed failed:
                 ThrowRestoreFailure(failed.Failure, scope.CallerToken);
                 return false;
+            case DmsCommandOutcome<DmsInstanceIdentity>.Unknown unresolvable
+                when unresolvable.Residue.Count > 0 || unresolvable is { Session: null, Quiescent: false }:
+                // Nothing names a session to prove gone, or the engine reports something it could not end
+                // (a replay process): the outcome cannot be resolved here and nothing destructive may run.
+                cleanup.Add(unresolvable.Residue);
+                cleanup.Withhold();
+                throw StepFailed(DmsProvisioningFailureCode.OutcomeUnknown, ResolveRestoreStep);
             case DmsCommandOutcome<DmsInstanceIdentity>.Unknown unknown:
-                // D-7b: the engine already proved every replay session gone, or named the one it could
-                // not; a session it could not prove gone is given one more bounded attempt, and the
-                // state is read by the validation that follows. Nothing destructive happens while the
-                // transaction's fate is open: the drop is withheld unless the state proves it rolled back.
+                // D-7b: the engine already proved the replay quiescent, or named the session it could not
+                // prove gone; that session is given one more bounded attempt, and the state is read by the
+                // validation that follows. Nothing destructive happens while the transaction's fate is
+                // open: the drop is withheld unless the state proves it rolled back.
                 if (unknown.Session is { } session)
                 {
                     DmsSessionTermination verdict = await scope.CallAsync(

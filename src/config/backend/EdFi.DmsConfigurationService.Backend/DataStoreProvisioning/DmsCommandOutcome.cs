@@ -35,15 +35,20 @@ public sealed record DmsCommandFailure(DmsCommandFailureClass Class, DmsProvisio
 /// The outcome of a mutating engine command (6.9a). <c>Succeeded</c> and <c>Failed</c> are definite;
 /// <c>Unknown</c> means the client cannot tell whether the effect committed (timeout, cancellation after
 /// send, connection loss, process killed), and names the session that must be proven terminated before
-/// state is read (D-7b, D-22). The session is null only when the engine itself already proved every
-/// session of the command gone (a replay process whose server session was looked up by its application
-/// name and terminated with verification, 6.3 step 5) and the state it then read was inconclusive: nothing
-/// remains to terminate, and the outcome stays unresolved.
+/// state is read (D-7b, D-22). An unknown outcome proves nothing beyond what it states: its state may be
+/// read only after its session is proven gone, or when the engine marks it <see cref="Unknown.Quiescent"/>
+/// because it already proved that no process or session of the command remains (6.3 step 5); one with
+/// neither a session nor that mark cannot be resolved and permits no destructive recovery.
+/// <see cref="Residue"/> lists what the command left that the caller must account for (6.11), such as a
+/// replay process whose end could not be confirmed.
 /// </summary>
 public abstract record DmsCommandOutcome
 {
     /// <summary>Whether the outcome proves what happened; only <see cref="Unknown"/> does not.</summary>
     public virtual bool IsDefinite => true;
+
+    /// <summary>Resources the command left behind that the caller must report; empty for most outcomes.</summary>
+    public IReadOnlyList<DmsCleanupResidue> Residue { get; init; } = Array.Empty<DmsCleanupResidue>();
 
     public sealed record Succeeded() : DmsCommandOutcome;
 
@@ -52,6 +57,12 @@ public abstract record DmsCommandOutcome
     public sealed record Unknown(DmsServerSessionId? Session) : DmsCommandOutcome
     {
         public override bool IsDefinite => false;
+
+        /// <summary>
+        /// True only when the engine already proved that no process or server session of the command
+        /// remains, so the state it left is stable and may be read; false, the default, proves nothing.
+        /// </summary>
+        public bool Quiescent { get; init; }
     }
 }
 
@@ -61,23 +72,32 @@ public abstract record DmsCommandOutcome<T>
     /// <summary>Whether the outcome proves what happened; only <see cref="Unknown"/> does not.</summary>
     public virtual bool IsDefinite => true;
 
+    /// <summary>Resources the command left behind that the caller must report; empty for most outcomes.</summary>
+    public IReadOnlyList<DmsCleanupResidue> Residue { get; init; } = Array.Empty<DmsCleanupResidue>();
+
     /// <summary>The same outcome without its value.</summary>
     public abstract DmsCommandOutcome WithoutValue();
 
     public sealed record Succeeded(T Value) : DmsCommandOutcome<T>
     {
-        public override DmsCommandOutcome WithoutValue() => new DmsCommandOutcome.Succeeded();
+        public override DmsCommandOutcome WithoutValue() =>
+            new DmsCommandOutcome.Succeeded() { Residue = Residue };
     }
 
     public sealed record Failed(DmsCommandFailure Failure) : DmsCommandOutcome<T>
     {
-        public override DmsCommandOutcome WithoutValue() => new DmsCommandOutcome.Failed(Failure);
+        public override DmsCommandOutcome WithoutValue() =>
+            new DmsCommandOutcome.Failed(Failure) { Residue = Residue };
     }
 
     public sealed record Unknown(DmsServerSessionId? Session) : DmsCommandOutcome<T>
     {
         public override bool IsDefinite => false;
 
-        public override DmsCommandOutcome WithoutValue() => new DmsCommandOutcome.Unknown(Session);
+        /// <inheritdoc cref="DmsCommandOutcome.Unknown.Quiescent"/>
+        public bool Quiescent { get; init; }
+
+        public override DmsCommandOutcome WithoutValue() =>
+            new DmsCommandOutcome.Unknown(Session) { Quiescent = Quiescent, Residue = Residue };
     }
 }

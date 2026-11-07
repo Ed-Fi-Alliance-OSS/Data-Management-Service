@@ -56,16 +56,37 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         TimeProvider timeProvider,
         ILogger logger
     )
+        : this(adminConnection, settings, timeProvider, logger, RunnerFor(settings, timeProvider, logger)) { }
+
+    /// <summary>The engine with its replay runner supplied, so a test can drive the outcome protocol with a fake process.</summary>
+    internal PostgresqlDmsTargetEngine(
+        PostgresqlAdminConnection adminConnection,
+        PostgresqlDmsEngineSettings settings,
+        TimeProvider timeProvider,
+        ILogger logger,
+        PsqlRestoreRunner runner
+    )
     {
         ArgumentNullException.ThrowIfNull(adminConnection);
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(runner);
         _adminConnection = adminConnection;
         _settings = settings;
-        _runner = new PsqlRestoreRunner(settings.PsqlPath, settings.RestoreTimeout, timeProvider, logger);
+        _runner = runner;
         _timeProvider = timeProvider;
         _logger = logger;
+    }
+
+    private static PsqlRestoreRunner RunnerFor(
+        PostgresqlDmsEngineSettings settings,
+        TimeProvider timeProvider,
+        ILogger logger
+    )
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        return new PsqlRestoreRunner(settings.PsqlPath, settings.RestoreTimeout, timeProvider, logger);
     }
 
     public string Provider => DmsDataStoreProvisioningOptions.PostgresqlProvider;
