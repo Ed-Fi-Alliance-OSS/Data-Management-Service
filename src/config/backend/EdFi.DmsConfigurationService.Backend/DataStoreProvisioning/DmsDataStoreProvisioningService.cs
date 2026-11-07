@@ -64,6 +64,7 @@ public sealed class DmsDataStoreProvisioningService(
     internal static readonly EventId OperationFailed = new(1438_10, nameof(OperationFailed));
     internal static readonly EventId LockLost = new(1438_11, nameof(LockLost));
     internal static readonly EventId StagingResidue = new(1438_12, nameof(StagingResidue));
+    internal static readonly EventId RecoveryUnproven = new(1438_13, nameof(RecoveryUnproven));
 
     private static readonly TimeSpan[] _cleanupBackoff =
     [
@@ -275,7 +276,8 @@ public sealed class DmsDataStoreProvisioningService(
         DmsSessionTermination released = await scope.CallAsync(
             ReleaseStagingSessionStep,
             settings.SessionTerminationTimeout + settings.CommandTimeout,
-            token => engine.TerminateSessionAsync(stagingSession, settings.SessionTerminationTimeout, token)
+            token => engine.TerminateSessionAsync(stagingSession, settings.SessionTerminationTimeout, token),
+            observe: null
         );
         if (released is DmsSessionTermination.NotTerminated)
         {
@@ -310,7 +312,8 @@ public sealed class DmsDataStoreProvisioningService(
         DmsCommandOutcome<DmsInstanceIdentity> created = await scope.CallAsync(
             CreateStagingStep,
             options.Value.CommandTimeout,
-            token => engine.CreateStagingAsync(scope.Holder, stage, claim, token)
+            token => engine.CreateStagingAsync(scope.Holder, stage, claim, token),
+            outcome => cleanup.Observe(outcome.WithoutValue())
         );
         switch (created)
         {
@@ -342,10 +345,14 @@ public sealed class DmsDataStoreProvisioningService(
     {
         DmsDataStoreProvisioningOptions settings = options.Value;
         DmsOperationId operation = scope.Operation;
+
+        // Any outcome that leaves the replay's fate open is recorded the moment it is returned, before a
+        // loss check can discard it, so cleanup never drops on an unproven outcome (D-7b).
         DmsCommandOutcome<DmsInstanceIdentity> restored = await scope.CallAsync(
             RestoreIntoStagingStep,
             settings.RestoreTimeout + settings.SessionTerminationTimeout + settings.CommandTimeout,
-            token => engine.RestoreIntoStagingAsync(stage, stagedArtifact, operation, token)
+            token => engine.RestoreIntoStagingAsync(stage, stagedArtifact, operation, token),
+            outcome => cleanup.Observe(outcome.WithoutValue())
         );
         if (
             restored is DmsCommandOutcome<DmsInstanceIdentity>.Succeeded
@@ -371,29 +378,23 @@ public sealed class DmsDataStoreProvisioningService(
                 return false;
             case DmsCommandOutcome<DmsInstanceIdentity>.Unknown unresolvable
                 when unresolvable.Residue.Count > 0 || unresolvable is { Session: null, Quiescent: false }:
-                // Nothing names a session to prove gone, or the engine reports something it could not end
-                // (a replay process): the outcome cannot be resolved here and nothing destructive may run.
-                cleanup.Add(unresolvable.Residue);
-                cleanup.Withhold();
+                // Nothing names a session to prove gone, or the engine reports something it could not end,
+                // such as a replay process. The outcome cannot be resolved here and nothing destructive may
+                // run. The observation above already withheld the drop and kept the residue.
                 throw StepFailed(DmsProvisioningFailureCode.OutcomeUnknown, ResolveRestoreStep);
             case DmsCommandOutcome<DmsInstanceIdentity>.Unknown unknown:
                 // D-7b: the engine already proved the replay quiescent, or named the session it could not
-                // prove gone; that session is given one more bounded attempt, and the state is read by the
-                // validation that follows. Nothing destructive happens while the transaction's fate is
-                // open: the drop is withheld unless the state proves it rolled back.
+                // prove gone; that session is given one more attempt on a recovery token of its own, and
+                // only a proven termination lifts the withheld drop. The state is then read by the
+                // validation that follows.
                 if (unknown.Session is { } session)
                 {
-                    DmsSessionTermination verdict = await scope.CallAsync(
-                        ResolveRestoreStep,
-                        settings.SessionTerminationTimeout + settings.CommandTimeout,
-                        token =>
-                            engine.TerminateSessionAsync(session, settings.SessionTerminationTimeout, token)
-                    );
-                    if (verdict is DmsSessionTermination.NotTerminated)
+                    if (!await ProveSessionGoneAsync(session, operation, ResolveRestoreStep))
                     {
-                        cleanup.Withhold();
                         throw StepFailed(DmsProvisioningFailureCode.OutcomeUnknown, ResolveRestoreStep);
                     }
+
+                    cleanup.Permit();
                 }
 
                 return true;
@@ -483,11 +484,53 @@ public sealed class DmsDataStoreProvisioningService(
     }
 
     /// <summary>
+    /// Recovery for an unknown outcome (6.10): terminates <paramref name="session"/> with verification on a
+    /// token of its own, bounded by <c>SessionTerminationTimeout</c> plus <c>CommandTimeout</c>, so neither
+    /// the caller's cancellation nor the holder's loss can cut it short. True only for a proven-gone verdict;
+    /// a refusal, a timeout, or any exception is no proof, and only the exception's type chain is logged.
+    /// </summary>
+    private async Task<bool> ProveSessionGoneAsync(
+        DmsServerSessionId session,
+        DmsOperationId operation,
+        string step
+    )
+    {
+        DmsDataStoreProvisioningOptions settings = options.Value;
+        using CancellationTokenSource bound = new(
+            settings.SessionTerminationTimeout + settings.CommandTimeout,
+            timeProvider
+        );
+        string failure;
+        try
+        {
+            DmsSessionTermination verdict = await engine.TerminateSessionAsync(
+                session,
+                settings.SessionTerminationTimeout,
+                bound.Token
+            );
+            return verdict is not DmsSessionTermination.NotTerminated;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // Only the type chain leaves the catch: a driver error may quote the connection.
+            failure = DmsProvisioningDiagnostic.TypeChain(exception);
+        }
+
+        logger.LogWarning(
+            RecoveryUnproven,
+            "DMS data store provisioning {OperationId} could not prove a session gone during {Step}: {ExceptionTypeChain}",
+            operation.Value,
+            step,
+            failure
+        );
+        return false;
+    }
+
+    /// <summary>
     /// An unknown outcome on the holder session (6.3 step 4): the holder may be gone, so it is terminated
-    /// from a fresh session with proof, and the staging name is inspected; a database carrying this
-    /// operation's claim is cleaned up. Without proof nothing is dropped and the database, if claimed,
-    /// stays as residue. Either way the operation ends <c>LockLost</c>, transient: no selected-target
-    /// mutation was issued.
+    /// with proof on a recovery token, and the staging name is inspected; a database carrying this
+    /// operation's claim is cleaned up only once the holder is proven gone, and stays as residue otherwise.
+    /// Either way the operation ends <c>LockLost</c>, transient: no selected-target mutation was issued.
     /// </summary>
     private async Task HolderInDoubtAsync(
         LockScope scope,
@@ -501,21 +544,24 @@ public sealed class DmsDataStoreProvisioningService(
             settings.SessionTerminationTimeout + settings.CommandTimeout,
             timeProvider
         );
-        bool proven = true;
-        if (holderSession is { } session)
+        if (
+            holderSession is { } session
+            && await ProveSessionGoneAsync(session, scope.Operation, CreateStagingStep)
+        )
         {
-            DmsSessionTermination verdict = await engine.TerminateSessionAsync(
-                session,
-                settings.SessionTerminationTimeout,
-                bound.Token
-            );
-            proven = verdict is not DmsSessionTermination.NotTerminated;
+            cleanup.Permit();
         }
 
-        DmsLiveTargetState state = await engine.InspectAsync(
-            scope.Operation.StagingDatabaseName,
-            bound.Token
-        );
+        DmsLiveTargetState state;
+        try
+        {
+            state = await engine.InspectAsync(scope.Operation.StagingDatabaseName, bound.Token);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return;
+        }
+
         if (
             state is DmsLiveTargetState.Present { Instance: DmsInstanceIdentity.Postgresql present }
             && DmsProvisionClaim.TryParse(present.Claim, out DmsProvisionClaim? found)
@@ -523,10 +569,6 @@ public sealed class DmsDataStoreProvisioningService(
         )
         {
             cleanup.Created(present);
-            if (!proven)
-            {
-                cleanup.Withhold();
-            }
         }
     }
 
@@ -807,6 +849,22 @@ public sealed class DmsDataStoreProvisioningService(
         /// <summary>No destructive recovery: the staging database is reported, not dropped.</summary>
         public void Withhold() => _withheld = true;
 
+        /// <summary>The outcome that withheld the drop was resolved with proof (D-7b): cleanup may drop again.</summary>
+        public void Permit() => _withheld = false;
+
+        /// <summary>
+        /// Records an engine outcome as soon as it is returned: its residue is kept, and an unknown outcome
+        /// that is not proven quiescent withholds the drop until a recovery proves it may proceed.
+        /// </summary>
+        public void Observe(DmsCommandOutcome outcome)
+        {
+            Add(outcome.Residue);
+            if (outcome is DmsCommandOutcome.Unknown { Quiescent: false })
+            {
+                Withhold();
+            }
+        }
+
         public void Add(IReadOnlyList<DmsCleanupResidue> residue) => _residue.AddRange(residue);
 
         public async Task RunAsync(
@@ -907,13 +965,18 @@ public sealed class DmsDataStoreProvisioningService(
         public string? LossAccompanyingTypeChain { get; private set; }
 
         public Task<T> ReadAsync<T>(string step, Func<CancellationToken, Task<T>> read) =>
-            CallAsync(step, commandTimeout, read);
+            CallAsync(step, commandTimeout, read, observe: null);
 
-        /// <summary>A gated engine call under its own <paramref name="deadline"/>; a read is a call under <c>CommandTimeout</c>.</summary>
+        /// <summary>
+        /// A gated engine call under its own <paramref name="deadline"/>; a read is a call under
+        /// <c>CommandTimeout</c>. <paramref name="observe"/> sees a normally returned result before the loss
+        /// check can discard it, so a command whose outcome must be accounted for is never lost to loss.
+        /// </summary>
         public async Task<T> CallAsync<T>(
             string step,
             TimeSpan deadline,
-            Func<CancellationToken, Task<T>> call
+            Func<CancellationToken, Task<T>> call,
+            Action<T>? observe
         )
         {
             CurrentStep = step;
@@ -967,7 +1030,8 @@ public sealed class DmsDataStoreProvisioningService(
             }
 
             // Loss declared while the read completed normally: the result came from a session whose lock
-            // may be gone, so it is discarded and nothing further is dispatched.
+            // may be gone, so it is discarded and nothing further is dispatched, once it has been observed.
+            observe?.Invoke(result);
             ThrowIfLost();
             return result;
         }

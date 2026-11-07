@@ -682,6 +682,124 @@ public class DmsDataStoreProvisioningServiceStagingTests
     }
 
     [TestFixture]
+    public class Given_the_recovery_of_an_unknown_restore_is_not_proven
+    {
+        private readonly List<bool> _recoveryTokenCancelled = [];
+        private Harness _throwing = null!;
+        private Harness _cancelled = null!;
+        private Harness _lost = null!;
+        private Harness _lostWithTheResult = null!;
+        private Harness _lostThenProven = null!;
+        private DmsDataStoreCreateResult _throwingResult = null!;
+        private DmsDataStoreCreateResult _cancelledResult = null!;
+        private DmsDataStoreCreateResult _lostResult = null!;
+        private DmsDataStoreCreateResult _lostWithTheResultResult = null!;
+        private DmsDataStoreCreateResult _lostThenProvenResult = null!;
+
+        private static Harness InDoubt(SpyDmsTargetEngine.TerminateScript terminate)
+        {
+            Harness harness = Scripted();
+            harness.Engine.OnRestoreIntoStaging = (_, _, _) =>
+                Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
+                    new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(Session)
+                );
+            harness.Engine.OnTerminateSession = terminate;
+            return harness;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _recoveryTokenCancelled.Clear();
+
+            _throwing = InDoubt((_, _, _) => throw new InvalidOperationException("The termination failed."));
+            _throwingResult = await CreateAsync(_throwing);
+
+            using CancellationTokenSource cancellation = new();
+            _cancelled = InDoubt(
+                (_, _, token) =>
+                {
+                    cancellation.Cancel();
+                    _recoveryTokenCancelled.Add(token.IsCancellationRequested);
+                    throw new OperationCanceledException();
+                }
+            );
+            _cancelledResult = await CreateAsync(_cancelled, cancellation.Token);
+
+            _lost = InDoubt(
+                (_, _, token) =>
+                {
+                    _lost.OnlyHolder.Lose();
+                    _recoveryTokenCancelled.Add(token.IsCancellationRequested);
+                    throw new TestConnectionException();
+                }
+            );
+            _lostResult = await CreateAsync(_lost);
+
+            // Loss discards the unknown result itself: the observation must already have withheld the drop.
+            _lostWithTheResult = Scripted();
+            _lostWithTheResult.Engine.OnRestoreIntoStaging = (_, _, _) =>
+            {
+                _lostWithTheResult.OnlyHolder.Lose();
+                return Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
+                    new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(Session)
+                );
+            };
+            _lostWithTheResultResult = await CreateAsync(_lostWithTheResult);
+
+            // The control: the recovery proves the session gone although the holder is lost meanwhile.
+            _lostThenProven = InDoubt(
+                (_, _, _) =>
+                {
+                    _lostThenProven.OnlyHolder.Lose();
+                    return Task.FromResult<DmsSessionTermination>(new DmsSessionTermination.Terminated());
+                }
+            );
+            _lostThenProvenResult = await CreateAsync(_lostThenProven);
+        }
+
+        [Test]
+        public void It_reports_an_unproven_recovery_as_outcome_unknown() =>
+            new[] { _throwingResult, _cancelledResult, _lostResult }
+                .Select(result => FailureOf(result).Code)
+                .Should()
+                .AllBeEquivalentTo(DmsProvisioningFailureCode.OutcomeUnknown);
+
+        [Test]
+        public void It_ends_a_result_discarded_by_loss_as_lock_lost() =>
+            FailureOf(_lostWithTheResultResult).Code.Should().Be(DmsProvisioningFailureCode.LockLost);
+
+        [Test]
+        public void It_never_drops_the_staging_database_without_proof() =>
+            new[] { _throwing, _cancelled, _lost, _lostWithTheResult }
+                .Select(harness => CountOf(harness, SpyDmsTargetEngine.DropStaging))
+                .Should()
+                .AllBeEquivalentTo(0);
+
+        [Test]
+        public void It_reports_the_staging_database_as_residue() =>
+            new[] { _throwingResult, _cancelledResult, _lostResult, _lostWithTheResultResult }
+                .Should()
+                .OnlyContain(result =>
+                    CleanupOf(result).Residue.Any(residue => residue.Kind == DmsResidueKind.StagingDatabase)
+                );
+
+        [Test]
+        public void It_runs_the_recovery_on_a_token_neither_the_caller_nor_the_loss_cancels() =>
+            _recoveryTokenCancelled.Should().Equal(false, false);
+
+        [Test]
+        public void It_drops_once_the_session_is_proven_gone_even_after_the_loss()
+        {
+            FailureOf(_lostThenProvenResult).Code.Should().Be(DmsProvisioningFailureCode.LockLost);
+            CountOf(_lostThenProven, SpyDmsTargetEngine.DropStaging).Should().Be(1);
+            CleanupOf(_lostThenProvenResult)
+                .Residue.Should()
+                .NotContain(residue => residue.Kind == DmsResidueKind.StagingDatabase);
+        }
+    }
+
+    [TestFixture]
     public class Given_the_staging_database_fails_validation
     {
         private Harness _drifted = null!;
