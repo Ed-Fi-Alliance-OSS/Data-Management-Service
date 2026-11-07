@@ -374,8 +374,11 @@ public sealed class DmsDataStoreProvisioningService(
         DmsDataStoreProvisioningOptions settings = options.Value;
         DmsOperationId operation = scope.Operation;
 
-        // Any outcome that leaves the replay's fate open is recorded the moment it is returned, before a
-        // loss check can discard it, so cleanup never drops on an unproven outcome (D-7b).
+        // The replay's fate is open from the moment it is dispatched: the drop is withheld first, and only
+        // a returned definite or quiescent outcome, or a later proven termination, lifts it. An exception,
+        // a cancellation, or a loss before any outcome returns therefore leaves the staging database as
+        // residue, never dropped without proof (D-7b).
+        cleanup.Withhold();
         DmsCommandOutcome<DmsInstanceIdentity> restored = await scope.CallAsync(
             RestoreIntoStagingStep,
             settings.RestoreTimeout + settings.SessionTerminationTimeout + settings.CommandTimeout,
@@ -857,7 +860,7 @@ public sealed class DmsDataStoreProvisioningService(
         /// <summary>
         /// Settles the create from its returned outcome before any loss check can discard it: a success is
         /// the instance to drop; a definite failure leaves only what the engine reported as residue; an
-        /// unknown outcome stays pending and withholds the drop.
+        /// unknown outcome stays pending and keeps the drop withheld.
         /// </summary>
         public void ObserveCreate(DmsCommandOutcome<DmsInstanceIdentity> outcome)
         {
@@ -880,8 +883,9 @@ public sealed class DmsDataStoreProvisioningService(
         public void Permit() => _withheld = false;
 
         /// <summary>
-        /// Records an engine outcome as soon as it is returned: its residue is kept, and an unknown outcome
-        /// that is not proven quiescent withholds the drop until a recovery proves it may proceed.
+        /// Records an engine outcome as soon as it is returned, for a command whose dispatch withheld the
+        /// drop: its residue is kept; a definite or quiescent outcome lifts the withhold; an unknown outcome
+        /// that is not quiescent keeps it until a recovery proves the command's session gone.
         /// </summary>
         public void Observe(DmsCommandOutcome outcome)
         {
@@ -889,6 +893,10 @@ public sealed class DmsDataStoreProvisioningService(
             if (outcome is DmsCommandOutcome.Unknown { Quiescent: false })
             {
                 Withhold();
+            }
+            else
+            {
+                Permit();
             }
         }
 

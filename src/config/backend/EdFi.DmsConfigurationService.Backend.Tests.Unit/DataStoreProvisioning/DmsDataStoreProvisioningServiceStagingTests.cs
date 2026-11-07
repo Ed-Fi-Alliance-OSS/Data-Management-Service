@@ -625,6 +625,90 @@ public class DmsDataStoreProvisioningServiceStagingTests
     }
 
     [TestFixture]
+    public class Given_the_restore_call_ends_without_an_outcome
+    {
+        private Harness _throwing = null!;
+        private Harness _cancelled = null!;
+        private Harness _lost = null!;
+        private DmsDataStoreCreateResult _throwingResult = null!;
+        private Exception? _cancelledOutcome;
+        private DmsDataStoreCreateResult _lostResult = null!;
+
+        private static Harness Restoring(SpyDmsTargetEngine.RestoreScript restore)
+        {
+            Harness harness = Scripted();
+            harness.Engine.OnRestoreIntoStaging = restore;
+            return harness;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _throwing = Restoring(
+                (_, _, _) =>
+                    throw new InvalidOperationException("The session lookup failed inside resolution.")
+            );
+            _throwingResult = await CreateAsync(_throwing);
+
+            using CancellationTokenSource cancellation = new();
+            _cancelled = Restoring(
+                (_, _, _) =>
+                {
+                    cancellation.Cancel();
+                    throw new OperationCanceledException(cancellation.Token);
+                }
+            );
+            _cancelledOutcome = await Record.ExceptionAsync(() =>
+                CreateAsync(_cancelled, cancellation.Token)
+            );
+
+            _lost = Restoring(
+                (_, _, _) =>
+                {
+                    _lost.OnlyHolder.Lose();
+                    throw new TestConnectionException();
+                }
+            );
+            _lostResult = await CreateAsync(_lost);
+        }
+
+        private static bool LoggedTheStagingDatabaseAsUnresolved(Harness harness) =>
+            harness.Logger.Entries.Any(entry =>
+                entry.EventId == DmsDataStoreProvisioningService.StagingResidue
+                && Equals(entry.Field("Reason"), "outcome unresolved")
+            );
+
+        [Test]
+        public void It_classifies_each_ending_as_before()
+        {
+            FailureOf(_throwingResult).Code.Should().Be(DmsProvisioningFailureCode.Unknown);
+            _cancelledOutcome.Should().BeAssignableTo<OperationCanceledException>();
+            FailureOf(_lostResult).Code.Should().Be(DmsProvisioningFailureCode.LockLost);
+        }
+
+        [Test]
+        public void It_never_drops_the_staging_database() =>
+            new[] { _throwing, _cancelled, _lost }
+                .Select(harness => CountOf(harness, SpyDmsTargetEngine.DropStaging))
+                .Should()
+                .AllBeEquivalentTo(0);
+
+        [Test]
+        public void It_reports_the_staging_database_as_residue() =>
+            new[] { _throwingResult, _lostResult }
+                .Should()
+                .OnlyContain(result =>
+                    CleanupOf(result).Residue.Any(residue => residue.Kind == DmsResidueKind.StagingDatabase)
+                );
+
+        [Test]
+        public void It_logs_the_residue_on_every_ending_including_cancellation() =>
+            new[] { _throwing, _cancelled, _lost }
+                .Should()
+                .OnlyContain(harness => LoggedTheStagingDatabaseAsUnresolved(harness));
+    }
+
+    [TestFixture]
     public class Given_the_engine_cannot_prove_the_replay_ended
     {
         private static readonly DmsCleanupResidue _process = new(

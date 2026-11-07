@@ -8,8 +8,8 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Catalog;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.Jobs;
 using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
@@ -262,7 +262,7 @@ internal sealed class Harness
             Options.Create(options),
             protectedNames ?? ProvisioningTestValues.ProtectedNames,
             clock,
-            NullLogger<DmsDataStoreProvisioningService>.Instance
+            Logger
         )
         {
             TestHooks = hooks ?? NoOpProvisioningTestHooks.Instance,
@@ -272,6 +272,9 @@ internal sealed class Harness
     public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 11, 5, 12, 0, 0, TimeSpan.Zero));
 
     public SpyDmsTargetEngine Engine { get; } = new();
+
+    /// <summary>Every entry the orchestrator logged, with its structured fields.</summary>
+    public CapturingLogger<DmsDataStoreProvisioningService> Logger { get; } = new();
 
     public FakeCatalog Catalog { get; } = new();
 

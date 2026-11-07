@@ -7,6 +7,7 @@ using System.ComponentModel;
 using System.Globalization;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
@@ -39,6 +40,8 @@ public sealed partial class PostgresqlDmsTargetEngine
 
     /// <summary>The <c>Diagnostic.Operation</c> of a completed replay whose staging database is no longer under its name.</summary>
     public const string RestoreInstanceStep = "RestoreIntoStaging.Instance";
+
+    internal static readonly EventId ReplayResolutionFailed = new(1438_35, nameof(ReplayResolutionFailed));
 
     public async Task<DmsCommandOutcome<DmsInstanceIdentity>> CreateStagingAsync(
         IDmsTargetLockHolder holder,
@@ -195,7 +198,35 @@ public sealed partial class PostgresqlDmsTargetEngine
     /// <c>Unknown</c> and <see cref="DmsCommandOutcome{T}.Unknown.Quiescent"/>, since nothing of the
     /// command remains to change the state.
     /// </summary>
-    private async Task<DmsCommandOutcome<DmsInstanceIdentity>> ResolveReplayAsync(
+    internal async Task<DmsCommandOutcome<DmsInstanceIdentity>> ResolveReplayAsync(
+        DmsDatabaseName staging,
+        DmsOperationId operation,
+        PsqlRunResult run
+    )
+    {
+        // A resolution that fails proves nothing: the lookup, a termination, or the bounded wait may stop it
+        // anywhere, so the outcome stays unknown, names no session and is not quiescent (D-7b).
+        string failure;
+        try
+        {
+            return await ResolveProvenReplayAsync(staging, operation, run);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // Only the type chain leaves the catch: a driver error may quote the connection.
+            failure = DmsProvisioningDiagnostic.TypeChain(exception);
+        }
+
+        _logger.LogWarning(
+            ReplayResolutionFailed,
+            "The replay outcome of operation {Operation} could not be resolved: {ExceptionTypeChain}",
+            operation.Value,
+            failure
+        );
+        return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null);
+    }
+
+    private async Task<DmsCommandOutcome<DmsInstanceIdentity>> ResolveProvenReplayAsync(
         DmsDatabaseName staging,
         DmsOperationId operation,
         PsqlRunResult run
