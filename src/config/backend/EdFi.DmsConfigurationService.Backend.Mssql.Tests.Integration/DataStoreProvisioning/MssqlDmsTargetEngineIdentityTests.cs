@@ -144,6 +144,9 @@ public class MssqlDmsTargetEngineIdentityTests
         private Exception? _factsOutcome;
         private DmsSessionOpenResult _connect = null!;
         private DmsSessionOpenResult _fileCatalogHidden = null!;
+        private DmsLiveTargetState _ownInspection = null!;
+        private DmsSessionOpenResult _ownInspectionOpen = null!;
+        private bool _ownInspectionLeftNoSession;
         private Guid _identityAfter;
         private bool _loginSessionsGone;
 
@@ -165,6 +168,27 @@ public class MssqlDmsTargetEngineIdentityTests
             // cannot be verified on it, so no session is handed out.
             await _database.ExecuteAsync($"CREATE USER {login} FOR LOGIN {login};");
             _fileCatalogHidden = await engine.OpenSessionAsync(_database.DatabaseName, instance, default);
+
+            // The same login's own inspection carries no file evidence either; two missing tags must not match.
+            _ownInspection = await engine.InspectAsync(_database.DatabaseName, default);
+            if (_ownInspection is DmsLiveTargetState.Present ownPresent)
+            {
+                _ownInspectionOpen = await engine.OpenSessionAsync(
+                    _database.DatabaseName,
+                    ownPresent.Instance,
+                    default
+                );
+                if (_ownInspectionOpen is DmsSessionOpenResult.Opened handedOut)
+                {
+                    await handedOut.Session.DisposeAsync();
+                }
+            }
+
+            string restricted = _login;
+            _ownInspectionLeftNoSession = await WaitUntilAsync(
+                async () => await SessionCountOfLoginAsync(restricted) == 0,
+                TimeSpan.FromSeconds(20)
+            );
 
             // With the file catalog visible and no grant on the dms schema: the identity read is refused.
             await ExecuteOnServerAsync($"GRANT VIEW ANY DEFINITION TO {login};");
@@ -239,6 +263,23 @@ public class MssqlDmsTargetEngineIdentityTests
         [Test]
         public void It_refuses_a_session_whose_primary_file_the_login_cannot_see() =>
             _fileCatalogHidden.Should().BeOfType<DmsSessionOpenResult.InstanceChanged>();
+
+        [Test]
+        public void It_inspects_without_file_evidence_when_the_login_cannot_see_the_file_catalog() =>
+            _ownInspection
+                .Should()
+                .BeOfType<DmsLiveTargetState.Present>()
+                .Which.Instance.Should()
+                .BeOfType<DmsInstanceIdentity.Mssql>()
+                .Which.PrimaryFileTag.Should()
+                .BeEmpty();
+
+        [Test]
+        public void It_refuses_a_session_against_its_own_inspection_when_both_file_tags_are_missing() =>
+            _ownInspectionOpen.Should().BeOfType<DmsSessionOpenResult.InstanceChanged>();
+
+        [Test]
+        public void It_closes_the_refused_connection() => _ownInspectionLeftNoSession.Should().BeTrue();
 
         [Test]
         public void It_reports_a_refused_identity_read_as_access_denied_with_the_error_number_only()

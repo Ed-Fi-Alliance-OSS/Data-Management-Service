@@ -154,8 +154,10 @@ public sealed class MssqlDmsTargetEngine : IDmsTargetEngine
     /// <summary>
     /// Opens a dedicated connection to <paramref name="name"/> and verifies, on that connection, that its
     /// database is <paramref name="expectedInstance"/>: the same <c>database_id</c>, primary file, and
-    /// <c>create_date</c> snapshot. SQL Server answers a login to a database that does not exist and one the
-    /// login may not open with the same error (4060), so that refusal is resolved by inspecting the name.
+    /// <c>create_date</c> snapshot. A primary file the connection cannot see is refused as a changed instance,
+    /// whatever the expected identity holds, so no session is ever handed out without file evidence. SQL Server
+    /// answers a login to a database that does not exist and one the login may not open with the same error
+    /// (4060), so that refusal is resolved by inspecting the name.
     /// </summary>
     public async Task<DmsSessionOpenResult> OpenSessionAsync(
         DmsDatabaseName name,
@@ -215,7 +217,9 @@ public sealed class MssqlDmsTargetEngine : IDmsTargetEngine
             throw;
         }
 
-        if (actual != expected)
+        // Missing file evidence never proves the instance, even when the expected identity is missing it too
+        // (both read by a login that cannot see sys.master_files): only database_id and create_date would match.
+        if (actual.PrimaryFileTag.Length == 0 || actual != expected)
         {
             await connection.DisposeAsync();
             return new DmsSessionOpenResult.InstanceChanged();
