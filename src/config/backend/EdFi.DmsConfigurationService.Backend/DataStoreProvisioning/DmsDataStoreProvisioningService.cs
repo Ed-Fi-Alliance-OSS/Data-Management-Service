@@ -462,7 +462,8 @@ public sealed partial class DmsDataStoreProvisioningService(
             scope,
             OpenStagingSessionStep,
             stage,
-            stagingInstance
+            stagingInstance,
+            DmsProvisioningFailureCode.AdminPrivilegeMissing
         );
         if (session is null)
         {
@@ -475,6 +476,7 @@ public sealed partial class DmsDataStoreProvisioningService(
                 ReadIdentityStep,
                 token => engine.ReadIdentityAsync(session, token)
             );
+            ThrowIfAccessDenied(identity, DmsProvisioningFailureCode.AdminPrivilegeMissing, ReadIdentityStep);
             DmsTargetFacts facts = await scope.ReadAsync(
                 ReadTargetFactsStep,
                 token => engine.ReadTargetFactsAsync(session, token)
@@ -536,31 +538,69 @@ public sealed partial class DmsDataStoreProvisioningService(
     /// returns it: when the scope then discards the result because loss was declared while the session opened,
     /// the session is disposed here, once, before the loss propagates. Null when the engine refused because the
     /// name no longer resolves to <paramref name="instance"/>; otherwise the caller owns the returned session.
+    /// A definite access refusal ends the step with <paramref name="accessDenied"/> and the refusal's
+    /// sanitized diagnostic, re-labelled with <paramref name="step"/>.
     /// </summary>
     private async Task<DmsSession?> OpenOwnedSessionAsync(
         LockScope scope,
         string step,
         DmsDatabaseName name,
-        DmsInstanceIdentity instance
+        DmsInstanceIdentity instance,
+        DmsProvisioningFailureCode accessDenied
     )
     {
         DmsSession? returned = null;
+        DmsSessionOpenResult opened;
         try
         {
-            DmsSessionOpenResult opened = await scope.CallAsync(
+            opened = await scope.CallAsync(
                 step,
                 options.Value.CommandTimeout,
                 token => engine.OpenSessionAsync(name, instance, token),
                 result => returned = (result as DmsSessionOpenResult.Opened)?.Session
             );
-            return (opened as DmsSessionOpenResult.Opened)?.Session;
         }
         catch (Exception) when (returned is not null)
         {
             await returned.DisposeAsync();
             throw;
         }
+
+        return opened switch
+        {
+            DmsSessionOpenResult.Opened open => open.Session,
+            DmsSessionOpenResult.AccessDenied refused => throw StepFailed(
+                accessDenied,
+                AtStep(refused.Diagnostic, step)
+            ),
+            _ => null,
+        };
     }
+
+    /// <summary>
+    /// An identity read the server definitely refused for lack of a privilege ends the step with
+    /// <paramref name="code"/> and the refusal's sanitized diagnostic, before anything else is read.
+    /// </summary>
+    private static void ThrowIfAccessDenied(
+        DmsIdentityRead identity,
+        DmsProvisioningFailureCode code,
+        string step
+    )
+    {
+        if (identity is DmsIdentityRead.Invalid { Problem: DmsIdentityReadProblem.AccessDenied } denied)
+        {
+            throw StepFailed(
+                code,
+                denied.Diagnostic is { } diagnostic
+                    ? AtStep(diagnostic, step)
+                    : DmsProvisioningDiagnostic.ForOperation(step)
+            );
+        }
+    }
+
+    /// <summary>The engine's type chain and provider code, labelled with the orchestrator's step.</summary>
+    private static DmsProvisioningDiagnostic AtStep(DmsProvisioningDiagnostic diagnostic, string step) =>
+        new(diagnostic.ExceptionTypeChain, diagnostic.ProviderErrorCode, step);
 
     /// <summary>
     /// Recovery for an unknown outcome (6.10): terminates <paramref name="session"/> with verification on a

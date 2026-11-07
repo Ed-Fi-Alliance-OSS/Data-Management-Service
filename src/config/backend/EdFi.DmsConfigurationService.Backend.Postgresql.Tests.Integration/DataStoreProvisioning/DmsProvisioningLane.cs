@@ -285,14 +285,14 @@ internal sealed class Lane : IAsyncDisposable
     private readonly string _operations;
     private readonly LaneHooks _hooks;
     private readonly TimeSpan? _restoreTimeout;
+    private readonly Deployment _deployment;
 
     private Lane(
         string root,
         string operations,
         LaneHooks hooks,
         TimeSpan? restoreTimeout,
-        RecordingEngine engine,
-        DmsDataStoreProvisioningService service,
+        Deployment deployment,
         DmsDataStoreCreateRequest request
     )
     {
@@ -300,8 +300,9 @@ internal sealed class Lane : IAsyncDisposable
         _operations = operations;
         _hooks = hooks;
         _restoreTimeout = restoreTimeout;
-        Engine = engine;
-        Service = service;
+        _deployment = deployment;
+        Engine = deployment.Engine;
+        Service = deployment.Service;
         Request = request;
     }
 
@@ -363,8 +364,7 @@ internal sealed class Lane : IAsyncDisposable
             operations,
             hooks,
             restoreTimeout,
-            deployment.Engine,
-            deployment.Service,
+            deployment,
             new DmsDataStoreCreateRequest(
                 DmsDatabaseTemplate.Minimal,
                 TargetName("stage"),
@@ -378,8 +378,24 @@ internal sealed class Lane : IAsyncDisposable
     internal sealed record Deployment(
         RecordingEngine Engine,
         DmsDataStoreProvisioningService Service,
-        DmsTrustedArtifactPin Pin
+        DmsTrustedArtifactPin Pin,
+        DmsDataStoreProvisioningOptions Options,
+        TemplateArtifactCatalog Catalog
     );
+
+    /// <summary>
+    /// The lane's own deployment (same options, catalog, allowlisted package and hooks, so the lane's request
+    /// and pin apply) over <paramref name="inner"/> instead of the superuser engine, behind a fresh recorder.
+    /// </summary>
+    public Deployment WithEngine(IDmsTargetEngine inner)
+    {
+        RecordingEngine engine = new(inner);
+        return _deployment with
+        {
+            Engine = engine,
+            Service = ServiceFor(engine, _deployment.Catalog, _deployment.Options, _hooks),
+        };
+    }
 
     /// <summary>
     /// The deployment after its allowlist was switched to another package built from <paramref name="artifactSql"/>
@@ -457,7 +473,21 @@ internal sealed class Lane : IAsyncDisposable
             NullLogger<TemplateArtifactCatalog>.Instance
         );
         RecordingEngine engine = new(DmsProvisioningTestServer.Engine(restoreTimeout: restoreTimeout));
-        DmsDataStoreProvisioningService service = new(
+        DmsDataStoreProvisioningService service = ServiceFor(engine, catalog, options, hooks);
+        DmsTrustedArtifactPin pin = (await catalog.ResolveAsync(DmsDatabaseTemplate.Minimal, default))
+            .Should()
+            .BeOfType<DmsArtifactResolution.Resolved>()
+            .Subject.Pin;
+        return new Deployment(engine, service, pin, options, catalog);
+    }
+
+    private static DmsDataStoreProvisioningService ServiceFor(
+        RecordingEngine engine,
+        TemplateArtifactCatalog catalog,
+        DmsDataStoreProvisioningOptions options,
+        LaneHooks hooks
+    ) =>
+        new(
             new Ready(),
             engine,
             catalog,
@@ -469,12 +499,6 @@ internal sealed class Lane : IAsyncDisposable
         {
             TestHooks = hooks,
         };
-        DmsTrustedArtifactPin pin = (await catalog.ResolveAsync(DmsDatabaseTemplate.Minimal, default))
-            .Should()
-            .BeOfType<DmsArtifactResolution.Resolved>()
-            .Subject.Pin;
-        return new Deployment(engine, service, pin);
-    }
 
     public Task<DmsDataStoreCreateResult> CreateAsync() => Service.CreateAsync(Request, default);
 

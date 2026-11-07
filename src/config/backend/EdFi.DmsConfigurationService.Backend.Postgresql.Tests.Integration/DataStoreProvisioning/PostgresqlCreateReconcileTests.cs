@@ -415,4 +415,140 @@ public class PostgresqlCreateReconcileTests
             (_corruptedHashAfter, _grantHeldAfter).Should().Be((new string('0', 64), true));
         }
     }
+
+    [TestFixture]
+    public class Given_the_admin_role_is_refused_access_to_a_created_target
+    {
+        private Lane? _lane;
+        private string? _role;
+        private Evidence _before = null!;
+        private Evidence _after = null!;
+        private (DmsDataStoreCreateResult Result, string[] Members) _identityDenied;
+        private (DmsDataStoreCreateResult Result, string[] Members) _connectDenied;
+        private bool _roleSessionsGone;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireLane();
+            await EnsureEnqueueOwnerRoleAsync();
+            _lane = await CreatedAsync();
+            _before = await EvidenceAsync(_lane.Target);
+
+            // A non-superuser login with no grant on the target's objects: CONNECT through PUBLIC, nothing on
+            // the dms schema, so the identity read is refused with 42501.
+            _role = await CreateLoginRoleAsync("reconcile");
+            Lane.Deployment restricted = _lane.WithEngine(EngineAs(_role));
+            DmsDataStoreCreateRequest request = _lane.Request;
+            _identityDenied = await RetryAsync(
+                restricted.Engine,
+                () => restricted.Service.CreateAsync(request, default)
+            );
+
+            // CONNECT revoked from PUBLIC: the session open is refused with 42501.
+            string quoted = PostgresqlIdentifiers.Quote(_lane.Target.Value);
+            await ExecuteOnServerAsync($"REVOKE CONNECT ON DATABASE {quoted} FROM PUBLIC;");
+            try
+            {
+                _connectDenied = await RetryAsync(
+                    restricted.Engine,
+                    () => restricted.Service.CreateAsync(request, default)
+                );
+            }
+            finally
+            {
+                await ExecuteOnServerAsync($"GRANT CONNECT ON DATABASE {quoted} TO PUBLIC;");
+            }
+
+            string role = _role;
+            _roleSessionsGone = await WaitUntilAsync(
+                async () =>
+                    await ScalarOnServerAsync<long>(
+                        "SELECT COUNT(*) FROM pg_catalog.pg_stat_activity WHERE usename = @role;",
+                        ("role", role)
+                    ) == 0,
+                TimeSpan.FromSeconds(20)
+            );
+            _after = await EvidenceAsync(_lane.Target);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_lane is not null)
+            {
+                await _lane.DisposeAsync();
+            }
+
+            if (_role is not null)
+            {
+                await DropRoleAsync(_role);
+            }
+        }
+
+        private static (DmsProvisioningFailureCode, DmsProvisioningFailureCategory, string, string?) Refusal(
+            DmsDataStoreCreateResult result
+        )
+        {
+            DmsProvisioningFailure failure = result
+                .Should()
+                .BeOfType<DmsDataStoreCreateResult.Failure>()
+                .Subject.Detail;
+            return (
+                failure.Code,
+                failure.Category,
+                failure.Diagnostic.Operation,
+                failure.Diagnostic.ProviderErrorCode
+            );
+        }
+
+        [Test]
+        public void It_reports_a_refused_identity_read_as_unverifiable_for_inspection() =>
+            Refusal(_identityDenied.Result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TargetUnverifiable,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.ReconcileIdentityStep,
+                        "42501"
+                    )
+                );
+
+        [Test]
+        public void It_reports_a_refused_connection_as_unverifiable_for_inspection() =>
+            Refusal(_connectDenied.Result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TargetUnverifiable,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.ReconcileOpenSessionStep,
+                        "42501"
+                    )
+                );
+
+        [Test]
+        public void It_reads_nothing_after_the_refusal()
+        {
+            _identityDenied.Members.Should().Equal(_readMembers[..^1]);
+            _connectDenied.Members.Should().Equal(_readMembers[..^2]);
+        }
+
+        [Test]
+        public void It_keeps_only_the_type_chain_in_the_diagnostic() =>
+            new[] { _identityDenied.Result, _connectDenied.Result }
+                .Select(result =>
+                    ((DmsDataStoreCreateResult.Failure)result).Detail.Diagnostic.ExceptionTypeChain
+                )
+                .Should()
+                .AllSatisfy(chain => chain.Should().Be(typeof(Npgsql.PostgresException).FullName));
+
+        [Test]
+        public void It_released_every_session_of_the_refused_role_and_its_operation_directories() =>
+            (_roleSessionsGone, _lane!.OperationEntries.Length).Should().Be((true, 0));
+
+        [Test]
+        public void It_left_the_target_exactly_as_it_was() => _after.Should().Be(_before);
+    }
 }

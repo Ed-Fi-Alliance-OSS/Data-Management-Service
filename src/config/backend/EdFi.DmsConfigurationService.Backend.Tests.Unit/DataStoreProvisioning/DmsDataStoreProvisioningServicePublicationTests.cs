@@ -992,6 +992,94 @@ public class DmsDataStoreProvisioningServicePublicationTests
     }
 
     [TestFixture]
+    public class Given_the_server_refuses_the_admin_access_to_the_renamed_target
+    {
+        private static readonly DmsProvisioningDiagnostic _refusal = new(
+            "Npgsql.PostgresException",
+            "42501",
+            "EngineOperation"
+        );
+
+        private Harness _connectDenied = null!;
+        private Harness _identityDenied = null!;
+        private DmsDataStoreCreateResult _connectResult = null!;
+        private DmsDataStoreCreateResult _identityResult = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _connectDenied = Scripted();
+            _connectDenied.Engine.OnOpenSession = (name, instance, _) =>
+                Task.FromResult<DmsSessionOpenResult>(
+                    IsStaging(name)
+                        ? new DmsSessionOpenResult.Opened(new FakeSession(instance, _stagingSession))
+                        : new DmsSessionOpenResult.AccessDenied(_refusal)
+                );
+            _connectResult = await CreateAsync(_connectDenied);
+
+            _identityDenied = Scripted();
+            _identityDenied.Engine.OnReadIdentity = (session, _) =>
+                Task.FromResult<DmsIdentityRead>(
+                    session.ServerSession == _markerSession
+                        ? new DmsIdentityRead.Invalid(DmsIdentityReadProblem.AccessDenied)
+                        {
+                            Diagnostic = _refusal,
+                        }
+                        : TargetFactsSample.Identity()
+                );
+            _identityResult = await CreateAsync(_identityDenied);
+        }
+
+        [Test]
+        public void It_reports_the_unmarked_target_for_inspection_with_the_sanitized_diagnostic() =>
+            (FailureOf(_connectResult), FailureOf(_identityResult))
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailure.Create(
+                            DmsProvisioningFailureCode.IdentityAssignmentFailed,
+                            new DmsProvisioningDiagnostic(
+                                "Npgsql.PostgresException",
+                                "42501",
+                                DmsDataStoreProvisioningService.OpenTargetSessionStep
+                            )
+                        ),
+                        DmsProvisioningFailure.Create(
+                            DmsProvisioningFailureCode.IdentityAssignmentFailed,
+                            new DmsProvisioningDiagnostic(
+                                "Npgsql.PostgresException",
+                                "42501",
+                                DmsDataStoreProvisioningService.VerifyRenamedTargetStep
+                            )
+                        )
+                    )
+                );
+
+        [Test]
+        public void It_neither_marks_nor_compensates_and_reports_the_target()
+        {
+            foreach (
+                (Harness harness, DmsDataStoreCreateResult result) in new[]
+                {
+                    (_connectDenied, _connectResult),
+                    (_identityDenied, _identityResult),
+                }
+            )
+            {
+                CleanupOf(result)
+                    .Residue.Should()
+                    .Equal(new DmsCleanupResidue(DmsResidueKind.UnmarkedTarget, TargetName));
+                (
+                    CountOf(harness, SpyDmsTargetEngine.AssignMarker),
+                    CountOf(harness, SpyDmsTargetEngine.DropInstance)
+                )
+                    .Should()
+                    .Be((0, 0));
+            }
+        }
+    }
+
+    [TestFixture]
     public class Given_a_read_of_the_re_check_fails_after_the_rename
     {
         private Harness _thrown = null!;

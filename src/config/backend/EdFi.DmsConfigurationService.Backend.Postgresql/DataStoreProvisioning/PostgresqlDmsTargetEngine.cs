@@ -33,6 +33,11 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
     /// <summary>The <c>Diagnostic.Operation</c> of a facts read whose inventory or security rows do not split as the delivered contract requires.</summary>
     public const string CatalogRowShapeStep = "CatalogRowShape";
 
+    /// <summary>The fixed operation names an access refusal's diagnostic carries.</summary>
+    public const string OpenSessionOperation = "OpenSession";
+
+    public const string ReadIdentityOperation = "ReadIdentity";
+
     private const string ServerFactsQuery =
         "SELECT current_setting('server_version'), current_setting('server_version_num')::int, (SELECT pg_catalog.pg_encoding_to_char(encoding) FROM pg_catalog.pg_database WHERE datname = 'template1'), pg_catalog.now();";
 
@@ -198,6 +203,13 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         {
             return new DmsSessionOpenResult.Absent();
         }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsAccessRefusal(exception.SqlState))
+        {
+            return new DmsSessionOpenResult.AccessDenied(
+                PostgresqlErrorClassifier.Diagnostic(exception, OpenSessionOperation)
+            );
+        }
 
         try
         {
@@ -240,6 +252,14 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
             when (PostgresqlErrorClassifier.IsMissingRelation(exception.SqlState))
         {
             return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.TableMissing);
+        }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsAccessRefusal(exception.SqlState))
+        {
+            return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.AccessDenied)
+            {
+                Diagnostic = PostgresqlErrorClassifier.Diagnostic(exception, ReadIdentityOperation),
+            };
         }
 
         return values.Count switch

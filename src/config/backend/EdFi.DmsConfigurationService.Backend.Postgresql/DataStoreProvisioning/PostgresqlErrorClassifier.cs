@@ -52,6 +52,18 @@ internal static class PostgresqlErrorClassifier
     }
 
     /// <summary>
+    /// A definite refusal for lack of a privilege: <c>42501</c> (a denied read, or <c>CONNECT</c> denied on the
+    /// database) or class <c>28</c> (the server's authentication rules reject this role for this database).
+    /// Nothing was read or opened, and retrying without an operator changing a grant cannot succeed.
+    /// </summary>
+    public static bool IsAccessRefusal(string sqlState)
+    {
+        ArgumentNullException.ThrowIfNull(sqlState);
+        return sqlState == PostgresErrorCodes.InsufficientPrivilege
+            || sqlState.StartsWith("28", StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Whether <paramref name="exception"/> proves the session's connection failed (D-12 loss evidence): the
     /// first PostgreSQL error in the chain is connection class, or, when there is none, a transport failure
     /// (<see cref="IOException"/>, <see cref="SocketException"/>) sits anywhere in the chain. A cancelled

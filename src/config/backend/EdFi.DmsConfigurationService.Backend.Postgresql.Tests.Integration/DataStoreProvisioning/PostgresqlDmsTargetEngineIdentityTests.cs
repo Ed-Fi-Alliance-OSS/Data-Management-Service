@@ -110,4 +110,104 @@ public class PostgresqlDmsTargetEngineIdentityTests
             return await engine.ReadIdentityAsync(session, default);
         }
     }
+
+    [TestFixture]
+    public class Given_a_role_the_server_refuses_access_to_the_target
+    {
+        private static readonly DmsProvisioningDiagnostic _readRefused = new(
+            typeof(Npgsql.PostgresException).FullName!,
+            "42501",
+            PostgresqlDmsTargetEngine.ReadIdentityOperation
+        );
+
+        private static readonly DmsProvisioningDiagnostic _connectRefused = new(
+            typeof(Npgsql.PostgresException).FullName!,
+            "42501",
+            PostgresqlDmsTargetEngine.OpenSessionOperation
+        );
+
+        private TestDatabase? _database;
+        private string? _role;
+        private DmsIdentityRead _identity = null!;
+        private DmsSessionOpenResult _connect = null!;
+        private Guid _identityAfter;
+        private bool _roleSessionsGone;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _database = await CreateDmsShapedDatabaseAsync("refused");
+            DmsInstanceIdentity instance = await _database.CatalogInstanceAsync();
+
+            // CONNECT through PUBLIC, nothing on the dms schema: the identity read is refused.
+            _role = await CreateLoginRoleAsync("refused");
+            PostgresqlDmsTargetEngine engine = EngineAs(_role);
+            DmsSessionOpenResult opened = await engine.OpenSessionAsync(
+                _database.DatabaseName,
+                instance,
+                default
+            );
+            await using (DmsSession session = ((DmsSessionOpenResult.Opened)opened).Session)
+            {
+                _identity = await engine.ReadIdentityAsync(session, default);
+            }
+
+            // CONNECT revoked from PUBLIC: the open itself is refused.
+            string quoted = PostgresqlIdentifiers.Quote(_database.Name);
+            await ExecuteOnServerAsync($"REVOKE CONNECT ON DATABASE {quoted} FROM PUBLIC;");
+            try
+            {
+                _connect = await engine.OpenSessionAsync(_database.DatabaseName, instance, default);
+            }
+            finally
+            {
+                await ExecuteOnServerAsync($"GRANT CONNECT ON DATABASE {quoted} TO PUBLIC;");
+            }
+
+            string role = _role;
+            _roleSessionsGone = await WaitUntilAsync(
+                async () =>
+                    await ScalarOnServerAsync<long>(
+                        "SELECT COUNT(*) FROM pg_catalog.pg_stat_activity WHERE usename = @role;",
+                        ("role", role)
+                    ) == 0,
+                TimeSpan.FromSeconds(20)
+            );
+            _identityAfter = await _database.ScalarAsync<Guid>(
+                "SELECT \"SourceIdentity\" FROM \"dms\".\"DataStoreIdentity\";"
+            );
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_database is not null)
+            {
+                await _database.DisposeAsync();
+            }
+
+            if (_role is not null)
+            {
+                await DropRoleAsync(_role);
+            }
+        }
+
+        [Test]
+        public void It_reports_a_refused_identity_read_as_access_denied_with_the_sqlstate_only()
+        {
+            DmsIdentityRead.Invalid invalid = _identity.Should().BeOfType<DmsIdentityRead.Invalid>().Subject;
+            (invalid.Problem, invalid.Diagnostic)
+                .Should()
+                .Be((DmsIdentityReadProblem.AccessDenied, _readRefused));
+        }
+
+        [Test]
+        public void It_reports_a_refused_connection_as_access_denied_with_the_sqlstate_only() =>
+            _connect.Should().Be(new DmsSessionOpenResult.AccessDenied(_connectRefused));
+
+        [Test]
+        public void It_leaves_no_session_of_the_role_and_the_identity_unchanged() =>
+            (_roleSessionsGone, _identityAfter).Should().Be((true, DmsShapedManifest.SourceIdentity));
+    }
 }

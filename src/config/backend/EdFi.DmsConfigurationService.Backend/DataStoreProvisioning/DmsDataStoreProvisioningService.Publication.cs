@@ -196,7 +196,13 @@ public sealed partial class DmsDataStoreProvisioningService
         await TestHooks.AtAsync(DmsProvisioningHookPoint.BeforeMarker, operation, scope.CallerToken);
 
         // 6.3 step 9.
-        DmsSession? session = await OpenOwnedSessionAsync(scope, OpenTargetSessionStep, target, ourTarget);
+        DmsSession? session = await OpenOwnedSessionAsync(
+            scope,
+            OpenTargetSessionStep,
+            target,
+            ourTarget,
+            DmsProvisioningFailureCode.AdminPrivilegeMissing
+        );
         if (session is null)
         {
             publication.Displaced();
@@ -292,6 +298,11 @@ public sealed partial class DmsDataStoreProvisioningService
         DmsIdentityRead identity = await scope.ReadAsync(
             VerifyRenamedTargetStep,
             token => engine.ReadIdentityAsync(session, token)
+        );
+        ThrowIfAccessDenied(
+            identity,
+            DmsProvisioningFailureCode.AdminPrivilegeMissing,
+            VerifyRenamedTargetStep
         );
         DmsTargetFacts facts = await scope.ReadAsync(
             VerifyRenamedTargetStep,

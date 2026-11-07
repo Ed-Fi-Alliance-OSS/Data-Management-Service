@@ -1319,6 +1319,72 @@ public class DmsDataStoreProvisioningServiceStagingTests
     }
 
     [TestFixture]
+    public class Given_the_server_refuses_the_admin_access_to_its_staging_database
+    {
+        private static readonly DmsProvisioningDiagnostic _refusal = new(
+            "Npgsql.PostgresException",
+            "42501",
+            "EngineOperation"
+        );
+
+        private Harness _connectDenied = null!;
+        private Harness _identityDenied = null!;
+        private DmsDataStoreCreateResult _connectResult = null!;
+        private DmsDataStoreCreateResult _identityResult = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _connectDenied = Scripted();
+            _connectDenied.Engine.OnOpenSession = (_, _, _) =>
+                Task.FromResult<DmsSessionOpenResult>(new DmsSessionOpenResult.AccessDenied(_refusal));
+            _connectResult = await CreateAsync(_connectDenied);
+
+            _identityDenied = Scripted();
+            _identityDenied.Engine.OnReadIdentity = (_, _) =>
+                Task.FromResult<DmsIdentityRead>(
+                    new DmsIdentityRead.Invalid(DmsIdentityReadProblem.AccessDenied) { Diagnostic = _refusal }
+                );
+            _identityResult = await CreateAsync(_identityDenied);
+        }
+
+        [Test]
+        public void It_reports_the_missing_admin_privilege_with_the_sanitized_diagnostic() =>
+            (FailureOf(_connectResult), FailureOf(_identityResult))
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailure.Create(
+                            DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                            new DmsProvisioningDiagnostic(
+                                "Npgsql.PostgresException",
+                                "42501",
+                                DmsDataStoreProvisioningService.OpenStagingSessionStep
+                            )
+                        ),
+                        DmsProvisioningFailure.Create(
+                            DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                            new DmsProvisioningDiagnostic(
+                                "Npgsql.PostgresException",
+                                "42501",
+                                DmsDataStoreProvisioningService.ReadIdentityStep
+                            )
+                        )
+                    )
+                );
+
+        [Test]
+        public void It_reads_no_facts_and_drops_its_own_staging_database()
+        {
+            foreach (Harness harness in new[] { _connectDenied, _identityDenied })
+            {
+                Members(harness).Should().NotContain(SpyDmsTargetEngine.ReadTargetFacts);
+                CountOf(harness, SpyDmsTargetEngine.DropStaging).Should().Be(1);
+            }
+        }
+    }
+
+    [TestFixture]
     public class Given_the_target_appears_before_publication
     {
         private Harness _harness = null!;

@@ -216,6 +216,42 @@ public class PostgresqlErrorClassifierTests
     }
 
     [TestFixture]
+    public class Given_states_that_may_be_a_definite_access_refusal
+    {
+        private static readonly string[] _refusals = ["42501", "28000", "28P01"];
+
+        // Missing objects, connection loss, cancellation, admin shutdown and a serialization failure are not refusals.
+        private static readonly string[] _others =
+        [
+            "42P01",
+            "3F000",
+            "3D000",
+            "08006",
+            "57014",
+            "57P01",
+            "40001",
+        ];
+
+        private bool[] _refusalVerdicts = [];
+        private bool[] _otherVerdicts = [];
+
+        [SetUp]
+        public void Setup()
+        {
+            _refusalVerdicts = [.. _refusals.Select(PostgresqlErrorClassifier.IsAccessRefusal)];
+            _otherVerdicts = [.. _others.Select(PostgresqlErrorClassifier.IsAccessRefusal)];
+        }
+
+        [Test]
+        public void It_treats_insufficient_privilege_and_authorization_class_as_refusals() =>
+            _refusalVerdicts.Should().AllSatisfy(verdict => verdict.Should().BeTrue());
+
+        [Test]
+        public void It_leaves_every_other_state_to_its_own_handling() =>
+            _otherVerdicts.Should().AllSatisfy(verdict => verdict.Should().BeFalse());
+    }
+
+    [TestFixture]
     public class Given_exceptions_that_may_prove_the_connection_failed
     {
         private bool _connectionClassState;

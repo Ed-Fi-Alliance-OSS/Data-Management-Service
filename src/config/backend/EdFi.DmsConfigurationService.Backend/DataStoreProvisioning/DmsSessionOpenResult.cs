@@ -14,4 +14,10 @@ public abstract record DmsSessionOpenResult
     public sealed record InstanceChanged() : DmsSessionOpenResult;
 
     public sealed record Absent() : DmsSessionOpenResult;
+
+    /// <summary>
+    /// The server definitely refused the connection for lack of a privilege (for example <c>CONNECT</c> revoked);
+    /// nothing was opened. The diagnostic carries the type chain and provider code only.
+    /// </summary>
+    public sealed record AccessDenied(DmsProvisioningDiagnostic Diagnostic) : DmsSessionOpenResult;
 }

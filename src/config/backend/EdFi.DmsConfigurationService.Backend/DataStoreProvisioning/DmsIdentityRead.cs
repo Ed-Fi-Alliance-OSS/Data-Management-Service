@@ -13,6 +13,9 @@ public enum DmsIdentityReadProblem
     MultipleRows,
     Unparsable,
     EmptyGuid,
+
+    /// <summary>The server definitely refused the read for lack of a privilege; <see cref="DmsIdentityRead.Invalid.Diagnostic"/> carries the provider code.</summary>
+    AccessDenied,
 }
 
 /// <summary>
@@ -40,5 +43,9 @@ public abstract record DmsIdentityRead
     }
 
     /// <summary>Any of these makes the target unverifiable; nothing is mutated.</summary>
-    public sealed record Invalid(DmsIdentityReadProblem Problem) : DmsIdentityRead;
+    public sealed record Invalid(DmsIdentityReadProblem Problem) : DmsIdentityRead
+    {
+        /// <summary>For a problem a server error proved, such as <see cref="DmsIdentityReadProblem.AccessDenied"/>: its type chain and provider code only, never its message.</summary>
+        public DmsProvisioningDiagnostic? Diagnostic { get; init; }
+    }
 }

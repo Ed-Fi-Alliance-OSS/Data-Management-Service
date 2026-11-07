@@ -332,6 +332,82 @@ public class DmsDataStoreProvisioningServiceReconcileTests
     }
 
     [TestFixture]
+    public class Given_the_server_refuses_the_admin_access_to_the_target
+    {
+        private static readonly DmsProvisioningDiagnostic _refusal = new(
+            "Npgsql.PostgresException",
+            "42501",
+            "EngineOperation"
+        );
+
+        private PresentTarget _identityDenied = null!;
+        private PresentTarget _connectDenied = null!;
+        private DmsDataStoreCreateResult _identityResult = null!;
+        private DmsDataStoreCreateResult _connectResult = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _identityDenied = new PresentTarget();
+            _identityDenied.Harness.Engine.OnReadIdentity = (_, _) =>
+                Task.FromResult<DmsIdentityRead>(
+                    new DmsIdentityRead.Invalid(DmsIdentityReadProblem.AccessDenied) { Diagnostic = _refusal }
+                );
+            _identityResult = await _identityDenied.CreateAsync();
+
+            _connectDenied = new PresentTarget();
+            _connectDenied.Harness.Engine.OnOpenSession = (_, _, _) =>
+                Task.FromResult<DmsSessionOpenResult>(new DmsSessionOpenResult.AccessDenied(_refusal));
+            _connectResult = await _connectDenied.CreateAsync();
+        }
+
+        [Test]
+        public void It_reports_a_refused_identity_read_as_unverifiable_with_the_sanitized_diagnostic() =>
+            FailureOf(_identityResult)
+                .Should()
+                .Be(
+                    DmsProvisioningFailure.Create(
+                        DmsProvisioningFailureCode.TargetUnverifiable,
+                        new DmsProvisioningDiagnostic(
+                            "Npgsql.PostgresException",
+                            "42501",
+                            DmsDataStoreProvisioningService.ReconcileIdentityStep
+                        )
+                    )
+                );
+
+        [Test]
+        public void It_reports_a_refused_connection_as_unverifiable_with_the_sanitized_diagnostic() =>
+            FailureOf(_connectResult)
+                .Should()
+                .Be(
+                    DmsProvisioningFailure.Create(
+                        DmsProvisioningFailureCode.TargetUnverifiable,
+                        new DmsProvisioningDiagnostic(
+                            "Npgsql.PostgresException",
+                            "42501",
+                            DmsDataStoreProvisioningService.ReconcileOpenSessionStep
+                        )
+                    )
+                );
+
+        [Test]
+        public void It_reads_nothing_after_the_refusal_and_releases_what_it_opened()
+        {
+            _identityDenied.Harness.Engine.Members.Should().Equal(_reads[..^1]);
+            _connectDenied.Harness.Engine.Members.Should().Equal(_reads[..^2]);
+            (
+                _identityDenied.Sessions.Single().Disposals,
+                _connectDenied.Sessions.Count,
+                _identityDenied.Harness.OnlyHolder.ReleaseCount,
+                _connectDenied.Harness.OnlyHolder.ReleaseCount
+            )
+                .Should()
+                .Be((1, 0, 1, 1));
+        }
+    }
+
+    [TestFixture]
     public class Given_the_deployment_expects_another_project_set
     {
         private DmsDataStoreCreateResult _result = null!;
