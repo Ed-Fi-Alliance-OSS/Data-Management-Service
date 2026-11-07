@@ -22,9 +22,10 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 /// staging database created and claimed on the holder session, the <c>psql</c> replay with its outcome
 /// protocol, and the staging drop, in the second part of this class; and publication (6.3 steps 8 and 10,
 /// 6.7): the rename into the target and the compensation drop on the holder session, and the marker on an
-/// instance-bound session, through <see cref="PostgresqlPublicationQueries"/>. Every read is on a dedicated
-/// connection; fencing, the owned delete, and the environmental validation arrive with Steps 3.8 and 3.9
-/// and throw until then. Connection and driver failures of a read propagate for the orchestrator to classify; a catalog
+/// instance-bound session, through <see cref="PostgresqlPublicationQueries"/>; and the owned delete (6.6):
+/// the fence, its reversal, and the guarded drop on the holder session, through
+/// <see cref="PostgresqlDeletionQueries"/>. Every read is on a dedicated connection; the environmental
+/// validation arrives with Step 3.9 and throws until then. Connection and driver failures of a read propagate for the orchestrator to classify; a catalog
 /// row the inventory contract cannot describe is reported as a content-profile violation, because the
 /// authoritative DDL never produces one.
 /// </summary>
@@ -413,24 +414,64 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         );
     }
 
-    public Task<DmsCommandOutcome> FenceAsync(
+    /// <summary>
+    /// 6.6 step 3 on the holder session, bounded by <c>SessionTerminationTimeout</c> plus <c>CommandTimeout</c>:
+    /// the termination loop has the whole termination bound, and the statements around it one command each.
+    /// </summary>
+    public async Task<DmsCommandOutcome> FenceAsync(
         IDmsTargetLockHolder holder,
         DmsTargetDatabaseName target,
         DmsInstanceIdentity instance,
         DmsServerSessionId? keep,
         CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(FenceAsync), "Step 3.8");
+    )
+    {
+        PostgresqlTargetLockSession session = RequireHolder(holder);
+        ArgumentNullException.ThrowIfNull(instance);
+        return await session.RunAsync(
+            token =>
+                PostgresqlDeletionQueries.FenceAsync(
+                    session.Connection,
+                    target,
+                    instance,
+                    keep,
+                    session.Session,
+                    _settings.SessionTerminationTimeout,
+                    _adminConnection.CommandTimeout,
+                    _timeProvider,
+                    token
+                ),
+            _settings.SessionTerminationTimeout + _adminConnection.CommandTimeout,
+            cancellationToken
+        );
+    }
 
-    public Task<DmsCommandOutcome> UnfenceAsync(
+    public async Task<DmsCommandOutcome> UnfenceAsync(
         IDmsTargetLockHolder holder,
         DmsTargetDatabaseName target,
         DmsInstanceIdentity instance,
         CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(UnfenceAsync), "Step 3.8");
+    )
+    {
+        PostgresqlTargetLockSession session = RequireHolder(holder);
+        ArgumentNullException.ThrowIfNull(instance);
+        return await session.RunAsync(
+            token =>
+                PostgresqlDeletionQueries.UnfenceAsync(
+                    session.Connection,
+                    target,
+                    instance,
+                    session.Session,
+                    token
+                ),
+            _adminConnection.CommandTimeout,
+            cancellationToken
+        );
+    }
 
     /// <summary>
-    /// The compensation drop (6.7) on the holder session; the owned delete (6.6) drops only after fencing and
-    /// verified exclusivity and arrives with Step 3.8.
+    /// On the holder session: the compensation drop (6.7), or the owned delete (6.6 step 5), which drops only a
+    /// target that is still fenced with no client session on it.
     /// </summary>
     public async Task<DmsCommandOutcome> DropInstanceAsync(
         IDmsTargetLockHolder holder,
@@ -440,22 +481,30 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         CancellationToken cancellationToken
     )
     {
-        if (reason != DmsDropReason.Compensation)
-        {
-            throw NotYetImplemented($"{nameof(DropInstanceAsync)} for {reason}", "Step 3.8");
-        }
-
         PostgresqlTargetLockSession session = RequireHolder(holder);
         ArgumentNullException.ThrowIfNull(instance);
+        if (reason is not (DmsDropReason.Compensation or DmsDropReason.Delete))
+        {
+            throw new ArgumentOutOfRangeException(nameof(reason));
+        }
+
         return await session.RunAsync(
             token =>
-                PostgresqlPublicationQueries.DropInstanceAsync(
-                    session.Connection,
-                    target,
-                    instance,
-                    session.Session,
-                    token
-                ),
+                reason == DmsDropReason.Delete
+                    ? PostgresqlDeletionQueries.DropTargetAsync(
+                        session.Connection,
+                        target,
+                        instance,
+                        session.Session,
+                        token
+                    )
+                    : PostgresqlPublicationQueries.DropInstanceAsync(
+                        session.Connection,
+                        target,
+                        instance,
+                        session.Session,
+                        token
+                    ),
             _adminConnection.CommandTimeout,
             cancellationToken
         );
@@ -687,6 +736,6 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
 
     private static NotImplementedException NotYetImplemented(string member, string step) =>
         new(
-            $"{member} of the PostgreSQL DMS target engine arrives with {step}; this build contains the read members, the target lock, session termination, the staging stage, and publication only."
+            $"{member} of the PostgreSQL DMS target engine arrives with {step}; this build contains the read members, the target lock, session termination, the staging stage, publication, and the owned delete only."
         );
 }

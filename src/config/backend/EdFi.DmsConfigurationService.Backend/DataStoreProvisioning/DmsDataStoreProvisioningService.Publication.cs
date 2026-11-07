@@ -73,7 +73,7 @@ public sealed partial class DmsDataStoreProvisioningService
                 DmsCleanupReport.Clean,
                 async scope =>
                 {
-                    scope.Publication = publication;
+                    scope.Ledger = publication;
                     DmsLiveTargetState state = await PreambleAsync(scope, request.TargetName);
                     if (state is DmsLiveTargetState.Present)
                     {
@@ -690,7 +690,7 @@ public sealed partial class DmsDataStoreProvisioningService
         DmsTargetDatabaseName target,
         DmsDatabaseName staging,
         Guid expectedSourceIdentity
-    )
+    ) : ITargetMutationLedger
     {
         public DmsTargetDatabaseName Target => target;
 

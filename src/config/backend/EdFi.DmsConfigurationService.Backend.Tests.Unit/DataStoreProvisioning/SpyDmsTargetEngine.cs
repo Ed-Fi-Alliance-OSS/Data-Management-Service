@@ -11,9 +11,9 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
 /// <summary>
 /// An engine that records every call with the database name it addresses, scripts the members the
 /// orchestrator reaches through a create (lock acquisition, server facts, inspection, staging create and
-/// drop, restore, session open and reads, termination, rename, marker, compensation drop), and refuses
-/// every other member after recording it, so a test can prove which calls were and were not issued and in
-/// what order.
+/// drop, restore, session open and reads, termination, rename, marker, compensation drop) and a delete
+/// (fence, unfence, owned drop), and refuses every other member after recording it, so a test can prove
+/// which calls were and were not issued and in what order.
 /// </summary>
 internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
 {
@@ -30,6 +30,8 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
     public const string RenameIntoTarget = "RenameIntoTarget";
     public const string AssignMarker = "AssignMarker";
     public const string DropInstance = "DropInstance";
+    public const string Fence = "Fence";
+    public const string Unfence = "Unfence";
 
     public sealed record Call(string Member, string? DatabaseName);
 
@@ -114,6 +116,19 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
         CancellationToken cancellationToken
     );
 
+    public delegate Task<DmsCommandOutcome> FenceScript(
+        DmsTargetDatabaseName target,
+        DmsInstanceIdentity instance,
+        DmsServerSessionId? keep,
+        CancellationToken cancellationToken
+    );
+
+    public delegate Task<DmsCommandOutcome> UnfenceScript(
+        DmsTargetDatabaseName target,
+        DmsInstanceIdentity instance,
+        CancellationToken cancellationToken
+    );
+
     public CreateStagingScript OnCreateStaging { get; set; } = (_, _, _) => throw NotExpected(CreateStaging);
 
     public RestoreScript OnRestoreIntoStaging { get; set; } =
@@ -138,6 +153,10 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
     public AssignMarkerScript OnAssignMarker { get; set; } = (_, _, _) => throw NotExpected(AssignMarker);
 
     public DropInstanceScript OnDropInstance { get; set; } = (_, _, _, _) => throw NotExpected(DropInstance);
+
+    public FenceScript OnFence { get; set; } = (_, _, _, _) => throw NotExpected(Fence);
+
+    public UnfenceScript OnUnfence { get; set; } = (_, _, _) => throw NotExpected(Unfence);
 
     /// <summary>The server session id of every termination request, in order.</summary>
     public IReadOnlyList<DmsServerSessionId> TerminatedSessions
@@ -258,14 +277,22 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
         DmsInstanceIdentity instance,
         DmsServerSessionId? keep,
         CancellationToken cancellationToken
-    ) => Refuse<DmsCommandOutcome>(nameof(FenceAsync), target.Value);
+    )
+    {
+        Record(Fence, target.Value);
+        return OnFence(target, instance, keep, cancellationToken);
+    }
 
     public Task<DmsCommandOutcome> UnfenceAsync(
         IDmsTargetLockHolder holder,
         DmsTargetDatabaseName target,
         DmsInstanceIdentity instance,
         CancellationToken cancellationToken
-    ) => Refuse<DmsCommandOutcome>(nameof(UnfenceAsync), target.Value);
+    )
+    {
+        Record(Unfence, target.Value);
+        return OnUnfence(target, instance, cancellationToken);
+    }
 
     public Task<DmsCommandOutcome> DropInstanceAsync(
         IDmsTargetLockHolder holder,

@@ -20,7 +20,7 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
 /// are reported without any further engine call; the holder is released on every path including
 /// exceptions; loss of the holder ends the operation as transient <c>LockLost</c> with no further engine
 /// call, whether the read in flight honours the token, completes normally, or throws; a deadline is
-/// <c>TimedOut</c>; cancellation propagates; and the stages beyond the preamble are not implemented.
+/// <c>TimedOut</c>; cancellation propagates; and a delete that finds the name empty mutates nothing.
 /// </summary>
 public class DmsDataStoreProvisioningServiceShellTests
 {
@@ -540,27 +540,14 @@ public class DmsDataStoreProvisioningServiceShellTests
     }
 
     [TestFixture]
-    public class Given_the_preamble_reaches_a_stage_beyond_the_shell
+    public class Given_a_delete_finds_the_target_absent
     {
-        private Harness _presentDelete = null!;
         private Harness _absentDelete = null!;
-        private Func<Task> _deleteOnPresent = () => Task.CompletedTask;
         private DmsDataStoreDeleteResult _deleteOnAbsent = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            DmsLiveTargetState present = new DmsLiveTargetState.Present(
-                new DmsInstanceIdentity.Postgresql(16385, "claim"),
-                DmsDatabaseState.Online
-            );
-
-            _presentDelete = new Harness();
-            _presentDelete.Engine.OnInspect = _ => Task.FromResult(present);
-            _deleteOnPresent = () =>
-                _presentDelete.Service.DeleteAsync(DeleteRequest(), CancellationToken.None);
-            await _deleteOnPresent.Should().ThrowAsync<NotImplementedException>();
-
             _absentDelete = new Harness();
             _absentDelete.Engine.OnInspect = _ =>
                 Task.FromResult<DmsLiveTargetState>(new DmsLiveTargetState.Absent());
@@ -575,27 +562,18 @@ public class DmsDataStoreProvisioningServiceShellTests
             _deleteOnAbsent.Should().BeOfType<DmsDataStoreDeleteResult.AlreadyAbsent>();
 
         [Test]
-        public void It_releases_the_lock_when_the_unimplemented_stage_throws() =>
-            _presentDelete.OnlyHolder.ReleaseCount.Should().Be(1);
-
-        [Test]
         public void It_releases_the_lock_after_already_absent() =>
             _absentDelete.OnlyHolder.ReleaseCount.Should().Be(1);
 
         [Test]
-        public void It_issues_no_mutation_on_any_path()
-        {
-            foreach (Harness harness in new[] { _presentDelete, _absentDelete })
-            {
-                harness
-                    .Engine.Members.Should()
-                    .Equal(
-                        SpyDmsTargetEngine.AcquireTargetLock,
-                        SpyDmsTargetEngine.ReadServerFacts,
-                        SpyDmsTargetEngine.Inspect
-                    );
-            }
-        }
+        public void It_issues_no_mutation() =>
+            _absentDelete
+                .Engine.Members.Should()
+                .Equal(
+                    SpyDmsTargetEngine.AcquireTargetLock,
+                    SpyDmsTargetEngine.ReadServerFacts,
+                    SpyDmsTargetEngine.Inspect
+                );
     }
 
     [TestFixture]

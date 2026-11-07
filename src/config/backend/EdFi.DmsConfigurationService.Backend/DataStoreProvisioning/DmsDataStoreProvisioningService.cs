@@ -22,16 +22,17 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// <c>LockLost</c>, and it is enforced at every read boundary, not only through the token: a read is not
 /// dispatched once loss is declared, and a read that completes normally, or throws anything, while loss
 /// is declared still ends the operation there (6.10). Caller cancellation propagates after the lock is
-/// released; the lock is released on every path. This build delivers the shell and a complete create path
-/// (6.3 steps 2 to 10): the artifact is staged and compared with the pin before the lock, the staging
+/// released; the lock is released on every path. This build delivers the shell, a complete create path
+/// (6.3 steps 2 to 10), and the owned delete (6.6): the artifact is staged and compared with the pin before the lock, the staging
 /// database is created and claimed on the holder session, the artifact is restored into it, the result is
 /// validated in full on an instance-bound session, renamed into the target on the holder session, re-checked,
 /// and marked, with compensation for a marker proven uncommitted; the staging database is dropped on every
 /// exit that does not publish it, bounded (D-19), with what remains reported as residue. A target found
 /// holding the name, by the preamble, by the last inspection before the rename, or by the rename itself, is
-/// reconciled (6.5) by reads only, against the full validation set of the trusted template. Owned deletion
-/// arrives with Step 3.8: the orchestrator throws <see cref="NotImplementedException"/> where it begins,
-/// after the lock is released, and is not registered as the provisioner until it exists.
+/// reconciled (6.5) by reads only, against the full validation set of the trusted template. A delete fences
+/// an owned target, proves exclusivity, re-verifies ownership and instance, and drops it on the holder
+/// session, reversing the fence on every failure it can. The orchestrator is not registered as the
+/// provisioner until readiness validation exists (Step 3.9).
 /// </summary>
 public sealed partial class DmsDataStoreProvisioningService(
     IDmsDataStoreProvisionerReadiness readiness,
@@ -719,44 +720,6 @@ public sealed partial class DmsDataStoreProvisioningService(
         return int.TryParse(version, out int major) ? major : int.MaxValue;
     }
 
-    public async Task<DmsDataStoreDeleteResult> DeleteAsync(
-        DmsDataStoreDeleteRequest request,
-        CancellationToken cancellationToken
-    )
-    {
-        ArgumentNullException.ThrowIfNull(request);
-        if (Refusal() is { } refusal)
-        {
-            return new DmsDataStoreDeleteResult.Failure(refusal, DmsCleanupReport.Clean);
-        }
-
-        DmsProvisioningFailure? invalid =
-            ValidateTargetName(request.TargetName) ?? ValidateSourceIdentity(request.ExpectedSourceIdentity);
-        if (invalid is not null)
-        {
-            return new DmsDataStoreDeleteResult.Failure(invalid, DmsCleanupReport.Clean);
-        }
-
-        return await RunUnderTargetLockAsync<DmsDataStoreDeleteResult>(
-            request.TargetName,
-            DeleteOperationName,
-            DmsOperationId.New(),
-            DmsCleanupReport.Clean,
-            async scope =>
-            {
-                DmsLiveTargetState state = await PreambleAsync(scope, request.TargetName);
-                if (state is DmsLiveTargetState.Absent)
-                {
-                    return new DmsDataStoreDeleteResult.AlreadyAbsent();
-                }
-
-                throw NotYetImplemented("owned deletion (6.6)", "Step 3.8");
-            },
-            static (failure, cleanup) => new DmsDataStoreDeleteResult.Failure(failure, cleanup),
-            cancellationToken
-        );
-    }
-
     /// <summary>The common preamble under the lock (6.1 steps 5 and 6).</summary>
     private async Task<DmsLiveTargetState> PreambleAsync(LockScope scope, DmsTargetDatabaseName target)
     {
@@ -920,10 +883,14 @@ public sealed partial class DmsDataStoreProvisioningService(
         DmsProvisioningDiagnostic diagnostic
     ) => new(DmsProvisioningFailure.Create(code, diagnostic));
 
-    private static NotImplementedException NotYetImplemented(string stage, string step) =>
-        new(
-            $"The {stage} stage of the DMS data store provisioner arrives with {step}; this build contains the orchestrator shell and the create path only."
-        );
+    /// <summary>
+    /// An operation's record of the selected-target mutations it sent (D-12): <c>LockLost</c> is transient
+    /// while none may have taken effect, and an inspection failure once one may have.
+    /// </summary>
+    private interface ITargetMutationLedger
+    {
+        bool TargetMutationIssued { get; }
+    }
 
     /// <summary>
     /// The staging database this create owns (6.7): dropped on every exit with bounded attempts (D-19)
@@ -1163,8 +1130,8 @@ public sealed partial class DmsDataStoreProvisioningService(
         /// <summary>The preamble's server facts (6.1 step 5), for the engine checks of later stages.</summary>
         public DmsServerFacts ServerFacts { get; set; } = null!;
 
-        /// <summary>A create's ledger of selected-target mutations, which decides the category of <c>LockLost</c>.</summary>
-        public Publication? Publication { get; set; }
+        /// <summary>The operation's ledger of selected-target mutations, which decides the category of <c>LockLost</c>.</summary>
+        public ITargetMutationLedger? Ledger { get; set; }
 
         /// <summary>The type chain of a non-cancellation exception a read raised alongside loss, if any.</summary>
         public string? LossAccompanyingTypeChain { get; private set; }
@@ -1273,13 +1240,13 @@ public sealed partial class DmsDataStoreProvisioningService(
 
         /// <summary>
         /// <c>LockLost</c> is transient while no selected-target mutation has been issued on the holder
-        /// (D-12); once the create's ledger records one whose effect is not proven absent, it is an
+        /// (D-12); once the operation's ledger records one whose effect is not proven absent, it is an
         /// inspection failure, and what the mutation did is settled after the lock is released.
         /// </summary>
         public DmsProvisioningFailure LockLostFailure() =>
             DmsProvisioningFailure.Create(
                 DmsProvisioningFailureCode.LockLost,
-                Publication?.TargetMutationIssued == true
+                Ledger?.TargetMutationIssued == true
                     ? DmsProvisioningFailureCategory.OperatorInspectionRequired
                     : DmsProvisioningFailureCategory.Transient,
                 DmsProvisioningDiagnostic.ForOperation(CurrentStep)

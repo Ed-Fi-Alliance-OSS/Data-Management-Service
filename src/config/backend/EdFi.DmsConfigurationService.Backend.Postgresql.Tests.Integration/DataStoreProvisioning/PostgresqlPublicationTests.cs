@@ -565,7 +565,8 @@ public class PostgresqlPublicationTests
         private DmsCommandOutcome _mismatchingOutcome = null!;
         private DmsLiveTargetState _matchingAfter = null!;
         private DmsLiveTargetState _mismatchingAfter = null!;
-        private Exception? _deleteOutcome;
+        private DmsCommandOutcome _deleteOutcome = null!;
+        private DmsLiveTargetState _afterDelete = null!;
 
         [OneTimeSetUp]
         public async Task Setup()
@@ -599,15 +600,14 @@ public class PostgresqlPublicationTests
             );
             _mismatchingAfter = await Staged.InspectAsync(_mismatching.Target);
 
-            _deleteOutcome = await Record.ExceptionAsync(() =>
-                _mismatching.Engine.DropInstanceAsync(
-                    _mismatching.Holder,
-                    _mismatching.Target,
-                    other,
-                    DmsDropReason.Delete,
-                    default
-                )
+            _deleteOutcome = await _mismatching.Engine.DropInstanceAsync(
+                _mismatching.Holder,
+                _mismatching.Target,
+                other,
+                DmsDropReason.Delete,
+                default
             );
+            _afterDelete = await Staged.InspectAsync(_mismatching.Target);
         }
 
         [OneTimeTearDown]
@@ -652,11 +652,21 @@ public class PostgresqlPublicationTests
         }
 
         [Test]
-        public void It_leaves_the_owned_delete_to_step_3_8() =>
+        public void It_refuses_an_owned_delete_of_a_target_that_is_not_fenced()
+        {
             _deleteOutcome
                 .Should()
-                .BeOfType<NotImplementedException>()
-                .Which.Message.Should()
-                .Contain("Step 3.8");
+                .Be(
+                    new DmsCommandOutcome.Failed(
+                        new DmsCommandFailure(
+                            DmsCommandFailureClass.ObjectInUse,
+                            DmsProvisioningDiagnostic.ForOperation(
+                                PostgresqlDeletionQueries.DropTargetNotFencedStep
+                            )
+                        )
+                    )
+                );
+            _afterDelete.Should().BeOfType<DmsLiveTargetState.Present>();
+        }
     }
 }

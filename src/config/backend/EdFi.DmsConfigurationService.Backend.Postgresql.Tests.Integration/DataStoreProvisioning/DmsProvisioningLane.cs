@@ -285,6 +285,7 @@ internal sealed class Lane : IAsyncDisposable
     private readonly string _operations;
     private readonly LaneHooks _hooks;
     private readonly TimeSpan? _restoreTimeout;
+    private readonly TimeSpan? _lockHeartbeatInterval;
     private readonly Deployment _deployment;
 
     private Lane(
@@ -292,6 +293,7 @@ internal sealed class Lane : IAsyncDisposable
         string operations,
         LaneHooks hooks,
         TimeSpan? restoreTimeout,
+        TimeSpan? lockHeartbeatInterval,
         Deployment deployment,
         DmsDataStoreCreateRequest request
     )
@@ -300,6 +302,7 @@ internal sealed class Lane : IAsyncDisposable
         _operations = operations;
         _hooks = hooks;
         _restoreTimeout = restoreTimeout;
+        _lockHeartbeatInterval = lockHeartbeatInterval;
         _deployment = deployment;
         Engine = deployment.Engine;
         Service = deployment.Service;
@@ -322,6 +325,9 @@ internal sealed class Lane : IAsyncDisposable
     public DmsDataStoreCreateRequest Request { get; }
 
     public DmsTargetDatabaseName Target => Request.TargetName;
+
+    /// <summary>A delete of the lane's target under the record's expected identity.</summary>
+    public DmsDataStoreDeleteRequest DeleteRequest => new(Target, Request.ExpectedSourceIdentity);
 
     public string[] OperationEntries => Directory.GetFileSystemEntries(_operations);
 
@@ -352,18 +358,28 @@ internal sealed class Lane : IAsyncDisposable
     public static async Task<Lane> BuildAsync(
         byte[] artifactSql,
         LaneHooks hooks,
-        TimeSpan? restoreTimeout = null
+        TimeSpan? restoreTimeout = null,
+        TimeSpan? lockHeartbeatInterval = null
     )
     {
         string root = Path.Combine(Path.GetTempPath(), "dms1438-lane-" + DmsOperationId.New().Value);
         string operations = Path.Combine(root, "operations");
         Directory.CreateDirectory(operations);
-        Deployment deployment = await DeployAsync(root, operations, artifactSql, null, hooks, restoreTimeout);
+        Deployment deployment = await DeployAsync(
+            root,
+            operations,
+            artifactSql,
+            null,
+            hooks,
+            restoreTimeout,
+            lockHeartbeatInterval
+        );
         return new Lane(
             root,
             operations,
             hooks,
             restoreTimeout,
+            lockHeartbeatInterval,
             deployment,
             new DmsDataStoreCreateRequest(
                 DmsDatabaseTemplate.Minimal,
@@ -403,7 +419,15 @@ internal sealed class Lane : IAsyncDisposable
     /// shares the lane's server, operations root and hooks, so it addresses the same target.
     /// </summary>
     public Task<Deployment> SwitchAllowlistAsync(byte[] artifactSql, string packageVersion) =>
-        DeployAsync(_root, _operations, artifactSql, packageVersion, _hooks, _restoreTimeout);
+        DeployAsync(
+            _root,
+            _operations,
+            artifactSql,
+            packageVersion,
+            _hooks,
+            _restoreTimeout,
+            _lockHeartbeatInterval
+        );
 
     private static async Task<Deployment> DeployAsync(
         string root,
@@ -411,7 +435,8 @@ internal sealed class Lane : IAsyncDisposable
         byte[] artifactSql,
         string? packageVersion,
         LaneHooks hooks,
-        TimeSpan? restoreTimeout
+        TimeSpan? restoreTimeout,
+        TimeSpan? lockHeartbeatInterval
     )
     {
         string artifacts = Path.Combine(root, "artifacts-" + DmsOperationId.New().Value);
@@ -472,7 +497,12 @@ internal sealed class Lane : IAsyncDisposable
             Options.Create(options),
             NullLogger<TemplateArtifactCatalog>.Instance
         );
-        RecordingEngine engine = new(DmsProvisioningTestServer.Engine(restoreTimeout: restoreTimeout));
+        RecordingEngine engine = new(
+            DmsProvisioningTestServer.Engine(
+                lockHeartbeatInterval: lockHeartbeatInterval,
+                restoreTimeout: restoreTimeout
+            )
+        );
         DmsDataStoreProvisioningService service = ServiceFor(engine, catalog, options, hooks);
         DmsTrustedArtifactPin pin = (await catalog.ResolveAsync(DmsDatabaseTemplate.Minimal, default))
             .Should()
@@ -501,6 +531,40 @@ internal sealed class Lane : IAsyncDisposable
         };
 
     public Task<DmsDataStoreCreateResult> CreateAsync() => Service.CreateAsync(Request, default);
+
+    public Task<DmsDataStoreDeleteResult> DeleteAsync() => Service.DeleteAsync(DeleteRequest, default);
+
+    /// <summary>
+    /// Builds the lane's target without <c>psql</c>: the committed DMS-shaped fixture under the target name,
+    /// carrying <paramref name="sourceIdentity"/> (the record's expected identity by default). A delete needs
+    /// only the identity, so this stands in for a create on lanes without a replay client.
+    /// </summary>
+    public async Task<DmsInstanceIdentity.Postgresql> SeedTargetAsync(Guid? sourceIdentity = null)
+    {
+        await EnsureEnqueueOwnerRoleAsync();
+        await ExecuteOnServerAsync($"CREATE DATABASE {PostgresqlIdentifiers.Quote(Target.Value)};");
+        TestDatabase target = new(Target.Value);
+        await target.ExecuteAsync(await File.ReadAllTextAsync(FixturePath("dms-shaped-database.sql")));
+        await target.ExecuteAsync(
+            $"UPDATE \"dms\".\"DataStoreIdentity\" SET \"SourceIdentity\" = '{(sourceIdentity ?? Request.ExpectedSourceIdentity):D}';"
+        );
+        return await target.CatalogInstanceAsync();
+    }
+
+    /// <summary>Whether the target exists, with its <c>oid</c> and whether it accepts connections, read on a side connection.</summary>
+    public async Task<(bool Exists, uint Oid, bool AllowsConnections)> TargetCatalogAsync()
+    {
+        await using NpgsqlConnection connection = await AdminConnection().OpenMaintenanceAsync(default);
+        await using NpgsqlCommand command = new(
+            "SELECT d.oid, d.datallowconn FROM pg_catalog.pg_database d WHERE d.datname = @name;",
+            connection
+        );
+        command.Parameters.AddWithValue("name", Target.Value);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+        return await reader.ReadAsync()
+            ? (true, await reader.GetFieldValueAsync<uint>(0), reader.GetBoolean(1))
+            : (false, 0, false);
+    }
 
     /// <summary>Every recorded call that named the selected target, other than the lock and inspections.</summary>
     public IReadOnlyList<(string Member, string? DatabaseName)> TargetMutations =>
