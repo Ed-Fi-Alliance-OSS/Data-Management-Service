@@ -478,6 +478,7 @@ public sealed partial class DmsDataStoreProvisioningService
                 "DMS data store provisioning {OperationId} left its renamed target unmarked for operator inspection",
                 operation.Value
             );
+            return ForInspection(result, operation);
         }
 
         if (unresolvedStep is not null)
@@ -495,6 +496,37 @@ public sealed partial class DmsDataStoreProvisioningService
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// An unmarked target cannot be repaired by a retry: the next attempt finds the package identity under the
+    /// name and refuses it as unowned. A failure that a stage ended with in another category is therefore
+    /// reported as <c>IdentityAssignmentFailed</c> for inspection, with the stage's diagnostic kept; a failure
+    /// already requiring inspection stands, and a null result (a cancellation to rethrow) stays null.
+    /// </summary>
+    private DmsDataStoreCreateResult? ForInspection(
+        DmsDataStoreCreateResult? result,
+        DmsOperationId operation
+    )
+    {
+        if (
+            result is not DmsDataStoreCreateResult.Failure failure
+            || failure.Detail.Category == DmsProvisioningFailureCategory.OperatorInspectionRequired
+        )
+        {
+            return result;
+        }
+
+        return Fail(
+            static (detail, report) => new DmsDataStoreCreateResult.Failure(detail, report),
+            operation,
+            CreateOperationName,
+            DmsProvisioningFailure.Create(
+                DmsProvisioningFailureCode.IdentityAssignmentFailed,
+                failure.Detail.Diagnostic
+            ),
+            failure.Cleanup
+        );
     }
 
     /// <summary>

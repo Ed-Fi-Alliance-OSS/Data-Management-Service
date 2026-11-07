@@ -974,4 +974,126 @@ public class DmsDataStoreProvisioningServicePublicationTests
                 .Equal(new DmsCleanupResidue(DmsResidueKind.UnmarkedTarget, TargetName));
         }
     }
+
+    [TestFixture]
+    public class Given_a_read_of_the_re_check_fails_after_the_rename
+    {
+        private Harness _thrown = null!;
+        private Harness _timedOut = null!;
+        private Harness _cancelled = null!;
+        private DmsDataStoreCreateResult _thrownResult = null!;
+        private DmsDataStoreCreateResult _timedOutResult = null!;
+        private Exception? _cancelledOutcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // The identity read on the renamed target throws a driver-like error.
+            _thrown = Scripted();
+            _thrown.Engine.OnReadIdentity = (session, _) =>
+                session.ServerSession == _markerSession
+                    ? throw new InvalidOperationException("The read failed.")
+                    : Task.FromResult<DmsIdentityRead>(TargetFactsSample.Identity());
+            _thrownResult = await CreateAsync(_thrown);
+
+            // The facts read on the renamed target waits until its CommandTimeout deadline passes.
+            _timedOut = Scripted();
+            TaskCompletionSource waiting = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _timedOut.Engine.OnReadTargetFacts = async (session, token) =>
+            {
+                if (session.ServerSession != _markerSession)
+                {
+                    return TargetFactsSample.PostgresqlFacts();
+                }
+
+                waiting.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                return TargetFactsSample.PostgresqlFacts();
+            };
+            Task<DmsDataStoreCreateResult> timingOut = CreateAsync(_timedOut);
+            await ReadStartedAsync(waiting, timingOut);
+            _timedOut.Time.Advance(CommandTimeout + TimeSpan.FromSeconds(1));
+            _timedOutResult = await timingOut;
+
+            // The caller cancels during the re-check.
+            using CancellationTokenSource cancellation = new();
+            _cancelled = Scripted();
+            _cancelled.Engine.OnReadIdentity = (session, _) =>
+            {
+                if (session.ServerSession != _markerSession)
+                {
+                    return Task.FromResult<DmsIdentityRead>(TargetFactsSample.Identity());
+                }
+
+                cancellation.Cancel();
+                throw new OperationCanceledException(cancellation.Token);
+            };
+            _cancelledOutcome = await Record.ExceptionAsync(() =>
+                CreateAsync(_cancelled, cancellation.Token)
+            );
+        }
+
+        [Test]
+        public void It_reports_a_thrown_read_for_inspection_with_its_diagnostic()
+        {
+            DmsProvisioningFailure failure = FailureOf(_thrownResult);
+            (failure.Code, failure.Category, failure.Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.IdentityAssignmentFailed,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.VerifyRenamedTargetStep
+                    )
+                );
+            failure.Diagnostic.ExceptionTypeChain.Should().Be(typeof(InvalidOperationException).FullName);
+        }
+
+        [Test]
+        public void It_reports_a_timed_out_read_for_inspection_with_its_diagnostic() =>
+            Verdict(_timedOutResult)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.IdentityAssignmentFailed,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.VerifyRenamedTargetStep
+                    )
+                );
+
+        [Test]
+        public void It_reports_the_unmarked_target_and_neither_marks_nor_compensates()
+        {
+            foreach (
+                (Harness harness, DmsDataStoreCreateResult result) in new[]
+                {
+                    (_thrown, _thrownResult),
+                    (_timedOut, _timedOutResult),
+                }
+            )
+            {
+                CleanupOf(result)
+                    .Residue.Should()
+                    .Equal(new DmsCleanupResidue(DmsResidueKind.UnmarkedTarget, TargetName));
+                (
+                    CountOf(harness, SpyDmsTargetEngine.AssignMarker),
+                    CountOf(harness, SpyDmsTargetEngine.DropInstance)
+                )
+                    .Should()
+                    .Be((0, 0));
+            }
+        }
+
+        [Test]
+        public void It_still_propagates_the_caller_cancellation_without_marking_or_compensating()
+        {
+            _cancelledOutcome.Should().BeAssignableTo<OperationCanceledException>();
+            (
+                CountOf(_cancelled, SpyDmsTargetEngine.AssignMarker),
+                CountOf(_cancelled, SpyDmsTargetEngine.DropInstance)
+            )
+                .Should()
+                .Be((0, 0));
+        }
+    }
 }
