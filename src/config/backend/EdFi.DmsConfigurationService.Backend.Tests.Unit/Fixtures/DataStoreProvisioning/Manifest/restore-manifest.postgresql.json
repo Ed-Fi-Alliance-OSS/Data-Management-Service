@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "packageId": "EdFi.Api.Minimal.Template.PostgreSql.5.2.0",
+  "packageVersion": "1.0.123",
+  "databaseEngine": "postgresql",
+  "templateKind": "Minimal",
+  "dataStandardVersion": "5.2.0",
+  "contentProfile": "DmsDatastoreOnly",
+  "projects": [
+    "edfi",
+    "tpdm"
+  ],
+  "apiSchemaFormatVersion": "1.0.0",
+  "effectiveSchemaHash": "abababababababababababababababababababababababababababababababab",
+  "resourceKeyCount": 42,
+  "resourceKeySeedHashB64": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+  "relationalMappingVersion": "v3",
+  "engineVersion": "18.1",
+  "documentJsonColumnType": "jsonb",
+  "inventory": {
+    "schemas": [
+      {
+        "schemaName": "dms",
+        "objects": [
+          {
+            "name": "GetMaxChangeVersion",
+            "type": "function"
+          },
+          {
+            "name": "DataStoreIdentity",
+            "type": "table"
+          },
+          {
+            "name": "Document",
+            "type": "table"
+          },
+          {
+            "name": "EffectiveSchema",
+            "type": "table"
+          }
+        ]
+      },
+      {
+        "schemaName": "edfi",
+        "objects": [
+          {
+            "name": "GetSchoolCount",
+            "type": "function"
+          },
+          {
+            "name": "AcademicWeek",
+            "type": "table"
+          },
+          {
+            "name": "School",
+            "type": "table"
+          },
+          {
+            "name": "SchoolView",
+            "type": "view"
+          }
+        ]
+      },
+      {
+        "schemaName": "public",
+        "objects": []
+      },
+      {
+        "schemaName": "tracked_changes_edfi",
+        "objects": [
+          {
+            "name": "AcademicWeek",
+            "type": "table"
+          },
+          {
+            "name": "School",
+            "type": "table"
+          }
+        ]
+      },
+      {
+        "schemaName": "we\"ird\\schema",
+        "objects": [
+          {
+            "name": "Zebra",
+            "type": "table"
+          },
+          {
+            "name": "apple",
+            "type": "table"
+          },
+          {
+            "name": "del",
+            "type": "table"
+          },
+          {
+            "name": "emoji😀",
+            "type": "table"
+          },
+          {
+            "name": "namé",
+            "type": "table"
+          },
+          {
+            "name": "tab\tname",
+            "type": "table"
+          }
+        ]
+      }
+    ],
+    "principals": [
+      "Alpha_writer",
+      "alpha_writer",
+      "zeta_reader"
+    ]
+  },
+  "inventorySha256": "045615fc790c89913b5c72a13a7b4c77dabb87e3e9233bafe32f1cb4b25f3f7d",
+  "artifactFileName": "EdFi.Api.Minimal.Template.PostgreSql.5.2.0.sql",
+  "artifactSha256": "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
+}

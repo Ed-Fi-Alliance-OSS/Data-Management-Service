@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 [assembly: InternalsVisibleTo("EdFi.DmsConfigurationService.Backend.Tests.Unit")]
+[assembly: InternalsVisibleTo("EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration")]
 
 namespace EdFi.DmsConfigurationService.Backend.Claims;
 
