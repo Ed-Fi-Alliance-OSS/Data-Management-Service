@@ -238,27 +238,21 @@ public sealed partial class DmsDataStoreProvisioningService
     )
     {
         DmsDataStoreProvisioningOptions settings = options.Value;
-        DmsCommandOutcome fenced;
-        try
-        {
-            fenced = await scope.CallAsync(
-                FenceStep,
-                settings.SessionTerminationTimeout + settings.CommandTimeout + settings.CommandTimeout,
-                token =>
-                {
-                    // Recorded as it is handed to the engine: a refusal before this point sent nothing.
-                    deletion.FenceDispatched(instance, scope.Holder.Session);
-                    return engine.FenceAsync(scope.Holder, target, instance, keep, token);
-                },
-                deletion.ObserveFence
-            );
-        }
-        catch (OperationCanceledException) when (deletion.State == DeletionState.FenceInDoubt)
-        {
-            // An engine command raises a cancellation only before its statement is sent (6.9a).
-            deletion.FenceNotSent();
-            throw;
-        }
+
+        // Recorded as it is handed to the engine, and in doubt from then on: only a refusal before this point
+        // (the scope's own caller or loss check) proves nothing was sent. Whatever ends the call afterwards
+        // without a definite outcome (an unknown outcome or an exception raised alongside loss, a deadline,
+        // the caller's cancellation) leaves the fence in doubt for settlement after the lock is released.
+        DmsCommandOutcome fenced = await scope.CallAsync(
+            FenceStep,
+            settings.SessionTerminationTimeout + settings.CommandTimeout + settings.CommandTimeout,
+            token =>
+            {
+                deletion.FenceDispatched(instance, scope.Holder.Session);
+                return engine.FenceAsync(scope.Holder, target, instance, keep, token);
+            },
+            deletion.ObserveFence
+        );
 
         switch (fenced)
         {
@@ -318,15 +312,15 @@ public sealed partial class DmsDataStoreProvisioningService
             );
         }
         catch (OperationCanceledException)
-            when (deletion.State is DeletionState.Fenced or DeletionState.DropInDoubt)
+            when (deletion.State == DeletionState.Fenced
+                && scope.CallerToken.IsCancellationRequested
+                && !scope.Holder.LostToken.IsCancellationRequested
+            )
         {
-            // Nothing was sent (6.9a): the fence still stands and is reversed unless the holder is lost.
-            deletion.DropNotSent();
-            if (scope.CallerToken.IsCancellationRequested && !scope.Holder.LostToken.IsCancellationRequested)
-            {
-                await UnfenceIfFencedAsync(scope, deletion);
-            }
-
+            // The drop was never handed to the engine (the ledger still shows the fence, not a drop in doubt):
+            // the scope refused it for the caller's cancellation, so the fence is reversed first. A drop that was
+            // handed over stays in doubt whatever ended it, and is settled after the lock is released.
+            await UnfenceIfFencedAsync(scope, deletion);
             throw;
         }
 
@@ -426,7 +420,7 @@ public sealed partial class DmsDataStoreProvisioningService
     /// ended the stage, our instance is <c>DropFailed</c>, another is <c>InstanceChanged</c>, and an unreadable
     /// name is <c>OutcomeUnknown</c>. A fence that may stand is read the same way and, unless the name shows
     /// our instance accepting connections, or no longer our instance, is reported as
-    /// <see cref="DmsResidueKind.FencedTarget"/> with the failure moved to inspection where its code allows.
+    /// <see cref="DmsResidueKind.FencedTarget"/> with the failure moved to inspection (<see cref="ForFencedTarget"/>).
     /// </summary>
     private async Task<DmsDataStoreDeleteResult?> SettleDeletionAsync(
         Deletion deletion,
@@ -536,18 +530,30 @@ public sealed partial class DmsDataStoreProvisioningService
         }
     }
 
-    /// <summary>A target left fenced needs an operator: the failure moves to inspection when its code allows it.</summary>
-    private static DmsProvisioningFailure ForFencedTarget(DmsProvisioningFailure failure) =>
-        failure.Category != DmsProvisioningFailureCategory.OperatorInspectionRequired
-        && DmsProvisioningFailure
+    /// <summary>
+    /// A target left fenced needs an operator, whatever ended the delete: a failure already requiring inspection
+    /// stands; one whose code allows inspection moves there; any other (a deadline, an unclassified error, a
+    /// missing privilege) becomes <c>ExclusiveAccessNotEstablished</c> for inspection, the code section 8 gives a
+    /// fence that could not be completed, with the original diagnostic kept.
+    /// </summary>
+    private static DmsProvisioningFailure ForFencedTarget(DmsProvisioningFailure failure)
+    {
+        if (failure.Category == DmsProvisioningFailureCategory.OperatorInspectionRequired)
+        {
+            return failure;
+        }
+
+        DmsProvisioningFailureCode code = DmsProvisioningFailure
             .CategoriesOf(failure.Code)
             .Contains(DmsProvisioningFailureCategory.OperatorInspectionRequired)
-            ? DmsProvisioningFailure.Create(
-                failure.Code,
-                DmsProvisioningFailureCategory.OperatorInspectionRequired,
-                failure.Diagnostic
-            )
-            : failure;
+            ? failure.Code
+            : DmsProvisioningFailureCode.ExclusiveAccessNotEstablished;
+        return DmsProvisioningFailure.Create(
+            code,
+            DmsProvisioningFailureCategory.OperatorInspectionRequired,
+            failure.Diagnostic
+        );
+    }
 
     /// <summary>Where the selected target stands in a delete (D-12, 6.6).</summary>
     private enum DeletionState
@@ -607,8 +613,6 @@ public sealed partial class DmsDataStoreProvisioningService
             State = DeletionState.FenceInDoubt;
         }
 
-        public void FenceNotSent() => State = DeletionState.None;
-
         /// <summary>A definite failure leaves the fence standing only when the engine reports it as residue.</summary>
         public void ObserveFence(DmsCommandOutcome outcome)
         {
@@ -648,8 +652,6 @@ public sealed partial class DmsDataStoreProvisioningService
         }
 
         public void DropDispatched() => State = DeletionState.DropInDoubt;
-
-        public void DropNotSent() => State = DeletionState.Fenced;
 
         public void ObserveDrop(DmsCommandOutcome outcome)
         {

@@ -1154,4 +1154,170 @@ public class DmsDataStoreProvisioningServiceDeleteTests
         public void It_sends_no_drop_and_reverses_the_fence() =>
             _target.Members.Should().Equal(Seq([.. _released, SpyDmsTargetEngine.Unfence]));
     }
+
+    /// <summary>
+    /// Round-1 review finding 1: loss declared while an engine call that was handed the fence or the drop
+    /// returns an unknown outcome, or throws. The scope turns both into a loss cancellation; neither proves that
+    /// nothing was sent, so the mutation stays in doubt and is settled by reading state after the lock.
+    /// </summary>
+    [TestFixture]
+    public class Given_loss_accompanies_an_uncertain_fence_or_drop
+    {
+        private static async Task<(OwnedTarget, DmsDataStoreDeleteResult)> FenceAsync(bool throws)
+        {
+            OwnedTarget target = new();
+            target.Harness.Engine.OnFence = (_, _, _, _) =>
+            {
+                // The fence was applied on the server; the client lost the answer with the holder.
+                target.State = new DmsLiveTargetState.Fenced(_instance);
+                target.Harness.OnlyHolder.Lose();
+                return throws
+                    ? throw new InvalidOperationException("connection reset", new IOException())
+                    : Task.FromResult<DmsCommandOutcome>(new DmsCommandOutcome.Unknown(Session));
+            };
+            return (target, await target.DeleteAsync());
+        }
+
+        private static async Task<(OwnedTarget, DmsDataStoreDeleteResult)> DropAsync(bool throws)
+        {
+            OwnedTarget target = new();
+            target.Harness.Engine.OnDropInstance = (_, _, _, _) =>
+            {
+                // The drop committed on the server; the client lost the answer with the holder.
+                target.State = new DmsLiveTargetState.Absent();
+                target.Harness.OnlyHolder.Lose();
+                return throws
+                    ? throw new InvalidOperationException("connection reset", new IOException())
+                    : Task.FromResult<DmsCommandOutcome>(new DmsCommandOutcome.Unknown(Session));
+            };
+            return (target, await target.DeleteAsync());
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task It_reports_an_applied_fence_for_inspection_with_the_fenced_target(bool throws)
+        {
+            (OwnedTarget target, DmsDataStoreDeleteResult result) = await FenceAsync(throws);
+            Verdict(result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.FenceStep
+                    )
+                );
+            ResidueOf(result).Should().Equal(_fencedResidue);
+            target.Members.Should().Equal(Seq([.. _owned, SpyDmsTargetEngine.Fence, .. _settlementReads]));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task It_reports_a_committed_drop_as_dropped_once_the_holder_is_proven_gone(bool throws)
+        {
+            (OwnedTarget target, DmsDataStoreDeleteResult result) = await DropAsync(throws);
+            result.Should().Be(new DmsDataStoreDeleteResult.Dropped(DmsCleanupReport.Clean));
+            target
+                .Members.Should()
+                .Equal(Seq([.. _released, SpyDmsTargetEngine.DropInstance, .. _settlementReads]));
+            target.Harness.Engine.TerminatedSessions.Should().Equal(_targetSession, Session);
+        }
+    }
+
+    /// <summary>
+    /// Round-1 review finding 2: a re-check under the fence that times out or fails unexpectedly, after which the
+    /// fence cannot be reversed. Settlement confirms the target fenced, so the failure must require inspection
+    /// even though its own code is transient-only; the diagnostic and the residue are kept.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_check_under_the_fence_fails_and_the_fence_cannot_be_reversed
+    {
+        private static OwnedTarget StuckFence()
+        {
+            OwnedTarget target = new();
+            target.Harness.Engine.OnUnfence = (_, _, _) =>
+                Task.FromResult(Failed(DmsCommandFailureClass.Rejected, "Unfence"));
+            return target;
+        }
+
+        [Test]
+        public async Task It_requires_inspection_after_an_unexpected_read_failure()
+        {
+            OwnedTarget target = StuckFence();
+            int reads = 0;
+            target.Harness.Engine.OnReadIdentity = (_, _) =>
+                ++reads == 2
+                    ? throw new InvalidOperationException(
+                        "server said: password=hunter2",
+                        new TimeoutException()
+                    )
+                    : Task.FromResult<DmsIdentityRead>(new DmsIdentityRead.Found(_expected));
+
+            DmsDataStoreDeleteResult result = await target.DeleteAsync();
+
+            DmsProvisioningFailure failure = FailureOf(result);
+            (failure.Code, failure.Category, failure.Diagnostic)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.ExclusiveAccessNotEstablished,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        new DmsProvisioningDiagnostic(
+                            "System.InvalidOperationException/System.TimeoutException",
+                            null,
+                            DmsDataStoreProvisioningService.VerifyFencedStep
+                        )
+                    )
+                );
+            ResidueOf(result).Should().Equal(_fencedResidue);
+            target
+                .Members.Should()
+                .Equal(
+                    Seq([
+                        .. _owned,
+                        SpyDmsTargetEngine.Fence,
+                        SpyDmsTargetEngine.ReadIdentity,
+                        SpyDmsTargetEngine.Unfence,
+                        .. _settlementReads,
+                    ])
+                );
+        }
+
+        [Test]
+        public async Task It_requires_inspection_after_a_read_deadline()
+        {
+            OwnedTarget target = StuckFence();
+            TaskCompletionSource readStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            int reads = 0;
+            target.Harness.Engine.OnReadIdentity = async (_, token) =>
+            {
+                if (++reads == 2)
+                {
+                    readStarted.SetResult();
+                    await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                }
+
+                return new DmsIdentityRead.Found(_expected);
+            };
+
+            Task<DmsDataStoreDeleteResult> delete = target.DeleteAsync();
+            await ReadStartedAsync(readStarted, delete);
+            target.Harness.Time.Advance(CommandTimeout);
+            DmsDataStoreDeleteResult result = await delete;
+
+            DmsProvisioningFailure failure = FailureOf(result);
+            (failure.Code, failure.Category, failure.Diagnostic)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.ExclusiveAccessNotEstablished,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsProvisioningDiagnostic.ForOperation(
+                            DmsDataStoreProvisioningService.VerifyFencedStep
+                        )
+                    )
+                );
+            ResidueOf(result).Should().Equal(_fencedResidue);
+        }
+    }
 }
