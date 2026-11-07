@@ -542,10 +542,8 @@ public class DmsDataStoreProvisioningServiceShellTests
     [TestFixture]
     public class Given_the_preamble_reaches_a_stage_beyond_the_shell
     {
-        private Harness _presentCreate = null!;
         private Harness _presentDelete = null!;
         private Harness _absentDelete = null!;
-        private Func<Task> _createOnPresent = () => Task.CompletedTask;
         private Func<Task> _deleteOnPresent = () => Task.CompletedTask;
         private DmsDataStoreDeleteResult _deleteOnAbsent = null!;
 
@@ -556,12 +554,6 @@ public class DmsDataStoreProvisioningServiceShellTests
                 new DmsInstanceIdentity.Postgresql(16385, "claim"),
                 DmsDatabaseState.Online
             );
-
-            _presentCreate = new Harness();
-            _presentCreate.Engine.OnInspect = _ => Task.FromResult(present);
-            _createOnPresent = () =>
-                _presentCreate.Service.CreateAsync(CreateRequest(), CancellationToken.None);
-            await _createOnPresent.Should().ThrowAsync<NotImplementedException>();
 
             _presentDelete = new Harness();
             _presentDelete.Engine.OnInspect = _ => Task.FromResult(present);
@@ -584,9 +576,7 @@ public class DmsDataStoreProvisioningServiceShellTests
 
         [Test]
         public void It_releases_the_lock_when_the_unimplemented_stage_throws() =>
-            (_presentCreate.OnlyHolder.ReleaseCount, _presentDelete.OnlyHolder.ReleaseCount)
-                .Should()
-                .Be((1, 1));
+            _presentDelete.OnlyHolder.ReleaseCount.Should().Be(1);
 
         [Test]
         public void It_releases_the_lock_after_already_absent() =>
@@ -595,7 +585,7 @@ public class DmsDataStoreProvisioningServiceShellTests
         [Test]
         public void It_issues_no_mutation_on_any_path()
         {
-            foreach (Harness harness in new[] { _presentCreate, _presentDelete, _absentDelete })
+            foreach (Harness harness in new[] { _presentDelete, _absentDelete })
             {
                 harness
                     .Engine.Members.Should()

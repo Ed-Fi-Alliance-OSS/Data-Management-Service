@@ -189,7 +189,7 @@ public class DmsDataStoreProvisioningServicePublicationTests
         private Harness _owned = null!;
         private DmsDataStoreCreateResult _foreignResult = null!;
         private DmsDataStoreCreateResult _unreadableResult = null!;
-        private Exception? _ownedOutcome;
+        private DmsDataStoreCreateResult _ownedResult = null!;
 
         /// <summary>The rename collides; the database found under the name afterwards answers the identity read with <paramref name="identity"/>.</summary>
         private static Harness Colliding(DmsIdentityRead identity)
@@ -223,7 +223,7 @@ public class DmsDataStoreProvisioningServicePublicationTests
             _unreadableResult = await CreateAsync(_unreadable);
 
             _owned = Colliding(Identity(_expected));
-            _ownedOutcome = await Record.ExceptionAsync(() => CreateAsync(_owned));
+            _ownedResult = await CreateAsync(_owned);
         }
 
         [Test]
@@ -251,17 +251,29 @@ public class DmsDataStoreProvisioningServicePublicationTests
                 );
 
         [Test]
-        public void It_leaves_the_owned_case_to_the_full_reconcile_of_step_3_7() =>
-            _ownedOutcome
+        public void It_reconciles_a_database_carrying_the_expected_identity_after_the_full_validation()
+        {
+            _ownedResult
                 .Should()
-                .BeOfType<NotImplementedException>()
-                .Which.Message.Should()
-                .Contain("Step 3.7");
+                .Be(
+                    new DmsDataStoreCreateResult.Reconciled(SharedTemplateCatalog.Pin, DmsCleanupReport.Clean)
+                );
+            AfterTheRename(_owned)
+                .Select(call => call.Member)
+                .Should()
+                .Equal(
+                    SpyDmsTargetEngine.Inspect,
+                    SpyDmsTargetEngine.OpenSession,
+                    SpyDmsTargetEngine.ReadIdentity,
+                    SpyDmsTargetEngine.ReadTargetFacts,
+                    SpyDmsTargetEngine.DropStaging
+                );
+        }
 
         [Test]
         public void It_only_reads_the_colliding_database_and_drops_its_own_staging_database()
         {
-            foreach (Harness harness in new[] { _foreign, _unreadable, _owned })
+            foreach (Harness harness in new[] { _foreign, _unreadable })
             {
                 AfterTheRename(harness)
                     .Select(call => call.Member)

@@ -27,11 +27,11 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// database is created and claimed on the holder session, the artifact is restored into it, the result is
 /// validated in full on an instance-bound session, renamed into the target on the holder session, re-checked,
 /// and marked, with compensation for a marker proven uncommitted; the staging database is dropped on every
-/// exit that does not publish it, bounded (D-19), with what remains reported as residue. A rename that
-/// collides ends in the ownership reads of 6.5 steps 1 and 2. Reconciling a target that carries the
-/// expected identity, and owned deletion, arrive with Steps 3.7 and 3.8: the orchestrator throws
-/// <see cref="NotImplementedException"/> where they begin, after cleanup and after the lock is released, and
-/// is not registered as the provisioner until they exist.
+/// exit that does not publish it, bounded (D-19), with what remains reported as residue. A target found
+/// holding the name, by the preamble, by the last inspection before the rename, or by the rename itself, is
+/// reconciled (6.5) by reads only, against the full validation set of the trusted template. Owned deletion
+/// arrives with Step 3.8: the orchestrator throws <see cref="NotImplementedException"/> where it begins,
+/// after the lock is released, and is not registered as the provisioner until it exists.
 /// </summary>
 public sealed partial class DmsDataStoreProvisioningService(
     IDmsDataStoreProvisionerReadiness readiness,
@@ -262,11 +262,10 @@ public sealed partial class DmsDataStoreProvisioningService(
         new([.. first.Residue, .. second.Residue]);
 
     /// <summary>
-    /// The staging stage (6.3 steps 2 to 7) under the lock: the engine floor, the staging name free, the
+    /// The staging stage (6.3 steps 2 to 6) under the lock: the engine floor, the staging name free, the
     /// staging database created and claimed on the holder session, the artifact restored into it with the
     /// outcome protocol, full validation on an instance-bound session, the session released with proof, and
-    /// the target re-inspected; ends at the <c>BeforeRename</c> hook. The selected target name is never
-    /// addressed by anything but an inspection. Returns the validated instance and the package identity.
+    /// the selected target name is never addressed. Returns the validated instance and the package identity.
     /// </summary>
     private async Task<StagedCandidate> StageAsync(
         LockScope scope,
@@ -329,18 +328,6 @@ public sealed partial class DmsDataStoreProvisioningService(
             );
         }
 
-        // 6.3 step 7: advisory; the rename is the authoritative check. A target that appeared meanwhile is
-        // reconciled, never renamed over.
-        DmsLiveTargetState targetState = await scope.ReadAsync(
-            InspectTargetStep,
-            token => engine.InspectAsync(request.TargetName, token)
-        );
-        if (targetState is DmsLiveTargetState.Present)
-        {
-            throw NotYetImplemented("reconcile after a late-appearing target (6.3 step 7, 6.5)", "Step 3.7");
-        }
-
-        await TestHooks.AtAsync(DmsProvisioningHookPoint.BeforeRename, operation, scope.CallerToken);
         return new StagedCandidate(stagingInstance, packageIdentity);
     }
 

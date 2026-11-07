@@ -1322,13 +1322,15 @@ public class DmsDataStoreProvisioningServiceStagingTests
     public class Given_the_target_appears_before_publication
     {
         private Harness _harness = null!;
-        private Exception? _outcome;
+        private RecordingHooks _hooks = null!;
+        private DmsDataStoreCreateResult _result = null!;
 
         [SetUp]
         public async Task Setup()
         {
             int targetInspections = 0;
-            _harness = Scripted();
+            _hooks = new RecordingHooks();
+            _harness = Scripted(_hooks);
             _harness.Engine.OnInspectByName = (name, _) =>
                 Task.FromResult<DmsLiveTargetState>(
                     name.Value == CreateRequest().TargetName.Value && ++targetInspections == 2
@@ -1338,12 +1340,36 @@ public class DmsDataStoreProvisioningServiceStagingTests
                         )
                         : new DmsLiveTargetState.Absent()
                 );
-            _outcome = await Record.ExceptionAsync(() => CreateAsync(_harness));
+            _result = await CreateAsync(_harness);
         }
 
         [Test]
-        public void It_hands_over_to_reconcile_instead_of_publishing() =>
-            _outcome.Should().BeOfType<NotImplementedException>().Which.Message.Should().Contain("Step 3.7");
+        public void It_hands_over_to_reconcile_instead_of_publishing()
+        {
+            // The database that appeared carries the package value, not the expected identity.
+            DmsProvisioningFailure failure = FailureOf(_result);
+            (failure.Code, failure.Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TargetUnowned,
+                        DmsDataStoreProvisioningService.ReconcileIdentityStep
+                    )
+                );
+            TargetMutations(_harness)
+                .Select(call => call.Member)
+                .Should()
+                .Equal(SpyDmsTargetEngine.OpenSession);
+        }
+
+        [Test]
+        public void It_never_reaches_the_rename() =>
+            (
+                CountOf(_harness, SpyDmsTargetEngine.RenameIntoTarget),
+                _hooks.Points.Contains(DmsProvisioningHookPoint.BeforeRename)
+            )
+                .Should()
+                .Be((0, false));
 
         [Test]
         public void It_drops_the_staging_database() =>

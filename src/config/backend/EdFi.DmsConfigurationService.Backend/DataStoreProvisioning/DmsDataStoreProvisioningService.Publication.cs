@@ -31,9 +31,6 @@ public sealed partial class DmsDataStoreProvisioningService
     public const string ResolveMarkerStep = "ResolveMarker";
     public const string CompensateStep = "Compensate";
     public const string ResolveCompensationStep = "ResolveCompensation";
-    public const string ReconcileInspectStep = "Reconcile.Inspect";
-    public const string ReconcileOpenSessionStep = "Reconcile.OpenSession";
-    public const string ReconcileIdentityStep = "Reconcile.Identity";
 
     internal static readonly EventId TargetResidue = new(1438_14, nameof(TargetResidue));
 
@@ -80,7 +77,9 @@ public sealed partial class DmsDataStoreProvisioningService
                     DmsLiveTargetState state = await PreambleAsync(scope, request.TargetName);
                     if (state is DmsLiveTargetState.Present)
                     {
-                        throw NotYetImplemented("reconcile (6.5)", "Step 3.7");
+                        // 6.3 step 1 and 6.5: a target already holding the name is reconciled by reads
+                        // only, and nothing is created, restored, renamed, marked, or dropped
+                        return await ReconcileAsync(scope, request, artifact, state, InspectTargetStep);
                     }
 
                     StagedCandidate candidate = await StageAsync(
@@ -89,6 +88,25 @@ public sealed partial class DmsDataStoreProvisioningService
                         artifact,
                         stagedArtifact,
                         cleanup
+                    );
+
+                    // 6.3 step 7: advisory; the rename is the authoritative check. A database that took the
+                    // name meanwhile is reconciled, never renamed over; the staging database is dropped by
+                    // cleanup after the lock is released.
+                    DmsLiveTargetState late = await scope.ReadAsync(
+                        InspectTargetStep,
+                        token => engine.InspectAsync(request.TargetName, token)
+                    );
+                    if (late is not DmsLiveTargetState.Absent)
+                    {
+                        return await ReconcileAsync(scope, request, artifact, late, InspectTargetStep);
+                    }
+
+                    // D-23: the last await point before publication; no further inspection follows it.
+                    await TestHooks.AtAsync(
+                        DmsProvisioningHookPoint.BeforeRename,
+                        operation,
+                        scope.CallerToken
                     );
                     return await PublishAsync(scope, request, artifact, candidate, publication);
                 },
@@ -154,8 +172,13 @@ public sealed partial class DmsDataStoreProvisioningService
                 Failure.Class: DmsCommandFailureClass.DuplicateName
             }:
                 // D-6: any database holding the name refuses the rename and is left untouched; the staging
-                // database is ours and dropped by cleanup.
-                return await ReconcileCollisionAsync(scope, request);
+                // database is ours and dropped by cleanup. What holds the name is inspected afresh and
+                // reconciled (6.5).
+                DmsLiveTargetState colliding = await scope.ReadAsync(
+                    ReconcileInspectStep,
+                    token => engine.InspectAsync(target, token)
+                );
+                return await ReconcileAsync(scope, request, artifact, colliding, ReconcileInspectStep);
             case DmsCommandOutcome<DmsInstanceIdentity>.Failed failed:
                 throw StepFailed(RenameFailureCodeOf(failed.Failure), failed.Failure.Diagnostic);
             case DmsCommandOutcome<DmsInstanceIdentity>.Unknown:
@@ -330,69 +353,6 @@ public sealed partial class DmsDataStoreProvisioningService
             default:
                 // The holder is in doubt; whether the target is gone is read after the lock is released.
                 throw StepFailed(DmsProvisioningFailureCode.CompensationFailed, CompensateStep);
-        }
-    }
-
-    /// <summary>
-    /// 6.5 steps 1 and 2 after the rename collided: the database holding the name is inspected and its
-    /// identity read, and nothing is mutated. An unreadable identity is <c>TargetUnverifiable</c>; another
-    /// identity is <c>TargetUnowned</c>. A target carrying the expected identity needs the full
-    /// re-validation of 6.5 steps 3 and 4, which arrives with Step 3.7.
-    /// </summary>
-    private async Task<DmsDataStoreCreateResult> ReconcileCollisionAsync(
-        LockScope scope,
-        DmsDataStoreCreateRequest request
-    )
-    {
-        DmsLiveTargetState state = await scope.ReadAsync(
-            ReconcileInspectStep,
-            token => engine.InspectAsync(request.TargetName, token)
-        );
-        DmsLiveTargetState.Present present = state switch
-        {
-            DmsLiveTargetState.Present { State: DmsDatabaseState.Online } online => online,
-            DmsLiveTargetState.Protected => throw StepFailed(
-                DmsProvisioningFailureCode.ProtectedTarget,
-                ReconcileInspectStep
-            ),
-            DmsLiveTargetState.Fenced => throw StepFailed(
-                DmsProvisioningFailureCode.TargetFenced,
-                ReconcileInspectStep
-            ),
-            _ => throw StepFailed(DmsProvisioningFailureCode.TargetUnverifiable, ReconcileInspectStep),
-        };
-
-        DmsSession? session = await OpenOwnedSessionAsync(
-            scope,
-            ReconcileOpenSessionStep,
-            request.TargetName,
-            present.Instance
-        );
-        if (session is null)
-        {
-            throw StepFailed(DmsProvisioningFailureCode.TargetUnverifiable, ReconcileOpenSessionStep);
-        }
-
-        await using (session)
-        {
-            DmsIdentityRead identity = await scope.ReadAsync(
-                ReconcileIdentityStep,
-                token => engine.ReadIdentityAsync(session, token)
-            );
-            if (identity is not DmsIdentityRead.Found found)
-            {
-                throw StepFailed(DmsProvisioningFailureCode.TargetUnverifiable, ReconcileIdentityStep);
-            }
-
-            if (found.SourceIdentity != request.ExpectedSourceIdentity)
-            {
-                throw StepFailed(DmsProvisioningFailureCode.TargetUnowned, ReconcileIdentityStep);
-            }
-
-            throw NotYetImplemented(
-                "reconcile validation of an owned target (6.5 steps 3 and 4)",
-                "Step 3.7"
-            );
         }
     }
 

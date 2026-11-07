@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
-using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using FluentAssertions;
 using Npgsql;
@@ -31,9 +30,6 @@ public class PostgresqlCreatePublicationTests
 
     private const string SentinelTable =
         "CREATE TABLE public.collision_sentinel (marker text NOT NULL); INSERT INTO public.collision_sentinel (marker) VALUES ('foreign');";
-
-    private const string ObjectCountQuery =
-        "SELECT (SELECT COUNT(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\\_toast%') + (SELECT COUNT(*) FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname NOT IN ('pg_catalog', 'information_schema'));";
 
     private static void RequireLane()
     {
@@ -86,14 +82,14 @@ public class PostgresqlCreatePublicationTests
                     foreign,
                     $"SELECT EXISTS (SELECT 1 FROM \"dms\".\"Document\" WHERE \"DocumentUuid\" = '{_sentinelDocument:D}');"
                 ) ?? false;
-            long objectCount = await foreign.ScalarAsync<long>(ObjectCountQuery);
+            long objectCount = await foreign.ScalarAsync<long>(TargetEvidence.ObjectCountQuery);
             ForeignEvidence evidence = new(
                 instance,
                 identity,
                 sentinel,
                 sentinelDocument,
                 objectCount,
-                await InventoryFingerprintAsync(target, instance)
+                await TargetEvidence.InventoryFingerprintAsync(target, instance)
             );
             await WaitForNoSessionsOnAsync(target.Value);
             return evidence;
@@ -114,39 +110,6 @@ public class PostgresqlCreatePublicationTests
                 )
             {
                 return null;
-            }
-        }
-
-        /// <summary>The canonical inventory hash the engine's facts describe, or the reason it cannot be built.</summary>
-        private static async Task<string> InventoryFingerprintAsync(
-            DmsTargetDatabaseName target,
-            DmsInstanceIdentity instance
-        )
-        {
-            PostgresqlDmsTargetEngine side = DmsProvisioningTestServer.Engine();
-            DmsSession session = (await side.OpenSessionAsync(target, instance, default))
-                .Should()
-                .BeOfType<DmsSessionOpenResult.Opened>()
-                .Subject.Session;
-            await using (session)
-            {
-                DmsTargetFacts facts;
-                try
-                {
-                    facts = await side.ReadTargetFactsAsync(session, default);
-                }
-                catch (DmsProvisioningFailedException exception)
-                {
-                    return "unreadable:" + exception.Failure.Diagnostic.Operation;
-                }
-
-                return DmsTargetValidator.TryBuildInventory(
-                    facts,
-                    out CanonicalInventory? inventory,
-                    out string? defect
-                )
-                    ? CanonicalInventoryHash.Compute(inventory)
-                    : "defect:" + defect;
             }
         }
 

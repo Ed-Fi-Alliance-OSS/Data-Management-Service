@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
@@ -17,6 +18,47 @@ using Npgsql;
 using static EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning.DmsProvisioningTestServer;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning;
+
+/// <summary>Read-only evidence about a database under a target name, taken on side connections, that a test compares before and after.</summary>
+internal static class TargetEvidence
+{
+    /// <summary>Relations and routines outside the system schemas.</summary>
+    public const string ObjectCountQuery =
+        "SELECT (SELECT COUNT(*) FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname NOT IN ('pg_catalog', 'information_schema') AND n.nspname NOT LIKE 'pg\\_toast%') + (SELECT COUNT(*) FROM pg_catalog.pg_proc p JOIN pg_catalog.pg_namespace n ON n.oid = p.pronamespace WHERE n.nspname NOT IN ('pg_catalog', 'information_schema'));";
+
+    /// <summary>The canonical inventory hash the engine's facts describe, or the reason it cannot be built.</summary>
+    public static async Task<string> InventoryFingerprintAsync(
+        DmsTargetDatabaseName target,
+        DmsInstanceIdentity instance
+    )
+    {
+        PostgresqlDmsTargetEngine side = DmsProvisioningTestServer.Engine();
+        DmsSession session = (await side.OpenSessionAsync(target, instance, default))
+            .Should()
+            .BeOfType<DmsSessionOpenResult.Opened>()
+            .Subject.Session;
+        await using (session)
+        {
+            DmsTargetFacts facts;
+            try
+            {
+                facts = await side.ReadTargetFactsAsync(session, default);
+            }
+            catch (DmsProvisioningFailedException exception)
+            {
+                return "unreadable:" + exception.Failure.Diagnostic.Operation;
+            }
+
+            return DmsTargetValidator.TryBuildInventory(
+                facts,
+                out CanonicalInventory? inventory,
+                out string? defect
+            )
+                ? CanonicalInventoryHash.Compute(inventory)
+                : "defect:" + defect;
+        }
+    }
+}
 
 /// <summary>The D-23 seams with a probe the fixture runs at every hook point.</summary>
 internal sealed class LaneHooks : IDmsProvisioningTestHooks
@@ -241,10 +283,14 @@ internal sealed class Lane : IAsyncDisposable
 
     private readonly string _root;
     private readonly string _operations;
+    private readonly LaneHooks _hooks;
+    private readonly TimeSpan? _restoreTimeout;
 
     private Lane(
         string root,
         string operations,
+        LaneHooks hooks,
+        TimeSpan? restoreTimeout,
         RecordingEngine engine,
         DmsDataStoreProvisioningService service,
         DmsDataStoreCreateRequest request
@@ -252,6 +298,8 @@ internal sealed class Lane : IAsyncDisposable
     {
         _root = root;
         _operations = operations;
+        _hooks = hooks;
+        _restoreTimeout = restoreTimeout;
         Engine = engine;
         Service = service;
         Request = request;
@@ -307,12 +355,59 @@ internal sealed class Lane : IAsyncDisposable
     )
     {
         string root = Path.Combine(Path.GetTempPath(), "dms1438-lane-" + DmsOperationId.New().Value);
-        string artifacts = Path.Combine(root, "artifacts");
         string operations = Path.Combine(root, "operations");
-        Directory.CreateDirectory(artifacts);
         Directory.CreateDirectory(operations);
+        Deployment deployment = await DeployAsync(root, operations, artifactSql, null, hooks, restoreTimeout);
+        return new Lane(
+            root,
+            operations,
+            hooks,
+            restoreTimeout,
+            deployment.Engine,
+            deployment.Service,
+            new DmsDataStoreCreateRequest(
+                DmsDatabaseTemplate.Minimal,
+                TargetName("stage"),
+                Guid.NewGuid(),
+                deployment.Pin
+            )
+        );
+    }
 
-        TestTemplatePackage package = new TestTemplatePackageBuilder()
+    /// <summary>One configured service over the shared server: its own recorder, catalog and allowlisted package.</summary>
+    internal sealed record Deployment(
+        RecordingEngine Engine,
+        DmsDataStoreProvisioningService Service,
+        DmsTrustedArtifactPin Pin
+    );
+
+    /// <summary>
+    /// The deployment after its allowlist was switched to another package built from <paramref name="artifactSql"/>
+    /// under <paramref name="packageVersion"/>, with the same manifest content, in its own catalog directory; it
+    /// shares the lane's server, operations root and hooks, so it addresses the same target.
+    /// </summary>
+    public Task<Deployment> SwitchAllowlistAsync(byte[] artifactSql, string packageVersion) =>
+        DeployAsync(_root, _operations, artifactSql, packageVersion, _hooks, _restoreTimeout);
+
+    private static async Task<Deployment> DeployAsync(
+        string root,
+        string operations,
+        byte[] artifactSql,
+        string? packageVersion,
+        LaneHooks hooks,
+        TimeSpan? restoreTimeout
+    )
+    {
+        string artifacts = Path.Combine(root, "artifacts-" + DmsOperationId.New().Value);
+        Directory.CreateDirectory(artifacts);
+
+        TestTemplatePackageBuilder builder = new();
+        if (packageVersion is not null)
+        {
+            builder.WithPackageVersion(packageVersion);
+        }
+
+        TestTemplatePackage package = builder
             .WithArtifact(artifactSql)
             .WithManifest(manifest =>
             {
@@ -378,18 +473,7 @@ internal sealed class Lane : IAsyncDisposable
             .Should()
             .BeOfType<DmsArtifactResolution.Resolved>()
             .Subject.Pin;
-        return new Lane(
-            root,
-            operations,
-            engine,
-            service,
-            new DmsDataStoreCreateRequest(
-                DmsDatabaseTemplate.Minimal,
-                TargetName("stage"),
-                Guid.NewGuid(),
-                pin
-            )
-        );
+        return new Deployment(engine, service, pin);
     }
 
     public Task<DmsDataStoreCreateResult> CreateAsync() => Service.CreateAsync(Request, default);
