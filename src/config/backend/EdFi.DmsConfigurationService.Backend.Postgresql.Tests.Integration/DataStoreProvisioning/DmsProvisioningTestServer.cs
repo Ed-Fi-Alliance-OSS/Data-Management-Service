@@ -191,6 +191,26 @@ internal static class DmsProvisioningTestServer
             ("app", applicationName)
         );
 
+    /// <summary>
+    /// Waits until no session is connected to <paramref name="database"/>: a closed connection's backend
+    /// leaves the activity view shortly after, not at once, and a rename refuses a database in use.
+    /// </summary>
+    public static async Task WaitForNoSessionsOnAsync(string database)
+    {
+        bool idle = await WaitUntilAsync(
+            async () =>
+                await ScalarOnServerAsync<int>(
+                    "SELECT COUNT(*)::int FROM pg_catalog.pg_stat_activity a WHERE a.datname = @name;",
+                    ("name", database)
+                ) == 0,
+            TimeSpan.FromSeconds(15)
+        );
+        if (!idle)
+        {
+            throw new InvalidOperationException("A session is still connected to the test database.");
+        }
+    }
+
     /// <summary>The pid of the session carrying <paramref name="applicationName"/>, or 0 when there is none.</summary>
     public static Task<int> PidNamedAsync(string applicationName) =>
         ScalarOnServerAsync<int>(

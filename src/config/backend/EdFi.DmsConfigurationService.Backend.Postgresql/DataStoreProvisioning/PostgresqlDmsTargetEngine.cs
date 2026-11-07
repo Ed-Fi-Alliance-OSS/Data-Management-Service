@@ -20,9 +20,11 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 /// termination (D-22): <see cref="TerminateSessionAsync"/> proves a session gone, or reports why it could not,
 /// through <see cref="PostgresqlSessionQueries"/>; and the staging stage (6.3 steps 4 and 5, 6.7): the
 /// staging database created and claimed on the holder session, the <c>psql</c> replay with its outcome
-/// protocol, and the staging drop, in the second part of this class. Every read is on a dedicated
-/// connection; the members that mutate the selected target arrive with Steps 3.6 to 3.9 and throw until
-/// then. Connection and driver failures of a read propagate for the orchestrator to classify; a catalog
+/// protocol, and the staging drop, in the second part of this class; and publication (6.3 steps 8 and 10,
+/// 6.7): the rename into the target and the compensation drop on the holder session, and the marker on an
+/// instance-bound session, through <see cref="PostgresqlPublicationQueries"/>. Every read is on a dedicated
+/// connection; fencing, the owned delete, and the environmental validation arrive with Steps 3.8 and 3.9
+/// and throw until then. Connection and driver failures of a read propagate for the orchestrator to classify; a catalog
 /// row the inventory contract cannot describe is reported as a content-profile violation, because the
 /// authoritative DDL never produces one.
 /// </summary>
@@ -316,19 +318,54 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         };
     }
 
-    public Task<DmsCommandOutcome<DmsInstanceIdentity>> RenameIntoTargetAsync(
+    public async Task<DmsCommandOutcome<DmsInstanceIdentity>> RenameIntoTargetAsync(
         IDmsTargetLockHolder holder,
         DmsDatabaseName staging,
         DmsInstanceIdentity stagingInstance,
         DmsTargetDatabaseName target,
         CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(RenameIntoTargetAsync), "Step 3.6");
+    )
+    {
+        PostgresqlTargetLockSession session = RequireHolder(holder);
+        ArgumentNullException.ThrowIfNull(stagingInstance);
+        return await session.RunAsync(
+            token =>
+                PostgresqlPublicationQueries.RenameAsync(
+                    session.Connection,
+                    staging,
+                    stagingInstance,
+                    target,
+                    session.Session,
+                    token
+                ),
+            _adminConnection.CommandTimeout,
+            cancellationToken
+        );
+    }
 
-    public Task<DmsCommandOutcome> AssignMarkerAsync(
+    public async Task<DmsCommandOutcome> AssignMarkerAsync(
         DmsSession session,
         Guid expectedSourceIdentity,
         CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(AssignMarkerAsync), "Step 3.6");
+    )
+    {
+        PostgresqlDmsSession bound = RequireSession(session);
+        if (bound.Instance is not DmsInstanceIdentity.Postgresql instance)
+        {
+            throw new ArgumentException(
+                "The session is not bound to a PostgreSQL instance.",
+                nameof(session)
+            );
+        }
+
+        return await PostgresqlPublicationQueries.AssignMarkerAsync(
+            bound.Connection,
+            instance.Oid,
+            expectedSourceIdentity,
+            bound.ServerSession,
+            cancellationToken
+        );
+    }
 
     public Task<DmsCommandOutcome> FenceAsync(
         IDmsTargetLockHolder holder,
@@ -345,13 +382,38 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         CancellationToken cancellationToken
     ) => throw NotYetImplemented(nameof(UnfenceAsync), "Step 3.8");
 
-    public Task<DmsCommandOutcome> DropInstanceAsync(
+    /// <summary>
+    /// The compensation drop (6.7) on the holder session; the owned delete (6.6) drops only after fencing and
+    /// verified exclusivity and arrives with Step 3.8.
+    /// </summary>
+    public async Task<DmsCommandOutcome> DropInstanceAsync(
         IDmsTargetLockHolder holder,
         DmsTargetDatabaseName target,
         DmsInstanceIdentity instance,
         DmsDropReason reason,
         CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(DropInstanceAsync), "Step 3.6");
+    )
+    {
+        if (reason != DmsDropReason.Compensation)
+        {
+            throw NotYetImplemented($"{nameof(DropInstanceAsync)} for {reason}", "Step 3.8");
+        }
+
+        PostgresqlTargetLockSession session = RequireHolder(holder);
+        ArgumentNullException.ThrowIfNull(instance);
+        return await session.RunAsync(
+            token =>
+                PostgresqlPublicationQueries.DropInstanceAsync(
+                    session.Connection,
+                    target,
+                    instance,
+                    session.Session,
+                    token
+                ),
+            _adminConnection.CommandTimeout,
+            cancellationToken
+        );
+    }
 
     public async Task<DmsSessionTermination> TerminateSessionAsync(
         DmsServerSessionId session,
@@ -579,6 +641,6 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
 
     private static NotImplementedException NotYetImplemented(string member, string step) =>
         new(
-            $"{member} of the PostgreSQL DMS target engine arrives with {step}; this build contains the read members, the target lock, session termination, and the staging stage only."
+            $"{member} of the PostgreSQL DMS target engine arrives with {step}; this build contains the read members, the target lock, session termination, the staging stage, and publication only."
         );
 }

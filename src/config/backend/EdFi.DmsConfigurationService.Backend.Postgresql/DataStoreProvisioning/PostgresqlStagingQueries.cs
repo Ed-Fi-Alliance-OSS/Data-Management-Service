@@ -317,7 +317,7 @@ internal static class PostgresqlStagingQueries
     /// state (<c>57014</c>) or follows a sent statement; one raised before anything was sent is the
     /// caller's and propagates. The driver reports the former with a PostgreSQL error in the chain.
     /// </summary>
-    private static bool IsAfterSend(Exception exception) =>
+    internal static bool IsAfterSend(Exception exception) =>
         PostgresqlErrorClassifier.SqlStateOf(exception) is not null;
 
     private static async Task ExecuteAsync(

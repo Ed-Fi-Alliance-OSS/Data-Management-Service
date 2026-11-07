@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Runtime.ExceptionServices;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
@@ -21,16 +22,18 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// <c>LockLost</c>, and it is enforced at every read boundary, not only through the token: a read is not
 /// dispatched once loss is declared, and a read that completes normally, or throws anything, while loss
 /// is declared still ends the operation there (6.10). Caller cancellation propagates after the lock is
-/// released; the lock is released on every path. This build delivers the shell and the staging stage of a
-/// create (6.3 steps 2 to 7): the artifact is staged and compared with the pin before the lock, the staging
+/// released; the lock is released on every path. This build delivers the shell and a complete create path
+/// (6.3 steps 2 to 10): the artifact is staged and compared with the pin before the lock, the staging
 /// database is created and claimed on the holder session, the artifact is restored into it, the result is
-/// validated in full on an instance-bound session, and the staging database is dropped on every exit that
-/// does not publish it, bounded (D-19), with what remains reported as residue. The stages that mutate the
-/// selected target (publication, reconcile validation, owned deletion) arrive with Steps 3.6 to 3.8: the
-/// orchestrator throws <see cref="NotImplementedException"/> where they begin, after cleanup and after the
-/// lock is released, and is not registered as the provisioner until they exist.
+/// validated in full on an instance-bound session, renamed into the target on the holder session, re-checked,
+/// and marked, with compensation for a marker proven uncommitted; the staging database is dropped on every
+/// exit that does not publish it, bounded (D-19), with what remains reported as residue. A rename that
+/// collides ends in the ownership reads of 6.5 steps 1 and 2. Reconciling a target that carries the
+/// expected identity, and owned deletion, arrive with Steps 3.7 and 3.8: the orchestrator throws
+/// <see cref="NotImplementedException"/> where they begin, after cleanup and after the lock is released, and
+/// is not registered as the provisioner until they exist.
 /// </summary>
-public sealed class DmsDataStoreProvisioningService(
+public sealed partial class DmsDataStoreProvisioningService(
     IDmsDataStoreProvisionerReadiness readiness,
     IDmsTargetEngine engine,
     ITemplateArtifactCatalog catalog,
@@ -130,7 +133,13 @@ public sealed class DmsDataStoreProvisioningService(
 
         TrustedTemplateArtifact artifact = ((TemplateArtifactStaging.Staged)staging).Artifact;
         StagingCleanup cleanup = new(operation.StagingDatabaseName);
-        DmsDataStoreCreateResult result;
+        Publication publication = new(
+            request.TargetName,
+            operation.StagingDatabaseName,
+            request.ExpectedSourceIdentity
+        );
+        DmsDataStoreCreateResult? result;
+        OperationCanceledException? cancellation = null;
         try
         {
             if (artifact.Pin != request.PinnedArtifact)
@@ -145,23 +154,13 @@ public sealed class DmsDataStoreProvisioningService(
 
             // 6.2 step 8: the artifact is extracted while hashing; a mismatch is ArtifactTampered.
             StagedArtifact stagedArtifact = await artifact.ExtractArtifactAsync(cancellationToken);
-            result = await RunUnderTargetLockAsync<DmsDataStoreCreateResult>(
-                request.TargetName,
-                CreateOperationName,
+            (result, cancellation) = await CreateUnderLockAsync(
+                request,
                 operation,
-                DmsCleanupReport.Clean,
-                async scope =>
-                {
-                    DmsLiveTargetState state = await PreambleAsync(scope, request.TargetName);
-                    if (state is DmsLiveTargetState.Present)
-                    {
-                        throw NotYetImplemented("reconcile (6.5)", "Step 3.7");
-                    }
-
-                    await StageAsync(scope, request, artifact, stagedArtifact, cleanup);
-                    throw NotYetImplemented("publication (6.3 steps 8 to 10)", "Step 3.6");
-                },
-                static (failure, cleanup) => new DmsDataStoreCreateResult.Failure(failure, cleanup),
+                artifact,
+                stagedArtifact,
+                cleanup,
+                publication,
                 cancellationToken
             );
         }
@@ -179,7 +178,9 @@ public sealed class DmsDataStoreProvisioningService(
         finally
         {
             // 6.7 cleanup on every exit, after the lock is released: the staging database is unique to this
-            // operation, so it may be dropped on any session, also after loss; then the private directory.
+            // operation, so it may be dropped on any session, also after loss, unless it was renamed into the
+            // target or a rename is still in doubt; then the private directory.
+            publication.ApplyTo(cleanup);
             await cleanup.RunAsync(
                 engine,
                 options.Value,
@@ -191,8 +192,16 @@ public sealed class DmsDataStoreProvisioningService(
             cleanup.Add(await ReleaseArtifactAsync(artifact));
         }
 
+        if (cancellation is not null && result is not DmsDataStoreCreateResult.Created)
+        {
+            ExceptionDispatchInfo.Throw(cancellation);
+        }
+
         // What cleanup could not remove rides every result of this create (6.11); it never changes the class.
-        return WithCleanup(result, cleanup.Report);
+        return WithCleanup(
+            result ?? throw new InvalidOperationException("The create ended without a result."),
+            cleanup.Report
+        );
     }
 
     /// <summary>
@@ -257,9 +266,9 @@ public sealed class DmsDataStoreProvisioningService(
     /// staging database created and claimed on the holder session, the artifact restored into it with the
     /// outcome protocol, full validation on an instance-bound session, the session released with proof, and
     /// the target re-inspected; ends at the <c>BeforeRename</c> hook. The selected target name is never
-    /// addressed by anything but an inspection.
+    /// addressed by anything but an inspection. Returns the validated instance and the package identity.
     /// </summary>
-    private async Task StageAsync(
+    private async Task<StagedCandidate> StageAsync(
         LockScope scope,
         DmsDataStoreCreateRequest request,
         TrustedTemplateArtifact artifact,
@@ -295,7 +304,7 @@ public sealed class DmsDataStoreProvisioningService(
         bool restoreInDoubt = await RestoreAsync(scope, stage, stagedArtifact, stagingInstance, cleanup);
 
         // 6.3 step 6 on an instance-bound session; for a restore in doubt, the reads also decide its fate.
-        DmsServerSessionId stagingSession = await ValidateStagingAsync(
+        (DmsServerSessionId stagingSession, Guid packageIdentity) = await ValidateStagingAsync(
             scope,
             request,
             artifact.Manifest,
@@ -332,6 +341,7 @@ public sealed class DmsDataStoreProvisioningService(
         }
 
         await TestHooks.AtAsync(DmsProvisioningHookPoint.BeforeRename, operation, scope.CallerToken);
+        return new StagedCandidate(stagingInstance, packageIdentity);
     }
 
     /// <summary>6.3 step 4: the staging database created and claimed on the holder session, registered for cleanup.</summary>
@@ -448,9 +458,10 @@ public sealed class DmsDataStoreProvisioningService(
     /// staging rule. For a restore in doubt, both singleton tables missing proves the replay rolled back
     /// (a transient restore failure, or the caller's cancellation), one missing leaves the outcome
     /// unresolved and the staging database in place; both present means it committed. Returns the
-    /// session's server id, for the proof that it is gone.
+    /// session's server id, for the proof that it is gone, and the package's identity value, which the
+    /// validator has proven a valid identity that differs from the expected one.
     /// </summary>
-    private async Task<DmsServerSessionId> ValidateStagingAsync(
+    private async Task<(DmsServerSessionId Session, Guid PackageIdentity)> ValidateStagingAsync(
         LockScope scope,
         DmsDataStoreCreateRequest request,
         RestoreManifest manifest,
@@ -519,7 +530,15 @@ public sealed class DmsDataStoreProvisioningService(
                 throw StepFailed(invalid.Code, ValidateStagingStep + "." + invalid.Check);
             }
 
-            return session.ServerSession;
+            if (identity is not DmsIdentityRead.Found package)
+            {
+                throw StepFailed(
+                    DmsProvisioningFailureCode.PackageIdentityInvalid,
+                    ValidateStagingStep + "." + DmsTargetValidator.IdentityCheck
+                );
+            }
+
+            return (session.ServerSession, package.SourceIdentity);
         }
     }
 
@@ -556,13 +575,7 @@ public sealed class DmsDataStoreProvisioningService(
             failure = DmsProvisioningDiagnostic.TypeChain(exception);
         }
 
-        logger.LogWarning(
-            RecoveryUnproven,
-            "DMS data store provisioning {OperationId} could not prove a session gone during {Step}: {ExceptionTypeChain}",
-            operation.Value,
-            step,
-            failure
-        );
+        LogRecoveryUnproven(operation, step, failure);
         return false;
     }
 
@@ -822,7 +835,7 @@ public sealed class DmsDataStoreProvisioningService(
 
     private static NotImplementedException NotYetImplemented(string stage, string step) =>
         new(
-            $"The {stage} stage of the DMS data store provisioner arrives with {step}; this build contains the orchestrator shell and the staging stage only."
+            $"The {stage} stage of the DMS data store provisioner arrives with {step}; this build contains the orchestrator shell and the create path only."
         );
 
     /// <summary>
@@ -841,6 +854,16 @@ public sealed class DmsDataStoreProvisioningService(
         public DmsCleanupReport Report => new([.. _residue]);
 
         public void Created(DmsInstanceIdentity instance) => _instance = instance;
+
+        /// <summary>
+        /// The staging database was renamed into the target: nothing of it remains under the staging name, so
+        /// there is neither an instance to drop nor a create to account for there.
+        /// </summary>
+        public void Published()
+        {
+            _instance = null;
+            _pendingClaim = null;
+        }
 
         /// <summary>
         /// A create carrying <paramref name="claim"/> is about to be sent on <paramref name="session"/>: until a
@@ -1053,6 +1076,9 @@ public sealed class DmsDataStoreProvisioningService(
         /// <summary>The preamble's server facts (6.1 step 5), for the engine checks of later stages.</summary>
         public DmsServerFacts ServerFacts { get; set; } = null!;
 
+        /// <summary>A create's ledger of selected-target mutations, which decides the category of <c>LockLost</c>.</summary>
+        public Publication? Publication { get; set; }
+
         /// <summary>The type chain of a non-cancellation exception a read raised alongside loss, if any.</summary>
         public string? LossAccompanyingTypeChain { get; private set; }
 
@@ -1064,23 +1090,42 @@ public sealed class DmsDataStoreProvisioningService(
         /// <c>CommandTimeout</c>. <paramref name="observe"/> sees a normally returned result before the loss
         /// check can discard it, so a command whose outcome must be accounted for is never lost to loss.
         /// </summary>
-        public async Task<T> CallAsync<T>(
+        public Task<T> CallAsync<T>(
             string step,
             TimeSpan deadline,
             Func<CancellationToken, Task<T>> call,
             Action<T>? observe
+        ) => CallCoreAsync(step, deadline, call, observe, callerToken);
+
+        /// <summary>
+        /// A call that the caller's cancellation must not skip, such as compensation (6.10): bounded by
+        /// <paramref name="deadline"/> and stopped by loss, but not linked to the caller's token.
+        /// </summary>
+        public Task<T> RecoveryCallAsync<T>(
+            string step,
+            TimeSpan deadline,
+            Func<CancellationToken, Task<T>> call,
+            Action<T>? observe
+        ) => CallCoreAsync(step, deadline, call, observe, CancellationToken.None);
+
+        private async Task<T> CallCoreAsync<T>(
+            string step,
+            TimeSpan deadline,
+            Func<CancellationToken, Task<T>> call,
+            Action<T>? observe,
+            CancellationToken caller
         )
         {
             CurrentStep = step;
 
             // Caller cancellation, or loss declared since the previous read, stops this one before anything
             // is dispatched.
-            callerToken.ThrowIfCancellationRequested();
+            caller.ThrowIfCancellationRequested();
             ThrowIfLost();
 
             using CancellationTokenSource deadlineSource = new(deadline, timeProvider);
             using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
-                callerToken,
+                caller,
                 holder.LostToken,
                 deadlineSource.Token
             );
@@ -1100,7 +1145,7 @@ public sealed class DmsDataStoreProvisioningService(
 
                 throw Lost();
             }
-            catch (OperationCanceledException) when (!callerToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (!caller.IsCancellationRequested)
             {
                 throw new DmsProvisioningFailedException(
                     DmsProvisioningFailure.Create(
@@ -1141,13 +1186,15 @@ public sealed class DmsDataStoreProvisioningService(
 
         /// <summary>
         /// <c>LockLost</c> is transient while no selected-target mutation has been issued on the holder
-        /// (D-12). The shell issues none; the publication and delete stages will record the first one and
-        /// turn this into an inspection failure with residue.
+        /// (D-12); once the create's ledger records one whose effect is not proven absent, it is an
+        /// inspection failure, and what the mutation did is settled after the lock is released.
         /// </summary>
         public DmsProvisioningFailure LockLostFailure() =>
             DmsProvisioningFailure.Create(
                 DmsProvisioningFailureCode.LockLost,
-                DmsProvisioningFailureCategory.Transient,
+                Publication?.TargetMutationIssued == true
+                    ? DmsProvisioningFailureCategory.OperatorInspectionRequired
+                    : DmsProvisioningFailureCategory.Transient,
                 DmsProvisioningDiagnostic.ForOperation(CurrentStep)
             );
     }

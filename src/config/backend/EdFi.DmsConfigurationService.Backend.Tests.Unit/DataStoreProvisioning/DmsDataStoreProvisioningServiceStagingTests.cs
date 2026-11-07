@@ -15,11 +15,11 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
 
 /// <summary>
 /// The orchestrator's staging stage (6.3 steps 2 to 7, Step 3.5) over the spy engine and the real
-/// catalog: the order of engine calls up to the publication boundary, with nothing but an inspection
-/// ever addressing the selected target name; the staging database dropped on every failure path and
-/// after lock loss, and withheld only while a restore's fate is open; residue when the drop fails; the
-/// restore's definite and unresolved outcomes mapped to the 6.3 step 5 codes; the holder in doubt after
-/// an unknown create; and the D-23 hooks and fault in their places.
+/// catalog: the order of engine calls through the publication that follows, with nothing but an
+/// inspection addressing the selected target name before the rename; the staging database dropped on
+/// every failure path and after lock loss, and withheld only while a restore's fate is open; residue when
+/// the drop fails; the restore's definite and unresolved outcomes mapped to the 6.3 step 5 codes; the
+/// holder in doubt after an unknown create; and the D-23 hooks and fault in their places.
 /// </summary>
 public class DmsDataStoreProvisioningServiceStagingTests
 {
@@ -66,7 +66,7 @@ public class DmsDataStoreProvisioningServiceStagingTests
         public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    /// <summary>A harness scripted so the whole staging stage succeeds up to the publication boundary.</summary>
+    /// <summary>A harness scripted so the whole staging stage succeeds and the publication that follows creates the target.</summary>
     private static Harness Scripted(
         RecordingHooks? hooks = null,
         Action<DmsDataStoreProvisioningOptions>? configure = null,
@@ -93,6 +93,12 @@ public class DmsDataStoreProvisioningServiceStagingTests
             Task.FromResult<DmsSessionTermination>(new DmsSessionTermination.Terminated());
         engine.OnDropStaging = (_, _, _) =>
             Task.FromResult<DmsCommandOutcome>(new DmsCommandOutcome.Succeeded());
+        engine.OnRenameIntoTarget = (_, instance, _, _) =>
+            Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
+                new DmsCommandOutcome<DmsInstanceIdentity>.Succeeded(instance)
+            );
+        engine.OnAssignMarker = (_, _, _) =>
+            Task.FromResult<DmsCommandOutcome>(new DmsCommandOutcome.Succeeded());
         return harness;
     }
 
@@ -116,11 +122,11 @@ public class DmsDataStoreProvisioningServiceStagingTests
         ];
 
     [TestFixture]
-    public class Given_a_valid_package_is_staged_up_to_the_publication_boundary
+    public class Given_a_valid_package_is_staged_and_published
     {
         private Harness _harness = null!;
         private RecordingHooks _hooks = null!;
-        private Exception? _outcome;
+        private DmsDataStoreCreateResult _result = null!;
         private bool _directoryReleased;
 
         [SetUp]
@@ -128,16 +134,18 @@ public class DmsDataStoreProvisioningServiceStagingTests
         {
             _hooks = new RecordingHooks();
             _harness = Scripted(_hooks);
-            _outcome = await Record.ExceptionAsync(() => CreateAsync(_harness));
+            _result = await CreateAsync(_harness);
             _directoryReleased = SharedTemplateCatalog.Workspace.OperationEntries.Length == 0;
         }
 
         [Test]
-        public void It_stops_at_the_publication_stage() =>
-            _outcome.Should().BeOfType<NotImplementedException>();
+        public void It_creates_the_target_with_the_staged_pin_and_no_residue() =>
+            _result
+                .Should()
+                .Be(new DmsDataStoreCreateResult.Created(SharedTemplateCatalog.Pin, DmsCleanupReport.Clean));
 
         [Test]
-        public void It_runs_the_stage_in_the_6_3_order_and_drops_the_staging_database_last()
+        public void It_runs_the_stage_in_the_6_3_order_and_publishes_instead_of_dropping()
         {
             string target = CreateRequest().TargetName.Value;
             string stage = _harness
@@ -158,18 +166,30 @@ public class DmsDataStoreProvisioningServiceStagingTests
                     new SpyDmsTargetEngine.Call(SpyDmsTargetEngine.ReadTargetFacts, null),
                     new SpyDmsTargetEngine.Call(SpyDmsTargetEngine.TerminateSession, null),
                     new SpyDmsTargetEngine.Call(SpyDmsTargetEngine.Inspect, target),
-                    new SpyDmsTargetEngine.Call(SpyDmsTargetEngine.DropStaging, stage)
+                    new SpyDmsTargetEngine.Call(SpyDmsTargetEngine.RenameIntoTarget, target),
+                    new SpyDmsTargetEngine.Call(SpyDmsTargetEngine.OpenSession, target),
+                    new SpyDmsTargetEngine.Call(SpyDmsTargetEngine.ReadIdentity, null),
+                    new SpyDmsTargetEngine.Call(SpyDmsTargetEngine.ReadTargetFacts, null),
+                    new SpyDmsTargetEngine.Call(SpyDmsTargetEngine.AssignMarker, null)
                 );
         }
 
         [Test]
-        public void It_never_mutates_the_selected_target() => TargetMutations(_harness).Should().BeEmpty();
+        public void It_addresses_the_target_only_by_the_rename_and_the_marker_session() =>
+            TargetMutations(_harness)
+                .Select(call => call.Member)
+                .Should()
+                .Equal(SpyDmsTargetEngine.RenameIntoTarget, SpyDmsTargetEngine.OpenSession);
 
         [Test]
         public void It_passes_the_hooks_in_order() =>
             _hooks
                 .Points.Should()
-                .Equal(DmsProvisioningHookPoint.AfterRestoreStarted, DmsProvisioningHookPoint.BeforeRename);
+                .Equal(
+                    DmsProvisioningHookPoint.AfterRestoreStarted,
+                    DmsProvisioningHookPoint.BeforeRename,
+                    DmsProvisioningHookPoint.BeforeMarker
+                );
 
         [Test]
         public void It_releases_the_holder_and_the_artifact() =>
@@ -501,8 +521,8 @@ public class DmsDataStoreProvisioningServiceStagingTests
         private DmsDataStoreCreateResult _rolledBackResult = null!;
         private DmsDataStoreCreateResult _oneTableOnlyResult = null!;
         private DmsDataStoreCreateResult _sessionUnprovenResult = null!;
-        private Exception? _sessionProvenOutcome;
-        private Exception? _clientLostOutcome;
+        private DmsDataStoreCreateResult _sessionProvenResult = null!;
+        private DmsDataStoreCreateResult _clientLostResult = null!;
 
         private static Harness Unresolved(
             DmsServerSessionId? session,
@@ -562,12 +582,12 @@ public class DmsDataStoreProvisioningServiceStagingTests
                 TargetFactsSample.EffectiveSchema(),
                 new DmsSessionTermination.AlreadyAbsent()
             );
-            _sessionProvenOutcome = await Record.ExceptionAsync(() => CreateAsync(_sessionProven));
+            _sessionProvenResult = await CreateAsync(_sessionProven);
 
             _faultHooks = new RecordingHooks();
             _faultHooks.Faults.Add(DmsProvisioningFaultPoint.DropConnectionDuringRestore);
             _clientLostTheResult = Scripted(_faultHooks);
-            _clientLostOutcome = await Record.ExceptionAsync(() => CreateAsync(_clientLostTheResult));
+            _clientLostResult = await CreateAsync(_clientLostTheResult);
         }
 
         [Test]
@@ -612,14 +632,14 @@ public class DmsDataStoreProvisioningServiceStagingTests
         [Test]
         public void It_continues_once_the_session_is_proven_gone_and_the_replay_committed()
         {
-            _sessionProvenOutcome.Should().BeOfType<NotImplementedException>();
+            _sessionProvenResult.Should().BeOfType<DmsDataStoreCreateResult.Created>();
             CountOf(_sessionProven, SpyDmsTargetEngine.TerminateSession).Should().Be(2);
         }
 
         [Test]
         public void It_treats_a_lost_client_result_after_a_commit_as_committed()
         {
-            _clientLostOutcome.Should().BeOfType<NotImplementedException>();
+            _clientLostResult.Should().BeOfType<DmsDataStoreCreateResult.Created>();
             _faultHooks.Points.Should().Contain(DmsProvisioningHookPoint.BeforeRename);
         }
     }

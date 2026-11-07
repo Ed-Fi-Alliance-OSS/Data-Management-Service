@@ -10,9 +10,10 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
 
 /// <summary>
 /// An engine that records every call with the database name it addresses, scripts the members the
-/// orchestrator reaches through the staging stage (lock acquisition, server facts, inspection, staging
-/// create and drop, restore, session open and reads, termination), and refuses every other member after
-/// recording it, so a test can prove which calls were and were not issued and in what order.
+/// orchestrator reaches through a create (lock acquisition, server facts, inspection, staging create and
+/// drop, restore, session open and reads, termination, rename, marker, compensation drop), and refuses
+/// every other member after recording it, so a test can prove which calls were and were not issued and in
+/// what order.
 /// </summary>
 internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
 {
@@ -26,11 +27,15 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
     public const string ReadIdentity = "ReadIdentity";
     public const string ReadTargetFacts = "ReadTargetFacts";
     public const string TerminateSession = "TerminateSession";
+    public const string RenameIntoTarget = "RenameIntoTarget";
+    public const string AssignMarker = "AssignMarker";
+    public const string DropInstance = "DropInstance";
 
     public sealed record Call(string Member, string? DatabaseName);
 
     private readonly Lock _gate = new();
     private readonly List<Call> _calls = [];
+    private readonly List<DmsServerSessionId> _terminated = [];
 
     public string Provider => "postgresql";
 
@@ -89,6 +94,26 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
         CancellationToken cancellationToken
     );
 
+    public delegate Task<DmsCommandOutcome<DmsInstanceIdentity>> RenameScript(
+        DmsDatabaseName staging,
+        DmsInstanceIdentity stagingInstance,
+        DmsTargetDatabaseName target,
+        CancellationToken cancellationToken
+    );
+
+    public delegate Task<DmsCommandOutcome> AssignMarkerScript(
+        DmsSession session,
+        Guid expectedSourceIdentity,
+        CancellationToken cancellationToken
+    );
+
+    public delegate Task<DmsCommandOutcome> DropInstanceScript(
+        DmsTargetDatabaseName target,
+        DmsInstanceIdentity instance,
+        DmsDropReason reason,
+        CancellationToken cancellationToken
+    );
+
     public CreateStagingScript OnCreateStaging { get; set; } = (_, _, _) => throw NotExpected(CreateStaging);
 
     public RestoreScript OnRestoreIntoStaging { get; set; } =
@@ -106,6 +131,25 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
 
     public TerminateScript OnTerminateSession { get; set; } =
         (_, _, _) => throw NotExpected(TerminateSession);
+
+    public RenameScript OnRenameIntoTarget { get; set; } =
+        (_, _, _, _) => throw NotExpected(RenameIntoTarget);
+
+    public AssignMarkerScript OnAssignMarker { get; set; } = (_, _, _) => throw NotExpected(AssignMarker);
+
+    public DropInstanceScript OnDropInstance { get; set; } = (_, _, _, _) => throw NotExpected(DropInstance);
+
+    /// <summary>The server session id of every termination request, in order.</summary>
+    public IReadOnlyList<DmsServerSessionId> TerminatedSessions
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _terminated];
+            }
+        }
+    }
 
     public static DmsServerFacts Facts() =>
         new(
@@ -192,13 +236,21 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
         DmsInstanceIdentity stagingInstance,
         DmsTargetDatabaseName target,
         CancellationToken cancellationToken
-    ) => Refuse<DmsCommandOutcome<DmsInstanceIdentity>>(nameof(RenameIntoTargetAsync), target.Value);
+    )
+    {
+        Record(RenameIntoTarget, target.Value);
+        return OnRenameIntoTarget(staging, stagingInstance, target, cancellationToken);
+    }
 
     public Task<DmsCommandOutcome> AssignMarkerAsync(
         DmsSession session,
         Guid expectedSourceIdentity,
         CancellationToken cancellationToken
-    ) => Refuse<DmsCommandOutcome>(nameof(AssignMarkerAsync), null);
+    )
+    {
+        Record(AssignMarker, null);
+        return OnAssignMarker(session, expectedSourceIdentity, cancellationToken);
+    }
 
     public Task<DmsCommandOutcome> FenceAsync(
         IDmsTargetLockHolder holder,
@@ -221,7 +273,11 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
         DmsInstanceIdentity instance,
         DmsDropReason reason,
         CancellationToken cancellationToken
-    ) => Refuse<DmsCommandOutcome>(nameof(DropInstanceAsync), target.Value);
+    )
+    {
+        Record(DropInstance, target.Value);
+        return OnDropInstance(target, instance, reason, cancellationToken);
+    }
 
     public Task<DmsCommandOutcome> DropStagingAsync(
         DmsDatabaseName staging,
@@ -240,6 +296,11 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
     )
     {
         Record(TerminateSession, null);
+        lock (_gate)
+        {
+            _terminated.Add(session);
+        }
+
         return OnTerminateSession(session, deadline, cancellationToken);
     }
 
