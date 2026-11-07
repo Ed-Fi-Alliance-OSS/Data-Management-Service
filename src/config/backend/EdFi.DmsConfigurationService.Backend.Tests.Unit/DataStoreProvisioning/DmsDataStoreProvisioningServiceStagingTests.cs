@@ -890,6 +890,65 @@ public class DmsDataStoreProvisioningServiceStagingTests
     }
 
     [TestFixture]
+    public class Given_a_staging_create_that_throws_while_the_name_is_still_empty
+    {
+        private readonly List<DmsServerSessionId> _terminated = [];
+        private Harness _unproven = null!;
+        private Harness _proven = null!;
+        private DmsDataStoreCreateResult _unprovenResult = null!;
+        private DmsDataStoreCreateResult _provenResult = null!;
+
+        private Harness Throwing(DmsSessionTermination verdict)
+        {
+            Harness harness = Scripted();
+            harness.Engine.OnCreateStaging = (_, _, _) =>
+                throw new InvalidOperationException("The create failed with no outcome.");
+            harness.Engine.OnTerminateSession = (session, _, _) =>
+            {
+                _terminated.Add(session);
+                return Task.FromResult(verdict);
+            };
+            return harness;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _terminated.Clear();
+            _unproven = Throwing(
+                new DmsSessionTermination.NotTerminated(DmsSessionTerminationFailure.TimedOut)
+            );
+            _unprovenResult = await CreateAsync(_unproven);
+            _proven = Throwing(new DmsSessionTermination.AlreadyAbsent());
+            _provenResult = await CreateAsync(_proven);
+        }
+
+        private static bool HasStagingResidue(DmsDataStoreCreateResult result) =>
+            CleanupOf(result).Residue.Any(residue => residue.Kind == DmsResidueKind.StagingDatabase);
+
+        [Test]
+        public void It_tries_to_prove_the_holder_session_gone() =>
+            _terminated.Should().Equal(Session, Session);
+
+        [Test]
+        public void It_reports_the_empty_name_as_residue_while_the_create_may_still_commit() =>
+            HasStagingResidue(_unprovenResult).Should().BeTrue();
+
+        [Test]
+        public void It_reports_nothing_once_the_holder_session_is_proven_gone() =>
+            HasStagingResidue(_provenResult).Should().BeFalse();
+
+        [Test]
+        public void It_drops_nothing_either_way() =>
+            (
+                CountOf(_unproven, SpyDmsTargetEngine.DropStaging),
+                CountOf(_proven, SpyDmsTargetEngine.DropStaging)
+            )
+                .Should()
+                .Be((0, 0));
+    }
+
+    [TestFixture]
     public class Given_the_recovery_of_an_unknown_restore_is_not_proven
     {
         private readonly List<bool> _recoveryTokenCancelled = [];

@@ -180,7 +180,14 @@ public sealed class DmsDataStoreProvisioningService(
         {
             // 6.7 cleanup on every exit, after the lock is released: the staging database is unique to this
             // operation, so it may be dropped on any session, also after loss; then the private directory.
-            await cleanup.RunAsync(engine, options.Value, timeProvider, logger, operation);
+            await cleanup.RunAsync(
+                engine,
+                options.Value,
+                timeProvider,
+                logger,
+                operation,
+                session => ProveSessionGoneAsync(session, operation, CreateStagingStep)
+            );
             cleanup.Add(await ReleaseArtifactAsync(artifact));
         }
 
@@ -335,9 +342,10 @@ public sealed class DmsDataStoreProvisioningService(
         StagingCleanup cleanup
     )
     {
-        // The create is this operation's from the moment it is sent: whatever ends the step, cleanup accounts
-        // for the name (6.7, 6.11).
-        cleanup.Pending(claim);
+        // The create is this operation's, and unproven, from the moment it is sent: whatever ends the step,
+        // cleanup accounts for the name, and only a returned definite outcome or a verified termination of
+        // the holder session it ran on settles it (6.7, 6.11, D-7b).
+        cleanup.Pending(claim, scope.Holder.Session);
         DmsCommandOutcome<DmsInstanceIdentity> created = await scope.CallAsync(
             CreateStagingStep,
             options.Value.CommandTimeout,
@@ -350,8 +358,9 @@ public sealed class DmsDataStoreProvisioningService(
                 return succeeded.Value;
             case DmsCommandOutcome<DmsInstanceIdentity>.Failed failed:
                 throw StepFailed(CreateStagingFailureCodeOf(failed.Failure), failed.Failure.Diagnostic);
-            case DmsCommandOutcome<DmsInstanceIdentity>.Unknown unknown:
-                await HolderInDoubtAsync(scope, unknown.Session, cleanup);
+            case DmsCommandOutcome<DmsInstanceIdentity>.Unknown:
+                // The holder is in doubt: the operation ends LockLost (transient, no selected-target mutation),
+                // and cleanup, once the holder is released, proves it gone before it decides about the name.
                 throw new DmsProvisioningFailedException(scope.LockLostFailure());
             default:
                 throw new InvalidOperationException("Unknown create-staging outcome.");
@@ -555,28 +564,6 @@ public sealed class DmsDataStoreProvisioningService(
             failure
         );
         return false;
-    }
-
-    /// <summary>
-    /// An unknown outcome on the holder session (6.3 step 4): the holder may be gone, so it is terminated
-    /// with proof on a recovery token, and only that proof lifts the withheld drop. The create stays pending,
-    /// so cleanup inspects the staging name: a database carrying this operation's claim is dropped once the
-    /// holder is proven gone and reported as residue otherwise. Either way the operation ends
-    /// <c>LockLost</c>, transient: no selected-target mutation was issued.
-    /// </summary>
-    private async Task HolderInDoubtAsync(
-        LockScope scope,
-        DmsServerSessionId? holderSession,
-        StagingCleanup cleanup
-    )
-    {
-        if (
-            holderSession is { } session
-            && await ProveSessionGoneAsync(session, scope.Operation, CreateStagingStep)
-        )
-        {
-            cleanup.Permit();
-        }
     }
 
     private static DmsProvisioningFailureCode CreateStagingFailureCodeOf(DmsCommandFailure failure) =>
@@ -848,14 +835,24 @@ public sealed class DmsDataStoreProvisioningService(
         private readonly List<DmsCleanupResidue> _residue = [];
         private DmsInstanceIdentity? _instance;
         private DmsProvisionClaim? _pendingClaim;
+        private DmsServerSessionId? _pendingSession;
         private bool _withheld;
 
         public DmsCleanupReport Report => new([.. _residue]);
 
         public void Created(DmsInstanceIdentity instance) => _instance = instance;
 
-        /// <summary>A create carrying <paramref name="claim"/> is about to be sent; until it settles, cleanup accounts for the name.</summary>
-        public void Pending(DmsProvisionClaim claim) => _pendingClaim = claim;
+        /// <summary>
+        /// A create carrying <paramref name="claim"/> is about to be sent on <paramref name="session"/>: until a
+        /// definite outcome or a verified termination of that session settles it, the drop is withheld and
+        /// cleanup accounts for the name.
+        /// </summary>
+        public void Pending(DmsProvisionClaim claim, DmsServerSessionId session)
+        {
+            _pendingClaim = claim;
+            _pendingSession = session;
+            Withhold();
+        }
 
         /// <summary>
         /// Settles the create from its returned outcome before any loss check can discard it: a success is
@@ -907,11 +904,19 @@ public sealed class DmsDataStoreProvisioningService(
             DmsDataStoreProvisioningOptions settings,
             TimeProvider timeProvider,
             ILogger logger,
-            DmsOperationId operation
+            DmsOperationId operation,
+            Func<DmsServerSessionId, Task<bool>> proveSessionGone
         )
         {
             if (_instance is null && _pendingClaim is not null)
             {
+                // An unsettled create is proven over only by its session being gone; the holder is released
+                // by now, so a verified termination is usually immediate.
+                if (_withheld && _pendingSession is { } session && await proveSessionGone(session))
+                {
+                    Permit();
+                }
+
                 string? unaccounted = await ClaimPendingAsync(engine, settings.CommandTimeout, timeProvider);
                 if (unaccounted is not null)
                 {
