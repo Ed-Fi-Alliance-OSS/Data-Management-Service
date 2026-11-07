@@ -220,6 +220,26 @@ internal sealed class FakeCatalog : ITemplateArtifactCatalog
 }
 
 /// <summary>
+/// The administrative connection source the orchestrator resolves before every operation (6.1 step 3):
+/// resolved unless a fixture scripts a failure; every resolution is counted.
+/// </summary>
+internal sealed class FakeAdminConnectionSource : IDmsAdminConnectionSource
+{
+    public DmsAdminConnectionResolution Result { get; set; } = new DmsAdminConnectionResolution.Resolved();
+
+    public int Resolutions { get; private set; }
+
+    public string Current => "Host=fake";
+
+    public Task<DmsAdminConnectionResolution> ResolveAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        Resolutions++;
+        return Task.FromResult(Result);
+    }
+}
+
+/// <summary>
 /// The orchestrator under test with its doubles; the engine hands out a fresh fake holder per acquisition.
 /// The clock is fake unless a fixture needs the cleanup backoff to elapse on its own, in which case it is
 /// the system clock and the waits are real but short.
@@ -261,6 +281,7 @@ internal sealed class Harness
             Catalog,
             Options.Create(options),
             protectedNames ?? ProvisioningTestValues.ProtectedNames,
+            AdminConnection,
             clock,
             Logger
         )
@@ -272,6 +293,8 @@ internal sealed class Harness
     public FakeTimeProvider Time { get; } = new(new DateTimeOffset(2026, 11, 5, 12, 0, 0, TimeSpan.Zero));
 
     public SpyDmsTargetEngine Engine { get; } = new();
+
+    public FakeAdminConnectionSource AdminConnection { get; } = new();
 
     /// <summary>Every entry the orchestrator logged, with its structured fields.</summary>
     public CapturingLogger<DmsDataStoreProvisioningService> Logger { get; } = new();

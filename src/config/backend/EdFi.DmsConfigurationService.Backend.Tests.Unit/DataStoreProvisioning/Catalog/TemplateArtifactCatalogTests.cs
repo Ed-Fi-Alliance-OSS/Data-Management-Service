@@ -834,6 +834,7 @@ public class TemplateArtifactCatalogTests
                 catalog,
                 Options.Create(new DmsDataStoreProvisioningOptions()),
                 ProtectedDatabaseNames.Create("edfi_configurationservice", []),
+                new FakeAdminConnectionSource(),
                 TimeProvider.System,
                 NullLogger<DmsDataStoreProvisioningService>.Instance
             );

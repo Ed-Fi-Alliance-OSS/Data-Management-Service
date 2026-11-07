@@ -281,10 +281,12 @@ public static class WebApplicationBuilderExtensions
     /// Registers DMS data store provisioning (spec 4.4) by <c>DmsDataStoreProvisioning:Provider</c>, which is
     /// read independently of <c>AppSettings:Datastore</c>: the target engine and the CMS catalog engine need
     /// not match. Disabled (the shipped default): only the readiness singleton and the refusing provisioner,
-    /// no options validation, no startup work. Enabled: the section is bound and validated at startup, and the
-    /// engine adapter for the provider is registered. No adapter exists in this build, so the
-    /// <see cref="UnavailableDmsTargetEngine"/> stands in for either provider and readiness can never become
-    /// <c>Ready</c>; the provisioner refuses every call.
+    /// no options validation, no startup work. Enabled: the section is bound and validated at startup; the
+    /// orchestrator replaces the refusing provisioner, beside the directory catalog, the protected set, and the
+    /// administrative connection source; and the engine adapter for the provider is registered. PostgreSQL has
+    /// its adapter; SQL Server has none in this build, so the <see cref="UnavailableDmsTargetEngine"/> stands
+    /// in for it and readiness can never become <c>Ready</c>. Every call is refused until startup records
+    /// <c>Ready</c> (D-2).
     /// </summary>
     private static void ConfigureDmsDataStoreProvisioning(
         WebApplicationBuilder webAppBuilder,
@@ -317,12 +319,53 @@ public static class WebApplicationBuilderExtensions
         string targetProvider = string.IsNullOrWhiteSpace(configuredProvider)
             ? "(unset)"
             : configuredProvider;
+        webAppBuilder.Services.TryAddSingleton(TimeProvider.System);
+        webAppBuilder.Services.AddSingleton<ITemplateArtifactCatalog, TemplateArtifactCatalog>();
+        webAppBuilder.Services.AddSingleton(ProtectedDatabaseNamesFor);
+        webAppBuilder.Services.AddSingleton<IDmsAdminConnectionSource, DmsAdminConnectionSource>();
+        webAppBuilder.Services.RemoveAll<IDmsDataStoreProvisioner>();
+        webAppBuilder.Services.AddSingleton<IDmsDataStoreProvisioner, DmsDataStoreProvisioningService>();
+
+        if (targetProvider == DmsDataStoreProvisioningOptions.PostgresqlProvider)
+        {
+            logger.Information("DMS data store provisioning is enabled for target provider postgresql");
+            webAppBuilder.Services.AddPostgresqlDmsTargetEngine();
+            return;
+        }
+
         logger.Information(
-            "DMS data store provisioning is enabled for target provider {Provider}; no engine adapter exists in this build, so the provisioner will refuse every call",
+            "DMS data store provisioning is enabled for target provider {Provider}; no engine adapter exists in this build for it, so the provisioner will refuse every call",
             LoggingUtility.SanitizeForLog(targetProvider)
         );
-        webAppBuilder.Services.AddSingleton<ITemplateArtifactCatalog, TemplateArtifactCatalog>();
         webAppBuilder.Services.AddSingleton<IDmsTargetEngine>(new UnavailableDmsTargetEngine(targetProvider));
+    }
+
+    /// <summary>
+    /// The protected set (4.3 <c>AdditionalProtectedDatabaseNames</c>): the operator's entries plus the CMS
+    /// catalog database, whose name is read from <c>DatabaseSettings:DatabaseConnection</c> with the catalog
+    /// provider's own builder. A catalog connection string that names no database cannot be protected, so it
+    /// stops startup naming the setting, never the value.
+    /// </summary>
+    private static ProtectedDatabaseNames ProtectedDatabaseNamesFor(IServiceProvider provider)
+    {
+        DmsDataStoreProvisioningOptions options = provider
+            .GetRequiredService<IOptions<DmsDataStoreProvisioningOptions>>()
+            .Value;
+        string catalogConnection = provider
+            .GetRequiredService<IOptions<DatabaseOptions>>()
+            .Value.DatabaseConnection;
+        System.Data.Common.DbConnectionStringBuilder builder = provider
+            .GetRequiredService<IDataStoreConnectionStringBuilderSource>()
+            .CreateBuilder(catalogConnection);
+        string catalogDatabase =
+            builder.TryGetValue("Database", out object? value)
+            && value is string name
+            && !string.IsNullOrWhiteSpace(name)
+                ? name
+                : throw new InvalidOperationException(
+                    "DMS data store provisioning cannot protect the CMS catalog database: DatabaseSettings:DatabaseConnection names no database."
+                );
+        return ProtectedDatabaseNames.Create(catalogDatabase, options.AdditionalProtectedDatabaseNames ?? []);
     }
 
     /// <summary>

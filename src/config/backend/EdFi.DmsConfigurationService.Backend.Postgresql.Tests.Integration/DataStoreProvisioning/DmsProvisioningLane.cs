@@ -523,6 +523,7 @@ internal sealed class Lane : IAsyncDisposable
             catalog,
             Options.Create(options),
             _protectedNames,
+            DmsProvisioningTestServer.AdminConnectionSource(),
             TimeProvider.System,
             NullLogger<DmsDataStoreProvisioningService>.Instance
         )

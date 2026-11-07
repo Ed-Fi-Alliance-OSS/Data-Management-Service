@@ -6,12 +6,12 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// The provisioner registered whenever no orchestrator can run (4.4): every call returns
-/// <c>Failure(NotReady)</c> derived from the current readiness and touches nothing. It serves a disabled
-/// feature (<c>FeatureDisabled</c>) and, until Step 1.4 delivers the orchestrator, an enabled feature that
-/// is not ready (<c>AdapterUnavailable</c> or <c>StartupValidationFailed</c>). Readiness can never be
-/// <c>Ready</c> while this class is the registered provisioner; if it were, that is a registration error
-/// and the call throws rather than pretending to provision.
+/// The provisioner registered while the feature is disabled (4.4): every call returns
+/// <c>Failure(NotReady/FeatureDisabled)</c> and touches nothing. When the feature is enabled the orchestrator
+/// is registered instead and refuses through <see cref="RefusalFor"/> until readiness is <c>Ready</c>
+/// (<c>AdapterUnavailable</c> or <c>StartupValidationFailed</c>). Readiness can never be <c>Ready</c> while this
+/// class is the registered provisioner; if it were, that is a registration error and the call throws rather
+/// than pretending to provision.
 /// </summary>
 public sealed class DisabledDmsDataStoreProvisioner(IDmsDataStoreProvisionerReadiness readiness)
     : IDmsDataStoreProvisioner
@@ -31,7 +31,7 @@ public sealed class DisabledDmsDataStoreProvisioner(IDmsDataStoreProvisionerRead
                 ? DmsProvisioningFailureCode.AdapterUnavailable
                 : DmsProvisioningFailureCode.StartupValidationFailed,
             DmsProvisionerReadiness.Ready => throw new InvalidOperationException(
-                "DMS data store provisioning readiness is Ready, but no provisioner orchestrator is registered in this build."
+                "DMS data store provisioning readiness is Ready, but the refusing provisioner is registered instead of the orchestrator."
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(readiness), "Unknown readiness state."),
         };

@@ -13,7 +13,8 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 /// The advisory lock key of D-12: the first eight bytes of the SHA-256 of the lock resource, read big-endian,
 /// with the target name folded to lower case. The vector and its <c>pg_locks</c> split were computed outside
 /// the implementation (Python <c>hashlib</c> and <c>struct</c>), so the operator procedure (7.6) and the
-/// holder agree on the resource.
+/// holder agree on the resource. The readiness probe resource (7.3 item 7) has its own vector and is
+/// unreachable from any target name.
 /// </summary>
 public class PostgresqlTargetLockKeyTests
 {
@@ -58,5 +59,24 @@ public class PostgresqlTargetLockKeyTests
                 : throw new InvalidOperationException(
                     "The candidate does not satisfy the target name rules."
                 );
+    }
+
+    [TestFixture]
+    public class Given_the_readiness_probe_resource
+    {
+        [Test]
+        public void It_matches_the_independently_computed_vector_of_the_probe_resource() =>
+            PostgresqlTargetLockSession.ProbeLockKey.Should().Be(5742783533976127761L);
+
+        [Test]
+        public void It_is_a_resource_no_target_name_can_produce() =>
+            DmsTargetDatabaseName
+                .TryCreate(
+                    PostgresqlTargetLockSession.ProbeResource,
+                    ProtectedDatabaseNames.Create("edfi_configurationservice", []),
+                    out _
+                )
+                .Should()
+                .NotBe(DmsTargetNameValidation.Valid);
     }
 }

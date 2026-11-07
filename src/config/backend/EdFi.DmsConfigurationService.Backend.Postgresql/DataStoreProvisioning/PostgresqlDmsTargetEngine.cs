@@ -24,8 +24,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 /// 6.7): the rename into the target and the compensation drop on the holder session, and the marker on an
 /// instance-bound session, through <see cref="PostgresqlPublicationQueries"/>; and the owned delete (6.6):
 /// the fence, its reversal, and the guarded drop on the holder session, through
-/// <see cref="PostgresqlDeletionQueries"/>. Every read is on a dedicated connection; the environmental
-/// validation arrives with Step 3.9 and throws until then. Connection and driver failures of a read propagate for the orchestrator to classify; a catalog
+/// <see cref="PostgresqlDeletionQueries"/>; and the environmental validation (7.3 items 4, 5 and 7) in a
+/// third part. Every read is on a dedicated connection. Connection and driver failures of a read propagate for the orchestrator to classify; a catalog
 /// row the inventory contract cannot describe is reported as a content-profile violation, because the
 /// authoritative DDL never produces one.
 /// </summary>
@@ -100,9 +100,6 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
     }
 
     public string Provider => DmsDataStoreProvisioningOptions.PostgresqlProvider;
-
-    public Task<DmsEngineEnvironment> ValidateEnvironmentAsync(CancellationToken cancellationToken) =>
-        throw NotYetImplemented(nameof(ValidateEnvironmentAsync), "Step 3.9");
 
     public async Task<DmsServerFacts> ReadServerFactsAsync(CancellationToken cancellationToken)
     {
@@ -733,9 +730,4 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
 
     private static DateTimeOffset ToUtc(DateTime value) =>
         new(DateTime.SpecifyKind(value, DateTimeKind.Utc), TimeSpan.Zero);
-
-    private static NotImplementedException NotYetImplemented(string member, string step) =>
-        new(
-            $"{member} of the PostgreSQL DMS target engine arrives with {step}; this build contains the read members, the target lock, session termination, the staging stage, publication, and the owned delete only."
-        );
 }

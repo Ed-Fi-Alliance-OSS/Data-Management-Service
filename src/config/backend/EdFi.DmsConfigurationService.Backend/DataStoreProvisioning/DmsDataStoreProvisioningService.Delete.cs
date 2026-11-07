@@ -48,6 +48,11 @@ public sealed partial class DmsDataStoreProvisioningService
             return new DmsDataStoreDeleteResult.Failure(invalid, DmsCleanupReport.Clean);
         }
 
+        if (await ResolveAdminConnectionAsync(cancellationToken) is { } unresolved)
+        {
+            return new DmsDataStoreDeleteResult.Failure(unresolved, DmsCleanupReport.Clean);
+        }
+
         DmsOperationId operation = DmsOperationId.New();
         Deletion deletion = new(request.TargetName);
         DmsDataStoreDeleteResult? result = null;

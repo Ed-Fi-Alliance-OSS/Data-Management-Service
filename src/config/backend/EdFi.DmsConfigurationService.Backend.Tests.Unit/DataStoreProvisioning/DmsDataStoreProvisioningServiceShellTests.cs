@@ -201,6 +201,87 @@ public class DmsDataStoreProvisioningServiceShellTests
     }
 
     [TestFixture]
+    public class Given_the_admin_connection_cannot_be_resolved
+    {
+        private static readonly DmsProvisioningDiagnostic _diagnostic = new(
+            "System.TimeoutException",
+            null,
+            DmsAdminConnectionSource.ResolverFailedStep
+        );
+
+        private Harness _failing = null!;
+        private Harness _resolving = null!;
+        private Harness _notReady = null!;
+        private Harness _invalid = null!;
+        private DmsDataStoreCreateResult _create = null!;
+        private DmsDataStoreDeleteResult _delete = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _failing = new Harness();
+            _failing.AdminConnection.Result = new DmsAdminConnectionResolution.Failed(_diagnostic);
+            _create = await _failing.Service.CreateAsync(CreateRequest(), CancellationToken.None);
+            _delete = await _failing.Service.DeleteAsync(DeleteRequest(), CancellationToken.None);
+
+            // Resolved, then refused at the lock, so each operation is seen resolving exactly once.
+            _resolving = new Harness();
+            _resolving.Engine.OnAcquireTargetLock = _ =>
+                Task.FromResult<DmsTargetLockResult>(new DmsTargetLockResult.Timeout());
+            await _resolving.Service.CreateAsync(CreateRequest(), CancellationToken.None);
+            await _resolving.Service.DeleteAsync(DeleteRequest(), CancellationToken.None);
+
+            _notReady = new Harness(
+                new DmsProvisionerReadiness.NotReady([
+                    new DmsReadinessReason(DmsProvisioningFailureCode.StartupValidationFailed, "Probe"),
+                ])
+            );
+            await _notReady.Service.CreateAsync(CreateRequest(), CancellationToken.None);
+            await _notReady.Service.DeleteAsync(DeleteRequest(), CancellationToken.None);
+
+            _invalid = new Harness();
+            await _invalid.Service.DeleteAsync(
+                new DmsDataStoreDeleteRequest(Name("EdFi_Ods_Test"), Guid.Empty),
+                CancellationToken.None
+            );
+        }
+
+        [Test]
+        public void It_fails_the_create_as_transient_secret_resolution_failed_with_the_diagnostic() =>
+            FailureOf(_create)
+                .Should()
+                .Match<DmsProvisioningFailure>(failure =>
+                    failure.Code == DmsProvisioningFailureCode.SecretResolutionFailed
+                    && failure.Category == DmsProvisioningFailureCategory.Transient
+                    && failure.Diagnostic == _diagnostic
+                );
+
+        [Test]
+        public void It_fails_the_delete_as_transient_secret_resolution_failed_with_the_diagnostic() =>
+            FailureOf(_delete)
+                .Should()
+                .Match<DmsProvisioningFailure>(failure =>
+                    failure.Code == DmsProvisioningFailureCode.SecretResolutionFailed
+                    && failure.Category == DmsProvisioningFailureCategory.Transient
+                    && failure.Diagnostic == _diagnostic
+                );
+
+        [Test]
+        public void It_stages_no_artifact_and_never_reaches_the_engine() =>
+            (_failing.Catalog.Calls, _failing.Engine.Calls.Count).Should().Be((0, 0));
+
+        [Test]
+        public void It_resolves_once_per_operation_before_the_lock() =>
+            (_resolving.AdminConnection.Resolutions, _resolving.Engine.Members.Distinct().Single())
+                .Should()
+                .Be((2, "AcquireTargetLock"));
+
+        [Test]
+        public void It_resolves_nothing_for_a_call_refused_by_readiness_or_the_boundary() =>
+            (_notReady.AdminConnection.Resolutions, _invalid.AdminConnection.Resolutions).Should().Be((0, 0));
+    }
+
+    [TestFixture]
     public class Given_artifact_resolution_runs_before_the_lock
     {
         private Harness _refusing = null!;

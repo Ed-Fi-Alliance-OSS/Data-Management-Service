@@ -32,6 +32,12 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
     /// <summary>The <c>Diagnostic.Operation</c> of an acquisition that failed for an infrastructure reason.</summary>
     public const string AcquireStep = "AcquireTargetLock";
 
+    /// <summary>
+    /// The resource the readiness lock probe takes (7.3 item 7): <c>dms-provision-target:v1:__probe__</c>. No
+    /// target name can produce it, because a target name starts with a letter.
+    /// </summary>
+    public const string ProbeResource = "__probe__";
+
     private const string SessionQuery =
         "SELECT a.pid, a.backend_start FROM pg_catalog.pg_stat_activity a WHERE a.pid = pg_catalog.pg_backend_pid();";
 
@@ -80,9 +86,15 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
     /// integer. In <c>pg_locks</c> it appears as <c>classid</c> (the high 32 bits) and <c>objid</c> (the low
     /// 32 bits) with <c>objsubid = 1</c>, which is how the operator procedure (7.6) finds the holder.
     /// </summary>
-    public static long LockKeyFor(DmsTargetDatabaseName name)
+    public static long LockKeyFor(DmsTargetDatabaseName name) =>
+        LockKeyForResource(name.Value.ToLowerInvariant());
+
+    /// <summary>The key of the readiness lock probe's resource, <see cref="ProbeResource"/>.</summary>
+    public static long ProbeLockKey => LockKeyForResource(ProbeResource);
+
+    private static long LockKeyForResource(string lowercasedResource)
     {
-        byte[] resource = Encoding.UTF8.GetBytes(LockResourcePrefix + name.Value.ToLowerInvariant());
+        byte[] resource = Encoding.UTF8.GetBytes(LockResourcePrefix + lowercasedResource);
         Span<byte> hash = stackalloc byte[SHA256.HashSizeInBytes];
         SHA256.HashData(resource, hash);
         return BinaryPrimitives.ReadInt64BigEndian(hash);
@@ -122,9 +134,36 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
     /// soon as it is open, before the lock is attempted, so a test can keep a reference and prove the
     /// connection closed on every path that returns without the lock.
     /// </summary>
-    internal static async Task<DmsTargetLockResult> AcquireAsync(
+    internal static Task<DmsTargetLockResult> AcquireAsync(
         PostgresqlAdminConnection adminConnection,
         DmsTargetDatabaseName name,
+        DmsOperationId operation,
+        TimeSpan acquireTimeout,
+        TimeSpan heartbeatInterval,
+        TimeProvider timeProvider,
+        ILogger logger,
+        Action<NpgsqlConnection>? connectionOpened,
+        CancellationToken cancellationToken
+    ) =>
+        AcquireKeyAsync(
+            adminConnection,
+            LockKeyFor(name),
+            operation,
+            acquireTimeout,
+            heartbeatInterval,
+            timeProvider,
+            logger,
+            connectionOpened,
+            cancellationToken
+        );
+
+    /// <summary>
+    /// The acquisition for an already derived key: a target's (<see cref="LockKeyFor"/>) or the readiness
+    /// probe's (<see cref="ProbeLockKey"/>), which no target name can reach.
+    /// </summary>
+    internal static async Task<DmsTargetLockResult> AcquireKeyAsync(
+        PostgresqlAdminConnection adminConnection,
+        long key,
         DmsOperationId operation,
         TimeSpan acquireTimeout,
         TimeSpan heartbeatInterval,
@@ -140,7 +179,6 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
         ArgumentNullException.ThrowIfNull(timeProvider);
         ArgumentNullException.ThrowIfNull(logger);
 
-        long key = LockKeyFor(name);
         NpgsqlConnection connection;
         try
         {
@@ -198,6 +236,14 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
             }
         }
     }
+
+    /// <summary>
+    /// Runs the heartbeat's probe once, now, through the execution gate under <c>CommandTimeout</c>, with the
+    /// heartbeat's loss rules: a connection failure declares the holder lost. The readiness lock probe
+    /// (7.3 item 7) uses it to prove one heartbeat on a fresh holder without waiting for the timer.
+    /// </summary>
+    internal Task<bool> ProbeOnceAsync(CancellationToken cancellationToken) =>
+        RunAsync(ProbeAsync, _commandTimeout, cancellationToken);
 
     protected override async Task<bool> ProbeAsync(CancellationToken cancellationToken)
     {

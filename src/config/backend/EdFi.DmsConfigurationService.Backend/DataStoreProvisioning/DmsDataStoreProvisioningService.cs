@@ -31,8 +31,9 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// holding the name, by the preamble, by the last inspection before the rename, or by the rename itself, is
 /// reconciled (6.5) by reads only, against the full validation set of the trusted template. A delete fences
 /// an owned target, proves exclusivity, re-verifies ownership and instance, and drops it on the holder
-/// session, reversing the fence on every failure it can. The orchestrator is not registered as the
-/// provisioner until readiness validation exists (Step 3.9).
+/// session, reversing the fence on every failure it can. Before any of that, after the boundary, the
+/// administrative connection string is resolved again (6.1 step 3) so the engine connects with the current
+/// secret values.
 /// </summary>
 public sealed partial class DmsDataStoreProvisioningService(
     IDmsDataStoreProvisionerReadiness readiness,
@@ -40,6 +41,7 @@ public sealed partial class DmsDataStoreProvisioningService(
     ITemplateArtifactCatalog catalog,
     IOptions<DmsDataStoreProvisioningOptions> options,
     ProtectedDatabaseNames protectedNames,
+    IDmsAdminConnectionSource adminConnection,
     TimeProvider timeProvider,
     ILogger<DmsDataStoreProvisioningService> logger
 ) : IDmsDataStoreProvisioner
@@ -117,6 +119,11 @@ public sealed partial class DmsDataStoreProvisioningService(
         if (invalid is not null)
         {
             return new DmsDataStoreCreateResult.Failure(invalid, DmsCleanupReport.Clean);
+        }
+
+        if (await ResolveAdminConnectionAsync(cancellationToken) is { } unresolved)
+        {
+            return new DmsDataStoreCreateResult.Failure(unresolved, DmsCleanupReport.Clean);
         }
 
         // 6.2 runs before the lock so no lock is held during file work (6.3 step 1). The operation id names
@@ -844,6 +851,21 @@ public sealed partial class DmsDataStoreProvisioningService(
         // The shell itself creates no resource; the report is what the steps before the lock left behind (6.11).
         return failure(detail, cleanup);
     }
+
+    /// <summary>
+    /// 6.1 step 3: the administrative connection string is resolved again for every operation, after the
+    /// boundary and before any file work, server contact, or the lock, so a rotated secret reaches the next
+    /// operation through the secret cache. A failure is transient <c>SecretResolutionFailed</c>.
+    /// </summary>
+    private async Task<DmsProvisioningFailure?> ResolveAdminConnectionAsync(
+        CancellationToken cancellationToken
+    ) =>
+        await adminConnection.ResolveAsync(cancellationToken) is DmsAdminConnectionResolution.Failed failed
+            ? DmsProvisioningFailure.Create(
+                DmsProvisioningFailureCode.SecretResolutionFailed,
+                failed.Diagnostic
+            )
+            : null;
 
     private DmsProvisioningFailure? Refusal() =>
         readiness.Current is DmsProvisionerReadiness.Ready

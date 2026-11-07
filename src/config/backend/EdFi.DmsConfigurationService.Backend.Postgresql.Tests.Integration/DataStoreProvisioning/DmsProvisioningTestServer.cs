@@ -6,7 +6,9 @@
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Services;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning;
@@ -117,6 +119,20 @@ internal static class DmsProvisioningTestServer
             timeProvider ?? TimeProvider.System,
             NullLogger.Instance
         );
+
+    /// <summary>The orchestrator's connection source over the lane's admin connection string, which holds no secret reference.</summary>
+    public static IDmsAdminConnectionSource AdminConnectionSource()
+    {
+        IOptions<SecretsOptions> secrets = Options.Create(new SecretsOptions());
+        return new DmsAdminConnectionSource(
+            Options.Create(
+                new DmsDataStoreProvisioningOptions { AdminConnectionString = AdminConnectionString }
+            ),
+            new SecretValueCache(secrets),
+            secrets,
+            TimeProvider.System
+        );
+    }
 
     /// <summary>An engine whose admin connection authenticates as <paramref name="roleName"/>.</summary>
     public static PostgresqlDmsTargetEngine EngineAs(string roleName) =>

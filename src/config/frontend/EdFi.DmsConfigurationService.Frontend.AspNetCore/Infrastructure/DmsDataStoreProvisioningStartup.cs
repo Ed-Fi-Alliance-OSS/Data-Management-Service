@@ -13,17 +13,26 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 /// <summary>
 /// Records the DMS data store provisioning readiness verdict once at startup, after <c>InitializeDatabase</c>
 /// (spec 4.4, D-2, 7.3). A disabled feature records <c>Disabled</c>. An enabled feature first has its static
-/// options validated (an <c>OptionsValidationException</c> propagates and stops startup with the validator's
-/// text), then runs the trust policy and catalog probes (7.3 steps 2 and 3) through the registered catalog and
-/// the registered engine's environmental probes, and records every failed probe. The remaining probe groups
-/// of 7.3 (secret resolution, <c>psql</c>, staging, lock probe) arrive with later steps, so when every existing
-/// probe passes the verdict is still <c>NotReady</c> with the <see cref="ProbesIncompleteProbe"/> reason: no
-/// build at this step can report <c>Ready</c>. The host keeps running either way; the provisioner refuses
+/// options validated and its protected set built (an exception from either propagates and stops startup with
+/// its text, which names settings and never values), then runs the probe groups of 7.3 and records every
+/// failed probe: secret resolution of the administrative connection string (item 1); the trust policy and
+/// catalog probes (items 2 and 3); and, once the connection string is resolved, the engine's probes (items 4
+/// to 7). The protected set is logged with sanitized names (item 8). When every probe passes the verdict is
+/// <c>Ready</c> for the engine's provider; otherwise <c>NotReady</c> with each reason logged at Critical as
+/// <c>DMSPROV-&lt;Code&gt;</c>. A probe group that throws is recorded as <c>StartupValidationFailed</c> under
+/// its probe name rather than stopping the host. The host keeps running either way; the provisioner refuses
 /// every call until a restart after remediation.
 /// </summary>
 public static class DmsDataStoreProvisioningStartup
 {
-    public const string ProbesIncompleteProbe = "ReadinessProbesIncomplete";
+    /// <summary>The probe name of a secret resolution failure (7.3 item 1).</summary>
+    public const string SecretResolutionProbe = "SecretResolution";
+
+    /// <summary>The probe name under which a catalog validation that threw is recorded.</summary>
+    public const string CatalogProbesProbe = "CatalogProbes";
+
+    /// <summary>The probe name under which an engine validation that threw is recorded.</summary>
+    public const string EngineProbesProbe = "EngineProbes";
 
     private static readonly EventId _disabled = new(
         1438_01,
@@ -33,6 +42,13 @@ public static class DmsDataStoreProvisioningStartup
     private static readonly EventId _notReady = new(
         1438_02,
         nameof(DmsDataStoreProvisioningStartup) + ".NotReady"
+    );
+
+    private static readonly EventId _ready = new(1438_03, nameof(DmsDataStoreProvisioningStartup) + ".Ready");
+
+    private static readonly EventId _protectedNames = new(
+        1438_04,
+        nameof(DmsDataStoreProvisioningStartup) + ".ProtectedNames"
     );
 
     public static async Task RunAsync(
@@ -60,26 +76,62 @@ public static class DmsDataStoreProvisioningStartup
             return;
         }
 
+        // 7.3 item 8, built first: a catalog connection string naming no database is static misconfiguration
+        // and stops startup as the options validator does.
+        ProtectedDatabaseNames protectedNames = services.GetRequiredService<ProtectedDatabaseNames>();
+        logger.LogInformation(
+            _protectedNames,
+            "DMS data store provisioning protects these database names on the target server beside the engine system databases: {ProtectedNames}",
+            string.Join(", ", protectedNames.Names.Select(LoggingUtility.SanitizeForLog))
+        );
+
+        IDmsAdminConnectionSource adminConnection = services.GetRequiredService<IDmsAdminConnectionSource>();
         ITemplateArtifactCatalog catalog = services.GetRequiredService<ITemplateArtifactCatalog>();
         IDmsTargetEngine engine = services.GetRequiredService<IDmsTargetEngine>();
+        TimeProvider timeProvider = services.GetRequiredService<TimeProvider>();
 
-        // Every probe group runs so the operator sees the complete picture in one restart.
-        List<DmsReadinessReason> reasons = [.. await catalog.ValidateAsync(cancellationToken)];
-        if (
-            await engine.ValidateEnvironmentAsync(cancellationToken) is DmsEngineEnvironment.NotReady notReady
-        )
-        {
-            reasons.AddRange(notReady.Reasons);
-        }
+        // Every probe group runs so the operator sees the complete picture in one restart; only the engine's
+        // probes wait for the connection string, because they cannot connect without it.
+        DmsAdminConnectionResolution resolution = await adminConnection.ResolveAsync(cancellationToken);
+        IReadOnlyList<DmsReadinessReason> secretReasons = resolution
+            is DmsAdminConnectionResolution.Failed failed
+            ?
+            [
+                new DmsReadinessReason(
+                    DmsProvisioningFailureCode.SecretResolutionFailed,
+                    SecretResolutionProbe,
+                    failed.Diagnostic
+                ),
+            ]
+            : [];
+        IReadOnlyList<DmsReadinessReason> catalogReasons = await RunGroupAsync(
+            catalog.ValidateAsync,
+            CatalogProbesProbe,
+            cancellationToken
+        );
+        IReadOnlyList<DmsReadinessReason> engineReasons =
+            resolution is DmsAdminConnectionResolution.Resolved
+                ? await RunGroupAsync(
+                    async token =>
+                        await engine.ValidateEnvironmentAsync(token) is DmsEngineEnvironment.NotReady notReady
+                            ? notReady.Reasons
+                            : [],
+                    EngineProbesProbe,
+                    cancellationToken
+                )
+                : [];
+        IReadOnlyList<DmsReadinessReason> reasons = [.. secretReasons, .. catalogReasons, .. engineReasons];
 
+        string provider = LoggingUtility.SanitizeForLog(engine.Provider);
         if (reasons.Count == 0)
         {
-            reasons.Add(
-                new DmsReadinessReason(
-                    DmsProvisioningFailureCode.StartupValidationFailed,
-                    ProbesIncompleteProbe
-                )
+            readiness.Record(new DmsProvisionerReadiness.Ready(engine.Provider, timeProvider.GetUtcNow()));
+            logger.LogInformation(
+                _ready,
+                "DMS data store provisioning is ready for target provider {Provider}",
+                provider
             );
+            return;
         }
 
         readiness.Record(new DmsProvisionerReadiness.NotReady(reasons));
@@ -87,15 +139,43 @@ public static class DmsDataStoreProvisioningStartup
         {
             logger.LogCritical(
                 _notReady,
-                "DMSPROV-{Code}: DMS data store provisioning is not ready for target provider {Provider}: probe {Probe} failed at {Operation} (exception types {ExceptionTypeChain}). The provisioner refuses every call until the host restarts after remediation",
+                "DMSPROV-{Code}: DMS data store provisioning is not ready for target provider {Provider}: probe {Probe} failed at {Operation} (exception types {ExceptionTypeChain}, provider error {ProviderErrorCode}). The provisioner refuses every call until the host restarts after remediation",
                 reason.Code,
-                LoggingUtility.SanitizeForLog(engine.Provider),
+                provider,
                 reason.Probe,
                 reason.Diagnostic?.Operation ?? "none",
                 string.IsNullOrEmpty(reason.Diagnostic?.ExceptionTypeChain)
                     ? "none"
-                    : reason.Diagnostic.ExceptionTypeChain
+                    : reason.Diagnostic.ExceptionTypeChain,
+                reason.Diagnostic?.ProviderErrorCode ?? "none"
             );
+        }
+    }
+
+    /// <summary>
+    /// Runs one probe group; an exception other than the caller's cancellation is recorded as
+    /// <c>StartupValidationFailed</c> under <paramref name="probe"/> with its type chain, never its message.
+    /// </summary>
+    private static async Task<IReadOnlyList<DmsReadinessReason>> RunGroupAsync(
+        Func<CancellationToken, Task<IReadOnlyList<DmsReadinessReason>>> group,
+        string probe,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return await group(cancellationToken);
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            return
+            [
+                new DmsReadinessReason(
+                    DmsProvisioningFailureCode.StartupValidationFailed,
+                    probe,
+                    DmsProvisioningDiagnostic.From(exception, probe)
+                ),
+            ];
         }
     }
 }

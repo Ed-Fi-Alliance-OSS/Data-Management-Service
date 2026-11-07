@@ -7,8 +7,10 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
+using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Jobs;
+using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -24,11 +26,15 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Configurat
 
 /// <summary>
 /// Spec Step 1.3: the shipped settings leave DMS data store provisioning disabled; enabling it with invalid
-/// static configuration stops the host naming the setting; enabling it for either target provider under
-/// either catalog datastore registers the unavailable adapter and the directory catalog and records
+/// static configuration stops the host naming the setting; enabling it for a target provider without an
+/// adapter registers the unavailable adapter, the directory catalog, and the orchestrator, and records
 /// <c>NotReady</c> with the adapter and trust policy reasons; Step 2.4: the catalog probes run at startup (a
-/// valid policy over an empty artifact directory records <c>ArtifactMissing</c> per template); and readiness
-/// can never be <c>Ready</c> in this build, even when the engine and the catalog both report ready.
+/// valid policy over an empty artifact directory records <c>ArtifactMissing</c> per template); Step 3.9:
+/// enabled for PostgreSQL under either catalog datastore with a server nothing listens on, the host runs, the
+/// real adapter records the server and <c>psql</c> reasons, and the orchestrator refuses before any engine
+/// call; an engine and a catalog that both report ready make readiness <c>Ready</c> with the protected set
+/// logged; a secret that cannot be resolved is <c>SecretResolutionFailed</c> and the engine probes do not run;
+/// an engine validation that throws is recorded by type and the host keeps running.
 /// </summary>
 public class DmsDataStoreProvisioningStartupTests
 {
@@ -113,38 +119,38 @@ public class DmsDataStoreProvisioningStartupTests
         }
     }
 
+    private static DmsDataStoreCreateRequest AnyCreateRequest()
+    {
+        DmsTargetDatabaseName.TryCreate(
+            "EdFi_Ods_Test",
+            ProtectedDatabaseNames.Create("edfi_configurationservice", []),
+            out DmsTargetDatabaseName name
+        );
+        return new DmsDataStoreCreateRequest(
+            DmsDatabaseTemplate.Minimal,
+            name,
+            Guid.NewGuid(),
+            new DmsTrustedArtifactPin
+            {
+                ContractVersion = 1,
+                Provider = "postgresql",
+                PackageId = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0",
+                PackageVersion = "1.0.335",
+                PackageSha256 = new string('a', 64),
+                ArtifactSha256 = new string('b', 64),
+                TemplateKind = "Minimal",
+                DataStandardVersion = "5.2.0",
+                EffectiveSchemaHash = new string('c', 64),
+                InventorySha256 = new string('d', 64),
+                ApiSchemaFormatVersion = "1.0.0",
+                RelationalMappingVersion = "v3",
+            }
+        );
+    }
+
     [TestFixture]
     public class Given_the_shipped_settings_at_startup
     {
-        private static DmsDataStoreCreateRequest AnyCreateRequest()
-        {
-            DmsTargetDatabaseName.TryCreate(
-                "EdFi_Ods_Test",
-                ProtectedDatabaseNames.Create("edfi_configurationservice", []),
-                out DmsTargetDatabaseName name
-            );
-            return new DmsDataStoreCreateRequest(
-                DmsDatabaseTemplate.Minimal,
-                name,
-                Guid.NewGuid(),
-                new DmsTrustedArtifactPin
-                {
-                    ContractVersion = 1,
-                    Provider = "postgresql",
-                    PackageId = "EdFi.Api.Minimal.Template.PostgreSql.5.2.0",
-                    PackageVersion = "1.0.335",
-                    PackageSha256 = new string('a', 64),
-                    ArtifactSha256 = new string('b', 64),
-                    TemplateKind = "Minimal",
-                    DataStandardVersion = "5.2.0",
-                    EffectiveSchemaHash = new string('c', 64),
-                    InventorySha256 = new string('d', 64),
-                    ApiSchemaFormatVersion = "1.0.0",
-                    RelationalMappingVersion = "v3",
-                }
-            );
-        }
-
         private WebApplicationFactory<Program> _factory = null!;
         private Exception? _exception;
         private DmsProvisionerReadiness _readiness = null!;
@@ -256,11 +262,9 @@ public class DmsDataStoreProvisioningStartupTests
                 .Contain($"{Section}:AdminConnectionString is required.");
     }
 
-    [TestFixture("postgresql", "postgresql")]
-    [TestFixture("postgresql", "mssql")]
     [TestFixture("mssql", "postgresql")]
     [TestFixture("mssql", "mssql")]
-    public class Given_enabled_for_a_target_provider_under_a_catalog_datastore(
+    public class Given_enabled_for_a_target_provider_without_an_adapter_under_a_catalog_datastore(
         string provider,
         string datastore
     )
@@ -270,6 +274,7 @@ public class DmsDataStoreProvisioningStartupTests
         private Exception? _exception;
         private IDmsTargetEngine _engine = null!;
         private ITemplateArtifactCatalog _catalog = null!;
+        private IDmsDataStoreProvisioner _provisioner = null!;
         private DmsProvisionerReadiness _readiness = null!;
         private DmsArtifactResolution _resolution = null!;
         private CapturedLog[] _criticalEntries = [];
@@ -282,10 +287,12 @@ public class DmsDataStoreProvisioningStartupTests
             _exception = StartupExceptionFor(_factory);
             _engine = _factory.Services.GetRequiredService<IDmsTargetEngine>();
             _catalog = _factory.Services.GetRequiredService<ITemplateArtifactCatalog>();
+            _provisioner = _factory.Services.GetRequiredService<IDmsDataStoreProvisioner>();
             _readiness = _factory.Services.GetRequiredService<IDmsDataStoreProvisionerReadiness>().Current;
-            _resolution = await _factory
-                .Services.GetRequiredService<IDmsDataStoreProvisioner>()
-                .ResolveArtifactAsync(DmsDatabaseTemplate.Minimal, CancellationToken.None);
+            _resolution = await _provisioner.ResolveArtifactAsync(
+                DmsDatabaseTemplate.Minimal,
+                CancellationToken.None
+            );
             _criticalEntries =
             [
                 .. _logs.Entries.Where(entry =>
@@ -311,6 +318,10 @@ public class DmsDataStoreProvisioningStartupTests
         [Test]
         public void It_registers_the_directory_catalog() =>
             _catalog.Should().BeOfType<TemplateArtifactCatalog>();
+
+        [Test]
+        public void It_registers_the_orchestrator_as_the_provisioner() =>
+            _provisioner.Should().BeOfType<DmsDataStoreProvisioningService>();
 
         [Test]
         public void It_records_not_ready_because_the_adapter_is_unavailable() =>
@@ -364,6 +375,137 @@ public class DmsDataStoreProvisioningStartupTests
         }
     }
 
+    /// <summary>
+    /// Step 3.9: enabled for PostgreSQL with a server nothing listens on. The real adapter is registered and
+    /// wrapped by a recording fake, so the fixture sees every call that reaches it.
+    /// </summary>
+    [TestFixture("postgresql")]
+    [TestFixture("mssql")]
+    public class Given_enabled_for_postgresql_with_an_unreachable_server_under_a_catalog_datastore(
+        string datastore
+    )
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private Exception? _exception;
+        private IDmsTargetEngine? _realEngine;
+        private IDmsTargetEngine _recordingEngine = null!;
+        private IDmsDataStoreProvisioner _provisioner = null!;
+        private DmsProvisionerReadiness _readiness = null!;
+        private DmsDataStoreCreateResult _create = null!;
+        private DmsDataStoreDeleteResult _delete = null!;
+        private string[] _engineCalls = [];
+
+        [SetUp]
+        public async Task Act()
+        {
+            _factory = CreateFactory(
+                EnabledSettings("postgresql", datastore),
+                configureServices: services =>
+                {
+                    ServiceDescriptor registered = services.Single(descriptor =>
+                        descriptor.ServiceType == typeof(IDmsTargetEngine)
+                    );
+                    services.Remove(registered);
+                    services.AddSingleton<IDmsTargetEngine>(provider =>
+                    {
+                        _realEngine = (IDmsTargetEngine)registered.ImplementationFactory!(provider);
+                        _recordingEngine = A.Fake<IDmsTargetEngine>(options => options.Wrapping(_realEngine));
+                        return _recordingEngine;
+                    });
+                }
+            );
+            _exception = StartupExceptionFor(_factory);
+            _readiness = _factory.Services.GetRequiredService<IDmsDataStoreProvisionerReadiness>().Current;
+            _provisioner = _factory.Services.GetRequiredService<IDmsDataStoreProvisioner>();
+            _create = await _provisioner.CreateAsync(AnyCreateRequest(), CancellationToken.None);
+            _delete = await _provisioner.DeleteAsync(
+                new DmsDataStoreDeleteRequest(AnyCreateRequest().TargetName, Guid.NewGuid()),
+                CancellationToken.None
+            );
+            _engineCalls =
+            [
+                .. Fake.GetCalls(_recordingEngine)
+                    .Select(call => call.Method.Name)
+                    .Where(name => name != "get_Provider"),
+            ];
+        }
+
+        [TearDown]
+        public void TearDown() => _factory.Dispose();
+
+        [Test]
+        public void It_starts_and_keeps_running() => _exception.Should().BeNull();
+
+        [Test]
+        public void It_registers_the_postgresql_adapter_whatever_the_catalog_datastore() =>
+            _realEngine.Should().BeOfType<PostgresqlDmsTargetEngine>();
+
+        [Test]
+        public void It_registers_the_orchestrator_as_the_provisioner() =>
+            _provisioner.Should().BeOfType<DmsDataStoreProvisioningService>();
+
+        [Test]
+        public void It_records_the_unreachable_server_as_server_unavailable() =>
+            _readiness
+                .Should()
+                .BeOfType<DmsProvisionerReadiness.NotReady>()
+                .Which.Reasons.Should()
+                .ContainSingle(reason => reason.Probe == "TargetServer")
+                .Which.Should()
+                .Match<DmsReadinessReason>(reason =>
+                    reason.Code == DmsProvisioningFailureCode.ServerUnavailable
+                    && reason.Diagnostic!.Operation == "TargetServer.Connect"
+                    && reason.Diagnostic.ExceptionTypeChain.Length > 0
+                );
+
+        [Test]
+        public void It_records_the_missing_psql_beside_it() =>
+            _readiness
+                .Should()
+                .BeOfType<DmsProvisionerReadiness.NotReady>()
+                .Which.Reasons.Should()
+                .ContainSingle(reason => reason.Probe == "PsqlVersion")
+                .Which.Should()
+                .Match<DmsReadinessReason>(reason =>
+                    reason.Code == DmsProvisioningFailureCode.StartupValidationFailed
+                    && reason.Diagnostic!.Operation == "ProbePsqlVersion.StartFailed"
+                );
+
+        [Test]
+        public void It_skips_the_lock_probe_on_an_unreachable_server() =>
+            _readiness
+                .Should()
+                .BeOfType<DmsProvisionerReadiness.NotReady>()
+                .Which.Reasons.Select(reason => reason.Probe)
+                .Should()
+                .NotContain("TargetLock");
+
+        [Test]
+        public void It_refuses_a_create_and_a_delete_as_not_ready() =>
+            new[] { FailureOf(_create), FailureOf(_delete) }
+                .Should()
+                .AllSatisfy(failure =>
+                    (failure.Category, failure.Code)
+                        .Should()
+                        .Be(
+                            (
+                                DmsProvisioningFailureCategory.NotReady,
+                                DmsProvisioningFailureCode.StartupValidationFailed
+                            )
+                        )
+                );
+
+        [Test]
+        public void It_reaches_the_engine_only_for_the_startup_validation() =>
+            _engineCalls.Should().Equal(nameof(IDmsTargetEngine.ValidateEnvironmentAsync));
+
+        private static DmsProvisioningFailure FailureOf(DmsDataStoreCreateResult result) =>
+            result.Should().BeOfType<DmsDataStoreCreateResult.Failure>().Subject.Detail;
+
+        private static DmsProvisioningFailure FailureOf(DmsDataStoreDeleteResult result) =>
+            result.Should().BeOfType<DmsDataStoreDeleteResult.Failure>().Subject.Detail;
+    }
+
     [TestFixture]
     public class Given_a_valid_trust_policy_over_an_empty_artifact_directory_with_a_ready_engine
     {
@@ -394,10 +536,7 @@ public class DmsDataStoreProvisioningStartupTests
             Directory.CreateDirectory(artifactDirectory);
             File.WriteAllText(policyPath, PolicyJson());
 
-            IDmsTargetEngine engine = A.Fake<IDmsTargetEngine>();
-            A.CallTo(() => engine.Provider).Returns("postgresql");
-            A.CallTo(() => engine.ValidateEnvironmentAsync(A<CancellationToken>._))
-                .Returns(new DmsEngineEnvironment.Ready());
+            IDmsTargetEngine engine = ReadyEngine();
 
             Dictionary<string, string> settings = EnabledSettings("postgresql", "postgresql");
             settings[$"{Section}:TrustPolicyPath"] = policyPath;
@@ -447,6 +586,133 @@ public class DmsDataStoreProvisioningStartupTests
     [TestFixture]
     public class Given_an_engine_and_a_catalog_that_both_report_ready
     {
+        private CapturingLoggerProvider _logs = null!;
+        private WebApplicationFactory<Program> _factory = null!;
+        private Exception? _exception;
+        private DmsProvisionerReadiness _readiness = null!;
+        private CapturedLog[] _protectedNamesEntries = [];
+
+        [SetUp]
+        public void Act()
+        {
+            _logs = new CapturingLoggerProvider();
+            IDmsTargetEngine engine = ReadyEngine();
+            ITemplateArtifactCatalog catalog = ReadyCatalog();
+
+            Dictionary<string, string> settings = EnabledSettings("postgresql", "postgresql");
+            settings[$"{Section}:AdditionalProtectedDatabaseNames:0"] = "edfi_identity";
+            _factory = CreateFactory(
+                settings,
+                _logs,
+                services =>
+                {
+                    services.RemoveAll<IDmsTargetEngine>();
+                    services.AddSingleton(engine);
+                    services.RemoveAll<ITemplateArtifactCatalog>();
+                    services.AddSingleton(catalog);
+                }
+            );
+            _exception = StartupExceptionFor(_factory);
+            _readiness = _factory.Services.GetRequiredService<IDmsDataStoreProvisionerReadiness>().Current;
+            _protectedNamesEntries = [.. _logs.Entries.Where(entry => entry.EventId.Id == 1438_04)];
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _factory.Dispose();
+            _logs.Dispose();
+        }
+
+        [Test]
+        public void It_starts() => _exception.Should().BeNull();
+
+        [Test]
+        public void It_records_ready_for_the_engine_provider() =>
+            _readiness
+                .Should()
+                .BeOfType<DmsProvisionerReadiness.Ready>()
+                .Which.Provider.Should()
+                .Be("postgresql");
+
+        [Test]
+        public void It_logs_the_protected_set_with_the_catalog_database_and_the_operator_entries() =>
+            _protectedNamesEntries
+                .Should()
+                .ContainSingle()
+                .Which.State["ProtectedNames"]
+                .Should()
+                .Be("edfi_identity, unreachable");
+    }
+
+    [TestFixture]
+    public class Given_the_admin_connection_secret_cannot_be_resolved_at_startup
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private Exception? _exception;
+        private DmsProvisionerReadiness _readiness = null!;
+        private IDmsTargetEngine _engine = null!;
+
+        [SetUp]
+        public void Act()
+        {
+            _engine = ReadyEngine();
+            ITemplateArtifactCatalog catalog = ReadyCatalog();
+            ISecretResolver resolver = A.Fake<ISecretResolver>();
+            A.CallTo(() => resolver.ResolveAsync(A<SecretReference>._, A<CancellationToken>._))
+                .ThrowsAsync(new InvalidOperationException("the secret value must never be reported"));
+
+            Dictionary<string, string> settings = EnabledSettings("postgresql", "postgresql");
+            settings[$"{Section}:AdminConnectionString"] =
+                "Host=127.0.0.1;Port=1;Username=none;Password=${secret:pg-admin}";
+            _factory = CreateFactory(
+                settings,
+                configureServices: services =>
+                {
+                    services.RemoveAll<ISecretResolver>();
+                    services.AddSingleton(resolver);
+                    services.RemoveAll<IDmsTargetEngine>();
+                    services.AddSingleton(_engine);
+                    services.RemoveAll<ITemplateArtifactCatalog>();
+                    services.AddSingleton(catalog);
+                }
+            );
+            _exception = StartupExceptionFor(_factory);
+            _readiness = _factory.Services.GetRequiredService<IDmsDataStoreProvisionerReadiness>().Current;
+        }
+
+        [TearDown]
+        public void TearDown() => _factory.Dispose();
+
+        [Test]
+        public void It_starts() => _exception.Should().BeNull();
+
+        [Test]
+        public void It_records_secret_resolution_failed_by_the_resolver_exception_type_only() =>
+            _readiness
+                .Should()
+                .BeOfType<DmsProvisionerReadiness.NotReady>()
+                .Which.Reasons.Should()
+                .Equal(
+                    new DmsReadinessReason(
+                        DmsProvisioningFailureCode.SecretResolutionFailed,
+                        DmsDataStoreProvisioningStartup.SecretResolutionProbe,
+                        new DmsProvisioningDiagnostic(
+                            "System.InvalidOperationException",
+                            null,
+                            DmsAdminConnectionSource.ResolverFailedStep
+                        )
+                    )
+                );
+
+        [Test]
+        public void It_does_not_run_the_engine_probes_without_a_connection_string() =>
+            A.CallTo(() => _engine.ValidateEnvironmentAsync(A<CancellationToken>._)).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_the_engine_validation_throws
+    {
         private WebApplicationFactory<Program> _factory = null!;
         private Exception? _exception;
         private DmsProvisionerReadiness _readiness = null!;
@@ -457,11 +723,8 @@ public class DmsDataStoreProvisioningStartupTests
             IDmsTargetEngine engine = A.Fake<IDmsTargetEngine>();
             A.CallTo(() => engine.Provider).Returns("postgresql");
             A.CallTo(() => engine.ValidateEnvironmentAsync(A<CancellationToken>._))
-                .Returns(new DmsEngineEnvironment.Ready());
-            ITemplateArtifactCatalog catalog = A.Fake<ITemplateArtifactCatalog>();
-            A.CallTo(() => catalog.ValidateAsync(A<CancellationToken>._))
-                .Returns(Task.FromResult<IReadOnlyList<DmsReadinessReason>>([]));
-
+                .ThrowsAsync(new InvalidOperationException("not for the log"));
+            ITemplateArtifactCatalog catalog = ReadyCatalog();
             _factory = CreateFactory(
                 EnabledSettings("postgresql", "postgresql"),
                 configureServices: services =>
@@ -480,21 +743,41 @@ public class DmsDataStoreProvisioningStartupTests
         public void TearDown() => _factory.Dispose();
 
         [Test]
-        public void It_starts() => _exception.Should().BeNull();
+        public void It_starts_and_keeps_running() => _exception.Should().BeNull();
 
         [Test]
-        public void It_still_records_not_ready_because_the_other_probes_do_not_exist_yet() =>
+        public void It_records_the_engine_probes_as_failed_by_type() =>
             _readiness
                 .Should()
                 .BeOfType<DmsProvisionerReadiness.NotReady>()
                 .Which.Reasons.Should()
-                .ContainSingle()
-                .Which.Should()
-                .Be(
+                .Equal(
                     new DmsReadinessReason(
                         DmsProvisioningFailureCode.StartupValidationFailed,
-                        DmsDataStoreProvisioningStartup.ProbesIncompleteProbe
+                        DmsDataStoreProvisioningStartup.EngineProbesProbe,
+                        new DmsProvisioningDiagnostic(
+                            "System.InvalidOperationException",
+                            null,
+                            DmsDataStoreProvisioningStartup.EngineProbesProbe
+                        )
                     )
                 );
+    }
+
+    private static IDmsTargetEngine ReadyEngine()
+    {
+        IDmsTargetEngine engine = A.Fake<IDmsTargetEngine>();
+        A.CallTo(() => engine.Provider).Returns("postgresql");
+        A.CallTo(() => engine.ValidateEnvironmentAsync(A<CancellationToken>._))
+            .Returns(new DmsEngineEnvironment.Ready());
+        return engine;
+    }
+
+    private static ITemplateArtifactCatalog ReadyCatalog()
+    {
+        ITemplateArtifactCatalog catalog = A.Fake<ITemplateArtifactCatalog>();
+        A.CallTo(() => catalog.ValidateAsync(A<CancellationToken>._))
+            .Returns(Task.FromResult<IReadOnlyList<DmsReadinessReason>>([]));
+        return catalog;
     }
 }
