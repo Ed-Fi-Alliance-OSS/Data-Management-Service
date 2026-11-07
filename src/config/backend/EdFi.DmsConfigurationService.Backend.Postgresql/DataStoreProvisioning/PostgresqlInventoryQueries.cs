@@ -161,54 +161,15 @@ internal static class PostgresqlInventoryQueries
     public const string HasPopulatedDocument =
         "SELECT EXISTS (SELECT 1 FROM \"dms\".\"Document\" d JOIN \"dms\".\"ResourceKey\" rk ON rk.\"ResourceKeyId\" = d.\"ResourceKeyId\" WHERE rk.\"ResourceName\" NOT LIKE '%Descriptor' AND rk.\"ResourceName\" NOT ILIKE '%SchoolYear%');";
 
-    /// <summary>Splits a <c>schema|name|type</c> row as <c>ConvertFrom-InventoryQueryRow</c> does: exactly three fields, each non-blank after trimming.</summary>
-    public static bool TryParseObjectRow(string? row, [NotNullWhen(true)] out DmsInventoryObject? entry)
-    {
-        entry = null;
-        if (string.IsNullOrWhiteSpace(row))
-        {
-            return false;
-        }
+    /// <summary>Splits a <c>schema|name|type</c> row with the engine-neutral rule (<see cref="DmsInventoryRows.TryParseObjectRow"/>).</summary>
+    public static bool TryParseObjectRow(string? row, [NotNullWhen(true)] out DmsInventoryObject? entry) =>
+        DmsInventoryRows.TryParseObjectRow(row, out entry);
 
-        string[] fields = row.Split('|');
-        if (fields.Length != 3)
-        {
-            return false;
-        }
-
-        string schemaName = fields[0].Trim();
-        string objectName = fields[1].Trim();
-        string objectType = fields[2].Trim();
-        if (schemaName.Length == 0 || objectName.Length == 0 || objectType.Length == 0)
-        {
-            return false;
-        }
-
-        entry = new DmsInventoryObject(schemaName, objectName, objectType);
-        return true;
-    }
-
-    /// <summary>Splits a <c>kind|name</c> row; the name may itself contain the separator.</summary>
+    /// <summary>Splits a <c>kind|name</c> row with the engine-neutral rule (<see cref="DmsInventoryRows.TryParseDatabaseLevelObjectRow"/>).</summary>
     public static bool TryParseDatabaseLevelObjectRow(
         string? row,
         [NotNullWhen(true)] out DmsDatabaseLevelObject? entry
-    )
-    {
-        entry = null;
-        if (string.IsNullOrWhiteSpace(row))
-        {
-            return false;
-        }
-
-        string[] fields = row.Trim().Split('|', 2);
-        if (fields.Length != 2 || fields[0].Length == 0 || fields[1].Length == 0)
-        {
-            return false;
-        }
-
-        entry = new DmsDatabaseLevelObject(fields[0], fields[1]);
-        return true;
-    }
+    ) => DmsInventoryRows.TryParseDatabaseLevelObjectRow(row, out entry);
 
     private static string NotAllowedExtensionObject(string catalog, string objectId) =>
         "NOT EXISTS (SELECT 1 FROM pg_catalog.pg_depend d JOIN pg_catalog.pg_extension e ON e.oid = d.refobjid WHERE d.classid = '"

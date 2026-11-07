@@ -772,4 +772,83 @@ public class DmsTargetValidatorTests
         public void It_accepts_a_name_that_only_shares_the_prefix_letters() =>
             _lookalikePasses.Should().Be(_valid);
     }
+
+    /// <summary>
+    /// <c>Assert-MssqlArtifactSecurityState</c> (F-P9b, D-15): only the built-in security state of a new SQL
+    /// Server database passes; every other permission or membership is a violation, judged by principal id,
+    /// securable class and scope, and grant state, never by name.
+    /// </summary>
+    [TestFixture]
+    public class Given_sql_server_security_state_vectors
+    {
+        private DmsTargetValidation _clean = null!;
+        private Dictionary<string, DmsTargetValidation> _violations = [];
+
+        [SetUp]
+        public void Setup()
+        {
+            DmsTargetFacts facts = MssqlFacts();
+            _clean = Staging(facts, MssqlManifestFor(facts));
+            Dictionary<string, DmsTargetFacts> vectors = new(StringComparer.Ordinal)
+            {
+                ["connect granted to guest"] = facts.WithPermissions(
+                    Permission(0, "CONNECT", "GRANT", MssqlGuest, 0)
+                ),
+                ["deny on a system object"] = facts.WithPermissions(
+                    Permission(1, "SELECT", "DENY", MssqlPublic, -385)
+                ),
+                ["extra db_owner member"] = facts.WithRoleMembers(Member(MssqlDbOwner, 5)),
+                ["dbo in another role"] = facts.WithRoleMembers(Member(16385, MssqlDbo)),
+                ["public select on a user object"] = facts.WithPermissions(
+                    Permission(1, "SELECT", "GRANT", MssqlPublic, 245575913)
+                ),
+                ["default with grant option"] = facts.WithPermissions(
+                    Permission(0, "CONNECT", "GRANT_WITH_GRANT_OPTION", MssqlDbo, 0)
+                ),
+                ["column-scoped select on a system object"] = facts.WithPermissions(
+                    Permission(1, "SELECT", "GRANT", MssqlPublic, -385, 1)
+                ),
+                ["schema grant to public"] = facts.WithPermissions(
+                    Permission(3, "SELECT", "GRANT", MssqlPublic, 5)
+                ),
+                ["database default to the wrong grantee"] = facts.WithPermissions(
+                    Permission(0, "VIEW ANY COLUMN MASTER KEY DEFINITION", "GRANT", MssqlDbo, 0)
+                ),
+                ["connect granted to public"] = facts.WithPermissions(
+                    Permission(0, "CONNECT", "GRANT", MssqlPublic, 0)
+                ),
+                ["system object select to dbo"] = facts.WithPermissions(
+                    Permission(1, "SELECT", "GRANT", MssqlDbo, -385)
+                ),
+                ["system object execute to public"] = facts.WithPermissions(
+                    Permission(1, "EXECUTE", "GRANT", MssqlPublic, -385)
+                ),
+                ["state in another case"] = facts.WithPermissions(
+                    Permission(0, "CONNECT", "grant", MssqlDbo, 0)
+                ),
+                ["database permission outside the defaults"] = facts.WithPermissions(
+                    Permission(0, "ALTER", "GRANT", MssqlDbo, 0)
+                ),
+            };
+            _violations = vectors.ToDictionary(
+                pair => pair.Key,
+                pair => Staging(pair.Value, MssqlManifestFor(pair.Value)),
+                StringComparer.Ordinal
+            );
+        }
+
+        [Test]
+        public void It_passes_the_built_in_security_state_of_a_new_database() => _clean.Should().Be(_valid);
+
+        [Test]
+        public void It_reports_every_other_permission_or_membership_as_a_security_state_violation() =>
+            _violations
+                .Should()
+                .AllSatisfy(pair =>
+                    pair.Value.Should().Be(Invalid(SecurityStateViolation, SecurityStateCheck), pair.Key)
+                );
+
+        [Test]
+        public void It_covers_each_vector() => _violations.Count.Should().Be(14);
+    }
 }

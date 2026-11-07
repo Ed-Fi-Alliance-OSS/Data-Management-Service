@@ -14,8 +14,9 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// baseline, (4) the canonical inventory hash recomputed from the catalog, (5) the <c>DmsDatastoreOnly</c>
 /// content profile (F-P9, <c>Assert-DmsOnlyInventory</c>), (6) the resource-schema partition against the
 /// manifest's projects and the deployment's expectations, (7) the engine's security rules (F-P9b,
-/// <c>Assert-PostgresqlArtifactOwnership</c> and <c>Assert-PostgresqlArtifactPrivilege</c>), and (8) the
-/// Populated predicate. Checks run in that order and the first failure is the verdict, named for
+/// <c>Assert-PostgresqlArtifactOwnership</c> and <c>Assert-PostgresqlArtifactPrivilege</c>, or
+/// <c>Assert-MssqlArtifactSecurityState</c>), and (8) the Populated predicate. Checks run in that order and
+/// the first failure is the verdict, named for
 /// <c>Diagnostic.Operation</c>; messages carry no value from a row. Nothing here reaches a server.
 /// </summary>
 public static class DmsTargetValidator
@@ -30,6 +31,7 @@ public static class DmsTargetValidator
     public const string ProjectSetCheck = "ProjectSet";
     public const string OwnershipCheck = "Ownership";
     public const string PrivilegesCheck = "Privileges";
+    public const string SecurityStateCheck = "SecurityState";
     public const string PopulatedPredicateCheck = "PopulatedPredicate";
 
     /// <summary>The locked-down global role the authoritative DDL makes own the SECURITY DEFINER enqueue functions (D-16).</summary>
@@ -43,6 +45,25 @@ public static class DmsTargetValidator
     private const string TrackedChangesPrefix = "tracked_changes_";
     private const string IdentityStateObjectPrefix = "OpenIddict";
     private const string PublicGrantee = "-";
+
+    /// <summary>The fixed principal ids every SQL Server database has: <c>public</c>, <c>dbo</c>, and the <c>db_owner</c> role.</summary>
+    private const int MssqlPublicId = 0;
+
+    private const int MssqlDboId = 1;
+    private const int MssqlDbOwnerId = 16384;
+
+    /// <summary>The <c>sys.database_permissions.class</c> values the built-in defaults use: the database and an object.</summary>
+    private const int MssqlDatabaseClass = 0;
+
+    private const int MssqlObjectClass = 1;
+
+    /// <summary>The built-in database-scope grants of a new SQL Server database, as <c>permission_name|grantee_id</c>.</summary>
+    private static readonly HashSet<string> _mssqlDatabaseDefaults = new(StringComparer.Ordinal)
+    {
+        $"CONNECT|{MssqlDboId}",
+        $"VIEW ANY COLUMN ENCRYPTION KEY DEFINITION|{MssqlPublicId}",
+        $"VIEW ANY COLUMN MASTER KEY DEFINITION|{MssqlPublicId}",
+    };
 
     /// <summary>Exactly the grants the core DDL emitter makes to the enqueue owner, as <c>kind|identity|privilege</c> with identities quoted as the privilege query quotes them.</summary>
     private static readonly HashSet<string> _enqueueOwnerGrants = new(StringComparer.Ordinal)
@@ -346,6 +367,7 @@ public static class DmsTargetValidator
         security switch
         {
             DmsSecurityFacts.Postgresql postgresql => PostgresqlSecurityVerdict(postgresql),
+            DmsSecurityFacts.Mssql mssql => MssqlSecurityVerdict(mssql),
             _ => throw new InvalidOperationException("Unknown security facts."),
         };
 
@@ -395,6 +417,42 @@ public static class DmsTargetValidator
 
         return Same(row.Grantee, EnqueueOwnerRoleName)
             && _enqueueOwnerGrants.Contains($"{row.Kind}|{row.Identity}|{row.Privilege}");
+    }
+
+    /// <summary>
+    /// <c>Assert-MssqlArtifactSecurityState</c>: the generated DDL emits no GRANT, DENY, user, role, or
+    /// membership, so only the built-in defaults of a new database are allowed, judged by principal id,
+    /// securable class and scope, and grant state rather than by name.
+    /// </summary>
+    private static DmsTargetValidation? MssqlSecurityVerdict(DmsSecurityFacts.Mssql security) =>
+        security.RoleMembers.All(IsAllowedRoleMember) && security.Permissions.All(IsAllowedPermission)
+            ? null
+            : Invalid(DmsProvisioningFailureCode.SecurityStateViolation, SecurityStateCheck);
+
+    /// <summary><c>dbo</c> as a member of <c>db_owner</c> is the only membership a new database has.</summary>
+    private static bool IsAllowedRoleMember(DmsMssqlRoleMemberRow row) =>
+        row.RoleId == MssqlDbOwnerId && row.MemberId == MssqlDboId;
+
+    /// <summary>
+    /// A plain <c>GRANT</c> without a column scope that is either one of the database-scope defaults, or
+    /// <c>SELECT</c> to <c>public</c> on a system object (a negative object id, which no user object has).
+    /// </summary>
+    private static bool IsAllowedPermission(DmsMssqlPermissionRow row)
+    {
+        if (!Same(row.StateDesc, "GRANT") || row.MinorId != 0)
+        {
+            return false;
+        }
+
+        return row.Class switch
+        {
+            MssqlDatabaseClass => row.MajorId == 0
+                && _mssqlDatabaseDefaults.Contains($"{row.PermissionName}|{row.GranteeId}"),
+            MssqlObjectClass => row.MajorId < 0
+                && row.GranteeId == MssqlPublicId
+                && Same(row.PermissionName, "SELECT"),
+            _ => false,
+        };
     }
 
     /// <summary>Item 8: a Populated template must carry at least one non-descriptor, non-school-year document.</summary>

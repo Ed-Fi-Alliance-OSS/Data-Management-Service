@@ -31,4 +31,7 @@
         <None Remove="ClaimsHierarchyMetadata.json" />
         <EmbeddedResource Include="ClaimsHierarchyMetadata.json" />
     </ItemGroup>
+    <ItemGroup>
+        <None Update="Fixtures/DataStoreProvisioning/**/*" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
 </Project>

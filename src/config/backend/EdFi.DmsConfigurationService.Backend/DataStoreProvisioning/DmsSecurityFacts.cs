@@ -27,9 +27,31 @@ public sealed record DmsPostgresqlPrivilegeRow(
 );
 
 /// <summary>
+/// One <c>permission</c> row of the delivered SQL Server security-state query (F-P9b,
+/// <c>Get-MssqlSecurityStateQuerySql</c>): a row of <c>sys.database_permissions</c>, built-in principals
+/// included. Judgment uses the numeric fields, <see cref="PermissionName"/>, and <see cref="StateDesc"/>;
+/// <see cref="Grantee"/> and <see cref="Securable"/> only describe a row.
+/// </summary>
+public sealed record DmsMssqlPermissionRow(
+    int Class,
+    string PermissionName,
+    string StateDesc,
+    int GranteeId,
+    int MajorId,
+    int MinorId,
+    string Grantee,
+    string Securable
+);
+
+/// <summary>
+/// One <c>member</c> row of the delivered SQL Server security-state query: a row of
+/// <c>sys.database_role_members</c>. Judgment uses the principal ids; the names only describe a row.
+/// </summary>
+public sealed record DmsMssqlRoleMemberRow(int RoleId, int MemberId, string Role, string Member);
+
+/// <summary>
 /// The engine's security rows for 6.9c item 7, judged by the provider-neutral rule sets in
-/// <see cref="DmsTargetValidator"/>. The SQL Server case (security state, F-P9b) arrives with its engine
-/// (Step 4.1).
+/// <see cref="DmsTargetValidator"/>.
 /// </summary>
 public abstract record DmsSecurityFacts
 {
@@ -37,5 +59,11 @@ public abstract record DmsSecurityFacts
     public sealed record Postgresql(
         IReadOnlyList<DmsPostgresqlOwnershipRow> Ownership,
         IReadOnlyList<DmsPostgresqlPrivilegeRow> Privileges
+    ) : DmsSecurityFacts;
+
+    /// <summary>SQL Server database permissions and role memberships, the security state a backup carries and a RESTORE re-creates (D-15).</summary>
+    public sealed record Mssql(
+        IReadOnlyList<DmsMssqlPermissionRow> Permissions,
+        IReadOnlyList<DmsMssqlRoleMemberRow> RoleMembers
     ) : DmsSecurityFacts;
 }

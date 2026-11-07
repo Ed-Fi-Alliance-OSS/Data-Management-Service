@@ -175,4 +175,89 @@ internal static class TargetFactsSample
         DmsSecurityFacts.Postgresql security = (DmsSecurityFacts.Postgresql)facts.Security;
         return facts with { Security = security with { Ownership = [.. security.Ownership, .. added] } };
     }
+
+    /// <summary>The fixed principal ids of every SQL Server database.</summary>
+    public const int MssqlPublic = 0;
+
+    public const int MssqlDbo = 1;
+    public const int MssqlGuest = 2;
+    public const int MssqlDbOwner = 16384;
+
+    /// <summary>A permission row; the names only describe it and never take part in judgment.</summary>
+    public static DmsMssqlPermissionRow Permission(
+        int securableClass,
+        string permissionName,
+        string stateDesc,
+        int granteeId,
+        int majorId,
+        int minorId = 0
+    ) => new(securableClass, permissionName, stateDesc, granteeId, majorId, minorId, "grantee", "securable");
+
+    public static DmsMssqlRoleMemberRow Member(int roleId, int memberId) =>
+        new(roleId, memberId, "role", "member");
+
+    /// <summary>
+    /// The facts a clean SQL Server DMS data store yields: <c>dbo</c> always enumerated, one resource project with
+    /// its companion, the <c>nvarchar(max)</c> baseline, a compatibility level, and exactly the built-in security
+    /// state of a new database (the three database-scope defaults, public SELECT on system objects, dbo in
+    /// db_owner).
+    /// </summary>
+    public static DmsTargetFacts MssqlFacts() =>
+        new()
+        {
+            EffectiveSchema = EffectiveSchema(),
+            EngineMajorVersion = 17,
+            CompatibilityLevel = 170,
+            DocumentJsonColumns = [new DmsDocumentJsonColumn("dms", "DocumentCache", "nvarchar(max)")],
+            SchemaNames = ["dbo", "dms", "edfi", "tracked_changes_edfi"],
+            InventoryObjects =
+            [
+                new DmsInventoryObject("dms", "DataStoreIdentity", "table"),
+                new DmsInventoryObject("dms", "EffectiveSchema", "table"),
+                new DmsInventoryObject("dms", "DocumentCache", "table"),
+                new DmsInventoryObject("dms", "GetMaxChangeVersion", "function"),
+                new DmsInventoryObject("edfi", "School", "table"),
+                new DmsInventoryObject("tracked_changes_edfi", "School", "table"),
+            ],
+            Principals = [],
+            DatabaseLevelObjects = [],
+            Security = new DmsSecurityFacts.Mssql(
+                [
+                    Permission(0, "CONNECT", "GRANT", MssqlDbo, 0),
+                    Permission(0, "VIEW ANY COLUMN ENCRYPTION KEY DEFINITION", "GRANT", MssqlPublic, 0),
+                    Permission(0, "VIEW ANY COLUMN MASTER KEY DEFINITION", "GRANT", MssqlPublic, 0),
+                    Permission(1, "SELECT", "GRANT", MssqlPublic, -385),
+                    Permission(1, "SELECT", "GRANT", MssqlPublic, -1073624922),
+                ],
+                [Member(MssqlDbOwner, MssqlDbo)]
+            ),
+            HasPopulatedDocument = false,
+        };
+
+    /// <summary>The SQL Server manifest describing <paramref name="facts"/>.</summary>
+    public static RestoreManifest MssqlManifestFor(DmsTargetFacts facts) =>
+        ManifestFor(
+            facts,
+            databaseEngine: RestoreManifest.MssqlEngine,
+            engineVersion: "17.0.1000.7",
+            databaseCompatibilityLevel: 170
+        );
+
+    public static DmsTargetFacts WithPermissions(
+        this DmsTargetFacts facts,
+        params DmsMssqlPermissionRow[] added
+    )
+    {
+        DmsSecurityFacts.Mssql security = (DmsSecurityFacts.Mssql)facts.Security;
+        return facts with { Security = security with { Permissions = [.. security.Permissions, .. added] } };
+    }
+
+    public static DmsTargetFacts WithRoleMembers(
+        this DmsTargetFacts facts,
+        params DmsMssqlRoleMemberRow[] added
+    )
+    {
+        DmsSecurityFacts.Mssql security = (DmsSecurityFacts.Mssql)facts.Security;
+        return facts with { Security = security with { RoleMembers = [.. security.RoleMembers, .. added] } };
+    }
 }
