@@ -7,6 +7,7 @@ using System.Diagnostics.CodeAnalysis;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
@@ -17,9 +18,11 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// <c>create_date</c> snapshot (6.1 step 6, D-13), instance-bound sessions that verify all three at open and
 /// capture <c>@@SPID</c> and <c>login_time</c> (D-7b), the delivered identity read, and the catalog facts the
 /// validator judges (6.9c), including the compatibility level and the security state. Every read is on a
-/// dedicated connection. Connection and driver failures of a read propagate for the orchestrator to
+/// dedicated connection. And the target lock (D-12): <see cref="AcquireTargetLockAsync"/> opens the holder
+/// session (<see cref="MssqlTargetLockSession"/>) that every later selected-target mutation runs on.
+/// Connection and driver failures of a read propagate for the orchestrator to
 /// classify; a catalog row the inventory contract cannot describe is reported as a content-profile
-/// violation, because the authoritative DDL never produces one. The mutating members arrive with Steps 4.2
+/// violation, because the authoritative DDL never produces one. The mutating members arrive with Steps 4.3
 /// to 4.9.
 /// </summary>
 public sealed class MssqlDmsTargetEngine : IDmsTargetEngine
@@ -62,12 +65,29 @@ public sealed class MssqlDmsTargetEngine : IDmsTargetEngine
     };
 
     private readonly MssqlAdminConnection _adminConnection;
+    private readonly MssqlDmsEngineSettings _settings;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger _logger;
 
     /// <param name="adminConnection">The resolved administrative connection (4.3 <c>AdminConnectionString</c> and <c>CommandTimeout</c>).</param>
-    public MssqlDmsTargetEngine(MssqlAdminConnection adminConnection)
+    /// <param name="settings">The range-checked 4.3 settings the engine reads.</param>
+    /// <param name="timeProvider">Drives the holder heartbeat and every deadline.</param>
+    /// <param name="logger">Receives the holder's ignored errors as type chains; never a value.</param>
+    public MssqlDmsTargetEngine(
+        MssqlAdminConnection adminConnection,
+        MssqlDmsEngineSettings settings,
+        TimeProvider timeProvider,
+        ILogger logger
+    )
     {
         ArgumentNullException.ThrowIfNull(adminConnection);
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(logger);
         _adminConnection = adminConnection;
+        _settings = settings;
+        _timeProvider = timeProvider;
+        _logger = logger;
     }
 
     public string Provider => DmsDataStoreProvisioningOptions.MssqlProvider;
@@ -104,7 +124,17 @@ public sealed class MssqlDmsTargetEngine : IDmsTargetEngine
         DmsTargetDatabaseName name,
         DmsOperationId operation,
         CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(AcquireTargetLockAsync), "Step 4.2");
+    ) =>
+        MssqlTargetLockSession.AcquireAsync(
+            _adminConnection,
+            name,
+            operation,
+            _settings.LockAcquireTimeout,
+            _settings.LockHeartbeatInterval,
+            _timeProvider,
+            _logger,
+            cancellationToken
+        );
 
     /// <summary>
     /// What is under <paramref name="name"/>, as SQL Server resolves the name: protected for the system

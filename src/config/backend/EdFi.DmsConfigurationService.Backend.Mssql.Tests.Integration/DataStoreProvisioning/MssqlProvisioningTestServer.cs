@@ -8,6 +8,7 @@ using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning;
 
@@ -59,9 +60,64 @@ internal static partial class MssqlProvisioningTestServer
             TimeSpan.FromSeconds(30)
         );
 
-    public static MssqlDmsTargetEngine Engine() => new(AdminConnection());
+    /// <summary>The engine on the lane's admin connection; the lock settings and the clock are the caller's to vary.</summary>
+    public static MssqlDmsTargetEngine Engine(
+        TimeSpan? lockAcquireTimeout = null,
+        TimeSpan? lockHeartbeatInterval = null,
+        TimeProvider? timeProvider = null
+    ) => EngineOn(AdminConnection(), lockAcquireTimeout, lockHeartbeatInterval, timeProvider);
 
-    public static MssqlDmsTargetEngine EngineAs(string login) => new(AdminConnectionAs(login));
+    public static MssqlDmsTargetEngine EngineAs(string login) => EngineOn(AdminConnectionAs(login));
+
+    private static MssqlDmsTargetEngine EngineOn(
+        MssqlAdminConnection adminConnection,
+        TimeSpan? lockAcquireTimeout = null,
+        TimeSpan? lockHeartbeatInterval = null,
+        TimeProvider? timeProvider = null
+    ) =>
+        new(
+            adminConnection,
+            new MssqlDmsEngineSettings(
+                lockAcquireTimeout ?? TimeSpan.FromSeconds(5),
+                lockHeartbeatInterval ?? TimeSpan.FromSeconds(5)
+            ),
+            timeProvider ?? TimeProvider.System,
+            NullLogger.Instance
+        );
+
+    /// <summary>The <c>session_id</c> of the session named <paramref name="applicationName"/>, or 0 when there is none.</summary>
+    public static Task<int> SessionIdNamedAsync(string applicationName) =>
+        ScalarOnServerAsync<int>(
+            "SELECT CONVERT(int, ISNULL(MAX(session_id), 0)) FROM sys.dm_exec_sessions WHERE program_name = @app;",
+            ("@app", applicationName)
+        );
+
+    public static Task<int> SessionCountNamedAsync(string applicationName) =>
+        ScalarOnServerAsync<int>(
+            "SELECT COUNT(*) FROM sys.dm_exec_sessions WHERE program_name = @app;",
+            ("@app", applicationName)
+        );
+
+    /// <summary>
+    /// Whether the session <paramref name="session"/> names still exists: the same <c>session_id</c> with the
+    /// same <c>login_time</c>, because SQL Server hands a freed <c>session_id</c> to the next session at once.
+    /// </summary>
+    public static async Task<bool> SessionExistsAsync(DmsServerSessionId session) =>
+        await ScalarOnServerAsync<int>(
+            "SELECT COUNT(*) FROM sys.dm_exec_sessions WHERE session_id = @id AND login_time = CONVERT(datetime, @loginTime);",
+            ("@id", (int)session.Id),
+            ("@loginTime", session.StartedAt.DateTime)
+        ) == 1;
+
+    /// <summary>The <c>wait_type</c> of the request <paramref name="sessionId"/> is running, or empty when it runs none or does not wait.</summary>
+    public static Task<string> WaitTypeOfAsync(int sessionId) =>
+        ScalarOnServerAsync<string>(
+            "SELECT ISNULL(MAX(wait_type), N'') FROM sys.dm_exec_requests WHERE session_id = @id;",
+            ("@id", sessionId)
+        );
+
+    /// <summary><c>KILL</c>s session <paramref name="sessionId"/> from a fresh admin session.</summary>
+    public static Task KillAsync(int sessionId) => ExecuteOnServerAsync($"KILL {sessionId:D};");
 
     public static DmsDatabaseName DatabaseNamed(string value) =>
         DmsDatabaseName.TryCreate(value, out DmsDatabaseName name)
