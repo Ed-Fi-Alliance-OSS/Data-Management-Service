@@ -59,6 +59,7 @@ internal sealed class PsqlRestoreRunner
     internal static readonly EventId ReplayExited = new(1438_31, nameof(ReplayExited));
     internal static readonly EventId ReplayKilled = new(1438_32, nameof(ReplayKilled));
     internal static readonly EventId ReplayUnconfirmed = new(1438_33, nameof(ReplayUnconfirmed));
+    internal static readonly EventId PasswordFileRetained = new(1438_34, nameof(PasswordFileRetained));
 
     /// <summary>The D-10 arguments every replay carries, before the file and connection arguments.</summary>
     public static IReadOnlyList<string> FixedArguments { get; } =
@@ -170,7 +171,15 @@ internal sealed class PsqlRestoreRunner
         }
         finally
         {
-            PgPassFile.TryDelete(passwordFilePath);
+            if (!PgPassFile.TryDelete(passwordFilePath))
+            {
+                // The operation directory's release retries and reports it as credential residue (6.11).
+                _logger.LogWarning(
+                    PasswordFileRetained,
+                    "The replay of operation {Operation} could not delete its password file; the operation directory's cleanup reports it",
+                    operation.Value
+                );
+            }
         }
     }
 

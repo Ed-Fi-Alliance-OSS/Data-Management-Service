@@ -20,7 +20,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 /// </summary>
 internal static class PgPassFile
 {
-    public const string FileName = "pgpass";
+    public const string FileName = PrivateOperationDirectory.CredentialFileName;
 
     private static readonly UTF8Encoding _utf8 = new(encoderShouldEmitUTF8Identifier: false);
 

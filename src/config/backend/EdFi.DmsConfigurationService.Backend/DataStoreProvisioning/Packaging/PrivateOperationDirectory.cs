@@ -24,6 +24,13 @@ public sealed class PrivateOperationDirectory : IDisposable
 {
     public const string NamePrefix = "dms-provision-";
 
+    /// <summary>
+    /// The name of the only credential an operation ever writes into its directory: the replay's
+    /// <c>libpq</c> password file (D-10). Cleanup recognizes it by this name and reports it as
+    /// <c>CredentialFile</c> residue at Critical (6.11, D-19).
+    /// </summary>
+    public const string CredentialFileName = "pgpass";
+
     /// <summary>Owner read, write, and traverse only.</summary>
     public const UnixFileMode PrivateDirectoryMode =
         UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;

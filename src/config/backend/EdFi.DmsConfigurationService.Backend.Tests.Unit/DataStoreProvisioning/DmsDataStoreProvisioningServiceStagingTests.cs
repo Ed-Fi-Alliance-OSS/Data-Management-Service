@@ -4,7 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.Jobs;
 using FluentAssertions;
 using static EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.ProvisioningTestValues;
 
@@ -918,6 +921,102 @@ public class DmsDataStoreProvisioningServiceStagingTests
                 .Residue.Should()
                 .NotContain(residue => residue.Kind == DmsResidueKind.StagingDatabase);
         }
+    }
+
+    [TestFixture]
+    public class Given_the_password_file_cannot_be_deleted
+    {
+        private readonly List<CredentialTrap> _traps = [];
+        private DmsDataStoreCreateResult _failedResult = null!;
+        private Exception? _cancelledOutcome;
+        private string _failedOperation = string.Empty;
+        private string _cancelledOperation = string.Empty;
+
+        /// <summary>
+        /// A replay that leaves its password file behind, undeletable, then ends with <paramref name="outcome"/>;
+        /// the release retries on the system clock (100 ms, 500 ms) before it reports.
+        /// </summary>
+        private Harness LeavingTheCredential(
+            Func<DmsCommandOutcome<DmsInstanceIdentity>> outcome,
+            Action? whileRestoring = null
+        )
+        {
+            Harness harness = Scripted(configure: options => options.CleanupAttempts = 3, systemClock: true);
+            harness.Engine.OnRestoreIntoStaging = (_, artifact, _) =>
+            {
+                _traps.Add(new CredentialTrap(Path.GetDirectoryName(artifact.FilePath)!));
+                whileRestoring?.Invoke();
+                return Task.FromResult(outcome());
+            };
+            return harness;
+        }
+
+        private static string OperationOf(Harness harness) =>
+            harness
+                .Engine.Calls.Single(call => call.Member == SpyDmsTargetEngine.CreateStaging)
+                .DatabaseName![DmsOperationId.StagingDatabaseNamePrefix.Length..];
+
+        private static IEnumerable<LogEntry> CriticalCredentialEntriesFor(string operation) =>
+            SharedTemplateCatalog.Workspace.Logger.Entries.Where(entry =>
+                entry.EventId == TemplateArtifactCatalog.CredentialResidue
+                && entry.Level == Microsoft.Extensions.Logging.LogLevel.Critical
+                && Equals(entry.Field("OperationId"), operation)
+            );
+
+        [SetUp]
+        public async Task Setup()
+        {
+            Harness failed = LeavingTheCredential(() =>
+                RestoreFailed(DmsCommandFailureClass.Rejected, DmsEngineOperations.RestoreRolledBack)
+            );
+            _failedResult = await CreateAsync(failed);
+            _failedOperation = OperationOf(failed);
+
+            using CancellationTokenSource cancellation = new();
+            Harness cancelled = LeavingTheCredential(
+                () => RestoreFailed(DmsCommandFailureClass.Rejected, DmsEngineOperations.RestoreCancelled),
+                cancellation.Cancel
+            );
+            _cancelledOutcome = await Record.ExceptionAsync(() => CreateAsync(cancelled, cancellation.Token));
+            _cancelledOperation = OperationOf(cancelled);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            foreach (CredentialTrap trap in _traps)
+            {
+                trap.Dispose();
+            }
+
+            _traps.Clear();
+        }
+
+        [Test]
+        public void It_reports_the_password_file_as_credential_residue() =>
+            CleanupOf(_failedResult)
+                .Residue.Should()
+                .Contain(
+                    new DmsCleanupResidue(
+                        DmsResidueKind.CredentialFile,
+                        PrivateOperationDirectory.NamePrefix
+                            + _failedOperation
+                            + "/"
+                            + PrivateOperationDirectory.CredentialFileName
+                    )
+                );
+
+        [Test]
+        public void It_logs_the_credential_once_at_critical() =>
+            CriticalCredentialEntriesFor(_failedOperation).Should().ContainSingle();
+
+        [Test]
+        public void It_still_propagates_a_cancellation() =>
+            _cancelledOutcome.Should().BeAssignableTo<OperationCanceledException>();
+
+        [Test]
+        public void It_logs_the_credential_at_critical_on_the_cancellation_path_too() =>
+            CriticalCredentialEntriesFor(_cancelledOperation).Should().ContainSingle();
     }
 
     [TestFixture]

@@ -181,11 +181,37 @@ public sealed class DmsDataStoreProvisioningService(
             // 6.7 cleanup on every exit, after the lock is released: the staging database is unique to this
             // operation, so it may be dropped on any session, also after loss; then the private directory.
             await cleanup.RunAsync(engine, options.Value, timeProvider, logger, operation);
-            cleanup.Add(artifact.Release());
+            cleanup.Add(await ReleaseArtifactAsync(artifact));
         }
 
         // What cleanup could not remove rides every result of this create (6.11); it never changes the class.
         return WithCleanup(result, cleanup.Report);
+    }
+
+    /// <summary>
+    /// Releases the private directory with <c>CleanupAttempts</c> tries and the D-19 backoff while residue
+    /// remains, so a password file the replay could not delete gets every bounded chance; only the final
+    /// attempt's residue is logged and returned, a credential file at Critical.
+    /// </summary>
+    private async Task<IReadOnlyList<DmsCleanupResidue>> ReleaseArtifactAsync(
+        TrustedTemplateArtifact artifact
+    )
+    {
+        int attempts = Math.Max(1, options.Value.CleanupAttempts);
+        for (int attempt = 1; attempt < attempts; attempt++)
+        {
+            if (artifact.Release(logResidue: false).Count == 0)
+            {
+                return [];
+            }
+
+            await Task.Delay(
+                _cleanupBackoff[Math.Min(attempt - 1, _cleanupBackoff.Length - 1)],
+                timeProvider
+            );
+        }
+
+        return artifact.Release(logResidue: true);
     }
 
     private static DmsDataStoreCreateResult WithCleanup(

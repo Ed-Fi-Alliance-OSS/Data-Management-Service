@@ -78,7 +78,13 @@ public sealed class TrustedTemplateArtifact : IDisposable
     /// Closes the package handle and deletes the operation directory; returns what could not be removed. While
     /// residue remains, each call attempts the deletion again and reports what remains after it.
     /// </summary>
-    public IReadOnlyList<DmsCleanupResidue> Release()
+    public IReadOnlyList<DmsCleanupResidue> Release() => Release(logResidue: true);
+
+    /// <summary>
+    /// The release, with the residue log left to the caller's last attempt: bounded cleanup (D-19) retries
+    /// while residue remains and logs only what the final attempt could not remove.
+    /// </summary>
+    internal IReadOnlyList<DmsCleanupResidue> Release(bool logResidue)
     {
         if (_residue is { Count: 0 })
         {
@@ -97,7 +103,11 @@ public sealed class TrustedTemplateArtifact : IDisposable
         }
 
         _residue = TemplateArtifactCatalog.ResidueUnder(directoryPath);
-        TemplateArtifactCatalog.LogResidue(_logger, _residue, OperationId);
+        if (logResidue)
+        {
+            TemplateArtifactCatalog.LogResidue(_logger, _residue, OperationId);
+        }
+
         return _residue;
     }
 

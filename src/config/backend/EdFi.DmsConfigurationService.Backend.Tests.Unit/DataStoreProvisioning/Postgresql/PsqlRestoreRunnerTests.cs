@@ -459,6 +459,67 @@ public class PsqlRestoreRunnerTests
     }
 
     [TestFixture]
+    public class Given_a_password_file_the_runner_cannot_delete
+    {
+        private ReplayWorkspace _workspace = null!;
+        private FakePsql _fake = null!;
+        private CredentialTrap? _trap;
+        private PsqlRunResult _result = null!;
+        private bool _passwordFileRemained;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _workspace = new ReplayWorkspace();
+            string signal = Path.Combine(_workspace.Root, "started");
+            _fake = FakePsql.Blocking(signal);
+            using CancellationTokenSource cancellation = new();
+            Task<PsqlRunResult> run = _workspace.RunAsync(
+                _workspace.Runner(_fake.ExecutablePath),
+                cancellation.Token
+            );
+            await FakePsql.WaitForFileAsync(signal, _bound);
+            _trap = new CredentialTrap(_workspace.OperationDirectory.Path);
+
+            await cancellation.CancelAsync();
+            _result = await run.WaitAsync(_bound);
+            _passwordFileRemained = File.Exists(_workspace.PasswordFilePath);
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            _trap?.Dispose();
+            await _fake.DisposeAsync();
+            _workspace.Dispose();
+        }
+
+        [Test]
+        public void It_still_returns_the_kill() => _result.Should().BeOfType<PsqlRunResult.Killed>();
+
+        [Test]
+        public void It_could_not_delete_the_file() => _passwordFileRemained.Should().BeTrue();
+
+        [Test]
+        public void It_logs_the_retained_file_without_any_value()
+        {
+            _workspace
+                .Logger.Entries.Should()
+                .ContainSingle(entry => entry.EventId == PsqlRestoreRunner.PasswordFileRetained)
+                .Which.Field("Operation")
+                .Should()
+                .Be(_workspace.Operation.Value);
+            _workspace
+                .LoggedText()
+                .Should()
+                .NotContain(text =>
+                    text.Contains(ReplayWorkspace.Password)
+                    || text.Contains(PrivateOperationDirectory.CredentialFileName)
+                );
+        }
+    }
+
+    [TestFixture]
     public class Given_a_replay_that_outlives_the_restore_timeout
     {
         private static readonly TimeSpan _restoreTimeout = TimeSpan.FromMinutes(30);

@@ -65,6 +65,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
 
     internal static readonly EventId ArtifactRefused = new(1438_20, nameof(ArtifactRefused));
     internal static readonly EventId ResidueLeft = new(1438_21, nameof(ResidueLeft));
+    internal static readonly EventId CredentialResidue = new(1438_22, nameof(CredentialResidue));
 
     /// <summary>
     /// Strict UTF-8: an invalid byte sequence is a decoding failure, never a replacement character, so text that
@@ -449,6 +450,16 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
 
         string directoryName = Path.GetFileName(directoryPath);
         List<DmsCleanupResidue> residue = [];
+        if (File.Exists(Path.Combine(directoryPath, PrivateOperationDirectory.CredentialFileName)))
+        {
+            residue.Add(
+                new DmsCleanupResidue(
+                    DmsResidueKind.CredentialFile,
+                    directoryName + "/" + PrivateOperationDirectory.CredentialFileName
+                )
+            );
+        }
+
         if (File.Exists(Path.Combine(directoryPath, StagedTemplatePackage.PackageCopyFileName)))
         {
             residue.Add(
@@ -472,7 +483,10 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         return residue;
     }
 
-    /// <summary>D-19: every residue is also a fixed-code Error log entry; the resource id is a generated name.</summary>
+    /// <summary>
+    /// D-19: every residue is also a fixed-code log entry, Error for most kinds and Critical for a credential
+    /// file; the resource id is a generated name, never the credential's content or a path.
+    /// </summary>
     internal static void LogResidue(
         ILogger logger,
         IReadOnlyList<DmsCleanupResidue> residue,
@@ -481,6 +495,17 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     {
         foreach (DmsCleanupResidue item in residue)
         {
+            if (item.Kind == DmsResidueKind.CredentialFile)
+            {
+                logger.LogCritical(
+                    CredentialResidue,
+                    "DMS data store provisioning operation {OperationId} could not remove the credential file {ResourceId}; remove it now by the operator residue procedure",
+                    operationId.Value,
+                    item.ResourceId
+                );
+                continue;
+            }
+
             logger.LogError(
                 ResidueLeft,
                 "DMS data store provisioning operation {OperationId} could not remove {ResidueKind} {ResourceId}; remove it by the operator residue procedure",
