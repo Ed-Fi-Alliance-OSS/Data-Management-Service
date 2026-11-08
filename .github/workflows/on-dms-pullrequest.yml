@@ -1719,7 +1719,6 @@ jobs:
       CDC_CONNECTOR_TEMPLATE_FAIL_FAST: "true"
       CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS: "false"
       CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE }}
-      CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE }}
       CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE }}
     steps:
       - name: Checkout the Repo
@@ -1741,11 +1740,16 @@ jobs:
           $image = ./eng/ci/Get-CdcQualificationPostgresqlImage.ps1
           "CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE=$image" >> $env:GITHUB_ENV
 
+      - name: Configure Kafka qualification image
+        run: |
+          $image = ./eng/ci/Get-CdcQualificationKafkaImage.ps1
+          "CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE=$image" >> $env:GITHUB_ENV
+
       - name: Validate CDC Connector Template Smoke Settings
         run: |
           $requiredImageVariables = @(
             "CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE",
-            "CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE",
+            "CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE",
             "CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE",
             "CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE"
           )

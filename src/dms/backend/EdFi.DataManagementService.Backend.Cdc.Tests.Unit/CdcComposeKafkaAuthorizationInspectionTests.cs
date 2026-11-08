@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using Confluent.Kafka;
 using FakeItEasy;
 using FluentAssertions;
@@ -62,7 +63,7 @@ public class Given_Cdc_compose_authorization_inspection
                                 Id = "image",
                                 RepoDigests = new[]
                                 {
-                                    _image.Replace(":3.9.0@", "@", StringComparison.Ordinal),
+                                    Regex.Replace(_image, @"\Aapache/kafka:[^@]+@", "apache/kafka@"),
                                 },
                             },
                         }

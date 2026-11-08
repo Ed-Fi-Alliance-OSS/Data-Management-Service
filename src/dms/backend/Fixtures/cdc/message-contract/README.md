@@ -346,8 +346,8 @@ row availability permits snapshot/capture replay; provider routing and ordering
 assertions remain MC-08/09. Categories are `DatabaseIntegration`,
 `CdcMessageContract`, `CdcMessageContractKafka`, and the relevant provider category.
 
-Set `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` to the qualified immutable sha256 image,
-`CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE`, and the relevant
+Set `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` to the qualified immutable sha256 image
+and configure the relevant
 `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` or
 `CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE`. Set
 `CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true` in qualification lanes. Missing local
@@ -355,6 +355,12 @@ prerequisites retain the sanitized skip policy. Containers/networks are isolated
 cleanup attempts every resource with independent timeouts, including assertion or
 cancellation failures during startup. The existing explicit keep-containers option
 continues to support debugging.
+
+All shared fixtures use Apache Kafka, defaulting to the digest-pinned
+`CdcComposeBrokerSizeDeployment.BrokerImage` shared with Compose. Direct fixture runs
+may set `CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE` for candidate Apache Kafka testing.
+`Invoke-CdcQualification.ps1` always selects the branch pin, including when pulling
+and recording images; no Redpanda image setting is required.
 
 ```sh
 dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration --filter 'Category=CdcMessageContractKafka'
@@ -445,7 +451,7 @@ It supplies source-shape evidence, not a second transformer or provider pipeline
 CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractPostgresql'
 ```
 
-Configure the qualified immutable Connect digest, PostgreSQL and Redpanda image
+Configure the qualified immutable Connect digest and PostgreSQL image
 variables described under MC-07. The suite starts no API or projector. The fixture's
 optional partition count defaults to one for existing smoke tests; its topic setup
 now explicitly applies compaction and delete retention for both binding topics.
@@ -491,8 +497,7 @@ Cache deletes and canonical non-delete operations produce no public records; fen
 work insert/update/delete is absent from capture, public output and attributable
 progress. Legitimate periodic/native/relational heartbeats remain separately allowed.
 
-Run with `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` set to the qualified immutable digest,
-`CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE` and
+Run with `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` set to the qualified immutable digest and
 `CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE` configured:
 
 ```sh
@@ -541,8 +546,8 @@ Stable executable scenario IDs:
   stale callbacks, observe fresh broker bounds, rescan every partition from earliest,
   and reconstruct the expected final state through the same bootstrap harness.
 
-Configure `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` with the qualified immutable digest,
-`CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE`, and `CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE`
+Configure `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` with the qualified immutable digest and configure
+`CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE`
 as for MC-07/08, then run:
 
 ```sh
@@ -590,7 +595,7 @@ then removes owned Docker resources unless keep-containers diagnostics are enabl
 Whole-broker interruption here is **not** progress acknowledgement-gating or
 readiness evidence; MC-12 owns that isolated failure boundary.
 
-Supply the existing Connect digest, Redpanda, PostgreSQL and SQL Server 2025 image
+Supply the existing Connect digest, PostgreSQL and SQL Server 2025 image
 settings described above, then run (twice for restart determinism):
 
 ```sh
@@ -615,7 +620,7 @@ route, so the proxy permits metadata and fetch requests while disconnecting Kafk
 Produce requests (API key 0) before forwarding them. It never decodes record bodies.
 The block is confirmed after closing existing sockets, before barrier capture.
 This uses Kafka's [connector client overrides](https://kafka.apache.org/25/kafka-connect/user-guide/)
-and [named broker listeners](https://docs.redpanda.com/streaming/current/manage/security/listener-configuration/).
+and the shared Apache Kafka fixture's named broker listeners (`INTERNAL`, `EXTERNAL`, and `PRODUCER`).
 
 Stable IDs use `MC-PROGRESS-ACK-{PG|SQL}-` with these suffixes:
 
@@ -636,7 +641,7 @@ Stable IDs use `MC-PROGRESS-ACK-{PG|SQL}-` with these suffixes:
   restoring the full focused sequence can admit. Ownership, projection, history and lag evidence
   are synthetic inputs. This does not qualify production writer admission or initial-enable orchestration.
 
-Use the same four image settings as MC-07/08/09, then run:
+Use the same Connect and provider image settings as MC-07/08/09, then run:
 
 ```sh
 CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractProgressAcknowledgement' --logger trx
@@ -672,8 +677,9 @@ headroom for supported batching and protocol overhead is separately qualified by
 
 Generated/read-back settings require compression `none`, explicit `max.request.size`,
 32 MiB `buffer.memory`, and `errors.tolerance=none`. Both topic limits are set/read back;
-Redpanda batch limits and observer fetch limits must accommodate the record budget;
-request capacity must also leave room for protocol overhead and batching.
+Kafka `message.max.bytes` is recorded as the broker default, which the explicit topic
+`max.message.bytes` overrides. Effective broker `socket.request.max.bytes` must leave
+request headroom, and observer fetch limits must accommodate the record budget.
 The isolated topic has one in-sync replica, so there is no inter-broker replication hop;
 this does not qualify a production multi-broker replication configuration.
 
@@ -692,7 +698,7 @@ source position, and permit focused readiness again. This is an isolated recover
 not the supported operational record-size increase procedure. Consumer capacity attestation,
 durable acknowledgement, and interrupted-rollout reconciliation remain DMS-1323 responsibilities.
 
-Use the same four image settings as MC-07/08/09, then run:
+Use the same Connect and provider image settings as MC-07/08/09, then run:
 
 ```sh
 CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj --filter 'Category=CdcMessageContract&FullyQualifiedName~MessageContractRecordSize' --logger trx
@@ -805,8 +811,7 @@ Manual workflow dispatch uses the same lane and suite choices.
 
 Use the image recorded in
 `src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json`.
-Configure `CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE`,
-`CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE`, and
+Configure `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` and
 `CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE` for the selected providers. SQL Server
 must be 2025 (major version 17). Provider `All` also needs the existing History
 suite's admin connection strings. Each invocation requires a fresh results directory:

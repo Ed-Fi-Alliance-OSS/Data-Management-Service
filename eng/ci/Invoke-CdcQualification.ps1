@@ -56,7 +56,7 @@ $persistReports = {
 $script:qualificationConfiguration = $Configuration
 $oldLocation = Get-Location
 $savedEnvironment = @{}
-foreach ($name in @('CDC_CONNECTOR_TEMPLATE_FAIL_FAST', 'CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS', 'CDC_ARTIFACT_CLEANUP_FAIL_FAST', 'CDC_CLEANUP_POSTGRESQL_ADMIN', 'CDC_CLEANUP_MSSQL_ADMIN', 'CDC_RUNBOOK_EVIDENCE_DIRECTORY', 'CDC_RUNBOOK_CONFIGURATION', 'MSBUILDDISABLENODEREUSE', 'NODE_OPTIONS', 'TMPDIR')) {
+foreach ($name in @('CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE', 'CDC_CONNECTOR_TEMPLATE_FAIL_FAST', 'CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS', 'CDC_ARTIFACT_CLEANUP_FAIL_FAST', 'CDC_CLEANUP_POSTGRESQL_ADMIN', 'CDC_CLEANUP_MSSQL_ADMIN', 'CDC_RUNBOOK_EVIDENCE_DIRECTORY', 'CDC_RUNBOOK_CONFIGURATION', 'MSBUILDDISABLENODEREUSE', 'NODE_OPTIONS', 'TMPDIR')) {
     $savedEnvironment[$name] = [Environment]::GetEnvironmentVariable($name)
 }
 $env:CDC_CONNECTOR_TEMPLATE_FAIL_FAST = 'true'
@@ -111,7 +111,6 @@ try {
     $lanes = if ($Lane -eq 'All') { @('Contract', 'Postgresql', 'Mssql', 'Kafka') } else { @($Lane) }
     if (@($lanes | Where-Object { $_ -ne 'Contract' }).Count -gt 0) {
         $required = @('CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE')
-        if ($Suite -ne 'ApiE2E' -and ('Postgresql' -in $lanes -or 'Mssql' -in $lanes -or 'Kafka' -in $lanes)) { $required += 'CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE' }
         if ('Kafka' -in $lanes) { $required += 'CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE' }
         if ('Postgresql' -in $lanes) {
             $required += 'CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE'
@@ -159,9 +158,8 @@ try {
         if ($env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE -cne $qualified.image) {
             throw 'EnvironmentUnavailable: Connect must use the shipped qualified exporter image digest.'
         }
-        $brokerSource = Get-Content 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcComposeBrokerSizeDeployment.cs' -Raw
-        $broker = [regex]::Match($brokerSource, '"(apache/kafka:[^"]+@sha256:[a-f0-9]{64})"').Groups[1].Value
-        if (-not $broker) { throw 'EnvironmentUnavailable: pinned Kafka image unavailable.' }
+        $broker = & (Join-Path $PSScriptRoot 'Get-CdcQualificationKafkaImage.ps1')
+        $env:CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE = $broker
         & docker info --format '{{.ServerVersion}}' *> (Join-Path $raw 'docker.log')
         if ($LASTEXITCODE -ne 0) { throw 'EnvironmentUnavailable: Docker is unavailable.' }
         $runtimeInputs = [ordered]@{

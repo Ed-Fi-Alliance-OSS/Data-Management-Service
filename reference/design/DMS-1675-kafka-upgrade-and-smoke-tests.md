@@ -1,6 +1,6 @@
 ---
 jira: DMS-1675
-status: Draft follow-up plan
+status: Implementation complete; live qualification pending
 ---
 
 # DMS-1675: Upgrade Kafka and qualify CDC against Apache Kafka
@@ -11,7 +11,7 @@ Jira: https://edfi.atlassian.net/browse/DMS-1675
 
 The Kafka update originally proposed by Dependabot #1426 (3.9.0 to 4.3.1) was included in dependency consolidation PR #1436 and subsequently raised to 4.3.2 to address broker vulnerabilities reported against 4.3.1. Kafka qualification and test-fixture changes exceed the scope of that dependency bundle and need a separate PR.
 
-The Compose broker image is being upgraded, but CdcComposeBrokerSizeDeployment.BrokerImage still pins 3.9.0 and checks the deployed image for exact equality. Native Kafka fixtures also consume this stale constant. The Backend CDC Connector Template Smoke Tests use Redpanda via CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE, redpanda start, and rpk commands, so they do not qualify Apache Kafka 4.3.2. Normal PR checks skip this manually dispatched smoke lane and do not establish that the live RecordSize qualification suites pass.
+At the initial split, Compose selected the new broker while CdcComposeBrokerSizeDeployment.BrokerImage still pinned 3.9.0 and checked the deployed image for exact equality. Native Kafka fixtures consumed that stale constant. The Backend CDC Connector Template Smoke Tests used Redpanda startup and rpk commands, so they did not qualify Apache Kafka 4.3.2. Normal PR checks skip this manually dispatched smoke lane and do not establish that the live RecordSize qualification suites pass.
 
 ## Intended outcome
 
@@ -27,9 +27,20 @@ Use the same digest-pinned Apache Kafka 4.3.2 broker in the DMS deployment and p
 6. Assess the 3.9.0 to 4.3.2 major-version transition, including startup and existing-data compatibility; document any required upgrade steps or restrictions.
 7. Refresh the pinned-image vulnerability assessment and record remaining findings and their disposition. The prior 2026-11-03 Linux/amd64 Trivy scan found 9 package findings: 1 critical, 3 high, 2 medium, and 3 unknown. Critical: CVE-2026-111497 (brotli-libs); high: CVE-2026-117610, CVE-2026-118370, CVE-2026-77214 (libexpat). These package findings do not establish exploitability. Do not describe 4.3.2 as security-cleared without resolving or assessing them.
 
-## Initial handoff status
+## Implementation status
 
-The new draft PR carries the Compose version bump and this implementation plan. Pin alignment, smoke-fixture migration, live qualification, upgrade compatibility assessment, and refreshed security disposition remain follow-up work.
+Pin alignment and its Compose drift test, the shared smoke-fixture migration, and
+the shared caller/configuration/documentation audit are implemented. Record-size
+helpers read Kafka broker settings, telemetry creates topics with Kafka tools, and
+restamp tests consume through Kafka's console consumer. Startup/cleanup tests use
+the shared pin. Both workflows and the runner no longer require Redpanda; the
+runner and smoke workflow resolve and validate the branch's Kafka pin. No explicit
+Redpanda support requirement was found, so no compatibility lane is retained.
+
+Live smoke, provider RecordSize, Compose persistence and affected Kafka suite
+qualification remain pending, as do the 3.9.0 upgrade compatibility assessment and
+refreshed security scan/disposition. Offline contract checks do not establish any
+of those outcomes.
 
 ## References
 

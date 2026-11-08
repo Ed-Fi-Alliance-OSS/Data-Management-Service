@@ -1971,43 +1971,50 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
     {
         foreach (string topic in new[] { request.PublicTopicName, request.ProgressTopicName })
         {
-            await CreateTopicAsync(
+            await CreateKafkaTopicAsync(
                 topic,
                 topic == request.PublicTopicName ? request.Binding.PartitionCount : 1,
-                ["cleanup.policy=compact", "delete.retention.ms=604800000"]
+                ["cleanup.policy=compact", "delete.retention.ms=604800000"],
+                cancellationToken
             );
         }
         if (request.SchemaHistoryTopicName is not null)
         {
-            await CreateTopicAsync(
+            await CreateKafkaTopicAsync(
                 request.SchemaHistoryTopicName,
                 1,
-                ["cleanup.policy=delete", "retention.ms=-1", "retention.bytes=-1"]
-            );
-        }
-
-        async Task CreateTopicAsync(string topic, int partitions, IReadOnlyList<string> configs)
-        {
-            await _docker.RunAsync(
-                [
-                    "exec",
-                    BrokerContainerName,
-                    "/opt/kafka/bin/kafka-topics.sh",
-                    "--bootstrap-server",
-                    KafkaBootstrapServers,
-                    "--create",
-                    "--if-not-exists",
-                    "--topic",
-                    topic,
-                    "--partitions",
-                    partitions.ToString(CultureInfo.InvariantCulture),
-                    "--replication-factor",
-                    "1",
-                    .. configs.SelectMany(config => new[] { "--config", config }),
-                ],
+                ["cleanup.policy=delete", "retention.ms=-1", "retention.bytes=-1"],
                 cancellationToken
             );
         }
+    }
+
+    internal async Task CreateKafkaTopicAsync(
+        string topic,
+        int partitions,
+        IReadOnlyList<string> configs,
+        CancellationToken cancellationToken
+    )
+    {
+        await _docker.RunAsync(
+            [
+                "exec",
+                BrokerContainerName,
+                "/opt/kafka/bin/kafka-topics.sh",
+                "--bootstrap-server",
+                KafkaBootstrapServers,
+                "--create",
+                "--if-not-exists",
+                "--topic",
+                topic,
+                "--partitions",
+                partitions.ToString(CultureInfo.InvariantCulture),
+                "--replication-factor",
+                "1",
+                .. configs.SelectMany(config => new[] { "--config", config }),
+            ],
+            cancellationToken
+        );
     }
 
     private async Task CreateMinimalProviderObjectsAsync(CancellationToken cancellationToken)

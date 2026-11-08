@@ -2032,7 +2032,7 @@ Connect lifecycle mutation or new monitoring service is needed here.
 | `hasSharedOffsetStoreIssue`, `status.connectOffsetStore` not satisfied/unknown | Platform owner inspects the configured shared topic and worker policy via controller diagnostics: compact-only cleanup, partition/durability requirements, effective worker-only access, intact committed offsets. Use [managed lifecycle](#managed-lifecycle) before any worker operation. | Fresh authoritative validation for every affected retained target; unavailable evidence stays blocking. Never delete/recreate the shared topic or reset offsets; per-binding retirement cannot clean this store. |
 | Progress topic unavailable; initial admission barrier not reached | Inspect sanitized Kafka/Connect/provider diagnostics and the binding-owned progress topic's policy/access; verify heartbeat/capture and committed source progress. Follow [established validation](#established-validation) or [initial retry](#initial-enable-retry) as appropriate. | Initial admission must reach its captured barrier. Established status instead checks current component/history evidence: `status.providerBarrier.state` is `NotApplicable`, and status captures no new barrier. Raw progress records/offsets are private, not proof by themselves. |
 | SQL Server `details.schemaHistoryState` unknown/lost/invalid | Platform owner checks the original binding's history topic: one partition, delete-only policy, unlimited time/size retention and effective private access; use [SQL Server owner](../design/backend-redesign/design-docs/cdc/cdc-streaming.md#sql-server). Topic existence alone is insufficient. | Fresh authoritative schema-history/continuity validation, or preserved terminal incident and verified containment. Never compact, recreate or seed history by hand. |
-| Public topic retained volume grows, cleaner stalls | Platform owner checks effective compact-only policy, explicit tombstone retention, broker cleaner/compaction errors and backlog, partition earliest/end offsets and retained bytes using its existing broker tooling. Compare repeat samples and storage headroom; inspect no payloads. [Topic owner](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic) governs retention. | Cleaner progress and storage headroom plus measured retained-log scan capacity; topic-policy success alone proves no cleaner health, consumer completion or purge. Local Redpanda and other brokers use their own metrics; the Connect gauges above expose none of these cleaner measures. |
+| Public topic retained volume grows, cleaner stalls | Platform owner checks effective compact-only policy, explicit tombstone retention, broker cleaner/compaction errors and backlog, partition earliest/end offsets and retained bytes using its existing broker tooling. Compare repeat samples and storage headroom; inspect no payloads. [Topic owner](../design/backend-redesign/design-docs/cdc/0002-kafka-topic-and-message-contract.md#topic) governs retention. | Cleaner progress and storage headroom plus measured retained-log scan capacity; topic-policy success alone proves no cleaner health, consumer completion or purge. Apache Kafka and other brokers use their own metrics; the Connect gauges above expose none of these cleaner measures. |
 | Incident persistence or connector stop fails | [Native recovery/incomplete shutdown](#native-recovery); preserve original state and escalate authority/availability failures. | Independently verified persistence and containment outcomes. Later healthy telemetry cannot certify earlier publication or clear terminal state. |
 
 ### Projection tuning and evidence limits
@@ -2236,14 +2236,14 @@ PowerShell, repository root; .NET 10, PowerShell 7.5 or newer (see the
 and working Docker Engine with permission
 to create/remove isolated containers/networks/volumes. Verify `systemctl status docker
 --no-pager` and `docker ps` on Linux. Have the repository-pinned Kafka image and qualified
-Connect image locally, or deliberately add the runner's `-PullImages` option. The local status case also requires the declared PostgreSQL and Redpanda images;
+Connect image locally, or deliberately add the runner's `-PullImages` option. The local status case also requires the declared PostgreSQL image;
 no external provider admin connection is needed for the Kafka lane. The runner uses a fresh results directory
 and the existing allowlisted exporter; never upload the printed private log directory.
 
 | Literal/input | Operator source | Permitted fixture replacement |
 | --- | --- | --- |
 | `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` | Shipped `CdcQualifiedWorkerImage.json` loaded below | Same exact qualified digest; no arbitrary tag |
-| `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE`, `CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE` | Approved immutable fixture images, set privately before execution | Same pinned provider/broker used by the local admission fixture |
+| `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` | Checked-in PostgreSQL Compose pin, resolved by `eng/ci/Get-CdcQualificationPostgresqlImage.ps1` | Same pinned provider used by the local admission fixture; Kafka is selected automatically from the branch pin |
 | `<new-kafka-evidence-directory>` | New private results location, not already present | Fresh isolated fixture results path |
 | Binding/principal/topic/group names and credentials | Created internally by the existing fixture | Existing fixture-owned synthetic identities only; no deployment settings/state substitution |
 
@@ -2310,7 +2310,7 @@ execution results and sanitized artifacts using the [result-recording guidance](
 | Literal/input | Operator source | Permitted fixture replacement |
 | --- | --- | --- |
 | `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` | Qualified digest loaded by `cdc-access-inspect` | Same shipped digest |
-| `CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE`, `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` | Qualification owner's approved immutable image references, set privately before running | Images accepted by existing pinned-image fixture; record exact images with result |
+| `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` | Checked-in PostgreSQL Compose pin, resolved by `eng/ci/Get-CdcQualificationPostgresqlImage.ps1` | Existing pinned-image fixture; Kafka is selected automatically from the branch pin; record exact images with result |
 | `<new-consumer-evidence-directory>` | New private results location | Fresh isolated fixture results path |
 | Provider/target/records/clock/store | Existing PostgreSQL-hosted DMS-1324 fixture | Its existing synthetic rows, simulated persistence/clock and fixture-created targets only |
 
