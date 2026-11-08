@@ -1,6 +1,6 @@
 ---
 jira: DMS-1675
-status: Implementation complete; live qualification pending
+status: Live qualification complete; upgrade compatibility and security assessment pending
 ---
 
 # DMS-1675: Upgrade Kafka and qualify CDC against Apache Kafka
@@ -37,10 +37,123 @@ the shared pin. Both workflows and the runner no longer require Redpanda; the
 runner and smoke workflow resolve and validate the branch's Kafka pin. No explicit
 Redpanda support requirement was found, so no compatibility lane is retained.
 
-Live smoke, provider RecordSize, Compose persistence and affected Kafka suite
-qualification remain pending, as do the 3.9.0 upgrade compatibility assessment and
-refreshed security scan/disposition. Offline contract checks do not establish any
-of those outcomes.
+Live smoke, both providers' RecordSize and Compose persistence, Kafka policy,
+telemetry, message contracts, and relevant unit/contract qualification passed as
+recorded below. Live qualification found and corrected the runbook's obsolete JMX
+tool class name. The 3.9.0 upgrade compatibility assessment and refreshed security
+scan/disposition remain pending.
+
+## Live qualification — 2026-11-08
+
+Tested implementation: `09a6cb66f7c0f4473c1f348bb0214cfad1cf78c2`, plus the
+runbook JMX command correction described below. No application or fixture code
+changed during qualification.
+
+Runs use Release builds from this checkout on Linux/amd64, .NET SDK 10.0.102,
+PowerShell 7.6.6, Docker 29.9.2, Compose 5.7.0 and Pester 5.7.1. Telemetry
+inspection uses curl 8.5.0, psql 18.6 and the CI-pinned sqlcmd (Go) 1.10.0 archive,
+verified against its workflow SHA-256.
+
+Immutable image inputs (the locally inspected image IDs match these digests):
+
+| Role | Image |
+| --- | --- |
+| Kafka | `apache/kafka:4.3.2@sha256:852a0d49fc4e656b022e7f23785411802c9a088c78a7c5e39f33969de9c227a7` |
+| Connect | `edfialliance/ed-fi-kafka-connect@sha256:13d9afb3ee322bae4f9cc1939b32079e99543ca27d48cb908b1cebfcdb60546d` |
+| PostgreSQL | `postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873` |
+| SQL Server | `mcr.microsoft.com/mssql/server:2025-latest@sha256:4bab24f36c1ecd48e85f7d37df26e6bf301641d84c3fe652f9a0dcc947d512e1` |
+
+Kafka and PostgreSQL inputs are resolved by the repository's qualification-image
+scripts; Connect comes from `CdcQualifiedWorkerImage.json`. SQL Server matches
+the repository's `CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE` CI variable read
+for this run. Fail-fast is enabled, container retention is disabled, and
+`NODE_OPTIONS` is cleared.
+
+| Selection | Passed | Failed | Skipped | Result |
+| --- | ---: | ---: | ---: | --- |
+| Contract: controller unit | 4,757 | 0 | 0 | Passed |
+| Contract: SchemaTools CDC CLI | 819 | 0 | 0 | Passed |
+| Contract: admin runbook | 6 | 0 | 0 | Passed |
+| Contract: offline integration | 577 | 0 | 0 | Passed |
+| Contract: PowerShell wrappers/qualification | 952 | 0 | 0 | Passed |
+| Connector-template smoke, both providers | 8 | 0 | 0 | Passed |
+| Live Connect readiness recovery/cleanup, both providers | 2 | 0 | 0 | Passed |
+| PostgreSQL RecordSize | 20 | 0 | 0 | Passed |
+| SQL Server RecordSize | 20 | 0 | 0 | Passed |
+| Kafka secured policy, after correction | 49 | 0 | 0 | Passed |
+| Kafka local policy, after correction | 2 | 0 | 0 | Passed |
+| Runbook command/link regression after correction | 55 | 0 | 0 | Passed |
+| PostgreSQL telemetry | 2 | 0 | 0 | Passed |
+| SQL Server telemetry | 2 | 0 | 0 | Passed |
+| PostgreSQL message contracts | 502 | 0 | 0 | Passed |
+| SQL Server message contracts | 496 | 0 | 0 | Passed |
+
+Contract also passed the required-method guards for all ten CLI groups and all
+14 wrapper cases; those checks validate coverage of the tests above and are not
+additional test executions. Smoke covers rendered connector validation and
+registration, classloading, Murmur2 partitioner vectors, heartbeat and committed
+offset progress, retained state after restart, and both restamp scopes for each
+provider. Its qualification report records zero Connect readiness or SQL Server
+startup failures/recoveries.
+
+The targeted live readiness-recovery selection also passed for both providers,
+recording two deliberately injected timeouts and two injected recoveries, with
+zero observed startup/readiness failures. It verifies actual Connect replacement
+and cleanup, not the complete Admission lane.
+
+Both provider Compose persistence cases retained cluster/topic identity, a public
+sentinel and committed source offsets through managed down/up and acknowledged
+size recreation. Evidence records replacement broker/worker containers and fresh
+readiness validation. The size change raised `ReplicaFetchMaxBytes` from
+1,000,000 to 2,000,000; the deployed broker image matched the shipped 4.3.2 pin.
+Both complete RecordSize selections passed all 20 scenarios and their seven
+required-method groups, including producer recovery without an offset reset.
+
+The first Kafka run failed one of 49 secured tests:
+`It_executes_marked_broker_retention_inspections_and_rejects_denied_authority`.
+The marked `cdc-kafka-retention-inspect` snippet invoked the removed
+`kafka.tools.JmxTool` class. The pinned 4.3.2 image supplies
+`org.apache.kafka.tools.JmxTool`; updating the actual operator snippet fixes the
+live inspection. The complete Kafka lane was rerun: 49 secured and two local
+tests passed, as did both required-case reports. The existing live test is the
+regression check: it failed with the old command and passed with the corrected
+command. All 55 focused runbook command/link tests also passed after this change.
+The original failed evidence remains in `Kafka-All`; the successful rerun is in
+`Kafka-All-fixed`.
+
+Both telemetry selections passed their required-case reports. MessageContract
+selections include serialized-contract tests and live broker fixtures, including
+the migrated record-size helper, replay, progress acknowledgements and provider
+routing. PostgreSQL also passed all six required reference-consumer cases.
+
+Run selections are the complete `Contract` and `Kafka` lanes and each provider's
+`RecordSize`, `Telemetry`, and `MessageContract` suites through
+`eng/ci/Invoke-CdcQualification.ps1`. Smoke uses the same Release integration
+project with `--filter 'Category=CdcConnectorTemplateSmoke'`, a TRX logger and
+an external `NUnit.WorkDirectory`; its TRX is also checked with
+`Get-CdcQualificationReport` and exported with `Export-CdcQualificationEvidence`.
+The extra direct readiness selection uses
+`FullyQualifiedName~Given_PinnedImageFixtureConnectReadinessLiveRecovery` with
+the same report/export checks. The focused SchemaTools regression selects
+`Given_Cdc_runbook_commands` and `Given_Cdc_runbook_links`.
+See [the qualification guide](../../docs/CDC-QUALIFICATION.md) for prerequisites
+and lane semantics. Every invocation uses a new results directory.
+
+Sanitized reports and exported evidence are retained locally under
+`/home/brad/work/dms-root/qualification-results/DMS-1675-20261108/` (601 files
+plus `SHA256SUMS`). The archive's `summary.json` records the tested implementation
+revision, corrected runbook Git blob and all final report outcomes. Its
+`SHA256SUMS` fingerprint is
+`ee7fa548343cfaa67d670ed03b1f48e7e7f53f9cc94bcc5513b5e24a115efee6`.
+Private TRX/logs remain in `/tmp/dms-1675-qualification-20261108/` and the
+invocation-specific `/tmp/cdc-qualification-*` directories. Generated diagnostics
+and raw logs are not committed. These are local results, not GitHub Actions
+results or a published CI archive. Fixture-owned containers were cleaned up;
+the two pre-existing containers were left unchanged.
+
+This selection does not establish 3.9.0-to-4.3.2 storage upgrade compatibility or
+resolve image vulnerabilities. The upgrade and security assessments remain
+separate work. Compose persistence uses newly provisioned volumes.
 
 ## References
 

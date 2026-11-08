@@ -2213,7 +2213,7 @@ foreach ($bound in @('earliest', 'latest')) {
     if ($LASTEXITCODE -ne 0) { throw 'Partition bounds unavailable.' }
 }
 foreach ($bean in @('kafka.log:type=LogCleaner,*', 'kafka.log:type=LogCleanerManager,*')) {
-    & timeout 30s docker exec -e JMX_PORT= $broker timeout 25s /opt/kafka/bin/kafka-run-class.sh kafka.tools.JmxTool --jmx-url '<private-jmx-url>' --object-name $bean --one-time true
+    & timeout 30s docker exec -e JMX_PORT= $broker timeout 25s /opt/kafka/bin/kafka-run-class.sh org.apache.kafka.tools.JmxTool --jmx-url '<private-jmx-url>' --object-name $bean --one-time true
     if ($LASTEXITCODE -ne 0) { throw 'Cleaner metrics unavailable.' }
 }
 & timeout 30s docker exec $broker timeout 25s df -Pk -- '<kafka-data-path>'
