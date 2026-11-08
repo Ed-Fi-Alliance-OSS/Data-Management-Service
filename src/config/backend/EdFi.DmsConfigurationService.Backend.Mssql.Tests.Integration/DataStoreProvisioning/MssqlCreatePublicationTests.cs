@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
-using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -63,10 +62,6 @@ public class MssqlCreatePublicationTests
     /// <summary>One collision variant: the foreign database built at <c>BeforeRename</c> by a script, with every piece of evidence taken before and after.</summary>
     private sealed class Collision : IAsyncDisposable
     {
-        /// <summary>User objects and user types: what a DDL statement against the foreign database would change.</summary>
-        private const string ObjectCountQuery =
-            "SELECT (SELECT COUNT(*) FROM sys.objects WHERE is_ms_shipped = 0) + (SELECT COUNT(*) FROM sys.types WHERE is_user_defined = 1) + (SELECT COUNT(*) FROM sys.schemas WHERE schema_id BETWEEN 5 AND 16383);";
-
         private Collision(Lane lane) => Lane = lane;
 
         private static async Task<ForeignEvidence> ForeignEvidenceAsync(DmsTargetDatabaseName target)
@@ -89,8 +84,8 @@ public class MssqlCreatePublicationTests
                     $"SELECT CONVERT(nvarchar(5), COUNT(*)) FROM [dms].[Document] WHERE [DocumentUuid] = '{_sentinelDocument:D}';"
                 )
                 is "1";
-            int objectCount = await foreign.ScalarAsync<int>(ObjectCountQuery);
-            string inventory = await InventoryFingerprintAsync(target, instance);
+            int objectCount = await foreign.ScalarAsync<int>(TargetEvidence.ObjectCountQuery);
+            string inventory = await TargetEvidence.InventoryFingerprintAsync(target, instance);
             await WaitForNoSessionsOnAsync(target.Value);
             return new ForeignEvidence(
                 instance,
@@ -100,39 +95,6 @@ public class MssqlCreatePublicationTests
                 objectCount,
                 inventory
             );
-        }
-
-        /// <summary>The canonical inventory hash the engine's facts describe, or the reason it cannot be built.</summary>
-        private static async Task<string> InventoryFingerprintAsync(
-            DmsTargetDatabaseName target,
-            DmsInstanceIdentity instance
-        )
-        {
-            MssqlDmsTargetEngine side = Engine();
-            DmsSession session = (await side.OpenSessionAsync(target, instance, default))
-                .Should()
-                .BeOfType<DmsSessionOpenResult.Opened>()
-                .Subject.Session;
-            await using (session)
-            {
-                DmsTargetFacts facts;
-                try
-                {
-                    facts = await side.ReadTargetFactsAsync(session, default);
-                }
-                catch (DmsProvisioningFailedException exception)
-                {
-                    return "unreadable:" + exception.Failure.Diagnostic.Operation;
-                }
-
-                return DmsTargetValidator.TryBuildInventory(
-                    facts,
-                    out CanonicalInventory? inventory,
-                    out string? defect
-                )
-                    ? CanonicalInventoryHash.Compute(inventory)
-                    : "defect:" + defect;
-            }
         }
 
         /// <summary>The text value, or null when the object it reads does not exist.</summary>

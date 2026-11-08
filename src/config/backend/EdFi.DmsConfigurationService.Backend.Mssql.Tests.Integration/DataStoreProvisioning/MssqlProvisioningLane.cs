@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -305,11 +306,56 @@ internal sealed class RecordingEngine(MssqlDmsTargetEngine inner) : IDmsTargetEn
 }
 
 /// <summary>
+/// What a test compares about a database it must leave untouched: user objects and types, and the canonical inventory
+/// hash the engine's facts describe.
+/// </summary>
+internal static class TargetEvidence
+{
+    /// <summary>User objects, user types and user schemas: what a DDL statement against the database would change.</summary>
+    public const string ObjectCountQuery =
+        "SELECT (SELECT COUNT(*) FROM sys.objects WHERE is_ms_shipped = 0) + (SELECT COUNT(*) FROM sys.types WHERE is_user_defined = 1) + (SELECT COUNT(*) FROM sys.schemas WHERE schema_id BETWEEN 5 AND 16383);";
+
+    /// <summary>The canonical inventory hash the engine's facts describe, or the reason it cannot be built.</summary>
+    public static async Task<string> InventoryFingerprintAsync(
+        DmsTargetDatabaseName target,
+        DmsInstanceIdentity instance
+    )
+    {
+        MssqlDmsTargetEngine side = Engine();
+        DmsSession session = (await side.OpenSessionAsync(target, instance, default))
+            .Should()
+            .BeOfType<DmsSessionOpenResult.Opened>()
+            .Subject.Session;
+        await using (session)
+        {
+            DmsTargetFacts facts;
+            try
+            {
+                facts = await side.ReadTargetFactsAsync(session, default);
+            }
+            catch (DmsProvisioningFailedException exception)
+            {
+                return "unreadable:" + exception.Failure.Diagnostic.Operation;
+            }
+
+            return DmsTargetValidator.TryBuildInventory(
+                facts,
+                out CanonicalInventory? inventory,
+                out string? defect
+            )
+                ? CanonicalInventoryHash.Compute(inventory)
+                : "defect:" + defect;
+        }
+    }
+}
+
+/// <summary>
 /// One SQL Server deployment over the shared server and the shared staging directory: a catalog directory with a
 /// package whose artifact is a server-made backup of the DMS-shaped fixture (its manifest carrying the committed
 /// canonical inventory and hash and the live compatibility level), an operations root, the real catalog, the real
-/// engine behind a recorder, and the orchestrator with the lane's hooks. Disposal drops whatever the operation left
-/// under its staging or target name and deletes the directories.
+/// engine behind a recorder, and the orchestrator with the lane's hooks. <see cref="WithEngine"/> and
+/// <see cref="SwitchAllowlistAsync"/> give further deployments over the same target. Disposal drops whatever the
+/// operation left under its staging or target name and deletes the directories.
 /// </summary>
 internal sealed class Lane : IAsyncDisposable
 {
@@ -319,17 +365,24 @@ internal sealed class Lane : IAsyncDisposable
     );
 
     private readonly string _root;
+    private readonly string _operations;
+    private readonly LaneHooks _hooks;
+    private readonly Deployment _deployment;
 
     private Lane(
         string root,
-        RecordingEngine engine,
-        DmsDataStoreProvisioningService service,
+        string operations,
+        LaneHooks hooks,
+        Deployment deployment,
         DmsDataStoreCreateRequest request
     )
     {
         _root = root;
-        Engine = engine;
-        Service = service;
+        _operations = operations;
+        _hooks = hooks;
+        _deployment = deployment;
+        Engine = deployment.Engine;
+        Service = deployment.Service;
         Request = request;
     }
 
@@ -349,6 +402,9 @@ internal sealed class Lane : IAsyncDisposable
     public DmsDataStoreCreateRequest Request { get; }
 
     public DmsTargetDatabaseName Target => Request.TargetName;
+
+    /// <summary>What the deployments left in the operations root; a finished operation leaves nothing.</summary>
+    public string[] OperationEntries => Directory.GetFileSystemEntries(_operations);
 
     /// <summary>The operation id, read from the staging name the create addressed.</summary>
     public DmsOperationId Operation =>
@@ -405,10 +461,65 @@ internal sealed class Lane : IAsyncDisposable
     )
     {
         string root = Path.Combine(Path.GetTempPath(), "dms1438-mssql-lane-" + DmsOperationId.New().Value);
-        string artifacts = Path.Combine(root, "artifacts");
         string operations = Path.Combine(root, "operations");
-        Directory.CreateDirectory(artifacts);
         Directory.CreateDirectory(operations);
+        Deployment deployment = await DeployAsync(root, operations, artifact, null, hooks, engine);
+        return new Lane(
+            root,
+            operations,
+            hooks,
+            deployment,
+            new DmsDataStoreCreateRequest(
+                DmsDatabaseTemplate.Minimal,
+                TargetName("stage"),
+                Guid.NewGuid(),
+                deployment.Pin
+            )
+        );
+    }
+
+    /// <summary>One configured service over the shared server: its own recorder, catalog and allowlisted package.</summary>
+    internal sealed record Deployment(
+        RecordingEngine Engine,
+        DmsDataStoreProvisioningService Service,
+        DmsTrustedArtifactPin Pin,
+        DmsDataStoreProvisioningOptions Options,
+        TemplateArtifactCatalog Catalog
+    );
+
+    /// <summary>
+    /// The lane's own deployment (same options, catalog, allowlisted package and hooks, so the lane's request and pin
+    /// apply) over <paramref name="inner"/> instead of the admin engine, behind a fresh recorder.
+    /// </summary>
+    public Deployment WithEngine(MssqlDmsTargetEngine inner)
+    {
+        RecordingEngine engine = new(inner);
+        return _deployment with
+        {
+            Engine = engine,
+            Service = ServiceFor(engine, _deployment.Catalog, _deployment.Options, _hooks),
+        };
+    }
+
+    /// <summary>
+    /// The deployment after its allowlist was switched to another package carrying <paramref name="artifact"/> under
+    /// <paramref name="packageVersion"/>, with the same manifest content, in its own catalog directory; it shares the
+    /// lane's server, operations root and hooks, so it addresses the same target.
+    /// </summary>
+    public Task<Deployment> SwitchAllowlistAsync(byte[] artifact, string packageVersion) =>
+        DeployAsync(_root, _operations, artifact, packageVersion, _hooks, null);
+
+    private static async Task<Deployment> DeployAsync(
+        string root,
+        string operations,
+        byte[] artifact,
+        string? packageVersion,
+        LaneHooks hooks,
+        MssqlDmsTargetEngine? engine
+    )
+    {
+        string artifacts = Path.Combine(root, "artifacts-" + DmsOperationId.New().Value);
+        Directory.CreateDirectory(artifacts);
         int compatibilityLevel = await ScalarOnServerAsync<byte>(
             "SELECT compatibility_level FROM sys.databases WHERE name = N'model';"
         );
@@ -416,7 +527,13 @@ internal sealed class Lane : IAsyncDisposable
             "SELECT CONVERT(int, SERVERPROPERTY('ProductMajorVersion'));"
         );
 
-        TestTemplatePackage package = new TestTemplatePackageBuilder(mssql: true)
+        TestTemplatePackageBuilder builder = new(mssql: true);
+        if (packageVersion is not null)
+        {
+            builder.WithPackageVersion(packageVersion);
+        }
+
+        TestTemplatePackage package = builder
             .WithArtifact(artifact)
             .WithManifest(manifest =>
             {
@@ -467,9 +584,23 @@ internal sealed class Lane : IAsyncDisposable
             NullLogger<TemplateArtifactCatalog>.Instance
         );
         RecordingEngine recording = new(engine ?? MssqlProvisioningTestServer.Engine());
-        DmsDataStoreProvisioningService service = new(
+        DmsDataStoreProvisioningService service = ServiceFor(recording, catalog, options, hooks);
+        DmsTrustedArtifactPin pin = (await catalog.ResolveAsync(DmsDatabaseTemplate.Minimal, default))
+            .Should()
+            .BeOfType<DmsArtifactResolution.Resolved>()
+            .Subject.Pin;
+        return new Deployment(recording, service, pin, options, catalog);
+    }
+
+    private static DmsDataStoreProvisioningService ServiceFor(
+        RecordingEngine engine,
+        TemplateArtifactCatalog catalog,
+        DmsDataStoreProvisioningOptions options,
+        LaneHooks hooks
+    ) =>
+        new(
             new Ready(),
-            recording,
+            engine,
             catalog,
             Options.Create(options),
             _protectedNames,
@@ -480,22 +611,6 @@ internal sealed class Lane : IAsyncDisposable
         {
             TestHooks = hooks,
         };
-        DmsTrustedArtifactPin pin = (await catalog.ResolveAsync(DmsDatabaseTemplate.Minimal, default))
-            .Should()
-            .BeOfType<DmsArtifactResolution.Resolved>()
-            .Subject.Pin;
-        return new Lane(
-            root,
-            recording,
-            service,
-            new DmsDataStoreCreateRequest(
-                DmsDatabaseTemplate.Minimal,
-                TargetName("stage"),
-                Guid.NewGuid(),
-                pin
-            )
-        );
-    }
 
     /// <summary>The orchestrator's connection source over the lane's admin connection string, which holds no secret reference.</summary>
     private static IDmsAdminConnectionSource AdminConnectionSource()
