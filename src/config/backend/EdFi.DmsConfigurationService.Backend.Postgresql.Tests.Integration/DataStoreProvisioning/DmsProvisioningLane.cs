@@ -417,12 +417,15 @@ internal sealed class Lane : IAsyncDisposable
 
     /// <summary>
     /// A deployment of a real feed package (Step 5.1) under <paramref name="template"/>: the package signed with an
-    /// ephemeral key into the lane's catalog directory, and <c>Compatibility</c> taken from its manifest.
+    /// ephemeral key into the lane's catalog directory, and <c>Compatibility</c> taken from its manifest. The engine is
+    /// <paramref name="engine"/> when given (a test holding the replay), otherwise the superuser engine with
+    /// <paramref name="restoreTimeout"/>, which is also the deployment's <c>RestoreTimeout</c>.
     /// </summary>
     public static async Task<Lane> BuildAsync(
         RealTemplatePackage package,
         DmsDatabaseTemplate template,
         LaneHooks hooks,
+        IDmsTargetEngine? engine = null,
         TimeSpan? restoreTimeout = null
     )
     {
@@ -435,6 +438,7 @@ internal sealed class Lane : IAsyncDisposable
             package.Compatibility(),
             null,
             hooks,
+            engine,
             restoreTimeout
         );
         return new Lane(
@@ -510,6 +514,7 @@ internal sealed class Lane : IAsyncDisposable
             _deployment.Options.Compatibility!,
             Request.PinnedArtifact,
             _hooks,
+            null,
             _restoreTimeout
         );
 
@@ -521,6 +526,7 @@ internal sealed class Lane : IAsyncDisposable
         DmsDataStoreProvisioningOptions.CompatibilityExpectations compatibility,
         DmsTrustedArtifactPin? pin,
         LaneHooks hooks,
+        IDmsTargetEngine? engine,
         TimeSpan? restoreTimeout
     )
     {
@@ -543,6 +549,7 @@ internal sealed class Lane : IAsyncDisposable
             compatibility,
             operations,
             hooks,
+            engine,
             restoreTimeout,
             null,
             pin
@@ -613,6 +620,7 @@ internal sealed class Lane : IAsyncDisposable
             },
             operations,
             hooks,
+            null,
             restoreTimeout,
             lockHeartbeatInterval,
             null
@@ -620,14 +628,16 @@ internal sealed class Lane : IAsyncDisposable
     }
 
     /// <summary>
-    /// The options, real catalog, recorded engine and orchestrator over <paramref name="allowlisted"/>; the pin is
-    /// <paramref name="pin"/>, or the one the catalog resolves now, which must succeed.
+    /// The options, real catalog, recorded engine (<paramref name="engine"/>, or the superuser engine with the lane's
+    /// bounds) and orchestrator over <paramref name="allowlisted"/>; the pin is <paramref name="pin"/>, or the one the
+    /// catalog resolves now, which must succeed.
     /// </summary>
     private static async Task<Deployment> DeployOverAsync(
         Allowlisted allowlisted,
         DmsDataStoreProvisioningOptions.CompatibilityExpectations compatibility,
         string operations,
         LaneHooks hooks,
+        IDmsTargetEngine? engine,
         TimeSpan? restoreTimeout,
         TimeSpan? lockHeartbeatInterval,
         DmsTrustedArtifactPin? pin
@@ -659,20 +669,21 @@ internal sealed class Lane : IAsyncDisposable
             Options.Create(options),
             NullLogger<TemplateArtifactCatalog>.Instance
         );
-        RecordingEngine engine = new(
-            DmsProvisioningTestServer.Engine(
-                lockHeartbeatInterval: lockHeartbeatInterval,
-                restoreTimeout: restoreTimeout
-            )
+        RecordingEngine recording = new(
+            engine
+                ?? DmsProvisioningTestServer.Engine(
+                    lockHeartbeatInterval: lockHeartbeatInterval,
+                    restoreTimeout: restoreTimeout
+                )
         );
-        DmsDataStoreProvisioningService service = ServiceFor(engine, catalog, options, hooks);
+        DmsDataStoreProvisioningService service = ServiceFor(recording, catalog, options, hooks);
         DmsTrustedArtifactPin resolved =
             pin
             ?? (await catalog.ResolveAsync(allowlisted.Template, default))
                 .Should()
                 .BeOfType<DmsArtifactResolution.Resolved>()
                 .Subject.Pin;
-        return new Deployment(engine, service, resolved, options, catalog, allowlisted.PackagePath);
+        return new Deployment(recording, service, resolved, options, catalog, allowlisted.PackagePath);
     }
 
     private static DmsDataStoreProvisioningService ServiceFor(

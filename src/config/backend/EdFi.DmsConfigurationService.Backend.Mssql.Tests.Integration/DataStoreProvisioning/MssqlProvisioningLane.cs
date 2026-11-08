@@ -532,13 +532,16 @@ internal sealed class Lane : IAsyncDisposable
 
     /// <summary>
     /// A deployment of a real feed package (Step 5.1) under <paramref name="template"/>: the package signed with an
-    /// ephemeral key into the lane's catalog directory, <c>Compatibility</c> taken from its manifest, and the admin
-    /// engine with <paramref name="restoreTimeout"/> as its restore bound (the 4.3 default unless given).
+    /// ephemeral key into the lane's catalog directory, <c>Compatibility</c> taken from its manifest, and
+    /// <paramref name="engine"/> when given (a test holding the restore), otherwise the admin engine with
+    /// <paramref name="restoreTimeout"/> as its restore bound (the 4.3 default unless given), which is also the
+    /// deployment's <c>RestoreTimeout</c>.
     /// </summary>
     public static async Task<Lane> BuildAsync(
         RealTemplatePackage package,
         DmsDatabaseTemplate template,
         LaneHooks hooks,
+        MssqlDmsTargetEngine? engine = null,
         TimeSpan? restoreTimeout = null
     )
     {
@@ -551,6 +554,7 @@ internal sealed class Lane : IAsyncDisposable
             package.Compatibility(),
             null,
             hooks,
+            engine,
             restoreTimeout
         );
         return new Lane(
@@ -616,6 +620,7 @@ internal sealed class Lane : IAsyncDisposable
             _deployment.Options.Compatibility!,
             Request.PinnedArtifact,
             _hooks,
+            null,
             null
         );
 
@@ -627,6 +632,7 @@ internal sealed class Lane : IAsyncDisposable
         DmsDataStoreProvisioningOptions.CompatibilityExpectations compatibility,
         DmsTrustedArtifactPin? pin,
         LaneHooks hooks,
+        MssqlDmsTargetEngine? engine,
         TimeSpan? restoreTimeout
     )
     {
@@ -649,7 +655,7 @@ internal sealed class Lane : IAsyncDisposable
             compatibility,
             operations,
             hooks,
-            MssqlProvisioningTestServer.Engine(restoreTimeout: restoreTimeout),
+            engine ?? MssqlProvisioningTestServer.Engine(restoreTimeout: restoreTimeout),
             restoreTimeout,
             pin
         );

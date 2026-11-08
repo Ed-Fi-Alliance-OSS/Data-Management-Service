@@ -12,6 +12,7 @@ using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging.Abstractions;
 using static EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning.MssqlProvisioningTestServer;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning;
@@ -22,14 +23,118 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStore
 /// Minimal and Sample each create a target that carries the expected identity, the manifest's effective schema and
 /// canonical inventory, and passes every validation gate including security; a second create reconciles without
 /// mutating; a delete drops it. A database restored out of band from the same backup (the same backup family, another
-/// identity) takes the name before the rename and is refused untouched. A caller cancellation during the restore and a
-/// restore bound below the real restore both drop the staging database and the staged file. A tampered package and a
-/// package for the other engine are refused before any engine call.
+/// identity) takes the name before the rename and is refused untouched. With the real restore held in its batch before
+/// recovery, a caller cancellation and an expiry of the restore bound, both triggered by the test, drop the staging
+/// database and the staged file. A tampered package and a package for the other engine are refused before any engine
+/// call.
 /// </summary>
 [Category(Category)]
 public class MssqlRealPackageTests
 {
     private static readonly Guid _foreignIdentity = Guid.Parse("5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a");
+
+    /// <summary>
+    /// The lane engine with its restore held (Step 5.1 review): the planned <c>RESTORE</c> of the real backup, changed
+    /// only by <c>NORECOVERY</c> so the restored database stays <c>RESTORING</c> instead of being recovered, followed in
+    /// the same batch by a wait for an application lock the test holds exclusively from before the create. The batch
+    /// cannot end while the test holds the lock, so the caller's cancellation, or the restore bound that only the test
+    /// fires (<see cref="ControlledRestoreDeadline"/>), always meets a restore that has not completed, however fast the
+    /// server restored.
+    /// </summary>
+    private sealed class HeldRestore : IAsyncDisposable
+    {
+        private const string Recovering = "STATS = 10;";
+
+        private readonly SqlConnection _holder;
+        private readonly string _resource;
+        private bool _released;
+
+        private HeldRestore(SqlConnection holder, string resource)
+        {
+            _holder = holder;
+            _resource = resource;
+            Engine = new MssqlDmsTargetEngine(
+                AdminConnection(),
+                Settings(restoreTimeout: ControlledRestoreDeadline.RestoreTimeout),
+                Deadline,
+                NullLogger.Instance
+            )
+            {
+                RestoreStatement = (plan, serverPath) =>
+                {
+                    string planned = plan.RestoreStatement(serverPath);
+                    if (!planned.Contains(Recovering, StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            "The planned restore no longer ends as the hold expects."
+                        );
+                    }
+
+                    return planned.Replace(Recovering, "NORECOVERY, " + Recovering, StringComparison.Ordinal)
+                        + $"\nEXEC sp_getapplock @Resource = {MssqlIdentifiers.Literal(resource)}, @LockMode = N'Shared', @LockOwner = N'Session', @LockTimeout = -1;";
+                },
+            };
+        }
+
+        public ControlledRestoreDeadline Deadline { get; } = new();
+
+        public MssqlDmsTargetEngine Engine { get; }
+
+        /// <summary>Takes the application lock the held restore waits for, on a session of its own in the maintenance database.</summary>
+        public static async Task<HeldRestore> AcquireAsync()
+        {
+            string resource =
+                "dms1438_held_restore_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6));
+            SqlConnection holder = await AdminConnection().OpenMaintenanceAsync(default);
+            await using SqlCommand command = new(
+                "DECLARE @granted int; EXEC @granted = sp_getapplock @Resource = @resource, @LockMode = N'Exclusive', @LockOwner = N'Session', @LockTimeout = 0; SELECT @granted;",
+                holder
+            );
+            command.Parameters.AddWithValue("@resource", resource);
+            if ((int)(await command.ExecuteScalarAsync())! < 0)
+            {
+                await holder.DisposeAsync();
+                throw new InvalidOperationException("The hold's application lock was not granted.");
+            }
+
+            return new HeldRestore(holder, resource);
+        }
+
+        /// <summary>Waits until the work session of the lane's operation waits for the lock after its restore; false if it never does.</summary>
+        public static Task<bool> WaitUntilHeldAsync(Lane lane) =>
+            WaitUntilAsync(
+                async () =>
+                    lane.Engine.CountOf(nameof(IDmsTargetEngine.CreateStagingAsync)) > 0
+                    && await ScalarOnServerAsync<int>(
+                        "SELECT COUNT(*) FROM sys.dm_tran_locks l JOIN sys.dm_exec_sessions s ON s.session_id = l.request_session_id WHERE s.program_name = @app AND l.resource_type = N'APPLICATION' AND l.request_status = N'WAIT';",
+                        ("@app", lane.Operation.RestoreApplicationName)
+                    ) > 0,
+                TimeSpan.FromMinutes(3)
+            );
+
+        /// <summary>Releases the lock on its own session before closing it, since a pooled session outlives the connection.</summary>
+        public async ValueTask DisposeAsync()
+        {
+            if (_released)
+            {
+                return;
+            }
+
+            _released = true;
+            await using (
+                SqlCommand command = new(
+                    "EXEC sp_releaseapplock @Resource = @resource, @LockOwner = N'Session';",
+                    _holder
+                )
+            )
+            {
+                command.Parameters.AddWithValue("@resource", _resource);
+                await command.ExecuteNonQueryAsync();
+            }
+
+            await _holder.DisposeAsync();
+        }
+    }
 
     private static RealTemplatePackage RequireRealPackage(string templateKind)
     {
@@ -397,34 +502,36 @@ public class MssqlRealPackageTests
     }
 
     [TestFixture]
-    public class Given_the_caller_cancels_while_the_real_restore_runs
+    public class Given_the_caller_cancels_while_the_real_restore_is_held
     {
+        private HeldRestore? _restore;
         private Lane? _lane;
-        private bool _restoreObserved;
+        private bool _restoreHeld;
+        private DmsLiveTargetState _stagingWhileHeld = null!;
         private Exception? _thrown;
         private DmsLiveTargetState _stagingAfter = null!;
         private DmsLiveTargetState _targetAfter = null!;
-
-        /// <summary>Requests a session named <paramref name="applicationName"/> is running as a <c>RESTORE</c>.</summary>
-        private static Task<int> RestoreRequestsOfAsync(string applicationName) =>
-            ScalarOnServerAsync<int>(
-                "SELECT COUNT(*) FROM sys.dm_exec_requests r JOIN sys.dm_exec_sessions s ON s.session_id = r.session_id WHERE s.program_name = @app AND r.command LIKE N'RESTORE%';",
-                ("@app", applicationName)
-            );
 
         [OneTimeSetUp]
         public async Task Setup()
         {
             RealTemplatePackage package = RequireRealPackage(RestoreManifest.PopulatedTemplateKind);
-            _lane = await Lane.BuildAsync(package, DmsDatabaseTemplate.Sample, new LaneHooks());
+            _restore = await HeldRestore.AcquireAsync();
+            _lane = await Lane.BuildAsync(
+                package,
+                DmsDatabaseTemplate.Sample,
+                new LaneHooks(),
+                _restore.Engine,
+                ControlledRestoreDeadline.RestoreTimeout
+            );
             using CancellationTokenSource cancellation = new();
             Task<DmsDataStoreCreateResult> creating = _lane.CreateAsync(cancellation.Token);
-            _restoreObserved = await WaitUntilAsync(
-                async () =>
-                    _lane.Engine.CountOf(nameof(IDmsTargetEngine.CreateStagingAsync)) > 0
-                    && await RestoreRequestsOfAsync(_lane.Operation.RestoreApplicationName) > 0,
-                TimeSpan.FromMinutes(3)
-            );
+            _restoreHeld = await HeldRestore.WaitUntilHeldAsync(_lane);
+            if (_restoreHeld)
+            {
+                _stagingWhileHeld = await InspectAsync(_lane.Operation.StagingDatabaseName);
+            }
+
             await cancellation.CancelAsync();
             try
             {
@@ -435,6 +542,7 @@ public class MssqlRealPackageTests
                 _thrown = exception;
             }
 
+            await _restore.DisposeAsync();
             _stagingAfter = await InspectAsync(_lane.Operation.StagingDatabaseName);
             _targetAfter = await InspectAsync(_lane.Target);
         }
@@ -446,10 +554,19 @@ public class MssqlRealPackageTests
             {
                 await _lane.DisposeAsync();
             }
+
+            if (_restore is not null)
+            {
+                await _restore.DisposeAsync();
+            }
         }
 
         [Test]
-        public void It_cancelled_while_the_server_ran_the_restore() => _restoreObserved.Should().BeTrue();
+        public void It_cancelled_while_the_restored_database_was_held_restoring()
+        {
+            _restoreHeld.Should().BeTrue();
+            _stagingWhileHeld.Should().BeOfType<DmsLiveTargetState.Fenced>();
+        }
 
         [Test]
         public void It_propagates_the_callers_cancellation() =>
@@ -468,9 +585,13 @@ public class MssqlRealPackageTests
     }
 
     [TestFixture]
-    public class Given_the_restore_bound_is_below_the_real_restore
+    public class Given_the_restore_bound_expires_while_the_real_restore_is_held
     {
+        private HeldRestore? _restore;
         private Lane? _lane;
+        private bool _restoreHeld;
+        private DmsLiveTargetState _stagingWhileHeld = null!;
+        private int _boundsFired;
         private DmsDataStoreCreateResult _result = null!;
         private DmsLiveTargetState _stagingAfter = null!;
         private DmsLiveTargetState _targetAfter = null!;
@@ -479,16 +600,24 @@ public class MssqlRealPackageTests
         public async Task Setup()
         {
             RealTemplatePackage package = RequireRealPackage(RestoreManifest.PopulatedTemplateKind);
-
-            // The Sample restore alone takes seconds (about 2.5 s on a developer machine); a quarter second ends any
-            // real one while the server is restoring.
+            _restore = await HeldRestore.AcquireAsync();
             _lane = await Lane.BuildAsync(
                 package,
                 DmsDatabaseTemplate.Sample,
                 new LaneHooks(),
-                TimeSpan.FromMilliseconds(250)
+                _restore.Engine,
+                ControlledRestoreDeadline.RestoreTimeout
             );
-            _result = await _lane.CreateAsync();
+            Task<DmsDataStoreCreateResult> creating = _lane.CreateAsync(default);
+            _restoreHeld = await HeldRestore.WaitUntilHeldAsync(_lane);
+            if (_restoreHeld)
+            {
+                _stagingWhileHeld = await InspectAsync(_lane.Operation.StagingDatabaseName);
+            }
+
+            _boundsFired = _restore.Deadline.Expire();
+            _result = await creating;
+            await _restore.DisposeAsync();
             _stagingAfter = await InspectAsync(_lane.Operation.StagingDatabaseName);
             _targetAfter = await InspectAsync(_lane.Target);
         }
@@ -500,6 +629,18 @@ public class MssqlRealPackageTests
             {
                 await _lane.DisposeAsync();
             }
+
+            if (_restore is not null)
+            {
+                await _restore.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_expired_the_bound_while_the_restored_database_was_held_restoring()
+        {
+            (_restoreHeld, _boundsFired).Should().Be((true, 1));
+            _stagingWhileHeld.Should().BeOfType<DmsLiveTargetState.Fenced>();
         }
 
         [Test]
