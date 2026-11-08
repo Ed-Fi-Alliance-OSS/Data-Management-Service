@@ -37,7 +37,7 @@ public class PostgresqlRealPackageTests
         RequirePsqlOrSkip();
         if (!RealTemplatePackage.IsConfigured)
         {
-            Assert.Ignore(
+            DmsProvisioningLaneRequirement.SkipLocallyOrFailInCi(
                 $"{RealTemplatePackage.DirectoryVariable} is not set; the real-package fixtures are skipped."
             );
         }

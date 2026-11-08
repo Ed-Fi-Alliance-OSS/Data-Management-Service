@@ -6,6 +6,7 @@
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -222,7 +223,7 @@ public class MssqlStagingTests
             string? serverPath = Environment.GetEnvironmentVariable(SharedStagingServerPathVariable);
             if (string.IsNullOrWhiteSpace(stagingPath) || string.IsNullOrWhiteSpace(serverPath))
             {
-                Assert.Ignore(
+                DmsProvisioningLaneRequirement.SkipLocallyOrFailInCi(
                     $"{SharedStagingPathVariable} and {SharedStagingServerPathVariable} are not set; the shared-volume probe is skipped."
                 );
             }

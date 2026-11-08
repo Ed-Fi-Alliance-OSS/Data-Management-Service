@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -14,8 +15,8 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStore
 
 /// <summary>
 /// The target SQL Server of the provisioning integration lane, resolved from
-/// <c>ConnectionStrings__MssqlDmsAdmin</c>. The lane skips when the variable is absent; it will fail closed
-/// under GitHub Actions once the CI lane exists (spec 9, Step 5.2). Databases and logins the tests build are
+/// <c>ConnectionStrings__MssqlDmsAdmin</c>. The lane skips locally when a lane setting is absent and fails
+/// under GitHub Actions (<see cref="DmsProvisioningLaneRequirement"/>). Databases and logins the tests build are
 /// named <c>dms1438_&lt;purpose&gt;_&lt;12 hex&gt;</c>; databases are dropped after any session on them is rolled
 /// back, logins after their sessions are gone.
 /// </summary>
@@ -28,9 +29,9 @@ internal static partial class MssqlProvisioningTestServer
     public const string FixtureDirectory = "Fixtures/DataStoreProvisioning";
 
     /// <summary>A CMS-side directory the server also sees, and its path as the server sees it; every test that restores needs both.</summary>
-    public const string SharedStagingPathVariable = "DMS1438_MSSQL_STAGING_PATH";
+    public const string SharedStagingPathVariable = "DMS_PROVISIONING_MSSQL_STAGING_PATH";
 
-    public const string SharedStagingServerPathVariable = "DMS1438_MSSQL_STAGING_SERVER_PATH";
+    public const string SharedStagingServerPathVariable = "DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH";
 
     /// <summary>The password of every login the tests create.</summary>
     public const string LoginPassword = "Dms1438-Login-Pa55word!";
@@ -44,7 +45,7 @@ internal static partial class MssqlProvisioningTestServer
     {
         if (!IsConfigured)
         {
-            Assert.Ignore(
+            DmsProvisioningLaneRequirement.SkipLocallyOrFailInCi(
                 $"{AdminEnvironmentVariableName} is not set; the DMS provisioning SQL Server lane is skipped."
             );
         }
@@ -63,7 +64,7 @@ internal static partial class MssqlProvisioningTestServer
             string.IsNullOrWhiteSpace(SharedStagingPath) || string.IsNullOrWhiteSpace(SharedStagingServerPath)
         )
         {
-            Assert.Ignore(
+            DmsProvisioningLaneRequirement.SkipLocallyOrFailInCi(
                 $"{SharedStagingPathVariable} and {SharedStagingServerPathVariable} are not set; the tests that restore are skipped."
             );
         }

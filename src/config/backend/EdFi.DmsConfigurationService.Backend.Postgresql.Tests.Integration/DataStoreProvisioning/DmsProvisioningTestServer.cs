@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -15,8 +16,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.Data
 
 /// <summary>
 /// The target PostgreSQL server of the provisioning integration lane, resolved from
-/// <c>ConnectionStrings__PostgresqlDmsAdmin</c>. The lane skips when the variable is absent; it will fail
-/// closed under GitHub Actions once the CI lane exists (spec 9, Step 5.2). Databases the tests build are
+/// <c>ConnectionStrings__PostgresqlDmsAdmin</c>. The lane skips locally when a lane setting is absent and fails
+/// under GitHub Actions (<see cref="DmsProvisioningLaneRequirement"/>). Databases the tests build are
 /// named <c>dms1438_&lt;purpose&gt;_&lt;12 hex&gt;</c> and dropped with <c>WITH (FORCE)</c>; the cluster role
 /// <c>edfi_dms_enqueue_owner</c> is created locked down when missing and left in place.
 /// </summary>
@@ -27,7 +28,7 @@ internal static class DmsProvisioningTestServer
     public const string AdminEnvironmentVariableName = "ConnectionStrings__PostgresqlDmsAdmin";
 
     /// <summary>The fully qualified <c>psql</c> the replay fixtures run; they skip when it is not set.</summary>
-    public const string PsqlEnvironmentVariableName = "DMS1438_PSQL_PATH";
+    public const string PsqlEnvironmentVariableName = "DMS_PROVISIONING_PSQL_PATH";
 
     public const string FixtureDirectory = "Fixtures/DataStoreProvisioning";
 
@@ -56,7 +57,7 @@ internal static class DmsProvisioningTestServer
     {
         if (!IsConfigured)
         {
-            Assert.Ignore(
+            DmsProvisioningLaneRequirement.SkipLocallyOrFailInCi(
                 $"{AdminEnvironmentVariableName} is not set; the DMS provisioning PostgreSQL lane is skipped."
             );
         }
@@ -81,7 +82,7 @@ internal static class DmsProvisioningTestServer
     {
         if (!HasPsql)
         {
-            Assert.Ignore(
+            DmsProvisioningLaneRequirement.SkipLocallyOrFailInCi(
                 $"{PsqlEnvironmentVariableName} does not name an existing psql; the replay fixtures are skipped."
             );
         }
