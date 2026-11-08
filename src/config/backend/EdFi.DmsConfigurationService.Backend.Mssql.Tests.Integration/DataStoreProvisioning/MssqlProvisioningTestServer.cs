@@ -218,6 +218,26 @@ internal static partial class MssqlProvisioningTestServer
     public static string UniqueName(string purpose) =>
         $"dms1438_{purpose}_{Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6))}";
 
+    /// <summary>
+    /// Waits until no session uses <paramref name="database"/>: the server ends a closed connection's session soon
+    /// after the client closes it, not at once, and a session left on a database refuses its rename or drop.
+    /// </summary>
+    public static async Task WaitForNoSessionsOnAsync(string database)
+    {
+        bool gone = await WaitUntilAsync(
+            async () =>
+                await ScalarOnServerAsync<int>(
+                    "SELECT COUNT(*) FROM sys.dm_exec_sessions WHERE database_id = DB_ID(@name);",
+                    ("@name", database)
+                ) == 0,
+            TimeSpan.FromSeconds(20)
+        );
+        if (!gone)
+        {
+            throw new InvalidOperationException("A session stayed on the test database.");
+        }
+    }
+
     /// <summary>Creates an empty database and, when given, runs <paramref name="script"/> in it.</summary>
     public static async Task<TestDatabase> CreateDatabaseAsync(string purpose, string? script = null)
     {

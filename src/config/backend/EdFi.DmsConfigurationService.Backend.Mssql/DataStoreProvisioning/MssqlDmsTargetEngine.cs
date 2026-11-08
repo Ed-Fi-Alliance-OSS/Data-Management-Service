@@ -25,10 +25,12 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// And the staging stage (6.4 steps 4 to 7, 6.7): the staging name reserved, the backup staged, planned and
 /// restored on a work session with its outcome resolved here, re-hashed after the restore, and the staging
 /// database dropped by its instance or by the reserved primary file name (the second part of this class).
+/// And publication (6.4 steps 10 and 12, 6.7): the rename into the target with the identity transition, the
+/// marker, and the compensation drop (the third part of this class).
 /// Connection and driver failures of a read propagate for the orchestrator to
 /// classify; a catalog row the inventory contract cannot describe is reported as a content-profile
 /// violation, because the authoritative DDL never produces one. The remaining mutating members arrive with
-/// Steps 4.6 to 4.9.
+/// Steps 4.8 and 4.9.
 /// </summary>
 public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
 {
@@ -399,20 +401,6 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
         };
     }
 
-    public Task<DmsCommandOutcome<DmsInstanceIdentity>> RenameIntoTargetAsync(
-        IDmsTargetLockHolder holder,
-        DmsDatabaseName staging,
-        DmsInstanceIdentity stagingInstance,
-        DmsTargetDatabaseName target,
-        CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(RenameIntoTargetAsync), "Step 4.6");
-
-    public Task<DmsCommandOutcome> AssignMarkerAsync(
-        DmsSession session,
-        Guid expectedSourceIdentity,
-        CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(AssignMarkerAsync), "Step 4.6");
-
     public Task<DmsCommandOutcome> FenceAsync(
         IDmsTargetLockHolder holder,
         DmsTargetDatabaseName target,
@@ -427,14 +415,6 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
         DmsInstanceIdentity instance,
         CancellationToken cancellationToken
     ) => throw NotYetImplemented(nameof(UnfenceAsync), "Step 4.8");
-
-    public Task<DmsCommandOutcome> DropInstanceAsync(
-        IDmsTargetLockHolder holder,
-        DmsTargetDatabaseName target,
-        DmsInstanceIdentity instance,
-        DmsDropReason reason,
-        CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(DropInstanceAsync), "Steps 4.6 and 4.8");
 
     /// <summary>
     /// D-22 on a fresh maintenance session, so it works whether or not the session's own connection (the

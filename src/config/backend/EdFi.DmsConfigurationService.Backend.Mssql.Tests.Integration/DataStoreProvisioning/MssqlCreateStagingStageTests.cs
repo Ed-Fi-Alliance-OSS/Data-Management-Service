@@ -7,7 +7,6 @@ using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using FluentAssertions;
-using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 using static EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning.MssqlProvisioningTestServer;
 
@@ -17,8 +16,8 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStore
 /// The orchestrator's SQL Server staging stage end to end (6.4 steps 2 to 9, Step 4.5) over the real catalog and the
 /// real engine, with a package whose artifact is a server-made backup of the committed DMS-shaped fixture. A valid
 /// package reaches the rename with a validated online staging database carrying the operation's primary file and the
-/// selected target never addressed by anything but an inspection (polled by a side session at every hook); the rename
-/// itself is Step 4.6's, so the lane's stand-in refuses it definitely and the staging database is dropped. A backup
+/// selected target never addressed by anything but an inspection (polled by a side session at every hook), and is then
+/// published under the target name with nothing left under the staging name (Step 4.6). A backup
 /// contaminated with a <c>dmscs</c> schema or drifted by a grant to <c>guest</c> ends with the staging database
 /// dropped and the target absent; a staged file replaced after the restore is a staging integrity violation; and a
 /// restore whose work session is lost, or that the caller cancels, while the database is restoring leaves nothing.
@@ -46,13 +45,14 @@ public class MssqlCreateStagingStageTests
         Guid? identity = null;
         if (staging is DmsLiveTargetState.Present)
         {
-            await using SqlConnection connection = await AdminConnection()
-                .OpenAsync(operation.StagingDatabaseName.Value, "dms1438-test", default);
-            await using SqlCommand command = new(
-                "SELECT CONVERT(nvarchar(36), [SourceIdentity]) FROM [dms].[DataStoreIdentity];",
-                connection
+            // The side connection must be gone before the hook returns: a session on the staging database refuses the
+            // rename that follows (5030).
+            identity = Guid.Parse(
+                await new TestDatabase(operation.StagingDatabaseName.Value).ScalarAsync<string>(
+                    "SELECT CONVERT(nvarchar(36), [SourceIdentity]) FROM [dms].[DataStoreIdentity];"
+                )
             );
-            identity = Guid.Parse((string)(await command.ExecuteScalarAsync())!);
+            await WaitForNoSessionsOnAsync(operation.StagingDatabaseName.Value);
         }
 
         return new HookObservation(point, staging, identity, await side.InspectAsync(target, default));
@@ -126,36 +126,47 @@ public class MssqlCreateStagingStageTests
                 .BeTrue();
 
         [Test]
-        public void It_addressed_the_target_only_by_the_rename() =>
+        public void It_addressed_the_target_only_by_the_rename_and_the_marker_session() =>
             _lane!
                 .TargetMutations.Select(call => call.Member)
                 .Should()
-                .Equal(nameof(IDmsTargetEngine.RenameIntoTargetAsync));
+                .Equal(
+                    nameof(IDmsTargetEngine.RenameIntoTargetAsync),
+                    nameof(IDmsTargetEngine.OpenSessionAsync)
+                );
 
         [Test]
-        public void It_ends_at_the_stand_in_rename_refusal() =>
-            (FailureOf(_result).Code, FailureOf(_result).Diagnostic.Operation)
-                .Should()
-                .Be((DmsProvisioningFailureCode.ServerRejected, RecordingEngine.RenameNotDeliveredStep));
+        public void It_creates_the_target() => _result.Should().BeOfType<DmsDataStoreCreateResult.Created>();
 
         [Test]
-        public void It_drops_the_validated_staging_instance_and_leaves_the_target_absent()
+        public void It_publishes_the_validated_staging_instance_under_the_target_name()
         {
-            _lane!
-                .Engine.DroppedStagingInstances.Should()
-                .ContainSingle()
-                .Which.Should()
-                .BeOfType<DmsInstanceIdentity.Mssql>();
-            (_stagingAfter, _targetAfter, ((DmsDataStoreCreateResult.Failure)_result).Cleanup.HasResidue)
+            DmsInstanceIdentity validated = (
+                (DmsLiveTargetState.Present)
+                    _observations
+                        .Single(observation => observation.Point == DmsProvisioningHookPoint.BeforeRename)
+                        .Staging
+            ).Instance;
+            (_lane!.Engine.DroppedStagingInstances.Count, _stagingAfter)
                 .Should()
-                .Be((new DmsLiveTargetState.Absent(), new DmsLiveTargetState.Absent(), false));
+                .Be((0, new DmsLiveTargetState.Absent()));
+            _targetAfter
+                .Should()
+                .BeOfType<DmsLiveTargetState.Present>()
+                .Which.Instance.IsSameStableInstance(validated)
+                .Should()
+                .BeTrue();
         }
 
         [Test]
         public void It_passed_the_hooks_in_order() =>
             _hooks
                 .Points.Should()
-                .Equal(DmsProvisioningHookPoint.AfterRestoreStarted, DmsProvisioningHookPoint.BeforeRename);
+                .Equal(
+                    DmsProvisioningHookPoint.AfterRestoreStarted,
+                    DmsProvisioningHookPoint.BeforeRename,
+                    DmsProvisioningHookPoint.BeforeMarker
+                );
 
         [Test]
         public void It_deleted_the_staged_file() =>

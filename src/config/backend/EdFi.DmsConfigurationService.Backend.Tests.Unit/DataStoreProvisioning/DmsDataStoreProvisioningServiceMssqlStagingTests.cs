@@ -41,7 +41,7 @@ public class DmsDataStoreProvisioningServiceMssqlStagingTests
     /// <summary>The primary file name the spy reserves for <paramref name="staging"/>.</summary>
     private static string ReservedFileOf(DmsDatabaseName staging) => staging.Value + "__op.mdf";
 
-    private static DmsInstanceIdentity.Mssql RestoredFor(DmsDatabaseName staging, string? fileName = null) =>
+    internal static DmsInstanceIdentity.Mssql RestoredFor(DmsDatabaseName staging, string? fileName = null) =>
         new(77, DataPath + "/" + (fileName ?? ReservedFileOf(staging)), _restoredAt);
 
     private sealed class FakeSession(DmsInstanceIdentity instance, DmsServerSessionId session)
@@ -50,7 +50,7 @@ public class DmsDataStoreProvisioningServiceMssqlStagingTests
         public override ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }
 
-    private sealed class FaultHooks : IDmsProvisioningTestHooks
+    internal sealed class FaultHooks : IDmsProvisioningTestHooks
     {
         public HashSet<DmsProvisioningFaultPoint> Faults { get; } = [];
 
@@ -69,7 +69,7 @@ public class DmsDataStoreProvisioningServiceMssqlStagingTests
     /// the instance carrying the reserved file, and every instance the orchestrator opens a session on, renames, or
     /// drops is recorded.
     /// </summary>
-    private sealed class MssqlLane
+    internal sealed class MssqlLane
     {
         public MssqlLane(IDmsProvisioningTestHooks? hooks = null)
         {

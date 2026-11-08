@@ -77,6 +77,8 @@ internal sealed class LaneHooks : IDmsProvisioningTestHooks
 {
     public List<DmsProvisioningHookPoint> Points { get; } = [];
 
+    public HashSet<DmsProvisioningFaultPoint> Faults { get; } = [];
+
     public Func<DmsProvisioningHookPoint, DmsOperationId, Task>? Probe { get; set; }
 
     public async ValueTask AtAsync(
@@ -92,25 +94,42 @@ internal sealed class LaneHooks : IDmsProvisioningTestHooks
         }
     }
 
-    public bool ShouldInjectFault(DmsProvisioningFaultPoint point, DmsOperationId operation) => false;
+    public bool ShouldInjectFault(DmsProvisioningFaultPoint point, DmsOperationId operation) =>
+        Faults.Contains(point);
 }
 
 /// <summary>
-/// The real SQL Server engine behind a record of every call and the database name it addressed, and of every
-/// instance a staging drop was handed. The rename into the target is Step 4.6's: until then it answers a definite
-/// refusal without contacting the server, so a create that reaches it ends with the staging database dropped and
-/// the target untouched.
+/// The real SQL Server engine behind a record of every call and the database name it addressed, of every instance a
+/// staging drop, a session open or a compensation drop was handed, and of every restore and rename outcome. Two seams
+/// stand in for a lost result: <see cref="AfterRename"/> replaces the rename's outcome after the server ran it, and
+/// <see cref="InsteadOfMarker"/> answers for a marker that is never sent.
 /// </summary>
 internal sealed class RecordingEngine(MssqlDmsTargetEngine inner) : IDmsTargetEngine
 {
-    /// <summary>The <c>Diagnostic.Operation</c> of the stand-in rename refusal.</summary>
-    public const string RenameNotDeliveredStep = "RenameIntoTarget.NotDelivered";
-
     public List<(string Member, string? DatabaseName)> Calls { get; } = [];
 
     public List<DmsInstanceIdentity> DroppedStagingInstances { get; } = [];
 
+    /// <summary>The instance each session open was asked to verify, in order.</summary>
+    public List<DmsInstanceIdentity> OpenedInstances { get; } = [];
+
+    /// <summary>The instance each target drop was handed, in order.</summary>
+    public List<DmsInstanceIdentity> DroppedInstances { get; } = [];
+
     public List<DmsCommandOutcome<DmsInstanceIdentity>> RestoreOutcomes { get; } = [];
+
+    /// <summary>The rename's outcomes as the engine returned them, before <see cref="AfterRename"/>.</summary>
+    public List<DmsCommandOutcome<DmsInstanceIdentity>> RenameOutcomes { get; } = [];
+
+    /// <summary>Replaces a rename's outcome after the server ran it, on the holder that ran it.</summary>
+    public delegate DmsCommandOutcome<DmsInstanceIdentity> RenameFault(
+        DmsCommandOutcome<DmsInstanceIdentity> outcome,
+        IDmsTargetLockHolder holder
+    );
+
+    public RenameFault? AfterRename { get; set; }
+
+    public Func<DmsSession, DmsCommandOutcome>? InsteadOfMarker { get; set; }
 
     public string Provider => inner.Provider;
 
@@ -148,6 +167,7 @@ internal sealed class RecordingEngine(MssqlDmsTargetEngine inner) : IDmsTargetEn
     )
     {
         Calls.Add((nameof(OpenSessionAsync), name.Value));
+        OpenedInstances.Add(expectedInstance);
         return inner.OpenSessionAsync(name, expectedInstance, cancellationToken);
     }
 
@@ -194,7 +214,7 @@ internal sealed class RecordingEngine(MssqlDmsTargetEngine inner) : IDmsTargetEn
         return outcome;
     }
 
-    public Task<DmsCommandOutcome<DmsInstanceIdentity>> RenameIntoTargetAsync(
+    public async Task<DmsCommandOutcome<DmsInstanceIdentity>> RenameIntoTargetAsync(
         IDmsTargetLockHolder holder,
         DmsDatabaseName staging,
         DmsInstanceIdentity stagingInstance,
@@ -203,14 +223,15 @@ internal sealed class RecordingEngine(MssqlDmsTargetEngine inner) : IDmsTargetEn
     )
     {
         Calls.Add((nameof(RenameIntoTargetAsync), target.Value));
-        return Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
-            new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
-                new DmsCommandFailure(
-                    DmsCommandFailureClass.Rejected,
-                    DmsProvisioningDiagnostic.ForOperation(RenameNotDeliveredStep)
-                )
-            )
+        DmsCommandOutcome<DmsInstanceIdentity> outcome = await inner.RenameIntoTargetAsync(
+            holder,
+            staging,
+            stagingInstance,
+            target,
+            cancellationToken
         );
+        RenameOutcomes.Add(outcome);
+        return AfterRename is null ? outcome : AfterRename(outcome, holder);
     }
 
     public Task<DmsCommandOutcome> AssignMarkerAsync(
@@ -220,7 +241,9 @@ internal sealed class RecordingEngine(MssqlDmsTargetEngine inner) : IDmsTargetEn
     )
     {
         Calls.Add((nameof(AssignMarkerAsync), null));
-        return inner.AssignMarkerAsync(session, expectedSourceIdentity, cancellationToken);
+        return InsteadOfMarker is null
+            ? inner.AssignMarkerAsync(session, expectedSourceIdentity, cancellationToken)
+            : Task.FromResult(InsteadOfMarker(session));
     }
 
     public Task<DmsCommandOutcome> FenceAsync(
@@ -255,6 +278,7 @@ internal sealed class RecordingEngine(MssqlDmsTargetEngine inner) : IDmsTargetEn
     )
     {
         Calls.Add((nameof(DropInstanceAsync), target.Value));
+        DroppedInstances.Add(instance);
         return inner.DropInstanceAsync(holder, target, instance, reason, cancellationToken);
     }
 
@@ -352,6 +376,14 @@ internal sealed class Lane : IAsyncDisposable
 
     public Task<DmsDataStoreCreateResult> CreateAsync(CancellationToken cancellationToken = default) =>
         Service.CreateAsync(Request, cancellationToken);
+
+    /// <summary>The <c>SourceIdentity</c> of the database under the target name, read on a fresh connection.</summary>
+    public async Task<Guid> TargetIdentityAsync() =>
+        Guid.Parse(
+            await new TestDatabase(Target.Value).ScalarAsync<string>(
+                "SELECT CONVERT(nvarchar(36), [SourceIdentity]) FROM [dms].[DataStoreIdentity];"
+            )
+        );
 
     private static DmsTargetDatabaseName TargetName(string purpose) =>
         DmsTargetDatabaseName.TryCreate(
