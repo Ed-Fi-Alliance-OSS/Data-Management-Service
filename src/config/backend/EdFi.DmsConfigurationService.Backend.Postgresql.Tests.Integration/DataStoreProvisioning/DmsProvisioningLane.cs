@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Trust;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -98,6 +99,9 @@ internal sealed class RecordingEngine(IDmsTargetEngine inner) : IDmsTargetEngine
 
     public List<DmsCommandOutcome<DmsInstanceIdentity>> RenameOutcomes { get; } = [];
 
+    /// <summary>The restore's outcomes as the engine returned them.</summary>
+    public List<DmsCommandOutcome<DmsInstanceIdentity>> RestoreOutcomes { get; } = [];
+
     public delegate DmsCommandOutcome<DmsInstanceIdentity> RenameFault(
         DmsCommandOutcome<DmsInstanceIdentity> outcome,
         IDmsTargetLockHolder holder
@@ -169,7 +173,7 @@ internal sealed class RecordingEngine(IDmsTargetEngine inner) : IDmsTargetEngine
         return inner.CreateStagingAsync(holder, staging, claim, cancellationToken);
     }
 
-    public Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreIntoStagingAsync(
+    public async Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreIntoStagingAsync(
         DmsDatabaseName staging,
         DmsTargetDatabaseName target,
         StagedArtifact artifact,
@@ -178,7 +182,15 @@ internal sealed class RecordingEngine(IDmsTargetEngine inner) : IDmsTargetEngine
     )
     {
         Calls.Add((nameof(RestoreIntoStagingAsync), staging.Value));
-        return inner.RestoreIntoStagingAsync(staging, target, artifact, operation, cancellationToken);
+        DmsCommandOutcome<DmsInstanceIdentity> outcome = await inner.RestoreIntoStagingAsync(
+            staging,
+            target,
+            artifact,
+            operation,
+            cancellationToken
+        );
+        RestoreOutcomes.Add(outcome);
+        return outcome;
     }
 
     public async Task<DmsCommandOutcome<DmsInstanceIdentity>> RenameIntoTargetAsync(
@@ -281,7 +293,8 @@ internal sealed class RecordingEngine(IDmsTargetEngine inner) : IDmsTargetEngine
 
 /// <summary>
 /// One deployment: a catalog directory with a package built from the shaped fixture (its manifest
-/// carrying the committed canonical inventory and hash), an operations root, the real catalog, the real
+/// carrying the committed canonical inventory and hash) or a real feed package signed with an ephemeral key
+/// (Step 5.1), an operations root, the real catalog, the real
 /// engine behind a recorder, and the orchestrator with the lane's hooks. Disposal drops whatever the
 /// operation left under its staging or target name and deletes the directories.
 /// </summary>
@@ -337,6 +350,9 @@ internal sealed class Lane : IAsyncDisposable
 
     public DmsTargetDatabaseName Target => Request.TargetName;
 
+    /// <summary>The allowlisted package in the lane's catalog directory.</summary>
+    public string PackagePath => _deployment.PackagePath;
+
     /// <summary>A delete of the lane's target under the record's expected identity.</summary>
     public DmsDataStoreDeleteRequest DeleteRequest => new(Target, Request.ExpectedSourceIdentity);
 
@@ -373,9 +389,7 @@ internal sealed class Lane : IAsyncDisposable
         TimeSpan? lockHeartbeatInterval = null
     )
     {
-        string root = Path.Combine(Path.GetTempPath(), "dms1438-lane-" + DmsOperationId.New().Value);
-        string operations = Path.Combine(root, "operations");
-        Directory.CreateDirectory(operations);
+        (string root, string operations) = NewRoot();
         Deployment deployment = await DeployAsync(
             root,
             operations,
@@ -401,13 +415,55 @@ internal sealed class Lane : IAsyncDisposable
         );
     }
 
+    /// <summary>
+    /// A deployment of a real feed package (Step 5.1) under <paramref name="template"/>: the package signed with an
+    /// ephemeral key into the lane's catalog directory, and <c>Compatibility</c> taken from its manifest.
+    /// </summary>
+    public static async Task<Lane> BuildAsync(
+        RealTemplatePackage package,
+        DmsDatabaseTemplate template,
+        LaneHooks hooks,
+        TimeSpan? restoreTimeout = null
+    )
+    {
+        (string root, string operations) = NewRoot();
+        Deployment deployment = await DeployRealAsync(
+            root,
+            operations,
+            package,
+            template,
+            package.Compatibility(),
+            null,
+            hooks,
+            restoreTimeout
+        );
+        return new Lane(
+            root,
+            operations,
+            hooks,
+            restoreTimeout,
+            null,
+            deployment,
+            new DmsDataStoreCreateRequest(template, TargetName("real"), Guid.NewGuid(), deployment.Pin)
+        );
+    }
+
+    private static (string Root, string Operations) NewRoot()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "dms1438-lane-" + DmsOperationId.New().Value);
+        string operations = Path.Combine(root, "operations");
+        Directory.CreateDirectory(operations);
+        return (root, operations);
+    }
+
     /// <summary>One configured service over the shared server: its own recorder, catalog and allowlisted package.</summary>
     internal sealed record Deployment(
         RecordingEngine Engine,
         DmsDataStoreProvisioningService Service,
         DmsTrustedArtifactPin Pin,
         DmsDataStoreProvisioningOptions Options,
-        TemplateArtifactCatalog Catalog
+        TemplateArtifactCatalog Catalog,
+        string PackagePath
     );
 
     /// <summary>
@@ -439,6 +495,69 @@ internal sealed class Lane : IAsyncDisposable
             _restoreTimeout,
             _lockHeartbeatInterval
         );
+
+    /// <summary>
+    /// The deployment after an operator pointed the lane template's allowlist entry at another real
+    /// <paramref name="package"/>, signed into its own catalog directory, while the lane's <c>Compatibility</c> and
+    /// record (with its pin) stay as they were; the package is not resolved, since a test may expect it refused.
+    /// </summary>
+    public Task<Deployment> SwitchAllowlistAsync(RealTemplatePackage package) =>
+        DeployRealAsync(
+            _root,
+            _operations,
+            package,
+            Request.Template,
+            _deployment.Options.Compatibility!,
+            Request.PinnedArtifact,
+            _hooks,
+            _restoreTimeout
+        );
+
+    private static async Task<Deployment> DeployRealAsync(
+        string root,
+        string operations,
+        RealTemplatePackage package,
+        DmsDatabaseTemplate template,
+        DmsDataStoreProvisioningOptions.CompatibilityExpectations compatibility,
+        DmsTrustedArtifactPin? pin,
+        LaneHooks hooks,
+        TimeSpan? restoreTimeout
+    )
+    {
+        string artifacts = Path.Combine(root, "artifacts-" + DmsOperationId.New().Value);
+        RealTemplatePublication publication;
+        using (EphemeralAttestationSigner signer = new(RealTemplatePackage.ProducerName))
+        {
+            publication = package.PublishTo(artifacts, signer);
+        }
+
+        return await DeployOverAsync(
+            new Allowlisted(
+                template,
+                package.PackageId,
+                package.PackageVersion,
+                publication.PackagePath,
+                publication.TrustPolicyPath,
+                artifacts
+            ),
+            compatibility,
+            operations,
+            hooks,
+            restoreTimeout,
+            null,
+            pin
+        );
+    }
+
+    /// <summary>A package signed into a catalog directory and the allowlist entry that names it.</summary>
+    private sealed record Allowlisted(
+        DmsDatabaseTemplate Template,
+        string PackageId,
+        string PackageVersion,
+        string PackagePath,
+        string TrustPolicyPath,
+        string ArtifactDirectory
+    );
 
     private static async Task<Deployment> DeployAsync(
         string root,
@@ -477,28 +596,60 @@ internal sealed class Lane : IAsyncDisposable
             })
             .Build(artifacts);
 
-        DmsDataStoreProvisioningOptions options = new()
-        {
-            Enabled = true,
-            Provider = DmsDataStoreProvisioningOptions.PostgresqlProvider,
-            AdminConnectionString = AdminConnectionString,
-            TrustPolicyPath = package.TrustPolicyPath,
-            ArtifactDirectory = artifacts,
-            OperationDirectory = operations,
-            Templates = new(StringComparer.Ordinal)
-            {
-                [DmsDatabaseTemplate.MinimalWireValue] = new()
-                {
-                    PackageId = package.PackageId,
-                    PackageVersion = package.PackageVersion,
-                },
-            },
-            Compatibility = new()
+        return await DeployOverAsync(
+            new Allowlisted(
+                DmsDatabaseTemplate.Minimal,
+                package.PackageId,
+                package.PackageVersion,
+                package.PackagePath,
+                package.TrustPolicyPath,
+                artifacts
+            ),
+            new()
             {
                 DataStandardVersion = "5.2.0",
                 EffectiveSchemaHash = DmsShapedManifest.EffectiveSchemaHash,
                 Projects = ["edfi"],
             },
+            operations,
+            hooks,
+            restoreTimeout,
+            lockHeartbeatInterval,
+            null
+        );
+    }
+
+    /// <summary>
+    /// The options, real catalog, recorded engine and orchestrator over <paramref name="allowlisted"/>; the pin is
+    /// <paramref name="pin"/>, or the one the catalog resolves now, which must succeed.
+    /// </summary>
+    private static async Task<Deployment> DeployOverAsync(
+        Allowlisted allowlisted,
+        DmsDataStoreProvisioningOptions.CompatibilityExpectations compatibility,
+        string operations,
+        LaneHooks hooks,
+        TimeSpan? restoreTimeout,
+        TimeSpan? lockHeartbeatInterval,
+        DmsTrustedArtifactPin? pin
+    )
+    {
+        DmsDataStoreProvisioningOptions options = new()
+        {
+            Enabled = true,
+            Provider = DmsDataStoreProvisioningOptions.PostgresqlProvider,
+            AdminConnectionString = AdminConnectionString,
+            TrustPolicyPath = allowlisted.TrustPolicyPath,
+            ArtifactDirectory = allowlisted.ArtifactDirectory,
+            OperationDirectory = operations,
+            Templates = new(StringComparer.Ordinal)
+            {
+                [allowlisted.Template.WireValue] = new()
+                {
+                    PackageId = allowlisted.PackageId,
+                    PackageVersion = allowlisted.PackageVersion,
+                },
+            },
+            Compatibility = compatibility,
             RestoreTimeout = restoreTimeout ?? TimeSpan.FromMinutes(5),
             CommandTimeout = TimeSpan.FromSeconds(30),
             SessionTerminationTimeout = TimeSpan.FromSeconds(30),
@@ -515,11 +666,13 @@ internal sealed class Lane : IAsyncDisposable
             )
         );
         DmsDataStoreProvisioningService service = ServiceFor(engine, catalog, options, hooks);
-        DmsTrustedArtifactPin pin = (await catalog.ResolveAsync(DmsDatabaseTemplate.Minimal, default))
-            .Should()
-            .BeOfType<DmsArtifactResolution.Resolved>()
-            .Subject.Pin;
-        return new Deployment(engine, service, pin, options, catalog);
+        DmsTrustedArtifactPin resolved =
+            pin
+            ?? (await catalog.ResolveAsync(allowlisted.Template, default))
+                .Should()
+                .BeOfType<DmsArtifactResolution.Resolved>()
+                .Subject.Pin;
+        return new Deployment(engine, service, resolved, options, catalog, allowlisted.PackagePath);
     }
 
     private static DmsDataStoreProvisioningService ServiceFor(
