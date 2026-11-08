@@ -20,9 +20,12 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// validator judges (6.9c), including the compatibility level and the security state. Every read is on a
 /// dedicated connection. And the target lock (D-12): <see cref="AcquireTargetLockAsync"/> opens the holder
 /// session (<see cref="MssqlTargetLockSession"/>) that every later selected-target mutation runs on.
+/// And session termination (D-22): <see cref="TerminateSessionAsync"/> kills a session addressed by
+/// <c>session_id</c> and <c>login_time</c> from a fresh maintenance session and proves it gone
+/// (<see cref="MssqlSessionQueries"/>).
 /// Connection and driver failures of a read propagate for the orchestrator to
 /// classify; a catalog row the inventory contract cannot describe is reported as a content-profile
-/// violation, because the authoritative DDL never produces one. The mutating members arrive with Steps 4.3
+/// violation, because the authoritative DDL never produces one. The mutating members arrive with Steps 4.5
 /// to 4.9.
 /// </summary>
 public sealed class MssqlDmsTargetEngine : IDmsTargetEngine
@@ -91,6 +94,9 @@ public sealed class MssqlDmsTargetEngine : IDmsTargetEngine
     }
 
     public string Provider => DmsDataStoreProvisioningOptions.MssqlProvider;
+
+    /// <summary>Test seam: the batch sent to kill a session; production sends <see cref="MssqlSessionQueries.GuardedKill"/>.</summary>
+    internal Func<short, string> GuardedKillStatement { get; init; } = MssqlSessionQueries.GuardedKill;
 
     public Task<DmsEngineEnvironment> ValidateEnvironmentAsync(CancellationToken cancellationToken) =>
         throw NotYetImplemented(nameof(ValidateEnvironmentAsync), "Step 4.9");
@@ -442,11 +448,30 @@ public sealed class MssqlDmsTargetEngine : IDmsTargetEngine
         CancellationToken cancellationToken
     ) => throw NotYetImplemented(nameof(DropStagingAsync), "Step 4.5");
 
-    public Task<DmsSessionTermination> TerminateSessionAsync(
+    /// <summary>
+    /// D-22 on a fresh maintenance session, so it works whether or not the session's own connection (the
+    /// holder's, a work session's) is still usable: the guarded <c>KILL</c>, then verification by
+    /// <c>session_id</c> and <c>login_time</c> until the session is gone or <paramref name="deadline"/> passes.
+    /// The request is validated before any connection is opened.
+    /// </summary>
+    public async Task<DmsSessionTermination> TerminateSessionAsync(
         DmsServerSessionId session,
         TimeSpan deadline,
         CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(TerminateSessionAsync), "Step 4.4");
+    )
+    {
+        MssqlSessionQueries.ValidateRequest(session, deadline);
+        await using SqlConnection connection = await _adminConnection.OpenMaintenanceAsync(cancellationToken);
+        return await MssqlSessionQueries.TerminateAsync(
+            connection,
+            session,
+            deadline,
+            _adminConnection.CommandTimeoutSeconds,
+            _timeProvider,
+            cancellationToken,
+            GuardedKillStatement
+        );
+    }
 
     /// <summary>
     /// A 4060 refusal resolved by what is under the name now: absent; the expected instance, online, which
