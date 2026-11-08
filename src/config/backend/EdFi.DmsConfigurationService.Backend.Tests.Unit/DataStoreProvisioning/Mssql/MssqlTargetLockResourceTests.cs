@@ -59,29 +59,63 @@ public class MssqlTargetLockResourceTests
     {
         [Test]
         public void It_keeps_values_in_range() =>
-            new MssqlDmsEngineSettings(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(10))
+            MssqlEngineSettingsSample
+                .With(
+                    TimeSpan.FromSeconds(5),
+                    TimeSpan.FromSeconds(10),
+                    TimeSpan.FromSeconds(20),
+                    TimeSpan.FromMinutes(7)
+                )
                 .Should()
                 .BeEquivalentTo(
                     new
                     {
                         LockAcquireTimeout = TimeSpan.FromSeconds(5),
                         LockHeartbeatInterval = TimeSpan.FromSeconds(10),
+                        SessionTerminationTimeout = TimeSpan.FromSeconds(20),
+                        RestoreTimeout = TimeSpan.FromMinutes(7),
                     }
                 );
 
-        [TestCase(0, 5)]
-        [TestCase(3601, 5)]
-        [TestCase(5, 0)]
-        [TestCase(5, 3601)]
-        public void It_refuses_values_out_of_range(int acquireSeconds, int heartbeatSeconds) =>
+        [TestCase(0, 5, 30, 300)]
+        [TestCase(3601, 5, 30, 300)]
+        [TestCase(5, 0, 30, 300)]
+        [TestCase(5, 3601, 30, 300)]
+        [TestCase(5, 5, 0, 300)]
+        [TestCase(5, 5, 3601, 300)]
+        [TestCase(5, 5, 30, 0)]
+        [TestCase(5, 5, 30, 21601)]
+        public void It_refuses_values_out_of_range(
+            int acquireSeconds,
+            int heartbeatSeconds,
+            int terminationSeconds,
+            int restoreSeconds
+        ) =>
             FluentActions
                 .Invoking(() =>
-                    new MssqlDmsEngineSettings(
+                    MssqlEngineSettingsSample.With(
                         TimeSpan.FromSeconds(acquireSeconds),
-                        TimeSpan.FromSeconds(heartbeatSeconds)
+                        TimeSpan.FromSeconds(heartbeatSeconds),
+                        TimeSpan.FromSeconds(terminationSeconds),
+                        TimeSpan.FromSeconds(restoreSeconds)
                     )
                 )
                 .Should()
                 .Throw<ArgumentOutOfRangeException>();
+
+        [Test]
+        public void It_refuses_missing_staging_settings() =>
+            FluentActions
+                .Invoking(() =>
+                    new MssqlDmsEngineSettings(
+                        TimeSpan.FromSeconds(5),
+                        TimeSpan.FromSeconds(5),
+                        TimeSpan.FromSeconds(30),
+                        TimeSpan.FromMinutes(5),
+                        null!
+                    )
+                )
+                .Should()
+                .Throw<ArgumentNullException>();
     }
 }

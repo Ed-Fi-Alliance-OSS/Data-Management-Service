@@ -5,7 +5,6 @@
 
 using System.Diagnostics.CodeAnalysis;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
-using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 
@@ -23,12 +22,15 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// And session termination (D-22): <see cref="TerminateSessionAsync"/> kills a session addressed by
 /// <c>session_id</c> and <c>login_time</c> from a fresh maintenance session and proves it gone
 /// (<see cref="MssqlSessionQueries"/>).
+/// And the staging stage (6.4 steps 4 to 7, 6.7): the staging name reserved, the backup staged, planned and
+/// restored on a work session with its outcome resolved here, re-hashed after the restore, and the staging
+/// database dropped by its instance or by the reserved primary file name (the second part of this class).
 /// Connection and driver failures of a read propagate for the orchestrator to
 /// classify; a catalog row the inventory contract cannot describe is reported as a content-profile
-/// violation, because the authoritative DDL never produces one. The mutating members arrive with Steps 4.5
-/// to 4.9.
+/// violation, because the authoritative DDL never produces one. The remaining mutating members arrive with
+/// Steps 4.6 to 4.9.
 /// </summary>
-public sealed class MssqlDmsTargetEngine : IDmsTargetEngine
+public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
 {
     /// <summary>The <c>Diagnostic.Operation</c> of a facts read whose inventory or security rows do not split as the delivered contract requires.</summary>
     public const string CatalogRowShapeStep = "CatalogRowShape";
@@ -397,20 +399,6 @@ public sealed class MssqlDmsTargetEngine : IDmsTargetEngine
         };
     }
 
-    public Task<DmsCommandOutcome<DmsInstanceIdentity>> CreateStagingAsync(
-        IDmsTargetLockHolder holder,
-        DmsDatabaseName staging,
-        DmsProvisionClaim claim,
-        CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(CreateStagingAsync), "Step 4.5");
-
-    public Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreIntoStagingAsync(
-        DmsDatabaseName staging,
-        StagedArtifact artifact,
-        DmsOperationId operation,
-        CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(RestoreIntoStagingAsync), "Step 4.5");
-
     public Task<DmsCommandOutcome<DmsInstanceIdentity>> RenameIntoTargetAsync(
         IDmsTargetLockHolder holder,
         DmsDatabaseName staging,
@@ -447,12 +435,6 @@ public sealed class MssqlDmsTargetEngine : IDmsTargetEngine
         DmsDropReason reason,
         CancellationToken cancellationToken
     ) => throw NotYetImplemented(nameof(DropInstanceAsync), "Steps 4.6 and 4.8");
-
-    public Task<DmsCommandOutcome> DropStagingAsync(
-        DmsDatabaseName staging,
-        DmsInstanceIdentity stagingInstance,
-        CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(DropStagingAsync), "Step 4.5");
 
     /// <summary>
     /// D-22 on a fresh maintenance session, so it works whether or not the session's own connection (the

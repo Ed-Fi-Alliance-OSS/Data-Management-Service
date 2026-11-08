@@ -113,7 +113,7 @@ public class MssqlSessionQueriesTests
                     "Server=127.0.0.1,1;User Id=sa;Password=unused;Connect Timeout=1;TrustServerCertificate=true",
                     TimeSpan.FromSeconds(5)
                 ),
-                new MssqlDmsEngineSettings(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1)),
+                MssqlEngineSettingsSample.With(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1)),
                 TimeProvider.System,
                 NullLogger.Instance
             );

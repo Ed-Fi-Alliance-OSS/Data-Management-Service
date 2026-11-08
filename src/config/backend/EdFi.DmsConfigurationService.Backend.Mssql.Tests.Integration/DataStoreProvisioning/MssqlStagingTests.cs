@@ -22,11 +22,6 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStore
 [Category(Category)]
 public class MssqlStagingTests
 {
-    /// <summary>A CMS-side directory the server also sees, and its path as the server sees it; the visible-probe test needs both.</summary>
-    public const string SharedStagingPathVariable = "DMS1438_MSSQL_STAGING_PATH";
-
-    public const string SharedStagingServerPathVariable = "DMS1438_MSSQL_STAGING_SERVER_PATH";
-
     private static Task<string> ServerPropertyAsync(string property) =>
         ScalarOnServerAsync<string>($"SELECT CONVERT(nvarchar(4000), SERVERPROPERTY('{property}'));");
 

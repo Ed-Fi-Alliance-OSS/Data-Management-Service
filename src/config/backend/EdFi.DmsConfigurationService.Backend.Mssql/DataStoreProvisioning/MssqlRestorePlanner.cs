@@ -39,7 +39,11 @@ public static partial class MssqlRestorePlanner
     public const long PrimaryFileId = 1;
 
     /// <summary>The prefix of every refusal's <c>Diagnostic.Operation</c>; the defect name follows it.</summary>
-    public const string PlanStepPrefix = "PlanRestore.";
+    public const string PlanStepPrefix = DmsEngineOperations.PlanRestorePrefix;
+
+    /// <summary><c>&lt;stage&gt;__&lt;op&gt;.mdf</c>: the file name of the primary data file of <paramref name="operation"/>'s staging database (D-11, D-13).</summary>
+    public static string PrimaryFileNameFor(DmsOperationId operation) =>
+        operation.StagingDatabaseName.Value + operation.PhysicalFileTag + ".mdf";
 
     /// <summary><c>RESTORE HEADERONLY</c> of the file at <paramref name="serverPath"/>, the server's view of the staged file.</summary>
     public static string HeaderOnlyStatement(string serverPath) =>
@@ -148,6 +152,7 @@ public static partial class MssqlRestorePlanner
         }
 
         string stem = staging.Value + operation.PhysicalFileTag;
+        string primaryFileName = PrimaryFileNameFor(operation);
         List<MssqlFileMove> moves = [];
         bool firstLogPlaced = false;
         foreach (MssqlBackupFile file in backup.Files)
@@ -158,7 +163,8 @@ public static partial class MssqlRestorePlanner
             if (file.Type == DataFileType)
             {
                 directory = defaultDataPath;
-                physicalFileName = file.FileId == PrimaryFileId ? $"{stem}.mdf" : $"{stem}_{logicalName}.ndf";
+                physicalFileName =
+                    file.FileId == PrimaryFileId ? primaryFileName : $"{stem}_{logicalName}.ndf";
             }
             else
             {

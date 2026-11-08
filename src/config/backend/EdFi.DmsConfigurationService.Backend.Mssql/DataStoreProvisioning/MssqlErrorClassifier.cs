@@ -98,6 +98,13 @@ internal static class MssqlErrorClassifier
     public static int? ErrorNumberOf(Exception exception) => FirstSqlException(exception)?.Number;
 
     /// <summary>
+    /// <see cref="FailureClassOf(int, byte)"/> for the first SQL Server error in the chain; null, an outcome in doubt,
+    /// when there is none.
+    /// </summary>
+    public static DmsCommandFailureClass? FailureClassOf(Exception exception) =>
+        FirstSqlException(exception) is { } sql ? FailureClassOf(sql.Number, sql.Class) : null;
+
+    /// <summary>
     /// Every error number the first <see cref="SqlException"/> in the chain carries, in the order the server sent
     /// them (<c>RESTORE</c> reports the specific error, then <c>3013</c>); empty when there is none.
     /// </summary>

@@ -38,8 +38,22 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
     private readonly Lock _gate = new();
     private readonly List<Call> _calls = [];
     private readonly List<DmsServerSessionId> _terminated = [];
+    private readonly List<string> _restoreTargets = [];
 
-    public string Provider => "postgresql";
+    /// <summary><c>postgresql</c> unless a test drives the SQL Server branch of the orchestrator.</summary>
+    public string Provider { get; set; } = DmsDataStoreProvisioningOptions.PostgresqlProvider;
+
+    /// <summary>The target name each restore was handed (never addressed; SQL Server compares the backup's recorded name with it).</summary>
+    public IReadOnlyList<string> RestoreTargets
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _restoreTargets];
+            }
+        }
+    }
 
     public IReadOnlyList<Call> Calls
     {
@@ -243,12 +257,18 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
 
     public Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreIntoStagingAsync(
         DmsDatabaseName staging,
+        DmsTargetDatabaseName target,
         StagedArtifact artifact,
         DmsOperationId operation,
         CancellationToken cancellationToken
     )
     {
         Record(RestoreIntoStaging, staging.Value);
+        lock (_gate)
+        {
+            _restoreTargets.Add(target.Value);
+        }
+
         return OnRestoreIntoStaging(staging, artifact, cancellationToken);
     }
 

@@ -68,11 +68,13 @@ public sealed partial class PostgresqlDmsTargetEngine
 
     public async Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreIntoStagingAsync(
         DmsDatabaseName staging,
+        DmsTargetDatabaseName target,
         StagedArtifact artifact,
         DmsOperationId operation,
         CancellationToken cancellationToken
     )
     {
+        // The target is not consulted: a dump records no database name to compare with (D-11 is SQL Server's).
         ArgumentNullException.ThrowIfNull(artifact);
         PrivateOperationDirectory directory = PrivateOperationDirectory.Attach(
             Path.GetDirectoryName(artifact.FilePath)

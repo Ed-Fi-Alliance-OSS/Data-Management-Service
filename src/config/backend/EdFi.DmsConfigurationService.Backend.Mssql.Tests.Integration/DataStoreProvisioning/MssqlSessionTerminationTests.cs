@@ -203,16 +203,7 @@ public class MssqlSessionTerminationTests
     private static MssqlDmsTargetEngine EngineWith(
         TimeProvider clock,
         Func<int, MssqlSessionObservation, MssqlSessionObservation> observationHook
-    ) =>
-        new(
-            AdminConnection(),
-            new MssqlDmsEngineSettings(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5)),
-            clock,
-            NullLogger.Instance
-        )
-        {
-            ObservationHook = observationHook,
-        };
+    ) => new(AdminConnection(), Settings(), clock, NullLogger.Instance) { ObservationHook = observationHook };
 
     [TestFixture]
     public class Given_a_busy_session_is_killed
@@ -828,12 +819,7 @@ public class MssqlSessionTerminationTests
             _database = await CreateDatabaseAsync("budget", PayloadTable);
             _busy = await BusySession.StartAsync(_database);
             string marker = UniqueName("kill_budget");
-            MssqlDmsTargetEngine engine = new(
-                AdminConnection(),
-                new MssqlDmsEngineSettings(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5)),
-                _clock,
-                NullLogger.Instance
-            )
+            MssqlDmsTargetEngine engine = new(AdminConnection(), Settings(), _clock, NullLogger.Instance)
             {
                 GuardedKillStatement = id =>
                     $"WAITFOR DELAY '00:02:00'; -- {marker}\n" + MssqlSessionQueries.GuardedKill(id),
@@ -930,7 +916,7 @@ public class MssqlSessionTerminationTests
             string marker = UniqueName("kill_cancel");
             MssqlDmsTargetEngine engine = new(
                 AdminConnection(),
-                new MssqlDmsEngineSettings(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5)),
+                Settings(),
                 TimeProvider.System,
                 NullLogger.Instance
             )

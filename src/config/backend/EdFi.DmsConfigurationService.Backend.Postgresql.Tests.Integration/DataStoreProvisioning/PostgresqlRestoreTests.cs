@@ -115,7 +115,7 @@ public class PostgresqlRestoreTests
 
         public DmsInstanceIdentity Instance { get; }
 
-        private static DmsTargetDatabaseName TargetName(string purpose) =>
+        internal static DmsTargetDatabaseName TargetName(string purpose) =>
             DmsTargetDatabaseName.TryCreate(
                 $"dms1438_{purpose}_{DmsOperationId.New().Value}",
                 _protectedNames,
@@ -153,7 +153,14 @@ public class PostgresqlRestoreTests
 
         public Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreAsync(
             CancellationToken cancellationToken = default
-        ) => Engine.RestoreIntoStagingAsync(Stage, _artifact.Artifact, Operation, cancellationToken);
+        ) =>
+            Engine.RestoreIntoStagingAsync(
+                Stage,
+                TargetName("replay"),
+                _artifact.Artifact,
+                Operation,
+                cancellationToken
+            );
 
         public Task<bool> SchemaExistsAsync(string schemaName) =>
             ScalarOnStageAsync<bool>(
@@ -432,6 +439,7 @@ public class PostgresqlRestoreTests
             );
             _outcome = await engine.RestoreIntoStagingAsync(
                 stage,
+                Replay.TargetName("replay"),
                 new StagedArtifact(artifactPath, new string('0', 64), DmsArtifactKind.PostgresqlSqlDump),
                 _operation,
                 default

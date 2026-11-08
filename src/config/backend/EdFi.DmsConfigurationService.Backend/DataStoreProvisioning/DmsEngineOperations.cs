@@ -24,6 +24,30 @@ public static class DmsEngineOperations
     /// <summary>The caller's cancellation ended the replay and its transaction was found rolled back: the cancellation propagates after cleanup.</summary>
     public const string RestoreCancelled = "RestoreIntoStaging.Cancelled";
 
+    /// <summary>
+    /// A request the restore needs before it, such as the SQL Server backup header read, failed without a server
+    /// verdict (connection loss, client timeout), so nothing was restored: <c>RestoreFailed</c>, transient.
+    /// </summary>
+    public const string RestoreNotStarted = "RestoreIntoStaging.NotStarted";
+
+    /// <summary>
+    /// The staged SQL Server backup no longer hashes to <c>artifactSha256</c> after the restore, or can no longer
+    /// be read to prove it does (D-18): <c>StagingIntegrityViolation</c>.
+    /// </summary>
+    public const string StagedBackupChanged = "RestoreIntoStaging.StagedBackupChanged";
+
+    /// <summary>
+    /// The prefix of every SQL Server staging-routine failure (6.4 step 4, D-18), including a staged file the server
+    /// cannot open: <c>StagingFailed</c>, transient. The step after the prefix names where it failed.
+    /// </summary>
+    public const string StageBackupPrefix = "StageBackup.";
+
+    /// <summary>
+    /// The prefix of every refusal of the SQL Server backup itself (6.4 step 5, D-11), including a backup the server
+    /// refuses to read: <c>BackupInvalid</c>, inspection. The defect after the prefix names the rule.
+    /// </summary>
+    public const string PlanRestorePrefix = "PlanRestore.";
+
     /// <summary>The D-16 role exists but is not in the locked-down state the template expects: <c>RoleStateUnsafe</c>.</summary>
     public const string RoleStateUnsafe = "EnsureEnqueueOwner.RoleStateUnsafe";
 

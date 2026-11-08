@@ -280,10 +280,11 @@ public sealed partial class DmsDataStoreProvisioningService(
         new([.. first.Residue, .. second.Residue]);
 
     /// <summary>
-    /// The staging stage (6.3 steps 2 to 6) under the lock: the engine floor, the staging name free, the
-    /// staging database created and claimed on the holder session, the artifact restored into it with the
-    /// outcome protocol, full validation on an instance-bound session, the session released with proof, and
-    /// the selected target name is never addressed. Returns the validated instance and the package identity.
+    /// The staging stage (6.3 steps 2 to 6; 6.4 steps 2 to 8) under the lock: the engine floor, the staging
+    /// name free, the staging database created and claimed on the holder session (SQL Server: the name
+    /// reserved, because the restore creates the database), the artifact restored into it with the outcome
+    /// protocol, full validation on an instance-bound session, the session released with proof, and the
+    /// selected target name is never addressed. Returns the validated instance and the package identity.
     /// </summary>
     private async Task<StagedCandidate> StageAsync(
         LockScope scope,
@@ -303,6 +304,18 @@ public sealed partial class DmsDataStoreProvisioningService(
             throw StepFailed(DmsProvisioningFailureCode.EngineIncompatible, EngineCheckStep);
         }
 
+        // 6.4 step 2: SQL Server places every restored file in the server's default directories (D-11).
+        if (
+            string.Equals(
+                engine.Provider,
+                DmsDataStoreProvisioningOptions.MssqlProvider,
+                StringComparison.Ordinal
+            ) && (scope.ServerFacts.DefaultDataPath is null || scope.ServerFacts.DefaultLogPath is null)
+        )
+        {
+            throw StepFailed(DmsProvisioningFailureCode.EngineIncompatible, EngineCheckStep);
+        }
+
         // 6.3 step 3: a generated name already in use is transient; a retry draws a new operation id.
         DmsLiveTargetState stagingState = await scope.ReadAsync(
             InspectStagingStep,
@@ -313,12 +326,20 @@ public sealed partial class DmsDataStoreProvisioningService(
             throw StepFailed(DmsProvisioningFailureCode.StagingNameCollision, InspectStagingStep);
         }
 
-        // 6.3 step 4 on the holder session.
+        // 6.3 step 4 on the holder session; on SQL Server a reservation (6.4).
         DmsProvisionClaim claim = new(operation, request.ExpectedSourceIdentity);
-        DmsInstanceIdentity stagingInstance = await CreateStagingAsync(scope, stage, claim, cleanup);
+        DmsInstanceIdentity reserved = await CreateStagingAsync(scope, stage, claim, cleanup);
 
-        // 6.3 step 5: the replay and its outcome; true when the replay's fate is read by the validation.
-        bool restoreInDoubt = await RestoreAsync(scope, stage, stagedArtifact, stagingInstance, cleanup);
+        // 6.3 step 5, 6.4 steps 4 to 7: the restore and its outcome; in doubt when the replay's fate is read by
+        // the validation. The instance is the created one, or on SQL Server the one the restore created.
+        (bool restoreInDoubt, DmsInstanceIdentity stagingInstance) = await RestoreAsync(
+            scope,
+            stage,
+            request.TargetName,
+            stagedArtifact,
+            reserved,
+            cleanup
+        );
 
         // 6.3 step 6 on an instance-bound session; for a restore in doubt, the reads also decide its fate.
         (DmsServerSessionId stagingSession, Guid packageIdentity) = await ValidateStagingAsync(
@@ -383,13 +404,17 @@ public sealed partial class DmsDataStoreProvisioningService(
     }
 
     /// <summary>
-    /// 6.3 step 5: the replay, bounded by the engine (the scope's deadline is a backstop beyond it), and its
-    /// outcome. Returns true when the outcome is unresolved and the validation's reads must decide the
-    /// replay's fate; throws for a definite failure or an outcome nothing can resolve.
+    /// 6.3 step 5 and 6.4 steps 4 to 7: the restore, bounded by the engine (the scope's deadline is a backstop
+    /// beyond it), and its outcome. Returns whether the outcome is unresolved, so the validation's reads must
+    /// decide the replay's fate, with the staging instance: the created one, or for a SQL Server reservation the
+    /// instance the restore created, adopted only when its primary file carries the reserved name and recorded
+    /// for cleanup as soon as the engine returns it. Throws for a definite failure or an outcome nothing can
+    /// resolve.
     /// </summary>
-    private async Task<bool> RestoreAsync(
+    private async Task<(bool InDoubt, DmsInstanceIdentity Instance)> RestoreAsync(
         LockScope scope,
         DmsDatabaseName stage,
+        DmsTargetDatabaseName target,
         StagedArtifact stagedArtifact,
         DmsInstanceIdentity stagingInstance,
         StagingCleanup cleanup
@@ -397,18 +422,44 @@ public sealed partial class DmsDataStoreProvisioningService(
     {
         DmsDataStoreProvisioningOptions settings = options.Value;
         DmsOperationId operation = scope.Operation;
+        DmsInstanceIdentity.MssqlReservation? reservation =
+            stagingInstance as DmsInstanceIdentity.MssqlReservation;
 
         // The replay's fate is open from the moment it is dispatched: the drop is withheld first, and only
         // a returned definite or quiescent outcome, or a later proven termination, lifts it. An exception,
         // a cancellation, or a loss before any outcome returns therefore leaves the staging database as
-        // residue, never dropped without proof (D-7b).
+        // residue, never dropped without proof (D-7b). A restored SQL Server instance becomes cleanup's
+        // instance before any loss check can discard the result.
         cleanup.Withhold();
         DmsCommandOutcome<DmsInstanceIdentity> restored = await scope.CallAsync(
             RestoreIntoStagingStep,
             settings.RestoreTimeout + settings.SessionTerminationTimeout + settings.CommandTimeout,
-            token => engine.RestoreIntoStagingAsync(stage, stagedArtifact, operation, token),
-            outcome => cleanup.Observe(outcome.WithoutValue())
+            token => engine.RestoreIntoStagingAsync(stage, target, stagedArtifact, operation, token),
+            outcome =>
+            {
+                cleanup.Observe(outcome.WithoutValue());
+                if (
+                    reservation is not null
+                    && outcome is DmsCommandOutcome<DmsInstanceIdentity>.Succeeded created
+                    && reservation.IsRealizedBy(created.Value)
+                )
+                {
+                    cleanup.Created(created.Value);
+                }
+            }
         );
+
+        // The instance a successful restore returned, before any fault replaces the outcome.
+        DmsInstanceIdentity instance = stagingInstance;
+        if (
+            reservation is not null
+            && restored is DmsCommandOutcome<DmsInstanceIdentity>.Succeeded adopted
+            && reservation.IsRealizedBy(adopted.Value)
+        )
+        {
+            instance = adopted.Value;
+        }
+
         if (
             restored is DmsCommandOutcome<DmsInstanceIdentity>.Succeeded
             && TestHooks.ShouldInjectFault(DmsProvisioningFaultPoint.DropConnectionDuringRestore, operation)
@@ -422,15 +473,19 @@ public sealed partial class DmsDataStoreProvisioningService(
         switch (restored)
         {
             case DmsCommandOutcome<DmsInstanceIdentity>.Succeeded succeeded:
-                if (!succeeded.Value.IsSameStableInstance(stagingInstance))
+                if (
+                    reservation is not null
+                        ? !reservation.IsRealizedBy(succeeded.Value)
+                        : !succeeded.Value.IsSameStableInstance(stagingInstance)
+                )
                 {
                     throw StepFailed(DmsProvisioningFailureCode.InstanceChanged, RestoreIntoStagingStep);
                 }
 
-                return false;
+                return (false, instance);
             case DmsCommandOutcome<DmsInstanceIdentity>.Failed failed:
                 ThrowRestoreFailure(failed.Failure, scope.CallerToken);
-                return false;
+                return (false, instance);
             case DmsCommandOutcome<DmsInstanceIdentity>.Unknown unresolvable
                 when unresolvable.Residue.Count > 0 || unresolvable is { Session: null, Quiescent: false }:
                 // Nothing names a session to prove gone, or the engine reports something it could not end,
@@ -452,7 +507,14 @@ public sealed partial class DmsDataStoreProvisioningService(
                     cleanup.Permit();
                 }
 
-                return true;
+                if (instance is DmsInstanceIdentity.MssqlReservation)
+                {
+                    // No instance to read: the restore never returned one, so its fate cannot be read here
+                    // and the name is left to cleanup's inspection by the reserved file name.
+                    throw StepFailed(DmsProvisioningFailureCode.OutcomeUnknown, ResolveRestoreStep);
+                }
+
+                return (true, instance);
             default:
                 throw new InvalidOperationException("Unknown restore outcome.");
         }
@@ -692,10 +754,14 @@ public sealed partial class DmsDataStoreProvisioningService(
             _ => DmsProvisioningFailureCode.ServerRejected,
         };
 
-    /// <summary>6.3 step 5 for a definite restore failure: the engine's fixed operation names what ended the replay.</summary>
+    /// <summary>
+    /// 6.3 step 5 and 6.4 steps 4 to 7 for a definite restore failure: the engine's fixed operation names what
+    /// ended the replay, or, by its prefix, the SQL Server staging routine or backup rule that refused it.
+    /// </summary>
     private static void ThrowRestoreFailure(DmsCommandFailure failure, CancellationToken callerToken)
     {
-        switch (failure.Diagnostic.Operation)
+        string operation = failure.Diagnostic.Operation;
+        switch (operation)
         {
             case DmsEngineOperations.RestoreCancelled:
                 throw new OperationCanceledException(
@@ -704,7 +770,7 @@ public sealed partial class DmsDataStoreProvisioningService(
                 );
             case DmsEngineOperations.RestoreTimedOut:
                 throw StepFailed(DmsProvisioningFailureCode.TimedOut, failure.Diagnostic);
-            case DmsEngineOperations.RestoreRolledBack:
+            case DmsEngineOperations.RestoreRolledBack or DmsEngineOperations.RestoreNotStarted:
                 throw new DmsProvisioningFailedException(
                     DmsProvisioningFailure.Create(
                         DmsProvisioningFailureCode.RestoreFailed,
@@ -714,6 +780,14 @@ public sealed partial class DmsDataStoreProvisioningService(
                 );
             case DmsEngineOperations.RoleStateUnsafe:
                 throw StepFailed(DmsProvisioningFailureCode.RoleStateUnsafe, failure.Diagnostic);
+            case DmsEngineOperations.StagedBackupChanged:
+                throw StepFailed(DmsProvisioningFailureCode.StagingIntegrityViolation, failure.Diagnostic);
+            case not null
+                when operation.StartsWith(DmsEngineOperations.StageBackupPrefix, StringComparison.Ordinal):
+                throw StepFailed(DmsProvisioningFailureCode.StagingFailed, failure.Diagnostic);
+            case not null
+                when operation.StartsWith(DmsEngineOperations.PlanRestorePrefix, StringComparison.Ordinal):
+                throw StepFailed(DmsProvisioningFailureCode.BackupInvalid, failure.Diagnostic);
             default:
                 throw StepFailed(
                     failure.Class == DmsCommandFailureClass.PrivilegeMissing

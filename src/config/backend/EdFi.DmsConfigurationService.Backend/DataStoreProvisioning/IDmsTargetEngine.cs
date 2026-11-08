@@ -60,8 +60,9 @@ public interface IDmsTargetEngine
 
     /// <summary>
     /// On the holder session: PostgreSQL creates the staging database and writes <paramref name="claim"/> as
-    /// its comment; SQL Server only reserves the name (the restore creates it). Returns the staging
-    /// instance identity.
+    /// its comment and returns the staging instance identity; SQL Server only reserves the name, because the
+    /// restore creates the database, and returns a <see cref="DmsInstanceIdentity.MssqlReservation"/> naming the
+    /// primary file the restored database will carry.
     /// </summary>
     Task<DmsCommandOutcome<DmsInstanceIdentity>> CreateStagingAsync(
         IDmsTargetLockHolder holder,
@@ -74,10 +75,12 @@ public interface IDmsTargetEngine
     /// Restores <paramref name="artifact"/> into the staging database on a work session addressable by
     /// <paramref name="operation"/> (<c>psql</c> replay or <c>RESTORE DATABASE … WITH MOVE</c>, never
     /// <c>REPLACE</c>), bounded by <c>RestoreTimeout</c>. Returns the staging instance identity (SQL Server:
-    /// first captured here).
+    /// first captured here). <paramref name="target"/> is never addressed: SQL Server refuses a backup whose
+    /// recorded database name equals it (D-11 hygiene).
     /// </summary>
     Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreIntoStagingAsync(
         DmsDatabaseName staging,
+        DmsTargetDatabaseName target,
         StagedArtifact artifact,
         DmsOperationId operation,
         CancellationToken cancellationToken

@@ -47,4 +47,31 @@ public abstract record DmsInstanceIdentity
                 CreateDateSnapshot = createDateSnapshot,
             };
     }
+
+    /// <summary>
+    /// A SQL Server staging name reserved for the database the restore will create (6.4): nothing exists on the
+    /// server yet, so the only evidence that a database later found under the staging name is this operation's is
+    /// the file name its primary file carries, <c>&lt;stage&gt;__&lt;op&gt;.mdf</c> (D-11, D-13). The orchestrator
+    /// replaces it with the restored instance; until then cleanup drops a database under the staging name only
+    /// when its primary file carries <see cref="PrimaryFileName"/>. It is never the same stable instance as
+    /// anything.
+    /// </summary>
+    public sealed record MssqlReservation(string PrimaryFileName) : DmsInstanceIdentity
+    {
+        /// <summary>
+        /// Whether <paramref name="instance"/> is a SQL Server database whose primary file's last path segment,
+        /// under either path convention, is exactly <see cref="PrimaryFileName"/>.
+        /// </summary>
+        public bool IsRealizedBy(DmsInstanceIdentity instance) =>
+            instance is Mssql restored && IsPrimaryFile(restored.PrimaryFileTag);
+
+        /// <summary>Whether <paramref name="physicalName"/> names a file called <see cref="PrimaryFileName"/>.</summary>
+        public bool IsPrimaryFile(string physicalName)
+        {
+            ArgumentNullException.ThrowIfNull(physicalName);
+            int separator = physicalName.LastIndexOfAny(['/', '\\']);
+            return separator >= 0
+                && string.Equals(physicalName[(separator + 1)..], PrimaryFileName, StringComparison.Ordinal);
+        }
+    }
 }

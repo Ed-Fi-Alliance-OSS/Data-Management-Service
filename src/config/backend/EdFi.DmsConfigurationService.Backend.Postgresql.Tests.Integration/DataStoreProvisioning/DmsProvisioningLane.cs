@@ -171,13 +171,14 @@ internal sealed class RecordingEngine(IDmsTargetEngine inner) : IDmsTargetEngine
 
     public Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreIntoStagingAsync(
         DmsDatabaseName staging,
+        DmsTargetDatabaseName target,
         StagedArtifact artifact,
         DmsOperationId operation,
         CancellationToken cancellationToken
     )
     {
         Calls.Add((nameof(RestoreIntoStagingAsync), staging.Value));
-        return inner.RestoreIntoStagingAsync(staging, artifact, operation, cancellationToken);
+        return inner.RestoreIntoStagingAsync(staging, target, artifact, operation, cancellationToken);
     }
 
     public async Task<DmsCommandOutcome<DmsInstanceIdentity>> RenameIntoTargetAsync(

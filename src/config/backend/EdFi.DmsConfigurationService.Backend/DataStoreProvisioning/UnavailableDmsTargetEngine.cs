@@ -67,6 +67,7 @@ public sealed class UnavailableDmsTargetEngine : IDmsTargetEngine
 
     public Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreIntoStagingAsync(
         DmsDatabaseName staging,
+        DmsTargetDatabaseName target,
         StagedArtifact artifact,
         DmsOperationId operation,
         CancellationToken cancellationToken

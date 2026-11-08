@@ -27,6 +27,11 @@ internal static partial class MssqlProvisioningTestServer
 
     public const string FixtureDirectory = "Fixtures/DataStoreProvisioning";
 
+    /// <summary>A CMS-side directory the server also sees, and its path as the server sees it; every test that restores needs both.</summary>
+    public const string SharedStagingPathVariable = "DMS1438_MSSQL_STAGING_PATH";
+
+    public const string SharedStagingServerPathVariable = "DMS1438_MSSQL_STAGING_SERVER_PATH";
+
     /// <summary>The password of every login the tests create.</summary>
     public const string LoginPassword = "Dms1438-Login-Pa55word!";
 
@@ -44,6 +49,55 @@ internal static partial class MssqlProvisioningTestServer
             );
         }
     }
+
+    public static string? SharedStagingPath => Environment.GetEnvironmentVariable(SharedStagingPathVariable);
+
+    public static string? SharedStagingServerPath =>
+        Environment.GetEnvironmentVariable(SharedStagingServerPathVariable);
+
+    /// <summary>Skips a test that restores unless the lane names a staging directory shared with the server.</summary>
+    public static void RequireSharedStagingOrSkip()
+    {
+        RequireConfiguredOrSkip();
+        if (
+            string.IsNullOrWhiteSpace(SharedStagingPath) || string.IsNullOrWhiteSpace(SharedStagingServerPath)
+        )
+        {
+            Assert.Ignore(
+                $"{SharedStagingPathVariable} and {SharedStagingServerPathVariable} are not set; the tests that restore are skipped."
+            );
+        }
+    }
+
+    /// <summary>
+    /// The staging settings: the shared directory when the lane provides one, otherwise a local directory the server
+    /// cannot see (for tests that never restore).
+    /// </summary>
+    public static MssqlStagingSettings StagingSettings() =>
+        new(
+            string.IsNullOrWhiteSpace(SharedStagingPath)
+                ? Path.Combine(Path.GetTempPath(), "dms1438-unshared-staging")
+                : SharedStagingPath,
+            string.IsNullOrWhiteSpace(SharedStagingServerPath)
+                ? "/var/opt/dms-staging"
+                : SharedStagingServerPath,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead,
+            3,
+            TimeSpan.FromSeconds(30)
+        );
+
+    public static MssqlDmsEngineSettings Settings(
+        TimeSpan? lockAcquireTimeout = null,
+        TimeSpan? lockHeartbeatInterval = null,
+        TimeSpan? restoreTimeout = null
+    ) =>
+        new(
+            lockAcquireTimeout ?? TimeSpan.FromSeconds(5),
+            lockHeartbeatInterval ?? TimeSpan.FromSeconds(5),
+            TimeSpan.FromSeconds(30),
+            restoreTimeout ?? TimeSpan.FromMinutes(5),
+            StagingSettings()
+        );
 
     public static MssqlAdminConnection AdminConnection() =>
         new(AdminConnectionString!, TimeSpan.FromSeconds(30));
@@ -64,8 +118,9 @@ internal static partial class MssqlProvisioningTestServer
     public static MssqlDmsTargetEngine Engine(
         TimeSpan? lockAcquireTimeout = null,
         TimeSpan? lockHeartbeatInterval = null,
-        TimeProvider? timeProvider = null
-    ) => EngineOn(AdminConnection(), lockAcquireTimeout, lockHeartbeatInterval, timeProvider);
+        TimeProvider? timeProvider = null,
+        TimeSpan? restoreTimeout = null
+    ) => EngineOn(AdminConnection(), lockAcquireTimeout, lockHeartbeatInterval, timeProvider, restoreTimeout);
 
     public static MssqlDmsTargetEngine EngineAs(string login) => EngineOn(AdminConnectionAs(login));
 
@@ -73,14 +128,12 @@ internal static partial class MssqlProvisioningTestServer
         MssqlAdminConnection adminConnection,
         TimeSpan? lockAcquireTimeout = null,
         TimeSpan? lockHeartbeatInterval = null,
-        TimeProvider? timeProvider = null
+        TimeProvider? timeProvider = null,
+        TimeSpan? restoreTimeout = null
     ) =>
         new(
             adminConnection,
-            new MssqlDmsEngineSettings(
-                lockAcquireTimeout ?? TimeSpan.FromSeconds(5),
-                lockHeartbeatInterval ?? TimeSpan.FromSeconds(5)
-            ),
+            Settings(lockAcquireTimeout, lockHeartbeatInterval, restoreTimeout),
             timeProvider ?? TimeProvider.System,
             NullLogger.Instance
         );

@@ -27,19 +27,22 @@ public sealed class MssqlBackupStager
     public const string FileExtension = ".bak";
 
     /// <summary>The fixed <c>Diagnostic.Operation</c> of each staging failure; never a path or a value.</summary>
-    public const string OpenSourceStep = "StageBackup.OpenSource";
+    public const string OpenSourceStep = DmsEngineOperations.StageBackupPrefix + "OpenSource";
 
-    public const string CreateStep = "StageBackup.Create";
+    public const string CreateStep = DmsEngineOperations.StageBackupPrefix + "Create";
 
-    public const string ApplyModeStep = "StageBackup.ApplyMode";
+    public const string ApplyModeStep = DmsEngineOperations.StageBackupPrefix + "ApplyMode";
 
-    public const string CopyStep = "StageBackup.Copy";
+    public const string CopyStep = DmsEngineOperations.StageBackupPrefix + "Copy";
 
-    public const string CopyHashMismatchStep = "StageBackup.CopyHashMismatch";
+    public const string CopyHashMismatchStep = DmsEngineOperations.StageBackupPrefix + "CopyHashMismatch";
 
-    public const string RehashStep = "StageBackup.Rehash";
+    public const string RehashStep = DmsEngineOperations.StageBackupPrefix + "Rehash";
 
-    public const string RehashMismatchStep = "StageBackup.RehashMismatch";
+    public const string RehashMismatchStep = DmsEngineOperations.StageBackupPrefix + "RehashMismatch";
+
+    /// <summary>The server could not open the staged file through <c>StagingServerPath</c> (<c>3201</c>).</summary>
+    public const string NotVisibleStep = DmsEngineOperations.StageBackupPrefix + "NotVisible";
 
     internal static readonly EventId StagedFileResidue = new(1438_40, nameof(StagedFileResidue));
 
