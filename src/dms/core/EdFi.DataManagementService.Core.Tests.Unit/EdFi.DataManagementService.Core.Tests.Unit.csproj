@@ -11,6 +11,7 @@
         <PackageReference Include="Autofac" />
         <PackageReference Include="Autofac.Extras.FakeItEasy" />
         <PackageReference Include="FakeItEasy" />
+        <PackageReference Include="CsCheck" />
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="Microsoft.Extensions.Http" />
         <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
